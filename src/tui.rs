@@ -20,7 +20,7 @@ use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::SessionStatus;
+use crate::models::{RebaseResult, RebaseState, SessionStatus};
 use crate::session::SessionManager;
 
 /// Events that can occur in the TUI
@@ -251,8 +251,57 @@ fn handle_sessions_input(
             }
         }
         KeyCode::Char('r') => {
-            if let Err(e) = app.rebase_current_session() {
-                app.set_status(format!("Rebase failed: {}", e));
+            // Rebase from main with conflict detection
+            if let Some(session) = app.current_session() {
+                if let Some(project) = app.current_project() {
+                    let worktree_path = session.worktree_path.clone();
+                    let main_branch = project.main_branch.clone();
+                    match Git::rebase_onto_main(&worktree_path, &main_branch) {
+                        Ok(RebaseResult::Success) => {
+                            app.set_status("Rebase completed successfully");
+                            app.clear_rebase_status();
+                        }
+                        Ok(RebaseResult::UpToDate) => {
+                            app.set_status("Already up to date with main branch");
+                        }
+                        Ok(RebaseResult::Conflicts(status)) => {
+                            let conflict_count = status.conflicted_files.len();
+                            app.set_rebase_status(status);
+                            app.set_status(format!(
+                                "Rebase conflicts: {} file(s) need resolution. Press 'R' for rebase menu.",
+                                conflict_count
+                            ));
+                        }
+                        Ok(RebaseResult::Aborted) => {
+                            app.set_status("Rebase was aborted");
+                            app.clear_rebase_status();
+                        }
+                        Ok(RebaseResult::Failed(e)) => {
+                            app.set_status(format!("Rebase failed: {}", e));
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Rebase error: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Char('R') => {
+            // Show rebase status/menu
+            if let Some(session) = app.current_session() {
+                let worktree_path = session.worktree_path.clone();
+                if Git::is_rebase_in_progress(&worktree_path) {
+                    match Git::get_rebase_status(&worktree_path) {
+                        Ok(status) => {
+                            app.set_rebase_status(status);
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to get rebase status: {}", e));
+                        }
+                    }
+                } else {
+                    app.set_status("No rebase in progress");
+                }
             }
         }
         KeyCode::Char('a') => {
@@ -314,25 +363,195 @@ fn handle_sessions_input(
 
 /// Handle keyboard input when Output pane is focused
 fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    match (key.modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_output_down(1),
-        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_output_up(1),
-        (KeyModifiers::NONE, KeyCode::Char('G')) => app.scroll_output_to_bottom(),
-        (KeyModifiers::NONE, KeyCode::Char('g')) => app.output_scroll = 0,
-        (KeyModifiers::NONE, KeyCode::PageDown) => app.scroll_output_down(10),
-        (KeyModifiers::NONE, KeyCode::PageUp) => app.scroll_output_up(10),
-        (KeyModifiers::CONTROL, KeyCode::Char('d')) => app.scroll_output_down(20),
-        (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.scroll_output_up(20),
-        (KeyModifiers::CONTROL, KeyCode::Char('f')) => app.scroll_output_down(40),
-        (KeyModifiers::CONTROL, KeyCode::Char('b')) => app.scroll_output_up(40),
-        (KeyModifiers::NONE, KeyCode::Char('o')) => app.view_mode = ViewMode::Output,
-        (KeyModifiers::NONE, KeyCode::Char('d')) => {
-            if let Err(e) = app.load_diff() {
-                app.set_status(format!("Failed to get diff: {}", e));
+    match app.view_mode {
+        ViewMode::Rebase => handle_rebase_input(key, app)?,
+        _ => {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_output_down(1),
+                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_output_up(1),
+                (KeyModifiers::NONE, KeyCode::Char('G')) => app.scroll_output_to_bottom(),
+                (KeyModifiers::NONE, KeyCode::Char('g')) => app.output_scroll = 0,
+                (KeyModifiers::NONE, KeyCode::PageDown) => app.scroll_output_down(10),
+                (KeyModifiers::NONE, KeyCode::PageUp) => app.scroll_output_up(10),
+                (KeyModifiers::CONTROL, KeyCode::Char('d')) => app.scroll_output_down(20),
+                (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.scroll_output_up(20),
+                (KeyModifiers::CONTROL, KeyCode::Char('f')) => app.scroll_output_down(40),
+                (KeyModifiers::CONTROL, KeyCode::Char('b')) => app.scroll_output_up(40),
+                (KeyModifiers::NONE, KeyCode::Char('o')) => app.view_mode = ViewMode::Output,
+                (KeyModifiers::NONE, KeyCode::Char('d')) => {
+                    if let Err(e) = app.load_diff() {
+                        app.set_status(format!("Failed to get diff: {}", e));
+                    }
+                }
+                (KeyModifiers::SHIFT, KeyCode::Char('R')) => {
+                    // Show rebase view if in progress
+                    if let Some(session) = app.current_session() {
+                        let worktree_path = session.worktree_path.clone();
+                        if Git::is_rebase_in_progress(&worktree_path) {
+                            if let Ok(status) = Git::get_rebase_status(&worktree_path) {
+                                app.set_rebase_status(status);
+                            }
+                        }
+                    }
+                }
+                (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
+                (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
+                _ => {}
             }
         }
-        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
-        (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
+    }
+    Ok(())
+}
+
+/// Handle keyboard input when in Rebase view mode
+fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.select_next_conflict(),
+        KeyCode::Char('k') | KeyCode::Up => app.select_prev_conflict(),
+        KeyCode::Char('c') => {
+            // Continue rebase
+            if let Some(session) = app.current_session() {
+                let worktree_path = session.worktree_path.clone();
+                match Git::rebase_continue(&worktree_path) {
+                    Ok(RebaseResult::Success) => {
+                        app.set_status("Rebase completed successfully");
+                        app.clear_rebase_status();
+                    }
+                    Ok(RebaseResult::Conflicts(status)) => {
+                        let conflict_count = status.conflicted_files.len();
+                        app.set_rebase_status(status);
+                        app.set_status(format!(
+                            "More conflicts: {} file(s) need resolution",
+                            conflict_count
+                        ));
+                    }
+                    Ok(RebaseResult::Failed(e)) => {
+                        app.set_status(format!("Continue failed: {}", e));
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Error: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Char('A') => {
+            // Abort rebase
+            if let Some(session) = app.current_session() {
+                let worktree_path = session.worktree_path.clone();
+                match Git::rebase_abort(&worktree_path) {
+                    Ok(RebaseResult::Aborted) => {
+                        app.set_status("Rebase aborted");
+                        app.clear_rebase_status();
+                    }
+                    Ok(RebaseResult::Failed(e)) => {
+                        app.set_status(format!("Abort failed: {}", e));
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Error: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Char('s') => {
+            // Skip current commit
+            if let Some(session) = app.current_session() {
+                let worktree_path = session.worktree_path.clone();
+                match Git::rebase_skip(&worktree_path) {
+                    Ok(RebaseResult::Success) => {
+                        app.set_status("Rebase completed successfully");
+                        app.clear_rebase_status();
+                    }
+                    Ok(RebaseResult::Conflicts(status)) => {
+                        let conflict_count = status.conflicted_files.len();
+                        app.set_rebase_status(status);
+                        app.set_status(format!(
+                            "More conflicts: {} file(s) need resolution",
+                            conflict_count
+                        ));
+                    }
+                    Ok(RebaseResult::Failed(e)) => {
+                        app.set_status(format!("Skip failed: {}", e));
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Error: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        KeyCode::Char('o') => {
+            // Resolve using ours (keep our changes)
+            if let Some(session) = app.current_session() {
+                if let Some(file) = app.current_conflict_file() {
+                    let worktree_path = session.worktree_path.clone();
+                    let file = file.to_string();
+                    match Git::resolve_using_ours(&worktree_path, &file) {
+                        Ok(()) => {
+                            app.set_status(format!("Resolved {} using ours", file));
+                            // Refresh rebase status
+                            if let Ok(status) = Git::get_rebase_status(&worktree_path) {
+                                if status.conflicted_files.is_empty() {
+                                    app.set_status("All conflicts resolved. Press 'c' to continue rebase.");
+                                }
+                                app.set_rebase_status(status);
+                            }
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to resolve: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Char('t') => {
+            // Resolve using theirs (accept incoming changes)
+            if let Some(session) = app.current_session() {
+                if let Some(file) = app.current_conflict_file() {
+                    let worktree_path = session.worktree_path.clone();
+                    let file = file.to_string();
+                    match Git::resolve_using_theirs(&worktree_path, &file) {
+                        Ok(()) => {
+                            app.set_status(format!("Resolved {} using theirs", file));
+                            // Refresh rebase status
+                            if let Ok(status) = Git::get_rebase_status(&worktree_path) {
+                                if status.conflicted_files.is_empty() {
+                                    app.set_status("All conflicts resolved. Press 'c' to continue rebase.");
+                                }
+                                app.set_rebase_status(status);
+                            }
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to resolve: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Enter => {
+            // View conflict diff for selected file
+            if let Some(session) = app.current_session() {
+                if let Some(file) = app.current_conflict_file() {
+                    let worktree_path = session.worktree_path.clone();
+                    let file = file.to_string();
+                    match Git::get_conflict_diff(&worktree_path, &file) {
+                        Ok(diff) => {
+                            app.diff_text = Some(diff);
+                            app.view_mode = ViewMode::Diff;
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to get diff: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Esc => {
+            app.view_mode = ViewMode::Output;
+            app.focus = Focus::Sessions;
+        }
+        KeyCode::Char('q') => app.should_quit = true,
         _ => {}
     }
     Ok(())
@@ -617,6 +836,7 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         ViewMode::Output => " Output ",
         ViewMode::Diff => " Diff (Syntax Highlighted) ",
         ViewMode::Messages => " Messages ",
+        ViewMode::Rebase => " Rebase ",
     };
 
     let content = match app.view_mode {
@@ -651,6 +871,9 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         ViewMode::Messages => {
             vec![Line::from("Messages view not implemented")]
         }
+        ViewMode::Rebase => {
+            draw_rebase_content(app)
+        }
     };
 
     let output = Paragraph::new(content)
@@ -667,6 +890,106 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(output, area);
+}
+
+fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    if let Some(ref status) = app.rebase_status {
+        // Header with rebase state
+        let state_color = status.state.color();
+        lines.push(Line::from(vec![
+            Span::styled("State: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{} {}", status.state.symbol(), status.state.as_str()),
+                Style::default().fg(state_color),
+            ),
+        ]));
+
+        // Progress info
+        if let (Some(current), Some(total)) = (status.current_step, status.total_steps) {
+            lines.push(Line::from(vec![
+                Span::styled("Progress: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{}/{}", current, total)),
+            ]));
+        }
+
+        // Branch info
+        if let Some(ref head) = status.head_name {
+            lines.push(Line::from(vec![
+                Span::styled("Rebasing: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(head.clone(), Style::default().fg(Color::Green)),
+            ]));
+        }
+
+        if let Some(ref onto) = status.onto_branch {
+            lines.push(Line::from(vec![
+                Span::styled("Onto: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(onto.clone(), Style::default().fg(Color::Cyan)),
+            ]));
+        }
+
+        // Current commit being applied
+        if let Some(ref commit) = status.current_commit {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Current commit: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(commit.clone(), Style::default().fg(Color::Yellow)),
+            ]));
+            if let Some(ref msg) = status.current_commit_message {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::raw(msg.clone()),
+                ]));
+            }
+        }
+
+        // Conflicted files
+        if !status.conflicted_files.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("Conflicts ({}):", status.conflicted_files.len()),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+
+            for (idx, file) in status.conflicted_files.iter().enumerate() {
+                let is_selected = app.selected_conflict == Some(idx);
+                let style = if is_selected {
+                    Style::default().bg(Color::DarkGray).fg(Color::White)
+                } else {
+                    Style::default().fg(Color::Red)
+                };
+                let prefix = if is_selected { "▸ " } else { "  " };
+                lines.push(Line::from(vec![
+                    Span::raw(prefix),
+                    Span::styled(file.clone(), style),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Commands: ", Style::default().add_modifier(Modifier::BOLD)),
+            ]));
+            lines.push(Line::from("  o: use ours (keep our changes)"));
+            lines.push(Line::from("  t: use theirs (accept incoming)"));
+            lines.push(Line::from("  Enter: view conflict diff"));
+            lines.push(Line::from("  c: continue rebase"));
+            lines.push(Line::from("  s: skip this commit"));
+            lines.push(Line::from("  A: abort rebase"));
+        } else if status.state == RebaseState::InProgress {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("No conflicts. ", Style::default().fg(Color::Green)),
+                Span::raw("Press 'c' to continue."),
+            ]));
+        }
+    } else {
+        lines.push(Line::from("No rebase in progress"));
+    }
+
+    lines
 }
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
@@ -739,6 +1062,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         ViewMode::Output => "Output",
         ViewMode::Diff => "Diff",
         ViewMode::Messages => "Messages",
+        ViewMode::Rebase => "Rebase",
     };
     status_spans.push(Span::styled(
         view_text,
@@ -752,21 +1076,20 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-match app.focus {
-            Focus::Sessions => {
+match (app.focus, app.view_mode) {
+            (Focus::Sessions, _) => {
                 if app.running_session_id.is_some() {
-                    "?:help  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  a:archive  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch  q:quit"
                 } else {
-                    "?:help  n:new  w:worktree  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
                 }
             }
-            Focus::Output => match app.view_mode {
-                ViewMode::Diff => "?:help  j/k:scroll  s:save  o:output  Esc:back",
-                _ => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
-            },
-            Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
-            Focus::SessionCreation => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
-            Focus::BranchDialog => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
+            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
+            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
+            (Focus::Output, _) => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  R:rebase  Esc:back  q:quit",
+            (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
+            (Focus::SessionCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
+            (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
         }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));

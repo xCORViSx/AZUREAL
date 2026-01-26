@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::{Project, Session, SessionStatus};
+use crate::models::{Project, RebaseStatus, Session, SessionStatus};
 use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
 
@@ -59,6 +59,10 @@ pub struct App {
     pub show_help: bool,
     /// Branch selection dialog state
     pub branch_dialog: Option<BranchDialog>,
+    /// Current rebase status (if any)
+    pub rebase_status: Option<RebaseStatus>,
+    /// Selected conflict file index (for conflict resolution)
+    pub selected_conflict: Option<usize>,
 }
 
 /// State for the branch selection dialog
@@ -78,6 +82,7 @@ pub enum ViewMode {
     Output,
     Diff,
     Messages,
+    Rebase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +177,8 @@ impl App {
             diff_highlighter: DiffHighlighter::new(),
             show_help: false,
             branch_dialog: None,
+            rebase_status: None,
+            selected_conflict: None,
         }
     }
 
@@ -620,6 +627,56 @@ impl App {
         self.focus = Focus::Sessions;
         self.clear_session_creation_input();
         self.clear_status();
+    }
+
+    /// Set rebase status and switch to rebase view
+    pub fn set_rebase_status(&mut self, status: RebaseStatus) {
+        self.rebase_status = Some(status);
+        self.selected_conflict = if self.rebase_status.as_ref().map_or(false, |s| !s.conflicted_files.is_empty()) {
+            Some(0)
+        } else {
+            None
+        };
+        self.view_mode = ViewMode::Rebase;
+        self.focus = Focus::Output;
+    }
+
+    /// Clear rebase status
+    pub fn clear_rebase_status(&mut self) {
+        self.rebase_status = None;
+        self.selected_conflict = None;
+        if self.view_mode == ViewMode::Rebase {
+            self.view_mode = ViewMode::Output;
+        }
+    }
+
+    /// Select next conflict file
+    pub fn select_next_conflict(&mut self) {
+        if let Some(ref status) = self.rebase_status {
+            if let Some(idx) = self.selected_conflict {
+                if idx + 1 < status.conflicted_files.len() {
+                    self.selected_conflict = Some(idx + 1);
+                }
+            }
+        }
+    }
+
+    /// Select previous conflict file
+    pub fn select_prev_conflict(&mut self) {
+        if let Some(idx) = self.selected_conflict {
+            if idx > 0 {
+                self.selected_conflict = Some(idx - 1);
+            }
+        }
+    }
+
+    /// Get the currently selected conflict file path
+    pub fn current_conflict_file(&self) -> Option<&str> {
+        self.rebase_status.as_ref().and_then(|status| {
+            self.selected_conflict.and_then(|idx| {
+                status.conflicted_files.get(idx).map(|s| s.as_str())
+            })
+        })
     }
 }
 
