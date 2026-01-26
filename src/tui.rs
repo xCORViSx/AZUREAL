@@ -1345,7 +1345,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
     let status = Paragraph::new(Line::from(status_spans))
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(Color::Reset));
 
     f.render_widget(status, area);
 }
@@ -1557,7 +1557,7 @@ fn draw_help_overlay(f: &mut Frame) {
                 .borders(Borders::ALL)
                 .title(" Help ")
                 .border_style(Style::default().fg(Color::Cyan))
-                .style(Style::default().bg(Color::Black))
+                .style(Style::default().bg(Color::Reset))
         )
         .wrap(Wrap { trim: false });
 
@@ -1583,7 +1583,7 @@ fn draw_session_creation_modal(f: &mut Frame, app: &App) {
 
     // Clear the background with a semi-transparent effect
     let bg_block = Block::default()
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(Color::Reset));
     f.render_widget(bg_block, modal_area);
 
     // Split modal into sections
@@ -1725,13 +1725,13 @@ fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Cyan))
                     .title(" Session Actions (↑↓ to navigate, Enter to select, Esc to close) ")
-                    .style(Style::default().bg(Color::Black)),
+                    .style(Style::default().bg(Color::Reset)),
             );
 
         // Clear the area first (creates overlay effect)
         f.render_widget(
             Block::default()
-                .style(Style::default().bg(Color::Black)),
+                .style(Style::default().bg(Color::Reset)),
             menu_area,
         );
 
@@ -1759,7 +1759,7 @@ fn draw_wizard_modal(f: &mut Frame, app: &App) {
     };
 
     // Clear the background with a semi-transparent effect (just draw spaces)
-    let background = Block::default().style(Style::default().bg(Color::Black));
+    let background = Block::default().style(Style::default().bg(Color::Reset));
     f.render_widget(background, area);
 
     // Draw the modal
@@ -1767,7 +1767,7 @@ fn draw_wizard_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
         .title(format!(" New Session - {} ", wizard.step_title()))
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(Color::Reset));
 
     f.render_widget(modal_block, modal_area);
 
