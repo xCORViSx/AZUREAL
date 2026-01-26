@@ -143,32 +143,6 @@ impl Git {
 
     /// Get the diff between worktree and main branch
     pub fn get_diff(worktree_path: &Path, main_branch: &str) -> Result<DiffInfo> {
-        // Get base commit (merge-base)
-        let base_output = Command::new("git")
-            .args(["merge-base", main_branch, "HEAD"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to get merge-base")?;
-
-        let base_commit = if base_output.status.success() {
-            Some(String::from_utf8_lossy(&base_output.stdout).trim().to_string())
-        } else {
-            None
-        };
-
-        // Get HEAD commit
-        let head_output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to get HEAD commit")?;
-
-        let head_commit = if head_output.status.success() {
-            Some(String::from_utf8_lossy(&head_output.stdout).trim().to_string())
-        } else {
-            None
-        };
-
         // Get the diff text
         let diff_output = Command::new("git")
             .args(["diff", &format!("{}...HEAD", main_branch)])
@@ -221,41 +195,8 @@ impl Git {
             files_changed,
             additions,
             deletions,
-            base_commit,
-            head_commit,
             timestamp: chrono::Utc::now(),
         })
-    }
-
-    /// Get short commit hash
-    pub fn short_hash(commit: &str) -> String {
-        commit.chars().take(7).collect()
-    }
-
-    /// Get commit message for a commit hash
-    pub fn get_commit_message(worktree_path: &Path, commit: &str) -> Result<String> {
-        let output = Command::new("git")
-            .args(["log", "-1", "--format=%s", commit])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to get commit message")?;
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }
-
-    /// Generate a patch file content
-    pub fn generate_patch(worktree_path: &Path, main_branch: &str) -> Result<String> {
-        let output = Command::new("git")
-            .args([
-                "format-patch",
-                "--stdout",
-                &format!("{}..HEAD", main_branch),
-            ])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to generate patch")?;
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     /// Rebase worktree onto main branch
@@ -290,6 +231,147 @@ impl Git {
             .context("Failed to get current branch")?;
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// List all local branches
+    pub fn list_local_branches(repo_path: &Path) -> Result<Vec<String>> {
+        let output = Command::new("git")
+            .args(["branch", "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list branches")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let branches: Vec<String> = stdout
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        Ok(branches)
+    }
+
+    /// List remote branches (without remote prefix)
+    pub fn list_remote_branches(repo_path: &Path) -> Result<Vec<String>> {
+        // Fetch to get latest remote branches
+        let _ = Command::new("git")
+            .args(["fetch", "--all", "--prune"])
+            .current_dir(repo_path)
+            .output();
+
+        let output = Command::new("git")
+            .args(["branch", "-r", "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list remote branches")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let branches: Vec<String> = stdout
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && !s.contains("HEAD"))
+            .collect();
+
+        Ok(branches)
+    }
+
+    /// Create a worktree from an existing branch
+    pub fn create_worktree_from_branch(
+        repo_path: &Path,
+        worktree_path: &Path,
+        branch_name: &str,
+    ) -> Result<()> {
+        // Ensure worktrees directory exists
+        if let Some(parent) = worktree_path.parent() {
+            std::fs::create_dir_all(parent)
+                .context("Failed to create worktrees directory")?;
+        }
+
+        // Check if branch is remote
+        let is_remote = branch_name.contains('/');
+
+        let output = if is_remote {
+            // For remote branches, create a local tracking branch
+            let local_branch = branch_name
+                .split('/')
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("/");
+
+            Command::new("git")
+                .args([
+                    "worktree",
+                    "add",
+                    "--track",
+                    "-b",
+                    &local_branch,
+                    &worktree_path.to_string_lossy(),
+                    branch_name,
+                ])
+                .current_dir(repo_path)
+                .output()
+                .context("Failed to execute git worktree add")?
+        } else {
+            // For local branches, just add the worktree
+            Command::new("git")
+                .args([
+                    "worktree",
+                    "add",
+                    &worktree_path.to_string_lossy(),
+                    branch_name,
+                ])
+                .current_dir(repo_path)
+                .output()
+                .context("Failed to execute git worktree add")?
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("Failed to create worktree: {}", stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Get branches that are not already checked out in a worktree
+    pub fn list_available_branches(repo_path: &Path) -> Result<Vec<String>> {
+        let worktrees = Self::list_worktrees(repo_path)?;
+
+        // Get branches checked out in worktrees
+        let mut checked_out: Vec<String> = Vec::new();
+        for wt_path in &worktrees {
+            let path = Path::new(wt_path);
+            if let Ok(branch) = Self::current_branch(path) {
+                checked_out.push(branch);
+            }
+        }
+
+        // Get all local branches
+        let local = Self::list_local_branches(repo_path)?;
+
+        // Get remote branches
+        let remote = Self::list_remote_branches(repo_path)?;
+
+        // Combine and filter out already checked out branches
+        let mut available: Vec<String> = local
+            .into_iter()
+            .filter(|b| !checked_out.contains(b))
+            .collect();
+
+        // Add remote branches that don't have a local equivalent checked out
+        for remote_branch in remote {
+            let local_name = remote_branch
+                .split('/')
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("/");
+
+            if !checked_out.contains(&local_name) && !available.contains(&remote_branch) {
+                available.push(remote_branch);
+            }
+        }
+
+        Ok(available)
     }
 
     /// Check if there are uncommitted changes

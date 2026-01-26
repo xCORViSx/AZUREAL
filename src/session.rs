@@ -68,6 +68,70 @@ impl<'a> SessionManager<'a> {
         Ok(session)
     }
 
+    /// Create a new session from an existing branch
+    pub fn create_session_from_branch(&self, project: &Project, branch: &str) -> Result<Session> {
+        // Validate project path exists and is a git repo
+        if !project.path.exists() {
+            bail!("Project path does not exist: {}", project.path.display());
+        }
+
+        if !Git::is_git_repo(&project.path) {
+            bail!(
+                "Project path is not a git repository: {}",
+                project.path.display()
+            );
+        }
+
+        // Determine the local branch name (strip remote prefix if present)
+        let local_branch = if branch.contains('/') {
+            branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+        } else {
+            branch.to_string()
+        };
+
+        // Generate session ID and name from branch
+        let session_id = Uuid::new_v4().to_string();
+        let session_name = local_branch.replace('/', "-");
+        let worktree_name = sanitize_for_branch(&session_name);
+
+        // Calculate worktree path
+        let worktree_path = project.worktrees_dir().join(&worktree_name);
+
+        // Check if worktree already exists
+        if worktree_path.exists() {
+            bail!("Worktree already exists: {}", worktree_path.display());
+        }
+
+        // Create the worktree from existing branch
+        Git::create_worktree_from_branch(&project.path, &worktree_path, branch)
+            .context("Failed to create git worktree from branch")?;
+
+        // Get the actual branch name in the worktree
+        let actual_branch = Git::current_branch(&worktree_path).unwrap_or(local_branch.clone());
+
+        // Create session record
+        let now = Utc::now();
+        let session = Session {
+            id: session_id,
+            name: session_name,
+            initial_prompt: format!("Continue work on branch: {}", actual_branch),
+            worktree_name,
+            worktree_path,
+            branch_name: actual_branch,
+            status: SessionStatus::Pending,
+            project_id: project.id,
+            pid: None,
+            exit_code: None,
+            archived: false,
+            created_at: now,
+            updated_at: now,
+        };
+
+        self.db.create_session(&session)?;
+
+        Ok(session)
+    }
+
     /// Delete a session and its worktree
     pub fn delete_session(&self, session: &Session, project: &Project) -> Result<()> {
         // Remove worktree

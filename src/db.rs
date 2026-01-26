@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::config::database_path;
 use crate::migrations::MigrationRunner;
 use crate::models::{
-    ConversationMessage, DiffInfo, MessageType, OutputType, Project, Session, SessionOutput,
-    SessionStatus,
+    ConversationMessage, MessageType, OutputType, Project, Session, SessionOutput, SessionStatus,
 };
 
 /// Database wrapper for Crystal
@@ -626,74 +625,6 @@ impl Database {
             .optional()
             .context("Failed to query last conversation message")
     }
-
-    // ==================== Session Diffs ====================
-
-    /// Save a diff snapshot for a session
-    pub fn save_diff(&self, diff: &DiffInfo) -> Result<i64> {
-        let files_json = serde_json::to_string(&diff.files_changed)
-            .context("Failed to serialize files_changed")?;
-
-        self.conn.execute(
-            "INSERT INTO session_diffs (session_id, diff_text, files_changed, additions, deletions, base_commit, head_commit, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                diff.session_id,
-                diff.diff_text,
-                files_json,
-                diff.additions,
-                diff.deletions,
-                diff.base_commit,
-                diff.head_commit,
-                diff.timestamp.to_rfc3339(),
-            ],
-        )?;
-
-        Ok(self.conn.last_insert_rowid())
-    }
-
-    /// Get the latest diff for a session
-    pub fn get_latest_diff(&self, session_id: &str) -> Result<Option<DiffInfo>> {
-        self.conn
-            .query_row(
-                "SELECT session_id, diff_text, files_changed, additions, deletions, base_commit, head_commit, created_at
-                 FROM session_diffs WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 1",
-                params![session_id],
-                |row| Ok(row_to_diff(row)),
-            )
-            .optional()
-            .context("Failed to query diff")
-    }
-
-    /// Get all diffs for a session (history)
-    pub fn get_diff_history(&self, session_id: &str) -> Result<Vec<DiffInfo>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT session_id, diff_text, files_changed, additions, deletions, base_commit, head_commit, created_at
-             FROM session_diffs WHERE session_id = ?1 ORDER BY created_at DESC",
-        )?;
-
-        let diffs = stmt
-            .query_map(params![session_id], |row| Ok(row_to_diff(row)))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(diffs)
-    }
-
-    /// Get diff summary stats for a session (without full diff text)
-    pub fn get_diff_stats(&self, session_id: &str) -> Result<Option<(i32, i32, usize)>> {
-        self.conn
-            .query_row(
-                "SELECT additions, deletions, files_changed FROM session_diffs WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 1",
-                params![session_id],
-                |row| {
-                    let files_json: String = row.get(2)?;
-                    let files: Vec<String> = serde_json::from_str(&files_json).unwrap_or_default();
-                    Ok((row.get(0)?, row.get(1)?, files.len()))
-                },
-            )
-            .optional()
-            .context("Failed to query diff stats")
-    }
 }
 
 fn row_to_session(row: &rusqlite::Row) -> Session {
@@ -711,22 +642,6 @@ fn row_to_session(row: &rusqlite::Row) -> Session {
         archived: row.get(10).unwrap(),
         created_at: parse_datetime(&row.get::<_, String>(11).unwrap()),
         updated_at: parse_datetime(&row.get::<_, String>(12).unwrap()),
-    }
-}
-
-fn row_to_diff(row: &rusqlite::Row) -> DiffInfo {
-    let files_json: String = row.get(2).unwrap();
-    let files_changed: Vec<String> = serde_json::from_str(&files_json).unwrap_or_default();
-
-    DiffInfo {
-        session_id: row.get(0).unwrap(),
-        diff_text: row.get(1).unwrap(),
-        files_changed,
-        additions: row.get(3).unwrap(),
-        deletions: row.get(4).unwrap(),
-        base_commit: row.get(5).unwrap(),
-        head_commit: row.get(6).unwrap(),
-        timestamp: parse_datetime(&row.get::<_, String>(7).unwrap()),
     }
 }
 

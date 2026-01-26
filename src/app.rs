@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::{DiffInfo, Project, Session, SessionStatus};
+use crate::models::{Project, Session, SessionStatus};
 use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
 
@@ -47,8 +47,6 @@ pub struct App {
     pub claude_receiver: Option<Receiver<ClaudeEvent>>,
     /// Current diff text (if viewing diff)
     pub diff_text: Option<String>,
-    /// Current diff info (with stats)
-    pub diff_info: Option<DiffInfo>,
     /// Scroll offset for output
     pub output_scroll: usize,
     /// Scroll offset for diff
@@ -57,8 +55,20 @@ pub struct App {
     pub diff_highlighter: DiffHighlighter,
     /// Whether to show help overlay
     pub show_help: bool,
-    /// Cached diff stats for sessions (session_id -> (additions, deletions, files_count))
-    pub diff_stats_cache: std::collections::HashMap<String, (i32, i32, usize)>,
+    /// Branch selection dialog state
+    pub branch_dialog: Option<BranchDialog>,
+}
+
+/// State for the branch selection dialog
+pub struct BranchDialog {
+    /// Available branches to select from
+    pub branches: Vec<String>,
+    /// Currently selected index
+    pub selected: usize,
+    /// Filter/search text
+    pub filter: String,
+    /// Filtered branch indices
+    pub filtered_indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +84,63 @@ pub enum Focus {
     Output,
     Input,
     SessionCreation,
+    BranchDialog,
+}
+
+impl BranchDialog {
+    pub fn new(branches: Vec<String>) -> Self {
+        let filtered_indices: Vec<usize> = (0..branches.len()).collect();
+        Self {
+            branches,
+            selected: 0,
+            filter: String::new(),
+            filtered_indices,
+        }
+    }
+
+    pub fn apply_filter(&mut self) {
+        let filter_lower = self.filter.to_lowercase();
+        self.filtered_indices = self
+            .branches
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.to_lowercase().contains(&filter_lower))
+            .map(|(i, _)| i)
+            .collect();
+
+        // Reset selection if current selection is out of bounds
+        if self.selected >= self.filtered_indices.len() {
+            self.selected = 0;
+        }
+    }
+
+    pub fn selected_branch(&self) -> Option<&String> {
+        self.filtered_indices
+            .get(self.selected)
+            .and_then(|&idx| self.branches.get(idx))
+    }
+
+    pub fn select_next(&mut self) {
+        if !self.filtered_indices.is_empty() && self.selected + 1 < self.filtered_indices.len() {
+            self.selected += 1;
+        }
+    }
+
+    pub fn select_prev(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    pub fn filter_char(&mut self, c: char) {
+        self.filter.push(c);
+        self.apply_filter();
+    }
+
+    pub fn filter_backspace(&mut self) {
+        self.filter.pop();
+        self.apply_filter();
+    }
 }
 
 impl App {
@@ -97,12 +164,11 @@ impl App {
             status_message: None,
             claude_receiver: None,
             diff_text: None,
-            diff_info: None,
             output_scroll: 0,
             diff_scroll: 0,
             diff_highlighter: DiffHighlighter::new(),
             show_help: false,
-            diff_stats_cache: std::collections::HashMap::new(),
+            branch_dialog: None,
         }
     }
 
@@ -126,8 +192,6 @@ impl App {
             } else {
                 Some(0)
             };
-            // Load diff stats for all sessions
-            self.load_diff_stats();
         }
         Ok(())
     }
@@ -325,6 +389,22 @@ impl App {
         self.load_sessions_for_project()
     }
 
+    /// Open the branch selection dialog
+    pub fn open_branch_dialog(&mut self, branches: Vec<String>) {
+        if branches.is_empty() {
+            self.set_status("No available branches to checkout");
+            return;
+        }
+        self.branch_dialog = Some(BranchDialog::new(branches));
+        self.focus = Focus::BranchDialog;
+    }
+
+    /// Close the branch selection dialog
+    pub fn close_branch_dialog(&mut self) {
+        self.branch_dialog = None;
+        self.focus = Focus::Sessions;
+    }
+
     /// Update session status in the list
     pub fn update_session_status(&mut self, session_id: &str, status: SessionStatus) {
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
@@ -438,6 +518,7 @@ impl App {
             Focus::Output => Focus::Input,
             Focus::Input => Focus::Sessions,
             Focus::SessionCreation => Focus::SessionCreation, // Don't cycle out of modal
+            Focus::BranchDialog => Focus::BranchDialog, // Don't cycle when dialog is open
         };
     }
 
@@ -448,6 +529,7 @@ impl App {
             Focus::Output => Focus::Sessions,
             Focus::Input => Focus::Output,
             Focus::SessionCreation => Focus::SessionCreation, // Don't cycle out of modal
+            Focus::BranchDialog => Focus::BranchDialog, // Don't cycle when dialog is open
         };
     }
 
@@ -535,38 +617,6 @@ impl App {
         self.focus = Focus::Sessions;
         self.clear_session_creation_input();
         self.clear_status();
-    }
-
-    /// Load diff stats for all sessions in current project
-    pub fn load_diff_stats(&mut self) {
-        self.diff_stats_cache.clear();
-        for session in &self.sessions {
-            if let Ok(Some(stats)) = self.db.get_diff_stats(&session.id) {
-                self.diff_stats_cache.insert(session.id.clone(), stats);
-            }
-        }
-    }
-
-    /// Get diff stats for a session
-    pub fn get_session_diff_stats(&self, session_id: &str) -> Option<&(i32, i32, usize)> {
-        self.diff_stats_cache.get(session_id)
-    }
-
-    /// Save current diff to database
-    pub fn save_current_diff(&mut self) -> anyhow::Result<()> {
-        // Get session_id first to avoid borrow conflicts
-        let session_id = self.current_session().map(|s| s.id.clone());
-
-        if let (Some(ref mut diff_info), Some(session_id)) = (&mut self.diff_info, session_id) {
-            diff_info.session_id = session_id.clone();
-            self.db.save_diff(diff_info)?;
-            // Update cache
-            self.diff_stats_cache.insert(
-                session_id,
-                (diff_info.additions, diff_info.deletions, diff_info.files_changed.len()),
-            );
-        }
-        Ok(())
     }
 }
 

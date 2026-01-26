@@ -180,26 +180,5 @@ pub struct DiffInfo {
     pub files_changed: Vec<String>,
     pub additions: i32,
     pub deletions: i32,
-    pub base_commit: Option<String>,
-    pub head_commit: Option<String>,
     pub timestamp: DateTime<Utc>,
-}
-
-impl DiffInfo {
-    /// Format a summary of the diff
-    pub fn summary(&self) -> String {
-        let files = self.files_changed.len();
-        format!(
-            "{} file{}, +{} -{}",
-            files,
-            if files == 1 { "" } else { "s" },
-            self.additions,
-            self.deletions
-        )
-    }
-
-    /// Check if the diff is empty (no changes)
-    pub fn is_empty(&self) -> bool {
-        self.diff_text.is_empty() && self.files_changed.is_empty()
-    }
 }

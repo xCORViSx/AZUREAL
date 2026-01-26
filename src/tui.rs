@@ -9,18 +9,19 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
 use std::time::Duration;
 
-use crate::app::{App, Focus, ViewMode};
+use crate::app::{App, BranchDialog, Focus, ViewMode};
 use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
 use crate::models::SessionStatus;
+use crate::session::SessionManager;
 
 /// Events that can occur in the TUI
 #[derive(Debug)]
@@ -210,6 +211,7 @@ fn handle_key_event(
         Focus::Output => handle_output_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
         Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,
+        Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
     }
 
     Ok(())
@@ -229,6 +231,19 @@ fn handle_sessions_input(
         KeyCode::Tab => app.focus = Focus::Output,
         KeyCode::Char('n') => {
             app.enter_session_creation_mode();
+        }
+        KeyCode::Char('w') => {
+            // Create worktree from existing branch
+            if let Some(project) = app.current_project() {
+                match Git::list_available_branches(&project.path) {
+                    Ok(branches) => {
+                        app.open_branch_dialog(branches);
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Failed to list branches: {}", e));
+                    }
+                }
+            }
         }
         KeyCode::Char('d') => {
             if let Err(e) = app.load_diff() {
@@ -290,15 +305,6 @@ fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         (KeyModifiers::NONE, KeyCode::Char('d')) => {
             if let Err(e) = app.load_diff() {
                 app.set_status(format!("Failed to get diff: {}", e));
-            }
-        }
-        (KeyModifiers::NONE, KeyCode::Char('s')) => {
-            // Save current diff snapshot
-            if app.view_mode == ViewMode::Diff && app.diff_info.is_some() {
-                match app.save_current_diff() {
-                    Ok(()) => app.set_status("Diff snapshot saved"),
-                    Err(e) => app.set_status(format!("Failed to save diff: {}", e)),
-                }
             }
         }
         (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
@@ -422,6 +428,43 @@ fn handle_session_creation_input(
     Ok(())
 }
 
+/// Handle keyboard input when Branch dialog is focused
+fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    if let Some(ref mut dialog) = app.branch_dialog {
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => dialog.select_next(),
+            KeyCode::Up | KeyCode::Char('k') => dialog.select_prev(),
+            KeyCode::Backspace => dialog.filter_backspace(),
+            KeyCode::Enter => {
+                if let Some(branch) = dialog.selected_branch().cloned() {
+                    if let Some(project) = app.current_project().cloned() {
+                        match SessionManager::new(&app.db)
+                            .create_session_from_branch(&project, &branch)
+                        {
+                            Ok(session) => {
+                                app.set_status(format!("Created worktree: {}", session.name));
+                                let _ = app.refresh_sessions();
+                            }
+                            Err(e) => {
+                                app.set_status(format!("Failed to create worktree: {}", e));
+                            }
+                        }
+                    }
+                    app.close_branch_dialog();
+                }
+            }
+            KeyCode::Esc => {
+                app.close_branch_dialog();
+            }
+            KeyCode::Char(c) => dialog.filter_char(c),
+            _ => {}
+        }
+    } else {
+        app.focus = Focus::Sessions;
+    }
+    Ok(())
+}
+
 fn ui(f: &mut Frame, app: &App) {
     // Main layout
     let chunks = Layout::default()
@@ -459,6 +502,11 @@ fn ui(f: &mut Frame, app: &App) {
         draw_session_creation_modal(f, app);
     }
 
+    // Draw branch dialog if active
+    if let Some(ref dialog) = app.branch_dialog {
+        draw_branch_dialog(f, dialog, f.area());
+    }
+
     // Draw help overlay if active
     if app.show_help {
         draw_help_overlay(f);
@@ -494,29 +542,12 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                     Style::default()
                 };
 
-                // Build session line with optional diff stats
-                let mut spans = vec![
+                items.push(ListItem::new(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(session.status.symbol(), Style::default().fg(status_color)),
                     Span::raw(" "),
-                ];
-
-                // Check for diff stats
-                if let Some(&(additions, deletions, _files)) = app.diff_stats_cache.get(&session.id) {
-                    // Show compact diff indicator
-                    let diff_indicator = format!("+{}-{}", additions, deletions);
-                    let max_name_len = 22 - diff_indicator.len() - 1;
-                    spans.push(Span::styled(truncate(&session.name, max_name_len), style));
-                    spans.push(Span::raw(" "));
-                    spans.push(Span::styled(
-                        diff_indicator,
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                } else {
-                    spans.push(Span::styled(truncate(&session.name, 22), style));
-                }
-
-                items.push(ListItem::new(Line::from(spans)));
+                    Span::styled(truncate(&session.name, 22), style),
+                ])));
             }
         }
     }
@@ -539,15 +570,9 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_output(f: &mut Frame, app: &App, area: Rect) {
     let title = match app.view_mode {
-        ViewMode::Output => " Output ".to_string(),
-        ViewMode::Diff => {
-            if let Some(ref diff_info) = app.diff_info {
-                format!(" Diff [Highlighted] ({}) ", diff_info.summary())
-            } else {
-                " Diff (Syntax Highlighted) ".to_string()
-            }
-        }
-        ViewMode::Messages => " Messages ".to_string(),
+        ViewMode::Output => " Output ",
+        ViewMode::Diff => " Diff (Syntax Highlighted) ",
+        ViewMode::Messages => " Messages ",
     };
 
     let content = match app.view_mode {
@@ -568,38 +593,15 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
-                let mut lines: Vec<Line> = Vec::new();
-
-                // Add header with commit info if available
-                if let Some(ref diff_info) = app.diff_info {
-                    if let Some(ref base) = diff_info.base_commit {
-                        lines.push(Line::from(vec![
-                            Span::styled("Base: ", Style::default().fg(Color::Yellow)),
-                            Span::raw(&base[..7.min(base.len())]),
-                        ]));
-                    }
-                    if let Some(ref head) = diff_info.head_commit {
-                        lines.push(Line::from(vec![
-                            Span::styled("Head: ", Style::default().fg(Color::Yellow)),
-                            Span::raw(&head[..7.min(head.len())]),
-                        ]));
-                    }
-                    if !lines.is_empty() {
-                        lines.push(Line::from(""));
-                    }
-                }
-
                 // Use syntax highlighter for diff view
                 let highlighted = app.diff_highlighter.colorize_diff(diff);
-                lines.extend(
-                    highlighted
-                        .into_iter()
-                        .skip(app.diff_scroll)
-                        .map(|spans| Line::from(spans))
-                );
-                lines
+                highlighted
+                    .into_iter()
+                    .skip(app.diff_scroll)
+                    .map(|spans| Line::from(spans))
+                    .collect()
             } else {
-                vec![Line::from("No diff available. Press 'd' to generate.")]
+                vec![Line::from("No diff available")]
             }
         }
         ViewMode::Messages => {
@@ -706,14 +708,12 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-        match app.focus {
-            Focus::Sessions => "?:help  n:new  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
-            Focus::Output => match app.view_mode {
-                ViewMode::Diff => "?:help  j/k:scroll  s:save  o:output  Esc:back",
-                _ => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
-            },
+match app.focus {
+            Focus::Sessions => "?:help  n:new  w:worktree  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
+            Focus::Output => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
             Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             Focus::SessionCreation => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
+            Focus::BranchDialog => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
         }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
@@ -743,6 +743,91 @@ fn colorize_output(line: &str) -> Vec<Span<'_>> {
     } else {
         vec![Span::raw(line)]
     }
+}
+
+fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
+    // Calculate dialog size - center it on screen
+    let dialog_width = 60.min(area.width.saturating_sub(4));
+    let dialog_height = 20.min(area.height.saturating_sub(4));
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    // Clear the background
+    f.render_widget(Clear, dialog_area);
+
+    // Split dialog into filter input and branch list
+    let dialog_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Filter input
+            Constraint::Min(5),    // Branch list
+        ])
+        .split(dialog_area);
+
+    // Draw filter input
+    let filter_title = if dialog.filter.is_empty() {
+        " Filter (type to search) "
+    } else {
+        " Filter "
+    };
+    let filter_text = if dialog.filter.is_empty() {
+        String::new()
+    } else {
+        dialog.filter.clone()
+    };
+    let filter = Paragraph::new(filter_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(filter_title),
+        );
+    f.render_widget(filter, dialog_chunks[0]);
+
+    // Draw branch list
+    let items: Vec<ListItem> = dialog
+        .filtered_indices
+        .iter()
+        .enumerate()
+        .map(|(display_idx, &branch_idx)| {
+            let branch = &dialog.branches[branch_idx];
+            let is_selected = display_idx == dialog.selected;
+
+            let style = if is_selected {
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if branch.contains('/') {
+                // Remote branch - show in different color
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let prefix = if is_selected { "▸ " } else { "  " };
+            ListItem::new(Line::from(vec![
+                Span::raw(prefix),
+                Span::styled(truncate(branch, dialog_width as usize - 4), style),
+            ]))
+        })
+        .collect();
+
+    let title = format!(
+        " Select Branch ({}/{}) ",
+        dialog.filtered_indices.len(),
+        dialog.branches.len()
+    );
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(title),
+    );
+
+    f.render_widget(list, dialog_chunks[1]);
 }
 
 fn draw_help_overlay(f: &mut Frame) {
@@ -781,6 +866,7 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  K                Select previous project"),
         Line::from("  Enter            Start/resume selected session"),
         Line::from("  n                Create new session (enter prompt)"),
+        Line::from("  w                Create worktree from existing branch"),
         Line::from("  d                View diff for selected session"),
         Line::from("  r                Rebase session onto main branch"),
         Line::from("  a                Archive selected session"),
@@ -810,6 +896,15 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  Esc              Cancel and return to Sessions panel"),
         Line::from("  Arrow keys       Navigate input text"),
         Line::from("  Home / End       Jump to start/end of input"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Branch Dialog", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from("  j / Down         Select next branch"),
+        Line::from("  k / Up           Select previous branch"),
+        Line::from("  Enter            Confirm selection"),
+        Line::from("  Esc              Cancel"),
+        Line::from("  Type             Filter branches"),
         Line::from(""),
         Line::from(vec![
             Span::styled("Press ? or q or Esc to close this help", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC))
