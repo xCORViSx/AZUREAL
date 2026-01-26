@@ -700,7 +700,7 @@ impl Git {
         let branches: Vec<String> = stdout
             .lines()
             .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty() && !s.contains("HEAD"))
+            .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect();
 
         Ok(branches)
