@@ -1,4 +1,4 @@
-# Crystal-RS Worktree Status
+# Azural Worktree Status
 
 ## Active Worktrees
 

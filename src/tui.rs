@@ -1472,7 +1472,7 @@ fn draw_help_overlay(f: &mut Frame) {
     let help_text = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled("Crystal - Keyboard Navigation Help", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            Span::styled("Azural - Keyboard Navigation Help", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         ]),
         Line::from(""),
         Line::from(vec![

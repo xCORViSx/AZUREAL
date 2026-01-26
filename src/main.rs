@@ -26,7 +26,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "crystal")]
+#[command(name = "azural")]
 #[command(about = "Minimal multi-session Claude Code manager with git worktrees")]
 #[command(version)]
 #[command(propagate_version = true)]
@@ -246,9 +246,9 @@ async fn main() -> Result<()> {
 
     // Initialize logging based on verbose flag
     let log_level = if cli.verbose {
-        "crystal=debug"
+        "azural=debug"
     } else {
-        "crystal=info"
+        "azural=info"
     };
 
     tracing_subscriber::registry()

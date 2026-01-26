@@ -120,6 +120,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "azural"
+version = "0.1.0"
+dependencies = [
+ "ansi-to-tui",
+ "anyhow",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "libc",
+ "portable-pty",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "syntect",
+ "textwrap",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,32 +327,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "crystal"
-version = "0.1.0"
-dependencies = [
- "ansi-to-tui",
- "anyhow",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "libc",
- "portable-pty",
- "ratatui",
- "rusqlite",
- "serde",
- "serde_json",
- "syntect",
- "textwrap",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
--- Initial Crystal database schema
+-- Initial Azural database schema
 -- Creates the core tables for projects, sessions, and related data.
 
 CREATE TABLE IF NOT EXISTS projects (

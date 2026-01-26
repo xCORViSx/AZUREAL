@@ -9,7 +9,7 @@ use crate::models::{
     ConversationMessage, MessageType, OutputType, Project, Session, SessionOutput, SessionStatus,
 };
 
-/// Database wrapper for Crystal
+/// Database wrapper for Azural
 pub struct Database {
     conn: Connection,
 }

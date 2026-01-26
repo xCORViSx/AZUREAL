@@ -31,7 +31,7 @@ impl<'a> SessionManager<'a> {
         let session_id = Uuid::new_v4().to_string();
         let session_name = generate_session_name(prompt);
         let worktree_name = sanitize_for_branch(&session_name);
-        let branch_name = format!("crystal/{}", worktree_name);
+        let branch_name = format!("azural/{}", worktree_name);
 
         // Calculate worktree path
         let worktree_path = project.worktrees_dir().join(&worktree_name);

@@ -66,11 +66,11 @@ impl Config {
     }
 }
 
-/// Get the Crystal config directory (~/.crystal)
+/// Get the Azural config directory (~/.azural)
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()
         .expect("Could not find home directory")
-        .join(".crystal-rs")
+        .join(".azural")
 }
 
 /// Get the config file path
@@ -80,7 +80,7 @@ pub fn config_file_path() -> PathBuf {
 
 /// Get the database file path
 pub fn database_path() -> PathBuf {
-    config_dir().join("crystal.db")
+    config_dir().join("azural.db")
 }
 
 /// Ensure the config directory exists
