@@ -660,7 +660,7 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-    // Session creation input methods
+// Session creation input methods
 
     /// Handle character input for session creation
     pub fn session_creation_char(&mut self, c: char) {
@@ -830,6 +830,57 @@ impl App {
     /// Get currently selected action
     pub fn selected_action(&self) -> Option<SessionAction> {
         self.context_menu.as_ref().map(|menu| menu.actions[menu.selected].clone())
+    }
+
+    /// Cycle to next view mode
+    pub fn next_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Output => ViewMode::Diff,
+            ViewMode::Diff => ViewMode::Messages,
+            ViewMode::Messages => ViewMode::Rebase,
+            ViewMode::Rebase => ViewMode::Output,
+        };
+        self.load_view_content();
+    }
+
+    /// Cycle to previous view mode
+    pub fn prev_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Output => ViewMode::Rebase,
+            ViewMode::Rebase => ViewMode::Messages,
+            ViewMode::Messages => ViewMode::Diff,
+            ViewMode::Diff => ViewMode::Output,
+        };
+        self.load_view_content();
+    }
+
+    /// Load content for the current view mode
+    fn load_view_content(&mut self) {
+        match self.view_mode {
+            ViewMode::Output => {
+                // Output is already loaded
+                self.output_scroll = 0;
+            }
+            ViewMode::Diff => {
+                // Load diff if we don't have it
+                if self.diff_text.is_none() {
+                    if let Some(session) = self.current_session() {
+                        if let Some(project) = self.current_project() {
+                            if let Ok(diff) = crate::git::Git::get_diff(&session.worktree_path, &project.main_branch) {
+                                self.diff_text = Some(diff.diff_text);
+                            }
+                        }
+                    }
+                }
+                self.diff_scroll = 0;
+            }
+            ViewMode::Messages => {
+                // Messages view content would go here
+            }
+            ViewMode::Rebase => {
+                // Rebase view - content is already in rebase_status
+            }
+        }
     }
 }
 

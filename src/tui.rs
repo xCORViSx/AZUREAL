@@ -256,13 +256,16 @@ fn execute_action(app: &mut App, claude_process: &ClaudeProcess, action: Session
                     || session.status == SessionStatus::Stopped
                     || session.status == SessionStatus::Completed
                 {
+                    let session_id = session.id.clone();
                     match claude_process.spawn(
+                        session_id.clone(),
                         &session.worktree_path,
                         &session.initial_prompt,
                         None,
                     ) {
                         Ok(rx) => {
                             app.claude_receiver = Some(rx);
+                            app.running_session_id = Some(session_id);
                             app.set_status("Starting Claude...");
                         }
                         Err(e) => {
@@ -545,6 +548,9 @@ fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 _ => {}
             }
         }
+        // h/l and arrow keys for view tab switching
+        (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => app.next_view_mode(),
+        (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => app.prev_view_mode(),
         (KeyModifiers::NONE, KeyCode::Tab) => app.focus = Focus::Input,
         (KeyModifiers::NONE, KeyCode::Char('o')) => {
             app.view_mode = ViewMode::Output;
@@ -1092,7 +1098,7 @@ fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             (" Messages ".to_string(), vec![Line::from("Messages view not implemented")])
         }
         ViewMode::Rebase => {
-            draw_rebase_content(app)
+            (" Rebase ".to_string(), draw_rebase_content(app))
         }
     };
 
@@ -1304,9 +1310,9 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
                     "?:help  Space:actions  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
                 }
             }
-            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
-            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
-            (Focus::Output, _) => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  R:rebase  Esc:back  q:quit",
+            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  h/l:tabs  s:save  o:output  Esc:back",
+            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  h/l:tabs  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
+            (Focus::Output, _) => "?:help  j/k:scroll  h/l:tabs  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  R:rebase  Esc:back  q:quit",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             (Focus::SessionCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
@@ -1596,6 +1602,8 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  PageUp           Scroll up 10 lines"),
         Line::from("  g                Jump to top"),
         Line::from("  G                Jump to bottom"),
+        Line::from("  h / Left         Previous view tab"),
+        Line::from("  l / Right        Next view tab"),
         Line::from("  o                Switch to output view"),
         Line::from("  d                Switch to diff view"),
         Line::from("  Esc              Return to Sessions panel"),
