@@ -276,6 +276,104 @@ impl Database {
         Ok(outputs)
     }
 
+    /// Get a single output by ID
+    pub fn get_session_output(&self, id: i64) -> Result<Option<SessionOutput>> {
+        self.conn
+            .query_row(
+                "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(SessionOutput {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        output_type: OutputType::from_str(&row.get::<_, String>(2)?),
+                        data: row.get(3)?,
+                        timestamp: parse_datetime(&row.get::<_, String>(4)?),
+                    })
+                },
+            )
+            .optional()
+            .context("Failed to query session output")
+    }
+
+    /// Get outputs for a session with pagination
+    pub fn get_session_outputs_paginated(
+        &self,
+        session_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<SessionOutput>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE session_id = ?1 ORDER BY timestamp ASC LIMIT ?2 OFFSET ?3",
+        )?;
+
+        let outputs = stmt
+            .query_map(params![session_id, limit as i64, offset as i64], |row| {
+                Ok(SessionOutput {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    output_type: OutputType::from_str(&row.get::<_, String>(2)?),
+                    data: row.get(3)?,
+                    timestamp: parse_datetime(&row.get::<_, String>(4)?),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(outputs)
+    }
+
+    /// Get the latest outputs for a session (most recent first)
+    pub fn get_latest_session_outputs(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<SessionOutput>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE session_id = ?1 ORDER BY timestamp DESC LIMIT ?2",
+        )?;
+
+        let outputs = stmt
+            .query_map(params![session_id, limit as i64], |row| {
+                Ok(SessionOutput {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    output_type: OutputType::from_str(&row.get::<_, String>(2)?),
+                    data: row.get(3)?,
+                    timestamp: parse_datetime(&row.get::<_, String>(4)?),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(outputs)
+    }
+
+    /// Count outputs for a session
+    pub fn count_session_outputs(&self, session_id: &str) -> Result<usize> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM session_outputs WHERE session_id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Delete a single output by ID
+    pub fn delete_session_output(&self, id: i64) -> Result<bool> {
+        let rows_affected = self
+            .conn
+            .execute("DELETE FROM session_outputs WHERE id = ?1", params![id])?;
+        Ok(rows_affected > 0)
+    }
+
+    /// Delete all outputs for a session
+    pub fn delete_session_outputs(&self, session_id: &str) -> Result<usize> {
+        let rows_affected = self.conn.execute(
+            "DELETE FROM session_outputs WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(rows_affected)
+    }
+
     // ==================== Conversation Messages ====================
 
     /// Add a conversation message
