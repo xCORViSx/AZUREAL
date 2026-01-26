@@ -421,12 +421,18 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
 
     let content = match app.view_mode {
         ViewMode::Output => {
-            let lines: Vec<Line> = app
+            let mut lines: Vec<Line> = app
                 .output_lines
                 .iter()
                 .skip(app.output_scroll)
                 .map(|line| Line::from(colorize_output(line)))
                 .collect();
+
+            // Add the partial line buffer if it's not empty
+            if !app.output_buffer.is_empty() {
+                lines.push(Line::from(colorize_output(&app.output_buffer)));
+            }
+
             lines
         }
         ViewMode::Diff => {

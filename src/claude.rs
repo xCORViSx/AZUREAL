@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
@@ -93,17 +93,25 @@ impl ClaudeProcess {
         let pid = child.process_id().unwrap_or(0);
         let _ = tx.send(ClaudeEvent::Started { pid });
 
-        // Read output in a separate thread
-        let reader = pair.master.try_clone_reader()
+        // Read output in a separate thread - stream chunks instead of lines
+        let mut reader = pair.master.try_clone_reader()
             .context("Failed to clone PTY reader")?;
 
         let tx_clone = tx.clone();
         thread::spawn(move || {
-            let reader = BufReader::new(reader);
-            for line in reader.lines() {
-                match line {
-                    Ok(line) => {
-                        let output = parse_claude_output(&line);
+            let mut buffer = [0u8; 4096];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break, // EOF
+                    Ok(n) => {
+                        // Convert bytes to string, handling potentially invalid UTF-8
+                        let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+
+                        let output = ClaudeOutput {
+                            output_type: OutputType::Stdout,
+                            data: chunk,
+                        };
+
                         if tx_clone.send(ClaudeEvent::Output(output)).is_err() {
                             break;
                         }
@@ -141,32 +149,6 @@ impl ClaudeProcess {
     }
 }
 
-/// Parse a line of output from Claude Code
-fn parse_claude_output(line: &str) -> ClaudeOutput {
-    // Claude outputs JSON in stream-json mode
-    // Try to parse as JSON first
-    if line.starts_with('{') {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            // Determine output type based on JSON content
-            let output_type = if json.get("type").is_some() {
-                OutputType::Json
-            } else {
-                OutputType::Stdout
-            };
-
-            return ClaudeOutput {
-                output_type,
-                data: line.to_string(),
-            };
-        }
-    }
-
-    // Plain text output
-    ClaudeOutput {
-        output_type: OutputType::Stdout,
-        data: line.to_string(),
-    }
-}
 
 /// Parse Claude's JSON output into a more usable format
 #[derive(Debug, Clone, serde::Deserialize)]

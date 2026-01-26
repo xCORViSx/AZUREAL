@@ -25,6 +25,8 @@ pub struct App {
     pub output_lines: VecDeque<String>,
     /// Maximum output lines to keep
     pub max_output_lines: usize,
+    /// Buffer for incomplete lines (streaming chunks)
+    pub output_buffer: String,
     /// Current input text
     pub input: String,
     /// Input cursor position
@@ -73,6 +75,7 @@ impl App {
             selected_session: None,
             output_lines: VecDeque::with_capacity(10000),
             max_output_lines: 10000,
+            output_buffer: String::new(),
             input: String::new(),
             input_cursor: 0,
             view_mode: ViewMode::Output,
@@ -166,26 +169,52 @@ impl App {
     /// Load output for the current session
     pub fn load_session_output(&mut self) {
         self.output_lines.clear();
+        self.output_buffer.clear();
         self.output_scroll = 0;
 
         if let Some(session) = self.current_session() {
             if let Ok(outputs) = self.db.get_session_outputs(&session.id) {
                 for output in outputs {
-                    self.output_lines.push_back(output.data);
-                    if self.output_lines.len() > self.max_output_lines {
-                        self.output_lines.pop_front();
-                    }
+                    // Process stored output chunks
+                    self.process_output_chunk(&output.data);
                 }
             }
         }
     }
 
-    /// Add output line
-    pub fn add_output(&mut self, line: String) {
-        self.output_lines.push_back(line);
-        if self.output_lines.len() > self.max_output_lines {
-            self.output_lines.pop_front();
+    /// Process an output chunk (may contain partial lines)
+    fn process_output_chunk(&mut self, chunk: &str) {
+        // Strip ANSI escape sequences for cleaner display
+        let cleaned = strip_ansi_escapes(chunk);
+
+        for ch in cleaned.chars() {
+            match ch {
+                '\n' => {
+                    // Complete line - add to output_lines
+                    let line = self.output_buffer.clone();
+                    self.output_lines.push_back(line);
+                    self.output_buffer.clear();
+
+                    if self.output_lines.len() > self.max_output_lines {
+                        self.output_lines.pop_front();
+                    }
+                }
+                '\r' => {
+                    // Carriage return - overwrite current line buffer
+                    // This handles progress indicators that use \r to update in place
+                    self.output_buffer.clear();
+                }
+                _ => {
+                    // Regular character - append to buffer
+                    self.output_buffer.push(ch);
+                }
+            }
         }
+    }
+
+    /// Add output chunk (streaming mode)
+    pub fn add_output(&mut self, chunk: String) {
+        self.process_output_chunk(&chunk);
         // Auto-scroll to bottom
         self.scroll_output_to_bottom();
     }
@@ -383,4 +412,33 @@ impl App {
             anyhow::bail!("No session selected")
         }
     }
+}
+
+/// Strip ANSI escape sequences from text
+fn strip_ansi_escapes(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // ESC character - start of ANSI sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Skip until we find a letter (the command character)
+                while let Some(&next_ch) = chars.peek() {
+                    chars.next();
+                    if next_ch.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                // Other escape sequences (less common)
+                chars.next();
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
 }
