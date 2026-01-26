@@ -4,6 +4,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
+use crate::events::{DisplayEvent, EventParser};
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus, Session, SessionStatus};
 use crate::session::SessionManager;
@@ -22,12 +23,18 @@ pub struct App {
     pub sessions: Vec<Session>,
     /// Currently selected session index
     pub selected_session: Option<usize>,
-    /// Output lines for current session
+    /// Output lines for current session (legacy raw text)
     pub output_lines: VecDeque<String>,
     /// Maximum output lines to keep
     pub max_output_lines: usize,
     /// Buffer for incomplete lines (streaming chunks)
     pub output_buffer: String,
+    /// Parsed display events (structured output)
+    pub display_events: Vec<DisplayEvent>,
+    /// Event parser for stream-json
+    pub event_parser: EventParser,
+    /// Currently selected event index (for navigation)
+    pub selected_event: Option<usize>,
     /// Current input text
     pub input: String,
     /// Input cursor position
@@ -187,6 +194,9 @@ impl App {
             output_lines: VecDeque::with_capacity(10000),
             max_output_lines: 10000,
             output_buffer: String::new(),
+            display_events: Vec::new(),
+            event_parser: EventParser::new(),
+            selected_event: None,
             input: String::new(),
             input_cursor: 0,
             session_creation_input: String::new(),
@@ -344,6 +354,9 @@ impl App {
         self.output_lines.clear();
         self.output_buffer.clear();
         self.output_scroll = 0;
+        self.display_events.clear();
+        self.event_parser = EventParser::new();
+        self.selected_event = None;
 
         if let Some(session) = self.current_session() {
             if let Ok(outputs) = self.db.get_session_outputs(&session.id) {
@@ -387,9 +400,14 @@ impl App {
 
     /// Add output chunk (streaming mode)
     pub fn add_output(&mut self, chunk: String) {
+        // Parse structured events from stream-json output
+        let events = self.event_parser.parse(&chunk);
+        self.display_events.extend(events);
+
+        // Also process as raw text for legacy display
         self.process_output_chunk(&chunk);
-        // Auto-scroll to bottom - use usize::MAX as sentinel for auto-scroll
-        // The actual scroll position will be clamped in the UI layer
+
+        // Auto-scroll to bottom
         self.output_scroll = usize::MAX;
     }
 

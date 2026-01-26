@@ -2,6 +2,7 @@ mod app;
 mod claude;
 mod config;
 mod db;
+mod events;
 mod git;
 mod migrations;
 mod models;
