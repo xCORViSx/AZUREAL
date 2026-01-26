@@ -1,12 +1,13 @@
 mod app;
+mod claude;
 mod config;
 mod db;
 mod git;
+mod migrations;
 mod models;
 mod session;
 mod syntax;
 mod tui;
-mod claude;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
