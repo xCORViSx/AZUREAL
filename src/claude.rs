@@ -53,10 +53,12 @@ impl ClaudeProcess {
         // Build the command
         let mut cmd = CommandBuilder::new(self.config.claude_executable());
 
-        // Add arguments
+        // Add arguments for bidirectional streaming
         cmd.arg("-p");
         cmd.arg(prompt);
         cmd.arg("--verbose");
+        cmd.arg("--input-format");
+        cmd.arg("stream-json");
         cmd.arg("--output-format");
         cmd.arg("stream-json");
 
