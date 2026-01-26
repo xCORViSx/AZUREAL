@@ -227,32 +227,57 @@ impl App {
             // Scan git worktrees directly instead of database
             let worktrees = Git::list_worktrees_detailed(&project.path)?;
 
-            self.sessions = worktrees
+            // Separate main worktree from feature worktrees
+            let (main_wts, feature_wts): (Vec<_>, Vec<_>) = worktrees
                 .into_iter()
-                .filter(|wt| !wt.is_main) // Skip main worktree
-                .map(|wt| {
-                    let name = wt.path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
+                .partition(|wt| wt.is_main);
 
-                    Session {
-                        id: name.clone(), // Use worktree name as stable ID
-                        name: name.clone(),
-                        initial_prompt: String::new(), // Not stored in git
-                        worktree_name: name,
-                        worktree_path: wt.path,
-                        branch_name: wt.branch.unwrap_or_default(),
-                        status: SessionStatus::Pending,
-                        project_id: project.id,
-                        pid: None,
-                        exit_code: None,
-                        archived: false,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    }
-                })
-                .collect();
+            let mut sessions = Vec::new();
 
+            // Add main worktree first (repo root)
+            if let Some(main_wt) = main_wts.into_iter().next() {
+                let branch_name = main_wt.branch.unwrap_or_else(|| "main".to_string());
+                sessions.push(Session {
+                    id: "__main__".to_string(),
+                    name: format!("[{}]", branch_name), // Bracket to distinguish
+                    initial_prompt: String::new(),
+                    worktree_name: "main".to_string(),
+                    worktree_path: main_wt.path,
+                    branch_name,
+                    status: SessionStatus::Pending,
+                    project_id: project.id,
+                    pid: None,
+                    exit_code: None,
+                    archived: false,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                });
+            }
+
+            // Add feature worktrees
+            for wt in feature_wts {
+                let name = wt.path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                sessions.push(Session {
+                    id: name.clone(),
+                    name: name.clone(),
+                    initial_prompt: String::new(),
+                    worktree_name: name,
+                    worktree_path: wt.path,
+                    branch_name: wt.branch.unwrap_or_default(),
+                    status: SessionStatus::Pending,
+                    project_id: project.id,
+                    pid: None,
+                    exit_code: None,
+                    archived: false,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                });
+            }
+
+            self.sessions = sessions;
             self.selected_session = if self.sessions.is_empty() {
                 None
             } else {
