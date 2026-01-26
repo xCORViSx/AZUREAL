@@ -5,6 +5,7 @@ use std::sync::mpsc::Receiver;
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
 use crate::models::{Project, Session, SessionStatus};
+use crate::syntax::DiffHighlighter;
 
 /// Application state
 pub struct App {
@@ -42,6 +43,8 @@ pub struct App {
     pub output_scroll: usize,
     /// Scroll offset for diff
     pub diff_scroll: usize,
+    /// Syntax highlighter for diff view
+    pub diff_highlighter: DiffHighlighter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +81,7 @@ impl App {
             diff_text: None,
             output_scroll: 0,
             diff_scroll: 0,
+            diff_highlighter: DiffHighlighter::new(),
         }
     }
 

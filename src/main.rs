@@ -4,6 +4,7 @@ mod db;
 mod git;
 mod models;
 mod session;
+mod syntax;
 mod tui;
 mod claude;
 

@@ -412,7 +412,7 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
 fn draw_output(f: &mut Frame, app: &App, area: Rect) {
     let title = match app.view_mode {
         ViewMode::Output => " Output ",
-        ViewMode::Diff => " Diff ",
+        ViewMode::Diff => " Diff (Syntax Highlighted) ",
         ViewMode::Messages => " Messages ",
     };
 
@@ -428,9 +428,12 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
-                diff.lines()
+                // Use syntax highlighter for diff view
+                let highlighted = app.diff_highlighter.colorize_diff(diff);
+                highlighted
+                    .into_iter()
                     .skip(app.diff_scroll)
-                    .map(|line| Line::from(colorize_diff(line)))
+                    .map(|spans| Line::from(spans))
                     .collect()
             } else {
                 vec![Line::from("No diff available")]
@@ -517,16 +520,3 @@ fn colorize_output(line: &str) -> Vec<Span<'_>> {
     }
 }
 
-fn colorize_diff(line: &str) -> Vec<Span<'_>> {
-    if line.starts_with('+') && !line.starts_with("+++") {
-        vec![Span::styled(line, Style::default().fg(Color::Green))]
-    } else if line.starts_with('-') && !line.starts_with("---") {
-        vec![Span::styled(line, Style::default().fg(Color::Red))]
-    } else if line.starts_with("@@") {
-        vec![Span::styled(line, Style::default().fg(Color::Cyan))]
-    } else if line.starts_with("diff ") || line.starts_with("index ") {
-        vec![Span::styled(line, Style::default().fg(Color::Yellow))]
-    } else {
-        vec![Span::raw(line)]
-    }
-}
