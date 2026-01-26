@@ -221,10 +221,38 @@ impl App {
         Ok(())
     }
 
-    /// Load sessions for the currently selected project
+    /// Load sessions for the currently selected project by scanning git worktrees
     pub fn load_sessions_for_project(&mut self) -> anyhow::Result<()> {
         if let Some(project) = self.projects.get(self.selected_project) {
-            self.sessions = self.db.list_sessions_for_project(project.id)?;
+            // Scan git worktrees directly instead of database
+            let worktrees = Git::list_worktrees_detailed(&project.path)?;
+
+            self.sessions = worktrees
+                .into_iter()
+                .filter(|wt| !wt.is_main) // Skip main worktree
+                .map(|wt| {
+                    let name = wt.path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    Session {
+                        id: wt.commit.clone(),
+                        name: name.clone(),
+                        initial_prompt: String::new(), // Not stored in git
+                        worktree_name: name,
+                        worktree_path: wt.path,
+                        branch_name: wt.branch.unwrap_or_default(),
+                        status: SessionStatus::Pending,
+                        project_id: project.id,
+                        pid: None,
+                        exit_code: None,
+                        archived: false,
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                    }
+                })
+                .collect();
+
             self.selected_session = if self.sessions.is_empty() {
                 None
             } else {

@@ -1,8 +1,17 @@
 use anyhow::{bail, Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::models::{DiffInfo, RebaseResult, RebaseState, RebaseStatus};
+
+/// Worktree info from git
+#[derive(Debug, Clone)]
+pub struct WorktreeInfo {
+    pub path: PathBuf,
+    pub branch: Option<String>,
+    pub commit: String,
+    pub is_main: bool,
+}
 
 /// Git operations for worktree management
 pub struct Git;
@@ -123,7 +132,7 @@ impl Git {
         Ok(())
     }
 
-    /// List existing worktrees
+    /// List existing worktrees (paths only)
     pub fn list_worktrees(repo_path: &Path) -> Result<Vec<String>> {
         let output = Command::new("git")
             .args(["worktree", "list", "--porcelain"])
@@ -137,6 +146,56 @@ impl Git {
             .filter(|line| line.starts_with("worktree "))
             .map(|line| line.strip_prefix("worktree ").unwrap_or(line).to_string())
             .collect();
+
+        Ok(worktrees)
+    }
+
+    /// List worktrees with full details (path, branch, commit)
+    pub fn list_worktrees_detailed(repo_path: &Path) -> Result<Vec<WorktreeInfo>> {
+        let output = Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list worktrees")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut worktrees = Vec::new();
+        let mut current_path: Option<std::path::PathBuf> = None;
+        let mut current_commit: Option<String> = None;
+        let mut current_branch: Option<String> = None;
+
+        for line in stdout.lines() {
+            if let Some(path) = line.strip_prefix("worktree ") {
+                // Save previous worktree if exists
+                if let (Some(path), Some(commit)) = (current_path.take(), current_commit.take()) {
+                    let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+                        || path == repo_path;
+                    worktrees.push(WorktreeInfo {
+                        path,
+                        branch: current_branch.take(),
+                        commit,
+                        is_main,
+                    });
+                }
+                current_path = Some(std::path::PathBuf::from(path));
+            } else if let Some(commit) = line.strip_prefix("HEAD ") {
+                current_commit = Some(commit.to_string());
+            } else if let Some(branch) = line.strip_prefix("branch refs/heads/") {
+                current_branch = Some(branch.to_string());
+            }
+        }
+
+        // Don't forget the last worktree
+        if let (Some(path), Some(commit)) = (current_path, current_commit) {
+            let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+                || path == repo_path;
+            worktrees.push(WorktreeInfo {
+                path,
+                branch: current_branch,
+                commit,
+                is_main,
+            });
+        }
 
         Ok(worktrees)
     }
