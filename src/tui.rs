@@ -465,42 +465,111 @@ fn handle_sessions_input(
 
 /// Handle keyboard input when Output pane is focused
 fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    match app.view_mode {
-        ViewMode::Rebase => handle_rebase_input(key, app)?,
-        _ => {
-            match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_output_down(1),
-                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_output_up(1),
-                (KeyModifiers::NONE, KeyCode::Char('G')) => app.scroll_output_to_bottom(),
-                (KeyModifiers::NONE, KeyCode::Char('g')) => app.output_scroll = 0,
-                (KeyModifiers::NONE, KeyCode::PageDown) => app.scroll_output_down(10),
-                (KeyModifiers::NONE, KeyCode::PageUp) => app.scroll_output_up(10),
-                (KeyModifiers::CONTROL, KeyCode::Char('d')) => app.scroll_output_down(20),
-                (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.scroll_output_up(20),
-                (KeyModifiers::CONTROL, KeyCode::Char('f')) => app.scroll_output_down(40),
-                (KeyModifiers::CONTROL, KeyCode::Char('b')) => app.scroll_output_up(40),
-                (KeyModifiers::NONE, KeyCode::Char('o')) => app.view_mode = ViewMode::Output,
-                (KeyModifiers::NONE, KeyCode::Char('d')) => {
-                    if let Err(e) = app.load_diff() {
-                        app.set_status(format!("Failed to get diff: {}", e));
-                    }
-                }
-                (KeyModifiers::SHIFT, KeyCode::Char('R')) => {
-                    // Show rebase view if in progress
-                    if let Some(session) = app.current_session() {
-                        let worktree_path = session.worktree_path.clone();
-                        if Git::is_rebase_in_progress(&worktree_path) {
-                            if let Ok(status) = Git::get_rebase_status(&worktree_path) {
-                                app.set_rebase_status(status);
-                            }
-                        }
-                    }
-                }
-                (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
-                (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
+    // Handle rebase mode separately
+    if app.view_mode == ViewMode::Rebase {
+        return handle_rebase_input(key, app);
+    }
+
+    // Use an estimate for viewport height; actual clamping happens in draw_output
+    let viewport_height = 20;
+
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_down(1, viewport_height),
+                ViewMode::Diff => app.scroll_diff_down(1, viewport_height),
                 _ => {}
             }
         }
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_up(1),
+                ViewMode::Diff => app.scroll_diff_up(1),
+                _ => {}
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('G')) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_to_bottom(viewport_height),
+                ViewMode::Diff => app.scroll_diff_to_bottom(viewport_height),
+                _ => {}
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('g')) => {
+            match app.view_mode {
+                ViewMode::Output => app.output_scroll = 0,
+                ViewMode::Diff => app.diff_scroll = 0,
+                _ => {}
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::PageDown) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_down(10, viewport_height),
+                ViewMode::Diff => app.scroll_diff_down(10, viewport_height),
+                _ => {}
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::PageUp) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_up(10),
+                ViewMode::Diff => app.scroll_diff_up(10),
+                _ => {}
+            }
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_down(20, viewport_height),
+                ViewMode::Diff => app.scroll_diff_down(20, viewport_height),
+                _ => {}
+            }
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_up(20),
+                ViewMode::Diff => app.scroll_diff_up(20),
+                _ => {}
+            }
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_down(40, viewport_height),
+                ViewMode::Diff => app.scroll_diff_down(40, viewport_height),
+                _ => {}
+            }
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_up(40),
+                ViewMode::Diff => app.scroll_diff_up(40),
+                _ => {}
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Tab) => app.focus = Focus::Input,
+        (KeyModifiers::NONE, KeyCode::Char('o')) => {
+            app.view_mode = ViewMode::Output;
+            app.output_scroll = 0;
+        }
+        (KeyModifiers::NONE, KeyCode::Char('d')) => {
+            if let Err(e) = app.load_diff() {
+                app.set_status(format!("Failed to get diff: {}", e));
+            } else {
+                app.diff_scroll = 0;
+            }
+        }
+        (KeyModifiers::SHIFT, KeyCode::Char('R')) => {
+            // Show rebase view if in progress
+            if let Some(session) = app.current_session() {
+                let worktree_path = session.worktree_path.clone();
+                if Git::is_rebase_in_progress(&worktree_path) {
+                    if let Ok(status) = Git::get_rebase_status(&worktree_path) {
+                        app.set_rebase_status(status);
+                    }
+                }
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
+        (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
+        _ => {}
     }
     Ok(())
 }
@@ -830,7 +899,7 @@ fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()>
     Ok(())
 }
 
-fn ui(f: &mut Frame, app: &App) {
+fn ui(f: &mut Frame, app: &mut App) {
     // Main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -938,20 +1007,27 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(sidebar, area);
 }
 
-fn draw_output(f: &mut Frame, app: &App, area: Rect) {
-    let title = match app.view_mode {
-        ViewMode::Output => " Output ",
-        ViewMode::Diff => " Diff (Syntax Highlighted) ",
-        ViewMode::Messages => " Messages ",
-        ViewMode::Rebase => " Rebase ",
-    };
+fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
+    // Calculate viewport height (subtract 2 for borders)
+    let viewport_height = area.height.saturating_sub(2) as usize;
 
-    let content = match app.view_mode {
+    let (title, content) = match app.view_mode {
         ViewMode::Output => {
+            let total = app.output_lines.len();
+            // Clamp scroll position to valid range
+            let scroll = if app.output_scroll == usize::MAX {
+                // Auto-scroll to bottom
+                total.saturating_sub(viewport_height)
+            } else {
+                app.output_scroll.min(total.saturating_sub(viewport_height))
+            };
+            app.output_scroll = scroll;
+
             let mut lines: Vec<Line> = app
                 .output_lines
                 .iter()
-                .skip(app.output_scroll)
+                .skip(scroll)
+                .take(viewport_height)
                 .map(|line| Line::from(colorize_output(line)))
                 .collect();
 
@@ -960,23 +1036,42 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(colorize_output(&app.output_buffer)));
             }
 
-            lines
+            let scroll_indicator = if total > viewport_height {
+                format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+            } else {
+                " Output ".to_string()
+            };
+
+            (scroll_indicator, lines)
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
                 // Use syntax highlighter for diff view
                 let highlighted = app.diff_highlighter.colorize_diff(diff);
-                highlighted
+                let total = highlighted.len();
+                let scroll = app.diff_scroll.min(total.saturating_sub(viewport_height));
+                app.diff_scroll = scroll;
+
+                let lines: Vec<Line> = highlighted
                     .into_iter()
-                    .skip(app.diff_scroll)
+                    .skip(scroll)
+                    .take(viewport_height)
                     .map(|spans| Line::from(spans))
-                    .collect()
+                    .collect();
+
+                let scroll_indicator = if total > viewport_height {
+                    format!(" Diff (Syntax Highlighted) [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                } else {
+                    " Diff (Syntax Highlighted) ".to_string()
+                };
+
+                (scroll_indicator, lines)
             } else {
-                vec![Line::from("No diff available")]
+                (" Diff ".to_string(), vec![Line::from("No diff available")])
             }
         }
         ViewMode::Messages => {
-            vec![Line::from("Messages view not implemented")]
+            (" Messages ".to_string(), vec![Line::from("Messages view not implemented")])
         }
         ViewMode::Rebase => {
             draw_rebase_content(app)
@@ -1213,6 +1308,19 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max - 1])
     }
+}
+
+fn is_scrolled_to_bottom(app: &App) -> bool {
+    // Consider scrolled to bottom if scroll position is at the end or set to auto-scroll
+    if app.output_scroll == usize::MAX {
+        return true;
+    }
+    let total = app.output_lines.len();
+    if total == 0 {
+        return true;
+    }
+    // Allow some margin (within 5 lines of bottom)
+    app.output_scroll + 5 >= total.saturating_sub(20)
 }
 
 fn colorize_output(line: &str) -> Vec<Span<'_>> {

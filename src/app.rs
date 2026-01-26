@@ -331,13 +331,15 @@ impl App {
     /// Add output chunk (streaming mode)
     pub fn add_output(&mut self, chunk: String) {
         self.process_output_chunk(&chunk);
-        // Auto-scroll to bottom
-        self.scroll_output_to_bottom();
+        // Auto-scroll to bottom - use usize::MAX as sentinel for auto-scroll
+        // The actual scroll position will be clamped in the UI layer
+        self.output_scroll = usize::MAX;
     }
 
     /// Scroll output down
-    pub fn scroll_output_down(&mut self, lines: usize) {
-        self.output_scroll = self.output_scroll.saturating_add(lines);
+    pub fn scroll_output_down(&mut self, lines: usize, viewport_height: usize) {
+        let max_scroll = self.output_lines.len().saturating_sub(viewport_height);
+        self.output_scroll = self.output_scroll.saturating_add(lines).min(max_scroll);
     }
 
     /// Scroll output up
@@ -346,8 +348,30 @@ impl App {
     }
 
     /// Scroll to bottom of output
-    pub fn scroll_output_to_bottom(&mut self) {
-        self.output_scroll = self.output_lines.len().saturating_sub(1);
+    pub fn scroll_output_to_bottom(&mut self, viewport_height: usize) {
+        self.output_scroll = self.output_lines.len().saturating_sub(viewport_height);
+    }
+
+    /// Scroll diff down
+    pub fn scroll_diff_down(&mut self, lines: usize, viewport_height: usize) {
+        if let Some(ref diff) = self.diff_text {
+            let total_lines = diff.lines().count();
+            let max_scroll = total_lines.saturating_sub(viewport_height);
+            self.diff_scroll = self.diff_scroll.saturating_add(lines).min(max_scroll);
+        }
+    }
+
+    /// Scroll diff up
+    pub fn scroll_diff_up(&mut self, lines: usize) {
+        self.diff_scroll = self.diff_scroll.saturating_sub(lines);
+    }
+
+    /// Scroll to bottom of diff
+    pub fn scroll_diff_to_bottom(&mut self, viewport_height: usize) {
+        if let Some(ref diff) = self.diff_text {
+            let total_lines = diff.lines().count();
+            self.diff_scroll = total_lines.saturating_sub(viewport_height);
+        }
     }
 
     /// Set status message
