@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -20,14 +20,11 @@ use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::SessionStatus;
+use crate::models::{OutputType, SessionStatus};
 use crate::session::SessionManager;
 
 /// Run the TUI application
 pub async fn run(db: Database) -> Result<()> {
-    // Load config first
-    let config = Config::load().unwrap_or_default();
-
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -35,8 +32,8 @@ pub async fn run(db: Database) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app state with config
-    let mut app = App::with_config(db, &config);
+    // Create app state
+    let mut app = App::new(db);
     app.load()?;
 
     // If no projects, prompt to add one
@@ -46,6 +43,9 @@ pub async fn run(db: Database) -> Result<()> {
             app.add_project(cwd)?;
         }
     }
+
+    // Load config
+    let config = Config::load().unwrap_or_default();
 
     // Main loop
     let result = run_app(&mut terminal, &mut app, config).await;
@@ -67,11 +67,11 @@ async fn run_app(
     app: &mut App,
     config: Config,
 ) -> Result<()> {
-    let claude_process = ClaudeProcess::new(config.clone());
+    let claude_process = ClaudeProcess::new(config);
 
     loop {
         // Draw UI
-        terminal.draw(|f| ui(f, app, &config))?;
+        terminal.draw(|f| ui(f, app))?;
 
         // Poll for Claude output - collect events first to avoid borrow issues
         let events: Vec<ClaudeEvent> = if let Some(ref receiver) = app.claude_receiver {
@@ -321,7 +321,7 @@ async fn run_app(
     Ok(())
 }
 
-fn ui(f: &mut Frame, app: &App, config: &Config) {
+fn ui(f: &mut Frame, app: &App) {
     // Main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -336,7 +336,7 @@ fn ui(f: &mut Frame, app: &App, config: &Config) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(config.tui.sidebar_width), // Sidebar
+            Constraint::Length(30), // Sidebar
             Constraint::Min(40),    // Output
         ])
         .split(chunks[0]);

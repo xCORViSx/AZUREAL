@@ -238,6 +238,33 @@ impl Database {
         Ok(())
     }
 
+    /// Delete a project
+    pub fn delete_project(&self, id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Update project main branch
+    pub fn update_project_main_branch(&self, id: i64, main_branch: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE projects SET main_branch = ?1, updated_at = ?2 WHERE id = ?3",
+            params![main_branch, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Update project system prompt
+    pub fn update_project_system_prompt(&self, id: i64, system_prompt: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE projects SET system_prompt = ?1, updated_at = ?2 WHERE id = ?3",
+            params![system_prompt, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
     // ==================== Session Outputs ====================
 
     /// Add output to a session

@@ -40,6 +40,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Syntax highlighting
 syntect = "5.2"
 
+# Platform-specific
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [profile.release]
 lto = true
 codegen-units = 1

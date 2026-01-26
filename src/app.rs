@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 use crate::claude::ClaudeEvent;
-use crate::config::Config;
 use crate::db::Database;
 use crate::models::{Project, Session, SessionStatus};
 use crate::syntax::DiffHighlighter;
@@ -64,19 +63,14 @@ pub enum Focus {
 
 impl App {
     pub fn new(db: Database) -> Self {
-        Self::with_config(db, &Config::default())
-    }
-
-    pub fn with_config(db: Database, config: &Config) -> Self {
-        let max_output_lines = config.tui.max_output_lines;
         Self {
             db,
             projects: Vec::new(),
             selected_project: 0,
             sessions: Vec::new(),
             selected_session: None,
-            output_lines: VecDeque::with_capacity(max_output_lines),
-            max_output_lines,
+            output_lines: VecDeque::with_capacity(10000),
+            max_output_lines: 10000,
             input: String::new(),
             input_cursor: 0,
             view_mode: ViewMode::Output,

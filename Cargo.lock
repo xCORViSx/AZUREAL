@@ -299,6 +299,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "libc",
  "portable-pty",
  "ratatui",
  "rusqlite",

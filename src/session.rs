@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
 use crate::models::{Project, Session, SessionStatus};
@@ -10,19 +10,11 @@ use crate::models::{Project, Session, SessionStatus};
 /// Manages session lifecycle
 pub struct SessionManager<'a> {
     db: &'a Database,
-    config: Config,
 }
 
 impl<'a> SessionManager<'a> {
     pub fn new(db: &'a Database) -> Self {
-        Self {
-            db,
-            config: Config::load().unwrap_or_default(),
-        }
-    }
-
-    pub fn with_config(db: &'a Database, config: Config) -> Self {
-        Self { db, config }
+        Self { db }
     }
 
     /// Create a new session with a worktree
@@ -40,12 +32,10 @@ impl<'a> SessionManager<'a> {
         let session_id = Uuid::new_v4().to_string();
         let session_name = generate_session_name(prompt);
         let worktree_name = sanitize_for_branch(&session_name);
-        let branch_name = format!("{}/{}", self.config.session.branch_prefix, worktree_name);
+        let branch_name = format!("crystal/{}", worktree_name);
 
-        // Calculate worktree path using config
-        let worktree_path = project
-            .worktrees_dir_with_config(&self.config.session.worktree_dir)
-            .join(&worktree_name);
+        // Calculate worktree path
+        let worktree_path = project.worktrees_dir().join(&worktree_name);
 
         // Check if worktree already exists
         if worktree_path.exists() {

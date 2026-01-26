@@ -18,10 +18,6 @@ impl Project {
     pub fn worktrees_dir(&self) -> PathBuf {
         self.path.join(".worktrees")
     }
-
-    pub fn worktrees_dir_with_config(&self, worktree_dir: &str) -> PathBuf {
-        self.path.join(worktree_dir)
-    }
 }
 
 /// Session status
