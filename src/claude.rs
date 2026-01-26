@@ -54,7 +54,7 @@ impl ClaudeProcess {
         cmd.arg("stream-json");
 
         // Add permission mode
-        match self.config.default_permission_mode {
+        match self.config.permission_mode() {
             PermissionMode::Ignore => {
                 cmd.arg("--dangerously-skip-permissions");
             }
@@ -64,6 +64,12 @@ impl ClaudeProcess {
             PermissionMode::Ask => {
                 // Default behavior
             }
+        }
+
+        // Add model if specified
+        if let Some(ref model) = self.config.claude.model {
+            cmd.arg("--model");
+            cmd.arg(model);
         }
 
         // Resume session if specified

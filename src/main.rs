@@ -41,6 +41,27 @@ enum Commands {
         /// Session ID or name
         session: String,
     },
+    /// Manage configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Show configuration file path
+    Path,
+    /// Initialize a new config file with defaults
+    Init {
+        /// Overwrite existing config file
+        #[arg(long)]
+        force: bool,
+    },
+    /// Edit configuration file in $EDITOR
+    Edit,
 }
 
 #[tokio::main]
@@ -107,12 +128,52 @@ async fn main() -> Result<()> {
                 println!("Session not found: {}", session_id);
             }
         }
+        Some(Commands::Config { action }) => {
+            handle_config_command(action)?;
+        }
         Some(Commands::Tui) | None => {
             // Launch TUI
             tui::run(db).await?;
         }
     }
 
+    Ok(())
+}
+
+fn handle_config_command(action: ConfigAction) -> Result<()> {
+    match action {
+        ConfigAction::Show => {
+            let config = config::Config::load()?;
+            println!("{}", config.display());
+        }
+        ConfigAction::Path => {
+            println!("{}", config::config_file_path().display());
+        }
+        ConfigAction::Init { force } => {
+            let path = config::config_file_path();
+            if force {
+                config::Config::init_force()?;
+                println!("Config file created at {}", path.display());
+            } else {
+                config::Config::init()?;
+                println!("Config file created at {}", path.display());
+            }
+        }
+        ConfigAction::Edit => {
+            let path = config::config_file_path();
+            if !path.exists() {
+                println!("Config file does not exist. Creating default...");
+                config::Config::init_force()?;
+            }
+            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+            let status = std::process::Command::new(&editor)
+                .arg(&path)
+                .status()?;
+            if !status.success() {
+                anyhow::bail!("Editor exited with non-zero status");
+            }
+        }
+    }
     Ok(())
 }
 
