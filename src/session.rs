@@ -106,6 +106,70 @@ impl<'a> SessionManager<'a> {
     pub fn list_sessions_for_project(&self, project_id: i64) -> Result<Vec<Session>> {
         self.db.list_sessions_for_project(project_id)
     }
+
+    /// Rename a session
+    pub fn rename_session(&self, session_id: &str, name: &str) -> Result<()> {
+        self.db.update_session_name(session_id, name)
+    }
+
+    /// Unarchive a session
+    pub fn unarchive_session(&self, session_id: &str) -> Result<()> {
+        self.db.unarchive_session(session_id)
+    }
+
+    /// List archived sessions
+    pub fn list_archived_sessions(&self) -> Result<Vec<Session>> {
+        self.db.list_archived_sessions()
+    }
+
+    /// List archived sessions for a project
+    pub fn list_archived_sessions_for_project(&self, project_id: i64) -> Result<Vec<Session>> {
+        self.db.list_archived_sessions_for_project(project_id)
+    }
+
+    /// Search sessions by name
+    pub fn search_sessions(&self, query: &str) -> Result<Vec<Session>> {
+        self.db.search_sessions_by_name(query)
+    }
+
+    /// Filter sessions by status
+    pub fn filter_by_status(&self, status: SessionStatus) -> Result<Vec<Session>> {
+        self.db.filter_sessions_by_status(status)
+    }
+
+    /// Filter sessions by status for a project
+    pub fn filter_by_status_for_project(
+        &self,
+        project_id: i64,
+        status: SessionStatus,
+    ) -> Result<Vec<Session>> {
+        self.db.filter_sessions_by_status_for_project(project_id, status)
+    }
+
+    /// Get session by worktree name
+    pub fn get_session_by_worktree(&self, worktree_name: &str) -> Result<Option<Session>> {
+        self.db.get_session_by_worktree_name(worktree_name)
+    }
+
+    /// Get session by branch name
+    pub fn get_session_by_branch(&self, branch_name: &str) -> Result<Option<Session>> {
+        self.db.get_session_by_branch_name(branch_name)
+    }
+
+    /// Clear all outputs for a session
+    pub fn clear_session_output(&self, session_id: &str) -> Result<()> {
+        self.db.clear_session_outputs(session_id)
+    }
+
+    /// Clear all conversation messages for a session
+    pub fn clear_conversation(&self, session_id: &str) -> Result<()> {
+        self.db.clear_conversation_messages(session_id)
+    }
+
+    /// Update session exit code
+    pub fn set_exit_code(&self, session_id: &str, exit_code: Option<i32>) -> Result<()> {
+        self.db.update_session_exit_code(session_id, exit_code)
+    }
 }
 
 /// Generate a session name from the prompt

@@ -140,6 +140,53 @@ impl Database {
         Ok(projects)
     }
 
+    /// Update project name
+    pub fn update_project_name(&self, id: i64, name: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE projects SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Update project system prompt
+    pub fn update_project_system_prompt(&self, id: i64, system_prompt: Option<&str>) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE projects SET system_prompt = ?1, updated_at = ?2 WHERE id = ?3",
+            params![system_prompt, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Update project main branch
+    pub fn update_project_main_branch(&self, id: i64, main_branch: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE projects SET main_branch = ?1, updated_at = ?2 WHERE id = ?3",
+            params![main_branch, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a project and all its sessions (cascading delete via foreign key)
+    pub fn delete_project(&self, id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Count sessions for a project
+    pub fn count_sessions_for_project(&self, project_id: i64) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions WHERE project_id = ?1",
+            params![project_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     // ==================== Sessions ====================
 
     /// Create a new session
@@ -206,6 +253,34 @@ impl Database {
         Ok(sessions)
     }
 
+    /// List archived sessions
+    pub fn list_archived_sessions(&self) -> Result<Vec<Session>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions WHERE archived = 1 ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map([], |row| Ok(row_to_session(row)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
+    /// List archived sessions for a specific project
+    pub fn list_archived_sessions_for_project(&self, project_id: i64) -> Result<Vec<Session>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions WHERE project_id = ?1 AND archived = 1 ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map(params![project_id], |row| Ok(row_to_session(row)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
     /// Update session status
     pub fn update_session_status(&self, id: &str, status: SessionStatus) -> Result<()> {
         let now = Utc::now();
@@ -226,11 +301,41 @@ impl Database {
         Ok(())
     }
 
+    /// Update session name
+    pub fn update_session_name(&self, id: &str, name: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE sessions SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Update session exit code
+    pub fn update_session_exit_code(&self, id: &str, exit_code: Option<i32>) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE sessions SET exit_code = ?1, updated_at = ?2 WHERE id = ?3",
+            params![exit_code, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
     /// Archive a session
     pub fn archive_session(&self, id: &str) -> Result<()> {
         let now = Utc::now();
         self.conn.execute(
             "UPDATE sessions SET archived = 1, updated_at = ?1 WHERE id = ?2",
+            params![now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Unarchive a session
+    pub fn unarchive_session(&self, id: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE sessions SET archived = 0, updated_at = ?1 WHERE id = ?2",
             params![now.to_rfc3339(), id],
         )?;
         Ok(())
@@ -243,31 +348,79 @@ impl Database {
         Ok(())
     }
 
-    /// Delete a project
-    pub fn delete_project(&self, id: i64) -> Result<()> {
+    /// Search sessions by name (case-insensitive)
+    pub fn search_sessions_by_name(&self, query: &str) -> Result<Vec<Session>> {
+        let pattern = format!("%{}%", query);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions WHERE name LIKE ?1 COLLATE NOCASE ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map(params![pattern], |row| Ok(row_to_session(row)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
+    /// Filter sessions by status
+    pub fn filter_sessions_by_status(&self, status: SessionStatus) -> Result<Vec<Session>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions WHERE status = ?1 ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map(params![status.as_str()], |row| Ok(row_to_session(row)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
+    /// Filter sessions by status for a specific project
+    pub fn filter_sessions_by_status_for_project(
+        &self,
+        project_id: i64,
+        status: SessionStatus,
+    ) -> Result<Vec<Session>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions WHERE project_id = ?1 AND status = ?2 ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map(params![project_id, status.as_str()], |row| {
+                Ok(row_to_session(row))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
+    /// Get session by worktree name
+    pub fn get_session_by_worktree_name(&self, worktree_name: &str) -> Result<Option<Session>> {
         self.conn
-            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
-        Ok(())
+            .query_row(
+                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+                 FROM sessions WHERE worktree_name = ?1",
+                params![worktree_name],
+                |row| Ok(row_to_session(row)),
+            )
+            .optional()
+            .context("Failed to query session by worktree name")
     }
 
-    /// Update project main branch
-    pub fn update_project_main_branch(&self, id: i64, main_branch: &str) -> Result<()> {
-        let now = Utc::now();
-        self.conn.execute(
-            "UPDATE projects SET main_branch = ?1, updated_at = ?2 WHERE id = ?3",
-            params![main_branch, now.to_rfc3339(), id],
-        )?;
-        Ok(())
-    }
-
-    /// Update project system prompt
-    pub fn update_project_system_prompt(&self, id: i64, system_prompt: &str) -> Result<()> {
-        let now = Utc::now();
-        self.conn.execute(
-            "UPDATE projects SET system_prompt = ?1, updated_at = ?2 WHERE id = ?3",
-            params![system_prompt, now.to_rfc3339(), id],
-        )?;
-        Ok(())
+    /// Get session by branch name
+    pub fn get_session_by_branch_name(&self, branch_name: &str) -> Result<Option<Session>> {
+        self.conn
+            .query_row(
+                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+                 FROM sessions WHERE branch_name = ?1",
+                params![branch_name],
+                |row| Ok(row_to_session(row)),
+            )
+            .optional()
+            .context("Failed to query session by branch name")
     }
 
     // ==================== Session Outputs ====================
@@ -308,39 +461,18 @@ impl Database {
         Ok(outputs)
     }
 
-    /// Get a single output by ID
-    pub fn get_session_output(&self, id: i64) -> Result<Option<SessionOutput>> {
-        self.conn
-            .query_row(
-                "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE id = ?1",
-                params![id],
-                |row| {
-                    Ok(SessionOutput {
-                        id: row.get(0)?,
-                        session_id: row.get(1)?,
-                        output_type: OutputType::from_str(&row.get::<_, String>(2)?),
-                        data: row.get(3)?,
-                        timestamp: parse_datetime(&row.get::<_, String>(4)?),
-                    })
-                },
-            )
-            .optional()
-            .context("Failed to query session output")
-    }
-
-    /// Get outputs for a session with pagination
-    pub fn get_session_outputs_paginated(
+    /// Get outputs for a session filtered by type
+    pub fn get_session_outputs_by_type(
         &self,
         session_id: &str,
-        limit: usize,
-        offset: usize,
+        output_type: OutputType,
     ) -> Result<Vec<SessionOutput>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE session_id = ?1 ORDER BY timestamp ASC LIMIT ?2 OFFSET ?3",
+            "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE session_id = ?1 AND output_type = ?2 ORDER BY timestamp ASC",
         )?;
 
         let outputs = stmt
-            .query_map(params![session_id, limit as i64, offset as i64], |row| {
+            .query_map(params![session_id, output_type.as_str()], |row| {
                 Ok(SessionOutput {
                     id: row.get(0)?,
                     session_id: row.get(1)?,
@@ -354,56 +486,23 @@ impl Database {
         Ok(outputs)
     }
 
-    /// Get the latest outputs for a session (most recent first)
-    pub fn get_latest_session_outputs(
-        &self,
-        session_id: &str,
-        limit: usize,
-    ) -> Result<Vec<SessionOutput>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, output_type, data, timestamp FROM session_outputs WHERE session_id = ?1 ORDER BY timestamp DESC LIMIT ?2",
+    /// Clear all outputs for a session
+    pub fn clear_session_outputs(&self, session_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM session_outputs WHERE session_id = ?1",
+            params![session_id],
         )?;
-
-        let outputs = stmt
-            .query_map(params![session_id, limit as i64], |row| {
-                Ok(SessionOutput {
-                    id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    output_type: OutputType::from_str(&row.get::<_, String>(2)?),
-                    data: row.get(3)?,
-                    timestamp: parse_datetime(&row.get::<_, String>(4)?),
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(outputs)
+        Ok(())
     }
 
     /// Count outputs for a session
-    pub fn count_session_outputs(&self, session_id: &str) -> Result<usize> {
+    pub fn count_session_outputs(&self, session_id: &str) -> Result<i64> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM session_outputs WHERE session_id = ?1",
             params![session_id],
             |row| row.get(0),
         )?;
-        Ok(count as usize)
-    }
-
-    /// Delete a single output by ID
-    pub fn delete_session_output(&self, id: i64) -> Result<bool> {
-        let rows_affected = self
-            .conn
-            .execute("DELETE FROM session_outputs WHERE id = ?1", params![id])?;
-        Ok(rows_affected > 0)
-    }
-
-    /// Delete all outputs for a session
-    pub fn delete_session_outputs(&self, session_id: &str) -> Result<usize> {
-        let rows_affected = self.conn.execute(
-            "DELETE FROM session_outputs WHERE session_id = ?1",
-            params![session_id],
-        )?;
-        Ok(rows_affected)
+        Ok(count)
     }
 
     // ==================== Conversation Messages ====================
@@ -442,6 +541,73 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(messages)
+    }
+
+    /// Get conversation messages for a session filtered by type
+    pub fn get_conversation_messages_by_type(
+        &self,
+        session_id: &str,
+        message_type: MessageType,
+    ) -> Result<Vec<ConversationMessage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, message_type, content, timestamp FROM conversation_messages WHERE session_id = ?1 AND message_type = ?2 ORDER BY timestamp ASC",
+        )?;
+
+        let messages = stmt
+            .query_map(params![session_id, message_type.as_str()], |row| {
+                Ok(ConversationMessage {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    message_type: MessageType::from_str(&row.get::<_, String>(2)?),
+                    content: row.get(3)?,
+                    timestamp: parse_datetime(&row.get::<_, String>(4)?),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(messages)
+    }
+
+    /// Clear all conversation messages for a session
+    pub fn clear_conversation_messages(&self, session_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM conversation_messages WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Count conversation messages for a session
+    pub fn count_conversation_messages(&self, session_id: &str) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM conversation_messages WHERE session_id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Get the last conversation message for a session
+    pub fn get_last_conversation_message(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ConversationMessage>> {
+        self.conn
+            .query_row(
+                "SELECT id, session_id, message_type, content, timestamp FROM conversation_messages WHERE session_id = ?1 ORDER BY timestamp DESC LIMIT 1",
+                params![session_id],
+                |row| {
+                    Ok(ConversationMessage {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        message_type: MessageType::from_str(&row.get::<_, String>(2)?),
+                        content: row.get(3)?,
+                        timestamp: parse_datetime(&row.get::<_, String>(4)?),
+                    })
+                },
+            )
+            .optional()
+            .context("Failed to query last conversation message")
     }
 }
 
