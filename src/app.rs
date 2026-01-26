@@ -236,7 +236,7 @@ impl App {
                         .unwrap_or_else(|| "unknown".to_string());
 
                     Session {
-                        id: wt.commit.clone(),
+                        id: name.clone(), // Use worktree name as stable ID
                         name: name.clone(),
                         initial_prompt: String::new(), // Not stored in git
                         worktree_name: name,

@@ -263,16 +263,29 @@ fn execute_action(app: &mut App, claude_process: &ClaudeProcess, action: Session
                     || session.status == SessionStatus::Stopped
                     || session.status == SessionStatus::Completed
                 {
+                    // Use input field if initial_prompt is empty (for discovered worktrees)
+                    let prompt = if session.initial_prompt.is_empty() {
+                        if app.input.trim().is_empty() {
+                            app.set_status("Enter a prompt in the input field first");
+                            return Ok(());
+                        }
+                        app.input.clone()
+                    } else {
+                        session.initial_prompt.clone()
+                    };
+
                     let session_id = session.id.clone();
                     match claude_process.spawn(
                         session_id.clone(),
                         &session.worktree_path,
-                        &session.initial_prompt,
+                        &prompt,
                         None,
                     ) {
                         Ok(rx) => {
                             app.claude_receiver = Some(rx);
                             app.running_session_id = Some(session_id);
+                            app.input.clear();
+                            app.input_cursor = 0;
                             app.set_status("Starting Claude...");
                         }
                         Err(e) => {
