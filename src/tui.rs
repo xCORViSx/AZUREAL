@@ -19,6 +19,7 @@ use crate::app::{App, BranchDialog, Focus, ViewMode, SessionAction};
 use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
+use crate::events::DisplayEvent;
 use crate::git::Git;
 use crate::models::{RebaseResult, RebaseState, SessionStatus};
 use crate::session::SessionManager;
@@ -1037,36 +1038,61 @@ fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let (title, content) = match app.view_mode {
         ViewMode::Output => {
-            let total = app.output_lines.len();
-            // Clamp scroll position to valid range
-            let scroll = if app.output_scroll == usize::MAX {
-                // Auto-scroll to bottom
-                total.saturating_sub(viewport_height)
+            // Use structured events if available, fall back to raw output
+            if !app.display_events.is_empty() {
+                let all_lines = render_display_events(&app.display_events);
+                let total = all_lines.len();
+
+                let scroll = if app.output_scroll == usize::MAX {
+                    total.saturating_sub(viewport_height)
+                } else {
+                    app.output_scroll.min(total.saturating_sub(viewport_height))
+                };
+                app.output_scroll = scroll;
+
+                let lines: Vec<Line> = all_lines
+                    .into_iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .collect();
+
+                let scroll_indicator = if total > viewport_height {
+                    format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                } else {
+                    " Output ".to_string()
+                };
+
+                (scroll_indicator, lines)
             } else {
-                app.output_scroll.min(total.saturating_sub(viewport_height))
-            };
-            app.output_scroll = scroll;
+                // Fall back to raw output lines
+                let total = app.output_lines.len();
+                let scroll = if app.output_scroll == usize::MAX {
+                    total.saturating_sub(viewport_height)
+                } else {
+                    app.output_scroll.min(total.saturating_sub(viewport_height))
+                };
+                app.output_scroll = scroll;
 
-            let mut lines: Vec<Line> = app
-                .output_lines
-                .iter()
-                .skip(scroll)
-                .take(viewport_height)
-                .map(|line| Line::from(colorize_output(line)))
-                .collect();
+                let mut lines: Vec<Line> = app
+                    .output_lines
+                    .iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .map(|line| Line::from(colorize_output(line)))
+                    .collect();
 
-            // Add the partial line buffer if it's not empty
-            if !app.output_buffer.is_empty() {
-                lines.push(Line::from(colorize_output(&app.output_buffer)));
+                if !app.output_buffer.is_empty() {
+                    lines.push(Line::from(colorize_output(&app.output_buffer)));
+                }
+
+                let scroll_indicator = if total > viewport_height {
+                    format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                } else {
+                    " Output ".to_string()
+                };
+
+                (scroll_indicator, lines)
             }
-
-            let scroll_indicator = if total > viewport_height {
-                format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
-            } else {
-                " Output ".to_string()
-            };
-
-            (scroll_indicator, lines)
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
@@ -1358,6 +1384,132 @@ fn colorize_output(line: &str) -> Vec<Span<'_>> {
     } else {
         vec![Span::raw(line)]
     }
+}
+
+/// Render DisplayEvents into Lines for the output panel
+fn render_display_events(events: &[DisplayEvent]) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    for event in events {
+        match event {
+            DisplayEvent::Init { model, cwd, .. } => {
+                lines.push(Line::from(vec![
+                    Span::styled("● ", Style::default().fg(Color::Green)),
+                    Span::styled("Session started", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!(" ({})", model), Style::default().fg(Color::DarkGray)),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("  cwd: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(cwd.clone(), Style::default().fg(Color::Cyan)),
+                ]));
+                lines.push(Line::from(""));
+            }
+            DisplayEvent::Hook { name, output } => {
+                if !output.trim().is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::styled("⚡ ", Style::default().fg(Color::Yellow)),
+                        Span::styled(name.clone(), Style::default().fg(Color::Yellow)),
+                    ]));
+                    for line in output.lines() {
+                        lines.push(Line::from(vec![
+                            Span::styled("  ", Style::default()),
+                            Span::styled(line.to_string(), Style::default().fg(Color::DarkGray)),
+                        ]));
+                    }
+                }
+            }
+            DisplayEvent::UserMessage { content, .. } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("▶ ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                    Span::styled("You", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                ]));
+                for line in content.lines() {
+                    lines.push(Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(line.to_string(), Style::default().fg(Color::White)),
+                    ]));
+                }
+                lines.push(Line::from(""));
+            }
+            DisplayEvent::AssistantText { text, .. } => {
+                lines.push(Line::from(vec![
+                    Span::styled("◀ ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Span::styled("Claude", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                ]));
+                for line in text.lines() {
+                    lines.push(Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(line.to_string(), Style::default().fg(Color::White)),
+                    ]));
+                }
+            }
+            DisplayEvent::ToolCall { tool_name, file_path, input, .. } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("🔧 ", Style::default()),
+                    Span::styled(tool_name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ]));
+                if let Some(path) = file_path {
+                    lines.push(Line::from(vec![
+                        Span::styled("   → ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(path.clone(), Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED)),
+                    ]));
+                } else {
+                    // Show truncated input for other tools
+                    let input_str = serde_json::to_string(input).unwrap_or_default();
+                    let truncated = if input_str.len() > 60 {
+                        format!("{}...", &input_str[..57])
+                    } else {
+                        input_str
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled("   ", Style::default()),
+                        Span::styled(truncated, Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+            }
+            DisplayEvent::ToolResult { success, output, .. } => {
+                let (icon, color) = if *success {
+                    ("✓", Color::Green)
+                } else {
+                    ("✗", Color::Red)
+                };
+                if !output.is_empty() {
+                    let preview = if output.len() > 100 {
+                        format!("{}...", &output[..97])
+                    } else {
+                        output.clone()
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("   {} ", icon), Style::default().fg(color)),
+                        Span::styled(preview, Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+            }
+            DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
+                lines.push(Line::from(""));
+                let status = if *success { "completed" } else { "failed" };
+                let color = if *success { Color::Green } else { Color::Red };
+                lines.push(Line::from(vec![
+                    Span::styled("● ", Style::default().fg(color)),
+                    Span::styled(format!("Session {} ", status), Style::default().fg(color)),
+                    Span::styled(
+                        format!("({:.1}s, ${:.4})", *duration_ms as f64 / 1000.0, cost_usd),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
+            }
+            DisplayEvent::Error { message } => {
+                lines.push(Line::from(vec![
+                    Span::styled("✗ Error: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(message.clone(), Style::default().fg(Color::Red)),
+                ]));
+            }
+        }
+    }
+
+    lines
 }
 
 fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
