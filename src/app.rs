@@ -31,10 +31,6 @@ pub struct App {
     pub input: String,
     /// Input cursor position
     pub input_cursor: usize,
-    /// Session creation prompt (multi-line)
-    pub session_creation_input: String,
-    /// Session creation cursor position (linear position in string)
-    pub session_creation_cursor: usize,
     /// Current view mode
     pub view_mode: ViewMode,
     /// Current focus
@@ -186,8 +182,6 @@ impl App {
             output_buffer: String::new(),
             input: String::new(),
             input_cursor: 0,
-            session_creation_input: String::new(),
-            session_creation_cursor: 0,
             view_mode: ViewMode::Output,
             focus: Focus::Sessions,
             should_quit: false,

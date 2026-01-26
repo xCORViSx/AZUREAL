@@ -10,6 +10,7 @@ license = "MIT"
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
+ansi-to-tui = "7"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

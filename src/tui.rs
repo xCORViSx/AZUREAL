@@ -16,7 +16,7 @@ use std::io;
 use std::time::Duration;
 
 use crate::app::{App, BranchDialog, Focus, ViewMode, SessionAction};
-use crate::claude::{ClaudeEvent, ClaudeProcess};
+use crate::claude::{ClaudeEvent, ClaudeMessage, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
@@ -332,7 +332,8 @@ fn handle_sessions_input(
             app.open_context_menu();
         }
         KeyCode::Char('n') => {
-            app.enter_session_creation_mode();
+            app.focus = Focus::Input;
+            app.set_status("Enter prompt for new session:");
         }
         KeyCode::Char('w') => {
             // Create worktree from existing branch
@@ -1341,13 +1342,114 @@ fn is_scrolled_to_bottom(app: &App) -> bool {
 }
 
 fn colorize_output(line: &str) -> Vec<Span<'_>> {
-    // Basic colorization for Claude output
-    if line.starts_with("Error") || line.starts_with("error") {
-        vec![Span::styled(line, Style::default().fg(Color::Red))]
-    } else if line.starts_with('>') || line.contains("Tool:") {
+    use ansi_to_tui::IntoText;
+
+    // First, try to handle ANSI escape codes if present
+    if line.contains('\x1b') {
+        // Convert ANSI to ratatui spans
+        if let Ok(text) = line.into_text() {
+            if let Some(first_line) = text.lines.into_iter().next() {
+                return first_line.spans;
+            }
+        }
+    }
+
+    // Try to parse as Claude JSON message
+    if line.starts_with('{') {
+        if let Some(msg) = ClaudeMessage::parse(line) {
+            return colorize_claude_message(&msg);
+        }
+        // If JSON parsing fails, still colorize as JSON
+        return vec![Span::styled(line, Style::default().fg(Color::Cyan))];
+    }
+
+    // Pattern-based colorization for plain text
+    if line.starts_with("Error") || line.starts_with("error") || line.contains("ERROR") {
+        vec![Span::styled(line, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))]
+    } else if line.starts_with("Warning") || line.contains("WARN") {
         vec![Span::styled(line, Style::default().fg(Color::Yellow))]
-    } else if line.starts_with('{') {
+    } else if line.starts_with("Success") || line.contains("✓") {
+        vec![Span::styled(line, Style::default().fg(Color::Green))]
+    } else if line.starts_with('>') || line.contains("Tool:") || line.contains(">>>") {
+        vec![Span::styled(line, Style::default().fg(Color::Magenta))]
+    } else if line.starts_with("$") || line.starts_with("►") {
+        vec![Span::styled(line, Style::default().fg(Color::Yellow))]
+    } else if line.starts_with("//") || line.starts_with("#") {
+        vec![Span::styled(line, Style::default().fg(Color::Gray))]
+    } else {
+        vec![Span::raw(line)]
+    }
+}
+
+fn colorize_claude_message(msg: &ClaudeMessage) -> Vec<Span<'static>> {
+    use crate::claude::ContentBlock;
+
+    match msg {
+        ClaudeMessage::Assistant { message } => {
+            let mut spans = vec![
+                Span::styled("Assistant: ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
+            ];
+            for block in &message.content {
+                match block {
+                    ContentBlock::Text { text } => {
+                        spans.push(Span::raw(text.clone()));
+                    }
+                    ContentBlock::ToolUse { name, .. } => {
+                        spans.push(Span::styled(
+                            format!(" [Tool: {}]", name),
+                            Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC)
+                        ));
+                    }
+                    ContentBlock::ToolResult { .. } => {
+                        spans.push(Span::styled(
+                            " [Tool Result]",
+                            Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC)
+                        ));
+                    }
+                }
+            }
+            spans
+        }
+        ClaudeMessage::User { message } => {
+            let mut spans = vec![
+                Span::styled("User: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            ];
+            for block in &message.content {
+                if let ContentBlock::Text { text } = block {
+                    spans.push(Span::raw(text.clone()));
+                }
+            }
+            spans
+        }
+        ClaudeMessage::Result { result, subtype } => {
+            let prefix = if let Some(st) = subtype {
+                format!("Result ({}): ", st)
+            } else {
+                "Result: ".to_string()
+            };
+            vec![
+                Span::styled(prefix, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::raw(result.clone())
+            ]
+        }
+        ClaudeMessage::System { message } => {
+            vec![
+                Span::styled("System: ", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC)),
+                Span::raw(message.clone())
+            ]
+        }
+    }
+}
+
+fn colorize_diff(line: &str) -> Vec<Span<'_>> {
+    if line.starts_with('+') && !line.starts_with("+++") {
+        vec![Span::styled(line, Style::default().fg(Color::Green))]
+    } else if line.starts_with('-') && !line.starts_with("---") {
+        vec![Span::styled(line, Style::default().fg(Color::Red))]
+    } else if line.starts_with("@@") {
         vec![Span::styled(line, Style::default().fg(Color::Cyan))]
+    } else if line.starts_with("diff ") || line.starts_with("index ") {
+        vec![Span::styled(line, Style::default().fg(Color::Yellow))]
     } else {
         vec![Span::raw(line)]
     }
