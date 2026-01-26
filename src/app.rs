@@ -959,19 +959,41 @@ fn strip_ansi_escapes(text: &str) -> String {
 
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            // ESC character - start of ANSI sequence
-            if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                // Skip until we find a letter (the command character)
-                while let Some(&next_ch) = chars.peek() {
+            // ESC character - start of escape sequence
+            match chars.peek() {
+                Some(&'[') => {
+                    // CSI sequence: \x1b[...letter
                     chars.next();
-                    if next_ch.is_ascii_alphabetic() {
-                        break;
+                    while let Some(&next_ch) = chars.peek() {
+                        chars.next();
+                        if next_ch.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
-            } else {
-                // Other escape sequences (less common)
-                chars.next();
+                Some(&']') => {
+                    // OSC sequence: \x1b]...(\x07 or \x1b\\)
+                    // Used by Claude Code for progress notifications like \x1b]9;4;0;...\x07
+                    chars.next();
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch == '\x07' {
+                            chars.next();
+                            break;
+                        }
+                        if next_ch == '\x1b' {
+                            chars.next();
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                _ => {
+                    // Other escape sequences
+                    chars.next();
+                }
             }
         } else {
             result.push(ch);

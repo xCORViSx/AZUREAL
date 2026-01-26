@@ -802,32 +802,8 @@ fn handle_input_mode(
                         }
                     }
                 } else {
-                    // Create new session
-                    match app.create_new_session(input) {
-                        Ok(session) => {
-                            app.set_status(format!("Created session: {}", session.name));
-
-                            // Start Claude immediately
-                            let session_id = session.id.clone();
-                            match claude_process.spawn(
-                                session_id.clone(),
-                                &session.worktree_path,
-                                &session.initial_prompt,
-                                None,
-                            ) {
-                                Ok(rx) => {
-                                    app.claude_receiver = Some(rx);
-                                    app.running_session_id = Some(session_id);
-                                }
-                                Err(e) => {
-                                    app.set_status(format!("Failed to start: {}", e));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            app.set_status(format!("Failed to create session: {}", e));
-                        }
-                    }
+                    // No running session - prompt user to start one first
+                    app.set_status("No running session. Select a session and press Enter to start it.");
                 }
                 app.focus = Focus::Sessions;
             }
