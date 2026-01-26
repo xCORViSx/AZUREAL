@@ -170,6 +170,36 @@ impl<'a> SessionManager<'a> {
     pub fn set_exit_code(&self, session_id: &str, exit_code: Option<i32>) -> Result<()> {
         self.db.update_session_exit_code(session_id, exit_code)
     }
+
+    /// List sessions eligible for cleanup (completed, failed, stopped, or archived)
+    pub fn list_cleanable_sessions(&self, project_id: i64) -> Result<Vec<Session>> {
+        self.db.list_cleanable_sessions(project_id)
+    }
+
+    /// Clean up a session by removing its worktree and optionally its branch
+    pub fn cleanup_session(
+        &self,
+        session: &Session,
+        project: &Project,
+        delete_branch: bool,
+    ) -> Result<()> {
+        // Remove worktree if it exists
+        if session.worktree_path.exists() {
+            Git::remove_worktree(&project.path, &session.worktree_path)
+                .context("Failed to remove worktree")?;
+        }
+
+        // Delete the branch if requested
+        if delete_branch {
+            Git::delete_branch(&project.path, &session.branch_name)
+                .context("Failed to delete branch")?;
+        }
+
+        // Delete session from database
+        self.db.delete_session(&session.id)?;
+
+        Ok(())
+    }
 }
 
 /// Generate a session name from the prompt

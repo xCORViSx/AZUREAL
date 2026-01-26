@@ -255,4 +255,35 @@ impl Git {
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
+
+    /// Delete a branch
+    pub fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
+        // Try normal deletion first
+        let output = Command::new("git")
+            .args(["branch", "-d", branch_name])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to execute git branch -d")?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        // Try force deletion if normal deletion fails
+        let output = Command::new("git")
+            .args(["branch", "-D", branch_name])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to execute git branch -D")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Don't fail if branch doesn't exist
+            if !stderr.contains("not found") {
+                bail!("Failed to delete branch {}: {}", branch_name, stderr);
+            }
+        }
+
+        Ok(())
+    }
 }

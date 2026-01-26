@@ -281,6 +281,22 @@ impl Database {
         Ok(sessions)
     }
 
+    /// List sessions eligible for cleanup (completed, failed, or archived)
+    pub fn list_cleanable_sessions(&self, project_id: i64) -> Result<Vec<Session>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+             FROM sessions
+             WHERE project_id = ?1 AND (status IN ('completed', 'failed', 'stopped') OR archived = 1)
+             ORDER BY updated_at DESC",
+        )?;
+
+        let sessions = stmt
+            .query_map(params![project_id], |row| Ok(row_to_session(row)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(sessions)
+    }
+
     /// Update session status
     pub fn update_session_status(&self, id: &str, status: SessionStatus) -> Result<()> {
         let now = Utc::now();

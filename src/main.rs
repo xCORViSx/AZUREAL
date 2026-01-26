@@ -185,6 +185,21 @@ enum SessionCommands {
         #[arg(long)]
         stat: bool,
     },
+    /// Clean up worktrees from completed/failed/archived sessions
+    Cleanup {
+        /// Project path (defaults to current directory)
+        #[arg(short = 'd', long)]
+        project: Option<String>,
+        /// Also delete the associated git branches
+        #[arg(long)]
+        delete_branches: bool,
+        /// Perform cleanup without confirmation
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Only show what would be cleaned up (dry run)
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -299,6 +314,14 @@ async fn main() -> Result<()> {
             }
             SessionCommands::Diff { session, stat } => {
                 handle_session_diff(&db, &session, stat)?;
+            }
+            SessionCommands::Cleanup {
+                project,
+                delete_branches,
+                yes,
+                dry_run,
+            } => {
+                handle_session_cleanup(&db, project, delete_branches, yes, dry_run)?;
             }
         },
 
@@ -586,6 +609,77 @@ fn handle_session_diff(db: &db::Database, session_id: &str, stat_only: bool) -> 
     Ok(())
 }
 
+fn handle_session_cleanup(
+    db: &db::Database,
+    project_path: Option<String>,
+    delete_branches: bool,
+    skip_confirm: bool,
+    dry_run: bool,
+) -> Result<()> {
+    let path = project_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
+
+    let project = db.get_or_create_project(&path)?;
+    let manager = session::SessionManager::new(db);
+
+    let sessions = manager.list_cleanable_sessions(project.id)?;
+
+    if sessions.is_empty() {
+        println!("No sessions to clean up.");
+        return Ok(());
+    }
+
+    println!("Sessions eligible for cleanup:");
+    println!("{}", "-".repeat(80));
+    for session in &sessions {
+        println!(
+            "  {} [{}] {} ({})",
+            session.status.symbol(),
+            session.status.as_str(),
+            session.name,
+            session.worktree_path.display()
+        );
+    }
+    println!("{}", "-".repeat(80));
+    println!("Total: {} session(s)", sessions.len());
+
+    if dry_run {
+        println!("\nDry run - no changes made.");
+        return Ok(());
+    }
+
+    if !skip_confirm {
+        print!("\nProceed with cleanup? [y/N] ");
+        use std::io::Write;
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Cleanup cancelled.");
+            return Ok(());
+        }
+    }
+
+    let mut cleaned = 0;
+    let mut errors = 0;
+    for session in &sessions {
+        match manager.cleanup_session(session, &project, delete_branches) {
+            Ok(()) => {
+                println!("Cleaned: {}", session.name);
+                cleaned += 1;
+            }
+            Err(e) => {
+                eprintln!("Error cleaning {}: {}", session.name, e);
+                errors += 1;
+            }
+        }
+    }
+
+    println!("\nCleanup complete: {} cleaned, {} errors", cleaned, errors);
+    Ok(())
+}
+
 // ==================== Project Handlers ====================
 
 fn handle_project_list(db: &db::Database, output_format: OutputFormat) -> Result<()> {
@@ -747,7 +841,7 @@ fn handle_project_config(
     }
 
     if let Some(prompt) = system_prompt {
-        db.update_project_system_prompt(project.id, &prompt)?;
+        db.update_project_system_prompt(project.id, Some(&prompt))?;
         println!("Updated system prompt");
     }
 
