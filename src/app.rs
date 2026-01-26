@@ -8,6 +8,7 @@ use crate::git::Git;
 use crate::models::{Project, RebaseStatus, Session, SessionStatus};
 use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
+use crate::wizard::SessionCreationWizard;
 
 /// Application state
 pub struct App {
@@ -31,6 +32,10 @@ pub struct App {
     pub input: String,
     /// Input cursor position
     pub input_cursor: usize,
+    /// Session creation prompt (multi-line)
+    pub session_creation_input: String,
+    /// Session creation cursor position (linear position in string)
+    pub session_creation_cursor: usize,
     /// Current view mode
     pub view_mode: ViewMode,
     /// Current focus
@@ -61,6 +66,8 @@ pub struct App {
     pub selected_conflict: Option<usize>,
     /// Context menu state
     pub context_menu: Option<ContextMenu>,
+    /// Session creation wizard (if active)
+    pub creation_wizard: Option<SessionCreationWizard>,
 }
 
 /// State for the branch selection dialog
@@ -182,6 +189,8 @@ impl App {
             output_buffer: String::new(),
             input: String::new(),
             input_cursor: 0,
+            session_creation_input: String::new(),
+            session_creation_cursor: 0,
             view_mode: ViewMode::Output,
             focus: Focus::Sessions,
             should_quit: false,
@@ -197,6 +206,7 @@ impl App {
             rebase_status: None,
             selected_conflict: None,
             context_menu: None,
+            creation_wizard: None,
         }
     }
 
@@ -660,7 +670,7 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-// Session creation input methods
+    // Session creation input methods
 
     /// Handle character input for session creation
     pub fn session_creation_char(&mut self, c: char) {
@@ -832,55 +842,21 @@ impl App {
         self.context_menu.as_ref().map(|menu| menu.actions[menu.selected].clone())
     }
 
-    /// Cycle to next view mode
-    pub fn next_view_mode(&mut self) {
-        self.view_mode = match self.view_mode {
-            ViewMode::Output => ViewMode::Diff,
-            ViewMode::Diff => ViewMode::Messages,
-            ViewMode::Messages => ViewMode::Rebase,
-            ViewMode::Rebase => ViewMode::Output,
-        };
-        self.load_view_content();
+    /// Start the session creation wizard
+    pub fn start_wizard(&mut self) {
+        self.creation_wizard = Some(SessionCreationWizard::new(&self.projects));
+        self.focus = Focus::Input; // Reuse Input focus for wizard
     }
 
-    /// Cycle to previous view mode
-    pub fn prev_view_mode(&mut self) {
-        self.view_mode = match self.view_mode {
-            ViewMode::Output => ViewMode::Rebase,
-            ViewMode::Rebase => ViewMode::Messages,
-            ViewMode::Messages => ViewMode::Diff,
-            ViewMode::Diff => ViewMode::Output,
-        };
-        self.load_view_content();
+    /// Cancel the wizard
+    pub fn cancel_wizard(&mut self) {
+        self.creation_wizard = None;
+        self.focus = Focus::Sessions;
     }
 
-    /// Load content for the current view mode
-    fn load_view_content(&mut self) {
-        match self.view_mode {
-            ViewMode::Output => {
-                // Output is already loaded
-                self.output_scroll = 0;
-            }
-            ViewMode::Diff => {
-                // Load diff if we don't have it
-                if self.diff_text.is_none() {
-                    if let Some(session) = self.current_session() {
-                        if let Some(project) = self.current_project() {
-                            if let Ok(diff) = crate::git::Git::get_diff(&session.worktree_path, &project.main_branch) {
-                                self.diff_text = Some(diff.diff_text);
-                            }
-                        }
-                    }
-                }
-                self.diff_scroll = 0;
-            }
-            ViewMode::Messages => {
-                // Messages view content would go here
-            }
-            ViewMode::Rebase => {
-                // Rebase view - content is already in rebase_status
-            }
-        }
+    /// Check if wizard is active
+    pub fn is_wizard_active(&self) -> bool {
+        self.creation_wizard.is_some()
     }
 }
 

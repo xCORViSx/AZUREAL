@@ -16,12 +16,13 @@ use std::io;
 use std::time::Duration;
 
 use crate::app::{App, BranchDialog, Focus, ViewMode, SessionAction};
-use crate::claude::{ClaudeEvent, ClaudeMessage, ClaudeProcess};
+use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
 use crate::models::{RebaseResult, RebaseState, SessionStatus};
 use crate::session::SessionManager;
+use crate::wizard::WizardStep;
 
 /// Events that can occur in the TUI
 #[derive(Debug)]
@@ -211,6 +212,12 @@ fn handle_key_event(
         return Ok(());
     }
 
+    // If wizard is active, handle wizard input
+    if app.is_wizard_active() {
+        handle_wizard_input(app, key.code, claude_process);
+        return Ok(());
+    }
+
     // Mode-specific keybindings
     match app.focus {
         Focus::Sessions => handle_sessions_input(key, app, claude_process)?,
@@ -335,8 +342,8 @@ fn handle_sessions_input(
             app.open_context_menu();
         }
         KeyCode::Char('n') => {
-            app.focus = Focus::Input;
-            app.set_status("Enter prompt for new session:");
+            // Start session creation wizard
+            app.start_wizard();
         }
         KeyCode::Char('w') => {
             // Create worktree from existing branch
@@ -548,9 +555,6 @@ fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 _ => {}
             }
         }
-        // h/l and arrow keys for view tab switching
-        (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => app.next_view_mode(),
-        (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => app.prev_view_mode(),
         (KeyModifiers::NONE, KeyCode::Tab) => app.focus = Focus::Input,
         (KeyModifiers::NONE, KeyCode::Char('o')) => {
             app.view_mode = ViewMode::Output;
@@ -815,12 +819,12 @@ fn handle_input_mode(
                 app.focus = Focus::Sessions;
             }
         }
-        KeyCode::Esc => {
+        (_, KeyCode::Esc) => {
             app.clear_input();
             app.clear_status();
             app.focus = Focus::Sessions;
         }
-        KeyCode::Tab => app.focus = Focus::Sessions,
+        (_, KeyCode::Tab) => app.focus = Focus::Sessions,
         _ => {}
     }
     Ok(())
@@ -924,6 +928,13 @@ fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()>
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
+    // If wizard is active, show wizard modal
+    if app.is_wizard_active() {
+        draw_wizard_modal(f, app);
+        return;
+    }
+
+
     // Main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1310,9 +1321,9 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
                     "?:help  Space:actions  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
                 }
             }
-            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  h/l:tabs  s:save  o:output  Esc:back",
-            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  h/l:tabs  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
-            (Focus::Output, _) => "?:help  j/k:scroll  h/l:tabs  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  R:rebase  Esc:back  q:quit",
+            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
+            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
+            (Focus::Output, _) => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  R:rebase  Esc:back  q:quit",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             (Focus::SessionCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
@@ -1348,114 +1359,13 @@ fn is_scrolled_to_bottom(app: &App) -> bool {
 }
 
 fn colorize_output(line: &str) -> Vec<Span<'_>> {
-    use ansi_to_tui::IntoText;
-
-    // First, try to handle ANSI escape codes if present
-    if line.contains('\x1b') {
-        // Convert ANSI to ratatui spans
-        if let Ok(text) = line.into_text() {
-            if let Some(first_line) = text.lines.into_iter().next() {
-                return first_line.spans;
-            }
-        }
-    }
-
-    // Try to parse as Claude JSON message
-    if line.starts_with('{') {
-        if let Some(msg) = ClaudeMessage::parse(line) {
-            return colorize_claude_message(&msg);
-        }
-        // If JSON parsing fails, still colorize as JSON
-        return vec![Span::styled(line, Style::default().fg(Color::Cyan))];
-    }
-
-    // Pattern-based colorization for plain text
-    if line.starts_with("Error") || line.starts_with("error") || line.contains("ERROR") {
-        vec![Span::styled(line, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))]
-    } else if line.starts_with("Warning") || line.contains("WARN") {
-        vec![Span::styled(line, Style::default().fg(Color::Yellow))]
-    } else if line.starts_with("Success") || line.contains("✓") {
-        vec![Span::styled(line, Style::default().fg(Color::Green))]
-    } else if line.starts_with('>') || line.contains("Tool:") || line.contains(">>>") {
-        vec![Span::styled(line, Style::default().fg(Color::Magenta))]
-    } else if line.starts_with("$") || line.starts_with("►") {
-        vec![Span::styled(line, Style::default().fg(Color::Yellow))]
-    } else if line.starts_with("//") || line.starts_with("#") {
-        vec![Span::styled(line, Style::default().fg(Color::Gray))]
-    } else {
-        vec![Span::raw(line)]
-    }
-}
-
-fn colorize_claude_message(msg: &ClaudeMessage) -> Vec<Span<'static>> {
-    use crate::claude::ContentBlock;
-
-    match msg {
-        ClaudeMessage::Assistant { message } => {
-            let mut spans = vec![
-                Span::styled("Assistant: ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
-            ];
-            for block in &message.content {
-                match block {
-                    ContentBlock::Text { text } => {
-                        spans.push(Span::raw(text.clone()));
-                    }
-                    ContentBlock::ToolUse { name, .. } => {
-                        spans.push(Span::styled(
-                            format!(" [Tool: {}]", name),
-                            Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC)
-                        ));
-                    }
-                    ContentBlock::ToolResult { .. } => {
-                        spans.push(Span::styled(
-                            " [Tool Result]",
-                            Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC)
-                        ));
-                    }
-                }
-            }
-            spans
-        }
-        ClaudeMessage::User { message } => {
-            let mut spans = vec![
-                Span::styled("User: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
-            ];
-            for block in &message.content {
-                if let ContentBlock::Text { text } = block {
-                    spans.push(Span::raw(text.clone()));
-                }
-            }
-            spans
-        }
-        ClaudeMessage::Result { result, subtype } => {
-            let prefix = if let Some(st) = subtype {
-                format!("Result ({}): ", st)
-            } else {
-                "Result: ".to_string()
-            };
-            vec![
-                Span::styled(prefix, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::raw(result.clone())
-            ]
-        }
-        ClaudeMessage::System { message } => {
-            vec![
-                Span::styled("System: ", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC)),
-                Span::raw(message.clone())
-            ]
-        }
-    }
-}
-
-fn colorize_diff(line: &str) -> Vec<Span<'_>> {
-    if line.starts_with('+') && !line.starts_with("+++") {
-        vec![Span::styled(line, Style::default().fg(Color::Green))]
-    } else if line.starts_with('-') && !line.starts_with("---") {
+    // Basic colorization for Claude output
+    if line.starts_with("Error") || line.starts_with("error") {
         vec![Span::styled(line, Style::default().fg(Color::Red))]
-    } else if line.starts_with("@@") {
-        vec![Span::styled(line, Style::default().fg(Color::Cyan))]
-    } else if line.starts_with("diff ") || line.starts_with("index ") {
+    } else if line.starts_with('>') || line.contains("Tool:") {
         vec![Span::styled(line, Style::default().fg(Color::Yellow))]
+    } else if line.starts_with('{') {
+        vec![Span::styled(line, Style::default().fg(Color::Cyan))]
     } else {
         vec![Span::raw(line)]
     }
@@ -1602,8 +1512,6 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  PageUp           Scroll up 10 lines"),
         Line::from("  g                Jump to top"),
         Line::from("  G                Jump to bottom"),
-        Line::from("  h / Left         Previous view tab"),
-        Line::from("  l / Right        Next view tab"),
         Line::from("  o                Switch to output view"),
         Line::from("  d                Switch to diff view"),
         Line::from("  Esc              Return to Sessions panel"),
@@ -1815,5 +1723,365 @@ fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
         );
 
         f.render_widget(list, menu_area);
+    }
+}
+
+fn draw_wizard_modal(f: &mut Frame, app: &App) {
+    let Some(ref wizard) = app.creation_wizard else {
+        return;
+    };
+
+    // Create a centered modal
+    let area = f.area();
+    let modal_width = area.width.min(80);
+    let modal_height = area.height.min(25);
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear the background with a semi-transparent effect (just draw spaces)
+    let background = Block::default().style(Style::default().bg(Color::Black));
+    f.render_widget(background, area);
+
+    // Draw the modal
+    let modal_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" New Session - {} ", wizard.step_title()))
+        .style(Style::default().bg(Color::Black));
+
+    f.render_widget(modal_block, modal_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: modal_area.x + 2,
+        y: modal_area.y + 2,
+        width: modal_area.width.saturating_sub(4),
+        height: modal_area.height.saturating_sub(4),
+    };
+
+    // Progress indicator
+    let (current_step, total_steps) = wizard.step_progress();
+    let progress_text = format!("Step {} of {}", current_step, total_steps);
+    let progress = Paragraph::new(progress_text)
+        .style(Style::default().fg(Color::Gray));
+
+    let progress_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 1,
+    };
+    f.render_widget(progress, progress_area);
+
+    // Content area (depends on current step)
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y + 2,
+        width: inner.width,
+        height: inner.height.saturating_sub(5),
+    };
+
+    match wizard.step {
+        WizardStep::SelectProject => {
+            draw_wizard_project_selection(f, app, wizard, content_area);
+        }
+        WizardStep::EnterPrompt => {
+            draw_wizard_prompt_input(f, wizard, content_area);
+        }
+        WizardStep::Confirm => {
+            draw_wizard_confirmation(f, app, wizard, content_area);
+        }
+    }
+
+    // Error messages
+    if !wizard.errors.is_empty() {
+        let error_area = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(3),
+            width: inner.width,
+            height: 2,
+        };
+        let error_text = wizard.errors.join(", ");
+        let error = Paragraph::new(error_text)
+            .style(Style::default().fg(Color::Red))
+            .wrap(Wrap { trim: true });
+        f.render_widget(error, error_area);
+    }
+
+    // Help text at bottom
+    let help_area = Rect {
+        x: inner.x,
+        y: inner.y + inner.height.saturating_sub(1),
+        width: inner.width,
+        height: 1,
+    };
+    let help = Paragraph::new(wizard.help_text())
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(help, help_area);
+}
+
+fn draw_wizard_project_selection(f: &mut Frame, app: &App, wizard: &crate::wizard::SessionCreationWizard, area: Rect) {
+    let instruction = Paragraph::new("Select a project for this session:")
+        .style(Style::default().fg(Color::White));
+
+    let instruction_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: 2,
+    };
+    f.render_widget(instruction, instruction_area);
+
+    // Project list
+    let list_area = Rect {
+        x: area.x,
+        y: area.y + 3,
+        width: area.width,
+        height: area.height.saturating_sub(3),
+    };
+
+    let items: Vec<ListItem> = app.projects.iter().enumerate().map(|(idx, project)| {
+        let is_selected = wizard.selected_project_idx == Some(idx);
+        let style = if is_selected {
+            Style::default().bg(Color::DarkGray).fg(Color::White)
+        } else {
+            Style::default()
+        };
+
+        let prefix = if is_selected { "▸ " } else { "  " };
+        ListItem::new(Line::from(vec![
+            Span::raw(prefix),
+            Span::styled(&project.name, style),
+            Span::raw(" "),
+            Span::styled(format!("({})", project.path.display()), Style::default().fg(Color::Gray)),
+        ]))
+    }).collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::NONE));
+
+    f.render_widget(list, list_area);
+}
+
+fn draw_wizard_prompt_input(f: &mut Frame, wizard: &crate::wizard::SessionCreationWizard, area: Rect) {
+    let instruction = Paragraph::new("Enter a prompt to start your Claude Code session:\n(This will be the initial message sent to Claude)")
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: true });
+
+    let instruction_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: 3,
+    };
+    f.render_widget(instruction, instruction_area);
+
+    // Prompt input box
+    let input_area = Rect {
+        x: area.x,
+        y: area.y + 4,
+        width: area.width,
+        height: 5,
+    };
+
+    let input = Paragraph::new(wizard.prompt.as_str())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Prompt ")
+                .border_style(Style::default().fg(Color::Yellow))
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(input, input_area);
+
+    // Show cursor
+    let cursor_x = input_area.x + 1 + (wizard.prompt_cursor as u16 % (input_area.width - 2));
+    let cursor_y = input_area.y + 1 + (wizard.prompt_cursor as u16 / (input_area.width - 2));
+    f.set_cursor_position((cursor_x, cursor_y));
+
+    // Session name preview
+    if !wizard.session_name_preview.is_empty() {
+        let preview_area = Rect {
+            x: area.x,
+            y: area.y + 10,
+            width: area.width,
+            height: 3,
+        };
+
+        let preview_text = format!("Session name: {}", wizard.session_name_preview);
+        let preview = Paragraph::new(preview_text)
+            .style(Style::default().fg(Color::Cyan))
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(preview, preview_area);
+    }
+}
+
+fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &crate::wizard::SessionCreationWizard, area: Rect) {
+    let selected_project = wizard.selected_project_idx
+        .and_then(|idx| app.projects.get(idx));
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Ready to create session", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+    ];
+
+    if let Some(project) = selected_project {
+        lines.push(Line::from(vec![
+            Span::styled("Project: ", Style::default().fg(Color::Gray)),
+            Span::styled(&project.name, Style::default().fg(Color::Cyan)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled("Session name: ", Style::default().fg(Color::Gray)),
+        Span::styled(&wizard.session_name_preview, Style::default().fg(Color::Cyan)),
+    ]));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(vec![
+        Span::styled("Initial prompt:", Style::default().fg(Color::Gray)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Wrap prompt text
+    let prompt_wrapped = textwrap::wrap(&wizard.prompt, (area.width as usize).saturating_sub(4));
+    for line in prompt_wrapped {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {}", line), Style::default().fg(Color::White)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Press Enter to create and start the session", Style::default().fg(Color::Green)),
+    ]));
+
+    let confirmation = Paragraph::new(lines)
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(confirmation, area);
+}
+
+fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &ClaudeProcess) {
+    let Some(wizard) = app.creation_wizard.as_mut() else {
+        return;
+    };
+
+    match wizard.step {
+        WizardStep::SelectProject => {
+            match key_code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    wizard.select_next_project(app.projects.len());
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    wizard.select_prev_project();
+                }
+                KeyCode::Enter => {
+                    if wizard.next_step() {
+                        // Successfully moved to next step
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.cancel_wizard();
+                }
+                _ => {}
+            }
+        }
+        WizardStep::EnterPrompt => {
+            match key_code {
+                KeyCode::Char(c) => {
+                    wizard.input_char(c);
+                }
+                KeyCode::Backspace => {
+                    wizard.input_backspace();
+                }
+                KeyCode::Delete => {
+                    wizard.input_delete();
+                }
+                KeyCode::Left => {
+                    wizard.cursor_left();
+                }
+                KeyCode::Right => {
+                    wizard.cursor_right();
+                }
+                KeyCode::Home => {
+                    wizard.cursor_home();
+                }
+                KeyCode::End => {
+                    wizard.cursor_end();
+                }
+                KeyCode::Enter => {
+                    if wizard.next_step() {
+                        // Successfully moved to confirmation step
+                    }
+                }
+                KeyCode::Esc => {
+                    wizard.prev_step();
+                }
+                _ => {}
+            }
+        }
+        WizardStep::Confirm => {
+            match key_code {
+                KeyCode::Enter => {
+                    // Create the session
+                    if let Some(project_idx) = wizard.selected_project_idx {
+                        if let Some(project) = app.projects.get(project_idx).cloned() {
+                            let prompt = wizard.prompt.clone();
+
+                            match SessionManager::new(&app.db).create_session(&project, &prompt) {
+                                Ok(session) => {
+                                    app.set_status(format!("Created session: {}", session.name));
+                                    let _ = app.refresh_sessions();
+
+                                    // Start Claude immediately
+                                    match claude_process.spawn(
+                                        session.id.clone(),
+                                        &session.worktree_path,
+                                        &session.initial_prompt,
+                                        None,
+                                    ) {
+                                        Ok(rx) => {
+                                            app.claude_receiver = Some(rx);
+                                            app.running_session_id = Some(session.id);
+                                            app.selected_session = Some(0);
+                                            app.load_session_output();
+                                        }
+                                        Err(e) => {
+                                            app.set_status(format!("Failed to start: {}", e));
+                                        }
+                                    }
+
+                                    app.cancel_wizard();
+                                }
+                                Err(e) => {
+                                    app.set_status(format!("Failed to create session: {}", e));
+                                    // Stay in wizard to show error
+                                }
+                            }
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    wizard.prev_step();
+                }
+                KeyCode::Char('q') => {
+                    app.cancel_wizard();
+                }
+                _ => {}
+            }
+        }
     }
 }

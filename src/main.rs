@@ -8,6 +8,7 @@ mod models;
 mod session;
 mod syntax;
 mod tui;
+mod wizard;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
