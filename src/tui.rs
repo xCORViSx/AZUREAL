@@ -482,19 +482,77 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
-    let status_text = if let Some(ref msg) = app.status_message {
+    // Build status line with session info
+    let mut status_spans = Vec::new();
+
+    // Session info (left side)
+    if let Some(session) = app.current_session() {
+        // Session status with color
+        let status_color = session.status.color();
+        status_spans.push(Span::styled(
+            format!("{} ", session.status.symbol()),
+            Style::default().fg(status_color),
+        ));
+
+        // Session name
+        status_spans.push(Span::styled(
+            truncate(&session.name, 25),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        ));
+
+        // PID if running
+        if let Some(pid) = session.pid {
+            status_spans.push(Span::raw(" "));
+            status_spans.push(Span::styled(
+                format!("[PID: {}]", pid),
+                Style::default().fg(Color::Green),
+            ));
+        }
+
+        // Branch name
+        status_spans.push(Span::raw(" "));
+        status_spans.push(Span::styled(
+            format!("({})", session.branch_name),
+            Style::default().fg(Color::Cyan),
+        ));
+    } else {
+        status_spans.push(Span::styled(
+            "No session selected",
+            Style::default().fg(Color::Gray),
+        ));
+    }
+
+    // Separator
+    status_spans.push(Span::raw(" │ "));
+
+    // View mode indicator
+    let view_text = match app.view_mode {
+        ViewMode::Output => "Output",
+        ViewMode::Diff => "Diff",
+        ViewMode::Messages => "Messages",
+    };
+    status_spans.push(Span::styled(
+        view_text,
+        Style::default().fg(Color::Yellow),
+    ));
+
+    // Separator
+    status_spans.push(Span::raw(" │ "));
+
+    // Help text or status message
+    let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-        let help = match app.focus {
-            Focus::Sessions => "n:new  d:diff  r:rebase  a:archive  Enter:start  Tab:switch  q:quit",
-            Focus::Output => "j/k:scroll  o:output  d:diff  Tab:switch  Esc:back  q:quit",
+        match app.focus {
+            Focus::Sessions => "n:new  d:diff  r:rebase  a:archive  Enter:start  q:quit",
+            Focus::Output => "j/k:scroll  o:output  d:diff  Esc:back  q:quit",
             Focus::Input => "Enter:submit  Esc:cancel",
-        };
-        help.to_string()
+        }.to_string()
     };
+    status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
-    let status = Paragraph::new(status_text)
-        .style(Style::default().fg(Color::Gray));
+    let status = Paragraph::new(Line::from(status_spans))
+        .style(Style::default().bg(Color::Black));
 
     f.render_widget(status, area);
 }
