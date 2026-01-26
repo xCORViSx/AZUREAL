@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::{Project, Session, SessionStatus};
+use crate::models::{DiffInfo, Project, Session, SessionStatus};
 use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
 
@@ -47,6 +47,8 @@ pub struct App {
     pub claude_receiver: Option<Receiver<ClaudeEvent>>,
     /// Current diff text (if viewing diff)
     pub diff_text: Option<String>,
+    /// Current diff info (with stats)
+    pub diff_info: Option<DiffInfo>,
     /// Scroll offset for output
     pub output_scroll: usize,
     /// Scroll offset for diff
@@ -55,6 +57,8 @@ pub struct App {
     pub diff_highlighter: DiffHighlighter,
     /// Whether to show help overlay
     pub show_help: bool,
+    /// Cached diff stats for sessions (session_id -> (additions, deletions, files_count))
+    pub diff_stats_cache: std::collections::HashMap<String, (i32, i32, usize)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,10 +97,12 @@ impl App {
             status_message: None,
             claude_receiver: None,
             diff_text: None,
+            diff_info: None,
             output_scroll: 0,
             diff_scroll: 0,
             diff_highlighter: DiffHighlighter::new(),
             show_help: false,
+            diff_stats_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -120,6 +126,8 @@ impl App {
             } else {
                 Some(0)
             };
+            // Load diff stats for all sessions
+            self.load_diff_stats();
         }
         Ok(())
     }
@@ -527,6 +535,38 @@ impl App {
         self.focus = Focus::Sessions;
         self.clear_session_creation_input();
         self.clear_status();
+    }
+
+    /// Load diff stats for all sessions in current project
+    pub fn load_diff_stats(&mut self) {
+        self.diff_stats_cache.clear();
+        for session in &self.sessions {
+            if let Ok(Some(stats)) = self.db.get_diff_stats(&session.id) {
+                self.diff_stats_cache.insert(session.id.clone(), stats);
+            }
+        }
+    }
+
+    /// Get diff stats for a session
+    pub fn get_session_diff_stats(&self, session_id: &str) -> Option<&(i32, i32, usize)> {
+        self.diff_stats_cache.get(session_id)
+    }
+
+    /// Save current diff to database
+    pub fn save_current_diff(&mut self) -> anyhow::Result<()> {
+        // Get session_id first to avoid borrow conflicts
+        let session_id = self.current_session().map(|s| s.id.clone());
+
+        if let (Some(ref mut diff_info), Some(session_id)) = (&mut self.diff_info, session_id) {
+            diff_info.session_id = session_id.clone();
+            self.db.save_diff(diff_info)?;
+            // Update cache
+            self.diff_stats_cache.insert(
+                session_id,
+                (diff_info.additions, diff_info.deletions, diff_info.files_changed.len()),
+            );
+        }
+        Ok(())
     }
 }
 

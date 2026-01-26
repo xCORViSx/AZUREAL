@@ -90,13 +90,22 @@ enum Commands {
         session: String,
     },
 
-    /// Show diff for a session's worktree
+    /// Generate or show diff for a session's worktree
     Diff {
         /// Session ID or name
         session: String,
-        /// Show stat only (files changed summary)
+        /// Output format (unified, stat, patch, json)
+        #[arg(short, long, default_value = "unified")]
+        format: String,
+        /// Save diff to file
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Save snapshot to database
         #[arg(long)]
-        stat: bool,
+        save: bool,
+        /// Show diff history
+        #[arg(long)]
+        history: bool,
     },
 }
 
@@ -177,13 +186,22 @@ enum SessionCommands {
         lines: usize,
     },
 
-    /// Show diff for a session's worktree
+    /// Generate or show diff for a session
     Diff {
         /// Session ID or name
         session: String,
-        /// Show stat only (files changed summary)
+        /// Output format (unified, stat, patch, json)
+        #[arg(short, long, default_value = "unified")]
+        format: String,
+        /// Save diff to file
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Save snapshot to database
         #[arg(long)]
-        stat: bool,
+        save: bool,
+        /// Show diff history
+        #[arg(long)]
+        history: bool,
     },
     /// Clean up worktrees from completed/failed/archived sessions
     Cleanup {
@@ -282,8 +300,8 @@ async fn main() -> Result<()> {
         Some(Commands::Status { session }) => {
             handle_session_status(&db, &session, output_format)?;
         }
-        Some(Commands::Diff { session, stat }) => {
-            handle_session_diff(&db, &session, stat)?;
+        Some(Commands::Diff { session, format, output, save, history }) => {
+            handle_session_diff(&db, &session, &format, output, save, history)?;
         }
 
         // Session subcommands
@@ -312,8 +330,8 @@ async fn main() -> Result<()> {
             SessionCommands::Logs { session, follow, lines } => {
                 handle_session_logs(&db, &session, follow, lines)?;
             }
-            SessionCommands::Diff { session, stat } => {
-                handle_session_diff(&db, &session, stat)?;
+            SessionCommands::Diff { session, format, output, save, history } => {
+                handle_session_diff(&db, &session, &format, output, save, history)?;
             }
             SessionCommands::Cleanup {
                 project,
@@ -571,41 +589,100 @@ fn handle_session_logs(db: &db::Database, session_id: &str, _follow: bool, lines
     Ok(())
 }
 
-fn handle_session_diff(db: &db::Database, session_id: &str, stat_only: bool) -> Result<()> {
+fn handle_session_diff(
+    db: &db::Database,
+    session_id: &str,
+    format: &str,
+    output: Option<String>,
+    save: bool,
+    history: bool,
+) -> Result<()> {
     let session = find_session(db, session_id)?;
+
+    // Get project for main branch info
+    let project = db
+        .get_project(session.project_id)?
+        .ok_or_else(|| anyhow::anyhow!("Project not found for session"))?;
+
+    if history {
+        // Show diff history
+        let diffs = db.get_diff_history(&session.id)?;
+        if diffs.is_empty() {
+            println!("No saved diffs for this session.");
+        } else {
+            println!("Diff history for session: {}\n", session.name);
+            for (i, diff) in diffs.iter().enumerate() {
+                println!(
+                    "{}. {} - {} ({} files, +{} -{})",
+                    i + 1,
+                    diff.timestamp.format("%Y-%m-%d %H:%M"),
+                    diff.head_commit
+                        .as_ref()
+                        .map(|c| git::Git::short_hash(c))
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    diff.files_changed.len(),
+                    diff.additions,
+                    diff.deletions
+                );
+            }
+        }
+        return Ok(());
+    }
 
     if !session.worktree_path.exists() {
         anyhow::bail!("Worktree does not exist: {}", session.worktree_path.display());
     }
 
-    let project = db
-        .get_project(session.project_id)?
-        .ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+    // Generate current diff
+    let mut diff = git::Git::get_diff(&session.worktree_path, &project.main_branch)?;
+    diff.session_id = session.id.clone();
 
-    let diff_info = git::Git::get_diff(&session.worktree_path, &project.main_branch)?;
-
-    if stat_only {
-        if diff_info.files_changed.is_empty() {
-            println!("No changes");
-        } else {
-            println!("Files changed:");
-            for file in &diff_info.files_changed {
-                println!("  {}", file);
-            }
-            println!(
-                "\n{} files, +{} -{} lines",
-                diff_info.files_changed.len(),
-                diff_info.additions,
-                diff_info.deletions
-            );
-        }
-    } else {
-        if diff_info.diff_text.is_empty() {
-            println!("No changes");
-        } else {
-            println!("{}", diff_info.diff_text);
-        }
+    if diff.is_empty() {
+        println!("No changes in this session.");
+        return Ok(());
     }
+
+    // Save to database if requested
+    if save {
+        db.save_diff(&diff)?;
+        println!("Diff snapshot saved.");
+    }
+
+    // Format output
+    let output_text = match format {
+        "stat" => {
+            let mut result = String::new();
+            result.push_str(&format!("Session: {}\n", session.name));
+            result.push_str(&format!("Branch: {}\n", session.branch_name));
+            if let Some(ref base) = diff.base_commit {
+                result.push_str(&format!("Base: {}\n", git::Git::short_hash(base)));
+            }
+            if let Some(ref head) = diff.head_commit {
+                result.push_str(&format!("Head: {}\n", git::Git::short_hash(head)));
+            }
+            result.push_str(&format!("\nFiles changed ({}):\n", diff.files_changed.len()));
+            for file in &diff.files_changed {
+                result.push_str(&format!("  {}\n", file));
+            }
+            result.push_str(&format!(
+                "\n{} insertions(+), {} deletions(-)\n",
+                diff.additions, diff.deletions
+            ));
+            result
+        }
+        "patch" => git::Git::generate_patch(&session.worktree_path, &project.main_branch)?,
+        "json" => serde_json::to_string_pretty(&diff)?,
+        _ => diff.diff_text.clone(), // "unified" or default
+    };
+
+    // Output to file or stdout
+    if let Some(path) = output {
+        std::fs::write(&path, &output_text)?;
+        println!("Diff written to: {}", path);
+    } else {
+        println!("{}", output_text);
+    }
+
     Ok(())
 }
 

@@ -292,6 +292,15 @@ fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 app.set_status(format!("Failed to get diff: {}", e));
             }
         }
+        (KeyModifiers::NONE, KeyCode::Char('s')) => {
+            // Save current diff snapshot
+            if app.view_mode == ViewMode::Diff && app.diff_info.is_some() {
+                match app.save_current_diff() {
+                    Ok(()) => app.set_status("Diff snapshot saved"),
+                    Err(e) => app.set_status(format!("Failed to save diff: {}", e)),
+                }
+            }
+        }
         (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
         (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
         _ => {}
@@ -485,12 +494,29 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                     Style::default()
                 };
 
-                items.push(ListItem::new(Line::from(vec![
+                // Build session line with optional diff stats
+                let mut spans = vec![
                     Span::raw("  "),
                     Span::styled(session.status.symbol(), Style::default().fg(status_color)),
                     Span::raw(" "),
-                    Span::styled(truncate(&session.name, 22), style),
-                ])));
+                ];
+
+                // Check for diff stats
+                if let Some(&(additions, deletions, _files)) = app.diff_stats_cache.get(&session.id) {
+                    // Show compact diff indicator
+                    let diff_indicator = format!("+{}-{}", additions, deletions);
+                    let max_name_len = 22 - diff_indicator.len() - 1;
+                    spans.push(Span::styled(truncate(&session.name, max_name_len), style));
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        diff_indicator,
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                } else {
+                    spans.push(Span::styled(truncate(&session.name, 22), style));
+                }
+
+                items.push(ListItem::new(Line::from(spans)));
             }
         }
     }
@@ -513,9 +539,15 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_output(f: &mut Frame, app: &App, area: Rect) {
     let title = match app.view_mode {
-        ViewMode::Output => " Output ",
-        ViewMode::Diff => " Diff (Syntax Highlighted) ",
-        ViewMode::Messages => " Messages ",
+        ViewMode::Output => " Output ".to_string(),
+        ViewMode::Diff => {
+            if let Some(ref diff_info) = app.diff_info {
+                format!(" Diff [Highlighted] ({}) ", diff_info.summary())
+            } else {
+                " Diff (Syntax Highlighted) ".to_string()
+            }
+        }
+        ViewMode::Messages => " Messages ".to_string(),
     };
 
     let content = match app.view_mode {
@@ -536,15 +568,38 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
+                let mut lines: Vec<Line> = Vec::new();
+
+                // Add header with commit info if available
+                if let Some(ref diff_info) = app.diff_info {
+                    if let Some(ref base) = diff_info.base_commit {
+                        lines.push(Line::from(vec![
+                            Span::styled("Base: ", Style::default().fg(Color::Yellow)),
+                            Span::raw(&base[..7.min(base.len())]),
+                        ]));
+                    }
+                    if let Some(ref head) = diff_info.head_commit {
+                        lines.push(Line::from(vec![
+                            Span::styled("Head: ", Style::default().fg(Color::Yellow)),
+                            Span::raw(&head[..7.min(head.len())]),
+                        ]));
+                    }
+                    if !lines.is_empty() {
+                        lines.push(Line::from(""));
+                    }
+                }
+
                 // Use syntax highlighter for diff view
                 let highlighted = app.diff_highlighter.colorize_diff(diff);
-                highlighted
-                    .into_iter()
-                    .skip(app.diff_scroll)
-                    .map(|spans| Line::from(spans))
-                    .collect()
+                lines.extend(
+                    highlighted
+                        .into_iter()
+                        .skip(app.diff_scroll)
+                        .map(|spans| Line::from(spans))
+                );
+                lines
             } else {
-                vec![Line::from("No diff available")]
+                vec![Line::from("No diff available. Press 'd' to generate.")]
             }
         }
         ViewMode::Messages => {
@@ -653,7 +708,10 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.focus {
             Focus::Sessions => "?:help  n:new  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
-            Focus::Output => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
+            Focus::Output => match app.view_mode {
+                ViewMode::Diff => "?:help  j/k:scroll  s:save  o:output  Esc:back",
+                _ => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
+            },
             Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             Focus::SessionCreation => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
         }.to_string()

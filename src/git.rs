@@ -143,6 +143,32 @@ impl Git {
 
     /// Get the diff between worktree and main branch
     pub fn get_diff(worktree_path: &Path, main_branch: &str) -> Result<DiffInfo> {
+        // Get base commit (merge-base)
+        let base_output = Command::new("git")
+            .args(["merge-base", main_branch, "HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get merge-base")?;
+
+        let base_commit = if base_output.status.success() {
+            Some(String::from_utf8_lossy(&base_output.stdout).trim().to_string())
+        } else {
+            None
+        };
+
+        // Get HEAD commit
+        let head_output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get HEAD commit")?;
+
+        let head_commit = if head_output.status.success() {
+            Some(String::from_utf8_lossy(&head_output.stdout).trim().to_string())
+        } else {
+            None
+        };
+
         // Get the diff text
         let diff_output = Command::new("git")
             .args(["diff", &format!("{}...HEAD", main_branch)])
@@ -195,8 +221,41 @@ impl Git {
             files_changed,
             additions,
             deletions,
+            base_commit,
+            head_commit,
             timestamp: chrono::Utc::now(),
         })
+    }
+
+    /// Get short commit hash
+    pub fn short_hash(commit: &str) -> String {
+        commit.chars().take(7).collect()
+    }
+
+    /// Get commit message for a commit hash
+    pub fn get_commit_message(worktree_path: &Path, commit: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args(["log", "-1", "--format=%s", commit])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get commit message")?;
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Generate a patch file content
+    pub fn generate_patch(worktree_path: &Path, main_branch: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args([
+                "format-patch",
+                "--stdout",
+                &format!("{}..HEAD", main_branch),
+            ])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to generate patch")?;
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     /// Rebase worktree onto main branch
