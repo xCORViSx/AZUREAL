@@ -209,6 +209,7 @@ fn handle_key_event(
         Focus::Sessions => handle_sessions_input(key, app, claude_process)?,
         Focus::Output => handle_output_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
+        Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,
     }
 
     Ok(())
@@ -227,8 +228,7 @@ fn handle_sessions_input(
         KeyCode::Char('K') => app.select_prev_project(),
         KeyCode::Tab => app.focus = Focus::Output,
         KeyCode::Char('n') => {
-            app.focus = Focus::Input;
-            app.set_status("Enter prompt for new session:");
+            app.enter_session_creation_mode();
         }
         KeyCode::Char('d') => {
             if let Err(e) = app.load_diff() {
@@ -354,6 +354,65 @@ fn handle_input_mode(
     Ok(())
 }
 
+/// Handle keyboard input when session creation modal is focused
+fn handle_session_creation_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+) -> Result<()> {
+    match (key.modifiers, key.code) {
+        // Ctrl+Enter to submit
+        (KeyModifiers::CONTROL, KeyCode::Enter) => {
+            if !app.session_creation_input.is_empty() {
+                let prompt = app.session_creation_input.clone();
+                app.exit_session_creation_mode();
+
+                match app.create_new_session(prompt) {
+                    Ok(session) => {
+                        app.set_status(format!("Created session: {}", session.name));
+
+                        // Start Claude immediately
+                        match claude_process.spawn(
+                            &session.worktree_path,
+                            &session.initial_prompt,
+                            None,
+                        ) {
+                            Ok(rx) => {
+                                app.claude_receiver = Some(rx);
+                            }
+                            Err(e) => {
+                                app.set_status(format!("Failed to start: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Failed to create session: {}", e));
+                    }
+                }
+            }
+        }
+        // Regular Enter adds newline
+        (KeyModifiers::NONE, KeyCode::Enter) => {
+            app.session_creation_char('\n');
+        }
+        // Character input
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+            app.session_creation_char(c);
+        }
+        (_, KeyCode::Backspace) => app.session_creation_backspace(),
+        (_, KeyCode::Delete) => app.session_creation_delete(),
+        (_, KeyCode::Left) => app.session_creation_left(),
+        (_, KeyCode::Right) => app.session_creation_right(),
+        (_, KeyCode::Home) => app.session_creation_home(),
+        (_, KeyCode::End) => app.session_creation_end(),
+        (_, KeyCode::Esc) => {
+            app.exit_session_creation_mode();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn ui(f: &mut Frame, app: &App) {
     // Main layout
     let chunks = Layout::default()
@@ -385,6 +444,11 @@ fn ui(f: &mut Frame, app: &App) {
 
     // Draw status bar
     draw_status(f, app, chunks[2]);
+
+    // Draw session creation modal if in session creation mode
+    if app.focus == Focus::SessionCreation {
+        draw_session_creation_modal(f, app);
+    }
 
     // Draw help overlay if active
     if app.show_help {
@@ -587,12 +651,12 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-        let help = match app.focus {
+        match app.focus {
             Focus::Sessions => "?:help  n:new  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
             Focus::Output => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
             Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
-        };
-        help.to_string()
+            Focus::SessionCreation => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
+        }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
@@ -705,4 +769,116 @@ fn draw_help_overlay(f: &mut Frame) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(help, help_area);
+}
+
+fn draw_session_creation_modal(f: &mut Frame, app: &App) {
+    use ratatui::layout::Alignment;
+
+    // Calculate centered modal area (80% width, 60% height)
+    let area = f.area();
+    let modal_width = (area.width * 4) / 5;
+    let modal_height = (area.height * 3) / 5;
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear the background with a semi-transparent effect
+    let bg_block = Block::default()
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(bg_block, modal_area);
+
+    // Split modal into sections
+    let modal_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Min(10),   // Input area
+            Constraint::Length(3), // Info/stats
+        ])
+        .split(modal_area);
+
+    // Draw title
+    let title = Paragraph::new("Create New Session")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT));
+    f.render_widget(title, modal_chunks[0]);
+
+    // Draw input area with content
+    let input_text = &app.session_creation_input;
+    let lines: Vec<Line> = input_text
+        .split('\n')
+        .map(|line| Line::from(line))
+        .collect();
+
+    let input_widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::LEFT | Borders::RIGHT)
+                .style(Style::default().fg(Color::Yellow))
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(input_widget, modal_chunks[1]);
+
+    // Calculate cursor position for rendering
+    if let Some((cursor_x, cursor_y)) = calculate_cursor_position(
+        input_text,
+        app.session_creation_cursor,
+        modal_chunks[1].width.saturating_sub(2) as usize,
+    ) {
+        f.set_cursor_position((
+            modal_chunks[1].x + 1 + cursor_x as u16,
+            modal_chunks[1].y + cursor_y as u16,
+        ));
+    }
+
+    // Draw info bar
+    let char_count = input_text.len();
+    let line_count = input_text.lines().count().max(1);
+    let info_text = format!(
+        " {} chars | {} lines | Ctrl+Enter: Submit | Esc: Cancel ",
+        char_count, line_count
+    );
+
+    let info = Paragraph::new(info_text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Gray))
+        .block(Block::default().borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT));
+
+    f.render_widget(info, modal_chunks[2]);
+}
+
+/// Calculate the visual cursor position in a multi-line text area
+fn calculate_cursor_position(text: &str, cursor: usize, width: usize) -> Option<(usize, usize)> {
+    let mut x = 0;
+    let mut y = 0;
+    let mut pos = 0;
+
+    for ch in text.chars() {
+        if pos >= cursor {
+            break;
+        }
+
+        if ch == '\n' {
+            y += 1;
+            x = 0;
+        } else {
+            x += 1;
+            if x >= width {
+                y += 1;
+                x = 0;
+            }
+        }
+
+        pos += ch.len_utf8();
+    }
+
+    Some((x, y))
 }

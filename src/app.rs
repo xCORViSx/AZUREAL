@@ -31,6 +31,10 @@ pub struct App {
     pub input: String,
     /// Input cursor position
     pub input_cursor: usize,
+    /// Session creation prompt (multi-line)
+    pub session_creation_input: String,
+    /// Session creation cursor position (linear position in string)
+    pub session_creation_cursor: usize,
     /// Current view mode
     pub view_mode: ViewMode,
     /// Current focus
@@ -65,6 +69,7 @@ pub enum Focus {
     Sessions,
     Output,
     Input,
+    SessionCreation,
 }
 
 impl App {
@@ -80,6 +85,8 @@ impl App {
             output_buffer: String::new(),
             input: String::new(),
             input_cursor: 0,
+            session_creation_input: String::new(),
+            session_creation_cursor: 0,
             view_mode: ViewMode::Output,
             focus: Focus::Sessions,
             should_quit: false,
@@ -422,6 +429,7 @@ impl App {
             Focus::Sessions => Focus::Output,
             Focus::Output => Focus::Input,
             Focus::Input => Focus::Sessions,
+            Focus::SessionCreation => Focus::SessionCreation, // Don't cycle out of modal
         };
     }
 
@@ -431,12 +439,94 @@ impl App {
             Focus::Sessions => Focus::Input,
             Focus::Output => Focus::Sessions,
             Focus::Input => Focus::Output,
+            Focus::SessionCreation => Focus::SessionCreation, // Don't cycle out of modal
         };
     }
 
     /// Toggle help overlay
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    // Session creation input methods
+
+    /// Handle character input for session creation
+    pub fn session_creation_char(&mut self, c: char) {
+        self.session_creation_input.insert(self.session_creation_cursor, c);
+        self.session_creation_cursor += c.len_utf8();
+    }
+
+    /// Handle backspace for session creation
+    pub fn session_creation_backspace(&mut self) {
+        if self.session_creation_cursor > 0 {
+            let mut idx = self.session_creation_cursor - 1;
+            while idx > 0 && !self.session_creation_input.is_char_boundary(idx) {
+                idx -= 1;
+            }
+            self.session_creation_input.remove(idx);
+            self.session_creation_cursor = idx;
+        }
+    }
+
+    /// Handle delete for session creation
+    pub fn session_creation_delete(&mut self) {
+        if self.session_creation_cursor < self.session_creation_input.len() {
+            self.session_creation_input.remove(self.session_creation_cursor);
+        }
+    }
+
+    /// Move cursor left in session creation
+    pub fn session_creation_left(&mut self) {
+        if self.session_creation_cursor > 0 {
+            let mut idx = self.session_creation_cursor - 1;
+            while idx > 0 && !self.session_creation_input.is_char_boundary(idx) {
+                idx -= 1;
+            }
+            self.session_creation_cursor = idx;
+        }
+    }
+
+    /// Move cursor right in session creation
+    pub fn session_creation_right(&mut self) {
+        if self.session_creation_cursor < self.session_creation_input.len() {
+            let mut idx = self.session_creation_cursor + 1;
+            while idx < self.session_creation_input.len()
+                && !self.session_creation_input.is_char_boundary(idx)
+            {
+                idx += 1;
+            }
+            self.session_creation_cursor = idx;
+        }
+    }
+
+    /// Move cursor to start of session creation input
+    pub fn session_creation_home(&mut self) {
+        self.session_creation_cursor = 0;
+    }
+
+    /// Move cursor to end of session creation input
+    pub fn session_creation_end(&mut self) {
+        self.session_creation_cursor = self.session_creation_input.len();
+    }
+
+    /// Clear session creation input
+    pub fn clear_session_creation_input(&mut self) {
+        self.session_creation_input.clear();
+        self.session_creation_cursor = 0;
+    }
+
+    /// Enter session creation mode
+    pub fn enter_session_creation_mode(&mut self) {
+        self.focus = Focus::SessionCreation;
+        self.clear_session_creation_input();
+        self.set_status("Enter prompt for new session (Ctrl+Enter to submit, Esc to cancel)");
+    }
+
+    /// Exit session creation mode
+    pub fn exit_session_creation_mode(&mut self) {
+        self.focus = Focus::Sessions;
+        self.clear_session_creation_input();
+        self.clear_status();
     }
 }
 
