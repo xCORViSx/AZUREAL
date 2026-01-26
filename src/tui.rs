@@ -734,15 +734,32 @@ fn handle_input_mode(
     app: &mut App,
     claude_process: &ClaudeProcess,
 ) -> Result<()> {
-    match key.code {
-        KeyCode::Char(c) => app.input_char(c),
-        KeyCode::Backspace => app.input_backspace(),
-        KeyCode::Delete => app.input_delete(),
-        KeyCode::Left => app.input_left(),
-        KeyCode::Right => app.input_right(),
-        KeyCode::Home => app.input_home(),
-        KeyCode::End => app.input_end(),
-        KeyCode::Enter => {
+    match (key.modifiers, key.code) {
+        // Character input
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => app.input_char(c),
+
+        // Basic editing
+        (KeyModifiers::NONE, KeyCode::Backspace) => app.input_backspace(),
+        (KeyModifiers::NONE, KeyCode::Delete) => app.input_delete(),
+
+        // Basic cursor movement
+        (KeyModifiers::NONE, KeyCode::Left) => app.input_left(),
+        (KeyModifiers::NONE, KeyCode::Right) => app.input_right(),
+        (KeyModifiers::NONE, KeyCode::Home) => app.input_home(),
+        (KeyModifiers::NONE, KeyCode::End) => app.input_end(),
+
+        // Word-based movement (Ctrl+Left/Right on Linux/Windows, Alt+Left/Right style)
+        (KeyModifiers::CONTROL, KeyCode::Left) => app.input_word_left(),
+        (KeyModifiers::CONTROL, KeyCode::Right) => app.input_word_right(),
+        (KeyModifiers::ALT, KeyCode::Left) => app.input_word_left(),
+        (KeyModifiers::ALT, KeyCode::Right) => app.input_word_right(),
+
+        // Word deletion (Ctrl+Backspace or Ctrl+W)
+        (KeyModifiers::CONTROL, KeyCode::Backspace) => app.input_delete_word(),
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.input_delete_word(),
+
+        // Submit
+        (KeyModifiers::NONE, KeyCode::Enter) => {
             if !app.input.is_empty() {
                 let input = app.input.clone();
                 app.clear_input();
@@ -1199,7 +1216,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Input (Enter to submit, Esc to cancel) ")
+                .title(" Input (Ctrl+W:del-word  Ctrl+←/→:word-move  Enter:submit  Esc:cancel) ")
                 .border_style(if app.focus == Focus::Input {
                     Style::default().fg(Color::Yellow)
                 } else {

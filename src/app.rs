@@ -427,6 +427,76 @@ impl App {
         self.input_cursor = self.input.len();
     }
 
+    /// Move cursor to previous word boundary
+    pub fn input_word_left(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut pos = self.input_cursor.saturating_sub(1);
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Skip non-whitespace to find word boundary
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        self.input_cursor = pos;
+    }
+
+    /// Move cursor to next word boundary
+    pub fn input_word_right(&mut self) {
+        let chars: Vec<char> = self.input.chars().collect();
+        if self.input_cursor >= chars.len() {
+            return;
+        }
+
+        let mut pos = self.input_cursor;
+
+        // Skip non-whitespace
+        while pos < chars.len() && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        // Skip whitespace
+        while pos < chars.len() && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        self.input_cursor = pos;
+    }
+
+    /// Delete word before cursor
+    pub fn input_delete_word(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut pos = self.input_cursor.saturating_sub(1);
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Skip non-whitespace to find word boundary
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Remove from pos to cursor
+        let before: String = chars[..pos].iter().collect();
+        let after: String = chars[self.input_cursor..].iter().collect();
+        self.input = format!("{}{}", before, after);
+        self.input_cursor = pos;
+    }
+
     /// Clear input
     pub fn clear_input(&mut self) {
         self.input.clear();
