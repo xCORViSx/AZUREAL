@@ -4,7 +4,9 @@ use std::sync::mpsc::Receiver;
 
 use crate::claude::ClaudeEvent;
 use crate::db::Database;
+use crate::git::Git;
 use crate::models::{Project, Session, SessionStatus};
+use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
 
 /// Application state
@@ -280,6 +282,105 @@ impl App {
     pub fn update_session_status(&mut self, session_id: &str, status: SessionStatus) {
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             session.status = status;
+        }
+    }
+
+    /// Handle Claude process started event
+    pub fn handle_claude_started(&mut self, pid: u32) {
+        if let Some(session) = self.current_session() {
+            let session_id = session.id.clone();
+            let _ = self.db.update_session_pid(&session_id, Some(pid));
+            let _ = self.db.update_session_status(&session_id, SessionStatus::Running);
+            self.update_session_status(&session_id, SessionStatus::Running);
+        }
+        self.set_status(format!("Claude started (PID: {})", pid));
+    }
+
+    /// Handle Claude process exited event
+    pub fn handle_claude_exited(&mut self, code: Option<i32>) -> bool {
+        if let Some(session) = self.current_session() {
+            let session_id = session.id.clone();
+            let status = if code == Some(0) {
+                SessionStatus::Completed
+            } else {
+                SessionStatus::Failed
+            };
+            let _ = self.db.update_session_status(&session_id, status);
+            self.update_session_status(&session_id, status);
+        }
+        self.set_status(format!("Claude exited with code: {:?}", code));
+        true // Signal to clear receiver
+    }
+
+    /// Handle Claude output event
+    pub fn handle_claude_output(&mut self, output_type: crate::models::OutputType, data: String) {
+        // Save to database first
+        if let Some(session) = self.current_session() {
+            let session_id = session.id.clone();
+            let _ = self.db.add_session_output(&session_id, output_type, &data);
+        }
+        self.add_output(data);
+    }
+
+    /// Handle Claude error event
+    pub fn handle_claude_error(&mut self, error: String) {
+        self.add_output(format!("Error: {}", error));
+        self.set_status(format!("Error: {}", error));
+    }
+
+    /// Create a new session with the given prompt
+    pub fn create_new_session(&mut self, prompt: String) -> anyhow::Result<crate::models::Session> {
+        if let Some(project) = self.current_project().cloned() {
+            let session = SessionManager::new(&self.db).create_session(&project, &prompt)?;
+            self.refresh_sessions()?;
+            self.selected_session = Some(0);
+            self.load_session_output();
+            Ok(session)
+        } else {
+            anyhow::bail!("No project selected")
+        }
+    }
+
+    /// Archive the current session
+    pub fn archive_current_session(&mut self) -> anyhow::Result<()> {
+        if let Some(session) = self.current_session() {
+            let session_id = session.id.clone();
+            SessionManager::new(&self.db).archive_session(&session_id)?;
+            self.set_status("Session archived");
+            self.refresh_sessions()?;
+        }
+        Ok(())
+    }
+
+    /// Get diff for current session
+    pub fn load_diff(&mut self) -> anyhow::Result<()> {
+        if let Some(session) = self.current_session() {
+            if let Some(project) = self.current_project() {
+                let diff = Git::get_diff(&session.worktree_path, &project.main_branch)?;
+                self.diff_text = Some(diff.diff_text);
+                self.view_mode = ViewMode::Diff;
+                self.focus = Focus::Output;
+                Ok(())
+            } else {
+                anyhow::bail!("No project selected")
+            }
+        } else {
+            anyhow::bail!("No session selected")
+        }
+    }
+
+    /// Rebase current session onto main
+    pub fn rebase_current_session(&mut self) -> anyhow::Result<()> {
+        if let Some(session) = self.current_session() {
+            if let Some(project) = self.current_project() {
+                Git::rebase_onto_main(&session.worktree_path, &project.main_branch)?;
+                self.set_status("Rebased successfully");
+                Ok(())
+            } else {
+                anyhow::bail!("No project selected")
+            }
+        } else {
+            anyhow::bail!("No session selected")
         }
     }
 }

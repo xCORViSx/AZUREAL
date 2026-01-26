@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -20,8 +20,18 @@ use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
-use crate::models::{OutputType, SessionStatus};
-use crate::session::SessionManager;
+use crate::models::SessionStatus;
+
+/// Events that can occur in the TUI
+#[derive(Debug)]
+pub enum TuiEvent {
+    /// User keyboard input
+    Input(event::KeyEvent),
+    /// Claude process event
+    Claude(ClaudeEvent),
+    /// Tick for periodic updates
+    Tick,
+}
 
 /// Run the TUI application
 pub async fn run(db: Database) -> Result<()> {
@@ -73,244 +83,12 @@ async fn run_app(
         // Draw UI
         terminal.draw(|f| ui(f, app))?;
 
-        // Poll for Claude output - collect events first to avoid borrow issues
-        let events: Vec<ClaudeEvent> = if let Some(ref receiver) = app.claude_receiver {
-            let mut events = Vec::new();
-            while let Ok(event) = receiver.try_recv() {
-                events.push(event);
-            }
-            events
-        } else {
-            Vec::new()
-        };
+        // Collect all available events
+        let events = collect_events(app)?;
 
-        let mut should_clear_receiver = false;
+        // Handle each event
         for event in events {
-            match event {
-                ClaudeEvent::Output(output) => {
-                    // Save to database first
-                    if let Some(session) = app.current_session() {
-                        let session_id = session.id.clone();
-                        let _ = app.db.add_session_output(
-                            &session_id,
-                            output.output_type,
-                            &output.data,
-                        );
-                    }
-                    app.add_output(output.data);
-                }
-                ClaudeEvent::Started { pid } => {
-                    if let Some(session) = app.current_session() {
-                        let session_id = session.id.clone();
-                        let _ = app.db.update_session_pid(&session_id, Some(pid));
-                        let _ = app.db.update_session_status(&session_id, SessionStatus::Running);
-                        app.update_session_status(&session_id, SessionStatus::Running);
-                    }
-                    app.set_status(format!("Claude started (PID: {})", pid));
-                }
-                ClaudeEvent::Exited { code } => {
-                    if let Some(session) = app.current_session() {
-                        let session_id = session.id.clone();
-                        let status = if code == Some(0) {
-                            SessionStatus::Completed
-                        } else {
-                            SessionStatus::Failed
-                        };
-                        let _ = app.db.update_session_status(&session_id, status);
-                        app.update_session_status(&session_id, status);
-                    }
-                    app.set_status(format!("Claude exited with code: {:?}", code));
-                    should_clear_receiver = true;
-                }
-                ClaudeEvent::Error(e) => {
-                    app.add_output(format!("Error: {}", e));
-                    app.set_status(format!("Error: {}", e));
-                }
-            }
-        }
-        if should_clear_receiver {
-            app.claude_receiver = None;
-        }
-
-        // Handle input events with timeout
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                // Global keybindings
-                match (key.modifiers, key.code) {
-                    (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                        app.should_quit = true;
-                    }
-                    (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
-                        app.should_quit = true;
-                    }
-                    _ => {}
-                }
-
-                if app.should_quit {
-                    break;
-                }
-
-                // Mode-specific keybindings
-                match app.focus {
-                    Focus::Sessions => match key.code {
-                        KeyCode::Char('j') | KeyCode::Down => app.select_next_session(),
-                        KeyCode::Char('k') | KeyCode::Up => app.select_prev_session(),
-                        KeyCode::Char('J') => app.select_next_project(),
-                        KeyCode::Char('K') => app.select_prev_project(),
-                        KeyCode::Tab => app.focus = Focus::Output,
-                        KeyCode::Char('n') => {
-                            // Create new session
-                            app.focus = Focus::Input;
-                            app.set_status("Enter prompt for new session:");
-                        }
-                        KeyCode::Char('d') => {
-                            // View diff
-                            if let Some(session) = app.current_session() {
-                                if let Some(project) = app.current_project() {
-                                    match Git::get_diff(&session.worktree_path, &project.main_branch) {
-                                        Ok(diff) => {
-                                            app.diff_text = Some(diff.diff_text);
-                                            app.view_mode = ViewMode::Diff;
-                                            app.focus = Focus::Output;
-                                        }
-                                        Err(e) => {
-                                            app.set_status(format!("Failed to get diff: {}", e));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('r') => {
-                            // Rebase from main
-                            if let Some(session) = app.current_session() {
-                                if let Some(project) = app.current_project() {
-                                    match Git::rebase_onto_main(&session.worktree_path, &project.main_branch) {
-                                        Ok(()) => {
-                                            app.set_status("Rebased successfully");
-                                        }
-                                        Err(e) => {
-                                            app.set_status(format!("Rebase failed: {}", e));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            // Archive session
-                            if let Some(session) = app.current_session() {
-                                let session_id = session.id.clone();
-                                if let Err(e) = SessionManager::new(&app.db).archive_session(&session_id) {
-                                    app.set_status(format!("Failed to archive: {}", e));
-                                } else {
-                                    app.set_status("Session archived");
-                                    let _ = app.refresh_sessions();
-                                }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            // Start/resume session
-                            if let Some(session) = app.current_session() {
-                                if session.status == SessionStatus::Pending
-                                    || session.status == SessionStatus::Stopped
-                                    || session.status == SessionStatus::Completed
-                                {
-                                    // Start Claude
-                                    match claude_process.spawn(
-                                        &session.worktree_path,
-                                        &session.initial_prompt,
-                                        None,
-                                    ) {
-                                        Ok(rx) => {
-                                            app.claude_receiver = Some(rx);
-                                            app.set_status("Starting Claude...");
-                                        }
-                                        Err(e) => {
-                                            app.set_status(format!("Failed to start: {}", e));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('q') => app.should_quit = true,
-                        _ => {}
-                    },
-                    Focus::Output => match key.code {
-                        KeyCode::Char('j') | KeyCode::Down => app.scroll_output_down(1),
-                        KeyCode::Char('k') | KeyCode::Up => app.scroll_output_up(1),
-                        KeyCode::Char('G') => app.scroll_output_to_bottom(),
-                        KeyCode::Char('g') => app.output_scroll = 0,
-                        KeyCode::PageDown => app.scroll_output_down(10),
-                        KeyCode::PageUp => app.scroll_output_up(10),
-                        KeyCode::Tab => app.focus = Focus::Input,
-                        KeyCode::Char('o') => app.view_mode = ViewMode::Output,
-                        KeyCode::Char('d') => {
-                            if let Some(session) = app.current_session() {
-                                if let Some(project) = app.current_project() {
-                                    if let Ok(diff) = Git::get_diff(&session.worktree_path, &project.main_branch) {
-                                        app.diff_text = Some(diff.diff_text);
-                                        app.view_mode = ViewMode::Diff;
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Esc => app.focus = Focus::Sessions,
-                        KeyCode::Char('q') => app.should_quit = true,
-                        _ => {}
-                    },
-                    Focus::Input => match key.code {
-                        KeyCode::Char(c) => app.input_char(c),
-                        KeyCode::Backspace => app.input_backspace(),
-                        KeyCode::Delete => app.input_delete(),
-                        KeyCode::Left => app.input_left(),
-                        KeyCode::Right => app.input_right(),
-                        KeyCode::Home => app.input_home(),
-                        KeyCode::End => app.input_end(),
-                        KeyCode::Enter => {
-                            if !app.input.is_empty() {
-                                let prompt = app.input.clone();
-                                app.clear_input();
-
-                                // Create new session
-                                if let Some(project) = app.current_project().cloned() {
-                                    match SessionManager::new(&app.db).create_session(&project, &prompt) {
-                                        Ok(session) => {
-                                            app.set_status(format!("Created session: {}", session.name));
-                                            let _ = app.refresh_sessions();
-
-                                            // Start Claude immediately
-                                            match claude_process.spawn(
-                                                &session.worktree_path,
-                                                &session.initial_prompt,
-                                                None,
-                                            ) {
-                                                Ok(rx) => {
-                                                    app.claude_receiver = Some(rx);
-                                                    app.selected_session = Some(0);
-                                                    app.load_session_output();
-                                                }
-                                                Err(e) => {
-                                                    app.set_status(format!("Failed to start: {}", e));
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            app.set_status(format!("Failed to create session: {}", e));
-                                        }
-                                    }
-                                }
-                                app.focus = Focus::Sessions;
-                            }
-                        }
-                        KeyCode::Esc => {
-                            app.clear_input();
-                            app.clear_status();
-                            app.focus = Focus::Sessions;
-                        }
-                        KeyCode::Tab => app.focus = Focus::Sessions,
-                        _ => {}
-                    },
-                }
-            }
+            handle_event(event, app, &claude_process)?;
         }
 
         if app.should_quit {
@@ -318,6 +96,231 @@ async fn run_app(
         }
     }
 
+    Ok(())
+}
+
+/// Collect all available events (keyboard input, Claude output, etc.)
+fn collect_events(app: &App) -> Result<Vec<TuiEvent>> {
+    let mut events = Vec::new();
+
+    // Poll for Claude output
+    if let Some(ref receiver) = app.claude_receiver {
+        while let Ok(event) = receiver.try_recv() {
+            events.push(TuiEvent::Claude(event));
+        }
+    }
+
+    // Poll for keyboard input with timeout
+    if event::poll(Duration::from_millis(100))? {
+        if let Event::Key(key) = event::read()? {
+            events.push(TuiEvent::Input(key));
+        }
+    }
+
+    // If no events, add a Tick
+    if events.is_empty() {
+        events.push(TuiEvent::Tick);
+    }
+
+    Ok(events)
+}
+
+/// Handle a single TUI event
+fn handle_event(event: TuiEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    match event {
+        TuiEvent::Claude(claude_event) => {
+            handle_claude_event(claude_event, app)?;
+        }
+        TuiEvent::Input(key_event) => {
+            handle_key_event(key_event, app, claude_process)?;
+        }
+        TuiEvent::Tick => {
+            // Periodic updates can go here
+        }
+    }
+    Ok(())
+}
+
+/// Handle Claude process events
+fn handle_claude_event(event: ClaudeEvent, app: &mut App) -> Result<()> {
+    match event {
+        ClaudeEvent::Output(output) => {
+            app.handle_claude_output(output.output_type, output.data);
+        }
+        ClaudeEvent::Started { pid } => {
+            app.handle_claude_started(pid);
+        }
+        ClaudeEvent::Exited { code } => {
+            if app.handle_claude_exited(code) {
+                app.claude_receiver = None;
+            }
+        }
+        ClaudeEvent::Error(e) => {
+            app.handle_claude_error(e);
+        }
+    }
+    Ok(())
+}
+
+/// Handle keyboard input events
+fn handle_key_event(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+) -> Result<()> {
+    // Global keybindings
+    match (key.modifiers, key.code) {
+        (KeyModifiers::CONTROL, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
+            app.should_quit = true;
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // Mode-specific keybindings
+    match app.focus {
+        Focus::Sessions => handle_sessions_input(key, app, claude_process)?,
+        Focus::Output => handle_output_input(key, app)?,
+        Focus::Input => handle_input_mode(key, app, claude_process)?,
+    }
+
+    Ok(())
+}
+
+/// Handle keyboard input when Sessions pane is focused
+fn handle_sessions_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+) -> Result<()> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.select_next_session(),
+        KeyCode::Char('k') | KeyCode::Up => app.select_prev_session(),
+        KeyCode::Char('J') => app.select_next_project(),
+        KeyCode::Char('K') => app.select_prev_project(),
+        KeyCode::Tab => app.focus = Focus::Output,
+        KeyCode::Char('n') => {
+            app.focus = Focus::Input;
+            app.set_status("Enter prompt for new session:");
+        }
+        KeyCode::Char('d') => {
+            if let Err(e) = app.load_diff() {
+                app.set_status(format!("Failed to get diff: {}", e));
+            }
+        }
+        KeyCode::Char('r') => {
+            if let Err(e) = app.rebase_current_session() {
+                app.set_status(format!("Rebase failed: {}", e));
+            }
+        }
+        KeyCode::Char('a') => {
+            if let Err(e) = app.archive_current_session() {
+                app.set_status(format!("Failed to archive: {}", e));
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(session) = app.current_session() {
+                if session.status == SessionStatus::Pending
+                    || session.status == SessionStatus::Stopped
+                    || session.status == SessionStatus::Completed
+                {
+                    match claude_process.spawn(
+                        &session.worktree_path,
+                        &session.initial_prompt,
+                        None,
+                    ) {
+                        Ok(rx) => {
+                            app.claude_receiver = Some(rx);
+                            app.set_status("Starting Claude...");
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to start: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Char('q') => app.should_quit = true,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle keyboard input when Output pane is focused
+fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.scroll_output_down(1),
+        KeyCode::Char('k') | KeyCode::Up => app.scroll_output_up(1),
+        KeyCode::Char('G') => app.scroll_output_to_bottom(),
+        KeyCode::Char('g') => app.output_scroll = 0,
+        KeyCode::PageDown => app.scroll_output_down(10),
+        KeyCode::PageUp => app.scroll_output_up(10),
+        KeyCode::Tab => app.focus = Focus::Input,
+        KeyCode::Char('o') => app.view_mode = ViewMode::Output,
+        KeyCode::Char('d') => {
+            if let Err(e) = app.load_diff() {
+                app.set_status(format!("Failed to get diff: {}", e));
+            }
+        }
+        KeyCode::Esc => app.focus = Focus::Sessions,
+        KeyCode::Char('q') => app.should_quit = true,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle keyboard input when Input field is focused
+fn handle_input_mode(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+) -> Result<()> {
+    match key.code {
+        KeyCode::Char(c) => app.input_char(c),
+        KeyCode::Backspace => app.input_backspace(),
+        KeyCode::Delete => app.input_delete(),
+        KeyCode::Left => app.input_left(),
+        KeyCode::Right => app.input_right(),
+        KeyCode::Home => app.input_home(),
+        KeyCode::End => app.input_end(),
+        KeyCode::Enter => {
+            if !app.input.is_empty() {
+                let prompt = app.input.clone();
+                app.clear_input();
+
+                match app.create_new_session(prompt) {
+                    Ok(session) => {
+                        app.set_status(format!("Created session: {}", session.name));
+
+                        // Start Claude immediately
+                        match claude_process.spawn(
+                            &session.worktree_path,
+                            &session.initial_prompt,
+                            None,
+                        ) {
+                            Ok(rx) => {
+                                app.claude_receiver = Some(rx);
+                            }
+                            Err(e) => {
+                                app.set_status(format!("Failed to start: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Failed to create session: {}", e));
+                    }
+                }
+                app.focus = Focus::Sessions;
+            }
+        }
+        KeyCode::Esc => {
+            app.clear_input();
+            app.clear_status();
+            app.focus = Focus::Sessions;
+        }
+        KeyCode::Tab => app.focus = Focus::Sessions,
+        _ => {}
+    }
     Ok(())
 }
 

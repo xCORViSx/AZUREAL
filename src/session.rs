@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
-use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::db::Database;
