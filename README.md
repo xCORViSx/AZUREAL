@@ -47,7 +47,7 @@ azural
 | `J/K` | Navigate projects |
 | `Tab` | Cycle focus (sessions → output → input) |
 | `n` | New session |
-| `w` | Open worktree from branch |
+| `b` | Browse branches |
 | `d` | View diff |
 | `r` | Rebase onto main |
 | `Space` | Context menu |

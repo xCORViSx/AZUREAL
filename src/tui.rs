@@ -358,8 +358,8 @@ fn handle_sessions_input(
             // Start session creation wizard
             app.start_wizard();
         }
-        KeyCode::Char('w') => {
-            // Create worktree from existing branch
+        KeyCode::Char('b') => {
+            // Browse branches - create worktree from existing branch
             if let Some(project) = app.current_project() {
                 match Git::list_available_branches(&project.path) {
                     Ok(branches) => {
@@ -1305,9 +1305,9 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         match (app.focus, app.view_mode) {
             (Focus::Sessions, _) => {
                 if app.running_session_id.is_some() {
-                    "?:help  Space:actions  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  Space:actions  n:new  b:branches  i:input  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch  q:quit"
                 } else {
-                    "?:help  Space:actions  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  Space:actions  n:new  b:branches  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
                 }
             }
             (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
@@ -1482,7 +1482,7 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  Space            Open context menu for session actions"),
         Line::from("  Enter            Start/resume selected session"),
         Line::from("  n                Create new session (enter prompt)"),
-        Line::from("  w                Create worktree from existing branch"),
+        Line::from("  b                Browse branches (create worktree)"),
         Line::from("  d                View diff for selected session"),
         Line::from("  r                Rebase session onto main branch"),
         Line::from("  a                Archive selected session"),
