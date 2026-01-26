@@ -174,7 +174,34 @@ fn handle_key_event(
             app.should_quit = true;
             return Ok(());
         }
+        (KeyModifiers::NONE, KeyCode::Char('?')) => {
+            app.toggle_help();
+            return Ok(());
+        }
+        (KeyModifiers::NONE, KeyCode::Tab) => {
+            if !app.show_help {
+                app.focus_next();
+            }
+            return Ok(());
+        }
+        (KeyModifiers::SHIFT, KeyCode::BackTab) => {
+            if !app.show_help {
+                app.focus_prev();
+            }
+            return Ok(());
+        }
         _ => {}
+    }
+
+    // Help overlay is open, only handle keys for closing it
+    if app.show_help {
+        match key.code {
+            KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => {
+                app.toggle_help();
+            }
+            _ => {}
+        }
+        return Ok(());
     }
 
     // Mode-specific keybindings
@@ -248,22 +275,25 @@ fn handle_sessions_input(
 
 /// Handle keyboard input when Output pane is focused
 fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => app.scroll_output_down(1),
-        KeyCode::Char('k') | KeyCode::Up => app.scroll_output_up(1),
-        KeyCode::Char('G') => app.scroll_output_to_bottom(),
-        KeyCode::Char('g') => app.output_scroll = 0,
-        KeyCode::PageDown => app.scroll_output_down(10),
-        KeyCode::PageUp => app.scroll_output_up(10),
-        KeyCode::Tab => app.focus = Focus::Input,
-        KeyCode::Char('o') => app.view_mode = ViewMode::Output,
-        KeyCode::Char('d') => {
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_output_down(1),
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_output_up(1),
+        (KeyModifiers::NONE, KeyCode::Char('G')) => app.scroll_output_to_bottom(),
+        (KeyModifiers::NONE, KeyCode::Char('g')) => app.output_scroll = 0,
+        (KeyModifiers::NONE, KeyCode::PageDown) => app.scroll_output_down(10),
+        (KeyModifiers::NONE, KeyCode::PageUp) => app.scroll_output_up(10),
+        (KeyModifiers::CONTROL, KeyCode::Char('d')) => app.scroll_output_down(20),
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.scroll_output_up(20),
+        (KeyModifiers::CONTROL, KeyCode::Char('f')) => app.scroll_output_down(40),
+        (KeyModifiers::CONTROL, KeyCode::Char('b')) => app.scroll_output_up(40),
+        (KeyModifiers::NONE, KeyCode::Char('o')) => app.view_mode = ViewMode::Output,
+        (KeyModifiers::NONE, KeyCode::Char('d')) => {
             if let Err(e) = app.load_diff() {
                 app.set_status(format!("Failed to get diff: {}", e));
             }
         }
-        KeyCode::Esc => app.focus = Focus::Sessions,
-        KeyCode::Char('q') => app.should_quit = true,
+        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
+        (KeyModifiers::NONE, KeyCode::Char('q')) => app.should_quit = true,
         _ => {}
     }
     Ok(())
@@ -355,6 +385,11 @@ fn ui(f: &mut Frame, app: &App) {
 
     // Draw status bar
     draw_status(f, app, chunks[2]);
+
+    // Draw help overlay if active
+    if app.show_help {
+        draw_help_overlay(f);
+    }
 }
 
 fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
@@ -552,11 +587,12 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-        match app.focus {
-            Focus::Sessions => "n:new  d:diff  r:rebase  a:archive  Enter:start  q:quit",
-            Focus::Output => "j/k:scroll  o:output  d:diff  Esc:back  q:quit",
-            Focus::Input => "Enter:submit  Esc:cancel",
-        }.to_string()
+        let help = match app.focus {
+            Focus::Sessions => "?:help  n:new  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
+            Focus::Output => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
+            Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
+        };
+        help.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
@@ -587,3 +623,86 @@ fn colorize_output(line: &str) -> Vec<Span<'_>> {
     }
 }
 
+fn draw_help_overlay(f: &mut Frame) {
+    // Create centered area for help
+    let area = f.area();
+    let help_width = 80.min(area.width - 4);
+    let help_height = 30.min(area.height - 4);
+
+    let help_area = Rect {
+        x: (area.width.saturating_sub(help_width)) / 2,
+        y: (area.height.saturating_sub(help_height)) / 2,
+        width: help_width,
+        height: help_height,
+    };
+
+    let help_text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Crystal - Keyboard Navigation Help", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Global", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from("  ?                Toggle this help"),
+        Line::from("  Tab              Cycle focus forward (Sessions → Output → Input)"),
+        Line::from("  Shift+Tab        Cycle focus backward"),
+        Line::from("  Ctrl+c / Ctrl+q  Quit application"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Sessions Panel", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from("  j / Down         Select next session"),
+        Line::from("  k / Up           Select previous session"),
+        Line::from("  J                Select next project"),
+        Line::from("  K                Select previous project"),
+        Line::from("  Enter            Start/resume selected session"),
+        Line::from("  n                Create new session (enter prompt)"),
+        Line::from("  d                View diff for selected session"),
+        Line::from("  r                Rebase session onto main branch"),
+        Line::from("  a                Archive selected session"),
+        Line::from("  q                Quit application"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Output Panel", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from("  j / Down         Scroll down one line"),
+        Line::from("  k / Up           Scroll up one line"),
+        Line::from("  Ctrl+d           Scroll down half page (20 lines)"),
+        Line::from("  Ctrl+u           Scroll up half page (20 lines)"),
+        Line::from("  Ctrl+f           Scroll down full page (40 lines)"),
+        Line::from("  Ctrl+b           Scroll up full page (40 lines)"),
+        Line::from("  PageDown         Scroll down 10 lines"),
+        Line::from("  PageUp           Scroll up 10 lines"),
+        Line::from("  g                Jump to top"),
+        Line::from("  G                Jump to bottom"),
+        Line::from("  o                Switch to output view"),
+        Line::from("  d                Switch to diff view"),
+        Line::from("  Esc              Return to Sessions panel"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Input Panel", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from("  Enter            Submit prompt and create session"),
+        Line::from("  Esc              Cancel and return to Sessions panel"),
+        Line::from("  Arrow keys       Navigate input text"),
+        Line::from("  Home / End       Jump to start/end of input"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Press ? or q or Esc to close this help", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC))
+        ]),
+    ];
+
+    let help = Paragraph::new(help_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Help ")
+                .border_style(Style::default().fg(Color::Cyan))
+                .style(Style::default().bg(Color::Black))
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(help, help_area);
+}

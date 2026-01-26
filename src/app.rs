@@ -49,6 +49,8 @@ pub struct App {
     pub diff_scroll: usize,
     /// Syntax highlighter for diff view
     pub diff_highlighter: DiffHighlighter,
+    /// Whether to show help overlay
+    pub show_help: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +89,7 @@ impl App {
             output_scroll: 0,
             diff_scroll: 0,
             diff_highlighter: DiffHighlighter::new(),
+            show_help: false,
         }
     }
 
@@ -411,6 +414,29 @@ impl App {
         } else {
             anyhow::bail!("No session selected")
         }
+    }
+
+    /// Cycle focus forward
+    pub fn focus_next(&mut self) {
+        self.focus = match self.focus {
+            Focus::Sessions => Focus::Output,
+            Focus::Output => Focus::Input,
+            Focus::Input => Focus::Sessions,
+        };
+    }
+
+    /// Cycle focus backward
+    pub fn focus_prev(&mut self) {
+        self.focus = match self.focus {
+            Focus::Sessions => Focus::Input,
+            Focus::Output => Focus::Sessions,
+            Focus::Input => Focus::Output,
+        };
+    }
+
+    /// Toggle help overlay
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
     }
 }
 
