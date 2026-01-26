@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::io::Read;
+use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 use crate::config::{Config, PermissionMode};
@@ -27,16 +28,22 @@ pub enum ClaudeEvent {
 /// Manages Claude Code CLI process
 pub struct ClaudeProcess {
     config: Config,
+    /// Map of session IDs to their PTY masters for bidirectional communication
+    active_ptys: Arc<Mutex<HashMap<String, Box<dyn MasterPty + Send>>>>,
 }
 
 impl ClaudeProcess {
     pub fn new(config: Config) -> Self {
-        Self { config }
+        Self {
+            config,
+            active_ptys: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     /// Spawn Claude Code with the given prompt in the specified directory
     pub fn spawn(
         &self,
+        session_id: String,
         working_dir: &Path,
         prompt: &str,
         resume_session_id: Option<&str>,
@@ -67,9 +74,9 @@ impl ClaudeProcess {
         }
 
         // Resume session if specified
-        if let Some(session_id) = resume_session_id {
+        if let Some(resume_id) = resume_session_id {
             cmd.arg("--resume");
-            cmd.arg(session_id);
+            cmd.arg(resume_id);
         }
 
         cmd.cwd(working_dir);
@@ -93,9 +100,25 @@ impl ClaudeProcess {
         let pid = child.process_id().unwrap_or(0);
         let _ = tx.send(ClaudeEvent::Started { pid });
 
-        // Read output in a separate thread - stream chunks instead of lines
-        let mut reader = pair.master.try_clone_reader()
-            .context("Failed to clone PTY reader")?;
+        // Store the master PTY for later input (bidirectional communication)
+        let master_pty = pair.master;
+        {
+            let mut active_ptys = self.active_ptys.lock().unwrap();
+            active_ptys.insert(session_id.clone(), master_pty);
+        }
+
+        // Clone PTY reader for output thread - stream chunks instead of lines
+        let active_ptys_clone = self.active_ptys.clone();
+        let session_id_for_reader = session_id.clone();
+        let mut reader = {
+            let active_ptys = active_ptys_clone.lock().unwrap();
+            if let Some(pty) = active_ptys.get(&session_id_for_reader) {
+                pty.try_clone_reader()
+                    .context("Failed to clone PTY reader")?
+            } else {
+                anyhow::bail!("PTY not found for session");
+            }
+        };
 
         let tx_clone = tx.clone();
         thread::spawn(move || {
@@ -125,6 +148,8 @@ impl ClaudeProcess {
         });
 
         // Wait for process to exit in another thread
+        let active_ptys_for_exit = self.active_ptys.clone();
+        let session_id_for_exit = session_id.clone();
         thread::spawn(move || {
             let status = child.wait();
             let code = status.ok().and_then(|s| {
@@ -135,17 +160,53 @@ impl ClaudeProcess {
                     None
                 }
             });
+
+            // Clean up PTY when process exits
+            let mut active_ptys = active_ptys_for_exit.lock().unwrap();
+            active_ptys.remove(&session_id_for_exit);
+
             let _ = tx.send(ClaudeEvent::Exited { code });
         });
 
         Ok(rx)
     }
 
-    /// Send input to a running Claude process (for follow-up prompts)
-    pub fn send_input(&self, _session_id: &str, _input: &str) -> Result<()> {
-        // TODO: Implement input sending via PTY writer
-        // This requires keeping track of the PTY writer for each session
-        Ok(())
+    /// Send input to a running Claude process (for follow-up prompts and approvals)
+    pub fn send_input(&self, session_id: &str, input: &str) -> Result<()> {
+        let mut active_ptys = self.active_ptys.lock().unwrap();
+
+        if let Some(pty) = active_ptys.get_mut(session_id) {
+            let mut writer = pty.take_writer()
+                .context("Failed to get PTY writer")?;
+
+            // Write input followed by newline
+            writeln!(writer, "{}", input)
+                .context("Failed to write to PTY")?;
+
+            writer.flush()
+                .context("Failed to flush PTY writer")?;
+
+            Ok(())
+        } else {
+            anyhow::bail!("No active PTY found for session: {}", session_id)
+        }
+    }
+
+    /// Check if a session has an active PTY (is running)
+    pub fn is_session_running(&self, session_id: &str) -> bool {
+        let active_ptys = self.active_ptys.lock().unwrap();
+        active_ptys.contains_key(session_id)
+    }
+
+    /// Stop a running session by closing its PTY
+    pub fn stop_session(&self, session_id: &str) -> Result<()> {
+        let mut active_ptys = self.active_ptys.lock().unwrap();
+
+        if active_ptys.remove(session_id).is_some() {
+            Ok(())
+        } else {
+            anyhow::bail!("No active PTY found for session: {}", session_id)
+        }
     }
 }
 

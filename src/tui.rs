@@ -266,19 +266,43 @@ fn handle_sessions_input(
                     || session.status == SessionStatus::Stopped
                     || session.status == SessionStatus::Completed
                 {
+                    let session_id = session.id.clone();
                     match claude_process.spawn(
+                        session_id.clone(),
                         &session.worktree_path,
                         &session.initial_prompt,
                         None,
                     ) {
                         Ok(rx) => {
                             app.claude_receiver = Some(rx);
+                            app.running_session_id = Some(session_id);
                             app.set_status("Starting Claude...");
                         }
                         Err(e) => {
                             app.set_status(format!("Failed to start: {}", e));
                         }
                     }
+                }
+            }
+        }
+        KeyCode::Char('i') => {
+            // Send input to running session
+            if app.running_session_id.is_some() {
+                app.focus = Focus::Input;
+                app.set_status("Enter input to send to Claude:");
+            } else {
+                app.set_status("No running session");
+            }
+        }
+        KeyCode::Char('s') => {
+            // Stop running session
+            if let Some(ref session_id) = app.running_session_id {
+                if let Err(e) = claude_process.stop_session(session_id) {
+                    app.set_status(format!("Failed to stop: {}", e));
+                } else {
+                    app.set_status("Session stopped");
+                    app.running_session_id = None;
+                    app.claude_receiver = None;
                 }
             }
         }
@@ -330,29 +354,48 @@ fn handle_input_mode(
         KeyCode::End => app.input_end(),
         KeyCode::Enter => {
             if !app.input.is_empty() {
-                let prompt = app.input.clone();
+                let input = app.input.clone();
                 app.clear_input();
 
-                match app.create_new_session(prompt) {
-                    Ok(session) => {
-                        app.set_status(format!("Created session: {}", session.name));
-
-                        // Start Claude immediately
-                        match claude_process.spawn(
-                            &session.worktree_path,
-                            &session.initial_prompt,
-                            None,
-                        ) {
-                            Ok(rx) => {
-                                app.claude_receiver = Some(rx);
-                            }
-                            Err(e) => {
-                                app.set_status(format!("Failed to start: {}", e));
-                            }
+                // Check if we're sending input to a running session or creating a new one
+                if let Some(ref session_id) = app.running_session_id {
+                    // Send input to running session
+                    match claude_process.send_input(session_id, &input) {
+                        Ok(()) => {
+                            app.set_status("Input sent");
+                            // Also display the input in output
+                            app.add_output(format!("> {}", input));
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to send input: {}", e));
                         }
                     }
-                    Err(e) => {
-                        app.set_status(format!("Failed to create session: {}", e));
+                } else {
+                    // Create new session
+                    match app.create_new_session(input) {
+                        Ok(session) => {
+                            app.set_status(format!("Created session: {}", session.name));
+
+                            // Start Claude immediately
+                            let session_id = session.id.clone();
+                            match claude_process.spawn(
+                                session_id.clone(),
+                                &session.worktree_path,
+                                &session.initial_prompt,
+                                None,
+                            ) {
+                                Ok(rx) => {
+                                    app.claude_receiver = Some(rx);
+                                    app.running_session_id = Some(session_id);
+                                }
+                                Err(e) => {
+                                    app.set_status(format!("Failed to start: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to create session: {}", e));
+                        }
                     }
                 }
                 app.focus = Focus::Sessions;
@@ -388,6 +431,7 @@ fn handle_session_creation_input(
 
                         // Start Claude immediately
                         match claude_process.spawn(
+                            session.id.clone(),
                             &session.worktree_path,
                             &session.initial_prompt,
                             None,
@@ -709,8 +753,17 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         msg.clone()
     } else {
 match app.focus {
-            Focus::Sessions => "?:help  n:new  w:worktree  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit",
-            Focus::Output => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
+            Focus::Sessions => {
+                if app.running_session_id.is_some() {
+                    "?:help  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  a:archive  Tab/Shift+Tab:switch  q:quit"
+                } else {
+                    "?:help  n:new  w:worktree  d:diff  r:rebase  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
+                }
+            }
+            Focus::Output => match app.view_mode {
+                ViewMode::Diff => "?:help  j/k:scroll  s:save  o:output  Esc:back",
+                _ => "?:help  j/k:scroll  Ctrl+d/u:half-page  Ctrl+f/b:full-page  o:output  d:diff  Esc:back",
+            },
             Focus::Input => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             Focus::SessionCreation => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             Focus::BranchDialog => "j/k:select  Enter:confirm  Esc:cancel  type to filter",

@@ -45,6 +45,8 @@ pub struct App {
     pub status_message: Option<String>,
     /// Active Claude process receiver
     pub claude_receiver: Option<Receiver<ClaudeEvent>>,
+    /// Currently running session ID (for sending input)
+    pub running_session_id: Option<String>,
     /// Current diff text (if viewing diff)
     pub diff_text: Option<String>,
     /// Scroll offset for output
@@ -163,6 +165,7 @@ impl App {
             should_quit: false,
             status_message: None,
             claude_receiver: None,
+            running_session_id: None,
             diff_text: None,
             output_scroll: 0,
             diff_scroll: 0,
