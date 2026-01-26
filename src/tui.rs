@@ -15,7 +15,7 @@ use ratatui::{
 use std::io;
 use std::time::Duration;
 
-use crate::app::{App, BranchDialog, Focus, ViewMode};
+use crate::app::{App, BranchDialog, Focus, ViewMode, SessionAction};
 use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 use crate::db::Database;
@@ -205,6 +205,12 @@ fn handle_key_event(
         return Ok(());
     }
 
+    // Handle context menu navigation first if open
+    if app.context_menu.is_some() {
+        handle_context_menu_input(key, app, claude_process)?;
+        return Ok(());
+    }
+
     // Mode-specific keybindings
     match app.focus {
         Focus::Sessions => handle_sessions_input(key, app, claude_process)?,
@@ -214,6 +220,98 @@ fn handle_key_event(
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
     }
 
+    Ok(())
+}
+
+/// Handle keyboard input when context menu is open
+fn handle_context_menu_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+) -> Result<()> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.context_menu_next(),
+        KeyCode::Char('k') | KeyCode::Up => app.context_menu_prev(),
+        KeyCode::Enter => {
+            // Execute selected action
+            if let Some(action) = app.selected_action() {
+                execute_action(app, claude_process, action)?;
+            }
+            app.close_context_menu();
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.close_context_menu();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Execute a session action
+fn execute_action(app: &mut App, claude_process: &ClaudeProcess, action: SessionAction) -> Result<()> {
+    match action {
+        SessionAction::Start => {
+            if let Some(session) = app.current_session() {
+                if session.status == SessionStatus::Pending
+                    || session.status == SessionStatus::Stopped
+                    || session.status == SessionStatus::Completed
+                {
+                    match claude_process.spawn(
+                        &session.worktree_path,
+                        &session.initial_prompt,
+                        None,
+                    ) {
+                        Ok(rx) => {
+                            app.claude_receiver = Some(rx);
+                            app.set_status("Starting Claude...");
+                        }
+                        Err(e) => {
+                            app.set_status(format!("Failed to start: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+        SessionAction::Stop => {
+            app.set_status("Stop action not yet implemented");
+        }
+        SessionAction::Archive => {
+            if let Some(session) = app.current_session() {
+                let session_id = session.id.clone();
+                if let Err(e) = SessionManager::new(&app.db).archive_session(&session_id) {
+                    app.set_status(format!("Failed to archive: {}", e));
+                } else {
+                    app.set_status("Session archived");
+                    let _ = app.refresh_sessions();
+                }
+            }
+        }
+        SessionAction::Delete => {
+            app.set_status("Delete action not yet implemented - use with caution");
+        }
+        SessionAction::ViewDiff => {
+            if let Err(e) = app.load_diff() {
+                app.set_status(format!("Failed to get diff: {}", e));
+            }
+        }
+        SessionAction::RebaseFromMain => {
+            if let Err(e) = app.rebase_current_session() {
+                app.set_status(format!("Rebase failed: {}", e));
+            }
+        }
+        SessionAction::OpenInEditor => {
+            if let Some(session) = app.current_session() {
+                let path = session.worktree_path.display().to_string();
+                app.set_status(format!("Editor integration not implemented. Path: {}", path));
+            }
+        }
+        SessionAction::CopyWorktreePath => {
+            if let Some(session) = app.current_session() {
+                let path = session.worktree_path.display().to_string();
+                app.set_status(format!("Copied to clipboard (not implemented): {}", path));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -229,6 +327,10 @@ fn handle_sessions_input(
         KeyCode::Char('J') => app.select_next_project(),
         KeyCode::Char('K') => app.select_prev_project(),
         KeyCode::Tab => app.focus = Focus::Output,
+        KeyCode::Char(' ') | KeyCode::Char('?') => {
+            // Open context menu
+            app.open_context_menu();
+        }
         KeyCode::Char('n') => {
             app.enter_session_creation_mode();
         }
@@ -774,6 +876,11 @@ fn ui(f: &mut Frame, app: &App) {
     if app.show_help {
         draw_help_overlay(f);
     }
+
+    // Draw context menu overlay if open
+    if app.context_menu.is_some() {
+        draw_context_menu(f, app, f.area());
+    }
 }
 
 fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
@@ -1076,12 +1183,12 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-match (app.focus, app.view_mode) {
+        match (app.focus, app.view_mode) {
             (Focus::Sessions, _) => {
                 if app.running_session_id.is_some() {
-                    "?:help  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  Space:actions  n:new  w:worktree  i:input  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch  q:quit"
                 } else {
-                    "?:help  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
+                    "?:help  Space:actions  n:new  w:worktree  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch  q:quit"
                 }
             }
             (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
@@ -1240,6 +1347,7 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("  k / Up           Select previous session"),
         Line::from("  J                Select next project"),
         Line::from("  K                Select previous project"),
+        Line::from("  Space            Open context menu for session actions"),
         Line::from("  Enter            Start/resume selected session"),
         Line::from("  n                Create new session (enter prompt)"),
         Line::from("  w                Create worktree from existing branch"),
@@ -1410,4 +1518,67 @@ fn calculate_cursor_position(text: &str, cursor: usize, width: usize) -> Option<
     }
 
     Some((x, y))
+}
+
+fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
+    if let Some(ref menu) = app.context_menu {
+        // Calculate menu dimensions
+        let menu_width = 50;
+        let menu_height = menu.actions.len() as u16 + 4; // +4 for title and borders
+
+        // Center the menu
+        let menu_x = (area.width.saturating_sub(menu_width)) / 2;
+        let menu_y = (area.height.saturating_sub(menu_height)) / 2;
+
+        let menu_area = Rect {
+            x: menu_x,
+            y: menu_y,
+            width: menu_width,
+            height: menu_height,
+        };
+
+        // Create menu items
+        let items: Vec<ListItem> = menu
+            .actions
+            .iter()
+            .enumerate()
+            .map(|(idx, action)| {
+                let is_selected = idx == menu.selected;
+                let style = if is_selected {
+                    Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+
+                let key_style = if is_selected {
+                    Style::default().bg(Color::Cyan).fg(Color::DarkGray)
+                } else {
+                    Style::default().fg(Color::Yellow)
+                };
+
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!(" [{:>5}] ", action.key_hint()), key_style),
+                    Span::styled(action.label(), style),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title(" Session Actions (↑↓ to navigate, Enter to select, Esc to close) ")
+                    .style(Style::default().bg(Color::Black)),
+            );
+
+        // Clear the area first (creates overlay effect)
+        f.render_widget(
+            Block::default()
+                .style(Style::default().bg(Color::Black)),
+            menu_area,
+        );
+
+        f.render_widget(list, menu_area);
+    }
 }

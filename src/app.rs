@@ -63,6 +63,8 @@ pub struct App {
     pub rebase_status: Option<RebaseStatus>,
     /// Selected conflict file index (for conflict resolution)
     pub selected_conflict: Option<usize>,
+    /// Context menu state
+    pub context_menu: Option<ContextMenu>,
 }
 
 /// State for the branch selection dialog
@@ -75,6 +77,27 @@ pub struct BranchDialog {
     pub filter: String,
     /// Filtered branch indices
     pub filtered_indices: Vec<usize>,
+}
+
+/// Context menu for session actions
+#[derive(Debug, Clone)]
+pub struct ContextMenu {
+    /// Available actions
+    pub actions: Vec<SessionAction>,
+    /// Selected action index
+    pub selected: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionAction {
+    Start,
+    Stop,
+    Archive,
+    Delete,
+    ViewDiff,
+    RebaseFromMain,
+    OpenInEditor,
+    CopyWorktreePath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,6 +202,7 @@ impl App {
             branch_dialog: None,
             rebase_status: None,
             selected_conflict: None,
+            context_menu: None,
         }
     }
 
@@ -677,6 +701,111 @@ impl App {
                 status.conflicted_files.get(idx).map(|s| s.as_str())
             })
         })
+    }
+
+    /// Open context menu for current session
+    pub fn open_context_menu(&mut self) {
+        if let Some(session) = self.current_session() {
+            let actions = SessionAction::available_for_status(session.status);
+            if !actions.is_empty() {
+                self.context_menu = Some(ContextMenu {
+                    actions,
+                    selected: 0,
+                });
+            }
+        }
+    }
+
+    /// Close context menu
+    pub fn close_context_menu(&mut self) {
+        self.context_menu = None;
+    }
+
+    /// Select next action in context menu
+    pub fn context_menu_next(&mut self) {
+        if let Some(ref mut menu) = self.context_menu {
+            if menu.selected + 1 < menu.actions.len() {
+                menu.selected += 1;
+            }
+        }
+    }
+
+    /// Select previous action in context menu
+    pub fn context_menu_prev(&mut self) {
+        if let Some(ref mut menu) = self.context_menu {
+            if menu.selected > 0 {
+                menu.selected -= 1;
+            }
+        }
+    }
+
+    /// Get currently selected action
+    pub fn selected_action(&self) -> Option<SessionAction> {
+        self.context_menu.as_ref().map(|menu| menu.actions[menu.selected].clone())
+    }
+}
+
+impl SessionAction {
+    pub fn label(&self) -> &'static str {
+        match self {
+            SessionAction::Start => "Start/Resume Session",
+            SessionAction::Stop => "Stop Session",
+            SessionAction::Archive => "Archive Session",
+            SessionAction::Delete => "Delete Session",
+            SessionAction::ViewDiff => "View Diff",
+            SessionAction::RebaseFromMain => "Rebase from Main",
+            SessionAction::OpenInEditor => "Open in Editor",
+            SessionAction::CopyWorktreePath => "Copy Worktree Path",
+        }
+    }
+
+    pub fn key_hint(&self) -> &'static str {
+        match self {
+            SessionAction::Start => "Enter",
+            SessionAction::Stop => "s",
+            SessionAction::Archive => "a",
+            SessionAction::Delete => "D",
+            SessionAction::ViewDiff => "d",
+            SessionAction::RebaseFromMain => "r",
+            SessionAction::OpenInEditor => "e",
+            SessionAction::CopyWorktreePath => "c",
+        }
+    }
+
+    /// Get available actions based on session status
+    pub fn available_for_status(status: SessionStatus) -> Vec<SessionAction> {
+        match status {
+            SessionStatus::Pending | SessionStatus::Stopped | SessionStatus::Completed => {
+                vec![
+                    SessionAction::Start,
+                    SessionAction::ViewDiff,
+                    SessionAction::RebaseFromMain,
+                    SessionAction::OpenInEditor,
+                    SessionAction::CopyWorktreePath,
+                    SessionAction::Archive,
+                    SessionAction::Delete,
+                ]
+            }
+            SessionStatus::Running | SessionStatus::Waiting => {
+                vec![
+                    SessionAction::Stop,
+                    SessionAction::ViewDiff,
+                    SessionAction::OpenInEditor,
+                    SessionAction::CopyWorktreePath,
+                ]
+            }
+            SessionStatus::Failed => {
+                vec![
+                    SessionAction::Start,
+                    SessionAction::ViewDiff,
+                    SessionAction::RebaseFromMain,
+                    SessionAction::OpenInEditor,
+                    SessionAction::CopyWorktreePath,
+                    SessionAction::Archive,
+                    SessionAction::Delete,
+                ]
+            }
+        }
     }
 }
 
