@@ -101,10 +101,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                         app.input = input;
                         app.input_cursor = app.input.len();
                     } else {
-                        // Save user prompt to DB and display
-                        let prompt_text = format!("You: {}\n", input);
-                        let _ = app.db.add_session_output(&session_id, crate::models::OutputType::System, &prompt_text);
-                        app.add_output(prompt_text);
+                        // Display user prompt (Claude's session files store the actual messages)
+                        let prompt_text = format!("You: {}\n", input.clone());
+                        app.add_user_message(input.clone());
+                        app.process_output_chunk(&prompt_text);
 
                         let resume_id = app.get_claude_session_id(&session_id).cloned();
 

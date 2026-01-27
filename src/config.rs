@@ -66,8 +66,21 @@ impl Config {
     }
 }
 
-/// Get the Azural config directory (~/.azural)
+/// Get the Azural config directory (project-level .azural/ in git root)
+/// Falls back to ~/.azural/ if not in a git repository
 pub fn config_dir() -> PathBuf {
+    // Try to find git root for project-level storage
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                return PathBuf::from(path.trim()).join(".azural");
+            }
+        }
+    }
+    // Fallback to home directory if not in git repo
     dirs::home_dir()
         .expect("Could not find home directory")
         .join(".azural")
@@ -91,4 +104,52 @@ pub fn ensure_config_dir() -> Result<()> {
             .context("Failed to create config directory")?;
     }
     Ok(())
+}
+
+/// Get Claude's session file path for a given project path and session ID
+/// Claude stores sessions at: ~/.claude/projects/<encoded-path>/<session-id>.jsonl
+pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    // Claude encodes paths by replacing / with -
+    let encoded_path = project_path.to_string_lossy().replace('/', "-");
+    let session_file = home
+        .join(".claude")
+        .join("projects")
+        .join(&encoded_path)
+        .join(format!("{}.jsonl", session_id));
+    if session_file.exists() { Some(session_file) } else { None }
+}
+
+/// Get Claude's project directory for a given worktree path
+pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let encoded_path = worktree_path.to_string_lossy().replace('/', "-");
+    let dir = home.join(".claude").join("projects").join(&encoded_path);
+    if dir.exists() { Some(dir) } else { None }
+}
+
+/// List all Claude session files for a worktree, sorted by modification time (newest first)
+pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, std::time::SystemTime)> {
+    let Some(project_dir) = claude_project_dir(worktree_path) else { return Vec::new() };
+
+    let mut sessions = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&project_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                    sessions.push((stem.to_string(), path, mtime));
+                }
+            }
+        }
+    }
+    // Sort by modification time, newest first
+    sessions.sort_by(|a, b| b.2.cmp(&a.2));
+    sessions
+}
+
+/// Find the most recent Claude session for a worktree
+pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<String> {
+    list_claude_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
 }

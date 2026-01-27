@@ -1,8 +1,12 @@
-# PTY Process Spawning Feature
+# Interactive Process Spawning Feature (IMPLEMENTED)
 
 ## Overview
 
-This feature implements bidirectional PTY (pseudo-terminal) communication for managing Claude Code sessions. It enables interactive control of Claude processes, allowing users to send input, receive output, and manage running sessions dynamically.
+This feature implements bidirectional communication for managing Claude Code sessions using the `--input-format stream-json` mode. It enables interactive control of Claude processes, allowing users to send input, receive output, and manage running sessions dynamically.
+
+**Status: IMPLEMENTED** - See `src/claude.rs` for the stream-json based `ClaudeProcess`.
+
+**Note:** We use stream-json I/O (not raw PTY) because Claude Code's `--output-format stream-json` only works with `-p` mode. The `--input-format stream-json` flag allows sending multiple prompts to a single `-p` process.
 
 ## Key Components
 
@@ -14,8 +18,8 @@ This feature implements bidirectional PTY (pseudo-terminal) communication for ma
 - **Session Lifecycle Management**: Tracks active sessions and automatically cleans up PTYs when processes exit
 
 **Key Methods:**
-- `spawn(session_id, working_dir, prompt, resume_session_id)` - Spawns a new Claude process with PTY
-- `send_input(session_id, input)` - Sends interactive input to a running session
+- `start_session(session_id, working_dir, initial_prompt)` - Spawns Claude in interactive mode via PTY (SessionStart)
+- `send_prompt(session_id, prompt)` - Sends follow-up prompt to running session (UserSubmitPrompt)
 - `is_session_running(session_id)` - Checks if a session has an active PTY
 - `stop_session(session_id)` - Terminates a running session by closing its PTY
 
@@ -32,8 +36,10 @@ This feature implements bidirectional PTY (pseudo-terminal) communication for ma
 
 ### 3. Application State (src/app.rs)
 
-**New State:**
-- `running_session_id: Option<String>` - Tracks which session is currently running
+**State:**
+- `claude_receivers: HashMap<String, Receiver<ClaudeEvent>>` - Event receivers per session
+- `running_sessions: HashSet<String>` - Tracks which sessions have active Claude processes
+- Session running state is also tracked internally by `ClaudeProcess.sessions` HashMap
 
 ## Technical Implementation
 

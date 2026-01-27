@@ -91,17 +91,22 @@ impl App {
         }
     }
 
-    /// Poll terminal for new output
-    pub fn poll_terminal(&mut self) {
+    /// Poll terminal for new output. Returns true if there was data.
+    pub fn poll_terminal(&mut self) -> bool {
         if let Some(ref rx) = self.terminal_rx {
             let was_at_bottom = self.terminal_scroll == 0;
+            let mut had_data = false;
             while let Ok(data) = rx.try_recv() {
                 self.terminal_parser.process(&data);
+                had_data = true;
             }
             if was_at_bottom {
                 self.terminal_scroll = 0;
                 self.terminal_parser.screen_mut().set_scrollback(0);
             }
+            had_data
+        } else {
+            false
         }
     }
 

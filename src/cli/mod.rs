@@ -48,6 +48,22 @@ pub enum Commands {
     #[command(subcommand)]
     Project(ProjectCommands),
 
+    /// View Claude Code hooks log
+    Hooks {
+        /// Number of recent hooks to show
+        #[arg(short, long, default_value = "20")]
+        lines: usize,
+        /// Output raw JSON instead of formatted
+        #[arg(long)]
+        json: bool,
+        /// Filter by hook name
+        #[arg(short = 'n', long)]
+        name: Option<String>,
+        /// Clear the hooks log
+        #[arg(long)]
+        clear: bool,
+    },
+
     // Shortcuts for common session operations
     /// List all sessions (shortcut for 'session list')
     #[command(alias = "ls")]

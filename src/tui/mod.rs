@@ -24,6 +24,7 @@ mod util;
 
 use anyhow::Result;
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -39,13 +40,12 @@ use crate::config::Config;
 use crate::db::Database;
 use crate::git::Git;
 
-pub use event_loop::TuiEvent;
 
 /// Run the TUI application
 pub async fn run(db: Database) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -64,7 +64,7 @@ pub async fn run(db: Database) -> Result<()> {
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
     result

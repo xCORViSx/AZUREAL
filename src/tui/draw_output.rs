@@ -40,7 +40,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 (scroll_indicator, lines)
             } else {
-                // Pre-render all lines with spacing to get accurate total
+                // Fallback: using output_lines with colorize_output
                 let mut all_lines: Vec<Line> = Vec::new();
                 let mut last_msg_type = MessageType::Other;
 

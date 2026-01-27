@@ -39,6 +39,43 @@ pub fn strip_ansi_escapes(text: &str) -> String {
     result
 }
 
+/// Extract the most relevant parameter from a tool's input for display
+fn extract_tool_param(tool_name: &str, input: Option<&serde_json::Value>) -> String {
+    let input = match input {
+        Some(v) => v,
+        None => return String::new(),
+    };
+
+    let result = match tool_name {
+        "Read" | "read" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
+        "Write" | "write" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
+        "Edit" | "edit" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
+        "Bash" | "bash" => input.get("command").and_then(|v| v.as_str()),
+        "Glob" | "glob" => input.get("pattern").and_then(|v| v.as_str()),
+        "Grep" | "grep" => input.get("pattern").and_then(|v| v.as_str()),
+        "Task" | "task" => input.get("description").and_then(|v| v.as_str()),
+        "WebFetch" | "webfetch" => input.get("url").and_then(|v| v.as_str()),
+        "WebSearch" | "websearch" => input.get("query").and_then(|v| v.as_str()),
+        "LSP" | "lsp" => {
+            let op = input.get("operation").and_then(|v| v.as_str()).unwrap_or("");
+            let file = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
+            return format!("{} {}", op, file);
+        }
+        _ => input.get("file_path")
+            .or_else(|| input.get("path"))
+            .or_else(|| input.get("command"))
+            .or_else(|| input.get("query"))
+            .or_else(|| input.get("pattern"))
+            .and_then(|v| v.as_str()),
+    };
+
+    match result {
+        Some(s) if s.len() > 60 => format!("{}...", &s[..57]),
+        Some(s) => s.to_string(),
+        None => String::new(),
+    }
+}
+
 /// Parse stream-json output and extract human-readable content
 /// Returns None if the line should not be displayed
 pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
@@ -46,6 +83,28 @@ pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
     let event_type = json.get("type")?.as_str()?;
 
     match event_type {
+        "system" => {
+            let subtype = json.get("subtype").and_then(|s| s.as_str())?;
+            match subtype {
+                "init" => {
+                    let model = json.get("model").and_then(|m| m.as_str()).unwrap_or("unknown");
+                    let cwd = json.get("cwd").and_then(|c| c.as_str()).unwrap_or("");
+                    Some(format!("[Session started | {} | {}]\n", model, cwd))
+                }
+                "hook_response" => {
+                    let hook_name = json.get("hook_name").and_then(|n| n.as_str()).unwrap_or("hook");
+                    let output = json.get("output").and_then(|o| o.as_str()).unwrap_or("");
+                    // Log hook to JSON file
+                    log_hook_event(&json);
+                    if output.is_empty() {
+                        Some(format!("[Hook: {}]\n", hook_name))
+                    } else {
+                        Some(format!("[Hook: {} | {}]\n", hook_name, output.trim()))
+                    }
+                }
+                _ => None,
+            }
+        }
         "user" => {
             let content = json.get("message")?.get("content")?.as_str()?;
             Some(format!("You: {}\n", content))
@@ -64,7 +123,13 @@ pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
                         }
                         "tool_use" => {
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
-                            text_parts.push(format!("[Using {}...]", name));
+                            let input = block.get("input");
+                            let param = extract_tool_param(name, input);
+                            if param.is_empty() {
+                                text_parts.push(format!("[Using {}...]", name));
+                            } else {
+                                text_parts.push(format!("[Using {} | {}]", name, param));
+                            }
                         }
                         _ => {}
                     }
@@ -79,5 +144,29 @@ pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
             Some(format!("[Done: {:.1}s, ${:.4}]\n", duration as f64 / 1000.0, cost))
         }
         _ => None,
+    }
+}
+
+/// Log hook event to JSON file (~/.azural/hooks.jsonl)
+/// Each line is a complete JSON object for easy parsing
+fn log_hook_event(event: &serde_json::Value) {
+    use std::io::Write;
+    let hooks_path = crate::config::config_dir().join("hooks.jsonl");
+
+    // Build structured hook record with timestamp
+    let record = serde_json::json!({
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "session_id": event.get("session_id").and_then(|s| s.as_str()),
+        "hook_name": event.get("hook_name").and_then(|n| n.as_str()),
+        "output": event.get("output").and_then(|o| o.as_str()),
+        "raw": event,
+    });
+
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&hooks_path)
+    {
+        let _ = writeln!(file, "{}", record);
     }
 }

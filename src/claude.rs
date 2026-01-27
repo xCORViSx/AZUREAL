@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
@@ -75,76 +76,76 @@ impl ClaudeProcess {
             PermissionMode::Approve | PermissionMode::Ask => {}
         }
 
-        cmd.cwd(working_dir);
+        // Use standard process with separate stdout/stderr to capture hooks
+        let mut child = Command::new(self.config.claude_executable())
+            .args(cmd.get_argv().iter().skip(1).map(|s| s.to_str().unwrap_or("")))
+            .current_dir(working_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to spawn Claude")?;
 
-        // Create PTY (80x30 like Crystal's xterm-color)
-        let pty_system = native_pty_system();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows: 30,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .context("Failed to create PTY")?;
-
-        // Spawn child in PTY
-        let mut child = pair.slave.spawn_command(cmd).context("Failed to spawn Claude in PTY")?;
-
-        // Get process ID (portable-pty returns Option<u32>)
-        let pid = child.process_id().unwrap_or(0);
+        let pid = child.id();
         let _ = tx.send(ClaudeEvent::Started { pid });
 
-        // Read from PTY master
-        let reader = pair.master.try_clone_reader().context("Failed to clone PTY reader")?;
-        let tx_output = tx.clone();
-
+        // Read stdout
+        let stdout = child.stdout.take().context("Failed to get stdout")?;
+        let tx_stdout = tx.clone();
         thread::spawn(move || {
-            let buf_reader = BufReader::new(reader);
-            let mut line_buffer = String::new();
+            let reader = BufReader::new(stdout);
+            for line_result in reader.lines() {
+                let line = match line_result {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
 
-            // PTY output may not be line-buffered, so we need to handle partial lines
-            for byte_result in buf_reader.bytes() {
-                match byte_result {
-                    Ok(byte) => {
-                        let ch = byte as char;
-                        if ch == '\n' {
-                            // Process complete line
-                            let line = line_buffer.trim_end().to_string();
-                            line_buffer.clear();
+                if line.is_empty() {
+                    continue;
+                }
 
-                            if line.is_empty() {
-                                continue;
-                            }
-
-                            // Parse JSON to extract session_id from init event
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                                if json.get("type").and_then(|v| v.as_str()) == Some("system")
-                                    && json.get("subtype").and_then(|v| v.as_str()) == Some("init")
-                                {
-                                    if let Some(session_id) =
-                                        json.get("session_id").and_then(|v| v.as_str())
-                                    {
-                                        let _ = tx_output
-                                            .send(ClaudeEvent::SessionId(session_id.to_string()));
-                                    }
-                                }
-                            }
-
-                            // Send output for display
-                            let output = ClaudeOutput {
-                                output_type: OutputType::Stdout,
-                                data: format!("{}\n", line),
-                            };
-                            if tx_output.send(ClaudeEvent::Output(output)).is_err() {
-                                break;
-                            }
-                        } else if ch != '\r' {
-                            // Skip carriage returns, accumulate other chars
-                            line_buffer.push(ch);
+                // Parse JSON to extract session_id from init event
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if json.get("type").and_then(|v| v.as_str()) == Some("system")
+                        && json.get("subtype").and_then(|v| v.as_str()) == Some("init")
+                    {
+                        if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
+                            let _ = tx_stdout.send(ClaudeEvent::SessionId(session_id.to_string()));
                         }
                     }
+                }
+
+                let output = ClaudeOutput {
+                    output_type: OutputType::Stdout,
+                    data: format!("{}\n", line),
+                };
+                if tx_stdout.send(ClaudeEvent::Output(output)).is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Read stderr - hooks might be here
+        let stderr = child.stderr.take().context("Failed to get stderr")?;
+        let tx_stderr = tx.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line_result in reader.lines() {
+                let line = match line_result {
+                    Ok(l) => l,
                     Err(_) => break,
+                };
+
+                if line.is_empty() {
+                    continue;
+                }
+
+                // Send stderr output (might contain hooks)
+                let output = ClaudeOutput {
+                    output_type: OutputType::Stderr,
+                    data: format!("{}\n", line),
+                };
+                if tx_stderr.send(ClaudeEvent::Output(output)).is_err() {
+                    break;
                 }
             }
         });
@@ -152,7 +153,7 @@ impl ClaudeProcess {
         // Wait for process to exit
         thread::spawn(move || {
             let status = child.wait();
-            let code = status.ok().map(|s| s.exit_code() as i32);
+            let code = status.ok().and_then(|s| s.code());
             let _ = tx.send(ClaudeEvent::Exited { code });
         });
 

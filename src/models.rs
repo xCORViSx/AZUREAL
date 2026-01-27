@@ -116,6 +116,7 @@ pub enum OutputType {
     System,
     Json,
     Error,
+    Hook,
 }
 
 impl OutputType {
@@ -126,6 +127,7 @@ impl OutputType {
             OutputType::System => "system",
             OutputType::Json => "json",
             OutputType::Error => "error",
+            OutputType::Hook => "hook",
         }
     }
 
@@ -136,6 +138,7 @@ impl OutputType {
             "system" => OutputType::System,
             "json" => OutputType::Json,
             "error" => OutputType::Error,
+            "hook" => OutputType::Hook,
             _ => OutputType::Stdout,
         }
     }

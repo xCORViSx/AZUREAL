@@ -14,7 +14,8 @@ mod util;
 pub use types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
@@ -76,6 +77,8 @@ pub struct App {
     pub terminal_rows: u16,
     pub terminal_cols: u16,
     pub terminal_needs_resize: bool,
+    /// Tracks position in hooks.jsonl for incremental reading
+    pub hooks_file_pos: u64,
 }
 
 impl App {
@@ -124,6 +127,7 @@ impl App {
             terminal_rows: 24,
             terminal_cols: 120,
             terminal_needs_resize: false,
+            hooks_file_pos: 0,
         }
     }
 
@@ -256,23 +260,211 @@ impl App {
         self.selected_event = None;
 
         if let Some(session) = self.current_session() {
-            if let Ok(outputs) = self.db.get_session_outputs(&session.id) {
-                for output in outputs {
-                    match output.output_type {
-                        OutputType::System => self.process_output_chunk(&output.data),
-                        OutputType::Json | OutputType::Stdout => {
+            let session_id = session.id.clone();
+            let worktree_path = session.worktree_path.clone();
+            let session_created = session.created_at;
+            let session_updated = session.updated_at;
+
+            // Try to get Claude session ID, or auto-discover from Claude's files
+            let mut claude_session_id = session.claude_session_id.clone()
+                .or_else(|| self.claude_session_ids.get(&session_id).cloned());
+
+            // Auto-discover Claude session ID if not set
+            if claude_session_id.is_none() {
+                if let Some(discovered_id) = crate::config::find_latest_claude_session(&worktree_path) {
+                    // Save discovered ID for future use
+                    self.claude_session_ids.insert(session_id.clone(), discovered_id.clone());
+                    let _ = self.db.update_session_claude_id(&session_id, Some(&discovered_id));
+                    claude_session_id = Some(discovered_id);
+                }
+            }
+
+            let mut loaded_from_claude = false;
+
+            // Try loading from Claude's session files
+            if let Some(claude_id) = claude_session_id {
+                if let Some(session_file) = crate::config::claude_session_file(&worktree_path, &claude_id) {
+                    let mut timed_events = self.load_claude_session_events(&session_file);
+
+                    // Load and merge hooks within session time range
+                    let hooks = self.load_hooks_with_timestamps();
+                    let (first_ts, last_ts) = if !timed_events.is_empty() {
+                        (timed_events.first().map(|(ts, _)| *ts), timed_events.last().map(|(ts, _)| *ts))
+                    } else {
+                        (None, None)
+                    };
+
+                    if let (Some(start), Some(end)) = (first_ts, last_ts) {
+                        let buffer = chrono::Duration::seconds(5);
+                        for (ts, event) in hooks {
+                            if ts >= start - buffer && ts <= end + buffer {
+                                timed_events.push((ts, event));
+                            }
+                        }
+                    }
+
+                    timed_events.sort_by_key(|(ts, _)| *ts);
+                    for (_, event) in timed_events {
+                        self.display_events.push(event);
+                    }
+                    loaded_from_claude = !self.display_events.is_empty();
+                }
+            }
+
+            // Fallback: load from database if Claude files unavailable
+            if !loaded_from_claude {
+                if let Ok(outputs) = self.db.get_session_outputs(&session_id) {
+                    for output in outputs {
+                        let events = self.event_parser.parse(&output.data);
+                        self.display_events.extend(events);
+
+                        // Also add to output_lines for legacy display
+                        if output.output_type == OutputType::Stdout || output.output_type == OutputType::Json {
                             if let Some(display_text) = parse_stream_json_for_display(&output.data) {
                                 self.process_output_chunk(&display_text);
                             }
                         }
-                        _ => self.process_output_chunk(&output.data),
+                    }
+                }
+
+                // Load hooks filtered by session time range
+                let hooks = self.load_hooks_with_timestamps();
+                let buffer = chrono::Duration::seconds(5);
+                for (ts, event) in hooks {
+                    if ts >= session_created - buffer && ts <= session_updated + buffer {
+                        self.display_events.push(event);
                     }
                 }
             }
         }
+
+        // Set hooks file position to end so we only capture new hooks going forward
+        if let Ok(metadata) = std::fs::metadata(crate::config::config_dir().join("hooks.jsonl")) {
+            self.hooks_file_pos = metadata.len();
+        }
     }
 
-    fn process_output_chunk(&mut self, chunk: &str) {
+    /// Load events from Claude's session file with timestamps
+    fn load_claude_session_events(&mut self, session_file: &std::path::Path) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
+        let file = match File::open(session_file) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
+
+        let reader = BufReader::new(file);
+        let mut events = Vec::new();
+
+        for line in reader.lines().map_while(Result::ok) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                // Parse timestamp
+                let timestamp = json.get("timestamp")
+                    .and_then(|t| t.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(chrono::Utc::now);
+
+                let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                match event_type {
+                    "user" => {
+                        if let Some(content) = json.get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| c.as_str())
+                        {
+                            events.push((timestamp, DisplayEvent::UserMessage {
+                                uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                                content: content.to_string(),
+                            }));
+                        }
+                    }
+                    "assistant" => {
+                        if let Some(message) = json.get("message") {
+                            if let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) {
+                                for block in content_arr {
+                                    if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
+                                        match block_type {
+                                            "text" => {
+                                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                                    events.push((timestamp, DisplayEvent::AssistantText {
+                                                        uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                                                        message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
+                                                        text: text.to_string(),
+                                                    }));
+                                                }
+                                            }
+                                            "tool_use" => {
+                                                let tool_name = block.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                                                let tool_id = block.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
+                                                let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
+                                                let file_path = input.get("file_path").or(input.get("path")).and_then(|p| p.as_str()).map(|s| s.to_string());
+
+                                                events.push((timestamp, DisplayEvent::ToolCall {
+                                                    uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                                                    tool_use_id: tool_id,
+                                                    tool_name,
+                                                    file_path,
+                                                    input,
+                                                }));
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "result" => {
+                        // Completion event
+                        if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
+                            let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                            events.push((timestamp, DisplayEvent::Complete {
+                                session_id: json.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                                duration_ms: duration as u64,
+                                cost_usd: cost,
+                                success: true,
+                            }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        events
+    }
+
+    /// Load hooks from hooks.jsonl with timestamps
+    fn load_hooks_with_timestamps(&self) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
+        let hooks_path = crate::config::config_dir().join("hooks.jsonl");
+        if !hooks_path.exists() { return Vec::new(); }
+
+        let file = match File::open(&hooks_path) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
+
+        let reader = BufReader::new(file);
+        let mut hooks = Vec::new();
+
+        for line in reader.lines().map_while(Result::ok) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                let timestamp_str = json.get("timestamp").and_then(|t| t.as_str()).unwrap_or("");
+                let hook_name = json.get("hook_name").and_then(|n| n.as_str()).unwrap_or("hook").to_string();
+                let output = json.get("output").and_then(|o| o.as_str()).unwrap_or("").trim().to_string();
+
+                let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .or_else(|_| timestamp_str.parse::<chrono::DateTime<chrono::Utc>>())
+                    .unwrap_or_else(|_| chrono::Utc::now());
+
+                if !output.is_empty() {
+                    hooks.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
+                }
+            }
+        }
+        hooks
+    }
+
+    pub fn process_output_chunk(&mut self, chunk: &str) {
         let cleaned = strip_ansi_escapes(chunk);
         for ch in cleaned.chars() {
             match ch {
@@ -295,17 +487,27 @@ impl App {
         self.output_scroll = usize::MAX;
     }
 
-    pub fn scroll_output_down(&mut self, lines: usize, viewport_height: usize) {
-        let max_scroll = self.output_lines.len().saturating_sub(viewport_height);
-        self.output_scroll = self.output_scroll.saturating_add(lines).min(max_scroll);
+    /// Add a user message directly to display_events (for local prompt echo)
+    pub fn add_user_message(&mut self, content: String) {
+        self.display_events.push(DisplayEvent::UserMessage {
+            uuid: String::new(),
+            content,
+        });
+        self.output_scroll = usize::MAX;
+    }
+
+    pub fn scroll_output_down(&mut self, lines: usize, _viewport_height: usize) {
+        // Don't cap here - draw_output will clamp to actual rendered line count
+        self.output_scroll = self.output_scroll.saturating_add(lines);
     }
 
     pub fn scroll_output_up(&mut self, lines: usize) {
         self.output_scroll = self.output_scroll.saturating_sub(lines);
     }
 
-    pub fn scroll_output_to_bottom(&mut self, viewport_height: usize) {
-        self.output_scroll = self.output_lines.len().saturating_sub(viewport_height);
+    pub fn scroll_output_to_bottom(&mut self, _viewport_height: usize) {
+        // Set to MAX, draw_output will compute actual bottom position
+        self.output_scroll = usize::MAX;
     }
 
     pub fn scroll_diff_down(&mut self, lines: usize, viewport_height: usize) {
@@ -380,12 +582,25 @@ impl App {
     }
 
     pub fn handle_claude_output(&mut self, session_id: &str, output_type: OutputType, data: String) {
+        // Save to DB as fallback for sessions without claude_session_id
         let _ = self.db.add_session_output(session_id, output_type, &data);
         let is_viewing = self.current_session().map(|s| s.id == session_id).unwrap_or(false);
         if is_viewing {
-            if let Some(display_text) = parse_stream_json_for_display(&data) {
-                self.add_output(display_text);
+            // Parse raw data into display events (works for JSON and plain text hooks)
+            let events = self.event_parser.parse(&data);
+            self.display_events.extend(events);
+
+            // For stdout JSON, also update output_lines (fallback display)
+            if output_type == OutputType::Stdout || output_type == OutputType::Json {
+                if let Some(display_text) = parse_stream_json_for_display(&data) {
+                    self.process_output_chunk(&display_text);
+                }
+            } else {
+                // For stderr and other types, just add raw text
+                self.process_output_chunk(&data);
             }
+
+            self.output_scroll = usize::MAX;
         }
     }
 
@@ -550,4 +765,58 @@ impl App {
     }
 
     pub fn is_wizard_active(&self) -> bool { self.creation_wizard.is_some() }
+
+    /// Poll hooks.jsonl for new entries and add them to display_events
+    /// Also saves hooks to database for persistence across session switches
+    /// Returns true if new hooks were found
+    pub fn poll_hooks_file(&mut self) -> bool {
+        let hooks_path = crate::config::config_dir().join("hooks.jsonl");
+        if !hooks_path.exists() { return false; }
+
+        let file = match File::open(&hooks_path) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+
+        let metadata = match file.metadata() {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+
+        // Skip if file hasn't grown
+        let file_len = metadata.len();
+        if file_len <= self.hooks_file_pos { return false; }
+
+        let mut reader = BufReader::new(file);
+        if reader.seek(SeekFrom::Start(self.hooks_file_pos)).is_err() { return false; }
+
+        let mut found = false;
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                let hook_name = json.get("hook_name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("hook")
+                    .to_string();
+                let output = json.get("output")
+                    .and_then(|o| o.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+
+                // Only add if we have meaningful output
+                // Note: We no longer save to DB - hooks persist in hooks.jsonl
+                if !output.is_empty() {
+                    self.display_events.push(DisplayEvent::Hook { name: hook_name.clone(), output: output.clone() });
+                    self.output_scroll = usize::MAX;
+                    found = true;
+                }
+            }
+            line.clear();
+        }
+
+        self.hooks_file_pos = file_len;
+        found
+    }
+
 }

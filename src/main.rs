@@ -42,6 +42,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Tui) | None => tui::run(db).await?,
 
+        // Hooks log viewer
+        Some(Commands::Hooks { lines, json, name, clear }) => cmd::handle_hooks(lines, json, name, clear)?,
+
         // Session shortcuts
         Some(Commands::List { project, all }) => cmd::handle_session_list(&db, project, all, output_format)?,
         Some(Commands::New { prompt, project, name }) => cmd::handle_session_new(&db, prompt, project, name, output_format)?,

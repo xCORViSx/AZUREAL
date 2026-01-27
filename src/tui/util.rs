@@ -11,6 +11,103 @@ use crate::events::DisplayEvent;
 /// Orange color constant for Claude messages
 const ORANGE: Color = Color::Rgb(255, 140, 0);
 
+/// Strip ANSI escape codes from a string for pattern matching
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until we hit a letter (end of escape sequence)
+            while let Some(&next) = chars.peek() {
+                chars.next();
+                if next.is_ascii_alphabetic() { break; }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Extract the most relevant parameter from a tool's input for display
+fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String {
+    match tool_name {
+        "Read" | "read" => {
+            input.get("file_path")
+                .or_else(|| input.get("path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "Write" | "write" => {
+            input.get("file_path")
+                .or_else(|| input.get("path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "Edit" | "edit" => {
+            input.get("file_path")
+                .or_else(|| input.get("path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "Bash" | "bash" => {
+            let cmd = input.get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if cmd.len() > 50 { format!("{}...", &cmd[..47]) } else { cmd.to_string() }
+        }
+        "Glob" | "glob" => {
+            input.get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "Grep" | "grep" => {
+            input.get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "WebFetch" | "webfetch" => {
+            input.get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "WebSearch" | "websearch" => {
+            input.get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "Task" | "task" => {
+            input.get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        "LSP" | "lsp" => {
+            let op = input.get("operation").and_then(|v| v.as_str()).unwrap_or("");
+            let file = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
+            format!("{} {}", op, file)
+        }
+        _ => {
+            // Generic: try common field names
+            input.get("file_path")
+                .or_else(|| input.get("path"))
+                .or_else(|| input.get("command"))
+                .or_else(|| input.get("query"))
+                .or_else(|| input.get("pattern"))
+                .and_then(|v| v.as_str())
+                .map(|s| if s.len() > 60 { format!("{}...", &s[..57]) } else { s.to_string() })
+                .unwrap_or_default()
+        }
+    }
+}
+
 /// Truncate a string to max length, adding ellipsis if needed
 pub fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max - 1]) }
@@ -33,7 +130,8 @@ pub enum MessageType {
 
 /// Detect message type from line content
 pub fn detect_message_type(line: &str) -> MessageType {
-    let trimmed = line.trim();
+    let stripped = strip_ansi(line);
+    let trimmed = stripped.trim();
     if trimmed.starts_with("You:") || trimmed.starts_with("> ") || trimmed.starts_with("❯")
         || trimmed.starts_with("Human:") || trimmed.starts_with("[H]") {
         MessageType::User
@@ -47,8 +145,11 @@ pub fn detect_message_type(line: &str) -> MessageType {
 /// Colorization for Claude output lines with rich styling
 /// This is the fallback when display_events is empty
 pub fn colorize_output(line: &str) -> Line<'static> {
-    let trimmed = line.trim();
+    // Strip ANSI codes for pattern matching, but keep original for display
+    let stripped = strip_ansi(line);
+    let trimmed = stripped.trim();
     let line_owned = line.to_string();
+    let lower = trimmed.to_lowercase();
 
     // User prompts - cyan background header
     if trimmed.starts_with("You:") || trimmed.starts_with("> ") || trimmed.starts_with("❯") {
@@ -68,29 +169,83 @@ pub fn colorize_output(line: &str) -> Line<'static> {
         ]).alignment(Alignment::Right);
     }
 
-    // Claude/Assistant responses - orange background header
+    // Claude/Assistant responses - check for tool use first
     if trimmed.starts_with("Claude:") || trimmed.starts_with("Assistant:") || trimmed.starts_with("[A]") {
+        let content = trimmed
+            .trim_start_matches("Claude:")
+            .trim_start_matches("Assistant:")
+            .trim_start_matches("[A]")
+            .trim();
+
+        // Check if this is a tool use line: "Claude: [Using Read | path]" or "Claude: [Using Read...]"
+        if content.starts_with("[Using ") {
+            let inner = content
+                .trim_start_matches("[Using ")
+                .trim_end_matches("...]")
+                .trim_end_matches(']');
+
+            // Parse "Tool | param" or just "Tool"
+            let (tool_name, param) = if let Some(pipe_pos) = inner.find(" | ") {
+                (&inner[..pipe_pos], Some(&inner[pipe_pos + 3..]))
+            } else {
+                (inner, None)
+            };
+
+            return Line::from(vec![
+                Span::styled(" ┣━", Style::default().fg(Color::Cyan)),
+                Span::styled("● ", Style::default().fg(Color::Yellow)),
+                Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    param.map(|p| format!("  {}", p)).unwrap_or_default(),
+                    Style::default().fg(Color::DarkGray)
+                ),
+            ]);
+        }
+
+        // Regular Claude response
         return Line::from(vec![
             Span::styled(" ◀ Claude ", Style::default().fg(Color::Black).bg(ORANGE).add_modifier(Modifier::BOLD)),
             Span::styled(" ", Style::default()),
-            Span::styled(trimmed.trim_start_matches("Claude:").trim_start_matches("Assistant:").trim_start_matches("[A]").trim().to_string(), Style::default().fg(Color::White)),
+            Span::styled(content.to_string(), Style::default().fg(Color::White)),
         ]);
     }
 
-    // Tool usage indicators
-    if trimmed.starts_with("[Using ") || trimmed.contains("Tool:") || trimmed.starts_with("⏺") {
+    // Standalone tool use line (when following text in same assistant message)
+    if trimmed.starts_with("[Using ") {
+        let inner = trimmed
+            .trim_start_matches("[Using ")
+            .trim_end_matches("...]")
+            .trim_end_matches(']');
+
+        // Parse "Tool | param" or just "Tool"
+        let (tool_name, param) = if let Some(pipe_pos) = inner.find(" | ") {
+            (&inner[..pipe_pos], Some(&inner[pipe_pos + 3..]))
+        } else {
+            (inner, None)
+        };
+
         return Line::from(vec![
-            Span::styled("  🔧 ", Style::default().fg(Color::Cyan)),
-            Span::styled(trimmed.trim_start_matches("[Using ").trim_end_matches("...]").to_string(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" ┣━", Style::default().fg(Color::Cyan)),
+            Span::styled("● ", Style::default().fg(Color::Yellow)),
+            Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                param.map(|p| format!("  {}", p)).unwrap_or_default(),
+                Style::default().fg(Color::DarkGray)
+            ),
         ]);
     }
 
-    // Done/completion markers
+    // Done/completion markers - timeline result style
     if trimmed.starts_with("[Done:") || trimmed.starts_with("✓") || trimmed.starts_with("✔") {
+        let result_text = trimmed
+            .trim_start_matches("[Done:")
+            .trim_start_matches("✓ ")
+            .trim_start_matches("✔ ")
+            .trim_end_matches(']');
         return Line::from(vec![
-            Span::styled("  ✓ ", Style::default().fg(Color::Green)),
-            Span::styled(trimmed.to_string(), Style::default().fg(Color::Green)),
+            Span::styled(" ┃  └─ ", Style::default().fg(Color::Cyan)),
+            Span::styled("✓ ", Style::default().fg(Color::Green)),
+            Span::styled(result_text.to_string(), Style::default().fg(Color::DarkGray)),
         ]);
     }
 
@@ -160,18 +315,30 @@ pub fn render_display_events(events: &[DisplayEvent], width: u16) -> Vec<Line<'s
                 lines.push(Line::from(""));
             }
             DisplayEvent::Hook { name, output } => {
+                // Compact, dim hook display - no spacing, minimal attention
                 if !output.trim().is_empty() {
                     lines.push(Line::from(vec![
-                        Span::styled("⚡ ", Style::default().fg(Color::Yellow)),
-                        Span::styled(name.clone(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::styled("› ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(name.clone(), Style::default().fg(Color::DarkGray)),
+                        Span::styled(": ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            output.lines().next().unwrap_or("").to_string(),
+                            Style::default().fg(Color::DarkGray)
+                        ),
                     ]));
-                    for line in output.lines() {
-                        lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::DarkGray))));
-                    }
-                    lines.push(Line::from(""));
+                } else {
+                    // Even empty hooks get a single dim line
+                    lines.push(Line::from(vec![
+                        Span::styled("› ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(name.clone(), Style::default().fg(Color::DarkGray)),
+                    ]));
                 }
             }
             DisplayEvent::UserMessage { content, .. } => {
+                // Skip empty user messages
+                if content.trim().is_empty() {
+                    continue;
+                }
                 // Two blank lines before user message
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
@@ -249,39 +416,47 @@ pub fn render_display_events(events: &[DisplayEvent], width: u16) -> Vec<Line<'s
                 ]));
             }
             DisplayEvent::ToolCall { tool_name, file_path, input, .. } => {
-                lines.push(Line::from(""));
+                // Timeline node style for tool calls
+                let tool_color = Color::Cyan;
+
+                // Timeline connector
                 lines.push(Line::from(vec![
-                    Span::styled("  🔧 ", Style::default().fg(Color::Cyan)),
-                    Span::styled(tool_name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ┃", Style::default().fg(tool_color)),
                 ]));
-                if let Some(path) = file_path {
-                    lines.push(Line::from(vec![
-                        Span::styled("     → ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(path.clone(), Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED)),
-                    ]));
+
+                // Tool node with name and primary parameter
+                let param_display = if let Some(path) = file_path {
+                    path.clone()
                 } else {
-                    let input_str = serde_json::to_string(input).unwrap_or_default();
-                    let truncated = if input_str.len() > 80 { format!("{}...", &input_str[..77]) } else { input_str };
-                    lines.push(Line::from(vec![
-                        Span::styled("     ", Style::default()),
-                        Span::styled(truncated, Style::default().fg(Color::DarkGray)),
-                    ]));
-                }
+                    // Extract meaningful parameter from input
+                    extract_tool_param(tool_name, input)
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled(" ┣━", Style::default().fg(tool_color)),
+                    Span::styled("● ", Style::default().fg(Color::Yellow)),
+                    Span::styled(tool_name.clone(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
+                    Span::styled("  ", Style::default()),
+                    Span::styled(param_display, Style::default().fg(Color::White)),
+                ]));
             }
             DisplayEvent::ToolResult { success, output, .. } => {
-                let (icon, color) = if *success { ("✓", Color::Green) } else { ("✗", Color::Red) };
-                if !output.is_empty() {
-                    let preview = if output.len() > 100 { format!("{}...", &output[..97]) } else { output.clone() };
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("     {} ", icon), Style::default().fg(color)),
-                        Span::styled(preview, Style::default().fg(Color::DarkGray)),
-                    ]));
+                // Timeline result node
+                let tool_color = Color::Cyan;
+                let (icon, result_color) = if *success { ("✓", Color::Green) } else { ("✗", Color::Red) };
+
+                let result_text = if !output.is_empty() {
+                    let preview = if output.len() > 60 { format!("{}...", &output[..57]) } else { output.clone() };
+                    preview.lines().next().unwrap_or("").to_string()
                 } else {
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("     {} ", icon), Style::default().fg(color)),
-                        Span::styled("Done", Style::default().fg(color)),
-                    ]));
-                }
+                    "Done".to_string()
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled(" ┃  └─ ", Style::default().fg(tool_color)),
+                    Span::styled(format!("{} ", icon), Style::default().fg(result_color)),
+                    Span::styled(result_text, Style::default().fg(Color::DarkGray)),
+                ]));
             }
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
                 lines.push(Line::from(""));
