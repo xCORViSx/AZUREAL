@@ -193,8 +193,8 @@ impl Database {
     pub fn create_session(&self, session: &Session) -> Result<()> {
         let now = Utc::now();
         self.conn.execute(
-            "INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, archived, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, archived, created_at, updated_at, claude_session_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 session.id,
                 session.name,
@@ -207,6 +207,31 @@ impl Database {
                 session.archived,
                 now.to_rfc3339(),
                 now.to_rfc3339(),
+                session.claude_session_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Ensure a session exists in DB (for foreign key constraints on session_outputs)
+    pub fn ensure_session(&self, session: &Session) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, archived, created_at, updated_at, claude_session_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                session.id,
+                session.name,
+                session.initial_prompt,
+                session.worktree_name,
+                session.worktree_path.to_string_lossy().as_ref(),
+                session.branch_name,
+                session.status.as_str(),
+                session.project_id,
+                session.archived,
+                now.to_rfc3339(),
+                now.to_rfc3339(),
+                session.claude_session_id,
             ],
         )?;
         Ok(())
@@ -216,7 +241,7 @@ impl Database {
     pub fn get_session(&self, id: &str) -> Result<Option<Session>> {
         self.conn
             .query_row(
-                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
                  FROM sessions WHERE id = ?1",
                 params![id],
                 |row| Ok(row_to_session(row)),
@@ -228,7 +253,7 @@ impl Database {
     /// List all sessions (optionally filtered by project)
     pub fn list_sessions(&self) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE archived = 0 ORDER BY updated_at DESC",
         )?;
 
@@ -242,7 +267,7 @@ impl Database {
     /// List sessions for a specific project
     pub fn list_sessions_for_project(&self, project_id: i64) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE project_id = ?1 AND archived = 0 ORDER BY updated_at DESC",
         )?;
 
@@ -256,7 +281,7 @@ impl Database {
     /// List archived sessions
     pub fn list_archived_sessions(&self) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE archived = 1 ORDER BY updated_at DESC",
         )?;
 
@@ -270,7 +295,7 @@ impl Database {
     /// List archived sessions for a specific project
     pub fn list_archived_sessions_for_project(&self, project_id: i64) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE project_id = ?1 AND archived = 1 ORDER BY updated_at DESC",
         )?;
 
@@ -284,7 +309,7 @@ impl Database {
     /// List sessions eligible for cleanup (completed, failed, or archived)
     pub fn list_cleanable_sessions(&self, project_id: i64) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions
              WHERE project_id = ?1 AND (status IN ('completed', 'failed', 'stopped') OR archived = 1)
              ORDER BY updated_at DESC",
@@ -337,6 +362,16 @@ impl Database {
         Ok(())
     }
 
+    /// Update session Claude session ID (for --resume)
+    pub fn update_session_claude_id(&self, id: &str, claude_session_id: Option<&str>) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE sessions SET claude_session_id = ?1, updated_at = ?2 WHERE id = ?3",
+            params![claude_session_id, now.to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
     /// Archive a session
     pub fn archive_session(&self, id: &str) -> Result<()> {
         let now = Utc::now();
@@ -368,7 +403,7 @@ impl Database {
     pub fn search_sessions_by_name(&self, query: &str) -> Result<Vec<Session>> {
         let pattern = format!("%{}%", query);
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE name LIKE ?1 COLLATE NOCASE ORDER BY updated_at DESC",
         )?;
 
@@ -382,7 +417,7 @@ impl Database {
     /// Filter sessions by status
     pub fn filter_sessions_by_status(&self, status: SessionStatus) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE status = ?1 ORDER BY updated_at DESC",
         )?;
 
@@ -400,7 +435,7 @@ impl Database {
         status: SessionStatus,
     ) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+            "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
              FROM sessions WHERE project_id = ?1 AND status = ?2 ORDER BY updated_at DESC",
         )?;
 
@@ -417,7 +452,7 @@ impl Database {
     pub fn get_session_by_worktree_name(&self, worktree_name: &str) -> Result<Option<Session>> {
         self.conn
             .query_row(
-                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
                  FROM sessions WHERE worktree_name = ?1",
                 params![worktree_name],
                 |row| Ok(row_to_session(row)),
@@ -430,7 +465,7 @@ impl Database {
     pub fn get_session_by_branch_name(&self, branch_name: &str) -> Result<Option<Session>> {
         self.conn
             .query_row(
-                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at
+                "SELECT id, name, initial_prompt, worktree_name, worktree_path, branch_name, status, project_id, pid, exit_code, archived, created_at, updated_at, claude_session_id
                  FROM sessions WHERE branch_name = ?1",
                 params![branch_name],
                 |row| Ok(row_to_session(row)),
@@ -642,6 +677,7 @@ fn row_to_session(row: &rusqlite::Row) -> Session {
         archived: row.get(10).unwrap(),
         created_at: parse_datetime(&row.get::<_, String>(11).unwrap()),
         updated_at: parse_datetime(&row.get::<_, String>(12).unwrap()),
+        claude_session_id: row.get(13).unwrap(),
     }
 }
 

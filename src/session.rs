@@ -61,6 +61,7 @@ impl<'a> SessionManager<'a> {
             archived: false,
             created_at: now,
             updated_at: now,
+            claude_session_id: None,
         };
 
         self.db.create_session(&session)?;
@@ -125,6 +126,7 @@ impl<'a> SessionManager<'a> {
             archived: false,
             created_at: now,
             updated_at: now,
+            claude_session_id: None,
         };
 
         self.db.create_session(&session)?;

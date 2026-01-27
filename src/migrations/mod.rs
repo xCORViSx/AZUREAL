@@ -29,12 +29,11 @@ pub fn all_migrations() -> Vec<Migration> {
             name: "001_initial",
             sql: include_str!("001_initial.sql"),
         },
-        // Add future migrations here:
-        // Migration {
-        //     version: 2,
-        //     name: "002_add_feature",
-        //     sql: include_str!("002_add_feature.sql"),
-        // },
+        Migration {
+            version: 2,
+            name: "002_claude_session_id",
+            sql: include_str!("002_claude_session_id.sql"),
+        },
     ]
 }
 

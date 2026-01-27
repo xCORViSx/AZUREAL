@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
-use std::collections::HashMap;
-use std::io::{Read, Write};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::io::{BufReader, Read};
 use std::path::Path;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::mpsc;
 use std::thread;
 
 use crate::config::{Config, PermissionMode};
@@ -21,242 +20,142 @@ pub struct ClaudeOutput {
 pub enum ClaudeEvent {
     Output(ClaudeOutput),
     Started { pid: u32 },
+    /// Claude's session ID from init event (for --resume)
+    SessionId(String),
     Exited { code: Option<i32> },
     Error(String),
 }
 
-/// Manages Claude Code CLI process
+/// Manages Claude Code CLI processes via PTY
+/// PTY spawning (like Crystal) may avoid tool_use ID collision bugs in -p --resume mode
 pub struct ClaudeProcess {
     config: Config,
-    /// Map of session IDs to their PTY masters for bidirectional communication
-    active_ptys: Arc<Mutex<HashMap<String, Box<dyn MasterPty + Send>>>>,
 }
 
 impl ClaudeProcess {
     pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            active_ptys: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self { config }
     }
 
-    /// Spawn Claude Code with the given prompt in the specified directory
+    /// Spawn Claude Code with the given prompt via PTY
+    /// resume_session_id: Claude session ID from previous prompt's init event (for --resume)
     pub fn spawn(
         &self,
-        session_id: String,
         working_dir: &Path,
         prompt: &str,
         resume_session_id: Option<&str>,
     ) -> Result<mpsc::Receiver<ClaudeEvent>> {
+        if prompt.is_empty() {
+            anyhow::bail!("Prompt cannot be empty");
+        }
+
         let (tx, rx) = mpsc::channel();
 
-        // Build the command
+        // Build command with PTY (like Crystal does)
         let mut cmd = CommandBuilder::new(self.config.claude_executable());
 
-        // Add arguments for bidirectional streaming
+        // Resume previous conversation if we have a session ID
+        if let Some(session_id) = resume_session_id {
+            cmd.arg("--resume");
+            cmd.arg(session_id);
+        }
+
+        // Prompt and output format
         cmd.arg("-p");
         cmd.arg(prompt);
         cmd.arg("--verbose");
-        cmd.arg("--input-format");
-        cmd.arg("stream-json");
         cmd.arg("--output-format");
         cmd.arg("stream-json");
 
-        // Add permission mode
+        // Permission mode
         match self.config.default_permission_mode {
             PermissionMode::Ignore => {
                 cmd.arg("--dangerously-skip-permissions");
             }
-            PermissionMode::Approve => {
-                // Default behavior - approve via stdin
-            }
-            PermissionMode::Ask => {
-                // Default behavior
-            }
-        }
-
-        // Resume session if specified
-        if let Some(resume_id) = resume_session_id {
-            cmd.arg("--resume");
-            cmd.arg(resume_id);
+            PermissionMode::Approve | PermissionMode::Ask => {}
         }
 
         cmd.cwd(working_dir);
 
-        // Set up PTY
-        let pty_system = NativePtySystem::default();
+        // Create PTY (80x30 like Crystal's xterm-color)
+        let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
-                rows: 24,
+                rows: 30,
                 cols: 80,
                 pixel_width: 0,
                 pixel_height: 0,
             })
             .context("Failed to create PTY")?;
 
-        let mut child = pair
-            .slave
-            .spawn_command(cmd)
-            .context("Failed to spawn Claude process")?;
+        // Spawn child in PTY
+        let mut child = pair.slave.spawn_command(cmd).context("Failed to spawn Claude in PTY")?;
 
+        // Get process ID (portable-pty returns Option<u32>)
         let pid = child.process_id().unwrap_or(0);
         let _ = tx.send(ClaudeEvent::Started { pid });
 
-        // Store the master PTY for later input (bidirectional communication)
-        let master_pty = pair.master;
-        {
-            let mut active_ptys = self.active_ptys.lock().unwrap();
-            active_ptys.insert(session_id.clone(), master_pty);
-        }
+        // Read from PTY master
+        let reader = pair.master.try_clone_reader().context("Failed to clone PTY reader")?;
+        let tx_output = tx.clone();
 
-        // Clone PTY reader for output thread - stream chunks instead of lines
-        let active_ptys_clone = self.active_ptys.clone();
-        let session_id_for_reader = session_id.clone();
-        let mut reader = {
-            let active_ptys = active_ptys_clone.lock().unwrap();
-            if let Some(pty) = active_ptys.get(&session_id_for_reader) {
-                pty.try_clone_reader()
-                    .context("Failed to clone PTY reader")?
-            } else {
-                anyhow::bail!("PTY not found for session");
-            }
-        };
-
-        let tx_clone = tx.clone();
         thread::spawn(move || {
-            let mut buffer = [0u8; 4096];
-            loop {
-                match reader.read(&mut buffer) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        // Convert bytes to string, handling potentially invalid UTF-8
-                        let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+            let buf_reader = BufReader::new(reader);
+            let mut line_buffer = String::new();
 
-                        let output = ClaudeOutput {
-                            output_type: OutputType::Stdout,
-                            data: chunk,
-                        };
+            // PTY output may not be line-buffered, so we need to handle partial lines
+            for byte_result in buf_reader.bytes() {
+                match byte_result {
+                    Ok(byte) => {
+                        let ch = byte as char;
+                        if ch == '\n' {
+                            // Process complete line
+                            let line = line_buffer.trim_end().to_string();
+                            line_buffer.clear();
 
-                        if tx_clone.send(ClaudeEvent::Output(output)).is_err() {
-                            break;
+                            if line.is_empty() {
+                                continue;
+                            }
+
+                            // Parse JSON to extract session_id from init event
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                                if json.get("type").and_then(|v| v.as_str()) == Some("system")
+                                    && json.get("subtype").and_then(|v| v.as_str()) == Some("init")
+                                {
+                                    if let Some(session_id) =
+                                        json.get("session_id").and_then(|v| v.as_str())
+                                    {
+                                        let _ = tx_output
+                                            .send(ClaudeEvent::SessionId(session_id.to_string()));
+                                    }
+                                }
+                            }
+
+                            // Send output for display
+                            let output = ClaudeOutput {
+                                output_type: OutputType::Stdout,
+                                data: format!("{}\n", line),
+                            };
+                            if tx_output.send(ClaudeEvent::Output(output)).is_err() {
+                                break;
+                            }
+                        } else if ch != '\r' {
+                            // Skip carriage returns, accumulate other chars
+                            line_buffer.push(ch);
                         }
                     }
-                    Err(e) => {
-                        let _ = tx_clone.send(ClaudeEvent::Error(e.to_string()));
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
         });
 
-        // Wait for process to exit in another thread
-        let active_ptys_for_exit = self.active_ptys.clone();
-        let session_id_for_exit = session_id.clone();
+        // Wait for process to exit
         thread::spawn(move || {
             let status = child.wait();
-            let code = status.ok().and_then(|s| {
-                if s.success() {
-                    Some(0)
-                } else {
-                    // Try to get exit code
-                    None
-                }
-            });
-
-            // Clean up PTY when process exits
-            let mut active_ptys = active_ptys_for_exit.lock().unwrap();
-            active_ptys.remove(&session_id_for_exit);
-
+            let code = status.ok().map(|s| s.exit_code() as i32);
             let _ = tx.send(ClaudeEvent::Exited { code });
         });
 
         Ok(rx)
-    }
-
-    /// Send input to a running Claude process (for follow-up prompts and approvals)
-    pub fn send_input(&self, session_id: &str, input: &str) -> Result<()> {
-        let mut active_ptys = self.active_ptys.lock().unwrap();
-
-        if let Some(pty) = active_ptys.get_mut(session_id) {
-            let mut writer = pty.take_writer()
-                .context("Failed to get PTY writer")?;
-
-            // Write input followed by newline
-            writeln!(writer, "{}", input)
-                .context("Failed to write to PTY")?;
-
-            writer.flush()
-                .context("Failed to flush PTY writer")?;
-
-            Ok(())
-        } else {
-            anyhow::bail!("No active PTY found for session: {}", session_id)
-        }
-    }
-
-    /// Check if a session has an active PTY (is running)
-    pub fn is_session_running(&self, session_id: &str) -> bool {
-        let active_ptys = self.active_ptys.lock().unwrap();
-        active_ptys.contains_key(session_id)
-    }
-
-    /// Stop a running session by closing its PTY
-    pub fn stop_session(&self, session_id: &str) -> Result<()> {
-        let mut active_ptys = self.active_ptys.lock().unwrap();
-
-        if active_ptys.remove(session_id).is_some() {
-            Ok(())
-        } else {
-            anyhow::bail!("No active PTY found for session: {}", session_id)
-        }
-    }
-}
-
-
-/// Parse Claude's JSON output into a more usable format
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "type")]
-pub enum ClaudeMessage {
-    #[serde(rename = "assistant")]
-    Assistant { message: AssistantMessage },
-    #[serde(rename = "user")]
-    User { message: UserMessage },
-    #[serde(rename = "result")]
-    Result { result: String, subtype: Option<String> },
-    #[serde(rename = "system")]
-    System { message: String },
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct AssistantMessage {
-    pub content: Vec<ContentBlock>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct UserMessage {
-    pub content: Vec<ContentBlock>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "tool_use")]
-    ToolUse {
-        id: String,
-        name: String,
-        input: serde_json::Value,
-    },
-    #[serde(rename = "tool_result")]
-    ToolResult {
-        tool_use_id: String,
-        content: String,
-    },
-}
-
-impl ClaudeMessage {
-    pub fn parse(json_str: &str) -> Option<Self> {
-        serde_json::from_str(json_str).ok()
     }
 }

@@ -95,6 +95,8 @@ pub struct Session {
     pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Claude CLI session ID for --resume (persisted across restarts)
+    pub claude_session_id: Option<String>,
 }
 
 /// Output from a session (terminal output)
