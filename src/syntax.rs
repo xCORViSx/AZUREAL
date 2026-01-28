@@ -3,7 +3,6 @@ use ratatui::text::Span;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
-use syntect::util::LinesWithEndings;
 
 /// Syntax highlighter for diff views
 pub struct DiffHighlighter {
@@ -107,8 +106,7 @@ impl DiffHighlighter {
             }
 
             // Context lines
-            if line.starts_with(' ') {
-                let content = &line[1..];
+            if let Some(content) = line.strip_prefix(' ') {
                 let mut spans = vec![Span::raw(" ")];
 
                 if let Some(syntax) = current_syntax {
@@ -191,14 +189,14 @@ fn blend_color(syntax_color: Color, base_color: Color) -> Color {
             // Tint towards green
             Color::Rgb(
                 (r as f32 * 0.7 + 0 as f32 * 0.3) as u8,
-                (g as f32 * 0.7 + 255 as f32 * 0.3) as u8,
+                (g as f32 * 0.7 + 255_f32 * 0.3) as u8,
                 (b as f32 * 0.7 + 0 as f32 * 0.3) as u8,
             )
         }
         (Color::Rgb(r, g, b), Color::Red) => {
             // Tint towards red
             Color::Rgb(
-                (r as f32 * 0.7 + 255 as f32 * 0.3) as u8,
+                (r as f32 * 0.7 + 255_f32 * 0.3) as u8,
                 (g as f32 * 0.7 + 0 as f32 * 0.3) as u8,
                 (b as f32 * 0.7 + 0 as f32 * 0.3) as u8,
             )

@@ -102,7 +102,7 @@ pub fn render_display_events(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let header = format!(" You ▶ ");
+                let header = " You ▶ ".to_string();
                 let header_pad = " ".repeat(bubble_width.saturating_sub(header.len()));
                 lines.push(Line::from(vec![
                     Span::styled(header_pad, Style::default().bg(Color::Cyan)),
@@ -128,7 +128,7 @@ pub fn render_display_events(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let header = format!(" ◀ Claude ");
+                let header = " ◀ Claude ".to_string();
                 let header_pad = " ".repeat(bubble_width.saturating_sub(header.len()));
                 lines.push(Line::from(vec![
                     Span::styled(header, Style::default().fg(Color::Black).bg(ORANGE).add_modifier(Modifier::BOLD)),
@@ -168,7 +168,7 @@ pub fn render_display_events(
                         continue;
                     }
 
-                    let is_table_line = trimmed.contains('|') && !trimmed.starts_with('|') == false;
+                    let is_table_line = trimmed.contains('|') && trimmed.starts_with('|');
                     let is_sep = is_table_separator(trimmed);
 
                     if is_table_line || is_sep {
@@ -410,8 +410,7 @@ fn render_write_preview(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                 trimmed.starts_with("/*") || trimmed.starts_with("\"\"\"") ||
                 trimmed.starts_with("///") || trimmed.starts_with("//!")
             })
-            .or(content_lines.first())
-            .map(|s| *s)
+            .or(content_lines.first()).copied()
             .unwrap_or("");
 
         lines.push(Line::from(vec![

@@ -11,7 +11,4 @@ mod core;
 mod rebase;
 mod worktree;
 
-pub use branch::*;
 pub use core::{Git, WorktreeInfo};
-pub use rebase::*;
-pub use worktree::*;

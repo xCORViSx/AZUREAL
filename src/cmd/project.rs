@@ -36,7 +36,7 @@ pub fn handle_project_list(output_format: OutputFormat) -> Result<()> {
             }
         }
         OutputFormat::Table => {
-            println!("{:<20} {}", "NAME", "PATH");
+            println!("{:<20} PATH", "NAME");
             println!("{}", "-".repeat(70));
             for project in projects {
                 println!("{:<20} {}", truncate(&project.name, 20), project.path.display());

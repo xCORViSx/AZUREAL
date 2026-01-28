@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     /// Anthropic API key (optional, Claude Code may have its own)
     pub anthropic_api_key: Option<String>,
@@ -29,16 +30,6 @@ pub enum PermissionMode {
     Ask,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            anthropic_api_key: None,
-            claude_executable: None,
-            default_permission_mode: PermissionMode::default(),
-            verbose: false,
-        }
-    }
-}
 
 impl Config {
     pub fn load() -> Result<Self> {

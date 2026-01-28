@@ -127,7 +127,7 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
                     Span::styled(format!("... ({} lines)", line_count - 2), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
                 ]));
                 let last_line = content_lines.iter().rev()
-                    .find(|l| l.find('→').map(|i| l[i+3..].trim().len() > 0).unwrap_or(l.trim().len() > 0))
+                    .find(|l| l.find('→').map(|i| !l[i+3..].trim().is_empty()).unwrap_or(!l.trim().is_empty()))
                     .unwrap_or(&content_lines[line_count - 1]);
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
@@ -284,7 +284,7 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
         _ => {
             let content_lines: Vec<&str> = content.lines().collect();
             let line_count = content_lines.len();
-            let first_line = content_lines.first().map(|s| *s).unwrap_or("✓");
+            let first_line = content_lines.first().copied().unwrap_or("✓");
             if line_count <= 1 {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),

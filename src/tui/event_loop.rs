@@ -134,11 +134,7 @@ pub async fn run_app(
         let now = Instant::now();
         let should_draw = if had_key_event || needs_redraw {
             true
-        } else if scroll_changed && now.duration_since(last_draw) >= min_draw_interval {
-            true
-        } else {
-            false
-        };
+        } else { scroll_changed && now.duration_since(last_draw) >= min_draw_interval };
 
         if should_draw {
             terminal.draw(|f| ui(f, app))?;

@@ -11,4 +11,3 @@ mod types;
 
 pub use display::DisplayEvent;
 pub use parser::EventParser;
-pub use types::*;

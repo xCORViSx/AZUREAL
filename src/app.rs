@@ -16,4 +16,4 @@ mod types;
 mod util;
 
 pub use state::App;
-pub use types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
+pub use types::{BranchDialog, Focus, SessionAction, ViewMode};

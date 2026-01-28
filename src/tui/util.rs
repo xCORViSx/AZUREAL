@@ -7,10 +7,8 @@
 //! - `render_tools`: Tool result rendering
 
 // Re-export commonly used items
-pub use super::colorize::{colorize_output, detect_message_type, strip_ansi, MessageType, ORANGE};
-pub use super::markdown::{parse_markdown_spans, parse_table_row, is_table_separator};
+pub use super::colorize::{colorize_output, detect_message_type, MessageType};
 pub use super::render_events::render_display_events;
-pub use super::render_tools::{extract_tool_param, render_tool_result, truncate_line};
 
 /// Truncate a string to max length, adding ellipsis if needed
 pub fn truncate(s: &str, max: usize) -> String {

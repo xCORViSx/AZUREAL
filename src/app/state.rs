@@ -13,7 +13,7 @@ use portable_pty::MasterPty;
 use crate::claude::{ClaudeEvent, InteractiveSession};
 use crate::events::{DisplayEvent, EventParser};
 use crate::git::Git;
-use crate::models::{OutputType, Project, RebaseStatus, Session, SessionStatus};
+use crate::models::{OutputType, Project, RebaseStatus, Session};
 use crate::syntax::DiffHighlighter;
 use crate::wizard::SessionCreationWizard;
 
@@ -568,7 +568,7 @@ impl App {
 
     pub fn set_rebase_status(&mut self, status: RebaseStatus) {
         self.rebase_status = Some(status);
-        self.selected_conflict = if self.rebase_status.as_ref().map_or(false, |s| !s.conflicted_files.is_empty()) { Some(0) } else { None };
+        self.selected_conflict = if self.rebase_status.as_ref().is_some_and(|s| !s.conflicted_files.is_empty()) { Some(0) } else { None };
         self.view_mode = ViewMode::Rebase;
         self.focus = Focus::Output;
     }

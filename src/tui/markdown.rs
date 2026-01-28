@@ -21,7 +21,7 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                     current_text.clear();
                 }
                 let mut code = String::new();
-                while let Some((_, ch)) = chars.next() {
+                for (_, ch) in chars.by_ref() {
                     if ch == '`' { break; }
                     code.push(ch);
                 }
@@ -41,12 +41,11 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                     }
                     let mut bold_text = String::new();
                     while let Some((_, ch)) = chars.next() {
-                        if ch == '*' {
-                            if chars.peek().map(|(_, c)| *c == '*').unwrap_or(false) {
+                        if ch == '*'
+                            && chars.peek().map(|(_, c)| *c == '*').unwrap_or(false) {
                                 chars.next();
                                 break;
                             }
-                        }
                         bold_text.push(ch);
                     }
                     if !bold_text.is_empty() {
@@ -60,7 +59,7 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                             current_text.clear();
                         }
                         let mut italic_text = String::new();
-                        while let Some((_, ch)) = chars.next() {
+                        for (_, ch) in chars.by_ref() {
                             if ch == '*' { break; }
                             italic_text.push(ch);
                         }

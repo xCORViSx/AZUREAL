@@ -108,7 +108,7 @@ pub fn handle_session_list(
             if sessions.is_empty() {
                 println!("No sessions found.");
             } else {
-                println!("{:<40} {:<12} {}", "BRANCH", "STATUS", "WORKTREE");
+                println!("{:<40} {:<12} WORKTREE", "BRANCH", "STATUS");
                 println!("{}", "-".repeat(90));
                 for session in sessions {
                     let wt = session.worktree_path.as_ref()
