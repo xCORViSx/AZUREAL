@@ -1,21 +1,10 @@
-//! Application state module
+//! Application state struct and core methods
 //!
-//! Split into focused submodules:
-//! - `types`: Enums and dialog types (BranchDialog, ContextMenu, SessionAction, etc.)
-//! - `input`: Input handling methods
-//! - `terminal`: PTY terminal management
-//! - `util`: Utility functions (ANSI stripping, JSON parsing)
-
-mod input;
-mod terminal;
-mod types;
-mod util;
-
-pub use types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
+//! Contains the App struct and all methods for managing application state,
+//! session discovery, output processing, and UI coordination.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
@@ -28,7 +17,9 @@ use crate::models::{OutputType, Project, RebaseStatus, Session, SessionStatus};
 use crate::syntax::DiffHighlighter;
 use crate::wizard::SessionCreationWizard;
 
-use util::{parse_stream_json_for_display, strip_ansi_escapes};
+use super::session_parser;
+use super::types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
+use super::util::{parse_stream_json_for_display, strip_ansi_escapes};
 
 /// Application state
 pub struct App {
@@ -291,11 +282,10 @@ impl App {
                         .and_then(|m| m.modified())
                         .ok();
 
-                    let timed_events = self.load_claude_session_events(&session_file);
-
-                    for (_, event) in timed_events {
-                        self.display_events.push(event);
-                    }
+                    let parsed = session_parser::parse_session_file(&session_file);
+                    self.display_events = parsed.events;
+                    self.pending_tool_calls = parsed.pending_tools;
+                    self.failed_tool_calls = parsed.failed_tools;
                 }
             }
         }
@@ -317,368 +307,6 @@ impl App {
         } else {
             false
         }
-    }
-
-    /// Extract hook events from system-reminder tags in content
-    fn extract_hooks_from_content(content: &str, timestamp: chrono::DateTime<chrono::Utc>) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
-        let mut hooks = Vec::new();
-        let mut search_start = 0;
-        while let Some(start) = content[search_start..].find("<system-reminder>") {
-            let abs_start = search_start + start + 17;
-            if let Some(end) = content[abs_start..].find("</system-reminder>") {
-                let reminder_content = &content[abs_start..abs_start + end];
-                if let Some(hook_pos) = reminder_content.find(" hook success:") {
-                    let name = reminder_content[..hook_pos]
-                        .trim()
-                        .trim_start_matches("\\n")
-                        .trim_end_matches("\\n")
-                        .to_string();
-                    let output = reminder_content[hook_pos + 14..]
-                        .trim()
-                        .trim_start_matches("\\n")
-                        .trim_end_matches("\\n")
-                        .to_string();
-
-                    if !output.is_empty() && output != "..." && !name.is_empty() {
-                        hooks.push((timestamp, DisplayEvent::Hook { name, output }));
-                    } else if output == "..." && !name.is_empty() {
-                        hooks.push((timestamp, DisplayEvent::Hook { name: name.clone(), output: format!("[{}]", name) }));
-                    }
-                } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
-                    let name = reminder_content[..hook_pos]
-                        .trim()
-                        .trim_start_matches("\\n")
-                        .trim_end_matches("\\n")
-                        .to_string();
-                    let output = reminder_content[hook_pos + 13..]
-                        .trim()
-                        .trim_start_matches("\\n")
-                        .trim_end_matches("\\n")
-                        .to_string();
-                    if !name.is_empty() {
-                        hooks.push((timestamp, DisplayEvent::Hook { name, output: format!("FAILED: {}", output) }));
-                    }
-                }
-                search_start = abs_start + end + 18;
-            } else {
-                break;
-            }
-        }
-        hooks
-    }
-
-    /// Load events from Claude's session file with timestamps
-    fn load_claude_session_events(&mut self, session_file: &std::path::Path) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
-        let file = match File::open(session_file) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-
-        let reader = BufReader::new(file);
-        let mut events = Vec::new();
-        let mut user_msg_by_parent: HashMap<String, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
-        let mut tool_calls: HashMap<String, (String, Option<String>)> = HashMap::new();
-        let mut pending_tools: HashSet<String> = HashSet::new();
-        let mut last_user_msg: Option<(usize, chrono::DateTime<chrono::Utc>)> = None;
-        let mut ups_hooks: Vec<(usize, chrono::DateTime<chrono::Utc>, DisplayEvent)> = Vec::new();
-
-        for line in reader.lines().map_while(Result::ok) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                let timestamp = json.get("timestamp")
-                    .and_then(|t| t.as_str())
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(chrono::Utc::now);
-
-                let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-                match event_type {
-                    "user" => {
-                        let message = json.get("message");
-                        let content_val = message.and_then(|m| m.get("content"));
-                        let is_meta = json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false);
-
-                        let content_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
-                            Some(s.to_string())
-                        } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
-                            Some(arr.iter()
-                                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                                .collect::<Vec<_>>()
-                                .join("\n"))
-                        } else {
-                            None
-                        };
-
-                        let is_compaction_summary = content_str.as_ref()
-                            .map(|c| c.starts_with("This session is being continued from a previous conversation"))
-                            .unwrap_or(false);
-
-                        if is_compaction_summary {
-                            events.push((timestamp, DisplayEvent::Compacting));
-                            continue;
-                        }
-
-                        if let Some(ref content) = content_str {
-                            for hook in Self::extract_hooks_from_content(content, timestamp) {
-                                events.push(hook);
-                            }
-                        }
-
-                        if is_meta { continue; }
-
-                        if let Some(content) = content_val.and_then(|c| c.as_str()) {
-                            if content.contains("<local-command-caveat>") { continue; }
-
-                            if content.contains("<local-command-stdout>") {
-                                if content.contains("Compacted") {
-                                    events.push((timestamp, DisplayEvent::Compacted));
-                                }
-                                continue;
-                            }
-
-                            if content.starts_with("<command-name>") {
-                                if let Some(end) = content.find("</command-name>") {
-                                    let cmd = &content[14..end];
-                                    events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
-                                    continue;
-                                }
-                            }
-
-                            let parent_uuid = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("").to_string();
-                            let event_idx = events.len();
-
-                            if !parent_uuid.is_empty() {
-                                if let Some((old_idx, old_ts)) = user_msg_by_parent.get(&parent_uuid) {
-                                    if timestamp > *old_ts {
-                                        events[*old_idx] = (chrono::DateTime::<chrono::Utc>::MIN_UTC, DisplayEvent::Filtered);
-                                        user_msg_by_parent.insert(parent_uuid, (event_idx, timestamp));
-                                    } else {
-                                        continue;
-                                    }
-                                } else {
-                                    user_msg_by_parent.insert(parent_uuid, (event_idx, timestamp));
-                                }
-                            }
-
-                            last_user_msg = Some((events.len(), timestamp));
-                            events.push((timestamp, DisplayEvent::UserMessage {
-                                uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                                content: content.to_string(),
-                            }));
-                        } else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
-                            for block in content_arr {
-                                if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                                    let tool_use_id = block.get("tool_use_id")
-                                        .and_then(|i| i.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-
-                                    let (tool_name, file_path) = tool_calls
-                                        .get(&tool_use_id)
-                                        .cloned()
-                                        .unwrap_or(("Unknown".to_string(), None));
-
-                                    let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
-                                        s.to_string()
-                                    } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
-                                        arr.iter()
-                                            .filter_map(|b| {
-                                                if b.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                                    b.get("text").and_then(|t| t.as_str())
-                                                } else { None }
-                                            })
-                                            .collect::<Vec<_>>()
-                                            .join("\n")
-                                    } else {
-                                        String::new()
-                                    };
-
-                                    pending_tools.remove(&tool_use_id);
-
-                                    let is_error = match tool_name.as_str() {
-                                        "Read" | "Write" | "Edit" | "Glob" | "Grep" => {
-                                            let first = content.lines().next().unwrap_or("").to_lowercase();
-                                            first.starts_with("error") || first.contains("enoent")
-                                                || first.contains("file does not exist")
-                                                || first.contains("does not exist")
-                                                || first.contains("<tool_use_error>")
-                                        }
-                                        "Bash" => content.lines().any(|line| {
-                                            let l = line.to_lowercase();
-                                            l.contains(": no such file") || l.contains(": permission denied")
-                                                || l.contains(": command not found")
-                                                || ((l.contains("exit code") || l.contains("exit status"))
-                                                    && !l.ends_with("0") && !l.ends_with("0\n"))
-                                        }),
-                                        "WebFetch" => {
-                                            let first = content.lines().next().unwrap_or("").to_lowercase();
-                                            first.contains("status code 4") || first.contains("status code 5")
-                                                || first.contains("failed") || first.starts_with("error")
-                                        }
-                                        _ => {
-                                            let first = content.lines().next().unwrap_or("").to_lowercase();
-                                            first.starts_with("error")
-                                        }
-                                    };
-                                    if is_error {
-                                        self.failed_tool_calls.insert(tool_use_id.clone());
-                                    }
-
-                                    let extracted = Self::extract_hooks_from_content(&content, timestamp);
-                                    for hook in extracted {
-                                        if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
-                                            if name == "UserPromptSubmit" {
-                                                if let Some((idx, user_ts)) = last_user_msg {
-                                                    let hook_ts = user_ts + chrono::Duration::milliseconds(1);
-                                                    ups_hooks.push((idx, hook_ts, hook.1.clone()));
-                                                }
-                                                continue;
-                                            }
-                                        }
-                                        events.push(hook);
-                                    }
-
-                                    if !content.is_empty() {
-                                        events.push((timestamp, DisplayEvent::ToolResult {
-                                            tool_use_id,
-                                            tool_name,
-                                            file_path,
-                                            content,
-                                        }));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "assistant" => {
-                        if let Some(message) = json.get("message") {
-                            if let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) {
-                                for block in content_arr {
-                                    if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
-                                        match block_type {
-                                            "thinking" => {
-                                                if let Some(thinking) = block.get("thinking").and_then(|t| t.as_str()) {
-                                                    let extracted = Self::extract_hooks_from_content(thinking, timestamp);
-                                                    for hook in extracted {
-                                                        if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
-                                                            if name == "UserPromptSubmit" {
-                                                                if let Some((_idx, user_ts)) = last_user_msg {
-                                                                    let hook_ts = user_ts + chrono::Duration::milliseconds(1);
-                                                                    ups_hooks.push((_idx, hook_ts, hook.1.clone()));
-                                                                }
-                                                                continue;
-                                                            }
-                                                        }
-                                                        events.push(hook);
-                                                    }
-                                                }
-                                            }
-                                            "text" => {
-                                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                                                    events.push((timestamp, DisplayEvent::AssistantText {
-                                                        uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                                                        message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
-                                                        text: text.to_string(),
-                                                    }));
-                                                }
-                                            }
-                                            "tool_use" => {
-                                                let tool_name = block.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                                                let tool_id = block.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-                                                let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
-                                                let file_path = input.get("file_path").or(input.get("path")).and_then(|p| p.as_str()).map(|s| s.to_string());
-
-                                                tool_calls.insert(tool_id.clone(), (tool_name.clone(), file_path.clone()));
-                                                pending_tools.insert(tool_id.clone());
-
-                                                events.push((timestamp, DisplayEvent::ToolCall {
-                                                    uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                                                    tool_use_id: tool_id,
-                                                    tool_name,
-                                                    file_path,
-                                                    input,
-                                                }));
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "result" => {
-                        if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
-                            let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
-                            events.push((timestamp, DisplayEvent::Complete {
-                                session_id: json.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                                duration_ms: duration as u64,
-                                cost_usd: cost,
-                                success: true,
-                            }));
-                        }
-                    }
-                    "system" => {
-                        let subtype = json.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
-                        if subtype == "local_command" {
-                            if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
-                                if content.starts_with("<command-name>") {
-                                    if let Some(end) = content.find("</command-name>") {
-                                        let cmd = &content[14..end];
-                                        events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
-                                        continue;
-                                    }
-                                }
-                                if content.contains("<local-command-stdout>") { continue; }
-                            }
-                        }
-                    }
-                    "progress" => {
-                        if let Some(data) = json.get("data") {
-                            if data.get("type").and_then(|t| t.as_str()) == Some("hook_progress") {
-                                let hook_name = data.get("hookName")
-                                    .or_else(|| data.get("hookEvent"))
-                                    .and_then(|n| n.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let command = data.get("command").and_then(|c| c.as_str()).unwrap_or("");
-
-                                if !hook_name.is_empty() {
-                                    let output = if command.starts_with("echo '") && command.ends_with('\'') {
-                                        command[6..command.len()-1].to_string()
-                                    } else if command.starts_with("echo \"") && command.ends_with('"') {
-                                        command[6..command.len()-1].to_string()
-                                    } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
-                                        if let Some(start) = command.find("OUT='") {
-                                            let rest = &command[start + 5..];
-                                            if let Some(end) = rest.find('\'') {
-                                                rest[..end].to_string()
-                                            } else { String::new() }
-                                        } else if let Some(start) = command.find("OUT=\"") {
-                                            let rest = &command[start + 5..];
-                                            if let Some(end) = rest.find('"') {
-                                                rest[..end].to_string()
-                                            } else { String::new() }
-                                        } else { String::new() }
-                                    } else { String::new() };
-
-                                    if !output.is_empty() {
-                                        events.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        for (_idx, ts, hook_event) in ups_hooks {
-            events.push((ts, hook_event));
-        }
-
-        self.pending_tool_calls = pending_tools;
-        events.into_iter().filter(|(_, e)| !matches!(e, DisplayEvent::Filtered)).collect()
     }
 
     pub fn process_output_chunk(&mut self, chunk: &str) {
@@ -915,6 +543,7 @@ impl App {
             Focus::Sessions => Focus::Output,
             Focus::Output => Focus::Input,
             Focus::Input => Focus::Sessions,
+            Focus::FileTree | Focus::Viewer => Focus::Output,
             Focus::SessionCreation | Focus::BranchDialog => self.focus,
         };
     }
@@ -924,6 +553,7 @@ impl App {
             Focus::Sessions => Focus::Input,
             Focus::Output => Focus::Sessions,
             Focus::Input => Focus::Output,
+            Focus::FileTree | Focus::Viewer => Focus::Sessions,
             Focus::SessionCreation | Focus::BranchDialog => self.focus,
         };
     }
@@ -1075,7 +705,7 @@ impl App {
 }
 
 /// Generate a session name from the prompt
-fn generate_session_name(prompt: &str) -> String {
+pub fn generate_session_name(prompt: &str) -> String {
     let name: String = prompt
         .chars()
         .take(40)
@@ -1101,7 +731,7 @@ fn generate_session_name(prompt: &str) -> String {
 }
 
 /// Sanitize a string for use as a git branch name
-fn sanitize_for_branch(s: &str) -> String {
+pub fn sanitize_for_branch(s: &str) -> String {
     let sanitized: String = s
         .chars()
         .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })

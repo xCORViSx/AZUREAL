@@ -16,7 +16,7 @@ use super::input_output::handle_output_input;
 use super::input_sessions::handle_sessions_input;
 use super::input_terminal::{handle_input_mode, handle_session_creation_input};
 use super::input_wizard::handle_wizard_input;
-use super::ui;
+use super::run::ui;
 
 /// Main TUI event loop
 pub async fn run_app(
@@ -273,6 +273,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         Focus::Input => handle_input_mode(key, app, claude_process)?,
         Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
+        Focus::FileTree | Focus::Viewer => {} // Not yet implemented
     }
 
     Ok(())

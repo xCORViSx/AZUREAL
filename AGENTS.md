@@ -34,7 +34,7 @@ Claude Code's interactive mode uses a full TUI that cannot be driven by simple s
 
 Current approach (`-p --resume`) works reliably with ~100-200ms process spawn overhead per prompt.
 
-Implementation: `src/claude.rs` spawns processes, `src/app.rs` tracks `claude_session_ids` HashMap for --resume.
+Implementation: `src/claude.rs` spawns processes, `src/app/state.rs` tracks `claude_session_ids` HashMap for --resume.
 
 ### Git Worktree Isolation
 
@@ -62,9 +62,9 @@ A ratatui-based terminal interface with:
 - Conditional polling: Terminal rx only polled when terminal mode active
 - Motion discard: Mouse motion events discarded instantly (zero processing)
 
-Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/mod.rs` for rendering, `src/app.rs` for state management.
+Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/app/state.rs` for state management.
 
-**Startup sequence** (`src/tui/mod.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
+**Startup sequence** (`src/tui/run.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
 
 ### Vim-Style Input Mode
 
@@ -80,7 +80,7 @@ Key mappings:
 - `Escape` (in inprompt mode): Return to command mode
 - `Enter` (in inprompt mode): Submit prompt
 
-Implementation: `insert_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui.rs`.
+Implementation: `insert_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
 ### Terminal Pane
 
@@ -99,8 +99,8 @@ Key mappings:
 
 Implementation:
 - `terminal_pty`, `terminal_writer`, `terminal_rx`, `terminal_parser` in `App` struct
-- `open_terminal()`, `close_terminal()`, `write_to_terminal()`, `poll_terminal()` in `src/app.rs`
-- `draw_terminal()` in `src/tui.rs` syncs vt100 parser dimensions with viewport
+- `open_terminal()`, `close_terminal()`, `write_to_terminal()`, `poll_terminal()` in `src/app/terminal.rs`
+- `draw_terminal()` in `src/tui/draw_terminal.rs` syncs vt100 parser dimensions with viewport
 
 ### Stream-JSON Parsing
 
@@ -166,7 +166,7 @@ Claude responses are parsed for markdown syntax and rendered with proper styling
 - `- bullet` and `1. numbered` lists → indented with cyan bullets
 - `> blockquotes` → gray vertical bar with italic text
 
-Implementation: `parse_markdown_spans()`, `parse_table_row()`, `is_table_separator()` in `src/tui/util.rs`
+Implementation: `parse_markdown_spans()`, `parse_table_row()`, `is_table_separator()` in `src/tui/markdown.rs`
 
 **Hook Visibility - Multiple Extraction Methods:**
 Claude Code hooks are captured from multiple sources in the session file:
@@ -211,7 +211,7 @@ Claude Code hooks are captured from multiple sources in the session file:
 
 **Supported hook types:** SessionStart, UserPromptSubmit, Stop, PreToolUse, PostToolUse, SubagentStop, PreCompact
 
-Implementation: `extract_hooks_from_content()`, `load_claude_session_events()` in `src/app/mod.rs`, `parse_progress_event()` in `src/events.rs`
+Implementation: `extract_hooks_from_content()` in `src/app/session_parser.rs`, `parse_progress_event()` in `src/events/parser.rs`
 
 ### Conversation Persistence
 
@@ -229,7 +229,7 @@ Azural reads all data at runtime without persisting anything:
 - **Live polling**: Session file is continuously polled for changes; output updates in real-time
 - **Hooks**: Extracted from `system-reminder` tags embedded in Claude's session files (no separate storage)
 
-Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_sessions()`, `discover_claude_session_id()` in `src/app/mod.rs`
+Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_sessions()` in `src/app/state.rs`
 
 **Fixed Bug: tool_use ID Collision**
 Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19 would return "tool_use ids must be unique" error (GitHub issues #20508, #20527, #13124).
@@ -266,31 +266,43 @@ azural/
 │   └── fix.md              # Bug queue
 ├── refs/                   # Reference files
 ├── src/
+│   ├── app.rs              # Module root (re-exports only)
 │   ├── app/                # Application state module
-│   │   ├── mod.rs          # App struct, state, core methods, session discovery
+│   │   ├── state.rs        # App struct and core methods
+│   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
 │   │   ├── types.rs        # Enums (Focus, ViewMode, dialogs)
 │   │   ├── input.rs        # Input handling methods
-│   │   └── util.rs         # ANSI stripping, JSON parsing, hooks logging
+│   │   └── util.rs         # ANSI stripping, JSON parsing
+│   ├── tui.rs              # Module root (re-exports only)
 │   ├── tui/                # Terminal UI module
-│   │   ├── mod.rs          # Main layout and entry
+│   │   ├── run.rs          # TUI entry point and main layout
 │   │   ├── event_loop.rs   # Event handling loop
-│   │   ├── util.rs         # Display utilities
+│   │   ├── util.rs         # Display utilities (re-exports)
+│   │   ├── colorize.rs     # Output colorization
+│   │   ├── markdown.rs     # Markdown parsing
+│   │   ├── render_events.rs # DisplayEvent rendering
+│   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── draw_*.rs       # Rendering functions
 │   │   └── input_*.rs      # Mode-specific input handlers
+│   ├── events.rs           # Module root (re-exports only)
+│   ├── events/             # Stream-JSON events module
+│   │   ├── types.rs        # Raw Claude Code event types
+│   │   ├── display.rs      # DisplayEvent enum
+│   │   └── parser.rs       # EventParser + tests
+│   ├── git.rs              # Module root (re-exports only)
+│   ├── git/                # Git operations module
+│   │   ├── core.rs         # Git struct, repo detection, diffs
+│   │   ├── branch.rs       # Branch management
+│   │   ├── rebase.rs       # Rebase operations
+│   │   └── worktree.rs     # Worktree create/delete/list
 │   ├── cmd/                # CLI command handlers
 │   │   ├── mod.rs          # Main command routing
 │   │   ├── session.rs      # Session list/show commands
 │   │   └── project.rs      # Project info command
-│   ├── git/                # Git operations module
-│   │   ├── mod.rs          # Git struct, repo/worktree operations
-│   │   ├── branch.rs       # Branch management
-│   │   ├── rebase.rs       # Rebase operations
-│   │   └── worktree.rs     # Worktree create/delete/list
 │   ├── claude.rs           # Claude CLI process management
 │   ├── cli/mod.rs          # CLI argument parsing
 │   ├── config.rs           # Configuration paths, Claude session discovery
-│   ├── events.rs           # Stream-JSON event types
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
 │   ├── syntax.rs           # Syntax highlighting for diffs

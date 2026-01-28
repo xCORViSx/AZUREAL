@@ -137,6 +137,8 @@ pub enum ViewMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Sessions,
+    FileTree,
+    Viewer,
     Output,
     Input,
     SessionCreation,

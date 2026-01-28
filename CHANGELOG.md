@@ -5,6 +5,14 @@ All notable changes to Azural will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Modularized large source files using file-based module roots:
+  - Module root files (`app.rs`, `git.rs`, `events.rs`, `tui.rs`) now contain only mod declarations and re-exports
+  - Created `app/state.rs` for App struct and core methods (extracted from app.rs)
+  - Created `app/session_parser.rs` for Claude session file parsing
+  - Created `git/core.rs` for Git struct and core operations
+  - Created `events/types.rs`, `events/display.rs`, `events/parser.rs` (split from events.rs)
+  - Created `tui/run.rs` for TUI entry point and main layout
+  - Split `tui/util.rs` into `colorize.rs`, `markdown.rs`, `render_events.rs`, `render_tools.rs`
 - Replaced SQLite database (`azural.db`) with JSON config (`azural.json`) for minimal footprint
   - Session outputs now read exclusively from Claude's JSONL session files
   - One-time automatic migration from SQLite if old database exists

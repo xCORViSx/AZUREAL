@@ -1,18 +1,12 @@
-//! Git operations for worktree management
-
-mod branch;
-mod rebase;
-mod worktree;
+//! Core Git operations
+//!
+//! Basic git operations like repo detection, branch info, and diffs.
 
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
 use crate::models::DiffInfo;
-
-pub use branch::*;
-pub use rebase::*;
-pub use worktree::*;
 
 /// Worktree info from git
 #[derive(Debug, Clone)]

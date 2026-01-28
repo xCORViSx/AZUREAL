@@ -72,6 +72,7 @@ pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             (Focus::SessionCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
+            (Focus::FileTree, _) | (Focus::Viewer, _) => "?:help  j/k:navigate  Tab:switch",
         }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));

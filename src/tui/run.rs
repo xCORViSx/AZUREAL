@@ -1,26 +1,6 @@
-//! Terminal User Interface module
+//! TUI entry point and main layout
 //!
-//! Split into focused submodules:
-//! - `event_loop`: Core event loop and event handling
-//! - `input_*`: Input handlers for different UI modes
-//! - `draw_*`: Rendering functions for different UI components
-//! - `util`: Utility functions (truncate, colorize, etc.)
-
-mod draw_dialogs;
-mod draw_input;
-mod draw_output;
-mod draw_sidebar;
-mod draw_status;
-mod draw_terminal;
-mod draw_wizard;
-mod event_loop;
-mod input_dialogs;
-mod input_output;
-mod input_rebase;
-mod input_sessions;
-mod input_terminal;
-mod input_wizard;
-pub mod util;
+//! Contains the run() function to start the TUI and the ui() layout function.
 
 use anyhow::Result;
 use crossterm::{
@@ -38,6 +18,8 @@ use std::io;
 use crate::app::{App, Focus};
 use crate::config::Config;
 
+use super::event_loop;
+use super::{draw_dialogs, draw_input, draw_output, draw_sidebar, draw_status, draw_terminal, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -64,7 +46,7 @@ pub async fn run() -> Result<()> {
 }
 
 /// Main UI layout and rendering
-fn ui(f: &mut Frame, app: &mut App) {
+pub fn ui(f: &mut Frame, app: &mut App) {
     // Wizard modal takes over the screen
     if app.is_wizard_active() {
         draw_wizard::draw_wizard_modal(f, app);
