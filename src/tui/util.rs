@@ -1104,11 +1104,11 @@ fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, 
         // WebFetch: Title + preview
         "WebFetch" => {
             let content_lines: Vec<&str> = content.lines().collect();
-            // First line is often the title
+            // First line is often the title or error message
             if let Some(title) = content_lines.first() {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  │ ", result_style.fg(tool_color)),
-                    Span::styled(format!("\"{}\"", truncate_line(title, 60)), Style::default().fg(Color::Yellow)),
+                    Span::styled(format!("\"{}\"", truncate_line(title, 60)), result_style),
                 ]));
             }
             // Second line as preview
@@ -1118,9 +1118,14 @@ fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, 
                     Span::styled(truncate_line(preview, 80), result_style),
                 ]));
             } else {
+                let (symbol, style) = if is_failed {
+                    ("✗ failed", result_style)
+                } else {
+                    ("✓ fetched", Style::default().fg(Color::Green))
+                };
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-                    Span::styled("✓ fetched", Style::default().fg(Color::Green)),
+                    Span::styled(symbol, style),
                 ]));
             }
         }
