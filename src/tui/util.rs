@@ -891,10 +891,11 @@ pub fn render_display_events(
                     }
                 }
             }
-            DisplayEvent::ToolResult { tool_name, file_path, content, .. } => {
+            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
                 saw_content = true;
                 last_hook = None; // Reset so same hook can appear after content
-                let result_lines = render_tool_result(tool_name, file_path.as_deref(), content);
+                let is_failed = failed_tools.contains(tool_use_id);
+                let result_lines = render_tool_result(tool_name, file_path.as_deref(), content, is_failed);
                 lines.extend(result_lines);
             }
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
@@ -927,11 +928,11 @@ pub fn render_display_events(
 
 /// Render tool result output based on tool type
 /// Each tool has a specific display format optimized for readability
-fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str) -> Vec<Line<'static>> {
+fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, is_failed: bool) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let tool_color = Color::Cyan;
-    // Use Gray (lighter than DarkGray) for tool results - more visible than hooks
-    let result_style = Style::default().fg(Color::Gray);
+    let tool_color = if is_failed { Color::Red } else { Color::Cyan };
+    // Use Red for failed tools, Gray for successful ones
+    let result_style = Style::default().fg(if is_failed { Color::Red } else { Color::Gray });
 
     // Filter out system-reminder blocks that Claude Code appends to tool results
     // Remove everything from <system-reminder> to </system-reminder> inclusive
