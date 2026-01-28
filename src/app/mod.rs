@@ -622,13 +622,17 @@ impl App {
                                         // Bash: shell errors can appear on any line
                                         "Bash" => content.lines().any(|line| {
                                             let l = line.to_lowercase();
-                                            // Shell command errors: "grep:", "tail:", "bash:", etc.
                                             l.contains(": no such file") || l.contains(": permission denied")
                                                 || l.contains(": command not found")
-                                                // Exit code errors
                                                 || ((l.contains("exit code") || l.contains("exit status"))
                                                     && !l.ends_with("0") && !l.ends_with("0\n"))
                                         }),
+                                        // WebFetch: HTTP errors
+                                        "WebFetch" => {
+                                            let first = content.lines().next().unwrap_or("").to_lowercase();
+                                            first.contains("status code 4") || first.contains("status code 5")
+                                                || first.contains("failed") || first.starts_with("error")
+                                        }
                                         // Other tools: check first line only
                                         _ => {
                                             let first = content.lines().next().unwrap_or("").to_lowercase();
