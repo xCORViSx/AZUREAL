@@ -24,7 +24,9 @@ Earlier we used `--fork-session` with `--resume`, but this creates a NEW session
 `--session-id` requires a valid UUID format. Simpler to capture Claude's generated session ID from the init event.
 
 **Why not keep process alive?**
-Claude Code's `-p` mode is "print and exit". The `--input-format stream-json` is for *chaining separate processes*, not keeping one alive. Verified by testing.
+Claude Code's interactive mode uses a full TUI that cannot be driven by simple stdin writes. The `--input-format stream-json` flag only works with `-p` mode which still exits after each response. Verified by testing - there's no headless interactive mode available.
+
+Current approach (`-p --resume`) works reliably with ~100-200ms process spawn overhead per prompt.
 
 Implementation: `src/claude.rs` spawns processes, `src/app.rs` tracks `claude_session_ids` HashMap for --resume.
 
@@ -55,6 +57,8 @@ A ratatui-based terminal interface with:
 - Motion discard: Mouse motion events discarded instantly (zero processing)
 
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/mod.rs` for rendering, `src/app.rs` for state management.
+
+**Startup sequence** (`src/tui/mod.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
 
 ### Vim-Style Input Mode
 
@@ -97,23 +101,111 @@ Implementation:
 Claude output is received in `stream-json` format and parsed for clean display:
 - User prompts shown as "You: <message>"
 - Claude responses shown as "Claude: <text>"
-- Tool usage shown as "[Using <name>...]"
+- Tool calls shown as timeline nodes with tool name and primary parameter
+- Tool results shown with tool-specific formatting (see below)
 - Completion info shown as "[Done: Xs, $X.XXXX]"
 - Hook output shown as "[Hook: <name>] <output>"
+- Slash commands (`/compact`, `/crt`, etc.) shown as 3-line magenta banners
+- Context compaction shown as "COMPACTING CONVERSATION" 3-line yellow banner
 
-**Hook Visibility Workaround:**
-Claude Code's stream-json output only emits `hook_response` events (with output) for `SessionStart` hooks. For other hook types (UserPromptSubmit, PreToolUse, PostToolUse), the hooks execute but output isn't streamed.
+**Tool Status Indicators:**
+| Indicator | Color | Meaning |
+|-----------|-------|---------|
+| ● | Green | Tool completed successfully |
+| ◐ | Pulsating | Tool in progress (waiting for result) |
+| ✗ | Red | Tool failed (error detected in result) |
 
-**Solution:** File-based IPC system where hooks write to project's `.azural/hooks.jsonl` and azural polls for new entries:
-1. Helper script `~/.claude/scripts/log-hook.sh` - logs hook output with timestamp to JSON file
-2. All hooks in `~/.claude/settings.json` run `log-hook.sh HookName "$OUT" &` in background before echo
-3. App polls `hooks.jsonl` every event loop iteration for new entries
-4. Hooks are saved to database with `OutputType::Hook` for persistence across session switches
-5. New entries create `DisplayEvent::Hook` and render in output pane
+Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "No such file", "command failed", non-zero exit codes.
 
-This enables ALL hook types to display in the output pane and persist when switching sessions.
+**Tool Result Display Formats:**
+| Tool | Format | Description |
+|------|--------|-------------|
+| Read | First + last line | Shows file boundaries with line count |
+| Bash | Last 2 lines | Shows command results (usually at end) |
+| Edit | Full diff | Actual file line numbers, changed lines (red/green bg), unchanged in gray |
+| Write | Purpose line | Line count + first comment (from input content) |
+| Grep | First 3 matches | Preview of search results |
+| Glob | Directory summary | File count grouped by directory |
+| Task | Summary line | First line of agent response |
+| WebFetch | Title + preview | Page title and first content line |
+| WebSearch | First 3 results | Numbered search results |
+| LSP | Result + context | Location and code context |
 
-Implementation: `poll_hooks_file()` in `src/app/mod.rs` (polls and saves to DB), `OutputType::Hook` in `src/models.rs`, `log-hook.sh` helper script
+**Command Detection:**
+User messages containing `<command-name>/xxx</command-name>` tags are parsed as slash commands and displayed prominently with centered 3-line banners in magenta.
+
+**Compacting Detection:**
+- "COMPACTING CONVERSATION" (yellow) - shown when user message starts with "This session is being continued from a previous conversation"
+- "CONVERSATION COMPACTED" (green) - shown when `<local-command-stdout>` contains "Compacted"
+
+**Filtered Messages:**
+- Meta messages (`isMeta: true`) are hidden - internal Claude instructions
+- `<local-command-caveat>` messages are hidden - tells Claude to ignore local command output
+- `<local-command-stdout>` content is hidden - raw output from local commands like `/memory`, `/status`
+  - Exception: "Compacted" triggers the CONVERSATION COMPACTED banner before being filtered
+- Rewound/edited user messages - when user rewinds to edit a message, only the corrected version is shown
+  - Detection: Multiple user messages sharing the same `parentUuid` - keep only the most recent by timestamp
+
+**Debug Output (debug builds only):**
+On debug builds (`cargo run`), azural automatically dumps rendered output to `.azural/debug-output.txt` whenever session output is loaded. Contains exactly what appears in the TUI output pane with style annotations (colors, bold, italic) for debugging rendering issues.
+
+**Markdown Rendering:**
+Claude responses are parsed for markdown syntax and rendered with proper styling:
+- `# H1`, `## H2`, `### H3` headers → styled with block chars (█, ▓, ▒) and colors, prefix removed
+- `**bold**` → bold text without markers
+- `*italic*` → italic text without markers
+- `` `inline code` `` → yellow text on dark background
+- ``` code blocks ``` → box-drawn borders with language label
+- `| table | rows |` → box-drawing characters (│, ├, ┼, ┤)
+- `- bullet` and `1. numbered` lists → indented with cyan bullets
+- `> blockquotes` → gray vertical bar with italic text
+
+Implementation: `parse_markdown_spans()`, `parse_table_row()`, `is_table_separator()` in `src/tui/util.rs`
+
+**Hook Visibility - Multiple Extraction Methods:**
+Claude Code hooks are captured from multiple sources in the session file:
+
+1. **hook_progress events** (type: "progress", data.type: "hook_progress")
+   - PreToolUse, PostToolUse hooks
+   - Hook output extracted from `command` field's echo statements
+   - Patterns: `echo 'message'` or `OUT='message'; ...; echo "$OUT"`
+
+2. **system-reminder tags** in assistant "thinking" blocks
+   - UserPromptSubmit hooks appear here (Claude Code injects them into context)
+   - Claude sees the injected system-reminder and it appears in thinking output
+   - Format: `<system-reminder>HookName hook success: output</system-reminder>`
+   - Extracted via `extract_hooks_from_content()` in `load_claude_session_events()`
+
+3. **system-reminder tags** in user messages and tool results
+   - Various hooks that appear in user message content or tool result content
+   - Same extraction pattern as thinking blocks
+
+4. **hook_response events** (SessionStart only)
+   - Only emitted for SessionStart hooks in stream-json
+
+5. **UserPromptSubmit hook positioning**
+   - Claude Code doesn't execute shell commands for UserPromptSubmit hooks (only injects output into context)
+   - System-reminder with hook content appears in assistant thinking blocks (not tool_results)
+   - Azural extracts UPS hooks from thinking blocks and assigns them timestamp = user_message_timestamp + 1ms
+   - When events are sorted by timestamp, UPS hooks naturally appear right after their user message
+   - UPS hooks from hooks.jsonl are skipped (duplicates with wrong timestamps)
+   - UPS hooks display as dim gray lines: `› UserPromptSubmit: <output>`
+
+6. **Compaction summary handling**
+   - When loading a continued session, the summary message ("This session is being continued...") contains quoted `<system-reminder>` references from conversation history
+   - These quoted references should NOT be treated as real hooks
+   - Azural skips hook extraction for the compaction summary and its immediately following tool results
+   - Flag `in_compaction_summary` tracks this state and resets only when a real user prompt is encountered
+
+**Hook Deduplication:**
+- Consecutive-only deduplication (not global)
+- Same hook can appear multiple times throughout conversation
+- Only back-to-back identical hooks are filtered
+- Hooks display next to their corresponding tool calls
+
+**Supported hook types:** SessionStart, UserPromptSubmit, Stop, PreToolUse, PostToolUse, SubagentStop, PreCompact
+
+Implementation: `extract_hooks_from_content()`, `load_claude_session_events()` in `src/app/mod.rs`, `parse_progress_event()` in `src/events.rs`
 
 ### Hooks Logging
 
@@ -144,13 +236,14 @@ Each session maintains conversation history across prompts using Claude's `--res
 Azural reads conversation data from Claude's session files with auto-discovery:
 - **Primary**: Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
 - **Auto-discovery**: If no `claude_session_id` is set, azural scans Claude's project directory and links the most recent session file
+- **Live polling**: Session file is continuously polled for changes; output updates in real-time as you chat with Claude in another terminal
 - **Hooks**: Read from project's `.azural/hooks.jsonl`, merged by timestamp with conversation events
 - **Fallback**: Database `session_outputs` table when no Claude session files exist
 - **azural.db**: Stores session metadata; outputs saved as fallback
 
 Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`
 
-Implementation: `load_session_output()`, `load_claude_session_events()`, `load_hooks_with_timestamps()` in `src/app/mod.rs`, `claude_session_file()` in `src/config.rs`
+Implementation: `load_session_output()`, `poll_session_file()`, `load_claude_session_events()`, `load_hooks_with_timestamps()` in `src/app/mod.rs`, `claude_session_file()` in `src/config.rs`
 
 **Known Bug: tool_use ID Collision (Fixed by Rollback)**
 When using `-p --resume` and Claude makes parallel tool calls, the API returns "tool_use ids must be unique" error. This is a known Claude Code bug (GitHub issues #20508, #20527, #13124) **introduced in 2.1.19**.

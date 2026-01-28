@@ -22,6 +22,7 @@
 - **Vim-Style Input** — Modal editing with command/insert modes (red/yellow border)
 - **Embedded Terminal** — Full PTY-based shell terminal with color support in the worktree
 - **Real-time Output** — Stream Claude's responses with ANSI color support
+- **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
 - **Mouse Scroll** — Scroll panels based on cursor position (independent of focus)
 - **Diff Viewer** — Syntax-highlighted diffs showing changes per session
 - **Rebase Support** — Interactive rebase with conflict detection
@@ -33,9 +34,12 @@
   npm install -g @anthropic-ai/claude-code@2.1.18
   ```
 
-## Known Limitations
+## Hook Display
 
-- **Hook Output Visibility** — Only `SessionStart` hook output is displayed in the output pane. Other hooks (PreToolUse, PostToolUse, UserPromptSubmit) execute but their output is not emitted to stream-json by Claude Code CLI.
+Azural automatically displays Claude Code hook output in the output pane:
+- **SessionStart** hooks appear via `hook_response` events
+- **PreToolUse/PostToolUse** hooks appear via `hook_progress` events
+- **UserPromptSubmit** hooks appear from system-reminder tags in the session file
 
 ## Installation
 

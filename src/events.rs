@@ -146,6 +146,14 @@ pub enum DisplayEvent {
         uuid: String,
         content: String,
     },
+    /// Slash command (e.g., /compact, /crt)
+    Command {
+        name: String,
+    },
+    /// Context compaction starting indicator
+    Compacting,
+    /// Context compaction completed indicator
+    Compacted,
     /// Assistant text response
     AssistantText {
         uuid: String,
@@ -162,11 +170,14 @@ pub enum DisplayEvent {
         /// Full input for display
         input: serde_json::Value,
     },
-    /// Tool result
+    /// Tool result (output from a tool call)
     ToolResult {
         tool_use_id: String,
-        success: bool,
-        output: String,
+        tool_name: String,
+        /// For file-based tools: the path that was operated on
+        file_path: Option<String>,
+        /// The raw output content from the tool
+        content: String,
     },
     /// Session complete
     Complete {
@@ -179,17 +190,22 @@ pub enum DisplayEvent {
     Error {
         message: String,
     },
+    /// Filtered out (used for rewound/edited messages that were superseded)
+    Filtered,
 }
 
 /// Parser for Claude Code stream-json events
 pub struct EventParser {
     buffer: String,
+    /// Track tool calls by ID so we can match results to calls
+    tool_calls: std::collections::HashMap<String, (String, Option<String>)>,
 }
 
 impl EventParser {
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
+            tool_calls: std::collections::HashMap::new(),
         }
     }
 
@@ -213,7 +229,7 @@ impl EventParser {
         events
     }
 
-    fn parse_line(&self, line: &str) -> Vec<DisplayEvent> {
+    fn parse_line(&mut self, line: &str) -> Vec<DisplayEvent> {
         let trimmed = line.trim();
 
         // Try JSON first if line looks like JSON (starts with {)
@@ -222,9 +238,10 @@ impl EventParser {
                 if let Some(event_type) = json.get("type").and_then(|v| v.as_str()) {
                     return match event_type {
                         "system" => self.parse_system_event(&json).into_iter().collect(),
-                        "user" => self.parse_user_event(&json).into_iter().collect(),
+                        "user" => self.parse_user_event(&json),
                         "assistant" => self.parse_assistant_event(&json),
                         "result" => self.parse_result_event(&json).into_iter().collect(),
+                        "progress" => self.parse_progress_event(&json).into_iter().collect(),
                         "hook" | "hook_result" | "hook_response" => {
                             let name = json.get("hook_name")
                                 .or_else(|| json.get("name"))
@@ -293,41 +310,132 @@ impl EventParser {
         None
     }
 
-    fn parse_user_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
-        let message = json.get("message")?;
-        let content_val = message.get("content")?;
+    /// Parse progress events (includes hook_progress for PreToolUse/PostToolUse hooks)
+    fn parse_progress_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
+        let data = json.get("data")?;
+        let data_type = data.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-        // Content can be a string or an array of content blocks
-        let content = if let Some(s) = content_val.as_str() {
-            s.to_string()
-        } else if let Some(arr) = content_val.as_array() {
-            // Extract text from content blocks
-            arr.iter()
-                .filter_map(|block| {
-                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                        block.get("text").and_then(|t| t.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        } else {
-            return None;
-        };
-
-        // Skip empty content (e.g., tool_result events have no text blocks)
-        if content.is_empty() {
+        // Only process hook_progress events
+        if data_type != "hook_progress" {
             return None;
         }
 
-        Some(DisplayEvent::UserMessage {
-            uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            content,
+        let hook_event = data.get("hookEvent").and_then(|v| v.as_str()).unwrap_or("");
+        let hook_name = data.get("hookName").and_then(|v| v.as_str()).unwrap_or(hook_event);
+        let command = data.get("command").and_then(|v| v.as_str()).unwrap_or("");
+
+        // Skip if no hook name
+        if hook_name.is_empty() {
+            return None;
+        }
+
+        // Try to extract output from simple echo commands (e.g., "echo 'message'" or "echo \"message\"")
+        // This handles the common pattern where hooks just echo a message
+        let output = if command.starts_with("echo '") && command.ends_with('\'') {
+            command[6..command.len()-1].to_string()
+        } else if command.starts_with("echo \"") && command.ends_with('"') {
+            command[6..command.len()-1].to_string()
+        } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
+            // Pattern: OUT='message'; ...; echo "$OUT" - extract the OUT value
+            if let Some(start) = command.find("OUT='") {
+                let rest = &command[start + 5..];
+                if let Some(end) = rest.find('\'') {
+                    rest[..end].to_string()
+                } else {
+                    String::new()
+                }
+            } else if let Some(start) = command.find("OUT=\"") {
+                let rest = &command[start + 5..];
+                if let Some(end) = rest.find('"') {
+                    rest[..end].to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Only show hooks that have meaningful output (skip verbose command-only hooks)
+        if output.is_empty() {
+            return None;
+        }
+
+        Some(DisplayEvent::Hook {
+            name: hook_name.to_string(),
+            output,
         })
     }
 
-    fn parse_assistant_event(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+    fn parse_user_event(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+        let mut events = Vec::new();
+        let message = match json.get("message") {
+            Some(m) => m,
+            None => return events,
+        };
+        let content_val = match message.get("content") {
+            Some(c) => c,
+            None => return events,
+        };
+
+        // String content = user prompt (may contain system-reminder tags with hook output)
+        if let Some(content) = content_val.as_str() {
+            // Extract hooks from system-reminder tags (e.g., "UserPromptSubmit hook success: ...")
+            events.extend(Self::extract_hooks_from_content(content));
+
+            events.push(DisplayEvent::UserMessage {
+                uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                content: content.to_string(),
+            });
+        }
+        // Array content = could be text blocks or tool_result blocks
+        else if let Some(arr) = content_val.as_array() {
+            for block in arr {
+                let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match block_type {
+                    "tool_result" => {
+                        let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
+                        let (tool_name, file_path) = self.tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
+
+                        let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
+                            s.to_string()
+                        } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
+                            arr.iter()
+                                .filter_map(|b| if b.get("type").and_then(|t| t.as_str()) == Some("text") { b.get("text").and_then(|t| t.as_str()) } else { None })
+                                .collect::<Vec<_>>().join("\n")
+                        } else { String::new() };
+
+                        // Extract hooks from system-reminder tags in tool result content
+                        events.extend(Self::extract_hooks_from_content(&content));
+
+                        if !content.is_empty() {
+                            events.push(DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content });
+                        }
+                    }
+                    "text" => {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            // Extract hooks from system-reminder tags in text content
+                            events.extend(Self::extract_hooks_from_content(text));
+
+                            if !text.is_empty() {
+                                events.push(DisplayEvent::UserMessage {
+                                    uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    content: text.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        events
+    }
+
+    fn parse_assistant_event(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let mut events = Vec::new();
 
         let message = match json.get("message") {
@@ -372,6 +480,12 @@ impl EventParser {
                             .or_else(|| input.get("path"))
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
+
+                        // Track this tool call so we can match it with the result later
+                        self.tool_calls.insert(
+                            tool_use_id.to_string(),
+                            (tool_name.to_string(), file_path.clone()),
+                        );
 
                         events.push(DisplayEvent::ToolCall {
                             uuid: uuid.clone(),
@@ -432,6 +546,40 @@ impl EventParser {
             }
         }
         None
+    }
+
+    /// Extract hook events from system-reminder tags in content
+    /// Parses patterns like "<system-reminder>HookName hook success: output</system-reminder>"
+    fn extract_hooks_from_content(content: &str) -> Vec<DisplayEvent> {
+        let mut hooks = Vec::new();
+
+        // Find all system-reminder blocks
+        let mut search_start = 0;
+        while let Some(start) = content[search_start..].find("<system-reminder>") {
+            let abs_start = search_start + start + 17; // skip the opening tag
+            if let Some(end) = content[abs_start..].find("</system-reminder>") {
+                let reminder_content = &content[abs_start..abs_start + end];
+
+                // Parse "HookName hook success: output" or "HookName hook failed: output"
+                if let Some(hook_pos) = reminder_content.find(" hook success:") {
+                    let name = reminder_content[..hook_pos].trim().to_string();
+                    let output = reminder_content[hook_pos + 14..].trim().to_string();
+                    if !output.is_empty() {
+                        hooks.push(DisplayEvent::Hook { name, output });
+                    }
+                } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
+                    let name = reminder_content[..hook_pos].trim().to_string();
+                    let output = reminder_content[hook_pos + 13..].trim().to_string();
+                    hooks.push(DisplayEvent::Hook { name, output: format!("FAILED: {}", output) });
+                }
+
+                search_start = abs_start + end + 18; // skip past </system-reminder>
+            } else {
+                break;
+            }
+        }
+
+        hooks
     }
 }
 
@@ -527,5 +675,132 @@ mod tests {
         let events = parser.parse(&format!("{}\n", json));
 
         assert_eq!(events.len(), 0, "hook_response with empty output should not produce events");
+    }
+
+    #[test]
+    fn test_parse_tool_result_matches_tool_call() {
+        let mut parser = EventParser::new();
+
+        // First, send a tool_use event
+        let tool_call_json = r#"{"type":"assistant","uuid":"u1","message":{"id":"msg1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tool123","name":"Read","input":{"file_path":"/test/file.rs"}}]}}"#;
+        let events = parser.parse(&format!("{}\n", tool_call_json));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolCall { tool_name, file_path, tool_use_id, .. } => {
+                assert_eq!(tool_name, "Read");
+                assert_eq!(file_path.as_deref(), Some("/test/file.rs"));
+                assert_eq!(tool_use_id, "tool123");
+            }
+            _ => panic!("Expected ToolCall event"),
+        }
+
+        // Then, send a tool_result event in a user message
+        let tool_result_json = r#"{"type":"user","uuid":"u2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool123","content":"File contents here"}]}}"#;
+        let events = parser.parse(&format!("{}\n", tool_result_json));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolResult { tool_name, file_path, content, tool_use_id } => {
+                assert_eq!(tool_name, "Read");
+                assert_eq!(file_path.as_deref(), Some("/test/file.rs"));
+                assert_eq!(content, "File contents here");
+                assert_eq!(tool_use_id, "tool123");
+            }
+            _ => panic!("Expected ToolResult event, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_from_system_reminder() {
+        let mut parser = EventParser::new();
+
+        // User message with system-reminder containing hook output
+        let json = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"<system-reminder>\nUserPromptSubmit hook success: Follow CLAUDE.md guidelines.\n</system-reminder>\nHello Claude"}}"#;
+        let events = parser.parse(&format!("{}\n", json));
+
+        // Should have Hook event AND UserMessage
+        assert_eq!(events.len(), 2);
+
+        match &events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "UserPromptSubmit");
+                assert_eq!(output, "Follow CLAUDE.md guidelines.");
+            }
+            _ => panic!("Expected Hook event, got {:?}", events[0]),
+        }
+
+        match &events[1] {
+            DisplayEvent::UserMessage { content, .. } => {
+                assert!(content.contains("Hello Claude"));
+            }
+            _ => panic!("Expected UserMessage event"),
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_from_tool_result() {
+        let mut parser = EventParser::new();
+
+        // First register a tool call
+        let tool_call_json = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"tool456","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
+        let _ = parser.parse(&format!("{}\n", tool_call_json));
+
+        // Tool result with system-reminder containing hook output
+        let tool_result_json = r#"{"type":"user","uuid":"u2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool456","content":"<system-reminder>\nPostToolUse hook success: If this changed code, consider updating AGENTS.md.\n</system-reminder>\nFile contents here"}]}}"#;
+        let events = parser.parse(&format!("{}\n", tool_result_json));
+
+        // Should have Hook event AND ToolResult
+        assert_eq!(events.len(), 2, "Expected 2 events, got {:?}", events);
+
+        match &events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "PostToolUse");
+                assert_eq!(output, "If this changed code, consider updating AGENTS.md.");
+            }
+            _ => panic!("Expected Hook event, got {:?}", events[0]),
+        }
+
+        match &events[1] {
+            DisplayEvent::ToolResult { tool_name, content, .. } => {
+                assert_eq!(tool_name, "Read");
+                assert!(content.contains("File contents here"));
+            }
+            _ => panic!("Expected ToolResult event, got {:?}", events[1]),
+        }
+    }
+
+    #[test]
+    fn test_parse_hook_progress_event() {
+        let mut parser = EventParser::new();
+
+        // Simple echo command
+        let json = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"PreToolUse:Bash","command":"echo 'Ensure this action complies with CLAUDE.md and AGENTS.md.'"}}"#;
+        let events = parser.parse(&format!("{}\n", json));
+
+        assert_eq!(events.len(), 1, "Expected 1 event, got {:?}", events);
+        match &events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "PreToolUse:Bash");
+                assert_eq!(output, "Ensure this action complies with CLAUDE.md and AGENTS.md.");
+            }
+            _ => panic!("Expected Hook event, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_hook_progress_with_out_variable() {
+        let mut parser = EventParser::new();
+
+        // OUT variable pattern
+        let json = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PostToolUse","hookName":"PostToolUse:Read","command":"OUT='If this changed code, consider updating AGENTS.md.'; ~/.claude/scripts/log-hook.sh PostToolUse \"$OUT\"; echo \"$OUT\""}}"#;
+        let events = parser.parse(&format!("{}\n", json));
+
+        assert_eq!(events.len(), 1, "Expected 1 event, got {:?}", events);
+        match &events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "PostToolUse:Read");
+                assert_eq!(output, "If this changed code, consider updating AGENTS.md.");
+            }
+            _ => panic!("Expected Hook event, got {:?}", events[0]),
+        }
     }
 }

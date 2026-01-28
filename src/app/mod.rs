@@ -21,7 +21,7 @@ use std::sync::mpsc::Receiver;
 
 use portable_pty::MasterPty;
 
-use crate::claude::ClaudeEvent;
+use crate::claude::{ClaudeEvent, InteractiveSession};
 use crate::db::Database;
 use crate::events::{DisplayEvent, EventParser};
 use crate::git::Git;
@@ -57,6 +57,8 @@ pub struct App {
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
     pub running_sessions: HashSet<String>,
     pub claude_session_ids: HashMap<String, String>,
+    /// Interactive PTY sessions (kept alive between prompts)
+    pub interactive_sessions: HashMap<String, InteractiveSession>,
     pub diff_text: Option<String>,
     pub output_scroll: usize,
     pub diff_scroll: usize,
@@ -79,6 +81,16 @@ pub struct App {
     pub terminal_needs_resize: bool,
     /// Tracks position in hooks.jsonl for incremental reading
     pub hooks_file_pos: u64,
+    /// Tool calls awaiting results (for progress indicator animation)
+    pub pending_tool_calls: HashSet<String>,
+    /// Tool calls that failed (for red indicator)
+    pub failed_tool_calls: HashSet<String>,
+    /// Animation tick counter for pulsating effects
+    pub animation_tick: u64,
+    /// Current session file path for live polling
+    pub session_file_path: Option<PathBuf>,
+    /// Last modified time of session file (for change detection)
+    pub session_file_modified: Option<std::time::SystemTime>,
 }
 
 impl App {
@@ -107,8 +119,9 @@ impl App {
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
             claude_session_ids: HashMap::new(),
+            interactive_sessions: HashMap::new(),
             diff_text: None,
-            output_scroll: 0,
+            output_scroll: usize::MAX, // Start at bottom (most recent messages)
             diff_scroll: 0,
             diff_highlighter: DiffHighlighter::new(),
             show_help: false,
@@ -128,6 +141,11 @@ impl App {
             terminal_cols: 120,
             terminal_needs_resize: false,
             hooks_file_pos: 0,
+            pending_tool_calls: HashSet::new(),
+            failed_tool_calls: HashSet::new(),
+            animation_tick: 0,
+            session_file_path: None,
+            session_file_modified: None,
         }
     }
 
@@ -254,10 +272,12 @@ impl App {
     pub fn load_session_output(&mut self) {
         self.output_lines.clear();
         self.output_buffer.clear();
-        self.output_scroll = 0;
+        self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
         self.event_parser = EventParser::new();
         self.selected_event = None;
+        self.pending_tool_calls.clear();
+        self.failed_tool_calls.clear();
 
         if let Some(session) = self.current_session() {
             let session_id = session.id.clone();
@@ -284,29 +304,35 @@ impl App {
             // Try loading from Claude's session files
             if let Some(claude_id) = claude_session_id {
                 if let Some(session_file) = crate::config::claude_session_file(&worktree_path, &claude_id) {
+                    // Track file for live polling
+                    self.session_file_path = Some(session_file.clone());
+                    self.session_file_modified = std::fs::metadata(&session_file)
+                        .and_then(|m| m.modified())
+                        .ok();
+
                     let mut timed_events = self.load_claude_session_events(&session_file);
 
-                    // Load and merge hooks within session time range
+                    // Load and merge hooks - include all hooks from session start to now
                     let hooks = self.load_hooks_with_timestamps();
-                    let (first_ts, last_ts) = if !timed_events.is_empty() {
-                        (timed_events.first().map(|(ts, _)| *ts), timed_events.last().map(|(ts, _)| *ts))
-                    } else {
-                        (None, None)
-                    };
+                    let session_start = timed_events.first().map(|(ts, _)| *ts);
 
-                    if let (Some(start), Some(end)) = (first_ts, last_ts) {
+                    if let Some(start) = session_start {
                         let buffer = chrono::Duration::seconds(5);
+                        let now = chrono::Utc::now();
                         for (ts, event) in hooks {
-                            if ts >= start - buffer && ts <= end + buffer {
+                            if ts >= start - buffer && ts <= now {
                                 timed_events.push((ts, event));
                             }
                         }
                     }
 
                     timed_events.sort_by_key(|(ts, _)| *ts);
+
+                    // UPS hooks already injected inline during parsing via prescan
                     for (_, event) in timed_events {
                         self.display_events.push(event);
                     }
+
                     loaded_from_claude = !self.display_events.is_empty();
                 }
             }
@@ -327,11 +353,12 @@ impl App {
                     }
                 }
 
-                // Load hooks filtered by session time range
+                // Load hooks from session start to now
                 let hooks = self.load_hooks_with_timestamps();
                 let buffer = chrono::Duration::seconds(5);
+                let now = chrono::Utc::now();
                 for (ts, event) in hooks {
-                    if ts >= session_created - buffer && ts <= session_updated + buffer {
+                    if ts >= session_created - buffer && ts <= now {
                         self.display_events.push(event);
                     }
                 }
@@ -342,6 +369,79 @@ impl App {
         if let Ok(metadata) = std::fs::metadata(crate::config::config_dir().join("hooks.jsonl")) {
             self.hooks_file_pos = metadata.len();
         }
+
+        // Auto-dump debug output on debug builds
+        #[cfg(debug_assertions)]
+        let _ = self.dump_debug_output();
+    }
+
+    /// Poll session file for changes and reload if modified
+    /// Returns true if the session was reloaded
+    pub fn poll_session_file(&mut self) -> bool {
+        let Some(path) = &self.session_file_path else { return false };
+        let Ok(metadata) = std::fs::metadata(path) else { return false };
+        let Ok(modified) = metadata.modified() else { return false };
+
+        // Check if file was modified since last check
+        if self.session_file_modified.map(|t| modified > t).unwrap_or(true) {
+            self.load_session_output();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Extract hook events from system-reminder tags in content
+    /// Parses patterns like "<system-reminder>HookName hook success: output</system-reminder>"
+    fn extract_hooks_from_content(content: &str, timestamp: chrono::DateTime<chrono::Utc>) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
+        let mut hooks = Vec::new();
+        let mut search_start = 0;
+        while let Some(start) = content[search_start..].find("<system-reminder>") {
+            let abs_start = search_start + start + 17; // skip the opening tag
+            if let Some(end) = content[abs_start..].find("</system-reminder>") {
+                let reminder_content = &content[abs_start..abs_start + end];
+                // Parse "HookName hook success: output" or "HookName hook failed: output"
+                if let Some(hook_pos) = reminder_content.find(" hook success:") {
+                    // Clean name: trim whitespace AND literal \n (some JSON has double-escaped newlines)
+                    let name = reminder_content[..hook_pos]
+                        .trim()
+                        .trim_start_matches("\\n")
+                        .trim_end_matches("\\n")
+                        .to_string();
+                    let mut output = reminder_content[hook_pos + 14..]
+                        .trim()
+                        .trim_start_matches("\\n")
+                        .trim_end_matches("\\n")
+                        .to_string();
+
+                    // Include hooks even if output is just "..." (Claude Code truncates some hooks)
+                    if !output.is_empty() && output != "..." && !name.is_empty() {
+                        hooks.push((timestamp, DisplayEvent::Hook { name, output }));
+                    } else if output == "..." && !name.is_empty() {
+                        // Still show hooks with truncated output, use hook name as context
+                        hooks.push((timestamp, DisplayEvent::Hook { name: name.clone(), output: format!("[{}]", name) }));
+                    }
+                } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
+                    let name = reminder_content[..hook_pos]
+                        .trim()
+                        .trim_start_matches("\\n")
+                        .trim_end_matches("\\n")
+                        .to_string();
+                    let output = reminder_content[hook_pos + 13..]
+                        .trim()
+                        .trim_start_matches("\\n")
+                        .trim_end_matches("\\n")
+                        .to_string();
+                    if !name.is_empty() {
+                        hooks.push((timestamp, DisplayEvent::Hook { name, output: format!("FAILED: {}", output) }));
+                    }
+                }
+                search_start = abs_start + end + 18; // skip past </system-reminder>
+            } else {
+                break;
+            }
+        }
+        hooks
     }
 
     /// Load events from Claude's session file with timestamps
@@ -353,6 +453,16 @@ impl App {
 
         let reader = BufReader::new(file);
         let mut events = Vec::new();
+        // Track user messages by parentUuid to deduplicate rewound messages (keep most recent)
+        let mut user_msg_by_parent: HashMap<String, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
+        // Track tool calls by tool_use_id so we can match results to their calls
+        let mut tool_calls: HashMap<String, (String, Option<String>)> = HashMap::new(); // id -> (name, file_path)
+        // Track tool calls that haven't received results yet (for in-progress indicator)
+        let mut pending_tools: HashSet<String> = HashSet::new();
+        // Track most recent user message (index AND timestamp) for UPS hook placement
+        let mut last_user_msg: Option<(usize, chrono::DateTime<chrono::Utc>)> = None;
+        // Collect UPS hooks with user message timestamp (for correct sorting after merge)
+        let mut ups_hooks: Vec<(usize, chrono::DateTime<chrono::Utc>, DisplayEvent)> = Vec::new();
 
         for line in reader.lines().map_while(Result::ok) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
@@ -367,14 +477,195 @@ impl App {
 
                 match event_type {
                     "user" => {
-                        if let Some(content) = json.get("message")
-                            .and_then(|m| m.get("content"))
-                            .and_then(|c| c.as_str())
-                        {
+                        let message = json.get("message");
+                        let content_val = message.and_then(|m| m.get("content"));
+                        let is_meta = json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false);
+
+                        // Get string content for early checks
+                        let content_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
+                            Some(s.to_string())
+                        } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+                            Some(arr.iter()
+                                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                                .collect::<Vec<_>>()
+                                .join("\n"))
+                        } else {
+                            None
+                        };
+
+                        // Check for compaction summary FIRST (before extracting hooks)
+                        // Summary contains quoted <system-reminder> tags that shouldn't be treated as real hooks
+                        let is_compaction_summary = content_str.as_ref()
+                            .map(|c| c.starts_with("This session is being continued from a previous conversation"))
+                            .unwrap_or(false);
+
+                        if is_compaction_summary {
+                            events.push((timestamp, DisplayEvent::Compacting));
+                            continue;
+                        }
+
+                        // Extract hooks from user messages - push directly (they're part of this turn)
+                        if let Some(ref content) = content_str {
+                            for hook in Self::extract_hooks_from_content(content, timestamp) {
+                                events.push(hook);
+                            }
+                        }
+
+                        // Skip meta messages for display
+                        if is_meta {
+                            continue;
+                        }
+
+                        // Handle string content (user prompts)
+                        if let Some(content) = content_val.and_then(|c| c.as_str()) {
+                            // Skip local-command-caveat messages (internal Claude instruction)
+                            if content.contains("<local-command-caveat>") {
+                                continue;
+                            }
+
+                            // Handle local-command-stdout (output of local commands)
+                            if content.contains("<local-command-stdout>") {
+                                // Check for "Compacted" indicator - show CONVERSATION COMPACTED banner
+                                if content.contains("Compacted") {
+                                    events.push((timestamp, DisplayEvent::Compacted));
+                                }
+                                // Skip the raw stdout content either way
+                                continue;
+                            }
+
+                            // Check for slash commands: <command-name>/xxx</command-name>
+                            if content.contains("<command-name>") {
+                                if let Some(start) = content.find("<command-name>") {
+                                    if let Some(end) = content.find("</command-name>") {
+                                        let cmd = &content[start + 14..end];
+                                        events.push((timestamp, DisplayEvent::Command {
+                                            name: cmd.to_string(),
+                                        }));
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            // Handle rewound messages: when a user rewinds/edits a message, both
+                            // the original and corrected message share the same parentUuid.
+                            // We keep only the most recent one (the corrected version).
+                            let parent_uuid = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("").to_string();
+                            let event_idx = events.len();
+
+                            if !parent_uuid.is_empty() {
+                                if let Some((old_idx, old_ts)) = user_msg_by_parent.get(&parent_uuid) {
+                                    if timestamp > *old_ts {
+                                        // New message is more recent - mark old for removal, add new
+                                        events[*old_idx] = (chrono::DateTime::<chrono::Utc>::MIN_UTC, DisplayEvent::Filtered);
+                                        user_msg_by_parent.insert(parent_uuid, (event_idx, timestamp));
+                                    } else {
+                                        // Old message is more recent - skip this one
+                                        continue;
+                                    }
+                                } else {
+                                    user_msg_by_parent.insert(parent_uuid, (event_idx, timestamp));
+                                }
+                            }
+
+                            // Track user message index AND timestamp for UPS hook placement
+                            last_user_msg = Some((events.len(), timestamp));
                             events.push((timestamp, DisplayEvent::UserMessage {
                                 uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
                                 content: content.to_string(),
                             }));
+                        }
+                        // Handle array content (tool results)
+                        else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
+                            for block in content_arr {
+                                if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                                    let tool_use_id = block.get("tool_use_id")
+                                        .and_then(|i| i.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+
+                                    // Get tool name and file_path from the original call
+                                    let (tool_name, file_path) = tool_calls
+                                        .get(&tool_use_id)
+                                        .cloned()
+                                        .unwrap_or(("Unknown".to_string(), None));
+
+                                    // Extract content - can be string or array of content blocks
+                                    let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
+                                        s.to_string()
+                                    } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
+                                        arr.iter()
+                                            .filter_map(|b| {
+                                                if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                                    b.get("text").and_then(|t| t.as_str())
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("\n")
+                                    } else {
+                                        String::new()
+                                    };
+
+                                    // Tool result received - mark as no longer pending
+                                    pending_tools.remove(&tool_use_id);
+
+                                    // Detect failed tools - tool-specific logic to avoid false positives
+                                    let is_error = match tool_name.as_str() {
+                                        // Read/Write/Edit: errors on first line
+                                        "Read" | "Write" | "Edit" | "Glob" | "Grep" => {
+                                            let first = content.lines().next().unwrap_or("").to_lowercase();
+                                            first.starts_with("error") || first.contains("enoent")
+                                                || first.contains("file does not exist")
+                                                || first.contains("does not exist")
+                                                || first.contains("<tool_use_error>")
+                                        }
+                                        // Bash: shell errors can appear on any line
+                                        "Bash" => content.lines().any(|line| {
+                                            let l = line.to_lowercase();
+                                            // Shell command errors: "grep:", "tail:", "bash:", etc.
+                                            l.contains(": no such file") || l.contains(": permission denied")
+                                                || l.contains(": command not found")
+                                                // Exit code errors
+                                                || ((l.contains("exit code") || l.contains("exit status"))
+                                                    && !l.ends_with("0") && !l.ends_with("0\n"))
+                                        }),
+                                        // Other tools: check first line only
+                                        _ => {
+                                            let first = content.lines().next().unwrap_or("").to_lowercase();
+                                            first.starts_with("error")
+                                        }
+                                    };
+                                    if is_error {
+                                        self.failed_tool_calls.insert(tool_use_id.clone());
+                                    }
+
+                                    // Extract hooks from system-reminder tags in tool results
+                                    let extracted = Self::extract_hooks_from_content(&content, timestamp);
+                                    for hook in extracted {
+                                        if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
+                                            if name == "UserPromptSubmit" {
+                                                // Use user message timestamp (+1ms offset) for correct sorting
+                                                if let Some((idx, user_ts)) = last_user_msg {
+                                                    let hook_ts = user_ts + chrono::Duration::milliseconds(1);
+                                                    ups_hooks.push((idx, hook_ts, hook.1.clone()));
+                                                }
+                                                continue;
+                                            }
+                                        }
+                                        events.push(hook);
+                                    }
+
+                                    if !content.is_empty() {
+                                        events.push((timestamp, DisplayEvent::ToolResult {
+                                            tool_use_id,
+                                            tool_name,
+                                            file_path,
+                                            content,
+                                        }));
+                                    }
+                                }
+                            }
                         }
                     }
                     "assistant" => {
@@ -383,6 +674,27 @@ impl App {
                                 for block in content_arr {
                                     if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
                                         match block_type {
+                                            "thinking" => {
+                                                // Extract UPS hooks from thinking blocks
+                                                // Claude Code injects system-reminder into context, which appears in thinking
+                                                if let Some(thinking) = block.get("thinking").and_then(|t| t.as_str()) {
+                                                    let extracted = Self::extract_hooks_from_content(thinking, timestamp);
+                                                    for hook in extracted {
+                                                        if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
+                                                            if name == "UserPromptSubmit" {
+                                                                // Use user message timestamp (+1ms offset) for correct sorting
+                                                                // This ensures UPS hooks appear right after user messages when sorted
+                                                                if let Some((_idx, user_ts)) = last_user_msg {
+                                                                    let hook_ts = user_ts + chrono::Duration::milliseconds(1);
+                                                                    ups_hooks.push((_idx, hook_ts, hook.1.clone()));
+                                                                }
+                                                                continue;
+                                                            }
+                                                        }
+                                                        events.push(hook);
+                                                    }
+                                                }
+                                            }
                                             "text" => {
                                                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
                                                     events.push((timestamp, DisplayEvent::AssistantText {
@@ -397,6 +709,11 @@ impl App {
                                                 let tool_id = block.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
                                                 let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
                                                 let file_path = input.get("file_path").or(input.get("path")).and_then(|p| p.as_str()).map(|s| s.to_string());
+
+                                                // Track this tool call so we can match it to its result
+                                                tool_calls.insert(tool_id.clone(), (tool_name.clone(), file_path.clone()));
+                                                // Mark as pending until we see its result
+                                                pending_tools.insert(tool_id.clone());
 
                                                 events.push((timestamp, DisplayEvent::ToolCall {
                                                     uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
@@ -425,11 +742,90 @@ impl App {
                             }));
                         }
                     }
+                    "system" => {
+                        // Handle local_command system events (e.g., /memory, /status)
+                        let subtype = json.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
+                        if subtype == "local_command" {
+                            if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+                                // Extract command name if present
+                                if content.contains("<command-name>") {
+                                    if let Some(start) = content.find("<command-name>") {
+                                        if let Some(end) = content.find("</command-name>") {
+                                            let cmd = &content[start + 14..end];
+                                            events.push((timestamp, DisplayEvent::Command {
+                                                name: cmd.to_string(),
+                                            }));
+                                            continue;
+                                        }
+                                    }
+                                }
+                                // Skip local-command-stdout (output of local commands)
+                                if content.contains("<local-command-stdout>") {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    "progress" => {
+                        // Handle hook_progress events (PreToolUse, PostToolUse, etc.)
+                        if let Some(data) = json.get("data") {
+                            if data.get("type").and_then(|t| t.as_str()) == Some("hook_progress") {
+                                let hook_name = data.get("hookName")
+                                    .or_else(|| data.get("hookEvent"))
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let command = data.get("command").and_then(|c| c.as_str()).unwrap_or("");
+
+                                if !hook_name.is_empty() {
+                                    // Extract output from echo commands
+                                    let output = if command.starts_with("echo '") && command.ends_with('\'') {
+                                        command[6..command.len()-1].to_string()
+                                    } else if command.starts_with("echo \"") && command.ends_with('"') {
+                                        command[6..command.len()-1].to_string()
+                                    } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
+                                        // Pattern: OUT='message'; ...; echo "$OUT"
+                                        if let Some(start) = command.find("OUT='") {
+                                            let rest = &command[start + 5..];
+                                            if let Some(end) = rest.find('\'') {
+                                                rest[..end].to_string()
+                                            } else { String::new() }
+                                        } else if let Some(start) = command.find("OUT=\"") {
+                                            let rest = &command[start + 5..];
+                                            if let Some(end) = rest.find('"') {
+                                                rest[..end].to_string()
+                                            } else { String::new() }
+                                        } else { String::new() }
+                                    } else { String::new() };
+
+                                    // Only show hooks with meaningful output
+                                    if !output.is_empty() {
+                                        events.push((timestamp, DisplayEvent::Hook {
+                                            name: hook_name,
+                                            output,
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
         }
-        events
+
+        // Add UPS hooks to events - they have user message timestamp (+1ms)
+        // so they'll sort to appear right after their user message
+        for (_idx, ts, hook_event) in ups_hooks {
+            events.push((ts, hook_event));
+        }
+
+        // Copy pending tools to self for in-progress indicator rendering
+        // (tools that have tool_use but no tool_result yet in the file)
+        self.pending_tool_calls = pending_tools;
+
+        // Filter out rewound/superseded messages (marked as Filtered during deduplication)
+        events.into_iter().filter(|(_, e)| !matches!(e, DisplayEvent::Filtered)).collect()
     }
 
     /// Load hooks from hooks.jsonl with timestamps
@@ -456,7 +852,9 @@ impl App {
                     .or_else(|_| timestamp_str.parse::<chrono::DateTime<chrono::Utc>>())
                     .unwrap_or_else(|_| chrono::Utc::now());
 
-                if !output.is_empty() {
+                // Skip UserPromptSubmit hooks from file - they're extracted from session
+                // file with adjusted timestamps for correct positioning after user messages
+                if !output.is_empty() && hook_name != "UserPromptSubmit" {
                     hooks.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
                 }
             }
@@ -578,6 +976,7 @@ impl App {
         self.update_session_status(session_id, status);
         self.running_sessions.remove(session_id);
         self.claude_receivers.remove(session_id);
+        self.interactive_sessions.remove(session_id);
         self.set_status(format!("{} exited: {:?}", session_id, code));
     }
 
@@ -588,6 +987,27 @@ impl App {
         if is_viewing {
             // Parse raw data into display events (works for JSON and plain text hooks)
             let events = self.event_parser.parse(&data);
+
+            // Track pending/completed/failed tool calls for progress animation
+            for event in &events {
+                match event {
+                    DisplayEvent::ToolCall { tool_use_id, .. } => {
+                        self.pending_tool_calls.insert(tool_use_id.clone());
+                    }
+                    DisplayEvent::ToolResult { tool_use_id, content, .. } => {
+                        self.pending_tool_calls.remove(tool_use_id);
+                        // Detect failed tools by checking content for error indicators
+                        let lower = content.to_lowercase();
+                        if lower.contains("error:") || lower.contains("failed")
+                            || lower.starts_with("error") || content.contains("ENOENT")
+                            || content.contains("permission denied") {
+                            self.failed_tool_calls.insert(tool_use_id.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             self.display_events.extend(events);
 
             // For stdout JSON, also update output_lines (fallback display)
@@ -819,4 +1239,78 @@ impl App {
         found
     }
 
+    /// Poll all interactive sessions for new events from their session files
+    /// Returns true if any new events were found
+    pub fn poll_interactive_sessions(&mut self) -> bool {
+        let current_session_id = self.current_session().map(|s| s.id.clone());
+        let Some(session_id) = current_session_id else { return false };
+
+        let events = if let Some(interactive) = self.interactive_sessions.get_mut(&session_id) {
+            interactive.poll_events()
+        } else {
+            return false;
+        };
+
+        if events.is_empty() {
+            return false;
+        }
+
+        // Track pending/completed/failed tool calls for progress animation
+        for event in &events {
+            match event {
+                DisplayEvent::ToolCall { tool_use_id, .. } => {
+                    self.pending_tool_calls.insert(tool_use_id.clone());
+                }
+                DisplayEvent::ToolResult { tool_use_id, content, .. } => {
+                    self.pending_tool_calls.remove(tool_use_id);
+                    // Detect failed tools by checking content for error indicators
+                    let lower = content.to_lowercase();
+                    if lower.contains("error:") || lower.contains("failed")
+                        || lower.starts_with("error") || content.contains("ENOENT")
+                        || content.contains("permission denied") {
+                        self.failed_tool_calls.insert(tool_use_id.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.display_events.extend(events);
+        self.output_scroll = usize::MAX;
+        true
+    }
+
+    /// Clean up interactive session when Claude exits
+    pub fn cleanup_interactive_session(&mut self, session_id: &str) {
+        self.interactive_sessions.remove(session_id);
+    }
+
+    /// Dump rendered output to file - exact replica of TUI output pane
+    /// Writes to <session_worktree>/.azural/debug-output.txt
+    pub fn dump_debug_output(&self) -> anyhow::Result<()> {
+        use std::io::Write;
+
+        let debug_dir = self.current_session()
+            .map(|s| s.worktree_path.join(".azural"))
+            .unwrap_or_else(|| crate::config::config_dir());
+        std::fs::create_dir_all(&debug_dir)?;
+        let debug_path = debug_dir.join("debug-output.txt");
+        let mut file = std::fs::File::create(&debug_path)?;
+
+        // Render exactly as TUI does - plain text only, no metadata
+        let rendered_lines = crate::tui::util::render_display_events(
+            &self.display_events,
+            120,
+            &self.pending_tool_calls,
+            &self.failed_tool_calls,
+            self.animation_tick,
+        );
+
+        for line in rendered_lines.iter() {
+            let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+            writeln!(file, "{}", text)?;
+        }
+
+        Ok(())
+    }
 }

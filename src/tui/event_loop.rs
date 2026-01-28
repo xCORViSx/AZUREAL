@@ -35,11 +35,16 @@ pub async fn run_app(
     terminal.draw(|f| ui(f, app))?;
 
     loop {
+        // Increment animation tick for pulsating tool indicators
+        app.animation_tick = app.animation_tick.wrapping_add(1);
+
         // Only poll terminal when in terminal mode (avoid unnecessary rx check)
         let terminal_changed = app.terminal_mode && app.poll_terminal();
 
         // Drain ALL pending events quickly (including mouse motion we'll discard)
-        let mut needs_redraw = terminal_changed;
+        // Also force redraw if we have pending tools (for animation)
+        let has_pending_tools = !app.pending_tool_calls.is_empty();
+        let mut needs_redraw = terminal_changed || has_pending_tools;
         let mut scroll_delta: i32 = 0;
         let mut scroll_col: u16 = 0;
         let mut scroll_row: u16 = 0;
@@ -103,6 +108,24 @@ pub async fn run_app(
         // Poll hooks file for new entries (from external hook scripts)
         if app.poll_hooks_file() {
             needs_redraw = true;
+        }
+
+        // Poll session file for changes (live update as Claude writes to it)
+        if app.poll_session_file() {
+            needs_redraw = true;
+        }
+
+        // Poll interactive sessions for new events from session files
+        if app.poll_interactive_sessions() {
+            needs_redraw = true;
+        }
+
+        // Auto-dump debug output when events change (debug builds only)
+        #[cfg(debug_assertions)]
+        if needs_redraw {
+            if let Err(e) = app.dump_debug_output() {
+                eprintln!("Debug dump failed: {}", e);
+            }
         }
 
         // Apply accumulated scroll using cached terminal size

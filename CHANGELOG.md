@@ -5,10 +5,49 @@ All notable changes to Azural will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Tool progress animation: Pulsating indicator (`◐`) while running, green (`●`) on success, red (`✗`) on failure
+  - Visual feedback during tool execution matching Claude Code CLI style
+
+### Fixed
+- Tool error status now works when loading from session file (not just live streaming)
+  - Errors detected by content patterns: "error:", "failed", "ENOENT", "permission denied", non-zero exit codes
+  - Failed tools show red `✗` indicator instead of green `●`
+- Pending tool status now tracked when loading from session file
+  - Tools with `tool_use` but no `tool_result` yet show pulsating `◐` indicator
+- Compaction summary no longer shows raw text blob as hooks
+  - Summary message contains quoted `<system-reminder>` tags from conversation history
+  - Compaction messages skipped during hook extraction (detected by summary format)
+- UserPromptSubmit (UPS) hooks now appear directly after user prompts
+  - UPS hooks extracted from assistant "thinking" blocks where Claude Code injects them
+  - Hooks assigned timestamp = user_message_timestamp + 1ms for correct sort order
+  - When events are sorted by timestamp, UPS hooks now appear immediately after their user message
+  - UPS hooks from hooks.jsonl are skipped (duplicates of session file hooks with wrong timestamps)
+  - Previously UPS hooks appeared after tool activity instead of after user prompts
+- Command display: Slash commands (`/compact`, `/crt`, etc.) shown as prominent 3-line centered magenta banners
+- Compacting indicator: "COMPACTING CONVERSATION" yellow banner when compaction starts
+- Compacted indicator: "CONVERSATION COMPACTED" green banner when compaction completes
+- Filtered out internal Claude messages: `<local-command-caveat>`, `<local-command-stdout>`, meta messages
+- Rewound message deduplication: When user rewinds to edit a message, only the corrected version is shown
+  - Detects by `parentUuid` - multiple user messages sharing the same parent, keeps only the most recent
+- Debug dump (debug builds only): Auto-writes `.azural/debug-output.txt` on session load
+  - Shows rendered output exactly as it appears in the TUI (with styling annotations)
+  - Only enabled in debug builds (`cargo run`), not release builds
+- Markdown rendering in Claude response output:
+  - Headers (`#`, `##`, `###`) styled with block characters and colors
+  - Bold (`**text**`) rendered without markers
+  - Italic (`*text*`) rendered without markers
+  - Inline code (`` `code` ``) with dark background
+  - Code blocks (``` ```) with language label and box-drawn borders
+  - Tables with `|` converted to box-drawing characters
+  - Bullet and numbered lists properly indented
+  - Blockquotes with vertical bar styling
 - Hooks file watching - azural polls `<project>/.azural/hooks.jsonl` for entries from ALL hook types
   - File-based IPC workaround for Claude Code's stream-json limitation
   - Works with `~/.claude/scripts/log-hook.sh` helper script
   - All hooks (PreToolUse, PostToolUse, UserPromptSubmit, etc.) now display in output pane
+- Live session output - azural continuously polls the Claude session file for changes
+  - Output pane updates in real-time as you chat with Claude in another terminal
+  - No need to switch sessions to see new messages
 - PTY-based embedded terminal pane - press `t` to toggle a full shell terminal
   - Acts as a portal to the user's actual terminal within Azural
   - Full color support with ANSI escape sequences via `ansi-to-tui`
@@ -19,7 +58,18 @@ All notable changes to Azural will be documented in this file.
 - Clean output display parsing stream-json format:
   - User prompts shown as "You: <message>"
   - Claude responses shown as "Claude: <text>"
-  - Tool usage shown as "[Using <tool> | <param>]" with parameter preview
+  - Tool calls shown as timeline nodes with tool name and primary parameter
+  - Tool results with tool-specific formatting:
+    - Read: first + last line with line count
+    - Bash: last 2 lines (results usually at end)
+    - Edit: complete diff output with actual file line numbers, red/green coloring for changed lines only, gray context for unchanged
+    - Write: first comment/purpose line + line count
+    - Grep: first 3 matches with overflow indicator
+    - Glob: file count grouped by directory
+    - Task: summary line from agent
+    - WebFetch: page title + preview
+    - WebSearch: first 3 numbered results
+    - LSP: location + code context
   - Completion info shown as "[Done: Xs, $X.XXXX]"
 - Mouse scroll support - scroll panels based on cursor position (independent of keyboard focus, Shift+drag for text selection)
 - iMessage-style output formatting:
@@ -55,7 +105,50 @@ All notable changes to Azural will be documented in this file.
   - vt100: 0.15 → 0.16
 - Prompt echo format changed from "> " to "You: " for consistency
 
+### Changed
+- Sessions now load scrolled to bottom (most recent messages visible)
+  - Initial load, session switch, and 'o' key all scroll to bottom
+  - Use 'g' to scroll to top if needed
+
 ### Fixed
+- Output pane now loads conversation history on startup (was empty until switching sessions)
+  - Added `load_session_output()` call after `app.load()` in startup sequence
+- All hook types now display in output pane (UserPromptSubmit, PreToolUse, PostToolUse, etc.)
+  - Parses `hook_progress` events from Claude Code's session data
+  - Extracts hook output from echo commands in hook definitions
+  - Parses hook output from system-reminder tags in user messages AND tool results
+  - Previously only SessionStart hooks were visible
+- Tool results now display in realtime during Claude's response (not just after completion)
+  - EventParser now tracks tool calls by ID to match with tool_result blocks
+  - Previously tool results only appeared after switching away from output pane and back
+- Edit tool now shows actual diff with red/green highlighted backgrounds and real file line numbers
+  - Extracts `old_string`/`new_string` from ToolCall input (not ToolResult which only has success message)
+  - Reads file to find where edit occurred, displays actual line numbers (not relative 1,2,3...)
+  - Only changed lines are highlighted - unchanged lines show in gray as context
+  - Removed lines: white text on red background
+  - Added lines: black text on green background
+  - Diff displayed inline with the tool call for immediate visibility
+- Write tool now shows line count + purpose line from ToolCall input (not empty result message)
+  - Extracts `content` from ToolCall input to count lines and find first comment/purpose line
+  - Displays inline with the tool call for immediate visibility
+- Tool results now strip `<system-reminder>` blocks that Claude Code appends
+  - Removes entire block (tags + content) so malware disclaimers don't appear in output
+- Read tool now shows last non-empty line (skips trailing empty lines like `60→`)
+- Init event no longer appears mid-conversation - only first Init shown
+- Hook deduplication now consecutive-only (not global) - hooks appear throughout conversation
+  - Previously: each unique (name, output) pair shown only once at first occurrence
+  - Now: same hook can appear multiple times, only consecutive identical hooks deduplicated
+  - Hooks now display next to their corresponding tool calls instead of clustering at beginning
+- UserPromptSubmit hooks now extracted from session file via system-reminder tags
+  - Added `extract_hooks_from_content` to `load_claude_session_events`
+  - Parses hooks from user message content and tool result content
+  - Extracts hooks from meta messages (`isMeta: true`) before skipping them for display
+- Hook time-filtering now uses `now()` as upper bound instead of last event timestamp
+  - Previously hooks after last session event were filtered out (5s buffer too small)
+  - Now all hooks from session start to present are included
+- Polling parser now properly captures ToolCall and ToolResult events for parallel tool calls
+  - Fixed missing ToolResults when Claude makes multiple tool calls at once
+  - Tool calls tracked by ID to match results to their corresponding calls
 - Hooks now persist across session switches - saved to database with OutputType::Hook
 - Hook logging runs in background (`&`) to ensure execution even if Claude Code terminates early
 - Hook output no longer truncated to 50 characters - full first line now displays

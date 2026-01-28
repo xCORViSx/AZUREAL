@@ -20,7 +20,7 @@ mod input_rebase;
 mod input_sessions;
 mod input_terminal;
 mod input_wizard;
-mod util;
+pub mod util;
 
 use anyhow::Result;
 use crossterm::{
@@ -51,6 +51,9 @@ pub async fn run(db: Database) -> Result<()> {
 
     let mut app = App::new(db);
     app.load()?;
+
+    // Load output for the initially selected session so output pane isn't empty on startup
+    app.load_session_output();
 
     // If no projects, add current directory if it's a git repo
     if app.projects.is_empty() {

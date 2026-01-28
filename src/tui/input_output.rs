@@ -90,7 +90,7 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         (KeyModifiers::NONE, KeyCode::Tab) => app.focus = Focus::Input,
         (KeyModifiers::NONE, KeyCode::Char('o')) => {
             app.view_mode = ViewMode::Output;
-            app.output_scroll = 0;
+            app.output_scroll = usize::MAX; // Scroll to bottom (most recent)
         }
         (KeyModifiers::NONE, KeyCode::Char('d')) => {
             if let Err(e) = app.load_diff() {

@@ -20,7 +20,13 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         ViewMode::Output => {
             if !app.display_events.is_empty() {
                 let inner_width = area.width.saturating_sub(2);
-                let all_lines = render_display_events(&app.display_events, inner_width);
+                let all_lines = render_display_events(
+                    &app.display_events,
+                    inner_width,
+                    &app.pending_tool_calls,
+                    &app.failed_tool_calls,
+                    app.animation_tick,
+                );
                 let total = all_lines.len();
 
                 let scroll = if app.output_scroll == usize::MAX {
