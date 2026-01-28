@@ -37,6 +37,38 @@ impl Git {
             .unwrap_or(false)
     }
 
+    /// Get the root path of the git repository
+    pub fn repo_root(path: &Path) -> Result<std::path::PathBuf> {
+        let output = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .current_dir(path)
+            .output()
+            .context("Failed to get repo root")?;
+
+        if output.status.success() {
+            Ok(std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+        } else {
+            anyhow::bail!("Not in a git repository")
+        }
+    }
+
+    /// List all azural/* branches (for archived session detection)
+    pub fn list_azural_branches(repo_path: &Path) -> Result<Vec<String>> {
+        let output = Command::new("git")
+            .args(["branch", "--list", "azural/*", "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list branches")?;
+
+        let branches: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        Ok(branches)
+    }
+
     /// Get the main branch name (main or master)
     pub fn get_main_branch(repo_path: &Path) -> Result<String> {
         for branch in ["main", "master"] {

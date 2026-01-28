@@ -17,24 +17,17 @@ pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
 
     // Session info (left side)
     if let Some(session) = app.current_session() {
-        let status_color = session.status.color();
+        let status = session.status(&app.running_sessions);
+        let status_color = status.color();
         status_spans.push(Span::styled(
-            format!("{} ", session.status.symbol()),
+            format!("{} ", status.symbol()),
             Style::default().fg(status_color),
         ));
 
         status_spans.push(Span::styled(
-            truncate(&session.name, 25),
+            truncate(session.name(), 25),
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         ));
-
-        if let Some(pid) = session.pid {
-            status_spans.push(Span::raw(" "));
-            status_spans.push(Span::styled(
-                format!("[PID: {}]", pid),
-                Style::default().fg(Color::Green),
-            ));
-        }
 
         status_spans.push(Span::raw(" "));
         status_spans.push(Span::styled(

@@ -4,6 +4,12 @@ All notable changes to Azural will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Replaced SQLite database (`azural.db`) with JSON config (`azural.json`) for minimal footprint
+  - Session outputs now read exclusively from Claude's JSONL session files
+  - One-time automatic migration from SQLite if old database exists
+  - Human-readable JSON format for debugging and manual inspection
+
 ### Added
 - Tool progress animation: Pulsating indicator (`◐`) while running, green (`●`) on success, red (`✗`) on failure
   - Visual feedback during tool execution matching Claude Code CLI style

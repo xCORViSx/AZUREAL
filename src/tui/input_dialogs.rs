@@ -5,7 +5,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::app::{App, Focus, SessionAction};
 use crate::claude::ClaudeProcess;
-use crate::session::SessionManager;
+use crate::git::Git;
 
 /// Handle keyboard input when context menu is open
 pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -29,7 +29,7 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
     match action {
         SessionAction::Start => {
             if let Some(session) = app.current_session() {
-                if app.is_session_running(&session.id) {
+                if app.is_session_running(&session.branch_name) {
                     app.set_status("Claude already running in this session");
                 } else {
                     app.focus = Focus::Input;
@@ -41,18 +41,12 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
             app.set_status("Stop action not yet implemented");
         }
         SessionAction::Archive => {
-            if let Some(session) = app.current_session() {
-                let session_id = session.id.clone();
-                if let Err(e) = SessionManager::new(&app.db).archive_session(&session_id) {
-                    app.set_status(format!("Failed to archive: {}", e));
-                } else {
-                    app.set_status("Session archived");
-                    let _ = app.refresh_sessions();
-                }
+            if let Err(e) = app.archive_current_session() {
+                app.set_status(format!("Failed to archive: {}", e));
             }
         }
         SessionAction::Delete => {
-            app.set_status("Delete action not yet implemented - use with caution");
+            app.set_status("Delete action not yet implemented - use CLI: azural session delete");
         }
         SessionAction::ViewDiff => {
             if let Err(e) = app.load_diff() {
@@ -66,14 +60,18 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
         }
         SessionAction::OpenInEditor => {
             if let Some(session) = app.current_session() {
-                let path = session.worktree_path.display().to_string();
-                app.set_status(format!("Editor integration not implemented. Path: {}", path));
+                if let Some(ref wt_path) = session.worktree_path {
+                    let path = wt_path.display().to_string();
+                    app.set_status(format!("Editor integration not implemented. Path: {}", path));
+                }
             }
         }
         SessionAction::CopyWorktreePath => {
             if let Some(session) = app.current_session() {
-                let path = session.worktree_path.display().to_string();
-                app.set_status(format!("Copied to clipboard (not implemented): {}", path));
+                if let Some(ref wt_path) = session.worktree_path {
+                    let path = wt_path.display().to_string();
+                    app.set_status(format!("Copied to clipboard (not implemented): {}", path));
+                }
             }
         }
     }
@@ -90,9 +88,13 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
             KeyCode::Enter => {
                 if let Some(branch) = dialog.selected_branch().cloned() {
                     if let Some(project) = app.current_project().cloned() {
-                        match SessionManager::new(&app.db).create_session_from_branch(&project, &branch) {
-                            Ok(session) => {
-                                app.set_status(format!("Created worktree: {}", session.name));
+                        // Create worktree from existing branch
+                        let worktree_name = branch.strip_prefix("azural/").unwrap_or(&branch);
+                        let worktree_path = project.worktrees_dir().join(worktree_name);
+
+                        match Git::create_worktree(&project.path, &worktree_path, &branch) {
+                            Ok(()) => {
+                                app.set_status(format!("Created worktree: {}", worktree_name));
                                 let _ = app.refresh_sessions();
                             }
                             Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),

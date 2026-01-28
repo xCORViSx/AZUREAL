@@ -12,8 +12,6 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => app.select_next_session(),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev_session(),
-        KeyCode::Char('J') => app.select_next_project(),
-        KeyCode::Char('K') => app.select_prev_project(),
         KeyCode::Tab => app.focus = Focus::Output,
         KeyCode::Char(' ') | KeyCode::Char('?') => app.open_context_menu(),
         KeyCode::Char('n') => app.start_wizard(),
@@ -32,10 +30,10 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         }
         KeyCode::Char('r') => {
             if let Some(session) = app.current_session() {
-                if let Some(project) = app.current_project() {
-                    let worktree_path = session.worktree_path.clone();
+                if let (Some(ref wt_path), Some(project)) = (&session.worktree_path, app.current_project()) {
+                    let wt = wt_path.clone();
                     let main_branch = project.main_branch.clone();
-                    match Git::rebase_onto_main(&worktree_path, &main_branch) {
+                    match Git::rebase_onto_main(&wt, &main_branch) {
                         Ok(RebaseResult::Success) => {
                             app.set_status("Rebase completed successfully");
                             app.clear_rebase_status();
@@ -62,19 +60,22 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
                             app.set_status(format!("Rebase error: {}", e));
                         }
                     }
+                } else {
+                    app.set_status("Session has no worktree");
                 }
             }
         }
         KeyCode::Char('R') => {
             if let Some(session) = app.current_session() {
-                let worktree_path = session.worktree_path.clone();
-                if Git::is_rebase_in_progress(&worktree_path) {
-                    match Git::get_rebase_status(&worktree_path) {
-                        Ok(status) => app.set_rebase_status(status),
-                        Err(e) => app.set_status(format!("Failed to get rebase status: {}", e)),
+                if let Some(ref wt_path) = session.worktree_path {
+                    if Git::is_rebase_in_progress(wt_path) {
+                        match Git::get_rebase_status(wt_path) {
+                            Ok(status) => app.set_rebase_status(status),
+                            Err(e) => app.set_status(format!("Failed to get rebase status: {}", e)),
+                        }
+                    } else {
+                        app.set_status("No rebase in progress");
                     }
-                } else {
-                    app.set_status("No rebase in progress");
                 }
             }
         }
@@ -84,9 +85,12 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
             }
         }
         KeyCode::Enter => {
-            let session_data = app.current_session().map(|s| (s.id.clone(), s.worktree_path.clone(), s.status.clone()));
-            if let Some((_, _, status)) = session_data {
-                if status == SessionStatus::Pending || status == SessionStatus::Stopped || status == SessionStatus::Completed || status == SessionStatus::Failed {
+            if let Some(session) = app.current_session() {
+                let status = session.status(&app.running_sessions);
+                if status == SessionStatus::Pending || status == SessionStatus::Stopped
+                    || status == SessionStatus::Completed || status == SessionStatus::Failed
+                    || status == SessionStatus::Waiting
+                {
                     app.focus = Focus::Input;
                     app.insert_mode = true;
                     app.set_status("Type your prompt and press Enter to send");
@@ -103,10 +107,11 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         }
         KeyCode::Char('s') => {
             if let Some(session) = app.current_session() {
-                let session_id = session.id.clone();
-                if app.running_sessions.remove(&session_id) {
-                    app.claude_receivers.remove(&session_id);
-                    app.set_status(format!("Stopped tracking: {}", session_id));
+                let branch_name = session.branch_name.clone();
+                let session_name = session.name().to_string();
+                if app.running_sessions.remove(&branch_name) {
+                    app.claude_receivers.remove(&branch_name);
+                    app.set_status(format!("Stopped tracking: {}", session_name));
                 }
             }
         }

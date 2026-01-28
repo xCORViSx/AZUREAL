@@ -2,6 +2,12 @@
 
 Azural (Agent Zones: Unified Runtime for Autonomous LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each "Session" is a git worktree with its own Claude agent, allowing concurrent AI-assisted development across multiple feature branches.
 
+**Stateless Architecture:** Azural stores NO persistent data. All state is derived at runtime from:
+- Git repository info via `git rev-parse --show-toplevel`
+- Git worktrees via `git worktree list` for active sessions
+- Git branches via `git branch | grep azural/` for archived sessions
+- Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
+
 # FEATURES
 
 ### Multi-Session Claude Management
@@ -207,24 +213,6 @@ Claude Code hooks are captured from multiple sources in the session file:
 
 Implementation: `extract_hooks_from_content()`, `load_claude_session_events()` in `src/app/mod.rs`, `parse_progress_event()` in `src/events.rs`
 
-### Hooks Logging
-
-All Claude Code hook events (that are emitted to stream-json) are captured to a JSON Lines file:
-- File location: `<project>/.azural/hooks.jsonl` (project-level, falls back to `~/.azural/` if not in git repo)
-- Format: One JSON object per line with timestamp, session_id, hook_name, output, and raw event
-- CLI: `azural hooks` to view recent hooks
-
-**CLI Usage:**
-```bash
-azural hooks              # Show last 20 hooks
-azural hooks -l 50        # Show last 50 hooks
-azural hooks --json       # Output raw JSON lines
-azural hooks -n "submit"  # Filter by hook name
-azural hooks --clear      # Clear the hooks log
-```
-
-Implementation: `log_hook_event()` in `src/app/util.rs`, `handle_hooks()` in `src/cmd/mod.rs`
-
 ### Conversation Persistence
 
 Each session maintains conversation history across prompts using Claude's `--resume` flag:
@@ -232,33 +220,21 @@ Each session maintains conversation history across prompts using Claude's `--res
 - Subsequent prompts use `--resume <session_id>` (without `--fork-session`)
 - History preserved in Claude Code's session storage until session is destroyed
 
-**Data Storage Architecture:**
-Azural reads conversation data from Claude's session files with auto-discovery:
-- **Primary**: Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
-- **Auto-discovery**: If no `claude_session_id` is set, azural scans Claude's project directory and links the most recent session file
-- **Live polling**: Session file is continuously polled for changes; output updates in real-time as you chat with Claude in another terminal
-- **Hooks**: Read from project's `.azural/hooks.jsonl`, merged by timestamp with conversation events
-- **Fallback**: Database `session_outputs` table when no Claude session files exist
-- **azural.db**: Stores session metadata; outputs saved as fallback
+**Stateless Data Discovery:**
+Azural reads all data at runtime without persisting anything:
+- **Project**: Discovered via `git rev-parse --show-toplevel`, main branch detected from git
+- **Sessions**: Discovered from `git worktree list` (active) + `git branch | grep azural/` (archived)
+- **Conversation**: Read from Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
+- **Auto-discovery**: Azural scans Claude's project directory to find/link session files by worktree path
+- **Live polling**: Session file is continuously polled for changes; output updates in real-time
+- **Hooks**: Extracted from `system-reminder` tags embedded in Claude's session files (no separate storage)
 
-Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`
+Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_sessions()`, `discover_claude_session_id()` in `src/app/mod.rs`
 
-Implementation: `load_session_output()`, `poll_session_file()`, `load_claude_session_events()`, `load_hooks_with_timestamps()` in `src/app/mod.rs`, `claude_session_file()` in `src/config.rs`
+**Fixed Bug: tool_use ID Collision**
+Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19 would return "tool_use ids must be unique" error (GitHub issues #20508, #20527, #13124).
 
-**Known Bug: tool_use ID Collision (Fixed by Rollback)**
-When using `-p --resume` and Claude makes parallel tool calls, the API returns "tool_use ids must be unique" error. This is a known Claude Code bug (GitHub issues #20508, #20527, #13124) **introduced in 2.1.19**.
-
-**Workaround:** Use Claude Code ≤ 2.1.18:
-```bash
-npm install -g @anthropic-ai/claude-code@2.1.18
-```
-
-Pattern on 2.1.19 (broken):
-- Simple → Tools resume: ❌ Fails
-- Tools → Tools resume: ❌ Fails
-
-Pattern on 2.1.17/2.1.18 (works):
-- All combinations: ✅ Works
+**Status:** Fixed in Claude Code 2.1.22. All resume + tools combinations now work correctly.
 
 ### Rebase Support
 
@@ -283,8 +259,6 @@ Implementation: `src/wizard.rs`
 ```
 azural/
 ├── .azural/                # Project-level azural data (gitignored)
-│   ├── azural.db           # SQLite database for sessions/outputs
-│   ├── hooks.jsonl         # Hook events log
 │   └── config.toml         # Optional project config
 ├── .project/               # Project management files
 │   ├── edits/              # Edit history
@@ -293,7 +267,7 @@ azural/
 ├── refs/                   # Reference files
 ├── src/
 │   ├── app/                # Application state module
-│   │   ├── mod.rs          # App struct, state, core methods
+│   │   ├── mod.rs          # App struct, state, core methods, session discovery
 │   │   ├── terminal.rs     # PTY terminal management
 │   │   ├── types.rs        # Enums (Focus, ViewMode, dialogs)
 │   │   ├── input.rs        # Input handling methods
@@ -305,15 +279,20 @@ azural/
 │   │   ├── draw_*.rs       # Rendering functions
 │   │   └── input_*.rs      # Mode-specific input handlers
 │   ├── cmd/                # CLI command handlers
-│   │   └── mod.rs          # Session, project, hooks commands
+│   │   ├── mod.rs          # Main command routing
+│   │   ├── session.rs      # Session list/show commands
+│   │   └── project.rs      # Project info command
+│   ├── git/                # Git operations module
+│   │   ├── mod.rs          # Git struct, repo/worktree operations
+│   │   ├── branch.rs       # Branch management
+│   │   ├── rebase.rs       # Rebase operations
+│   │   └── worktree.rs     # Worktree create/delete/list
 │   ├── claude.rs           # Claude CLI process management
-│   ├── config.rs           # Configuration loading/saving
-│   ├── db.rs               # SQLite database operations
+│   ├── cli/mod.rs          # CLI argument parsing
+│   ├── config.rs           # Configuration paths, Claude session discovery
 │   ├── events.rs           # Stream-JSON event types
-│   ├── git.rs              # Git and worktree operations
-│   ├── main.rs             # Entry point and CLI
+│   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
-│   ├── session.rs          # Session management layer
 │   ├── syntax.rs           # Syntax highlighting for diffs
 │   └── wizard.rs           # Session creation wizard
 ├── worktrees/              # Git worktrees for sessions
@@ -360,19 +339,19 @@ azural/
 
 ## Domain-Specific Guidelines
 
-This is a TUI + CLI wrapper application. Testing focuses on:
+This is a TUI + CLI wrapper application with stateless architecture. Testing focuses on:
 
 1. **Process Management**: Verify Claude processes spawn, communicate, and terminate correctly
-2. **State Consistency**: Ensure app state matches database state and git worktree state
+2. **State Discovery**: Ensure app correctly discovers sessions from git worktrees and branches
 3. **Event Parsing**: Validate stream-json parsing handles all event types
 4. **Concurrent Operations**: Test multiple sessions running Claude simultaneously
-5. **Error Recovery**: Verify graceful handling of Claude exits, git errors, DB failures
+5. **Error Recovery**: Verify graceful handling of Claude exits and git errors
 
 ## Test Categories
 
 - Unit tests for parsing functions (`parse_stream_json_for_display`, event parsing)
 - Integration tests for git operations (worktree create/delete/list)
-- Integration tests for database CRUD operations
+- Integration tests for session discovery from git state
 - E2E tests for TUI event handling (would require mock terminal)
 
 # REFERENCES

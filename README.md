@@ -86,3 +86,5 @@ MIT
 
 
 non-intrusive : only the binary added to PATH ; no config or database files outside repo azural is working with
+
+No file footprint - no database or config files / directly scans git worktrees and ~/.claude directory for session data

@@ -105,11 +105,6 @@ pub async fn run_app(
             }
         }
 
-        // Poll hooks file for new entries (from external hook scripts)
-        if app.poll_hooks_file() {
-            needs_redraw = true;
-        }
-
         // Poll session file for changes (live update as Claude writes to it)
         if app.poll_session_file() {
             needs_redraw = true;

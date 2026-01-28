@@ -1,9 +1,10 @@
-//! Project command handlers
+//! Project command handlers (stateless - derived from git)
 
 use anyhow::Result;
 
 use crate::cli::OutputFormat;
-use crate::db::Database;
+use crate::git::Git;
+use crate::models::Project;
 
 /// Truncate string with ellipsis
 fn truncate(s: &str, max_len: usize) -> String {
@@ -11,136 +12,128 @@ fn truncate(s: &str, max_len: usize) -> String {
     else { format!("{}...", &s[..max_len.saturating_sub(3)]) }
 }
 
-pub fn handle_project_list(db: &Database, output_format: OutputFormat) -> Result<()> {
-    let projects = db.list_projects()?;
+/// Discover project from current directory
+fn discover_project() -> Result<Project> {
+    let cwd = std::env::current_dir()?;
+    if !Git::is_git_repo(&cwd) {
+        anyhow::bail!("Not in a git repository");
+    }
+    let repo_root = Git::repo_root(&cwd)?;
+    let main_branch = Git::get_main_branch(&repo_root)?;
+    Ok(Project::from_path(repo_root, main_branch))
+}
+
+pub fn handle_project_list(output_format: OutputFormat) -> Result<()> {
+    // In stateless mode, we only have the current project
+    let project = discover_project()?;
+    let projects = vec![project];
 
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&projects)?),
         OutputFormat::Plain => {
             for project in &projects {
-                println!("{}\t{}\t{}", project.id, project.name, project.path.display());
+                println!("{}\t{}", project.name, project.path.display());
             }
         }
         OutputFormat::Table => {
-            if projects.is_empty() {
-                println!("No projects found.");
-            } else {
-                println!("{:<6} {:<20} {}", "ID", "NAME", "PATH");
-                println!("{}", "-".repeat(70));
-                for project in projects {
-                    println!("{:<6} {:<20} {}", project.id, truncate(&project.name, 20), project.path.display());
-                }
+            println!("{:<20} {}", "NAME", "PATH");
+            println!("{}", "-".repeat(70));
+            for project in projects {
+                println!("{:<20} {}", truncate(&project.name, 20), project.path.display());
             }
         }
     }
     Ok(())
 }
 
-pub fn handle_project_show(db: &Database, project_arg: Option<String>, output_format: OutputFormat) -> Result<()> {
-    let project = match project_arg {
-        Some(arg) => {
-            if let Ok(id) = arg.parse::<i64>() {
-                db.get_project(id)?
-            } else {
-                db.get_project_by_path(&std::path::PathBuf::from(&arg))?
-            }
+pub fn handle_project_show(project_arg: Option<String>, output_format: OutputFormat) -> Result<()> {
+    let project = if let Some(arg) = project_arg {
+        // If a path is specified, use it
+        let path = std::path::PathBuf::from(&arg);
+        if !Git::is_git_repo(&path) {
+            anyhow::bail!("Not a git repository: {}", arg);
         }
-        None => {
-            let cwd = std::env::current_dir()?;
-            db.get_project_by_path(&cwd)?
-        }
+        let repo_root = Git::repo_root(&path)?;
+        let main_branch = Git::get_main_branch(&repo_root)?;
+        Project::from_path(repo_root, main_branch)
+    } else {
+        discover_project()?
     };
-
-    let project = project.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
 
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&project)?),
-        OutputFormat::Plain => println!("{}\t{}\t{}", project.id, project.name, project.path.display()),
+        OutputFormat::Plain => println!("{}\t{}", project.name, project.path.display()),
         OutputFormat::Table => {
             println!("Project: {}", project.name);
-            println!("ID: {}", project.id);
             println!("Path: {}", project.path.display());
             println!("Main branch: {}", project.main_branch);
-            println!("Created: {}", project.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
 
-            if let Some(prompt) = &project.system_prompt {
-                println!("System prompt: {}", truncate(prompt, 60));
+            // Count worktrees
+            if let Ok(worktrees) = Git::list_worktrees_detailed(&project.path) {
+                println!("\nWorktrees: {}", worktrees.len());
+                for wt in worktrees.iter().take(5) {
+                    let name = if wt.is_main { "(main)" } else {
+                        wt.branch.as_deref().unwrap_or("detached")
+                    };
+                    println!("  {} - {}", name, wt.path.display());
+                }
+                if worktrees.len() > 5 {
+                    println!("  ... and {} more", worktrees.len() - 5);
+                }
             }
 
-            let sessions = db.list_sessions_for_project(project.id)?;
-            println!("\nSessions: {}", sessions.len());
-            if !sessions.is_empty() {
-                for session in sessions.iter().take(5) {
-                    println!("  {} {} - {}", session.status.symbol(), truncate(&session.name, 30), session.status.as_str());
-                }
-                if sessions.len() > 5 { println!("  ... and {} more", sessions.len() - 5); }
+            // Count azural branches
+            if let Ok(branches) = Git::list_azural_branches(&project.path) {
+                println!("\nAzural branches: {}", branches.len());
             }
         }
     }
     Ok(())
 }
 
-pub fn handle_project_remove(db: &Database, project_arg: &str, skip_confirm: bool) -> Result<()> {
-    let project = if let Ok(id) = project_arg.parse::<i64>() {
-        db.get_project(id)?
-    } else {
-        db.get_project_by_path(&std::path::PathBuf::from(project_arg))?
-    };
-
-    let project = project.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
-
-    if !skip_confirm {
-        println!("Remove project '{}' from tracking?", project.name);
-        println!("This will NOT delete the project files or worktrees.");
-        print!("Type 'yes' to confirm: ");
-        use std::io::Write;
-        std::io::stdout().flush()?;
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if input.trim() != "yes" {
-            println!("Cancelled.");
-            return Ok(());
-        }
-    }
-
-    db.delete_project(project.id)?;
-    println!("Removed project: {}", project.name);
+pub fn handle_project_remove(_project_arg: &str, _skip_confirm: bool) -> Result<()> {
+    // In stateless mode, there's nothing to "remove" from tracking
+    // Projects are discovered from git, not stored
+    println!("In stateless mode, projects are discovered from git repositories.");
+    println!("There is no project database to remove entries from.");
+    println!("\nTo remove session worktrees, use: azural session cleanup --delete-branches");
     Ok(())
 }
 
 pub fn handle_project_config(
-    db: &Database,
     project_arg: Option<String>,
     main_branch: Option<String>,
-    system_prompt: Option<String>,
 ) -> Result<()> {
-    let path = project_arg
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
-
-    let project = db.get_project_by_path(&path)?
-        .ok_or_else(|| anyhow::anyhow!("Project not found: {}", path.display()))?;
-
-    if main_branch.is_none() && system_prompt.is_none() {
-        println!("Project: {}", project.name);
-        println!("Main branch: {}", project.main_branch);
-        if let Some(prompt) = &project.system_prompt {
-            println!("System prompt: {}", prompt);
-        } else {
-            println!("System prompt: (not set)");
+    let project = if let Some(arg) = project_arg {
+        let path = std::path::PathBuf::from(&arg);
+        if !Git::is_git_repo(&path) {
+            anyhow::bail!("Not a git repository: {}", arg);
         }
+        let repo_root = Git::repo_root(&path)?;
+        let branch = Git::get_main_branch(&repo_root)?;
+        Project::from_path(repo_root, branch)
+    } else {
+        discover_project()?
+    };
+
+    if main_branch.is_none() {
+        // Show current config
+        println!("Project: {}", project.name);
+        println!("Path: {}", project.path.display());
+        println!("Main branch: {} (auto-detected)", project.main_branch);
+        println!("\nNote: In stateless mode, main branch is auto-detected from git.");
+        println!("To change the default branch, use: git symbolic-ref HEAD refs/heads/<branch>");
         return Ok(());
     }
 
+    // In stateless mode, we can't persist config changes
+    // But we can suggest how to change git's default branch
     if let Some(branch) = main_branch {
-        db.update_project_main_branch(project.id, &branch)?;
-        println!("Updated main branch to: {}", branch);
-    }
-
-    if let Some(prompt) = system_prompt {
-        db.update_project_system_prompt(project.id, Some(&prompt))?;
-        println!("Updated system prompt");
+        println!("In stateless mode, main branch is auto-detected from git.");
+        println!("\nTo change the default branch to '{}', run:", branch);
+        println!("  git symbolic-ref HEAD refs/heads/{}", branch);
+        println!("\nOr rename your branch:");
+        println!("  git branch -m {} {}", project.main_branch, branch);
     }
 
     Ok(())

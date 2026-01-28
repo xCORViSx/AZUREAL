@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -58,7 +58,17 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
     };
 
     match wizard.step {
-        WizardStep::SelectProject => draw_wizard_project_selection(f, app, wizard, content_area),
+        WizardStep::SelectProject => {
+            // In single-project mode, show project info
+            let project_info = if let Some(ref project) = app.project {
+                format!("Project: {} ({})", project.name, project.path.display())
+            } else {
+                "No project loaded".to_string()
+            };
+            let info = Paragraph::new(project_info)
+                .style(Style::default().fg(Color::Cyan));
+            f.render_widget(info, content_area);
+        }
         WizardStep::EnterPrompt => draw_wizard_prompt_input(f, wizard, content_area),
         WizardStep::Confirm => draw_wizard_confirmation(f, app, wizard, content_area),
     }
@@ -86,34 +96,6 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
     };
     let help = Paragraph::new(wizard.help_text()).style(Style::default().fg(Color::Gray));
     f.render_widget(help, help_area);
-}
-
-fn draw_wizard_project_selection(f: &mut Frame, app: &App, wizard: &SessionCreationWizard, area: Rect) {
-    let instruction = Paragraph::new("Select a project for this session:")
-        .style(Style::default().fg(Color::White));
-    f.render_widget(instruction, Rect { x: area.x, y: area.y, width: area.width, height: 2 });
-
-    let list_area = Rect { x: area.x, y: area.y + 3, width: area.width, height: area.height.saturating_sub(3) };
-
-    let items: Vec<ListItem> = app.projects.iter().enumerate().map(|(idx, project)| {
-        let is_selected = wizard.selected_project_idx == Some(idx);
-        let style = if is_selected {
-            Style::default().bg(Color::DarkGray).fg(Color::White)
-        } else {
-            Style::default()
-        };
-
-        let prefix = if is_selected { "▸ " } else { "  " };
-        ListItem::new(Line::from(vec![
-            Span::raw(prefix),
-            Span::styled(&project.name, style),
-            Span::raw(" "),
-            Span::styled(format!("({})", project.path.display()), Style::default().fg(Color::Gray)),
-        ]))
-    }).collect();
-
-    let list = List::new(items).block(Block::default().borders(Borders::NONE));
-    f.render_widget(list, list_area);
 }
 
 fn draw_wizard_prompt_input(f: &mut Frame, wizard: &SessionCreationWizard, area: Rect) {
@@ -150,8 +132,6 @@ fn draw_wizard_prompt_input(f: &mut Frame, wizard: &SessionCreationWizard, area:
 }
 
 fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &SessionCreationWizard, area: Rect) {
-    let selected_project = wizard.selected_project_idx.and_then(|idx| app.projects.get(idx));
-
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Ready to create session", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
@@ -159,7 +139,7 @@ fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &SessionCreationWi
         Line::from(""),
     ];
 
-    if let Some(project) = selected_project {
+    if let Some(ref project) = app.project {
         lines.push(Line::from(vec![
             Span::styled("Project: ", Style::default().fg(Color::Gray)),
             Span::styled(&project.name, Style::default().fg(Color::Cyan)),

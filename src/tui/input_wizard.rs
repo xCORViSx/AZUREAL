@@ -4,7 +4,6 @@ use crossterm::event::KeyCode;
 
 use crate::app::App;
 use crate::claude::ClaudeProcess;
-use crate::session::SessionManager;
 use crate::wizard::WizardStep;
 
 /// Handle keyboard input for session creation wizard
@@ -13,9 +12,8 @@ pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &Cl
 
     match wizard.step {
         WizardStep::SelectProject => {
+            // In single-project stateless mode, skip to next step
             match key_code {
-                KeyCode::Char('j') | KeyCode::Down => wizard.select_next_project(app.projects.len()),
-                KeyCode::Char('k') | KeyCode::Up => wizard.select_prev_project(),
                 KeyCode::Enter => { wizard.next_step(); }
                 KeyCode::Esc => app.cancel_wizard(),
                 _ => {}
@@ -38,29 +36,31 @@ pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &Cl
         WizardStep::Confirm => {
             match key_code {
                 KeyCode::Enter => {
-                    if let Some(project_idx) = wizard.selected_project_idx {
-                        if let Some(project) = app.projects.get(project_idx).cloned() {
-                            let prompt = wizard.prompt.clone();
+                    let prompt = wizard.prompt.clone();
 
-                            match SessionManager::new(&app.db).create_session(&project, &prompt) {
-                                Ok(session) => {
-                                    let _ = app.refresh_sessions();
-                                    app.set_status(format!("Created session: {}", session.name));
+                    match app.create_new_session(prompt.clone()) {
+                        Ok(session) => {
+                            let branch_name = session.branch_name.clone();
+                            app.set_status(format!("Created session: {}", session.name()));
 
-                                    match claude_process.spawn(&session.worktree_path, &session.initial_prompt, None) {
-                                        Ok(rx) => {
-                                            app.register_claude(session.id, rx);
-                                            app.selected_session = Some(0);
+                            // Start Claude in the new session
+                            if let Some(ref wt_path) = session.worktree_path {
+                                match claude_process.spawn(wt_path, &prompt, None) {
+                                    Ok(rx) => {
+                                        app.register_claude(branch_name.clone(), rx);
+                                        // Find and select the new session
+                                        if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == branch_name) {
+                                            app.selected_session = Some(idx);
                                             app.load_session_output();
                                         }
-                                        Err(e) => app.set_status(format!("Failed to start: {}", e)),
                                     }
-
-                                    app.cancel_wizard();
+                                    Err(e) => app.set_status(format!("Failed to start Claude: {}", e)),
                                 }
-                                Err(e) => app.set_status(format!("Failed to create session: {}", e)),
                             }
+
+                            app.cancel_wizard();
                         }
+                        Err(e) => app.set_status(format!("Failed to create session: {}", e)),
                     }
                 }
                 KeyCode::Esc => wizard.prev_step(),

@@ -11,42 +11,43 @@ use ratatui::{
 use crate::app::{App, Focus};
 use super::util::truncate;
 
-/// Draw the sidebar showing projects and sessions
+/// Draw the sidebar showing project and sessions
 pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     let mut items: Vec<ListItem> = Vec::new();
 
-    for (proj_idx, project) in app.projects.iter().enumerate() {
-        let is_selected_proj = proj_idx == app.selected_project;
-        let proj_style = if is_selected_proj {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
-
+    // Show project name
+    if let Some(ref project) = app.project {
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("▸ ", proj_style),
-            Span::styled(&project.name, proj_style),
+            Span::styled("▸ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(&project.name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ])));
 
-        if is_selected_proj {
-            for (sess_idx, session) in app.sessions.iter().enumerate() {
-                let is_selected = app.selected_session == Some(sess_idx);
-                let status_color = session.status.color();
+        // Show sessions
+        for (sess_idx, session) in app.sessions.iter().enumerate() {
+            let is_selected = app.selected_session == Some(sess_idx);
+            let status = session.status(&app.running_sessions);
+            let status_color = status.color();
 
-                let style = if is_selected && app.focus == Focus::Sessions {
-                    Style::default().bg(Color::DarkGray).fg(Color::White)
-                } else {
-                    Style::default()
-                };
+            let style = if is_selected && app.focus == Focus::Sessions {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::default()
+            };
 
-                items.push(ListItem::new(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(session.status.symbol(), Style::default().fg(status_color)),
-                    Span::raw(" "),
-                    Span::styled(truncate(&session.name, 22), style),
-                ])));
-            }
+            let name = session.name();
+            let prefix = if session.archived { "  ◌ " } else { "  " };
+
+            items.push(ListItem::new(Line::from(vec![
+                Span::raw(prefix),
+                Span::styled(status.symbol(), Style::default().fg(status_color)),
+                Span::raw(" "),
+                Span::styled(truncate(name, 22), style),
+            ])));
         }
+    } else {
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("No project", Style::default().fg(Color::Red)),
+        ])));
     }
 
     let is_focused = app.focus == Focus::Sessions;

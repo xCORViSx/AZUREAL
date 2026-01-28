@@ -13,8 +13,8 @@ impl App {
         if self.terminal_pty.is_some() { return; }
 
         let cwd = self.current_session()
-            .map(|s| s.worktree_path.clone())
-            .or_else(|| self.projects.get(self.selected_project).map(|p| p.path.clone()))
+            .and_then(|s| s.worktree_path.clone())
+            .or_else(|| self.project.as_ref().map(|p| p.path.clone()))
             .unwrap_or_else(|| std::env::current_dir().unwrap());
 
         let pty_system = native_pty_system();

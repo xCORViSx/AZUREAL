@@ -15,18 +15,16 @@ pub use types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 use portable_pty::MasterPty;
 
 use crate::claude::{ClaudeEvent, InteractiveSession};
-use crate::db::Database;
 use crate::events::{DisplayEvent, EventParser};
 use crate::git::Git;
 use crate::models::{OutputType, Project, RebaseStatus, Session, SessionStatus};
-use crate::session::SessionManager;
 use crate::syntax::DiffHighlighter;
 use crate::wizard::SessionCreationWizard;
 
@@ -34,9 +32,7 @@ use util::{parse_stream_json_for_display, strip_ansi_escapes};
 
 /// Application state
 pub struct App {
-    pub db: Database,
-    pub projects: Vec<Project>,
-    pub selected_project: usize,
+    pub project: Option<Project>,
     pub sessions: Vec<Session>,
     pub selected_session: Option<usize>,
     pub output_lines: VecDeque<String>,
@@ -79,8 +75,6 @@ pub struct App {
     pub terminal_rows: u16,
     pub terminal_cols: u16,
     pub terminal_needs_resize: bool,
-    /// Tracks position in hooks.jsonl for incremental reading
-    pub hooks_file_pos: u64,
     /// Tool calls awaiting results (for progress indicator animation)
     pub pending_tool_calls: HashSet<String>,
     /// Tool calls that failed (for red indicator)
@@ -94,11 +88,9 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(db: Database) -> Self {
+    pub fn new() -> Self {
         Self {
-            db,
-            projects: Vec::new(),
-            selected_project: 0,
+            project: None,
             sessions: Vec::new(),
             selected_session: None,
             output_lines: VecDeque::with_capacity(10000),
@@ -140,7 +132,6 @@ impl App {
             terminal_rows: 24,
             terminal_cols: 120,
             terminal_needs_resize: false,
-            hooks_file_pos: 0,
             pending_tool_calls: HashSet::new(),
             failed_tool_calls: HashSet::new(),
             animation_tick: 0,
@@ -149,87 +140,97 @@ impl App {
         }
     }
 
-    pub fn is_session_running(&self, session_id: &str) -> bool {
-        self.running_sessions.contains(session_id)
+    pub fn is_session_running(&self, branch_name: &str) -> bool {
+        self.running_sessions.contains(branch_name)
     }
 
     pub fn is_current_session_running(&self) -> bool {
-        self.current_session().map(|s| self.running_sessions.contains(&s.id)).unwrap_or(false)
+        self.current_session().map(|s| self.running_sessions.contains(&s.branch_name)).unwrap_or(false)
     }
 
+    /// Load project and sessions from git (stateless discovery)
     pub fn load(&mut self) -> anyhow::Result<()> {
-        self.projects = self.db.list_projects()?;
-        if !self.projects.is_empty() { self.load_sessions_for_project()?; }
-        Ok(())
-    }
+        let cwd = std::env::current_dir()?;
 
-    pub fn load_sessions_for_project(&mut self) -> anyhow::Result<()> {
-        if let Some(project) = self.projects.get(self.selected_project) {
-            let worktrees = Git::list_worktrees_detailed(&project.path)?;
-            let (main_wts, feature_wts): (Vec<_>, Vec<_>) = worktrees.into_iter().partition(|wt| wt.is_main);
-            let mut sessions = Vec::new();
-
-            // Add main worktree first
-            if let Some(main_wt) = main_wts.into_iter().next() {
-                let branch_name = main_wt.branch.unwrap_or_else(|| "main".to_string());
-                let main_claude_id = self.db.get_session("__main__").ok().flatten().and_then(|s| s.claude_session_id);
-                if let Some(ref id) = main_claude_id {
-                    self.claude_session_ids.insert("__main__".to_string(), id.clone());
-                }
-                let main_session = Session {
-                    id: "__main__".to_string(),
-                    name: format!("[{}]", branch_name),
-                    initial_prompt: String::new(),
-                    worktree_name: "main".to_string(),
-                    worktree_path: main_wt.path,
-                    branch_name,
-                    status: SessionStatus::Pending,
-                    project_id: project.id,
-                    pid: None,
-                    exit_code: None,
-                    archived: false,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                    claude_session_id: main_claude_id,
-                };
-                let _ = self.db.ensure_session(&main_session);
-                sessions.push(main_session);
-            }
-
-            // Add feature worktrees
-            for wt in feature_wts {
-                let name = wt.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "unknown".to_string());
-                let claude_id = self.db.get_session(&name).ok().flatten().and_then(|s| s.claude_session_id);
-                if let Some(ref id) = claude_id {
-                    self.claude_session_ids.insert(name.clone(), id.clone());
-                }
-                let feature_session = Session {
-                    id: name.clone(),
-                    name: name.clone(),
-                    initial_prompt: String::new(),
-                    worktree_name: name,
-                    worktree_path: wt.path,
-                    branch_name: wt.branch.unwrap_or_default(),
-                    status: SessionStatus::Pending,
-                    project_id: project.id,
-                    pid: None,
-                    exit_code: None,
-                    archived: false,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                    claude_session_id: claude_id,
-                };
-                let _ = self.db.ensure_session(&feature_session);
-                sessions.push(feature_session);
-            }
-
-            self.sessions = sessions;
-            self.selected_session = if self.sessions.is_empty() { None } else { Some(0) };
+        // Find git repo root
+        if !Git::is_git_repo(&cwd) {
+            return Ok(());
         }
+
+        let repo_root = Git::repo_root(&cwd)?;
+        let main_branch = Git::get_main_branch(&repo_root)?;
+
+        self.project = Some(Project::from_path(repo_root, main_branch));
+        self.load_sessions()?;
+
         Ok(())
     }
 
-    pub fn current_project(&self) -> Option<&Project> { self.projects.get(self.selected_project) }
+    /// Load sessions from git worktrees and branches
+    pub fn load_sessions(&mut self) -> anyhow::Result<()> {
+        let Some(project) = &self.project else { return Ok(()) };
+
+        let worktrees = Git::list_worktrees_detailed(&project.path)?;
+        let azural_branches = Git::list_azural_branches(&project.path)?;
+
+        let mut sessions = Vec::new();
+        let mut active_branches: HashSet<String> = HashSet::new();
+
+        // First, add main worktree
+        for wt in &worktrees {
+            if wt.is_main {
+                let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
+                let claude_id = crate::config::find_latest_claude_session(&wt.path);
+                if let Some(ref id) = claude_id {
+                    self.claude_session_ids.insert(branch_name.clone(), id.clone());
+                }
+                sessions.push(Session {
+                    branch_name: branch_name.clone(),
+                    worktree_path: Some(wt.path.clone()),
+                    claude_session_id: claude_id,
+                    archived: false,
+                });
+                active_branches.insert(branch_name);
+            }
+        }
+
+        // Add feature worktrees (azural/* branches with active worktrees)
+        for wt in &worktrees {
+            if !wt.is_main {
+                let branch_name = wt.branch.clone().unwrap_or_default();
+                let claude_id = crate::config::find_latest_claude_session(&wt.path);
+                if let Some(ref id) = claude_id {
+                    self.claude_session_ids.insert(branch_name.clone(), id.clone());
+                }
+                sessions.push(Session {
+                    branch_name: branch_name.clone(),
+                    worktree_path: Some(wt.path.clone()),
+                    claude_session_id: claude_id,
+                    archived: false,
+                });
+                active_branches.insert(branch_name);
+            }
+        }
+
+        // Add archived sessions (azural/* branches without worktrees)
+        for branch in azural_branches {
+            if !active_branches.contains(&branch) {
+                sessions.push(Session {
+                    branch_name: branch,
+                    worktree_path: None,
+                    claude_session_id: None,
+                    archived: true,
+                });
+            }
+        }
+
+        self.sessions = sessions;
+        self.selected_session = if self.sessions.is_empty() { None } else { Some(0) };
+
+        Ok(())
+    }
+
+    pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
     pub fn current_session(&self) -> Option<&Session> { self.selected_session.and_then(|idx| self.sessions.get(idx)) }
 
     pub fn select_next_session(&mut self) {
@@ -253,22 +254,6 @@ impl App {
         }
     }
 
-    pub fn select_next_project(&mut self) {
-        if self.selected_project + 1 < self.projects.len() {
-            self.selected_project += 1;
-            let _ = self.load_sessions_for_project();
-            self.load_session_output();
-        }
-    }
-
-    pub fn select_prev_project(&mut self) {
-        if self.selected_project > 0 {
-            self.selected_project -= 1;
-            let _ = self.load_sessions_for_project();
-            self.load_session_output();
-        }
-    }
-
     pub fn load_session_output(&mut self) {
         self.output_lines.clear();
         self.output_buffer.clear();
@@ -280,94 +265,39 @@ impl App {
         self.failed_tool_calls.clear();
 
         if let Some(session) = self.current_session() {
-            let session_id = session.id.clone();
+            let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
-            let session_created = session.created_at;
-            let session_updated = session.updated_at;
 
             // Try to get Claude session ID, or auto-discover from Claude's files
             let mut claude_session_id = session.claude_session_id.clone()
-                .or_else(|| self.claude_session_ids.get(&session_id).cloned());
+                .or_else(|| self.claude_session_ids.get(&branch_name).cloned());
 
-            // Auto-discover Claude session ID if not set
+            // Auto-discover Claude session ID if not set and we have a worktree
             if claude_session_id.is_none() {
-                if let Some(discovered_id) = crate::config::find_latest_claude_session(&worktree_path) {
-                    // Save discovered ID for future use
-                    self.claude_session_ids.insert(session_id.clone(), discovered_id.clone());
-                    let _ = self.db.update_session_claude_id(&session_id, Some(&discovered_id));
-                    claude_session_id = Some(discovered_id);
+                if let Some(ref wt_path) = worktree_path {
+                    if let Some(discovered_id) = crate::config::find_latest_claude_session(wt_path) {
+                        self.claude_session_ids.insert(branch_name.clone(), discovered_id.clone());
+                        claude_session_id = Some(discovered_id);
+                    }
                 }
             }
 
-            let mut loaded_from_claude = false;
-
             // Try loading from Claude's session files
-            if let Some(claude_id) = claude_session_id {
-                if let Some(session_file) = crate::config::claude_session_file(&worktree_path, &claude_id) {
+            if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
+                if let Some(session_file) = crate::config::claude_session_file(wt_path, &claude_id) {
                     // Track file for live polling
                     self.session_file_path = Some(session_file.clone());
                     self.session_file_modified = std::fs::metadata(&session_file)
                         .and_then(|m| m.modified())
                         .ok();
 
-                    let mut timed_events = self.load_claude_session_events(&session_file);
+                    let timed_events = self.load_claude_session_events(&session_file);
 
-                    // Load and merge hooks - include all hooks from session start to now
-                    let hooks = self.load_hooks_with_timestamps();
-                    let session_start = timed_events.first().map(|(ts, _)| *ts);
-
-                    if let Some(start) = session_start {
-                        let buffer = chrono::Duration::seconds(5);
-                        let now = chrono::Utc::now();
-                        for (ts, event) in hooks {
-                            if ts >= start - buffer && ts <= now {
-                                timed_events.push((ts, event));
-                            }
-                        }
-                    }
-
-                    timed_events.sort_by_key(|(ts, _)| *ts);
-
-                    // UPS hooks already injected inline during parsing via prescan
                     for (_, event) in timed_events {
                         self.display_events.push(event);
                     }
-
-                    loaded_from_claude = !self.display_events.is_empty();
                 }
             }
-
-            // Fallback: load from database if Claude files unavailable
-            if !loaded_from_claude {
-                if let Ok(outputs) = self.db.get_session_outputs(&session_id) {
-                    for output in outputs {
-                        let events = self.event_parser.parse(&output.data);
-                        self.display_events.extend(events);
-
-                        // Also add to output_lines for legacy display
-                        if output.output_type == OutputType::Stdout || output.output_type == OutputType::Json {
-                            if let Some(display_text) = parse_stream_json_for_display(&output.data) {
-                                self.process_output_chunk(&display_text);
-                            }
-                        }
-                    }
-                }
-
-                // Load hooks from session start to now
-                let hooks = self.load_hooks_with_timestamps();
-                let buffer = chrono::Duration::seconds(5);
-                let now = chrono::Utc::now();
-                for (ts, event) in hooks {
-                    if ts >= session_created - buffer && ts <= now {
-                        self.display_events.push(event);
-                    }
-                }
-            }
-        }
-
-        // Set hooks file position to end so we only capture new hooks going forward
-        if let Ok(metadata) = std::fs::metadata(crate::config::config_dir().join("hooks.jsonl")) {
-            self.hooks_file_pos = metadata.len();
         }
 
         // Auto-dump debug output on debug builds
@@ -376,13 +306,11 @@ impl App {
     }
 
     /// Poll session file for changes and reload if modified
-    /// Returns true if the session was reloaded
     pub fn poll_session_file(&mut self) -> bool {
         let Some(path) = &self.session_file_path else { return false };
         let Ok(metadata) = std::fs::metadata(path) else { return false };
         let Ok(modified) = metadata.modified() else { return false };
 
-        // Check if file was modified since last check
         if self.session_file_modified.map(|t| modified > t).unwrap_or(true) {
             self.load_session_output();
             true
@@ -392,33 +320,28 @@ impl App {
     }
 
     /// Extract hook events from system-reminder tags in content
-    /// Parses patterns like "<system-reminder>HookName hook success: output</system-reminder>"
     fn extract_hooks_from_content(content: &str, timestamp: chrono::DateTime<chrono::Utc>) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
         let mut hooks = Vec::new();
         let mut search_start = 0;
         while let Some(start) = content[search_start..].find("<system-reminder>") {
-            let abs_start = search_start + start + 17; // skip the opening tag
+            let abs_start = search_start + start + 17;
             if let Some(end) = content[abs_start..].find("</system-reminder>") {
                 let reminder_content = &content[abs_start..abs_start + end];
-                // Parse "HookName hook success: output" or "HookName hook failed: output"
                 if let Some(hook_pos) = reminder_content.find(" hook success:") {
-                    // Clean name: trim whitespace AND literal \n (some JSON has double-escaped newlines)
                     let name = reminder_content[..hook_pos]
                         .trim()
                         .trim_start_matches("\\n")
                         .trim_end_matches("\\n")
                         .to_string();
-                    let mut output = reminder_content[hook_pos + 14..]
+                    let output = reminder_content[hook_pos + 14..]
                         .trim()
                         .trim_start_matches("\\n")
                         .trim_end_matches("\\n")
                         .to_string();
 
-                    // Include hooks even if output is just "..." (Claude Code truncates some hooks)
                     if !output.is_empty() && output != "..." && !name.is_empty() {
                         hooks.push((timestamp, DisplayEvent::Hook { name, output }));
                     } else if output == "..." && !name.is_empty() {
-                        // Still show hooks with truncated output, use hook name as context
                         hooks.push((timestamp, DisplayEvent::Hook { name: name.clone(), output: format!("[{}]", name) }));
                     }
                 } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
@@ -436,7 +359,7 @@ impl App {
                         hooks.push((timestamp, DisplayEvent::Hook { name, output: format!("FAILED: {}", output) }));
                     }
                 }
-                search_start = abs_start + end + 18; // skip past </system-reminder>
+                search_start = abs_start + end + 18;
             } else {
                 break;
             }
@@ -453,20 +376,14 @@ impl App {
 
         let reader = BufReader::new(file);
         let mut events = Vec::new();
-        // Track user messages by parentUuid to deduplicate rewound messages (keep most recent)
         let mut user_msg_by_parent: HashMap<String, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
-        // Track tool calls by tool_use_id so we can match results to their calls
-        let mut tool_calls: HashMap<String, (String, Option<String>)> = HashMap::new(); // id -> (name, file_path)
-        // Track tool calls that haven't received results yet (for in-progress indicator)
+        let mut tool_calls: HashMap<String, (String, Option<String>)> = HashMap::new();
         let mut pending_tools: HashSet<String> = HashSet::new();
-        // Track most recent user message (index AND timestamp) for UPS hook placement
         let mut last_user_msg: Option<(usize, chrono::DateTime<chrono::Utc>)> = None;
-        // Collect UPS hooks with user message timestamp (for correct sorting after merge)
         let mut ups_hooks: Vec<(usize, chrono::DateTime<chrono::Utc>, DisplayEvent)> = Vec::new();
 
         for line in reader.lines().map_while(Result::ok) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                // Parse timestamp
                 let timestamp = json.get("timestamp")
                     .and_then(|t| t.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
@@ -481,7 +398,6 @@ impl App {
                         let content_val = message.and_then(|m| m.get("content"));
                         let is_meta = json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false);
 
-                        // Get string content for early checks
                         let content_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
                             Some(s.to_string())
                         } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
@@ -493,8 +409,6 @@ impl App {
                             None
                         };
 
-                        // Check for compaction summary FIRST (before extracting hooks)
-                        // Summary contains quoted <system-reminder> tags that shouldn't be treated as real hooks
                         let is_compaction_summary = content_str.as_ref()
                             .map(|c| c.starts_with("This session is being continued from a previous conversation"))
                             .unwrap_or(false);
@@ -504,61 +418,41 @@ impl App {
                             continue;
                         }
 
-                        // Extract hooks from user messages - push directly (they're part of this turn)
                         if let Some(ref content) = content_str {
                             for hook in Self::extract_hooks_from_content(content, timestamp) {
                                 events.push(hook);
                             }
                         }
 
-                        // Skip meta messages for display
-                        if is_meta {
-                            continue;
-                        }
+                        if is_meta { continue; }
 
-                        // Handle string content (user prompts)
                         if let Some(content) = content_val.and_then(|c| c.as_str()) {
-                            // Skip local-command-caveat messages (internal Claude instruction)
-                            if content.contains("<local-command-caveat>") {
-                                continue;
-                            }
+                            if content.contains("<local-command-caveat>") { continue; }
 
-                            // Handle local-command-stdout (output of local commands)
                             if content.contains("<local-command-stdout>") {
-                                // Check for "Compacted" indicator - show CONVERSATION COMPACTED banner
                                 if content.contains("Compacted") {
                                     events.push((timestamp, DisplayEvent::Compacted));
                                 }
-                                // Skip the raw stdout content either way
                                 continue;
                             }
 
-                            // Check for slash commands: <command-name>/xxx</command-name>
-                            // Only match when tag is at START of message (not embedded in user text)
                             if content.starts_with("<command-name>") {
                                 if let Some(end) = content.find("</command-name>") {
-                                    let cmd = &content[14..end]; // 14 = "<command-name>".len()
-                                    events.push((timestamp, DisplayEvent::Command {
-                                        name: cmd.to_string(),
-                                    }));
+                                    let cmd = &content[14..end];
+                                    events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
                                     continue;
                                 }
                             }
 
-                            // Handle rewound messages: when a user rewinds/edits a message, both
-                            // the original and corrected message share the same parentUuid.
-                            // We keep only the most recent one (the corrected version).
                             let parent_uuid = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("").to_string();
                             let event_idx = events.len();
 
                             if !parent_uuid.is_empty() {
                                 if let Some((old_idx, old_ts)) = user_msg_by_parent.get(&parent_uuid) {
                                     if timestamp > *old_ts {
-                                        // New message is more recent - mark old for removal, add new
                                         events[*old_idx] = (chrono::DateTime::<chrono::Utc>::MIN_UTC, DisplayEvent::Filtered);
                                         user_msg_by_parent.insert(parent_uuid, (event_idx, timestamp));
                                     } else {
-                                        // Old message is more recent - skip this one
                                         continue;
                                     }
                                 } else {
@@ -566,15 +460,12 @@ impl App {
                                 }
                             }
 
-                            // Track user message index AND timestamp for UPS hook placement
                             last_user_msg = Some((events.len(), timestamp));
                             events.push((timestamp, DisplayEvent::UserMessage {
                                 uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
                                 content: content.to_string(),
                             }));
-                        }
-                        // Handle array content (tool results)
-                        else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
+                        } else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
                             for block in content_arr {
                                 if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                                     let tool_use_id = block.get("tool_use_id")
@@ -582,13 +473,11 @@ impl App {
                                         .unwrap_or("")
                                         .to_string();
 
-                                    // Get tool name and file_path from the original call
                                     let (tool_name, file_path) = tool_calls
                                         .get(&tool_use_id)
                                         .cloned()
                                         .unwrap_or(("Unknown".to_string(), None));
 
-                                    // Extract content - can be string or array of content blocks
                                     let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
                                         s.to_string()
                                     } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
@@ -596,9 +485,7 @@ impl App {
                                             .filter_map(|b| {
                                                 if b.get("type").and_then(|t| t.as_str()) == Some("text") {
                                                     b.get("text").and_then(|t| t.as_str())
-                                                } else {
-                                                    None
-                                                }
+                                                } else { None }
                                             })
                                             .collect::<Vec<_>>()
                                             .join("\n")
@@ -606,12 +493,9 @@ impl App {
                                         String::new()
                                     };
 
-                                    // Tool result received - mark as no longer pending
                                     pending_tools.remove(&tool_use_id);
 
-                                    // Detect failed tools - tool-specific logic to avoid false positives
                                     let is_error = match tool_name.as_str() {
-                                        // Read/Write/Edit: errors on first line
                                         "Read" | "Write" | "Edit" | "Glob" | "Grep" => {
                                             let first = content.lines().next().unwrap_or("").to_lowercase();
                                             first.starts_with("error") || first.contains("enoent")
@@ -619,7 +503,6 @@ impl App {
                                                 || first.contains("does not exist")
                                                 || first.contains("<tool_use_error>")
                                         }
-                                        // Bash: shell errors can appear on any line
                                         "Bash" => content.lines().any(|line| {
                                             let l = line.to_lowercase();
                                             l.contains(": no such file") || l.contains(": permission denied")
@@ -627,13 +510,11 @@ impl App {
                                                 || ((l.contains("exit code") || l.contains("exit status"))
                                                     && !l.ends_with("0") && !l.ends_with("0\n"))
                                         }),
-                                        // WebFetch: HTTP errors
                                         "WebFetch" => {
                                             let first = content.lines().next().unwrap_or("").to_lowercase();
                                             first.contains("status code 4") || first.contains("status code 5")
                                                 || first.contains("failed") || first.starts_with("error")
                                         }
-                                        // Other tools: check first line only
                                         _ => {
                                             let first = content.lines().next().unwrap_or("").to_lowercase();
                                             first.starts_with("error")
@@ -643,12 +524,10 @@ impl App {
                                         self.failed_tool_calls.insert(tool_use_id.clone());
                                     }
 
-                                    // Extract hooks from system-reminder tags in tool results
                                     let extracted = Self::extract_hooks_from_content(&content, timestamp);
                                     for hook in extracted {
                                         if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
                                             if name == "UserPromptSubmit" {
-                                                // Use user message timestamp (+1ms offset) for correct sorting
                                                 if let Some((idx, user_ts)) = last_user_msg {
                                                     let hook_ts = user_ts + chrono::Duration::milliseconds(1);
                                                     ups_hooks.push((idx, hook_ts, hook.1.clone()));
@@ -678,15 +557,11 @@ impl App {
                                     if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
                                         match block_type {
                                             "thinking" => {
-                                                // Extract UPS hooks from thinking blocks
-                                                // Claude Code injects system-reminder into context, which appears in thinking
                                                 if let Some(thinking) = block.get("thinking").and_then(|t| t.as_str()) {
                                                     let extracted = Self::extract_hooks_from_content(thinking, timestamp);
                                                     for hook in extracted {
                                                         if let (_, DisplayEvent::Hook { ref name, .. }) = &hook {
                                                             if name == "UserPromptSubmit" {
-                                                                // Use user message timestamp (+1ms offset) for correct sorting
-                                                                // This ensures UPS hooks appear right after user messages when sorted
                                                                 if let Some((_idx, user_ts)) = last_user_msg {
                                                                     let hook_ts = user_ts + chrono::Duration::milliseconds(1);
                                                                     ups_hooks.push((_idx, hook_ts, hook.1.clone()));
@@ -713,9 +588,7 @@ impl App {
                                                 let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
                                                 let file_path = input.get("file_path").or(input.get("path")).and_then(|p| p.as_str()).map(|s| s.to_string());
 
-                                                // Track this tool call so we can match it to its result
                                                 tool_calls.insert(tool_id.clone(), (tool_name.clone(), file_path.clone()));
-                                                // Mark as pending until we see its result
                                                 pending_tools.insert(tool_id.clone());
 
                                                 events.push((timestamp, DisplayEvent::ToolCall {
@@ -734,7 +607,6 @@ impl App {
                         }
                     }
                     "result" => {
-                        // Completion event
                         if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
                             let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
                             events.push((timestamp, DisplayEvent::Complete {
@@ -746,29 +618,21 @@ impl App {
                         }
                     }
                     "system" => {
-                        // Handle local_command system events (e.g., /memory, /status)
                         let subtype = json.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
                         if subtype == "local_command" {
                             if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
-                                // Extract command name if present (must be at start)
                                 if content.starts_with("<command-name>") {
                                     if let Some(end) = content.find("</command-name>") {
                                         let cmd = &content[14..end];
-                                        events.push((timestamp, DisplayEvent::Command {
-                                            name: cmd.to_string(),
-                                        }));
+                                        events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
                                         continue;
                                     }
                                 }
-                                // Skip local-command-stdout (output of local commands)
-                                if content.contains("<local-command-stdout>") {
-                                    continue;
-                                }
+                                if content.contains("<local-command-stdout>") { continue; }
                             }
                         }
                     }
                     "progress" => {
-                        // Handle hook_progress events (PreToolUse, PostToolUse, etc.)
                         if let Some(data) = json.get("data") {
                             if data.get("type").and_then(|t| t.as_str()) == Some("hook_progress") {
                                 let hook_name = data.get("hookName")
@@ -779,13 +643,11 @@ impl App {
                                 let command = data.get("command").and_then(|c| c.as_str()).unwrap_or("");
 
                                 if !hook_name.is_empty() {
-                                    // Extract output from echo commands
                                     let output = if command.starts_with("echo '") && command.ends_with('\'') {
                                         command[6..command.len()-1].to_string()
                                     } else if command.starts_with("echo \"") && command.ends_with('"') {
                                         command[6..command.len()-1].to_string()
                                     } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
-                                        // Pattern: OUT='message'; ...; echo "$OUT"
                                         if let Some(start) = command.find("OUT='") {
                                             let rest = &command[start + 5..];
                                             if let Some(end) = rest.find('\'') {
@@ -799,12 +661,8 @@ impl App {
                                         } else { String::new() }
                                     } else { String::new() };
 
-                                    // Only show hooks with meaningful output
                                     if !output.is_empty() {
-                                        events.push((timestamp, DisplayEvent::Hook {
-                                            name: hook_name,
-                                            output,
-                                        }));
+                                        events.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
                                     }
                                 }
                             }
@@ -815,52 +673,12 @@ impl App {
             }
         }
 
-        // Add UPS hooks to events - they have user message timestamp (+1ms)
-        // so they'll sort to appear right after their user message
         for (_idx, ts, hook_event) in ups_hooks {
             events.push((ts, hook_event));
         }
 
-        // Copy pending tools to self for in-progress indicator rendering
-        // (tools that have tool_use but no tool_result yet in the file)
         self.pending_tool_calls = pending_tools;
-
-        // Filter out rewound/superseded messages (marked as Filtered during deduplication)
         events.into_iter().filter(|(_, e)| !matches!(e, DisplayEvent::Filtered)).collect()
-    }
-
-    /// Load hooks from hooks.jsonl with timestamps
-    fn load_hooks_with_timestamps(&self) -> Vec<(chrono::DateTime<chrono::Utc>, DisplayEvent)> {
-        let hooks_path = crate::config::config_dir().join("hooks.jsonl");
-        if !hooks_path.exists() { return Vec::new(); }
-
-        let file = match File::open(&hooks_path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-
-        let reader = BufReader::new(file);
-        let mut hooks = Vec::new();
-
-        for line in reader.lines().map_while(Result::ok) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                let timestamp_str = json.get("timestamp").and_then(|t| t.as_str()).unwrap_or("");
-                let hook_name = json.get("hook_name").and_then(|n| n.as_str()).unwrap_or("hook").to_string();
-                let output = json.get("output").and_then(|o| o.as_str()).unwrap_or("").trim().to_string();
-
-                let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .or_else(|_| timestamp_str.parse::<chrono::DateTime<chrono::Utc>>())
-                    .unwrap_or_else(|_| chrono::Utc::now());
-
-                // Skip UserPromptSubmit hooks from file - they're extracted from session
-                // file with adjusted timestamps for correct positioning after user messages
-                if !output.is_empty() && hook_name != "UserPromptSubmit" {
-                    hooks.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
-                }
-            }
-        }
-        hooks
     }
 
     pub fn process_output_chunk(&mut self, chunk: &str) {
@@ -886,7 +704,6 @@ impl App {
         self.output_scroll = usize::MAX;
     }
 
-    /// Add a user message directly to display_events (for local prompt echo)
     pub fn add_user_message(&mut self, content: String) {
         self.display_events.push(DisplayEvent::UserMessage {
             uuid: String::new(),
@@ -896,7 +713,6 @@ impl App {
     }
 
     pub fn scroll_output_down(&mut self, lines: usize, _viewport_height: usize) {
-        // Don't cap here - draw_output will clamp to actual rendered line count
         self.output_scroll = self.output_scroll.saturating_add(lines);
     }
 
@@ -905,7 +721,6 @@ impl App {
     }
 
     pub fn scroll_output_to_bottom(&mut self, _viewport_height: usize) {
-        // Set to MAX, draw_output will compute actual bottom position
         self.output_scroll = usize::MAX;
     }
 
@@ -934,15 +749,7 @@ impl App {
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }
     pub fn clear_status(&mut self) { self.status_message = None; }
 
-    pub fn add_project(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        let project = self.db.get_or_create_project(&path)?;
-        self.projects.push(project);
-        self.selected_project = self.projects.len() - 1;
-        self.load_sessions_for_project()?;
-        Ok(())
-    }
-
-    pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions_for_project() }
+    pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }
 
     pub fn open_branch_dialog(&mut self, branches: Vec<String>) {
         if branches.is_empty() {
@@ -958,38 +765,23 @@ impl App {
         self.focus = Focus::Sessions;
     }
 
-    pub fn update_session_status(&mut self, session_id: &str, status: SessionStatus) {
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            session.status = status;
-        }
+    pub fn handle_claude_started(&mut self, branch_name: &str, pid: u32) {
+        self.running_sessions.insert(branch_name.to_string());
+        self.set_status(format!("Claude started in {} (PID: {})", branch_name, pid));
     }
 
-    pub fn handle_claude_started(&mut self, session_id: &str, pid: u32) {
-        let _ = self.db.update_session_pid(session_id, Some(pid));
-        let _ = self.db.update_session_status(session_id, SessionStatus::Running);
-        self.update_session_status(session_id, SessionStatus::Running);
-        self.set_status(format!("Claude started in {} (PID: {})", session_id, pid));
+    pub fn handle_claude_exited(&mut self, branch_name: &str, code: Option<i32>) {
+        self.running_sessions.remove(branch_name);
+        self.claude_receivers.remove(branch_name);
+        self.interactive_sessions.remove(branch_name);
+        self.set_status(format!("{} exited: {:?}", branch_name, code));
     }
 
-    pub fn handle_claude_exited(&mut self, session_id: &str, code: Option<i32>) {
-        let status = if code == Some(0) { SessionStatus::Completed } else { SessionStatus::Failed };
-        let _ = self.db.update_session_status(session_id, status);
-        self.update_session_status(session_id, status);
-        self.running_sessions.remove(session_id);
-        self.claude_receivers.remove(session_id);
-        self.interactive_sessions.remove(session_id);
-        self.set_status(format!("{} exited: {:?}", session_id, code));
-    }
-
-    pub fn handle_claude_output(&mut self, session_id: &str, output_type: OutputType, data: String) {
-        // Save to DB as fallback for sessions without claude_session_id
-        let _ = self.db.add_session_output(session_id, output_type, &data);
-        let is_viewing = self.current_session().map(|s| s.id == session_id).unwrap_or(false);
+    pub fn handle_claude_output(&mut self, branch_name: &str, output_type: OutputType, data: String) {
+        let is_viewing = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
         if is_viewing {
-            // Parse raw data into display events (works for JSON and plain text hooks)
             let events = self.event_parser.parse(&data);
 
-            // Track pending/completed/failed tool calls for progress animation
             for event in &events {
                 match event {
                     DisplayEvent::ToolCall { tool_use_id, .. } => {
@@ -997,7 +789,6 @@ impl App {
                     }
                     DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
-                        // Detect failed tools by checking content for error indicators
                         let lower = content.to_lowercase();
                         if lower.contains("error:") || lower.contains("failed")
                             || lower.starts_with("error") || content.contains("ENOENT")
@@ -1011,13 +802,11 @@ impl App {
 
             self.display_events.extend(events);
 
-            // For stdout JSON, also update output_lines (fallback display)
             if output_type == OutputType::Stdout || output_type == OutputType::Json {
                 if let Some(display_text) = parse_stream_json_for_display(&data) {
                     self.process_output_chunk(&display_text);
                 }
             } else {
-                // For stderr and other types, just add raw text
                 self.process_output_chunk(&data);
             }
 
@@ -1025,44 +814,68 @@ impl App {
         }
     }
 
-    pub fn handle_claude_error(&mut self, session_id: &str, error: String) {
-        let is_viewing = self.current_session().map(|s| s.id == session_id).unwrap_or(false);
+    pub fn handle_claude_error(&mut self, branch_name: &str, error: String) {
+        let is_viewing = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
         if is_viewing { self.add_output(format!("Error: {}", error)); }
-        self.set_status(format!("{}: {}", session_id, error));
+        self.set_status(format!("{}: {}", branch_name, error));
     }
 
-    pub fn register_claude(&mut self, session_id: String, receiver: Receiver<ClaudeEvent>) {
-        self.claude_receivers.insert(session_id.clone(), receiver);
-        self.running_sessions.insert(session_id);
+    pub fn register_claude(&mut self, branch_name: String, receiver: Receiver<ClaudeEvent>) {
+        self.claude_receivers.insert(branch_name.clone(), receiver);
+        self.running_sessions.insert(branch_name);
     }
 
-    pub fn set_claude_session_id(&mut self, azural_session_id: &str, claude_session_id: String) {
-        self.claude_session_ids.insert(azural_session_id.to_string(), claude_session_id.clone());
-        if let Err(e) = self.db.update_session_claude_id(azural_session_id, Some(&claude_session_id)) {
-            tracing::error!("Failed to persist claude_session_id: {}", e);
-        }
+    pub fn set_claude_session_id(&mut self, branch_name: &str, claude_session_id: String) {
+        self.claude_session_ids.insert(branch_name.to_string(), claude_session_id);
     }
 
-    pub fn get_claude_session_id(&self, azural_session_id: &str) -> Option<&String> {
-        self.claude_session_ids.get(azural_session_id)
+    pub fn get_claude_session_id(&self, branch_name: &str) -> Option<&String> {
+        self.claude_session_ids.get(branch_name)
     }
 
     pub fn create_new_session(&mut self, prompt: String) -> anyhow::Result<Session> {
-        if let Some(project) = self.current_project().cloned() {
-            let session = SessionManager::new(&self.db).create_session(&project, &prompt)?;
-            self.refresh_sessions()?;
-            self.selected_session = Some(0);
-            self.load_session_output();
-            Ok(session)
-        } else {
-            anyhow::bail!("No project selected")
+        let Some(project) = self.project.clone() else {
+            anyhow::bail!("No project loaded")
+        };
+
+        // Generate session name from prompt
+        let name = generate_session_name(&prompt);
+        let worktree_name = sanitize_for_branch(&name);
+        let branch_name = format!("azural/{}", worktree_name);
+        let worktree_path = project.worktrees_dir().join(&worktree_name);
+
+        if worktree_path.exists() {
+            anyhow::bail!("Worktree already exists: {}", worktree_path.display());
         }
+
+        // Create git worktree
+        Git::create_worktree(&project.path, &worktree_path, &branch_name)?;
+
+        let session = Session {
+            branch_name: branch_name.clone(),
+            worktree_path: Some(worktree_path),
+            claude_session_id: None,
+            archived: false,
+        };
+
+        self.refresh_sessions()?;
+
+        // Select the new session
+        if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == branch_name) {
+            self.selected_session = Some(idx);
+            self.load_session_output();
+        }
+
+        Ok(session)
     }
 
     pub fn archive_current_session(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
-            let session_id = session.id.clone();
-            SessionManager::new(&self.db).archive_session(&session_id)?;
+            if let Some(ref wt_path) = session.worktree_path {
+                if let Some(project) = &self.project {
+                    Git::remove_worktree(&project.path, wt_path)?;
+                }
+            }
             self.set_status("Session archived");
             self.refresh_sessions()?;
         }
@@ -1071,24 +884,30 @@ impl App {
 
     pub fn load_diff(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
-            if let Some(project) = self.current_project() {
-                let diff = Git::get_diff(&session.worktree_path, &project.main_branch)?;
-                self.diff_text = Some(diff.diff_text);
-                self.view_mode = ViewMode::Diff;
-                self.focus = Focus::Output;
-                Ok(())
-            } else { anyhow::bail!("No project selected") }
-        } else { anyhow::bail!("No session selected") }
+            if let Some(ref wt_path) = session.worktree_path {
+                if let Some(project) = self.current_project() {
+                    let diff = Git::get_diff(wt_path, &project.main_branch)?;
+                    self.diff_text = Some(diff.diff_text);
+                    self.view_mode = ViewMode::Diff;
+                    self.focus = Focus::Output;
+                    return Ok(());
+                }
+            }
+        }
+        anyhow::bail!("No active session with worktree")
     }
 
     pub fn rebase_current_session(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
-            if let Some(project) = self.current_project() {
-                Git::rebase_onto_main(&session.worktree_path, &project.main_branch)?;
-                self.set_status("Rebased successfully");
-                Ok(())
-            } else { anyhow::bail!("No project selected") }
-        } else { anyhow::bail!("No session selected") }
+            if let Some(ref wt_path) = session.worktree_path {
+                if let Some(project) = self.current_project() {
+                    Git::rebase_onto_main(wt_path, &project.main_branch)?;
+                    self.set_status("Rebased successfully");
+                    return Ok(());
+                }
+            }
+        }
+        anyhow::bail!("No active session with worktree")
     }
 
     pub fn focus_next(&mut self) {
@@ -1152,7 +971,8 @@ impl App {
 
     pub fn open_context_menu(&mut self) {
         if let Some(session) = self.current_session() {
-            let actions = SessionAction::available_for_status(session.status);
+            let status = session.status(&self.running_sessions);
+            let actions = SessionAction::available_for_status(status);
             if !actions.is_empty() { self.context_menu = Some(ContextMenu { actions, selected: 0 }); }
         }
     }
@@ -1176,7 +996,7 @@ impl App {
     }
 
     pub fn start_wizard(&mut self) {
-        self.creation_wizard = Some(SessionCreationWizard::new(&self.projects));
+        self.creation_wizard = Some(SessionCreationWizard::new_single_project(self.project.as_ref()));
         self.focus = Focus::Input;
     }
 
@@ -1187,76 +1007,18 @@ impl App {
 
     pub fn is_wizard_active(&self) -> bool { self.creation_wizard.is_some() }
 
-    /// Poll hooks.jsonl for new entries and add them to display_events
-    /// Also saves hooks to database for persistence across session switches
-    /// Returns true if new hooks were found
-    pub fn poll_hooks_file(&mut self) -> bool {
-        let hooks_path = crate::config::config_dir().join("hooks.jsonl");
-        if !hooks_path.exists() { return false; }
-
-        let file = match File::open(&hooks_path) {
-            Ok(f) => f,
-            Err(_) => return false,
-        };
-
-        let metadata = match file.metadata() {
-            Ok(m) => m,
-            Err(_) => return false,
-        };
-
-        // Skip if file hasn't grown
-        let file_len = metadata.len();
-        if file_len <= self.hooks_file_pos { return false; }
-
-        let mut reader = BufReader::new(file);
-        if reader.seek(SeekFrom::Start(self.hooks_file_pos)).is_err() { return false; }
-
-        let mut found = false;
-        let mut line = String::new();
-        while reader.read_line(&mut line).unwrap_or(0) > 0 {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-                let hook_name = json.get("hook_name")
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("hook")
-                    .to_string();
-                let output = json.get("output")
-                    .and_then(|o| o.as_str())
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-
-                // Only add if we have meaningful output
-                // Note: We no longer save to DB - hooks persist in hooks.jsonl
-                if !output.is_empty() {
-                    self.display_events.push(DisplayEvent::Hook { name: hook_name.clone(), output: output.clone() });
-                    self.output_scroll = usize::MAX;
-                    found = true;
-                }
-            }
-            line.clear();
-        }
-
-        self.hooks_file_pos = file_len;
-        found
-    }
-
-    /// Poll all interactive sessions for new events from their session files
-    /// Returns true if any new events were found
     pub fn poll_interactive_sessions(&mut self) -> bool {
-        let current_session_id = self.current_session().map(|s| s.id.clone());
-        let Some(session_id) = current_session_id else { return false };
+        let current_branch = self.current_session().map(|s| s.branch_name.clone());
+        let Some(branch_name) = current_branch else { return false };
 
-        let events = if let Some(interactive) = self.interactive_sessions.get_mut(&session_id) {
+        let events = if let Some(interactive) = self.interactive_sessions.get_mut(&branch_name) {
             interactive.poll_events()
         } else {
             return false;
         };
 
-        if events.is_empty() {
-            return false;
-        }
+        if events.is_empty() { return false; }
 
-        // Track pending/completed/failed tool calls for progress animation
         for event in &events {
             match event {
                 DisplayEvent::ToolCall { tool_use_id, .. } => {
@@ -1264,7 +1026,6 @@ impl App {
                 }
                 DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                     self.pending_tool_calls.remove(tool_use_id);
-                    // Detect failed tools by checking content for error indicators
                     let lower = content.to_lowercase();
                     if lower.contains("error:") || lower.contains("failed")
                         || lower.starts_with("error") || content.contains("ENOENT")
@@ -1281,24 +1042,21 @@ impl App {
         true
     }
 
-    /// Clean up interactive session when Claude exits
-    pub fn cleanup_interactive_session(&mut self, session_id: &str) {
-        self.interactive_sessions.remove(session_id);
+    pub fn cleanup_interactive_session(&mut self, branch_name: &str) {
+        self.interactive_sessions.remove(branch_name);
     }
 
-    /// Dump rendered output to file - exact replica of TUI output pane
-    /// Writes to <session_worktree>/.azural/debug-output.txt
     pub fn dump_debug_output(&self) -> anyhow::Result<()> {
         use std::io::Write;
 
         let debug_dir = self.current_session()
-            .map(|s| s.worktree_path.join(".azural"))
-            .unwrap_or_else(|| crate::config::config_dir());
+            .and_then(|s| s.worktree_path.as_ref())
+            .map(|p| p.join(".azural"))
+            .unwrap_or_else(crate::config::config_dir);
         std::fs::create_dir_all(&debug_dir)?;
         let debug_path = debug_dir.join("debug-output.txt");
         let mut file = std::fs::File::create(&debug_path)?;
 
-        // Render exactly as TUI does - plain text only, no metadata
         let rendered_lines = crate::tui::util::render_display_events(
             &self.display_events,
             120,
@@ -1314,4 +1072,55 @@ impl App {
 
         Ok(())
     }
+}
+
+/// Generate a session name from the prompt
+fn generate_session_name(prompt: &str) -> String {
+    let name: String = prompt
+        .chars()
+        .take(40)
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-' || *c == '_')
+        .collect();
+
+    let name = name.trim();
+
+    if name.is_empty() {
+        format!("session-{}", &uuid::Uuid::new_v4().to_string()[..8])
+    } else {
+        let name = if name.len() > 30 {
+            if let Some(pos) = name[..30].rfind(' ') {
+                &name[..pos]
+            } else {
+                &name[..30]
+            }
+        } else {
+            name
+        };
+        name.to_string()
+    }
+}
+
+/// Sanitize a string for use as a git branch name
+fn sanitize_for_branch(s: &str) -> String {
+    let sanitized: String = s
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+
+    let mut result = String::new();
+    let mut last_was_dash = false;
+
+    for c in sanitized.chars() {
+        if c == '-' {
+            if !last_was_dash && !result.is_empty() {
+                result.push(c);
+                last_was_dash = true;
+            }
+        } else {
+            result.push(c);
+            last_was_dash = false;
+        }
+    }
+
+    result.trim_end_matches('-').to_string()
 }

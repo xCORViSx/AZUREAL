@@ -48,22 +48,6 @@ pub enum Commands {
     #[command(subcommand)]
     Project(ProjectCommands),
 
-    /// View Claude Code hooks log
-    Hooks {
-        /// Number of recent hooks to show
-        #[arg(short, long, default_value = "20")]
-        lines: usize,
-        /// Output raw JSON instead of formatted
-        #[arg(long)]
-        json: bool,
-        /// Filter by hook name
-        #[arg(short = 'n', long)]
-        name: Option<String>,
-        /// Clear the hooks log
-        #[arg(long)]
-        clear: bool,
-    },
-
     // Shortcuts for common session operations
     /// List all sessions (shortcut for 'session list')
     #[command(alias = "ls")]
@@ -229,18 +213,14 @@ pub enum ProjectCommands {
         yes: bool,
     },
 
-    /// Set project configuration
+    /// Show project configuration
     Config {
         /// Project path (defaults to current directory)
         #[arg(short, long)]
         project: Option<String>,
 
-        /// Set the main branch name
+        /// Set the main branch name (shows instructions in stateless mode)
         #[arg(long)]
         main_branch: Option<String>,
-
-        /// Set a system prompt for all sessions
-        #[arg(long)]
-        system_prompt: Option<String>,
     },
 }

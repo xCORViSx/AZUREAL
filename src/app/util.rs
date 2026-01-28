@@ -94,8 +94,6 @@ pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
                 "hook_response" => {
                     let hook_name = json.get("hook_name").and_then(|n| n.as_str()).unwrap_or("hook");
                     let output = json.get("output").and_then(|o| o.as_str()).unwrap_or("");
-                    // Log hook to JSON file
-                    log_hook_event(&json);
                     if output.is_empty() {
                         Some(format!("[Hook: {}]\n", hook_name))
                     } else {
@@ -144,29 +142,5 @@ pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
             Some(format!("[Done: {:.1}s, ${:.4}]\n", duration as f64 / 1000.0, cost))
         }
         _ => None,
-    }
-}
-
-/// Log hook event to JSON file (~/.azural/hooks.jsonl)
-/// Each line is a complete JSON object for easy parsing
-fn log_hook_event(event: &serde_json::Value) {
-    use std::io::Write;
-    let hooks_path = crate::config::config_dir().join("hooks.jsonl");
-
-    // Build structured hook record with timestamp
-    let record = serde_json::json!({
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "session_id": event.get("session_id").and_then(|s| s.as_str()),
-        "hook_name": event.get("hook_name").and_then(|n| n.as_str()),
-        "output": event.get("output").and_then(|o| o.as_str()),
-        "raw": event,
-    });
-
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&hooks_path)
-    {
-        let _ = writeln!(file, "{}", record);
     }
 }

@@ -93,28 +93,35 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                 let input = app.input.clone();
                 app.clear_input();
 
-                let session_data = app.current_session().map(|s| (s.id.clone(), s.worktree_path.clone()));
+                // Get session info: branch_name and worktree_path
+                let session_data = app.current_session().map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
 
-                if let Some((session_id, worktree_path)) = session_data {
-                    if app.is_session_running(&session_id) {
-                        app.set_status("Claude already running - wait for response");
+                if let Some((branch_name, worktree_opt)) = session_data {
+                    if let Some(wt_path) = worktree_opt {
+                        if app.is_session_running(&branch_name) {
+                            app.set_status("Claude already running - wait for response");
+                            app.input = input;
+                            app.input_cursor = app.input.len();
+                        } else {
+                            // Display user prompt (Claude's session files store the actual messages)
+                            let prompt_text = format!("You: {}\n", input.clone());
+                            app.add_user_message(input.clone());
+                            app.process_output_chunk(&prompt_text);
+
+                            let resume_id = app.get_claude_session_id(&branch_name).cloned();
+
+                            match claude_process.spawn(&wt_path, &input, resume_id.as_deref()) {
+                                Ok(rx) => {
+                                    app.register_claude(branch_name, rx);
+                                    app.set_status("Running...");
+                                }
+                                Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                            }
+                        }
+                    } else {
+                        app.set_status("Session has no worktree (archived?)");
                         app.input = input;
                         app.input_cursor = app.input.len();
-                    } else {
-                        // Display user prompt (Claude's session files store the actual messages)
-                        let prompt_text = format!("You: {}\n", input.clone());
-                        app.add_user_message(input.clone());
-                        app.process_output_chunk(&prompt_text);
-
-                        let resume_id = app.get_claude_session_id(&session_id).cloned();
-
-                        match claude_process.spawn(&worktree_path, &input, resume_id.as_deref()) {
-                            Ok(rx) => {
-                                app.register_claude(session_id, rx);
-                                app.set_status("Running...");
-                            }
-                            Err(e) => app.set_status(format!("Failed to start: {}", e)),
-                        }
                     }
                 } else {
                     app.set_status("Select a session first");
@@ -134,12 +141,16 @@ pub fn handle_session_creation_input(key: event::KeyEvent, app: &mut App, claude
                 let prompt = app.session_creation_input.clone();
                 app.exit_session_creation_mode();
 
-                match app.create_new_session(prompt) {
+                match app.create_new_session(prompt.clone()) {
                     Ok(session) => {
-                        app.set_status(format!("Created session: {}", session.name));
-                        match claude_process.spawn(&session.worktree_path, &session.initial_prompt, None) {
-                            Ok(rx) => app.register_claude(session.id, rx),
-                            Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                        let branch_name = session.branch_name.clone();
+                        app.set_status(format!("Created session: {}", session.name()));
+
+                        if let Some(ref wt_path) = session.worktree_path {
+                            match claude_process.spawn(wt_path, &prompt, None) {
+                                Ok(rx) => app.register_claude(branch_name, rx),
+                                Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                            }
                         }
                     }
                     Err(e) => app.set_status(format!("Failed to create session: {}", e)),

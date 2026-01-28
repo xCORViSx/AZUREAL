@@ -37,31 +37,21 @@ use std::io;
 
 use crate::app::{App, Focus};
 use crate::config::Config;
-use crate::db::Database;
-use crate::git::Git;
 
 
 /// Run the TUI application
-pub async fn run(db: Database) -> Result<()> {
+pub async fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(db);
+    let mut app = App::new();
     app.load()?;
 
-    // Load output for the initially selected session so output pane isn't empty on startup
+    // Load output for the initially selected session
     app.load_session_output();
-
-    // If no projects, add current directory if it's a git repo
-    if app.projects.is_empty() {
-        let cwd = std::env::current_dir()?;
-        if Git::is_git_repo(&cwd) {
-            app.add_project(cwd)?;
-        }
-    }
 
     let config = Config::load().unwrap_or_default();
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;

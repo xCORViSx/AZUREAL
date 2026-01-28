@@ -101,10 +101,11 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
         (KeyModifiers::SHIFT, KeyCode::Char('R')) => {
             if let Some(session) = app.current_session() {
-                let worktree_path = session.worktree_path.clone();
-                if Git::is_rebase_in_progress(&worktree_path) {
-                    if let Ok(status) = Git::get_rebase_status(&worktree_path) {
-                        app.set_rebase_status(status);
+                if let Some(ref wt_path) = session.worktree_path {
+                    if Git::is_rebase_in_progress(wt_path) {
+                        if let Ok(status) = Git::get_rebase_status(wt_path) {
+                            app.set_rebase_status(status);
+                        }
                     }
                 }
             }

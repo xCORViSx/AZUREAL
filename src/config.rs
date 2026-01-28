@@ -91,11 +91,6 @@ pub fn config_file_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
-/// Get the database file path
-pub fn database_path() -> PathBuf {
-    config_dir().join("azural.db")
-}
-
 /// Ensure the config directory exists
 pub fn ensure_config_dir() -> Result<()> {
     let dir = config_dir();

@@ -46,6 +46,18 @@ impl SessionCreationWizard {
         }
     }
 
+    /// Create a wizard for single-project stateless mode
+    pub fn new_single_project(project: Option<&Project>) -> Self {
+        Self {
+            step: WizardStep::EnterPrompt,
+            prompt: String::new(),
+            prompt_cursor: 0,
+            selected_project_idx: if project.is_some() { Some(0) } else { None },
+            session_name_preview: String::new(),
+            errors: Vec::new(),
+        }
+    }
+
     /// Move to the next step
     pub fn next_step(&mut self) -> bool {
         self.errors.clear();

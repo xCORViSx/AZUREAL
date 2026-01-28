@@ -223,16 +223,21 @@ fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String {
                 .to_string()
         }
         "Task" | "task" => {
-            input.get("description")
+            let agent_type = input.get("subagent_type")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
+                .unwrap_or("agent");
+            let desc = input.get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            format!("[{}] {}", agent_type, desc)
         }
         "LSP" | "lsp" => {
             let op = input.get("operation").and_then(|v| v.as_str()).unwrap_or("");
             let file = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
             format!("{} {}", op, file)
         }
+        "EnterPlanMode" => "🔍 Planning...".to_string(),
+        "ExitPlanMode" => "📋 Plan complete".to_string(),
         _ => {
             // Generic: try common field names
             input.get("file_path")
@@ -1091,14 +1096,18 @@ fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, 
             ]));
         }
 
-        // Task: Summary line
+        // Task: Show full subagent output (this IS the main content)
         "Task" => {
-            let first_line = content.lines().next().unwrap_or("completed");
-            lines.push(Line::from(vec![
-                Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-                Span::styled("→ ", Style::default().fg(Color::Yellow)),
-                Span::styled(truncate_line(first_line, 90), result_style),
-            ]));
+            let content_lines: Vec<&str> = content.lines().collect();
+            let line_count = content_lines.len();
+
+            for (i, l) in content_lines.iter().enumerate() {
+                let prefix = if i == line_count - 1 { " ┃  └─ " } else { " ┃  │ " };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, result_style.fg(tool_color)),
+                    Span::styled(truncate_line(l, 120), result_style),
+                ]));
+            }
         }
 
         // WebFetch: Title + preview
