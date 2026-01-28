@@ -534,15 +534,14 @@ impl App {
                             }
 
                             // Check for slash commands: <command-name>/xxx</command-name>
-                            if content.contains("<command-name>") {
-                                if let Some(start) = content.find("<command-name>") {
-                                    if let Some(end) = content.find("</command-name>") {
-                                        let cmd = &content[start + 14..end];
-                                        events.push((timestamp, DisplayEvent::Command {
-                                            name: cmd.to_string(),
-                                        }));
-                                        continue;
-                                    }
+                            // Only match when tag is at START of message (not embedded in user text)
+                            if content.starts_with("<command-name>") {
+                                if let Some(end) = content.find("</command-name>") {
+                                    let cmd = &content[14..end]; // 14 = "<command-name>".len()
+                                    events.push((timestamp, DisplayEvent::Command {
+                                        name: cmd.to_string(),
+                                    }));
+                                    continue;
                                 }
                             }
 
@@ -747,16 +746,14 @@ impl App {
                         let subtype = json.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
                         if subtype == "local_command" {
                             if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
-                                // Extract command name if present
-                                if content.contains("<command-name>") {
-                                    if let Some(start) = content.find("<command-name>") {
-                                        if let Some(end) = content.find("</command-name>") {
-                                            let cmd = &content[start + 14..end];
-                                            events.push((timestamp, DisplayEvent::Command {
-                                                name: cmd.to_string(),
-                                            }));
-                                            continue;
-                                        }
+                                // Extract command name if present (must be at start)
+                                if content.starts_with("<command-name>") {
+                                    if let Some(end) = content.find("</command-name>") {
+                                        let cmd = &content[14..end];
+                                        events.push((timestamp, DisplayEvent::Command {
+                                            name: cmd.to_string(),
+                                        }));
+                                        continue;
                                     }
                                 }
                                 // Skip local-command-stdout (output of local commands)
