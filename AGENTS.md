@@ -123,6 +123,8 @@ let lines = app.rendered_lines_cache.iter().skip(scroll).take(height).cloned().c
 
 **Files:** `src/tui/draw_output.rs` uses `app.rendered_lines_cache`; call `app.invalidate_render_cache()` when `display_events` changes
 
+**Diff caching:** Same pattern for diff view - `app.diff_lines_cache` stores colorized diff output. Set `app.diff_lines_dirty = true` when `diff_text` changes. `src/tui/draw_output.rs` checks dirty flag before re-highlighting.
+
 ### 3. THROTTLE Animation and Scroll
 
 ```rust
