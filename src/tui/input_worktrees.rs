@@ -150,6 +150,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 let session_name = session.name().to_string();
                 if app.running_sessions.remove(&branch_name) {
                     app.claude_receivers.remove(&branch_name);
+                    app.invalidate_sidebar(); // Status indicator changed
                     app.set_status(format!("Stopped tracking: {}", session_name));
                 }
             }

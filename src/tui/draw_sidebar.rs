@@ -11,14 +11,14 @@ use ratatui::{
 use crate::app::{App, Focus};
 use super::util::truncate;
 
-/// Draw the sidebar showing project and sessions
-pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
+/// Build sidebar items (extracted for caching)
+fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
     let mut items: Vec<ListItem> = Vec::new();
 
     if let Some(ref project) = app.project {
         items.push(ListItem::new(Line::from(vec![
             Span::styled("▸ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled(&project.name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(project.name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ])));
 
         for (sess_idx, session) in app.sessions.iter().enumerate() {
@@ -86,8 +86,21 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
         ])));
     }
 
+    items
+}
+
+/// Draw the sidebar showing project and sessions
+pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::Worktrees;
-    let sidebar = List::new(items)
+
+    // Only rebuild sidebar items if cache is dirty or focus changed (styling depends on focus)
+    if app.sidebar_dirty || app.sidebar_focus_cached != is_focused {
+        app.sidebar_cache = build_sidebar_items(app);
+        app.sidebar_dirty = false;
+        app.sidebar_focus_cached = is_focused;
+    }
+
+    let sidebar = List::new(app.sidebar_cache.clone())
         .block(
             Block::default()
                 .borders(Borders::ALL)

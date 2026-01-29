@@ -65,6 +65,7 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
+                self.viewer_viewport_scroll = usize::MAX; // Force viewport rebuild
             }
             Err(e) => {
                 self.viewer_content = Some(format!("Error reading file: {}", e));
@@ -72,6 +73,7 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
+                self.viewer_viewport_scroll = usize::MAX;
             }
         }
     }
@@ -83,5 +85,6 @@ impl App {
         self.viewer_mode = ViewerMode::Empty;
         self.viewer_scroll = 0;
         self.viewer_lines_dirty = true;
+        self.viewer_viewport_scroll = usize::MAX;
     }
 }

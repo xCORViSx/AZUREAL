@@ -12,6 +12,7 @@ use super::App;
 impl App {
     pub fn handle_claude_started(&mut self, branch_name: &str, pid: u32) {
         self.running_sessions.insert(branch_name.to_string());
+        self.invalidate_sidebar(); // Status indicator changed
         self.set_status(format!("Claude started in {} (PID: {})", branch_name, pid));
     }
 
@@ -19,6 +20,7 @@ impl App {
         self.running_sessions.remove(branch_name);
         self.claude_receivers.remove(branch_name);
         self.interactive_sessions.remove(branch_name);
+        self.invalidate_sidebar(); // Status indicator changed
         self.set_status(format!("{} exited: {:?}", branch_name, code));
     }
 
@@ -69,6 +71,7 @@ impl App {
     pub fn register_claude(&mut self, branch_name: String, receiver: Receiver<ClaudeEvent>) {
         self.claude_receivers.insert(branch_name.clone(), receiver);
         self.running_sessions.insert(branch_name);
+        self.invalidate_sidebar(); // Status indicator changed
     }
 
     pub fn set_claude_session_id(&mut self, branch_name: &str, claude_session_id: String) {

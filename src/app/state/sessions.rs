@@ -13,11 +13,13 @@ impl App {
                 self.save_current_terminal(); // Save BEFORE changing selection
                 self.selected_session = Some(idx + 1);
                 self.load_session_output();
+                self.invalidate_sidebar();
             }
         } else if !self.sessions.is_empty() {
             self.save_current_terminal();
             self.selected_session = Some(0);
             self.load_session_output();
+            self.invalidate_sidebar();
         }
     }
 
@@ -27,6 +29,7 @@ impl App {
                 self.save_current_terminal(); // Save BEFORE changing selection
                 self.selected_session = Some(idx - 1);
                 self.load_session_output();
+                self.invalidate_sidebar();
             }
         }
     }
@@ -98,11 +101,13 @@ impl App {
     pub fn expand_session(&mut self, branch_name: &str) {
         self.sessions_expanded.insert(branch_name.to_string());
         self.load_session_files(branch_name);
+        self.invalidate_sidebar();
     }
 
     /// Collapse a session's file dropdown
     pub fn collapse_session(&mut self, branch_name: &str) {
         self.sessions_expanded.remove(branch_name);
+        self.invalidate_sidebar();
     }
 
     /// Toggle session expansion state
@@ -122,6 +127,7 @@ impl App {
         self.session_files.insert(branch_name.to_string(), files);
         // Initialize selection to 0 (latest) if not set
         self.session_selected_file_idx.entry(branch_name.to_string()).or_insert(0);
+        self.invalidate_sidebar();
     }
 
     /// Select a specific session file by index
@@ -131,6 +137,7 @@ impl App {
                 self.session_selected_file_idx.insert(branch_name.to_string(), idx);
                 // Load the selected session file
                 self.load_session_output();
+                self.invalidate_sidebar();
             }
         }
     }
@@ -145,6 +152,7 @@ impl App {
         if current + 1 < files.len() {
             self.session_selected_file_idx.insert(branch, current + 1);
             self.load_session_output();
+            self.invalidate_sidebar();
         }
     }
 
@@ -156,6 +164,7 @@ impl App {
         if current > 0 {
             self.session_selected_file_idx.insert(branch, current - 1);
             self.load_session_output();
+            self.invalidate_sidebar();
         }
     }
 

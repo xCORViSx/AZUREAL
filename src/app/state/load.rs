@@ -87,6 +87,7 @@ impl App {
 
         self.sessions = sessions;
         self.selected_session = if self.sessions.is_empty() { None } else { Some(0) };
+        self.invalidate_sidebar();
 
         Ok(())
     }
@@ -100,6 +101,7 @@ impl App {
         self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
         self.invalidate_render_cache();
+        self.invalidate_output_viewport();
         self.event_parser = crate::events::EventParser::new();
         self.selected_event = None;
         self.pending_tool_calls.clear();

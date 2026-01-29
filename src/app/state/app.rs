@@ -125,6 +125,28 @@ pub struct App {
     pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
     /// Selected file index per session (0 = latest/newest)
     pub session_selected_file_idx: HashMap<String, usize>,
+    /// Cached sidebar ListItems (avoid rebuilding every frame)
+    pub sidebar_cache: Vec<ratatui::widgets::ListItem<'static>>,
+    /// Flag indicating sidebar cache needs refresh
+    pub sidebar_dirty: bool,
+    /// Last known focus state for sidebar (styling changes on focus)
+    pub sidebar_focus_cached: bool,
+    /// Cached output viewport lines (avoid cloning from full cache every frame)
+    pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
+    /// Scroll position used for output viewport cache
+    pub output_viewport_scroll: usize,
+    /// Height used for output viewport cache
+    pub output_viewport_height: usize,
+    /// Cached viewer viewport lines (avoid cloning from full cache every frame)
+    pub viewer_viewport_cache: Vec<ratatui::text::Line<'static>>,
+    /// Scroll position used for viewer viewport cache
+    pub viewer_viewport_scroll: usize,
+    /// Height used for viewer viewport cache
+    pub viewer_viewport_height: usize,
+    /// Cached output title string (avoid format! every frame)
+    pub output_title_cache: String,
+    /// Cached viewer title string
+    pub viewer_title_cache: String,
 }
 
 impl App {
@@ -205,12 +227,39 @@ impl App {
             sessions_expanded: HashSet::new(),
             session_files: HashMap::new(),
             session_selected_file_idx: HashMap::new(),
+            sidebar_cache: Vec::new(),
+            sidebar_dirty: true,
+            sidebar_focus_cached: false,
+            output_viewport_cache: Vec::new(),
+            output_viewport_scroll: usize::MAX,
+            output_viewport_height: 0,
+            viewer_viewport_cache: Vec::new(),
+            viewer_viewport_scroll: usize::MAX,
+            viewer_viewport_height: 0,
+            output_title_cache: String::new(),
+            viewer_title_cache: String::new(),
         }
     }
 
     /// Mark rendered lines cache as dirty (call when display_events change)
     pub fn invalidate_render_cache(&mut self) {
         self.rendered_lines_dirty = true;
+        self.output_viewport_scroll = usize::MAX; // Force viewport rebuild on next draw
+    }
+
+    /// Mark sidebar cache as dirty (call when sessions/selection/expansion changes)
+    pub fn invalidate_sidebar(&mut self) {
+        self.sidebar_dirty = true;
+    }
+
+    /// Mark output viewport cache as dirty (call when scroll/content changes)
+    pub fn invalidate_output_viewport(&mut self) {
+        self.output_viewport_scroll = usize::MAX;
+    }
+
+    /// Mark viewer viewport cache as dirty
+    pub fn invalidate_viewer_viewport(&mut self) {
+        self.viewer_viewport_scroll = usize::MAX;
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
