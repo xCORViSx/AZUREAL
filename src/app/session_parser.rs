@@ -58,7 +58,6 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
     let mut total_lines = 0;
     let mut parse_errors = 0;
     let mut session_slug: Option<String> = None;
-    let mut plan_inserted = false;
 
     for line in reader.lines().map_while(Result::ok) {
         total_lines += 1;
@@ -85,7 +84,7 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
                 &json, timestamp, &mut timed_events, &mut user_msg_by_parent,
                 &tool_calls, &mut pending_tools, &mut failed_tools,
                 &mut last_user_msg, &mut ups_hooks,
-                session_slug.as_deref(), &mut plan_inserted,
+                session_slug.as_deref(),
             ),
             "assistant" => {
                 parse_assistant_event(
@@ -190,7 +189,6 @@ fn parse_user_event(
     last_user_msg: &mut Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
     session_slug: Option<&str>,
-    plan_inserted: &mut bool,
 ) {
     let message = json.get("message");
     let content_val = message.and_then(|m| m.get("content"));
@@ -268,7 +266,7 @@ fn parse_user_event(
             if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                 parse_tool_result_block(
                     block, timestamp, events, tool_calls, pending_tools, failed_tools,
-                    last_user_msg, ups_hooks, session_slug, plan_inserted,
+                    last_user_msg, ups_hooks, session_slug,
                 );
             }
         }
@@ -285,7 +283,6 @@ fn parse_tool_result_block(
     last_user_msg: &Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
     session_slug: Option<&str>,
-    plan_inserted: &mut bool,
 ) {
     let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
     let (tool_name, file_path) = tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
@@ -367,12 +364,11 @@ fn parse_tool_result_block(
         }));
     }
 
-    // Insert plan content after successful Write to plan file
-    if is_plan_write && !is_error && !*plan_inserted {
+    // Insert plan content after successful Write to plan file (show every plan for full history)
+    if is_plan_write && !is_error {
         if let Some(slug) = session_slug {
             if let Some(plan_event) = load_plan_file(slug) {
                 events.push((timestamp, plan_event));
-                *plan_inserted = true;
             }
         }
     }

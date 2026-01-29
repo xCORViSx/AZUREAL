@@ -35,6 +35,8 @@ pub fn render_display_events(
     let mut saw_init = false;
     let mut saw_content = false;
     let mut last_hook: Option<(String, String)> = None;
+    let mut saw_exit_plan_mode = false;
+    let mut saw_user_after_exit_plan = false;
 
     for event in events {
         match event {
@@ -72,6 +74,7 @@ pub fn render_display_events(
             DisplayEvent::UserMessage { content, .. } => {
                 saw_content = true;
                 last_hook = None;
+                if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
                 render_user_message(&mut lines, content, bubble_width, w);
             }
             DisplayEvent::AssistantText { text, .. } => {
@@ -96,6 +99,7 @@ pub fn render_display_events(
             DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
                 saw_content = true;
                 last_hook = None;
+                if tool_name == "ExitPlanMode" { saw_exit_plan_mode = true; }
                 render_tool_call(&mut lines, &mut animation_indices, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
             DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
@@ -113,6 +117,11 @@ pub fn render_display_events(
             }
             DisplayEvent::Filtered => {}
         }
+    }
+
+    // Show plan approval prompt if ExitPlanMode was called with no user response yet
+    if saw_exit_plan_mode && !saw_user_after_exit_plan {
+        render_plan_approval(&mut lines, w);
     }
 
     (lines, animation_indices)
@@ -290,6 +299,66 @@ fn render_error(lines: &mut Vec<Line<'static>>, message: &str) {
         lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::Red))).alignment(Alignment::Center));
     }
     lines.push(Line::from(""));
+}
+
+/// Render plan approval prompt when awaiting user response to ExitPlanMode
+fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
+    let color = Color::Yellow;
+    let box_width = 50.min(width.saturating_sub(4));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    // Top border
+    lines.push(Line::from(vec![
+        Span::styled(format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+    ]).alignment(Alignment::Center));
+
+    // Header
+    let header = " ⏳ Awaiting Plan Approval ";
+    let header_pad = box_width.saturating_sub(header.chars().count() + 2);
+    lines.push(Line::from(vec![
+        Span::styled("│", Style::default().fg(color)),
+        Span::styled(header, Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)),
+        Span::styled(" ".repeat(header_pad), Style::default().bg(color)),
+        Span::styled("│", Style::default().fg(color)),
+    ]).alignment(Alignment::Center));
+
+    // Separator
+    lines.push(Line::from(vec![
+        Span::styled(format!("├{}┤", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+    ]).alignment(Alignment::Center));
+
+    // Options
+    let options = [
+        "1. Yes, clear context and bypass",
+        "2. Yes, and manually approve edits",
+        "3. Yes, and bypass permissions",
+        "4. Yes, manually approve edits",
+        "5. Type to tell Claude what to change",
+    ];
+
+    for opt in &options {
+        let pad = box_width.saturating_sub(opt.chars().count() + 4);
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(color)),
+            Span::styled(opt.to_string(), Style::default().fg(Color::White)),
+            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+        ]).alignment(Alignment::Center));
+    }
+
+    // Bottom border
+    lines.push(Line::from(vec![
+        Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+    ]).alignment(Alignment::Center));
+
+    // Hint
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Use terminal mode (", Style::default().fg(Color::DarkGray)),
+        Span::styled("t", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(") to respond", Style::default().fg(Color::DarkGray)),
+    ]).alignment(Alignment::Center));
 }
 
 /// Render a plan block with prominent full-width styling and markdown highlighting
