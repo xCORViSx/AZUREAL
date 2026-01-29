@@ -13,7 +13,7 @@ use textwrap::{wrap, Options};
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
-use super::markdown::{parse_markdown_spans, parse_table_row, is_table_separator};
+use super::markdown::{parse_markdown_spans, is_table_separator};
 use super::render_tools::{extract_tool_param, render_tool_result, truncate_line};
 
 /// Wrap text to fit within max_width, returning wrapped lines
@@ -160,8 +160,38 @@ pub fn render_display_events(
                 ]));
 
                 let mut in_code_block = false;
-                let mut in_table = false;
                 let text_lines: Vec<&str> = text.lines().collect();
+
+                // Pre-scan for tables to render them properly
+                let mut table_ranges: Vec<(usize, usize)> = Vec::new();
+                let mut table_start: Option<usize> = None;
+                for (idx, tl) in text_lines.iter().enumerate() {
+                    let t = tl.trim();
+                    let pipe_count = t.matches('|').count();
+                    let is_table_row = pipe_count >= 2;
+                    let is_sep = is_table_separator(t);
+
+                    if is_table_row || is_sep {
+                        if table_start.is_none() { table_start = Some(idx); }
+                    } else if let Some(start) = table_start {
+                        table_ranges.push((start, idx));
+                        table_start = None;
+                    }
+                }
+                if let Some(start) = table_start {
+                    table_ranges.push((start, text_lines.len()));
+                }
+
+                // Check if line index is within a table range
+                let in_table_range = |idx: usize| -> bool {
+                    table_ranges.iter().any(|(s, e)| idx >= *s && idx < *e)
+                };
+                let is_table_start = |idx: usize| -> bool {
+                    table_ranges.iter().any(|(s, _)| idx == *s)
+                };
+                let is_table_end = |idx: usize| -> bool {
+                    table_ranges.iter().any(|(_, e)| idx == *e - 1)
+                };
 
                 for (i, line) in text_lines.iter().enumerate() {
                     let trimmed = line.trim();
@@ -196,40 +226,68 @@ pub fn render_display_events(
                         continue;
                     }
 
-                    let is_table_line = trimmed.contains('|') && trimmed.starts_with('|');
-                    let is_sep = is_table_separator(trimmed);
+                    // Check if this line is part of a table
+                    if in_table_range(i) {
+                        let is_sep = is_table_separator(trimmed);
+                        let cells: Vec<&str> = trimmed.split('|').filter(|s| !s.is_empty()).collect();
+                        let is_header = is_table_start(i) && text_lines.get(i + 1).map(|l| is_table_separator(l)).unwrap_or(false);
 
-                    if is_table_line || is_sep {
-                        if !in_table && is_table_line && !is_sep {
-                            in_table = true;
-                            let next_is_sep = text_lines.get(i + 1).map(|l| is_table_separator(l)).unwrap_or(false);
-                            let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-                            if next_is_sep {
-                                let cells: Vec<&str> = trimmed.split('|').filter(|s| !s.is_empty()).collect();
-                                spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-                                for (j, cell) in cells.iter().enumerate() {
-                                    spans.push(Span::styled(cell.trim().to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
-                                    if j < cells.len() - 1 {
-                                        spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-                                    }
+                        // Add top border at table start
+                        if is_table_start(i) {
+                            let mut top = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+                            top.push(Span::styled("┌", Style::default().fg(Color::DarkGray)));
+                            for (j, cell) in cells.iter().enumerate() {
+                                top.push(Span::styled("─".repeat(cell.len() + 2), Style::default().fg(Color::DarkGray)));
+                                if j < cells.len() - 1 {
+                                    top.push(Span::styled("┬", Style::default().fg(Color::DarkGray)));
                                 }
-                                spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-                            } else {
-                                spans.extend(parse_table_row(trimmed, false));
                             }
-                            lines.push(Line::from(spans));
-                        } else if is_sep {
+                            top.push(Span::styled("┐", Style::default().fg(Color::DarkGray)));
+                            lines.push(Line::from(top));
+                        }
+
+                        if is_sep {
+                            // Separator row: ├───┼───┤
                             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-                            spans.extend(parse_table_row(trimmed, true));
+                            spans.push(Span::styled("├", Style::default().fg(Color::DarkGray)));
+                            for (j, cell) in cells.iter().enumerate() {
+                                spans.push(Span::styled("─".repeat(cell.len()), Style::default().fg(Color::DarkGray)));
+                                if j < cells.len() - 1 {
+                                    spans.push(Span::styled("┼", Style::default().fg(Color::DarkGray)));
+                                }
+                            }
+                            spans.push(Span::styled("┤", Style::default().fg(Color::DarkGray)));
                             lines.push(Line::from(spans));
                         } else {
+                            // Data row: │ cell │ cell │
                             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-                            spans.extend(parse_table_row(trimmed, false));
+                            spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+                            for cell in &cells {
+                                let cell_text = format!(" {} ", cell.trim());
+                                if is_header {
+                                    spans.push(Span::styled(cell_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+                                } else {
+                                    spans.push(Span::styled(cell_text, Style::default().fg(Color::White)));
+                                }
+                                spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+                            }
                             lines.push(Line::from(spans));
                         }
+
+                        // Add bottom border at table end
+                        if is_table_end(i) {
+                            let mut bot = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+                            bot.push(Span::styled("└", Style::default().fg(Color::DarkGray)));
+                            for (j, cell) in cells.iter().enumerate() {
+                                bot.push(Span::styled("─".repeat(cell.len() + 2), Style::default().fg(Color::DarkGray)));
+                                if j < cells.len() - 1 {
+                                    bot.push(Span::styled("┴", Style::default().fg(Color::DarkGray)));
+                                }
+                            }
+                            bot.push(Span::styled("┘", Style::default().fg(Color::DarkGray)));
+                            lines.push(Line::from(bot));
+                        }
                         continue;
-                    } else {
-                        in_table = false;
                     }
 
                     if trimmed.starts_with('#') {
