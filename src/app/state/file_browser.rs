@@ -64,12 +64,14 @@ impl App {
                 self.viewer_path = Some(entry.path.clone());
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
+                self.viewer_lines_dirty = true;
             }
             Err(e) => {
                 self.viewer_content = Some(format!("Error reading file: {}", e));
                 self.viewer_path = Some(entry.path.clone());
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
+                self.viewer_lines_dirty = true;
             }
         }
     }
@@ -80,5 +82,6 @@ impl App {
         self.viewer_path = None;
         self.viewer_mode = ViewerMode::Empty;
         self.viewer_scroll = 0;
+        self.viewer_lines_dirty = true;
     }
 }

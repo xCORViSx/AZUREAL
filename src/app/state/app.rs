@@ -92,6 +92,12 @@ pub struct App {
     pub viewer_scroll: usize,
     /// Current viewer display mode
     pub viewer_mode: ViewerMode,
+    /// Cached rendered lines for viewer pane (syntax highlighting is expensive)
+    pub viewer_lines_cache: Vec<ratatui::text::Line<'static>>,
+    /// Width used for viewer cache (invalidate on resize)
+    pub viewer_lines_width: usize,
+    /// Flag indicating viewer cache needs refresh
+    pub viewer_lines_dirty: bool,
     /// Cached rendered lines for convo pane (expensive to compute)
     pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Width used for cached render (invalidate on resize)
@@ -169,6 +175,9 @@ impl App {
             viewer_path: None,
             viewer_scroll: 0,
             viewer_mode: ViewerMode::Empty,
+            viewer_lines_cache: Vec::new(),
+            viewer_lines_width: 0,
+            viewer_lines_dirty: true,
             rendered_lines_cache: Vec::new(),
             rendered_lines_width: 0,
             rendered_lines_dirty: true,
