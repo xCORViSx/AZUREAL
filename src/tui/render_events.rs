@@ -63,6 +63,11 @@ pub fn render_display_events(
                     Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
                 ]).alignment(Alignment::Center));
             }
+            DisplayEvent::Plan { name, content } => {
+                saw_content = true;
+                last_hook = None;
+                render_plan(&mut lines, name, content, w);
+            }
             DisplayEvent::UserMessage { content, .. } => {
                 saw_content = true;
                 last_hook = None;
@@ -283,5 +288,58 @@ fn render_error(lines: &mut Vec<Line<'static>>, message: &str) {
     for line in message.lines() {
         lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::Red))).alignment(Alignment::Center));
     }
+    lines.push(Line::from(""));
+}
+
+/// Render a plan block with prominent full-width styling
+fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width: usize) {
+    let plan_color = Color::Magenta;
+    let header_bg = Color::Magenta;
+    let border_char = "═";
+
+    // Spacing before plan
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    // Top border
+    lines.push(Line::from(vec![
+        Span::styled(format!("╔{}╗", border_char.repeat(width.saturating_sub(2))), Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
+    ]));
+
+    // Header with plan icon and name
+    let header = format!(" 📋 PLAN MODE: {} ", name);
+    let header_pad = width.saturating_sub(header.chars().count() + 2);
+    lines.push(Line::from(vec![
+        Span::styled("║", Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
+        Span::styled(header, Style::default().fg(Color::White).bg(header_bg).add_modifier(Modifier::BOLD)),
+        Span::styled(" ".repeat(header_pad), Style::default().bg(header_bg)),
+        Span::styled("║", Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
+    ]));
+
+    // Separator under header
+    lines.push(Line::from(vec![
+        Span::styled(format!("╠{}╣", "─".repeat(width.saturating_sub(2))), Style::default().fg(plan_color)),
+    ]));
+
+    // Plan content with left border
+    let content_width = width.saturating_sub(4);
+    for line in content.lines() {
+        // Simple wrapping for long lines
+        let wrapped = wrap_text(line, content_width);
+        for wrapped_line in wrapped {
+            let pad = content_width.saturating_sub(wrapped_line.chars().count());
+            lines.push(Line::from(vec![
+                Span::styled("║ ", Style::default().fg(plan_color)),
+                Span::styled(wrapped_line, Style::default().fg(Color::White)),
+                Span::styled(format!("{} ║", " ".repeat(pad)), Style::default().fg(plan_color)),
+            ]));
+        }
+    }
+
+    // Bottom border
+    lines.push(Line::from(vec![
+        Span::styled(format!("╚{}╝", border_char.repeat(width.saturating_sub(2))), Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
+    ]));
+
     lines.push(Line::from(""));
 }

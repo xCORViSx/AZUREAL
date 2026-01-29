@@ -57,6 +57,8 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
     let mut ups_hooks: Vec<(usize, DateTime<Utc>, DisplayEvent)> = Vec::new();
     let mut total_lines = 0;
     let mut parse_errors = 0;
+    let mut session_slug: Option<String> = None;
+    let mut plan_inserted = false;
 
     for line in reader.lines().map_while(Result::ok) {
         total_lines += 1;
@@ -73,15 +75,33 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
 
         let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
+        // Capture session slug for plan file lookup
+        if session_slug.is_none() {
+            session_slug = json.get("slug").and_then(|s| s.as_str()).map(|s| s.to_string());
+        }
+
         match event_type {
             "user" => parse_user_event(
                 &json, timestamp, &mut timed_events, &mut user_msg_by_parent,
                 &tool_calls, &mut pending_tools, &mut failed_tools,
                 &mut last_user_msg, &mut ups_hooks,
             ),
-            "assistant" => parse_assistant_event(
-                &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
-            ),
+            "assistant" => {
+                // Check for EnterPlanMode tool call to insert plan content
+                if !plan_inserted {
+                    if let Some(slug) = &session_slug {
+                        if has_enter_plan_mode(&json) {
+                            if let Some(plan_event) = load_plan_file(slug) {
+                                timed_events.push((timestamp, plan_event));
+                                plan_inserted = true;
+                            }
+                        }
+                    }
+                }
+                parse_assistant_event(
+                    &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
+                );
+            }
             "result" => parse_result_event(&json, timestamp, &mut timed_events),
             "system" => parse_system_event(&json, timestamp, &mut timed_events),
             "progress" => parse_progress_event(&json, timestamp, &mut timed_events),
@@ -495,5 +515,37 @@ fn parse_progress_event(
 
     if !output.is_empty() {
         events.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
+    }
+}
+
+/// Check if an assistant event contains an EnterPlanMode tool call
+fn has_enter_plan_mode(json: &serde_json::Value) -> bool {
+    json.get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+        .map(|arr| arr.iter().any(|block| {
+            block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                && block.get("name").and_then(|n| n.as_str()) == Some("EnterPlanMode")
+        }))
+        .unwrap_or(false)
+}
+
+/// Load plan file from ~/.claude/plans/{slug}.md
+fn load_plan_file(slug: &str) -> Option<DisplayEvent> {
+    let plans_dir = dirs::home_dir()?.join(".claude").join("plans");
+    let plan_path = plans_dir.join(format!("{}.md", slug));
+
+    if plan_path.exists() {
+        let content = std::fs::read_to_string(&plan_path).ok()?;
+        // Extract plan name from first line (# Plan: Name or just # Title)
+        let name = content.lines()
+            .next()
+            .and_then(|line| line.strip_prefix("# Plan: ").or_else(|| line.strip_prefix("# ")))
+            .unwrap_or(slug)
+            .to_string();
+
+        Some(DisplayEvent::Plan { name, content })
+    } else {
+        None
     }
 }

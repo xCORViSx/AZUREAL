@@ -1,5 +1,29 @@
 # Edit History
 
+## 2026-01-29: Plan Mode Display
+
+### Feature
+Display plan content from `~/.claude/plans/{slug}.md` when EnterPlanMode tool is called.
+
+### Implementation
+1. Added `DisplayEvent::Plan { name, content }` variant
+2. Session parser extracts session slug from JSONL events
+3. When EnterPlanMode tool call detected, loads matching plan file
+4. Plan rendered with prominent full-width magenta border and header
+
+### Rendering
+- Full-width box with double-line border (╔═══╗)
+- Magenta theme to stand out from other content
+- Header: "📋 PLAN MODE: {name}"
+- Content wrapped to fit width
+
+### Files Changed
+- `src/events/display.rs` - Added Plan variant
+- `src/app/session_parser.rs` - Plan detection and loading
+- `src/tui/render_events.rs` - Plan rendering
+
+---
+
 ## 2026-01-29: Debug Dump Now Debug-Build Only
 
 ### Problem

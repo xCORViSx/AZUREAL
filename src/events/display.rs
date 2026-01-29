@@ -29,6 +29,11 @@ pub enum DisplayEvent {
     Compacting,
     /// Context compaction completed indicator
     Compacted,
+    /// Plan mode content (from ~/.claude/plans/)
+    Plan {
+        name: String,
+        content: String,
+    },
     /// Assistant text response
     AssistantText {
         uuid: String,
