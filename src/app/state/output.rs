@@ -25,6 +25,7 @@ impl App {
     pub fn add_output(&mut self, chunk: String) {
         let events = self.event_parser.parse(&chunk);
         self.display_events.extend(events);
+        self.invalidate_render_cache();
         self.process_output_chunk(&chunk);
         self.output_scroll = usize::MAX;
     }
@@ -34,6 +35,7 @@ impl App {
             uuid: String::new(),
             content,
         });
+        self.invalidate_render_cache();
         self.output_scroll = usize::MAX;
     }
 }

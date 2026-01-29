@@ -46,6 +46,7 @@ impl App {
             }
 
             self.display_events.extend(events);
+            self.invalidate_render_cache();
 
             if output_type == OutputType::Stdout || output_type == OutputType::Json {
                 if let Some(display_text) = parse_stream_json_for_display(&data) {
@@ -109,6 +110,7 @@ impl App {
         }
 
         self.display_events.extend(events);
+        self.invalidate_render_cache();
         self.output_scroll = usize::MAX;
         true
     }

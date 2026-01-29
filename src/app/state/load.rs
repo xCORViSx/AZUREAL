@@ -99,6 +99,7 @@ impl App {
         self.output_buffer.clear();
         self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
+        self.invalidate_render_cache();
         self.event_parser = crate::events::EventParser::new();
         self.selected_event = None;
         self.pending_tool_calls.clear();
@@ -135,6 +136,7 @@ impl App {
                     self.display_events = parsed.events;
                     self.pending_tool_calls = parsed.pending_tools;
                     self.failed_tool_calls = parsed.failed_tools;
+                    self.invalidate_render_cache();
                 }
             }
         }
@@ -195,6 +197,7 @@ impl App {
             &self.pending_tool_calls,
             &self.failed_tool_calls,
             self.animation_tick,
+            &self.syntax_highlighter,
         );
 
         for line in rendered_lines.iter() {

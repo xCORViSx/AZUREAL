@@ -20,14 +20,22 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         ViewMode::Output => {
             if !app.display_events.is_empty() {
                 let inner_width = area.width.saturating_sub(2);
-                let all_lines = render_display_events(
-                    &app.display_events,
-                    inner_width,
-                    &app.pending_tool_calls,
-                    &app.failed_tool_calls,
-                    app.animation_tick,
-                );
-                let total = all_lines.len();
+
+                // Only re-render if cache is dirty or width changed
+                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
+                    app.rendered_lines_cache = render_display_events(
+                        &app.display_events,
+                        inner_width,
+                        &app.pending_tool_calls,
+                        &app.failed_tool_calls,
+                        app.animation_tick,
+                        &app.syntax_highlighter,
+                    );
+                    app.rendered_lines_width = inner_width;
+                    app.rendered_lines_dirty = false;
+                }
+
+                let total = app.rendered_lines_cache.len();
 
                 let scroll = if app.output_scroll == usize::MAX {
                     total.saturating_sub(viewport_height)
@@ -36,7 +44,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 app.output_scroll = scroll;
 
-                let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
+                let lines: Vec<Line> = app.rendered_lines_cache.iter().skip(scroll).take(viewport_height).cloned().collect();
 
                 let scroll_indicator = if total > viewport_height {
                     format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)

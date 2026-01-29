@@ -83,14 +83,102 @@ Other features:
 - Help overlay with keybindings
 - Mouse scroll support (scroll panels based on cursor position)
 
-**Performance Optimizations:**
-- Event batching: All pending events drained before redrawing
-- Scroll throttling: 20fps max for scroll redraws, immediate for key/Claude events
-- Cached terminal size: Only updates on resize events
-- Conditional polling: Terminal rx only polled when terminal mode active
-- Motion discard: Mouse motion events discarded instantly (zero processing)
-
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/app/state/` for state management (split into 9 focused submodules).
+
+---
+
+## ⚠️ CRITICAL: CPU PERFORMANCE RULES ⚠️
+
+**DO NOT REGRESS THESE OPTIMIZATIONS. CPU usage must stay <5% during scrolling.**
+
+### 1. NEVER Create Expensive Objects in Render Path
+
+```rust
+// ❌ WRONG - Creates SyntaxHighlighter on EVERY FRAME (loads entire syntect SyntaxSet)
+fn render_edit_diff(...) {
+    let highlighter = SyntaxHighlighter::new();  // CATASTROPHIC - 100ms+ per call
+}
+
+// ✅ CORRECT - Pass reference from App state
+fn render_edit_diff(..., highlighter: &SyntaxHighlighter) {
+    highlighter.highlight_file(...)  // Reuses pre-loaded syntax definitions
+}
+```
+
+**Files:** `src/tui/render_events.rs` passes `&app.syntax_highlighter` to `render_edit_diff()`
+
+### 2. CACHE Rendered Output
+
+```rust
+// ❌ WRONG - Re-renders ALL events on EVERY frame (O(n) per frame)
+let all_lines = render_display_events(&app.display_events, ...);
+
+// ✅ CORRECT - Cache rendered lines, only re-render when data changes
+if app.rendered_lines_dirty || app.rendered_lines_width != width {
+    app.rendered_lines_cache = render_display_events(...);
+    app.rendered_lines_dirty = false;
+}
+let lines = app.rendered_lines_cache.iter().skip(scroll).take(height).cloned().collect();
+```
+
+**Files:** `src/tui/draw_output.rs` uses `app.rendered_lines_cache`; call `app.invalidate_render_cache()` when `display_events` changes
+
+### 3. THROTTLE Animation and Scroll
+
+```rust
+// ❌ WRONG - Animation forces redraw every loop iteration
+let has_pending = !app.pending_tool_calls.is_empty();
+let mut needs_redraw = has_pending;  // CONSTANT REDRAWS when tools pending
+
+// ✅ CORRECT - Throttle animation to 4fps
+let animation_due = now.duration_since(last_animation) >= Duration::from_millis(250);
+if animation_due && has_pending {
+    app.animation_tick = app.animation_tick.wrapping_add(1);
+    last_animation = now;
+}
+let mut needs_redraw = animation_due && has_pending;
+```
+
+**Throttle values in `src/tui/event_loop.rs`:**
+- `min_draw_interval = 100ms` (10fps scroll)
+- `min_animation_interval = 250ms` (4fps pulsating indicators)
+- `min_poll_interval = 500ms` (session file polling)
+
+### 4. SKIP Redraw When Nothing Changed
+
+```rust
+// ❌ WRONG - Always returns true, always redraws
+pub fn scroll_output_up(&mut self, lines: usize) {
+    self.output_scroll = self.output_scroll.saturating_sub(lines);
+}
+
+// ✅ CORRECT - Return whether position actually changed
+pub fn scroll_output_up(&mut self, lines: usize) -> bool {
+    let old = self.output_scroll;
+    self.output_scroll = self.output_scroll.saturating_sub(lines);
+    self.output_scroll != old  // false if already at top
+}
+```
+
+**Files:** `src/app/state/scroll.rs` - all scroll functions return `bool`; `src/tui/event_loop.rs` uses return value
+
+### 5. Event Loop Optimizations
+
+- **Event batching:** Drain ALL pending events before redrawing (one redraw per batch)
+- **Motion discard:** Mouse motion events discarded instantly (zero processing)
+- **Conditional polling:** Terminal rx only polled when `app.terminal_mode == true`
+- **Cached terminal size:** Only updated on resize events, not every frame
+
+### Performance Checklist for PRs
+
+Before merging ANY change to render/event code:
+- [ ] No `::new()` calls for expensive structs in render path
+- [ ] No O(n) operations per frame (use caching)
+- [ ] Animations throttled (not every frame)
+- [ ] Scroll returns bool, caller checks before redraw
+- [ ] Test: scroll aggressively, CPU must stay <5%
+
+---
 
 **Startup sequence** (`src/tui/run.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
 

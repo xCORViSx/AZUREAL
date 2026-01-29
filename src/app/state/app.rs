@@ -92,6 +92,12 @@ pub struct App {
     pub viewer_scroll: usize,
     /// Current viewer display mode
     pub viewer_mode: ViewerMode,
+    /// Cached rendered lines for convo pane (expensive to compute)
+    pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
+    /// Width used for cached render (invalidate on resize)
+    pub rendered_lines_width: u16,
+    /// Flag indicating cache needs refresh
+    pub rendered_lines_dirty: bool,
 }
 
 impl App {
@@ -154,7 +160,15 @@ impl App {
             viewer_path: None,
             viewer_scroll: 0,
             viewer_mode: ViewerMode::Empty,
+            rendered_lines_cache: Vec::new(),
+            rendered_lines_width: 0,
+            rendered_lines_dirty: true,
         }
+    }
+
+    /// Mark rendered lines cache as dirty (call when display_events change)
+    pub fn invalidate_render_cache(&mut self) {
+        self.rendered_lines_dirty = true;
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }

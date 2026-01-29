@@ -19,15 +19,15 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_down(1, viewport_height),
-                ViewMode::Diff => app.scroll_diff_down(1, viewport_height),
+                ViewMode::Output => { app.scroll_output_down(1, viewport_height); }
+                ViewMode::Diff => { app.scroll_diff_down(1, viewport_height); }
                 _ => {}
             }
         }
         (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_up(1),
-                ViewMode::Diff => app.scroll_diff_up(1),
+                ViewMode::Output => { app.scroll_output_up(1); }
+                ViewMode::Diff => { app.scroll_diff_up(1); }
                 _ => {}
             }
         }
@@ -47,43 +47,43 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
         (KeyModifiers::NONE, KeyCode::PageDown) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_down(10, viewport_height),
-                ViewMode::Diff => app.scroll_diff_down(10, viewport_height),
+                ViewMode::Output => { app.scroll_output_down(10, viewport_height); }
+                ViewMode::Diff => { app.scroll_diff_down(10, viewport_height); }
                 _ => {}
             }
         }
         (KeyModifiers::NONE, KeyCode::PageUp) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_up(10),
-                ViewMode::Diff => app.scroll_diff_up(10),
+                ViewMode::Output => { app.scroll_output_up(10); }
+                ViewMode::Diff => { app.scroll_diff_up(10); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_down(20, viewport_height),
-                ViewMode::Diff => app.scroll_diff_down(20, viewport_height),
+                ViewMode::Output => { app.scroll_output_down(20, viewport_height); }
+                ViewMode::Diff => { app.scroll_diff_down(20, viewport_height); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_up(20),
-                ViewMode::Diff => app.scroll_diff_up(20),
+                ViewMode::Output => { app.scroll_output_up(20); }
+                ViewMode::Diff => { app.scroll_diff_up(20); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_down(40, viewport_height),
-                ViewMode::Diff => app.scroll_diff_down(40, viewport_height),
+                ViewMode::Output => { app.scroll_output_down(40, viewport_height); }
+                ViewMode::Diff => { app.scroll_diff_down(40, viewport_height); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_up(40),
-                ViewMode::Diff => app.scroll_diff_up(40),
+                ViewMode::Output => { app.scroll_output_up(40); }
+                ViewMode::Diff => { app.scroll_diff_up(40); }
                 _ => {}
             }
         }

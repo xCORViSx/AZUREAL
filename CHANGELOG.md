@@ -4,7 +4,35 @@ All notable changes to Azural will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- 4-pane TUI layout: Sessions (40 cols), FileTree (40 cols), Viewer (50%), Convo (50%)
+  - FileTree shows directory structure for selected session's worktree
+  - Viewer displays file content with syntax highlighting and line numbers
+  - Viewer dual-purpose: file preview from FileTree OR diff detail from Convo
+  - Tab cycles through all 4 panes plus Input
+- FileTree navigation with j/k, Enter to open, Space/l to expand, h to collapse
+- Viewer scroll with j/k, Ctrl+d/u, Ctrl+f/b, g/G
+- Per-session terminal persistence: each session maintains its own PTY shell session
+
 ### Changed
+- Message bubble containment: all content constrained to bubble + 10 max width
+  - User/Claude message text wraps within bubble width
+  - Tool calls, results, hooks, diffs constrained to bubble + 10
+- Tool command lines show full parameters (no "..." truncation on commands)
+
+### Fixed
+- **Critical performance fix**: `SyntaxHighlighter::new()` was being called inside `render_edit_diff` on EVERY render frame, loading the entire syntect SyntaxSet each time. Now reuses single instance from App state.
+- **Render caching**: Convo pane now caches rendered lines instead of re-rendering all events on every frame. Cache invalidated only when display_events actually change. Eliminates O(n) rendering on scroll/navigation.
+- **Scroll optimization**: Scroll functions now return whether position changed; skip redraw when at boundaries (no wasted frames when already at top/bottom)
+- **Animation throttling**: Pulsating tool indicators now update at 4fps instead of every frame; scroll throttled to 10fps (was 20fps)
+- Session file polling throttled from 100ms to 500ms to reduce parsing overhead on large sessions
+- Removed debug dump on every redraw (was causing disk I/O on every frame in debug builds)
+- Tool results show summarized output constrained to width:
+  - Read: first + last line with line count
+  - Bash: last 2 non-empty lines
+  - Grep: first 3 matches
+  - Glob: file count
+  - Task: first 5 lines
 - Modularized large source files using file-based module roots:
   - Module root files (`app.rs`, `git.rs`, `events.rs`, `tui.rs`) now contain only mod declarations and re-exports
   - Created `app/state.rs` for App struct and core methods (extracted from app.rs)

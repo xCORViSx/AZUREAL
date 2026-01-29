@@ -28,7 +28,11 @@ pub async fn run_app(
 ) -> Result<()> {
     let claude_process = ClaudeProcess::new(config);
     let mut last_draw = Instant::now();
-    let min_draw_interval = Duration::from_millis(50); // Max 20fps for scroll
+    let mut last_session_poll = Instant::now();
+    let mut last_animation = Instant::now();
+    let min_draw_interval = Duration::from_millis(100); // Max 10fps for scroll
+    let min_poll_interval = Duration::from_millis(500); // Poll session file max 2x/sec
+    let min_animation_interval = Duration::from_millis(250); // 4fps for pulsating indicators
 
     // Cache terminal size, update on resize events
     let (mut cached_width, mut cached_height) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -37,16 +41,20 @@ pub async fn run_app(
     terminal.draw(|f| ui(f, app))?;
 
     loop {
-        // Increment animation tick for pulsating tool indicators
-        app.animation_tick = app.animation_tick.wrapping_add(1);
-
         // Only poll terminal when in terminal mode (avoid unnecessary rx check)
         let terminal_changed = app.terminal_mode && app.poll_terminal();
 
-        // Drain ALL pending events quickly (including mouse motion we'll discard)
-        // Also force redraw if we have pending tools (for animation)
+        // Throttle animation updates (4fps) to avoid constant redraws
+        let now_anim = Instant::now();
+        let animation_due = now_anim.duration_since(last_animation) >= min_animation_interval;
         let has_pending_tools = !app.pending_tool_calls.is_empty();
-        let mut needs_redraw = terminal_changed || has_pending_tools;
+        if animation_due && has_pending_tools {
+            app.animation_tick = app.animation_tick.wrapping_add(1);
+            last_animation = now_anim;
+        }
+
+        // Only redraw for animation if it actually updated
+        let mut needs_redraw = terminal_changed || (animation_due && has_pending_tools);
         let mut scroll_delta: i32 = 0;
         let mut scroll_col: u16 = 0;
         let mut scroll_row: u16 = 0;
@@ -107,23 +115,19 @@ pub async fn run_app(
             }
         }
 
-        // Poll session file for changes (live update as Claude writes to it)
-        if app.poll_session_file() {
-            needs_redraw = true;
-        }
-
-        // Poll interactive sessions for new events from session files
-        if app.poll_interactive_sessions() {
-            needs_redraw = true;
-        }
-
-        // Auto-dump debug output when events change (debug builds only)
-        #[cfg(debug_assertions)]
-        if needs_redraw {
-            if let Err(e) = app.dump_debug_output() {
-                eprintln!("Debug dump failed: {}", e);
+        // Poll session file for changes (throttled - max 2x/sec for large files)
+        let now_poll = Instant::now();
+        if now_poll.duration_since(last_session_poll) >= min_poll_interval {
+            if app.poll_session_file() {
+                needs_redraw = true;
             }
+            if app.poll_interactive_sessions() {
+                needs_redraw = true;
+            }
+            last_session_poll = now_poll;
         }
+
+        // Debug dump removed - too expensive for every redraw
 
         // Apply accumulated scroll using cached terminal size
         let mut scroll_changed = false;
@@ -168,36 +172,36 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width
     let in_terminal = app.terminal_mode && row >= content_height && row < term_height - 1;
 
     if in_sessions {
+        let old = app.selected_session;
         if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
         else { for _ in 0..delta.abs() { app.select_prev_session(); } }
-        true
+        app.selected_session != old
     } else if in_file_tree {
+        let old = app.file_tree_selected;
         if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
         else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
-        true
+        app.file_tree_selected != old
     } else if in_viewer {
-        if delta > 0 { app.scroll_viewer_down(delta as usize, vh); }
-        else { app.scroll_viewer_up((-delta) as usize); }
-        true
+        if delta > 0 { app.scroll_viewer_down(delta as usize, vh) }
+        else { app.scroll_viewer_up((-delta) as usize) }
     } else if in_terminal {
         if delta > 0 { app.scroll_terminal_down(delta as usize); }
         else { app.scroll_terminal_up((-delta) as usize); }
-        true
+        true // Terminal scroll doesn't have boundary check yet
     } else if in_output {
         if delta > 0 {
             match app.view_mode {
                 crate::app::ViewMode::Output => app.scroll_output_down(delta as usize, vh),
                 crate::app::ViewMode::Diff => app.scroll_diff_down(delta as usize, vh),
-                _ => {}
+                _ => false
             }
         } else {
             match app.view_mode {
                 crate::app::ViewMode::Output => app.scroll_output_up((-delta) as usize),
                 crate::app::ViewMode::Diff => app.scroll_diff_up((-delta) as usize),
-                _ => {}
+                _ => false
             }
         }
-        true
     } else {
         false
     }
