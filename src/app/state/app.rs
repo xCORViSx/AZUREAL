@@ -106,6 +106,8 @@ pub struct App {
     pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Width used for cached render (invalidate on resize)
     pub rendered_lines_width: u16,
+    /// Animation tick used for cached render (for pending tool indicators)
+    pub rendered_lines_tick: u64,
     /// Flag indicating cache needs refresh
     pub rendered_lines_dirty: bool,
     /// Total lines in last parsed session file
@@ -192,6 +194,7 @@ impl App {
             viewer_lines_dirty: true,
             rendered_lines_cache: Vec::new(),
             rendered_lines_width: 0,
+            rendered_lines_tick: 0,
             rendered_lines_dirty: true,
             parse_total_lines: 0,
             parse_errors: 0,

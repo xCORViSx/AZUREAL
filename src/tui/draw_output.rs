@@ -21,8 +21,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             if !app.display_events.is_empty() {
                 let inner_width = area.width.saturating_sub(2);
 
-                // Only re-render if cache is dirty or width changed
-                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
+                // Only re-render if cache is dirty, width changed, or animation tick changed (for pending indicators)
+                let animation_changed = !app.pending_tool_calls.is_empty() && app.rendered_lines_tick != app.animation_tick;
+                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width || animation_changed {
                     app.rendered_lines_cache = render_display_events(
                         &app.display_events,
                         inner_width,
@@ -32,6 +33,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         &app.syntax_highlighter,
                     );
                     app.rendered_lines_width = inner_width;
+                    app.rendered_lines_tick = app.animation_tick;
                     app.rendered_lines_dirty = false;
                 }
 
