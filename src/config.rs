@@ -114,11 +114,27 @@ pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
     if dir.exists() { Some(dir) } else { None }
 }
 
+/// Format a SystemTime as a relative or absolute time string (called once at load, not per-frame)
+fn format_time(mtime: std::time::SystemTime) -> String {
+    let Ok(dur) = std::time::SystemTime::now().duration_since(mtime) else {
+        return "future".to_string();
+    };
+    let secs = dur.as_secs();
+    if secs < 60 { return format!("{}s ago", secs); }
+    if secs < 3600 { return format!("{}m ago", secs / 60); }
+    if secs < 86400 { return format!("{}h ago", secs / 3600); }
+    if secs < 604800 { return format!("{}d ago", secs / 86400); }
+    // Older than a week: show date
+    let datetime = chrono::DateTime::<chrono::Local>::from(mtime);
+    datetime.format("%b %d").to_string()
+}
+
 /// List all Claude session files for a worktree, sorted by modification time (newest first)
-pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, std::time::SystemTime)> {
+/// Returns (session_id, path, pre-formatted_time_string) to avoid per-frame formatting
+pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
     let Some(project_dir) = claude_project_dir(worktree_path) else { return Vec::new() };
 
-    let mut sessions = Vec::new();
+    let mut sessions: Vec<(String, PathBuf, std::time::SystemTime)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&project_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -132,7 +148,8 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
     }
     // Sort by modification time, newest first
     sessions.sort_by(|a, b| b.2.cmp(&a.2));
-    sessions
+    // Pre-format time strings (expensive chrono call done once, not per-frame)
+    sessions.into_iter().map(|(id, path, mtime)| (id, path, format_time(mtime))).collect()
 }
 
 /// Find the most recent Claude session for a worktree

@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
-use std::time::SystemTime;
 
 use portable_pty::MasterPty;
 
@@ -116,8 +115,8 @@ pub struct App {
     pub assistant_text_blocks: usize,
     /// Expanded sessions in sidebar (shows dropdown of session files)
     pub sessions_expanded: HashSet<String>,
-    /// Cached session files per worktree branch (session_id, path, mtime)
-    pub session_files: HashMap<String, Vec<(String, PathBuf, SystemTime)>>,
+    /// Cached session files per worktree branch (session_id, path, formatted_time)
+    pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
     /// Selected file index per session (0 = latest/newest)
     pub session_selected_file_idx: HashMap<String, usize>,
 }

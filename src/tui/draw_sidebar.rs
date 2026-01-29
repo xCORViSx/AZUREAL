@@ -11,21 +11,6 @@ use ratatui::{
 use crate::app::{App, Focus};
 use super::util::truncate;
 
-/// Format a SystemTime as a relative or absolute time string
-fn format_time(mtime: std::time::SystemTime) -> String {
-    let Ok(dur) = std::time::SystemTime::now().duration_since(mtime) else {
-        return "future".to_string();
-    };
-    let secs = dur.as_secs();
-    if secs < 60 { return format!("{}s ago", secs); }
-    if secs < 3600 { return format!("{}m ago", secs / 60); }
-    if secs < 86400 { return format!("{}h ago", secs / 3600); }
-    if secs < 604800 { return format!("{}d ago", secs / 86400); }
-    // Older than a week: show date
-    let datetime = chrono::DateTime::<chrono::Local>::from(mtime);
-    datetime.format("%b %d").to_string()
-}
-
 /// Draw the sidebar showing project and sessions
 pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     let mut items: Vec<ListItem> = Vec::new();
@@ -66,7 +51,7 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                 let selected_idx = *app.session_selected_file_idx.get(&session.branch_name).unwrap_or(&0);
 
                 if let Some(files) = files {
-                    for (j, (session_id, _path, mtime)) in files.iter().enumerate() {
+                    for (j, (session_id, _path, time_str)) in files.iter().enumerate() {
                         let is_file_selected = j == selected_idx;
                         // Active Claude session file: cyan text (like project/worktree)
                         let file_style = if is_file_selected {
@@ -74,7 +59,6 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                         } else {
                             Style::default().fg(Color::DarkGray)
                         };
-                        let time_str = format_time(*mtime);
                         // Truncate session ID for display
                         let id_display = if session_id.len() > 16 {
                             format!("{}…", &session_id[..15])
@@ -85,7 +69,7 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                             Span::raw("     "),
                             Span::styled(id_display, file_style),
                             Span::raw(" "),
-                            Span::styled(time_str, Style::default().fg(Color::DarkGray)),
+                            Span::styled(time_str.clone(), Style::default().fg(Color::DarkGray)),
                         ])));
                     }
                 } else {
