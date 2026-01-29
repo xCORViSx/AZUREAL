@@ -169,6 +169,28 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Conditional polling:** Terminal rx only polled when `app.terminal_mode == true`
 - **Cached terminal size:** Only updated on resize events, not every frame
 
+### 6. Pre-Format Expensive Data at Load Time
+
+```rust
+// ❌ WRONG - chrono::DateTime::from() on EVERY FRAME
+fn draw_sidebar(...) {
+    for file in files {
+        let time_str = format_time(file.mtime);  // EXPENSIVE chrono call per-frame
+    }
+}
+
+// ✅ CORRECT - Format once when loading, store String
+pub fn list_claude_sessions(...) -> Vec<(String, PathBuf, String)> {
+    sessions.into_iter()
+        .map(|(id, path, mtime)| (id, path, format_time(mtime)))  // Format ONCE at load
+        .collect()
+}
+```
+
+**Rule:** Any data transformation (time formatting, string manipulation, parsing) must happen at load/update time, never in render functions.
+
+**Files:** `src/config.rs::list_claude_sessions()` pre-formats time strings; `src/tui/draw_sidebar.rs` just displays them
+
 ### Performance Checklist for PRs
 
 Before merging ANY change to render/event code:
