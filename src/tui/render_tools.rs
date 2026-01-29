@@ -73,13 +73,15 @@ pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String 
     }
 }
 
-/// Truncate a line to max length (NO ellipsis - just cut)
+/// Truncate a line to max length with ellipsis indicator
 pub fn truncate_line(s: &str, max_len: usize) -> String {
     let trimmed = s.trim();
     if trimmed.chars().count() <= max_len {
         trimmed.to_string()
+    } else if max_len > 1 {
+        format!("{}…", trimmed.chars().take(max_len - 1).collect::<String>())
     } else {
-        trimmed.chars().take(max_len).collect::<String>()
+        "…".to_string()
     }
 }
 

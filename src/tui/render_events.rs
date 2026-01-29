@@ -231,27 +231,42 @@ pub fn render_display_events(
                             3 => ("▒ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                             _ => ("░ ", Style::default().fg(Color::Green)),
                         };
-                        // Truncate header to fit within bubble (minus "│ " + prefix)
+                        // Wrap header to fit within bubble (minus "│ " + prefix)
                         let header_max = bubble_width.saturating_sub(4);
-                        lines.push(Line::from(vec![
-                            Span::styled("│ ", Style::default().fg(ORANGE)),
-                            Span::styled(prefix, style),
-                            Span::styled(truncate_line(header_text, header_max), style),
-                        ]));
+                        for (i, wrapped) in wrap_text(header_text, header_max).into_iter().enumerate() {
+                            if i == 0 {
+                                lines.push(Line::from(vec![
+                                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                                    Span::styled(prefix, style),
+                                    Span::styled(wrapped, style),
+                                ]));
+                            } else {
+                                lines.push(Line::from(vec![
+                                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                                    Span::styled("  ", Style::default()), // Indent continuation
+                                    Span::styled(wrapped, style),
+                                ]));
+                            }
+                        }
                         continue;
                     }
 
                     if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
                         let bullet_content = trimmed.trim_start_matches("- ").trim_start_matches("* ").trim_start_matches("• ");
-                        // Truncate bullet content (minus "│   • ")
+                        // Wrap bullet content (minus "│   • ")
                         let bullet_max = bubble_width.saturating_sub(6);
-                        let truncated = truncate_line(bullet_content, bullet_max);
-                        let mut spans = vec![
-                            Span::styled("│ ", Style::default().fg(ORANGE)),
-                            Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                        ];
-                        spans.extend(parse_markdown_spans(&truncated, Style::default().fg(Color::White)));
-                        lines.push(Line::from(spans));
+                        for (i, wrapped) in wrap_text(bullet_content, bullet_max).into_iter().enumerate() {
+                            let mut spans = vec![
+                                Span::styled("│ ", Style::default().fg(ORANGE)),
+                            ];
+                            if i == 0 {
+                                spans.push(Span::styled("  • ", Style::default().fg(Color::Cyan)));
+                            } else {
+                                spans.push(Span::styled("    ", Style::default())); // Indent continuation
+                            }
+                            spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+                            lines.push(Line::from(spans));
+                        }
                         continue;
                     }
 
@@ -259,29 +274,36 @@ pub fn render_display_events(
                         let num_end = trimmed.find(". ").unwrap_or(0);
                         let num = &trimmed[..num_end];
                         let content = &trimmed[num_end + 2..];
-                        // Truncate numbered content (minus "│   N. ")
-                        let num_max = bubble_width.saturating_sub(7);
-                        let truncated = truncate_line(content, num_max);
-                        let mut spans = vec![
-                            Span::styled("│ ", Style::default().fg(ORANGE)),
-                            Span::styled(format!("  {}. ", num), Style::default().fg(Color::Cyan)),
-                        ];
-                        spans.extend(parse_markdown_spans(&truncated, Style::default().fg(Color::White)));
-                        lines.push(Line::from(spans));
+                        // Wrap numbered content (minus "│   N. ")
+                        let num_prefix = format!("  {}. ", num);
+                        let num_max = bubble_width.saturating_sub(2 + num_prefix.len());
+                        for (i, wrapped) in wrap_text(content, num_max).into_iter().enumerate() {
+                            let mut spans = vec![
+                                Span::styled("│ ", Style::default().fg(ORANGE)),
+                            ];
+                            if i == 0 {
+                                spans.push(Span::styled(num_prefix.clone(), Style::default().fg(Color::Cyan)));
+                            } else {
+                                spans.push(Span::styled(" ".repeat(num_prefix.len()), Style::default())); // Indent continuation
+                            }
+                            spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+                            lines.push(Line::from(spans));
+                        }
                         continue;
                     }
 
                     if trimmed.starts_with("> ") {
                         let quote_content = trimmed.trim_start_matches("> ");
-                        // Truncate quote content (minus "│ ┃ ")
+                        // Wrap quote content (minus "│ ┃ ")
                         let quote_max = bubble_width.saturating_sub(4);
-                        let truncated = truncate_line(quote_content, quote_max);
-                        let mut spans = vec![
-                            Span::styled("│ ", Style::default().fg(ORANGE)),
-                            Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
-                        ];
-                        spans.extend(parse_markdown_spans(&truncated, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
-                        lines.push(Line::from(spans));
+                        for wrapped in wrap_text(quote_content, quote_max) {
+                            let mut spans = vec![
+                                Span::styled("│ ", Style::default().fg(ORANGE)),
+                                Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
+                            ];
+                            spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+                            lines.push(Line::from(spans));
+                        }
                         continue;
                     }
 
