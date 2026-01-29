@@ -61,7 +61,6 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     app.viewer_lines_cache = all_lines;
                     app.viewer_lines_width = viewport_width;
                     app.viewer_lines_dirty = false;
-                    app.viewer_viewport_scroll = usize::MAX; // Invalidate viewport when content changes
                 }
 
                 let total = app.viewer_lines_cache.len();
@@ -72,25 +71,21 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 app.viewer_scroll = scroll;
 
-                // Only rebuild viewport cache if scroll/height changed (avoids per-frame cloning)
-                if app.viewer_viewport_scroll != scroll || app.viewer_viewport_height != viewport_height {
-                    app.viewer_viewport_cache.clear();
-                    app.viewer_viewport_cache.extend(
-                        app.viewer_lines_cache.iter().skip(scroll).take(viewport_height).cloned()
-                    );
-                    app.viewer_viewport_scroll = scroll;
-                    app.viewer_viewport_height = viewport_height;
+                // Build viewport slice directly (single clone operation)
+                let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .cloned()
+                    .collect();
 
-                    // Cache title string too
-                    let original_line_count = app.viewer_content.as_ref().map(|c| c.lines().count()).unwrap_or(0);
-                    app.viewer_title_cache = if total > viewport_height {
-                        format!(" {} [{}/{}] ", path_str, scroll + 1, total)
-                    } else {
-                        format!(" {} ({} lines) ", path_str, original_line_count)
-                    };
-                }
+                let original_line_count = app.viewer_content.as_ref().map(|c| c.lines().count()).unwrap_or(0);
+                let title = if total > viewport_height {
+                    format!(" {} [{}/{}] ", path_str, scroll + 1, total)
+                } else {
+                    format!(" {} ({} lines) ", path_str, original_line_count)
+                };
 
-                (app.viewer_title_cache.clone(), app.viewer_viewport_cache.clone())
+                (title, display_lines)
             } else {
                 (format!(" {} ", path_str), vec![Line::from("No content")])
             }
@@ -122,7 +117,6 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     app.viewer_lines_cache = all_lines;
                     app.viewer_lines_width = viewport_width;
                     app.viewer_lines_dirty = false;
-                    app.viewer_viewport_scroll = usize::MAX; // Invalidate viewport when content changes
                 }
 
                 let total = app.viewer_lines_cache.len();
@@ -133,23 +127,20 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 app.viewer_scroll = scroll;
 
-                // Only rebuild viewport cache if scroll/height changed
-                if app.viewer_viewport_scroll != scroll || app.viewer_viewport_height != viewport_height {
-                    app.viewer_viewport_cache.clear();
-                    app.viewer_viewport_cache.extend(
-                        app.viewer_lines_cache.iter().skip(scroll).take(viewport_height).cloned()
-                    );
-                    app.viewer_viewport_scroll = scroll;
-                    app.viewer_viewport_height = viewport_height;
+                // Build viewport slice directly (single clone operation)
+                let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .cloned()
+                    .collect();
 
-                    app.viewer_title_cache = if total > viewport_height {
-                        format!(" Diff [{}/{}] ", scroll + 1, total)
-                    } else {
-                        " Diff ".to_string()
-                    };
-                }
+                let title = if total > viewport_height {
+                    format!(" Diff [{}/{}] ", scroll + 1, total)
+                } else {
+                    " Diff ".to_string()
+                };
 
-                (app.viewer_title_cache.clone(), app.viewer_viewport_cache.clone())
+                (title, display_lines)
             } else {
                 (" Diff ".to_string(), vec![Line::from("No diff selected")])
             }

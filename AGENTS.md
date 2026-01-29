@@ -193,30 +193,7 @@ pub fn list_claude_sessions(...) -> Vec<(String, PathBuf, String)> {
 
 **Files:** `src/config.rs::list_claude_sessions()` pre-formats time strings; `src/tui/draw_sidebar.rs` just displays them
 
-### 7. CACHE Viewport Slices (Avoid Per-Frame Cloning)
-
-```rust
-// ❌ WRONG - Clones entire Line objects EVERY FRAME during scroll
-let lines: Vec<Line> = cache.iter().skip(scroll).take(height).cloned().collect();
-
-// ✅ CORRECT - Cache viewport slice, only rebuild when scroll/height changes
-if app.viewport_scroll != scroll || app.viewport_height != height {
-    app.viewport_cache.clear();
-    app.viewport_cache.extend(cache.iter().skip(scroll).take(height).cloned());
-    app.viewport_scroll = scroll;
-    app.viewport_height = height;
-}
-let lines = app.viewport_cache.clone();  // Cheap: reuses cached slice
-```
-
-**Files:**
-- `src/tui/draw_output.rs` uses `app.output_viewport_cache` for Convo and Diff views
-- `src/tui/draw_viewer.rs` uses `app.viewer_viewport_cache` for file/diff viewer
-- Invalidate with `app.invalidate_output_viewport()` or `app.invalidate_viewer_viewport()` when content changes
-
-**Why:** Line cloning is expensive because each Line contains Vec<Span> with owned Strings. During scroll, if position doesn't change frame-to-frame (e.g., stationary), we avoid all clones.
-
-### 8. CACHE Sidebar Items (Avoid Per-Frame Rebuild)
+### 7. CACHE Sidebar Items (Avoid Per-Frame Rebuild)
 
 ```rust
 // ❌ WRONG - Rebuilds ALL sidebar ListItems on EVERY FRAME
@@ -245,11 +222,10 @@ let sidebar = List::new(app.sidebar_cache.clone());  // Cheap clone of cached it
 
 Before merging ANY change to render/event code:
 - [ ] No `::new()` calls for expensive structs in render path
-- [ ] No O(n) operations per frame (use caching)
+- [ ] No O(n) operations per frame (use caching for expensive computations)
 - [ ] Animations throttled (not every frame)
 - [ ] Scroll returns bool, caller checks before redraw
-- [ ] Viewport slices cached (no per-frame cloning)
-- [ ] Sidebar items cached (invalidated only on state change)
+- [ ] Sidebar and file tree items cached (invalidated only on state change)
 - [ ] Test: scroll aggressively, CPU must stay <5%
 
 ---

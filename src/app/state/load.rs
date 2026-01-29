@@ -101,7 +101,6 @@ impl App {
         self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
         self.invalidate_render_cache();
-        self.invalidate_output_viewport();
         self.event_parser = crate::events::EventParser::new();
         self.selected_event = None;
         self.pending_tool_calls.clear();
@@ -197,6 +196,7 @@ impl App {
         if !self.file_tree_entries.is_empty() {
             self.file_tree_selected = Some(0);
         }
+        self.invalidate_file_tree();
     }
 
     pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }

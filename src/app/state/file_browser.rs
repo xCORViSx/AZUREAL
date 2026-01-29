@@ -30,6 +30,7 @@ impl App {
             .iter()
             .position(|e| e.path == selected_path)
             .or(Some(0));
+        self.invalidate_file_tree();
     }
 
     /// Select next file tree entry
@@ -37,9 +38,11 @@ impl App {
         if let Some(idx) = self.file_tree_selected {
             if idx + 1 < self.file_tree_entries.len() {
                 self.file_tree_selected = Some(idx + 1);
+                self.invalidate_file_tree();
             }
         } else if !self.file_tree_entries.is_empty() {
             self.file_tree_selected = Some(0);
+            self.invalidate_file_tree();
         }
     }
 
@@ -48,6 +51,7 @@ impl App {
         if let Some(idx) = self.file_tree_selected {
             if idx > 0 {
                 self.file_tree_selected = Some(idx - 1);
+                self.invalidate_file_tree();
             }
         }
     }
@@ -65,7 +69,6 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
-                self.viewer_viewport_scroll = usize::MAX; // Force viewport rebuild
             }
             Err(e) => {
                 self.viewer_content = Some(format!("Error reading file: {}", e));
@@ -73,7 +76,6 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
-                self.viewer_viewport_scroll = usize::MAX;
             }
         }
     }
@@ -85,6 +87,5 @@ impl App {
         self.viewer_mode = ViewerMode::Empty;
         self.viewer_scroll = 0;
         self.viewer_lines_dirty = true;
-        self.viewer_viewport_scroll = usize::MAX;
     }
 }

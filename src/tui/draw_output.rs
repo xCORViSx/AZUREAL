@@ -35,7 +35,6 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     app.rendered_lines_width = inner_width;
                     app.rendered_lines_tick = app.animation_tick;
                     app.rendered_lines_dirty = false;
-                    app.output_viewport_scroll = usize::MAX; // Invalidate viewport when content changes
                 }
 
                 let total = app.rendered_lines_cache.len();
@@ -47,25 +46,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 app.output_scroll = scroll;
 
-                // Only rebuild viewport cache if scroll/height changed (avoids per-frame cloning)
-                if app.output_viewport_scroll != scroll || app.output_viewport_height != viewport_height {
-                    app.output_viewport_cache.clear();
-                    app.output_viewport_cache.extend(
-                        app.rendered_lines_cache.iter().skip(scroll).take(viewport_height).cloned()
-                    );
-                    app.output_viewport_scroll = scroll;
-                    app.output_viewport_height = viewport_height;
+                // Build viewport slice directly (single clone operation)
+                let lines: Vec<Line> = app.rendered_lines_cache.iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .cloned()
+                    .collect();
 
-                    // Cache title string too
-                    app.output_title_cache = if total > viewport_height {
-                        format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
-                    } else {
-                        " Convo ".to_string()
-                    };
-                }
+                let title = if total > viewport_height {
+                    format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                } else {
+                    " Convo ".to_string()
+                };
 
-                // Clone viewport cache for Paragraph (shallow clone since we own it)
-                (app.output_title_cache.clone(), app.output_viewport_cache.clone())
+                (title, lines)
             } else {
                 // Fallback: using output_lines with colorize_output
                 let mut all_lines: Vec<Line> = Vec::new();
@@ -125,34 +119,26 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 if app.diff_lines_dirty {
                     app.diff_lines_cache = app.diff_highlighter.colorize_diff(diff);
                     app.diff_lines_dirty = false;
-                    // Invalidate viewport when content changes
-                    app.output_viewport_scroll = usize::MAX;
                 }
 
                 let total = app.diff_lines_cache.len();
                 let scroll = app.diff_scroll.min(total.saturating_sub(viewport_height));
                 app.diff_scroll = scroll;
 
-                // Reuse viewport cache pattern for diff view
-                if app.output_viewport_scroll != scroll || app.output_viewport_height != viewport_height {
-                    app.output_viewport_cache.clear();
-                    app.output_viewport_cache.extend(
-                        app.diff_lines_cache.iter()
-                            .skip(scroll)
-                            .take(viewport_height)
-                            .map(|spans| Line::from(spans.clone()))
-                    );
-                    app.output_viewport_scroll = scroll;
-                    app.output_viewport_height = viewport_height;
+                // Build viewport slice directly (single clone operation)
+                let lines: Vec<Line> = app.diff_lines_cache.iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .map(|spans| Line::from(spans.clone()))
+                    .collect();
 
-                    app.output_title_cache = if total > viewport_height {
-                        format!(" Diff (Syntax Highlighted) [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
-                    } else {
-                        " Diff (Syntax Highlighted) ".to_string()
-                    };
-                }
+                let title = if total > viewport_height {
+                    format!(" Diff (Syntax Highlighted) [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                } else {
+                    " Diff (Syntax Highlighted) ".to_string()
+                };
 
-                (app.output_title_cache.clone(), app.output_viewport_cache.clone())
+                (title, lines)
             } else {
                 (" Diff ".to_string(), vec![Line::from("No diff available")])
             }
