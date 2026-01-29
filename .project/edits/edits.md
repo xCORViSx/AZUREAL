@@ -1,5 +1,25 @@
 # Edit History
 
+## 2026-01-29: Debug Dump Now Debug-Build Only
+
+### Problem
+Selecting a large session caused lag that persisted across all app interactions (file tree navigation, etc.).
+
+### Root Cause
+`dump_debug_output()` was called unconditionally on every session selection. This function:
+1. Re-renders the ENTIRE session through `render_display_events()` (O(n) events)
+2. Writes all rendered lines to disk (blocking I/O)
+
+For a 15k event session, this blocked the main thread for seconds.
+
+### Solution
+Wrapped both the call and function with `#[cfg(debug_assertions)]` so it only runs in debug builds.
+
+### Files Changed
+- `src/app/state/load.rs` - Added `#[cfg(debug_assertions)]` to call site and function definition
+
+---
+
 ## 2026-01-29: Animation Decoupled from Content Cache (CPU Fix)
 
 ### Problem

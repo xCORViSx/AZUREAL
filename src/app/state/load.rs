@@ -165,7 +165,8 @@ impl App {
         // Load file tree for new session
         self.load_file_tree();
 
-        // Always dump debug output to help diagnose rendering issues
+        // Debug output only in debug builds (expensive operation)
+        #[cfg(debug_assertions)]
         let _ = self.dump_debug_output();
     }
 
@@ -201,6 +202,8 @@ impl App {
 
     pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }
 
+    /// Dump debug output to .azural/debug-output.txt (debug builds only)
+    #[cfg(debug_assertions)]
     pub fn dump_debug_output(&self) -> anyhow::Result<()> {
         use std::io::Write;
         use crate::events::DisplayEvent;
