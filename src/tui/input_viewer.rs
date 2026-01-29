@@ -35,14 +35,11 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App, viewport_height: usize)
         }
 
         // Home/End
-        (KeyModifiers::NONE, KeyCode::Home) | (_, KeyCode::Char('g')) => {
+        (KeyModifiers::NONE, KeyCode::Home) | (KeyModifiers::NONE, KeyCode::Char('g')) => {
             app.viewer_scroll = 0;
         }
         (KeyModifiers::SHIFT, KeyCode::Char('G')) | (KeyModifiers::NONE, KeyCode::End) => {
-            if let Some(ref content) = app.viewer_content {
-                let total = content.lines().count();
-                app.viewer_scroll = total.saturating_sub(viewport_height);
-            }
+            app.scroll_viewer_to_bottom();
         }
 
         // Escape: clear viewer and return to file tree

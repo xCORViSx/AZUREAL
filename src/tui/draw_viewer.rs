@@ -66,7 +66,11 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 }
 
                 let total = all_display_lines.len();
-                let scroll = app.viewer_scroll.min(total.saturating_sub(viewport_height));
+                let scroll = if app.viewer_scroll == usize::MAX {
+                    total.saturating_sub(viewport_height)
+                } else {
+                    app.viewer_scroll.min(total.saturating_sub(viewport_height))
+                };
                 app.viewer_scroll = scroll;
 
                 let display_lines: Vec<Line> = all_display_lines
@@ -109,7 +113,11 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 }
 
                 let total = all_lines.len();
-                let scroll = app.viewer_scroll.min(total.saturating_sub(viewport_height));
+                let scroll = if app.viewer_scroll == usize::MAX {
+                    total.saturating_sub(viewport_height)
+                } else {
+                    app.viewer_scroll.min(total.saturating_sub(viewport_height))
+                };
                 app.viewer_scroll = scroll;
                 let display_lines: Vec<Line> = all_lines
                     .into_iter()

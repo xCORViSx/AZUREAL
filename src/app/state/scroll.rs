@@ -46,13 +46,10 @@ impl App {
     }
 
     /// Scroll viewer down, returns true if position changed
-    pub fn scroll_viewer_down(&mut self, lines: usize, viewport_height: usize) -> bool {
+    /// Note: Actual clamping happens in draw_viewer based on wrapped line count
+    pub fn scroll_viewer_down(&mut self, lines: usize, _viewport_height: usize) -> bool {
         let old = self.viewer_scroll;
-        if let Some(ref content) = self.viewer_content {
-            let total_lines = content.lines().count();
-            let max_scroll = total_lines.saturating_sub(viewport_height);
-            self.viewer_scroll = self.viewer_scroll.saturating_add(lines).min(max_scroll);
-        }
+        self.viewer_scroll = self.viewer_scroll.saturating_add(lines);
         self.viewer_scroll != old
     }
 
@@ -61,5 +58,10 @@ impl App {
         let old = self.viewer_scroll;
         self.viewer_scroll = self.viewer_scroll.saturating_sub(lines);
         self.viewer_scroll != old
+    }
+
+    /// Scroll viewer to bottom
+    pub fn scroll_viewer_to_bottom(&mut self) {
+        self.viewer_scroll = usize::MAX;
     }
 }
