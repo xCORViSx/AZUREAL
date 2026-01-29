@@ -222,6 +222,21 @@ impl SyntaxHighlighter {
         Self { syntax_set }
     }
 
+    /// Highlight lines with optional background color (for edit diffs)
+    /// Returns highlighted spans with the specified background applied
+    pub fn highlight_with_bg(&self, content: &str, filename: &str, bg: Option<Color>) -> Vec<Vec<Span<'static>>> {
+        let base = self.highlight_file(content, filename);
+        if let Some(bg_color) = bg {
+            base.into_iter().map(|line_spans| {
+                line_spans.into_iter().map(|span| {
+                    Span::styled(span.content, span.style.bg(bg_color))
+                }).collect()
+            }).collect()
+        } else {
+            base
+        }
+    }
+
     /// Highlight a file's content using bright hardcoded colors
     pub fn highlight_file(&self, content: &str, filename: &str) -> Vec<Vec<Span<'static>>> {
         use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};

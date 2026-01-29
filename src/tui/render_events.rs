@@ -23,6 +23,61 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
 }
 
+/// Wrap spans to fit within max_width, preserving styles
+fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
+    if max_width == 0 { return vec![spans]; }
+
+    let mut full_text = String::new();
+    let mut style_ranges: Vec<(usize, usize, Style)> = Vec::new();
+
+    for span in &spans {
+        let start = full_text.len();
+        full_text.push_str(&span.content);
+        let end = full_text.len();
+        style_ranges.push((start, end, span.style));
+    }
+
+    if full_text.is_empty() { return vec![vec![]]; }
+
+    let opts = Options::new(max_width).break_words(true);
+    let wrapped_lines: Vec<String> = wrap(&full_text, opts)
+        .into_iter()
+        .map(|cow| cow.into_owned())
+        .collect();
+
+    let mut result: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut char_offset = 0;
+
+    for wrapped in wrapped_lines {
+        let line_start = char_offset;
+        let line_end = char_offset + wrapped.len();
+        let mut line_spans: Vec<Span<'static>> = Vec::new();
+
+        for &(range_start, range_end, style) in &style_ranges {
+            if range_end <= line_start || range_start >= line_end { continue; }
+
+            let overlap_start = range_start.max(line_start);
+            let overlap_end = range_end.min(line_end);
+
+            if overlap_start < overlap_end {
+                let local_start = overlap_start - line_start;
+                let local_end = overlap_end - line_start;
+                let text: String = wrapped.chars().skip(local_start).take(local_end - local_start).collect();
+                if !text.is_empty() {
+                    line_spans.push(Span::styled(text, style));
+                }
+            }
+        }
+
+        result.push(line_spans);
+        char_offset = line_end;
+        if char_offset < full_text.len() { char_offset += 1; }
+    }
+
+    if result.is_empty() { result.push(vec![]); }
+    result
+}
+
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
 /// User messages are right-aligned (cyan), Claude messages are left-aligned (orange)
 pub fn render_display_events(
@@ -494,18 +549,28 @@ pub fn render_display_events(
     lines
 }
 
-/// Render Edit tool diff inline with the tool call
-fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, _highlighter: &SyntaxHighlighter) {
+/// Render Edit tool diff inline with the tool call with syntax highlighting
+fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &SyntaxHighlighter) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
 
     if old_str.is_empty() && new_str.is_empty() { return; }
 
-    // Dimmer red/green backgrounds
+    // Background colors for diff display
     let dim_red_bg = Color::Rgb(60, 25, 25);
     let dim_green_bg = Color::Rgb(25, 50, 25);
-    // Dim white for removed text
-    let dim_white = Color::Rgb(170, 170, 170);
+
+    // Get filename for syntax detection
+    let filename = file_path.as_ref()
+        .and_then(|p| std::path::Path::new(p).file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file.txt".to_string());
+
+    // Pre-highlight old and new content with appropriate backgrounds
+    let old_highlighted = highlighter.highlight_with_bg(old_str, &filename, Some(dim_red_bg));
+    let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
+    // Unchanged lines use dim gray foreground, no special background
+    let unchanged_highlighted = highlighter.highlight_file(old_str, &filename);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
@@ -519,7 +584,6 @@ fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, f
     let max_line = start_line + old_lines.len().max(new_lines.len());
     let num_width = max_line.to_string().len().max(2);
     let max_len = old_lines.len().max(new_lines.len());
-    // Content width after " ┃   XX +/- " prefix
     let content_max = max_width.saturating_sub(4 + num_width + 3 + 1);
 
     for i in 0..max_len {
@@ -528,56 +592,69 @@ fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, f
 
         match (old_line, new_line) {
             (Some(old), Some(new)) if old == new => {
-                // Unchanged line - dim gray, wrap if needed
-                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+                // Unchanged - dim gray foreground, wrap with styles
+                let spans = unchanged_highlighted.get(i).cloned().unwrap_or_default();
+                let dimmed: Vec<Span<'static>> = spans.into_iter().map(|s| {
+                    Span::styled(s.content, Style::default().fg(Color::DarkGray))
+                }).collect();
+                for (j, wrapped_spans) in wrap_spans(dimmed, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$}   ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
-                    lines.push(Line::from(vec![
+                    let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::DarkGray)),
-                    ]));
+                    ];
+                    all_spans.extend(wrapped_spans);
+                    lines.push(Line::from(all_spans));
                 }
             }
-            (Some(old), Some(new_text)) => {
-                // Changed line - old (red bg, dim white) and new (green bg)
-                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+            (Some(_old), Some(_new_text)) => {
+                // Changed - show old (red bg) then new (green bg), both syntax highlighted
+                let old_spans = old_highlighted.get(i).cloned().unwrap_or_default();
+                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
-                    lines.push(Line::from(vec![
+                    let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Red)),
-                        Span::styled(format!("{} ", wrapped), Style::default().fg(dim_white).bg(dim_red_bg)),
-                    ]));
+                    ];
+                    all_spans.extend(wrapped_spans);
+                    lines.push(Line::from(all_spans));
                 }
 
-                for (j, wrapped) in wrap_text(new_text, content_max).into_iter().enumerate() {
+                let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
+                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
-                    lines.push(Line::from(vec![
+                    let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Green)),
-                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::White).bg(dim_green_bg)),
-                    ]));
+                    ];
+                    all_spans.extend(wrapped_spans);
+                    lines.push(Line::from(all_spans));
                 }
             }
-            (Some(old), None) => {
-                // Deleted line - red bg with dim white text, wrap if needed
-                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+            (Some(_old), None) => {
+                // Deleted - red bg with syntax highlighting
+                let old_spans = old_highlighted.get(i).cloned().unwrap_or_default();
+                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
-                    lines.push(Line::from(vec![
+                    let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Red)),
-                        Span::styled(format!("{} ", wrapped), Style::default().fg(dim_white).bg(dim_red_bg)),
-                    ]));
+                    ];
+                    all_spans.extend(wrapped_spans);
+                    lines.push(Line::from(all_spans));
                 }
             }
-            (None, Some(new_text)) => {
-                // Added line - green bg, wrap if needed
-                for (j, wrapped) in wrap_text(new_text, content_max).into_iter().enumerate() {
+            (None, Some(_new_text)) => {
+                // Added - green bg with syntax highlighting
+                let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
+                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
-                    lines.push(Line::from(vec![
+                    let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Green)),
-                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::White).bg(dim_green_bg)),
-                    ]));
+                    ];
+                    all_spans.extend(wrapped_spans);
+                    lines.push(Line::from(all_spans));
                 }
             }
             (None, None) => {}
