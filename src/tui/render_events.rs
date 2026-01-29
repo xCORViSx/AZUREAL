@@ -72,13 +72,22 @@ pub fn render_display_events(
                     let prefix_len = 2 + name.len() + 2; // "› " + name + ": "
                     let output_max = hook_max.saturating_sub(prefix_len);
                     let first_line = output.lines().next().unwrap_or("");
-                    let truncated = truncate_line(first_line, output_max);
-                    lines.push(Line::from(vec![
-                        Span::styled("› ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(name.clone(), Style::default().fg(Color::DarkGray)),
-                        Span::styled(": ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(truncated, Style::default().fg(Color::DarkGray)),
-                    ]));
+                    for (i, wrapped) in wrap_text(first_line, output_max).into_iter().enumerate() {
+                        if i == 0 {
+                            lines.push(Line::from(vec![
+                                Span::styled("› ", Style::default().fg(Color::DarkGray)),
+                                Span::styled(name.clone(), Style::default().fg(Color::DarkGray)),
+                                Span::styled(": ", Style::default().fg(Color::DarkGray)),
+                                Span::styled(wrapped, Style::default().fg(Color::DarkGray)),
+                            ]));
+                        } else {
+                            let indent = " ".repeat(prefix_len);
+                            lines.push(Line::from(vec![
+                                Span::styled(indent, Style::default()),
+                                Span::styled(wrapped, Style::default().fg(Color::DarkGray)),
+                            ]));
+                        }
+                    }
                 } else {
                     lines.push(Line::from(vec![
                         Span::styled("› ", Style::default().fg(Color::DarkGray)),
@@ -175,14 +184,15 @@ pub fn render_display_events(
                     }
 
                     if in_code_block {
-                        // Truncate code lines to fit within bubble (minus "│ │ " prefix)
+                        // Wrap code lines to fit within bubble (minus "│ │ " prefix)
                         let code_max = bubble_width.saturating_sub(4);
-                        let code_line = truncate_line(line, code_max);
-                        lines.push(Line::from(vec![
-                            Span::styled("│ ", Style::default().fg(ORANGE)),
-                            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(code_line, Style::default().fg(Color::Yellow)),
-                        ]));
+                        for wrapped in wrap_text(line, code_max) {
+                            lines.push(Line::from(vec![
+                                Span::styled("│ ", Style::default().fg(ORANGE)),
+                                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                                Span::styled(wrapped, Style::default().fg(Color::Yellow)),
+                            ]));
+                        }
                         continue;
                     }
 
@@ -345,19 +355,28 @@ pub fn render_display_events(
                     ("● ", Color::Green)
                 };
 
-                // Constrain tool command line to bubble + 10
+                // Constrain tool command line to bubble + 10, wrap if needed
                 let tool_line_max = bubble_width + 10;
                 let prefix_len = 3 + 2 + tool_name.len() + 2; // " ┣━" + indicator + name + "  "
                 let param_max = tool_line_max.saturating_sub(prefix_len);
-                let param_display = truncate_line(&param_raw, param_max);
 
-                lines.push(Line::from(vec![
-                    Span::styled(" ┣━", Style::default().fg(tool_color)),
-                    Span::styled(indicator, Style::default().fg(indicator_color)),
-                    Span::styled(tool_name.clone(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
-                    Span::styled("  ", Style::default()),
-                    Span::styled(param_display, Style::default().fg(ORANGE)),
-                ]));
+                for (i, wrapped) in wrap_text(&param_raw, param_max).into_iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(" ┣━", Style::default().fg(tool_color)),
+                            Span::styled(indicator, Style::default().fg(indicator_color)),
+                            Span::styled(tool_name.clone(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
+                            Span::styled("  ", Style::default()),
+                            Span::styled(wrapped, Style::default().fg(ORANGE)),
+                        ]));
+                    } else {
+                        let indent = " ".repeat(prefix_len);
+                        lines.push(Line::from(vec![
+                            Span::styled(indent, Style::default()),
+                            Span::styled(wrapped, Style::default().fg(ORANGE)),
+                        ]));
+                    }
+                }
 
                 let tool_max = bubble_width + 10;
                 if tool_name == "Edit" {
@@ -403,25 +422,21 @@ pub fn render_display_events(
     lines
 }
 
-/// Render Edit tool diff inline with the tool call (with syntax highlighting)
-fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &SyntaxHighlighter) {
+/// Render Edit tool diff inline with the tool call
+fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, _highlighter: &SyntaxHighlighter) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
 
     if old_str.is_empty() && new_str.is_empty() { return; }
 
-    // Dimmer red/green backgrounds that don't clash with syntax colors
+    // Dimmer red/green backgrounds
     let dim_red_bg = Color::Rgb(60, 25, 25);
     let dim_green_bg = Color::Rgb(25, 50, 25);
-    // Dim white for removed text (brighter than DarkGray but not full white)
+    // Dim white for removed text
     let dim_white = Color::Rgb(170, 170, 170);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
-
-    // Use passed-in highlighter (reused across renders)
-    let filename = file_path.as_deref().unwrap_or("file.txt");
-    let new_highlighted = highlighter.highlight_file(new_str, filename);
 
     let start_line = file_path.as_ref().and_then(|path| {
         std::fs::read_to_string(path).ok().and_then(|content| {
@@ -441,69 +456,57 @@ fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, f
 
         match (old_line, new_line) {
             (Some(old), Some(new)) if old == new => {
-                // Unchanged line - dim gray, no highlighting needed
-                let truncated = truncate_line(old, content_max);
-                lines.push(Line::from(vec![
-                    Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$}   ", start_line + i, width = num_width), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", truncated), Style::default().fg(Color::DarkGray)),
-                ]));
-            }
-            (Some(old), Some(_new)) => {
-                // Changed line - old (red bg, dim white) and new (green bg, syntax highlighted)
-                let old_truncated = truncate_line(old, content_max);
-                lines.push(Line::from(vec![
-                    Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} - ", start_line + i, width = num_width), Style::default().fg(Color::Red)),
-                    Span::styled(format!("{} ", old_truncated), Style::default().fg(dim_white).bg(dim_red_bg)),
-                ]));
-
-                let mut new_spans = vec![
-                    Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} + ", start_line + i, width = num_width), Style::default().fg(Color::Green)),
-                ];
-                // For syntax-highlighted lines, truncate by character count
-                let mut char_count = 0;
-                if let Some(highlighted) = new_highlighted.get(i) {
-                    for span in highlighted {
-                        let remaining = content_max.saturating_sub(char_count);
-                        if remaining == 0 { break; }
-                        let text: String = span.content.chars().take(remaining).collect();
-                        char_count += text.chars().count();
-                        new_spans.push(Span::styled(text, span.style.bg(dim_green_bg)));
-                    }
+                // Unchanged line - dim gray, wrap if needed
+                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+                    let line_num = if j == 0 { format!(" {:>width$}   ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    lines.push(Line::from(vec![
+                        Span::styled(" ┃  ", Style::default().fg(tool_color)),
+                        Span::styled(line_num, Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::DarkGray)),
+                    ]));
                 }
-                new_spans.push(Span::styled(" ", Style::default().bg(dim_green_bg)));
-                lines.push(Line::from(new_spans));
+            }
+            (Some(old), Some(new_text)) => {
+                // Changed line - old (red bg, dim white) and new (green bg)
+                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+                    let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    lines.push(Line::from(vec![
+                        Span::styled(" ┃  ", Style::default().fg(tool_color)),
+                        Span::styled(line_num, Style::default().fg(Color::Red)),
+                        Span::styled(format!("{} ", wrapped), Style::default().fg(dim_white).bg(dim_red_bg)),
+                    ]));
+                }
+
+                for (j, wrapped) in wrap_text(new_text, content_max).into_iter().enumerate() {
+                    let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    lines.push(Line::from(vec![
+                        Span::styled(" ┃  ", Style::default().fg(tool_color)),
+                        Span::styled(line_num, Style::default().fg(Color::Green)),
+                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::White).bg(dim_green_bg)),
+                    ]));
+                }
             }
             (Some(old), None) => {
-                // Deleted line - red bg with dim white text (no syntax highlighting)
-                let truncated = truncate_line(old, content_max);
-                lines.push(Line::from(vec![
-                    Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} - ", start_line + i, width = num_width), Style::default().fg(Color::Red)),
-                    Span::styled(format!("{} ", truncated), Style::default().fg(dim_white).bg(dim_red_bg)),
-                ]));
-            }
-            (None, Some(_new)) => {
-                // Added line - green bg with syntax highlighting
-                let mut spans = vec![
-                    Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} + ", start_line + i, width = num_width), Style::default().fg(Color::Green)),
-                ];
-                // For syntax-highlighted lines, truncate by character count
-                let mut char_count = 0;
-                if let Some(highlighted) = new_highlighted.get(i) {
-                    for span in highlighted {
-                        let remaining = content_max.saturating_sub(char_count);
-                        if remaining == 0 { break; }
-                        let text: String = span.content.chars().take(remaining).collect();
-                        char_count += text.chars().count();
-                        spans.push(Span::styled(text, span.style.bg(dim_green_bg)));
-                    }
+                // Deleted line - red bg with dim white text, wrap if needed
+                for (j, wrapped) in wrap_text(old, content_max).into_iter().enumerate() {
+                    let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    lines.push(Line::from(vec![
+                        Span::styled(" ┃  ", Style::default().fg(tool_color)),
+                        Span::styled(line_num, Style::default().fg(Color::Red)),
+                        Span::styled(format!("{} ", wrapped), Style::default().fg(dim_white).bg(dim_red_bg)),
+                    ]));
                 }
-                spans.push(Span::styled(" ", Style::default().bg(dim_green_bg)));
-                lines.push(Line::from(spans));
+            }
+            (None, Some(new_text)) => {
+                // Added line - green bg, wrap if needed
+                for (j, wrapped) in wrap_text(new_text, content_max).into_iter().enumerate() {
+                    let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    lines.push(Line::from(vec![
+                        Span::styled(" ┃  ", Style::default().fg(tool_color)),
+                        Span::styled(line_num, Style::default().fg(Color::Green)),
+                        Span::styled(format!("{} ", wrapped), Style::default().fg(Color::White).bg(dim_green_bg)),
+                    ]));
+                }
             }
             (None, None) => {}
         }
