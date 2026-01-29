@@ -19,8 +19,8 @@ impl DiffHighlighter {
         Self { syntax_set, theme }
     }
 
-    /// Parse a diff and return syntax-highlighted spans
-    pub fn colorize_diff<'a>(&self, diff_text: &'a str) -> Vec<Vec<Span<'a>>> {
+    /// Parse a diff and return syntax-highlighted spans (owned for caching)
+    pub fn colorize_diff(&self, diff_text: &str) -> Vec<Vec<Span<'static>>> {
         let mut result = Vec::new();
         let mut current_file: Option<String> = None;
         let mut current_syntax: Option<&SyntaxReference> = None;
@@ -29,7 +29,7 @@ impl DiffHighlighter {
             // Detect file headers
             if line.starts_with("diff --git") {
                 result.push(vec![Span::styled(
-                    line,
+                    line.to_string(),
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 )]);
                 continue;
@@ -42,7 +42,7 @@ impl DiffHighlighter {
                     current_syntax = self.syntax_set.find_syntax_for_file(filename).ok().flatten();
                 }
                 result.push(vec![Span::styled(
-                    line,
+                    line.to_string(),
                     Style::default().fg(Color::Yellow),
                 )]);
                 continue;
@@ -51,7 +51,7 @@ impl DiffHighlighter {
             // Detect --- filename (old file)
             if line.starts_with("---") {
                 result.push(vec![Span::styled(
-                    line,
+                    line.to_string(),
                     Style::default().fg(Color::Yellow),
                 )]);
                 continue;
@@ -60,7 +60,7 @@ impl DiffHighlighter {
             // Hunk headers
             if line.starts_with("@@") {
                 result.push(vec![Span::styled(
-                    line,
+                    line.to_string(),
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 )]);
                 continue;
@@ -69,7 +69,7 @@ impl DiffHighlighter {
             // Index lines
             if line.starts_with("index ") {
                 result.push(vec![Span::styled(
-                    line,
+                    line.to_string(),
                     Style::default().fg(Color::DarkGray),
                 )]);
                 continue;
@@ -78,12 +78,12 @@ impl DiffHighlighter {
             // Added lines
             if line.starts_with('+') && !line.starts_with("+++") {
                 let content = &line[1..];
-                let mut spans = vec![Span::styled("+", Style::default().fg(Color::Green))];
+                let mut spans = vec![Span::styled("+".to_string(), Style::default().fg(Color::Green))];
 
                 if let Some(syntax) = current_syntax {
                     spans.extend(self.highlight_line(content, syntax, Color::Green));
                 } else {
-                    spans.push(Span::styled(content, Style::default().fg(Color::Green)));
+                    spans.push(Span::styled(content.to_string(), Style::default().fg(Color::Green)));
                 }
 
                 result.push(spans);
@@ -93,12 +93,12 @@ impl DiffHighlighter {
             // Removed lines
             if line.starts_with('-') && !line.starts_with("---") {
                 let content = &line[1..];
-                let mut spans = vec![Span::styled("-", Style::default().fg(Color::Red))];
+                let mut spans = vec![Span::styled("-".to_string(), Style::default().fg(Color::Red))];
 
                 if let Some(syntax) = current_syntax {
                     spans.extend(self.highlight_line(content, syntax, Color::Red));
                 } else {
-                    spans.push(Span::styled(content, Style::default().fg(Color::Red)));
+                    spans.push(Span::styled(content.to_string(), Style::default().fg(Color::Red)));
                 }
 
                 result.push(spans);
@@ -112,7 +112,7 @@ impl DiffHighlighter {
                 if let Some(syntax) = current_syntax {
                     spans.extend(self.highlight_line(content, syntax, Color::Reset));
                 } else {
-                    spans.push(Span::raw(content));
+                    spans.push(Span::raw(content.to_string()));
                 }
 
                 result.push(spans);
@@ -121,7 +121,7 @@ impl DiffHighlighter {
 
             // Other lines (no prefix)
             result.push(vec![Span::styled(
-                line,
+                line.to_string(),
                 Style::default().fg(Color::DarkGray),
             )]);
         }
@@ -129,13 +129,13 @@ impl DiffHighlighter {
         result
     }
 
-    /// Highlight a single line of code with syntax highlighting
-    fn highlight_line<'a>(
+    /// Highlight a single line of code with syntax highlighting (owned for caching)
+    fn highlight_line(
         &self,
-        line: &'a str,
+        line: &str,
         syntax: &SyntaxReference,
         base_color: Color,
-    ) -> Vec<Span<'a>> {
+    ) -> Vec<Span<'static>> {
         let mut highlighter = HighlightLines::new(syntax, &self.theme);
         let mut spans = Vec::new();
 

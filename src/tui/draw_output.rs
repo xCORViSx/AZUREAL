@@ -108,15 +108,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
-                let highlighted = app.diff_highlighter.colorize_diff(diff);
-                let total = highlighted.len();
+                // Cache diff highlighting (expensive - don't do per-frame)
+                if app.diff_lines_dirty {
+                    app.diff_lines_cache = app.diff_highlighter.colorize_diff(diff);
+                    app.diff_lines_dirty = false;
+                }
+
+                let total = app.diff_lines_cache.len();
                 let scroll = app.diff_scroll.min(total.saturating_sub(viewport_height));
                 app.diff_scroll = scroll;
 
-                let lines: Vec<Line> = highlighted.into_iter()
+                let lines: Vec<Line> = app.diff_lines_cache.iter()
                     .skip(scroll)
                     .take(viewport_height)
-                    .map(Line::from)
+                    .map(|spans| Line::from(spans.clone()))
                     .collect();
 
                 let scroll_indicator = if total > viewport_height {

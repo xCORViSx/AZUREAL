@@ -139,6 +139,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                         match Git::get_conflict_diff(wt_path, &file) {
                             Ok(diff) => {
                                 app.diff_text = Some(diff);
+                                app.diff_lines_dirty = true;
                                 app.view_mode = ViewMode::Diff;
                             }
                             Err(e) => {

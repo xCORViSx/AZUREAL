@@ -62,6 +62,7 @@ impl App {
                 if let Some(project) = self.current_project() {
                     let diff = Git::get_diff(wt_path, &project.main_branch)?;
                     self.diff_text = Some(diff.diff_text);
+                    self.diff_lines_dirty = true;
                     self.view_mode = ViewMode::Diff;
                     self.focus = Focus::Output;
                     return Ok(());

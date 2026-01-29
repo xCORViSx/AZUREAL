@@ -44,6 +44,10 @@ pub struct App {
     /// Interactive PTY sessions (kept alive between prompts)
     pub interactive_sessions: HashMap<String, InteractiveSession>,
     pub diff_text: Option<String>,
+    /// Cached colorized diff lines (expensive highlighting done once, not per-frame)
+    pub diff_lines_cache: Vec<Vec<ratatui::text::Span<'static>>>,
+    /// Flag indicating diff cache needs refresh
+    pub diff_lines_dirty: bool,
     pub output_scroll: usize,
     pub diff_scroll: usize,
     pub diff_highlighter: DiffHighlighter,
@@ -147,6 +151,8 @@ impl App {
             claude_session_ids: HashMap::new(),
             interactive_sessions: HashMap::new(),
             diff_text: None,
+            diff_lines_cache: Vec::new(),
+            diff_lines_dirty: true,
             output_scroll: usize::MAX, // Start at bottom (most recent messages)
             diff_scroll: 0,
             diff_highlighter: DiffHighlighter::new(),
