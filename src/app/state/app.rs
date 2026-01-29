@@ -98,6 +98,15 @@ pub struct App {
     pub rendered_lines_width: u16,
     /// Flag indicating cache needs refresh
     pub rendered_lines_dirty: bool,
+    /// Total lines in last parsed session file
+    pub parse_total_lines: usize,
+    /// Parse errors in last parsed session file
+    pub parse_errors: usize,
+    /// Assistant parsing diagnostics
+    pub assistant_total: usize,
+    pub assistant_no_message: usize,
+    pub assistant_no_content_arr: usize,
+    pub assistant_text_blocks: usize,
 }
 
 impl App {
@@ -163,6 +172,12 @@ impl App {
             rendered_lines_cache: Vec::new(),
             rendered_lines_width: 0,
             rendered_lines_dirty: true,
+            parse_total_lines: 0,
+            parse_errors: 0,
+            assistant_total: 0,
+            assistant_no_message: 0,
+            assistant_no_content_arr: 0,
+            assistant_text_blocks: 0,
         }
     }
 

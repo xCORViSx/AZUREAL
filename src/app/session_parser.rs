@@ -16,16 +16,34 @@ pub struct ParsedSession {
     pub events: Vec<DisplayEvent>,
     pub pending_tools: HashSet<String>,
     pub failed_tools: HashSet<String>,
+    /// Number of lines in the JSONL file
+    pub total_lines: usize,
+    /// Number of lines that failed to parse
+    pub parse_errors: usize,
+    /// Diagnostics about assistant event parsing
+    pub assistant_total: usize,
+    pub assistant_no_message: usize,
+    pub assistant_no_content_arr: usize,
+    pub assistant_text_blocks: usize,
 }
 
 /// Parse a Claude session JSONL file into display events
 pub fn parse_session_file(session_file: &Path) -> ParsedSession {
+    // Reset diagnostics
+    PARSE_DIAGNOSTICS.with(|d| *d.borrow_mut() = ParseDiagnostics::default());
+
     let file = match File::open(session_file) {
         Ok(f) => f,
         Err(_) => return ParsedSession {
             events: Vec::new(),
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
+            total_lines: 0,
+            parse_errors: 0,
+            assistant_total: 0,
+            assistant_no_message: 0,
+            assistant_no_content_arr: 0,
+            assistant_text_blocks: 0,
         },
     };
 
@@ -37,9 +55,15 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
     let mut failed_tools: HashSet<String> = HashSet::new();
     let mut last_user_msg: Option<(usize, DateTime<Utc>)> = None;
     let mut ups_hooks: Vec<(usize, DateTime<Utc>, DisplayEvent)> = Vec::new();
+    let mut total_lines = 0;
+    let mut parse_errors = 0;
 
     for line in reader.lines().map_while(Result::ok) {
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        total_lines += 1;
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else {
+            parse_errors += 1;
+            continue;
+        };
 
         let timestamp = json.get("timestamp")
             .and_then(|t| t.as_str())
@@ -76,7 +100,23 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
         .map(|(_, e)| e)
         .collect();
 
-    ParsedSession { events, pending_tools, failed_tools }
+    // Get diagnostics
+    let (ast_total, ast_no_msg, ast_no_arr, ast_text) = PARSE_DIAGNOSTICS.with(|d| {
+        let d = d.borrow();
+        (d.assistant_events_total, d.assistant_events_no_message, d.assistant_events_no_content_arr, d.assistant_text_blocks)
+    });
+
+    ParsedSession {
+        events,
+        pending_tools,
+        failed_tools,
+        total_lines,
+        parse_errors,
+        assistant_total: ast_total,
+        assistant_no_message: ast_no_msg,
+        assistant_no_content_arr: ast_no_arr,
+        assistant_text_blocks: ast_text,
+    }
 }
 
 /// Extract hook events from system-reminder tags in content
@@ -309,6 +349,19 @@ fn parse_tool_result_block(
     }
 }
 
+/// Track assistant parsing issues for diagnostics
+#[derive(Default)]
+pub struct ParseDiagnostics {
+    pub assistant_events_total: usize,
+    pub assistant_events_no_message: usize,
+    pub assistant_events_no_content_arr: usize,
+    pub assistant_text_blocks: usize,
+}
+
+thread_local! {
+    pub static PARSE_DIAGNOSTICS: std::cell::RefCell<ParseDiagnostics> = std::cell::RefCell::new(ParseDiagnostics::default());
+}
+
 fn parse_assistant_event(
     json: &serde_json::Value,
     timestamp: DateTime<Utc>,
@@ -316,8 +369,16 @@ fn parse_assistant_event(
     tool_calls: &mut HashMap<String, (String, Option<String>)>,
     pending_tools: &mut HashSet<String>,
 ) {
-    let Some(message) = json.get("message") else { return };
-    let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) else { return };
+    PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
+
+    let Some(message) = json.get("message") else {
+        PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_no_message += 1);
+        return;
+    };
+    let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) else {
+        PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_no_content_arr += 1);
+        return;
+    };
 
     for block in content_arr {
         let Some(block_type) = block.get("type").and_then(|t| t.as_str()) else { continue };
@@ -332,6 +393,7 @@ fn parse_assistant_event(
             }
             "text" => {
                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_text_blocks += 1);
                     events.push((timestamp, DisplayEvent::AssistantText {
                         uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
                         message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),

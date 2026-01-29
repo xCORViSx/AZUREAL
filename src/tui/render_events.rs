@@ -118,7 +118,7 @@ pub fn render_display_events(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let header = " You ▶ ".to_string();
+                let header = " ◀ You ".to_string();
                 let header_pad = " ".repeat(bubble_width.saturating_sub(header.len()));
                 lines.push(Line::from(vec![
                     Span::styled(header_pad, Style::default().bg(Color::Cyan)),
@@ -143,7 +143,7 @@ pub fn render_display_events(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let header = " ◀ Claude ".to_string();
+                let header = " Claude ▶ ".to_string();
                 let header_pad = " ".repeat(bubble_width.saturating_sub(header.len()));
                 lines.push(Line::from(vec![
                     Span::styled(header, Style::default().fg(Color::Black).bg(ORANGE).add_modifier(Modifier::BOLD)),

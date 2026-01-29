@@ -136,6 +136,12 @@ impl App {
                     self.display_events = parsed.events;
                     self.pending_tool_calls = parsed.pending_tools;
                     self.failed_tool_calls = parsed.failed_tools;
+                    self.parse_total_lines = parsed.total_lines;
+                    self.parse_errors = parsed.parse_errors;
+                    self.assistant_total = parsed.assistant_total;
+                    self.assistant_no_message = parsed.assistant_no_message;
+                    self.assistant_no_content_arr = parsed.assistant_no_content_arr;
+                    self.assistant_text_blocks = parsed.assistant_text_blocks;
                     self.invalidate_render_cache();
                 }
             }
@@ -144,8 +150,7 @@ impl App {
         // Load file tree for new session
         self.load_file_tree();
 
-        // Auto-dump debug output on debug builds
-        #[cfg(debug_assertions)]
+        // Always dump debug output to help diagnose rendering issues
         let _ = self.dump_debug_output();
     }
 
@@ -182,6 +187,7 @@ impl App {
 
     pub fn dump_debug_output(&self) -> anyhow::Result<()> {
         use std::io::Write;
+        use crate::events::DisplayEvent;
 
         let debug_dir = self.current_session()
             .and_then(|s| s.worktree_path.as_ref())
@@ -191,6 +197,88 @@ impl App {
         let debug_path = debug_dir.join("debug-output.txt");
         let mut file = std::fs::File::create(&debug_path)?;
 
+        // Diagnostic header
+        writeln!(file, "=== AZURAL DEBUG DUMP ===")?;
+        writeln!(file, "Dump time: {:?}", std::time::SystemTime::now())?;
+        writeln!(file, "Session file: {:?}", self.session_file_path)?;
+
+        // Check if session file looks complete (ends with newline and valid JSON)
+        if let Some(ref path) = self.session_file_path {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let file_size = content.len();
+                let ends_with_newline = content.ends_with('\n');
+                let last_50_chars: String = content.chars().rev().take(50).collect::<String>().chars().rev().collect();
+                writeln!(file, "File size: {} bytes, ends with newline: {}", file_size, ends_with_newline)?;
+                writeln!(file, "Last 50 chars: {:?}", last_50_chars)?;
+
+                // Check if last line looks like valid JSON
+                if let Some(last_line) = content.lines().last() {
+                    let is_valid_json = serde_json::from_str::<serde_json::Value>(last_line).is_ok();
+                    writeln!(file, "Last line valid JSON: {}", is_valid_json)?;
+                    if !is_valid_json {
+                        writeln!(file, "Last line (truncated): {:?}", &last_line.chars().take(100).collect::<String>())?;
+                    }
+                }
+            }
+        }
+        writeln!(file, "")?;
+        writeln!(file, "JSONL lines: {} (parse errors: {})", self.parse_total_lines, self.parse_errors)?;
+        writeln!(file, "")?;
+        writeln!(file, "=== ASSISTANT PARSING STATS ===")?;
+        writeln!(file, "  Total 'assistant' events in JSONL: {}", self.assistant_total)?;
+        writeln!(file, "  - No 'message' field: {}", self.assistant_no_message)?;
+        writeln!(file, "  - No 'content' array: {}", self.assistant_no_content_arr)?;
+        writeln!(file, "  - Text blocks created: {}", self.assistant_text_blocks)?;
+        writeln!(file, "")?;
+        writeln!(file, "Total display_events: {}", self.display_events.len())?;
+
+        // Count event types
+        let mut user_msgs = 0;
+        let mut assistant_texts = 0;
+        let mut tool_calls = 0;
+        let mut tool_results = 0;
+        let mut hooks = 0;
+        let mut other = 0;
+
+        for event in &self.display_events {
+            match event {
+                DisplayEvent::UserMessage { .. } => user_msgs += 1,
+                DisplayEvent::AssistantText { .. } => assistant_texts += 1,
+                DisplayEvent::ToolCall { .. } => tool_calls += 1,
+                DisplayEvent::ToolResult { .. } => tool_results += 1,
+                DisplayEvent::Hook { .. } => hooks += 1,
+                _ => other += 1,
+            }
+        }
+
+        writeln!(file, "Event breakdown:")?;
+        writeln!(file, "  UserMessage: {}", user_msgs)?;
+        writeln!(file, "  AssistantText: {}", assistant_texts)?;
+        writeln!(file, "  ToolCall: {}", tool_calls)?;
+        writeln!(file, "  ToolResult: {}", tool_results)?;
+        writeln!(file, "  Hook: {}", hooks)?;
+        writeln!(file, "  Other: {}", other)?;
+        writeln!(file, "")?;
+
+        // Show last 5 events with preview
+        writeln!(file, "=== LAST 5 EVENTS ===")?;
+        let start = self.display_events.len().saturating_sub(5);
+        for (i, event) in self.display_events.iter().skip(start).enumerate() {
+            let preview = match event {
+                DisplayEvent::UserMessage { content, .. } => format!("UserMessage: {}...", &content.chars().take(50).collect::<String>()),
+                DisplayEvent::AssistantText { text, .. } => format!("AssistantText: {}...", &text.chars().take(50).collect::<String>()),
+                DisplayEvent::ToolCall { tool_name, .. } => format!("ToolCall: {}", tool_name),
+                DisplayEvent::ToolResult { tool_name, .. } => format!("ToolResult: {}", tool_name),
+                DisplayEvent::Hook { name, output } => format!("Hook: {} -> {}", name, &output.chars().take(30).collect::<String>()),
+                DisplayEvent::Complete { .. } => "Complete".to_string(),
+                DisplayEvent::Error { message } => format!("Error: {}", &message.chars().take(50).collect::<String>()),
+                _ => format!("{:?}", event).chars().take(50).collect(),
+            };
+            writeln!(file, "  [{}] {}", start + i, preview)?;
+        }
+        writeln!(file, "")?;
+
+        writeln!(file, "=== RENDERED OUTPUT ===")?;
         let rendered_lines = crate::tui::util::render_display_events(
             &self.display_events,
             120,
@@ -199,6 +287,9 @@ impl App {
             self.animation_tick,
             &self.syntax_highlighter,
         );
+
+        writeln!(file, "Total rendered lines: {}", rendered_lines.len())?;
+        writeln!(file, "")?;
 
         for line in rendered_lines.iter() {
             let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();

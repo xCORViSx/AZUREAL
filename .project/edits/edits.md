@@ -1,0 +1,505 @@
+# Edit History
+
+## 2026-01-28: Fully Stateless Architecture
+
+### Summary
+Eliminated ALL persistent storage. Azural now derives all state at runtime from git repository state and Claude's session files.
+
+### Key Insight
+All essential data was already stored elsewhere:
+- **Project info** → `git rev-parse --show-toplevel` + main branch detection
+- **Active sessions** → `git worktree list` (worktrees with `azural/` branches)
+- **Archived sessions** → `git branch | grep azural/` (branches without worktrees)
+- **Claude session ID** → discovered from Claude's `~/.claude/projects/` directory
+- **Conversation history** → Claude's JSONL session files
+
+### Files Deleted
+- `src/store.rs` - JSON storage (no longer needed)
+- `src/session.rs` - Session management layer (merged into app/mod.rs)
+
+### Major Changes
+
+1. **`src/app/mod.rs`** - Added stateless discovery
+   - `load()` discovers project via git
+   - `load_sessions()` discovers from worktrees + branches
+   - `discover_claude_session_id()` scans Claude's project dir
+   - Removed `store` field entirely
+
+2. **`src/models.rs`** - Simplified Session
+   - `Session { branch_name, worktree_path: Option<PathBuf>, claude_session_id, archived }`
+   - `name()` method strips `azural/` prefix
+   - `status()` method derives status from runtime state
+
+3. **`src/cmd/session.rs` and `src/cmd/project.rs`** - Stateless CLI
+   - `discover_project()` and `discover_sessions()` functions
+   - No store dependency
+
+4. **`src/tui/` handlers** - Updated for new Session API
+   - `session.worktree_path` now `Option<PathBuf>` (None if archived)
+   - All handlers properly check for None before git operations
+
+### Why
+User asked "why do we even need the JSON?" - the answer was we don't. Everything can be derived. This eliminates all persistent state, making azural truly stateless.
+
+---
+
+## 2026-01-28: Remove hooks.jsonl
+
+### Summary
+Removed hooks.jsonl logging since hooks are already embedded in Claude's session files via `system-reminder` tags. Fully stateless now - azural writes NO files.
+
+### Removed
+- `log_hook_event()` in `src/app/util.rs`
+- `handle_hooks()` in `src/cmd/mod.rs`
+- `poll_hooks_file()` in `src/app/mod.rs`
+- `load_hooks_with_timestamps()` in `src/app/mod.rs`
+- `hooks_file_pos` field in App struct
+- `Hooks` CLI command in `src/cli/mod.rs`
+- Hook merging code in `load_session_output()`
+
+### Why
+Hooks are already extracted from Claude's JSONL session files via `extract_hooks_from_content()`. The hooks.jsonl was redundant storage that violated the stateless architecture.
+
+---
+
+## 2026-01-28: Upgrade to Claude Code 2.1.22
+
+### Summary
+Upgraded from 2.1.18 to 2.1.22. The "tool_use ids must be unique" bug has been fixed upstream.
+
+### Verification
+Tested the exact pattern that previously failed:
+1. Simple prompt → create session ✅
+2. Resume with single tool (Read) ✅
+3. Resume with multiple tools (Glob + Read) ✅
+
+All resume + tools combinations now work. No longer need to pin to 2.1.18.
+
+---
+
+## 2026-01-28: Improved Task/Subagent Display
+
+### Problem
+When Claude uses Task tool (subagents like Explore, Plan), only hooks showed in azural's output pane. The actual subagent work was invisible because:
+1. Task tool results were truncated to 1 line
+2. Subagent type wasn't shown
+
+### Fix
+1. **Task tool results** now show up to 20 lines of subagent output instead of just 1
+2. **Task tool calls** now show `[subagent_type] description` (e.g., `[Explore] Search codebase`)
+3. **EnterPlanMode** shows `🔍 Planning...`
+4. **ExitPlanMode** shows `📋 Plan complete`
+
+### Files Changed
+- `src/tui/util.rs` - `render_tool_result()` for Task, `extract_tool_param()` for Task/EnterPlanMode/ExitPlanMode
+
+---
+
+## 2026-01-26: Multi-Session Claude + Clean Output Display
+
+### Summary
+Implemented multi-agent concurrent processing and clean output display for Claude stream-json format.
+
+### Changes
+
+1. **Multi-session Claude support** (`src/app.rs`)
+   - Changed `claude_receiver: Option<Receiver>` to `claude_receivers: HashMap<String, Receiver<ClaudeEvent>>`
+   - Changed `running_session_id: Option<String>` to `running_sessions: HashSet<String>`
+   - Each session can now have its own Claude process running concurrently
+
+2. **Conversation persistence** (`src/claude.rs`, `src/app.rs`)
+   - Added `claude_session_ids: HashMap<String, String>` to track Claude session IDs
+   - Added `--resume <session-id>` flag support for conversation continuity
+   - Added `SessionId(String)` event variant to capture init event session_id
+
+3. **Stream-JSON output mode** (`src/claude.rs`)
+   - Added `--verbose --output-format stream-json` flags
+   - `--verbose` is required when using stream-json with `-p` mode
+
+4. **Clean output display** (`src/app.rs`)
+   - Added `parse_stream_json_for_display()` function
+   - User prompts: "You: <message>"
+   - Claude responses: "Claude: <text>"
+   - Tool usage: "[Using <name>...]"
+   - Completion: "[Done: Xs, $X.XXXX]"
+
+5. **Prompt echo consistency** (`src/tui.rs`)
+   - Changed prompt echo from "> " to "You: " for consistency with parsed output
+
+### Why
+User requested multi-agent processing (the core purpose of the app) and clean readable output instead of raw JSON.
+
+---
+
+## 2026-01-26: PTY-Based Interactive Sessions
+
+### Summary
+Replaced one-shot `-p` mode with PTY-based interactive sessions to properly distinguish SessionStart vs UserSubmitPrompt.
+
+### Problem
+Previous implementation spawned a new Claude process for each prompt using `-p` flag (one-shot mode). This conflated SessionStart and UserSubmitPrompt - every prompt was effectively a SessionStart. Used `--resume` for conversation context but process died after each response.
+
+### Solution
+Implemented PTY (pseudo-terminal) based architecture:
+
+1. **start_session()** - First prompt spawns Claude interactively via PTY
+   - No `-p` flag - Claude enters interactive mode
+   - Process stays alive waiting for input
+   - Initial prompt sent via PTY stdin
+
+2. **send_prompt()** - Follow-up prompts write to existing PTY
+   - Proper UserSubmitPrompt behavior
+   - Claude receives input, processes, waits for more
+
+3. **is_session_running()** - Checks if session has active PTY
+
+4. **stop_session()** - Closes PTY, terminates Claude
+
+### Changes
+
+1. **src/claude.rs** - Complete rewrite
+   - Added `ActiveSession` struct with PTY writer
+   - Added `sessions: Arc<Mutex<HashMap<String, ActiveSession>>>`
+   - `start_session()` spawns via `portable_pty`
+   - `send_prompt()` writes to PTY stdin
+   - Removed old `spawn()` method (kept `spawn_oneshot()` for legacy)
+
+2. **src/tui.rs** - Updated input handler
+   - Checks `claude_process.is_session_running()` first
+   - If running: call `send_prompt()` (UserSubmitPrompt)
+   - If not running: call `start_session()` (SessionStart)
+
+### Why
+Claude Code CLI has distinct SessionStart and UserSubmitPrompt events. Proper interactive mode via stream-json I/O enables true conversation flow where Claude stays alive and receives follow-up prompts without spawning new processes.
+
+---
+
+## 2026-01-26: Stream-JSON I/O (Corrected from PTY)
+
+### Summary
+Replaced PTY approach with proper stream-json input/output mode after verifying Claude Code's documented behavior.
+
+### Investigation
+User asked "how do u know youre doing it the way claude code does it?" - validated by:
+1. `claude --help` shows `--output-format` only works with `--print`
+2. `--input-format stream-json` allows "realtime streaming input" in `-p` mode
+3. Third-party documentation confirmed NDJSON format for input
+
+### Changes
+
+1. **src/claude.rs** - Changed from PTY to stream-json I/O
+   - Removed `portable-pty` usage
+   - Uses `claude -p "" --input-format stream-json --output-format stream-json`
+   - Stores `ChildStdin` handle instead of PTY writer
+   - `send_prompt()` writes NDJSON: `{"type":"user","message":{"role":"user","content":"..."}}`
+   - Requires `--verbose` flag with stream-json
+   - Uses `-p "init"` as minimal initial prompt (empty string fails)
+
+### Why
+Claude Code's `--output-format stream-json` (which we need for structured output) only works with `-p` mode, not interactive mode. The `--input-format stream-json` flag was designed specifically for this use case - sending multiple prompts to a single `-p` process.
+
+---
+
+## 2026-01-26: Remove --fork-session (Fix for Tool Concurrency)
+
+### Summary
+Removed `--fork-session` flag which was causing tool_use ID collisions and loss of conversation context.
+
+### Problem
+Using `--fork-session` on every resume was creating a NEW session each time, causing:
+1. Loss of conversation context (forking starts fresh)
+2. Potential tool_use ID collisions when parallel tools ran
+
+### Investigation
+Explored Claude Code source (`~/claude-code-main`) and Crystal wrapper (`~/crystal`):
+- `--fork-session` should only be used when actually wanting to fork
+- `--session-id` requires valid UUID format (can't use arbitrary strings)
+- Crystal uses simple `--resume <captured_id>` pattern without forking
+
+### Failed Attempt: Deterministic `--session-id`
+Tried using `--session-id azural-{session_id}` but Claude Code requires valid UUID format.
+Error: "Invalid session ID. Must be a valid UUID."
+
+### Final Solution
+Reverted to original approach but WITHOUT `--fork-session`:
+- First prompt: no --resume, Claude generates session ID
+- Capture session ID from init event in stream-json output
+- Follow-up prompts: `--resume <captured_id>` (NO --fork-session)
+
+### Changes
+
+1. **src/claude.rs** - Remove --fork-session, restore session ID capture
+   - Signature: `spawn(working_dir, prompt, resume_session_id: Option<&str>)`
+   - Only `--resume` on follow-ups, no `--fork-session`
+   - Re-enabled session ID parsing from init event
+
+2. **src/app.rs** - Back to HashMap
+   - `claude_session_ids: HashMap<String, String>` (azural session → Claude session)
+   - `set_claude_session_id()` / `get_claude_session_id()` methods
+
+3. **src/tui.rs** - Updated to use original pattern
+
+### Why
+The original session capture approach worked fine. The ONLY issue was `--fork-session` which was:
+1. Creating new sessions on every resume (losing context)
+2. Potentially causing tool_use ID collisions
+Simply removing `--fork-session` fixes both issues.
+
+---
+
+## 2026-01-26: Claude Code Bug Confirmed (Upstream Issue)
+
+### Summary
+After extensive investigation, confirmed that "tool_use ids must be unique" error is a **known Claude Code bug**, not an azural issue.
+
+### Investigation
+1. Removed `--fork-session` - didn't fix
+2. Tried `--continue` instead of `--resume` - didn't fix
+3. Tried PTY spawning (matching Crystal) - didn't fix
+4. Compared with Crystal codebase extensively - same pattern, no visible difference
+5. Found existing GitHub issues: #20508, #20527, #13124
+
+### Root Cause
+When Claude makes parallel tool calls during a `-p --resume` turn, duplicate `tool_use` IDs are generated during API request construction. Not in the stored session file.
+
+### Pattern
+| First Prompt | Resume Prompt | Result |
+|--------------|---------------|--------|
+| No tools | No tools | ✅ Works |
+| No tools | With tools | ❌ FAILS |
+| With tools | No tools | ✅ Works |
+| With tools | With tools | ❌ FAILS |
+
+### Status
+Bug report created at `.project/claude-code-bug-report.md`. Awaiting upstream fix.
+
+---
+
+## 2026-01-26: Rollback to 2.1.17 Fixes Bug
+
+### Discovery
+GitHub issue #20508 reported 2.1.18 was last working version. Rolled back to test.
+
+### Solution
+```bash
+ln -sf ~/.local/share/claude/versions/2.1.17 ~/.local/bin/claude
+```
+
+### Verification
+- 2.1.17: "hello" → resume with "read README.md" → ✅ SUCCESS
+- Bug introduced in 2.1.19
+
+### Note
+No built-in way to disable auto-updates. If Claude auto-updates, manually re-symlink to 2.1.17.
+
+---
+
+## 2026-01-28: TUI Module Modularization
+
+### Summary
+Split `src/tui/util.rs` (1236 lines) into focused modules for better organization and maintainability.
+
+### New Module Structure
+
+```
+src/tui/
+├── colorize.rs (183 lines)    - Output colorization, strip_ansi, MessageType
+├── markdown.rs (120 lines)    - Markdown parsing (bold, italic, code, tables)
+├── render_events.rs (428 lines) - DisplayEvent → Lines rendering
+├── render_tools.rs (307 lines)  - Tool parameter extraction, result rendering
+└── util.rs (49 lines)          - Small utilities, re-exports
+```
+
+### Files Changed
+
+1. **Created `src/tui/colorize.rs`**
+   - `ORANGE` color constant
+   - `strip_ansi()` - remove ANSI escape codes
+   - `MessageType` enum
+   - `detect_message_type()` - identify user/assistant lines
+   - `colorize_output()` - legacy fallback colorization
+
+2. **Created `src/tui/markdown.rs`**
+   - `parse_markdown_spans()` - inline bold/italic/code
+   - `parse_table_row()` - table rendering with box drawing
+   - `is_table_separator()` - detect markdown table separators
+
+3. **Created `src/tui/render_tools.rs`**
+   - `extract_tool_param()` - get primary param for display
+   - `truncate_line()` - truncate with ellipsis
+   - `render_tool_result()` - tool-specific result formatting
+
+4. **Created `src/tui/render_events.rs`**
+   - `render_display_events()` - main event rendering function
+   - `render_edit_diff()` - inline diff display for Edit tool
+   - `render_write_preview()` - Write tool preview
+
+5. **Simplified `src/tui/util.rs`**
+   - Reduced from 1236 lines to 49 lines
+   - Keeps only: `truncate()`, `is_scrolled_to_bottom()`, `calculate_cursor_position()`
+   - Re-exports commonly used items from submodules
+
+6. **Updated `src/tui/mod.rs`**
+   - Added module declarations for new files
+   - Updated documentation header
+
+### Also Fixed
+- Added `FileTree` and `Viewer` to Focus enum match arms in:
+  - `app/mod.rs` (focus_next, focus_prev)
+  - `tui/draw_status.rs` (help text)
+  - `tui/event_loop.rs` (input handling)
+
+### Why
+User requested modularization of files over 500 lines. The 1236-line util.rs was the priority since it contained multiple distinct responsibilities.
+
+---
+
+## 2026-01-28: 4-Pane TUI Layout Restructure
+
+### Summary
+Restructured TUI from 3-pane to 4-pane layout, adding FileTree and Viewer panels for file browsing and content viewing.
+
+### New Layout
+```
+┌──────────┬──────────┬─────────────────┬─────────────────┐
+│ Sessions │ FileTree │     Viewer      │     Output      │
+│   (40)   │   (40)   │  (50% remain)   │  (50% remain)   │
+├──────────┴──────────┴─────────────────┴─────────────────┤
+│                    Input / Terminal                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### New Files Created
+1. **`src/tui/draw_file_tree.rs`** - FileTree panel rendering
+   - Shows directory tree for selected session's worktree
+   - Directory expand/collapse with ▼/▶ indicators
+   - File icons based on extension (🦀 for .rs, ⚙ for .toml, etc.)
+   - Selection highlighting with blue background
+
+2. **`src/tui/draw_viewer.rs`** - Viewer panel rendering
+   - Empty state: "Select file or diff"
+   - File mode: Line numbers + file content
+   - Diff mode: Color-coded diff lines (prepared for future)
+
+3. **`src/tui/input_file_tree.rs`** - FileTree input handling
+   - j/k: Navigate up/down
+   - Enter: Open file in Viewer / Expand directory
+   - h/l: Collapse/Expand directory
+   - Space: Toggle directory expand
+
+4. **`src/tui/input_viewer.rs`** - Viewer input handling
+   - j/k: Scroll content
+   - Ctrl+d/u: Half-page scroll
+   - Ctrl+f/b: Full-page scroll
+   - g/G: Jump to top/bottom
+   - Esc: Clear viewer, return to FileTree
+
+### Files Modified
+1. **`src/app/types.rs`** - Added types
+   - `ViewerMode` enum (Empty, File, Diff)
+   - `FileTreeEntry` struct (path, name, is_dir, depth)
+
+2. **`src/app/state.rs`** - Added state and methods
+   - New fields: file_tree_entries, file_tree_selected, file_tree_scroll, file_tree_expanded, viewer_content, viewer_path, viewer_scroll, viewer_mode
+   - Methods: load_file_tree(), toggle_file_tree_dir(), file_tree_next/prev(), load_file_into_viewer(), scroll_viewer_down/up(), clear_viewer()
+   - Updated focus_next/prev for 4-pane cycle
+   - Added build_file_tree() helper
+
+3. **`src/tui/run.rs`** - Updated layout
+   - Changed from 2 panes to 4 panes
+   - Widths: Sessions(40), FileTree(40), Viewer(50%), Output(50%)
+
+4. **`src/tui/event_loop.rs`** - Updated input routing
+   - Added handlers for FileTree and Viewer focus states
+   - Updated apply_scroll_cached for 4-pane mouse scroll zones
+
+5. **`src/tui/draw_status.rs`** - Updated help text
+   - FileTree: "j/k:navigate Enter:open h/l:collapse/expand Space:toggle Tab:switch"
+   - Viewer: "j/k:scroll Ctrl+d/u:half-page g/G:top/bottom Esc:close Tab:switch"
+
+6. **`src/tui.rs`** - Registered new modules
+
+7. **`src/app.rs`** - Exported ViewerMode
+
+### Why
+User requested file viewer pane as Phase 2 feature. The 4-pane layout enables browsing session files and viewing content alongside Claude output.
+
+---
+
+## 2026-01-28: Message Bubble Containment + Width Constraints
+
+### Summary
+Constrained ALL content outside bubbles to `bubble_width + 10` max width. Tool commands show full content; tool results show summarized output.
+
+### Changes
+1. **Bubble containment** (`src/tui/render_events.rs`)
+   - User messages wrap to `bubble_width - 4`
+   - Claude text wraps to `bubble_width - 2`
+   - Code blocks, headers, bullets, quotes truncate within bubble
+
+2. **Width constraints for non-bubble content** (`src/tui/render_events.rs`)
+   - Tool command lines: param_display constrained to `bubble_width + 10`
+   - Hooks: output line constrained to `bubble_width + 10`
+   - Edit diffs: each line constrained to `bubble_width + 10`
+   - Write previews: purpose line constrained to `bubble_width + 10`
+
+3. **Tool commands** (`src/tui/render_tools.rs`)
+   - `extract_tool_param()` returns FULL command (no truncation with "...")
+   - Bash commands, file paths, patterns all shown fully
+   - Truncation happens at display time via `truncate_line()` which cuts without "..."
+
+4. **Tool results** (`src/tui/render_tools.rs`)
+   - Restored summarized output per tool type:
+     - Read: first + last line with line count
+     - Bash: last 2 non-empty lines
+     - Grep: first 3 matches + overflow count
+     - Glob: file count
+     - Task: first 5 lines + overflow count
+   - All constrained to max_width parameter
+
+### Why
+User clarified: full COMMANDS on tool lines (no "..." truncation), but results can be summarized. All content must stay within `bubble_width + 10` to prevent extending to pane edge.
+
+---
+
+## 2026-01-28: FileTree/Viewer Fixes + Syntax Highlighting
+
+### Summary
+Fixed FileTree cursor reset on expand/collapse, improved pane display, and added syntax highlighting to the Viewer.
+
+### Issues Fixed
+
+1. **FileTree cursor reset** - Cursor jumped to top after every expand/collapse
+   - Root cause: `toggle_file_tree_dir()` called `load_file_tree()` which reset selection to `Some(0)`
+   - Fix: Remember selected path before rebuild, restore selection to same path after rebuild
+
+2. **Pane display issues** - Lines not showing properly
+   - Root cause: `Wrap { trim: false }` caused lines to wrap and mess up scroll calculations
+   - Fix: Removed `Wrap`, added explicit line truncation with `truncate_str()` and `truncate_line_spans()`
+
+3. **Added syntax highlighting** - Files now display with proper code highlighting
+   - Added `SyntaxHighlighter` struct to `src/syntax.rs` using syntect
+   - Base16-ocean.dark theme with 150+ language support
+   - Auto-detects language from file extension
+
+### Files Modified
+
+1. **`src/syntax.rs`** - Added `SyntaxHighlighter`
+   - `highlight_file(content, filename)` returns Vec of styled spans per line
+   - Reuses syntect SyntaxSet and Theme from DiffHighlighter
+
+2. **`src/app/state.rs`**
+   - Added `syntax_highlighter: SyntaxHighlighter` field
+   - Updated `toggle_file_tree_dir()` to preserve selection path
+
+3. **`src/tui/draw_viewer.rs`**
+   - Changed `app: &App` to `app: &mut App` for scroll state updates
+   - Removed `Wrap { trim: false }` that caused display issues
+   - Added syntax highlighting for File mode using `app.syntax_highlighter`
+   - Added `truncate_str()` and `truncate_line_spans()` helpers
+   - Updates `app.viewer_scroll` during render to clamp to valid range
+
+4. **`src/tui/draw_file_tree.rs`**
+   - Changed `app: &App` to `app: &mut App` for scroll state updates
+   - Added auto-scroll logic to keep selection visible in viewport
+   - Updates `app.file_tree_scroll` during render
