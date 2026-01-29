@@ -8,7 +8,7 @@ have rebasing hooks that immediately inject into all session agents whenever mai
 
 
 
-
+Instead of Grep say Search, instead of Glob say FindPattern
 
 
 Lets do a command that can be done on the convo panel for Claude Session file picking (picks between multiple session files within an azural session's reserved project folder at ~/.claude/projects)

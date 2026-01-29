@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use textwrap::{wrap, Options};
 
 use crate::app::{App, Focus, ViewerMode};
 
@@ -42,36 +43,42 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
             if let Some(ref content) = app.viewer_content {
                 // Syntax highlight the file
                 let highlighted = app.syntax_highlighter.highlight_file(content, &path_str);
-                let total = highlighted.len();
-                let scroll = app.viewer_scroll.min(total.saturating_sub(viewport_height));
-                app.viewer_scroll = scroll;
+                let original_line_count = highlighted.len();
+                let line_num_width = original_line_count.to_string().len().max(3);
+                let content_width = viewport_width.saturating_sub(line_num_width + 3);
 
-                // Build display lines with line numbers
-                let line_num_width = total.to_string().len().max(3);
-                let display_lines: Vec<Line> = highlighted
-                    .into_iter()
-                    .enumerate()
-                    .skip(scroll)
-                    .take(viewport_height)
-                    .map(|(i, spans)| {
-                        let line_num = format!("{:>width$} │ ", i + 1, width = line_num_width);
+                // Build wrapped display lines with line numbers
+                let mut all_display_lines: Vec<Line> = Vec::new();
+                for (line_idx, spans) in highlighted.into_iter().enumerate() {
+                    let wrapped = wrap_spans(spans, content_width);
+                    for (wrap_idx, wrapped_spans) in wrapped.into_iter().enumerate() {
+                        let line_num = if wrap_idx == 0 {
+                            format!("{:>width$} │ ", line_idx + 1, width = line_num_width)
+                        } else {
+                            format!("{:>width$} │ ", "", width = line_num_width) // Continuation
+                        };
                         let mut all_spans = vec![
                             Span::styled(line_num, Style::default().fg(Color::DarkGray))
                         ];
-                        all_spans.extend(spans);
+                        all_spans.extend(wrapped_spans);
+                        all_display_lines.push(Line::from(all_spans));
+                    }
+                }
 
-                        // Truncate long lines (approximate - spans make this tricky)
-                        let content_width = viewport_width.saturating_sub(line_num_width + 3);
-                        truncate_line_spans(&mut all_spans, content_width + line_num_width + 3);
+                let total = all_display_lines.len();
+                let scroll = app.viewer_scroll.min(total.saturating_sub(viewport_height));
+                app.viewer_scroll = scroll;
 
-                        Line::from(all_spans)
-                    })
+                let display_lines: Vec<Line> = all_display_lines
+                    .into_iter()
+                    .skip(scroll)
+                    .take(viewport_height)
                     .collect();
 
                 let title = if total > viewport_height {
                     format!(" {} [{}/{}] ", path_str, scroll + 1, total)
                 } else {
-                    format!(" {} ({} lines) ", path_str, total)
+                    format!(" {} ({} lines) ", path_str, original_line_count)
                 };
 
                 (title, display_lines)
@@ -81,23 +88,25 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         }
         ViewerMode::Diff => {
             if let Some(ref content) = app.viewer_content {
-                let all_lines: Vec<Line> = content
-                    .lines()
-                    .map(|line| {
-                        let style = if line.starts_with('+') && !line.starts_with("+++") {
-                            Style::default().fg(Color::Green)
-                        } else if line.starts_with('-') && !line.starts_with("---") {
-                            Style::default().fg(Color::Red)
-                        } else if line.starts_with("@@") {
-                            Style::default().fg(Color::Cyan)
-                        } else if line.starts_with("diff ") || line.starts_with("index ") {
-                            Style::default().fg(Color::Yellow)
-                        } else {
-                            Style::default()
-                        };
-                        Line::from(Span::styled(truncate_str(line, viewport_width), style))
-                    })
-                    .collect();
+                let mut all_lines: Vec<Line> = Vec::new();
+                for line in content.lines() {
+                    let style = if line.starts_with('+') && !line.starts_with("+++") {
+                        Style::default().fg(Color::Green)
+                    } else if line.starts_with('-') && !line.starts_with("---") {
+                        Style::default().fg(Color::Red)
+                    } else if line.starts_with("@@") {
+                        Style::default().fg(Color::Cyan)
+                    } else if line.starts_with("diff ") || line.starts_with("index ") {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+
+                    // Wrap long lines
+                    for wrapped in wrap_text(line, viewport_width) {
+                        all_lines.push(Line::from(Span::styled(wrapped, style)));
+                    }
+                }
 
                 let total = all_lines.len();
                 let scroll = app.viewer_scroll.min(total.saturating_sub(viewport_height));
@@ -140,39 +149,71 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(widget, area);
 }
 
-/// Truncate a string to max_width, adding ellipsis if needed
-fn truncate_str(s: &str, max_width: usize) -> String {
-    if s.len() <= max_width {
-        s.to_string()
-    } else if max_width > 3 {
-        format!("{}...", &s[..max_width - 3])
-    } else {
-        s[..max_width].to_string()
-    }
+/// Wrap text to fit within max_width
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if text.is_empty() { return vec![String::new()]; }
+    let opts = Options::new(max_width).break_words(true);
+    wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
 }
 
-/// Truncate line spans to approximate max width
-fn truncate_line_spans(spans: &mut Vec<Span<'static>>, max_width: usize) {
-    let mut total_len = 0;
-    let mut truncate_at = spans.len();
+/// Wrap spans to fit within max_width, preserving styles
+fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
+    if max_width == 0 { return vec![spans]; }
 
-    for (i, span) in spans.iter().enumerate() {
-        let span_len = span.content.chars().count();
-        if total_len + span_len > max_width {
-            truncate_at = i;
-            break;
-        }
-        total_len += span_len;
+    // Collect all text and build a style map
+    let mut full_text = String::new();
+    let mut style_ranges: Vec<(usize, usize, Style)> = Vec::new();
+
+    for span in &spans {
+        let start = full_text.len();
+        full_text.push_str(&span.content);
+        let end = full_text.len();
+        style_ranges.push((start, end, span.style));
     }
 
-    if truncate_at < spans.len() {
-        spans.truncate(truncate_at + 1);
-        if let Some(last) = spans.last_mut() {
-            let remaining = max_width.saturating_sub(total_len);
-            if remaining > 3 {
-                let content: String = last.content.chars().take(remaining - 3).collect();
-                *last = Span::styled(format!("{}...", content), last.style);
+    if full_text.is_empty() { return vec![vec![]]; }
+
+    // Wrap the full text
+    let opts = Options::new(max_width).break_words(true);
+    let wrapped_lines: Vec<String> = wrap(&full_text, opts)
+        .into_iter()
+        .map(|cow| cow.into_owned())
+        .collect();
+
+    // Rebuild spans for each wrapped line
+    let mut result: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut char_offset = 0;
+
+    for wrapped in wrapped_lines {
+        let line_start = char_offset;
+        let line_end = char_offset + wrapped.len();
+        let mut line_spans: Vec<Span<'static>> = Vec::new();
+
+        for &(range_start, range_end, style) in &style_ranges {
+            // Check if this style range overlaps with current line
+            if range_end <= line_start || range_start >= line_end { continue; }
+
+            let overlap_start = range_start.max(line_start);
+            let overlap_end = range_end.min(line_end);
+
+            if overlap_start < overlap_end {
+                let local_start = overlap_start - line_start;
+                let local_end = overlap_end - line_start;
+                let text: String = wrapped.chars().skip(local_start).take(local_end - local_start).collect();
+                if !text.is_empty() {
+                    line_spans.push(Span::styled(text, style));
+                }
             }
         }
+
+        result.push(line_spans);
+        char_offset = line_end;
+        // Account for newline/space that textwrap removes
+        if char_offset < full_text.len() {
+            char_offset += 1;
+        }
     }
+
+    if result.is_empty() { result.push(vec![]); }
+    result
 }
