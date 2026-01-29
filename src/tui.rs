@@ -34,7 +34,9 @@ mod run;
 pub mod colorize;
 pub mod markdown;
 pub mod render_events;
+pub mod render_markdown;
 pub mod render_tools;
+pub mod render_wrap;
 pub mod util;
 
 pub use run::run;
