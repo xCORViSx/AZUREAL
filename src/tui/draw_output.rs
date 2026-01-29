@@ -21,19 +21,18 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             if !app.display_events.is_empty() {
                 let inner_width = area.width.saturating_sub(2);
 
-                // Only re-render if cache is dirty, width changed, or animation tick changed (for pending indicators)
-                let animation_changed = !app.pending_tool_calls.is_empty() && app.rendered_lines_tick != app.animation_tick;
-                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width || animation_changed {
-                    app.rendered_lines_cache = render_display_events(
+                // Only re-render if cache is dirty or width changed (NOT for animation tick)
+                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
+                    let (lines_cache, anim_indices) = render_display_events(
                         &app.display_events,
                         inner_width,
                         &app.pending_tool_calls,
                         &app.failed_tool_calls,
-                        app.animation_tick,
                         &app.syntax_highlighter,
                     );
+                    app.rendered_lines_cache = lines_cache;
+                    app.animation_line_indices = anim_indices;
                     app.rendered_lines_width = inner_width;
-                    app.rendered_lines_tick = app.animation_tick;
                     app.rendered_lines_dirty = false;
                 }
 
@@ -46,12 +45,28 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 app.output_scroll = scroll;
 
-                // Build viewport slice directly (single clone operation)
-                let lines: Vec<Line> = app.rendered_lines_cache.iter()
+                // Build viewport slice and patch animation colors for pending indicators
+                let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
+                let pulse_idx = (app.animation_tick / 2) as usize % pulse_colors.len();
+                let pulse_color = pulse_colors[pulse_idx];
+
+                let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
                     .skip(scroll)
                     .take(viewport_height)
                     .cloned()
                     .collect();
+
+                // Patch animation colors for pending tool indicators in viewport
+                for &(line_idx, span_idx) in &app.animation_line_indices {
+                    if line_idx >= scroll && line_idx < scroll + viewport_height {
+                        let viewport_idx = line_idx - scroll;
+                        if let Some(line) = lines.get_mut(viewport_idx) {
+                            if let Some(span) = line.spans.get_mut(span_idx) {
+                                span.style = span.style.fg(pulse_color);
+                            }
+                        }
+                    }
+                }
 
                 let title = if total > viewport_height {
                     format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)

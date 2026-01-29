@@ -125,25 +125,40 @@ let lines = app.rendered_lines_cache.iter().skip(scroll).take(height).cloned().c
 
 **Diff caching:** Same pattern for diff view - `app.diff_lines_cache` stores colorized diff output. Set `app.diff_lines_dirty = true` when `diff_text` changes. `src/tui/draw_output.rs` checks dirty flag before re-highlighting.
 
-### 3. THROTTLE Animation and Scroll
+### 3. DECOUPLE Animation from Content Cache
+
+**Critical: Animation must NOT invalidate the content cache.** The pulsating indicator only changes color - the content (markdown, tool calls) is unchanged.
 
 ```rust
-// ❌ WRONG - Animation forces redraw every loop iteration
-let has_pending = !app.pending_tool_calls.is_empty();
-let mut needs_redraw = has_pending;  // CONSTANT REDRAWS when tools pending
-
-// ✅ CORRECT - Throttle animation to 4fps
-let animation_due = now.duration_since(last_animation) >= Duration::from_millis(250);
-if animation_due && has_pending {
-    app.animation_tick = app.animation_tick.wrapping_add(1);
-    last_animation = now;
+// ❌ WRONG - Animation tick invalidates entire cache, re-renders 15k events every 250ms
+let animation_changed = !app.pending_tool_calls.is_empty() && app.rendered_lines_tick != app.animation_tick;
+if app.rendered_lines_dirty || animation_changed {
+    app.rendered_lines_cache = render_display_events(...);  // EXPENSIVE: parses ALL events
 }
-let mut needs_redraw = animation_due && has_pending;
+
+// ✅ CORRECT - Cache content independently, patch animation colors in viewport only
+if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
+    let (lines, anim_indices) = render_display_events(...);  // Only when content changes
+    app.rendered_lines_cache = lines;
+    app.animation_line_indices = anim_indices;  // Track which lines need animation
+}
+
+// Patch animation colors in viewport slice (O(viewport) not O(all))
+let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % 4];
+for &(line_idx, span_idx) in &app.animation_line_indices {
+    if line_idx >= scroll && line_idx < scroll + viewport_height {
+        if let Some(span) = lines[line_idx - scroll].spans.get_mut(span_idx) {
+            span.style = span.style.fg(pulse_color);
+        }
+    }
+}
 ```
+
+**Files:** `src/tui/draw_output.rs` patches colors in viewport; `src/tui/render_events.rs` returns `animation_line_indices`
 
 **Throttle values in `src/tui/event_loop.rs`:**
 - `min_draw_interval = 100ms` (10fps scroll)
-- `min_animation_interval = 250ms` (4fps pulsating indicators)
+- `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
 
 ### 4. SKIP Redraw When Nothing Changed

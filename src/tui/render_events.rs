@@ -17,15 +17,17 @@ use super::render_tools::{extract_tool_param, render_tool_result, render_edit_di
 use super::render_wrap::wrap_text;
 
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
+/// Returns (lines, animation_indices) where animation_indices are (line_idx, span_idx) pairs
+/// for pending tool indicators that need animation color patching
 pub fn render_display_events(
     events: &[DisplayEvent],
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
-    animation_tick: u64,
     syntax_highlighter: &SyntaxHighlighter,
-) -> Vec<Line<'static>> {
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
     let mut lines = Vec::new();
+    let mut animation_indices = Vec::new();
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -88,7 +90,7 @@ pub fn render_display_events(
             DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
                 saw_content = true;
                 last_hook = None;
-                render_tool_call(&mut lines, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, animation_tick, bubble_width, syntax_highlighter);
+                render_tool_call(&mut lines, &mut animation_indices, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
             DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
                 saw_content = true;
@@ -107,7 +109,7 @@ pub fn render_display_events(
         }
     }
 
-    lines
+    (lines, animation_indices)
 }
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
@@ -199,13 +201,13 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
 
 fn render_tool_call(
     lines: &mut Vec<Line<'static>>,
+    animation_indices: &mut Vec<(usize, usize)>,
     tool_name: &str,
     file_path: &Option<String>,
     input: &serde_json::Value,
     tool_use_id: &str,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
-    animation_tick: u64,
     bubble_width: usize,
     highlighter: &SyntaxHighlighter,
 ) {
@@ -217,10 +219,9 @@ fn render_tool_call(
 
     let param_raw = file_path.clone().unwrap_or_else(|| extract_tool_param(tool_name, input));
 
+    // Use placeholder color for pending - will be patched during viewport rendering
     let (indicator, indicator_color) = if is_pending {
-        let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
-        let pulse_idx = (animation_tick / 2) as usize % pulse_colors.len();
-        ("◐ ", pulse_colors[pulse_idx])
+        ("◐ ", Color::White)
     } else if is_failed {
         ("✗ ", Color::Red)
     } else {
@@ -234,6 +235,10 @@ fn render_tool_call(
 
     for (i, wrapped) in wrap_text(&param_raw, param_max).into_iter().enumerate() {
         if i == 0 {
+            // Track line index for animation patching (span index 1 is the indicator)
+            if is_pending {
+                animation_indices.push((lines.len(), 1));
+            }
             lines.push(Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(tool_color)),
                 Span::styled(indicator, Style::default().fg(indicator_color)),

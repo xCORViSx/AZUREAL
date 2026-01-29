@@ -295,12 +295,11 @@ impl App {
         writeln!(file, "")?;
 
         writeln!(file, "=== RENDERED OUTPUT ===")?;
-        let rendered_lines = crate::tui::util::render_display_events(
+        let (rendered_lines, _) = crate::tui::util::render_display_events(
             &self.display_events,
             120,
             &self.pending_tool_calls,
             &self.failed_tool_calls,
-            self.animation_tick,
             &self.syntax_highlighter,
         );
 

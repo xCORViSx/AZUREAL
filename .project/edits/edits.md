@@ -1,5 +1,28 @@
 # Edit History
 
+## 2026-01-29: Animation Decoupled from Content Cache (CPU Fix)
+
+### Problem
+Loading a 15k line conversation caused 80% CPU on idle. Root cause: animation tick (every 250ms) was invalidating the entire content cache, forcing a full re-render of all 15k display events just to update one pulsating `◐` indicator.
+
+### Solution
+Decoupled animation from content caching:
+1. Content rendering only happens when content actually changes (not animation tick)
+2. Store `animation_line_indices: Vec<(usize, usize)>` - positions of pending indicators
+3. Patch animation colors in viewport slice only (O(30 visible lines) not O(15k total))
+
+### Files Changed
+- `src/app/state/app.rs` - Removed `rendered_lines_tick`, added `animation_line_indices`
+- `src/tui/render_events.rs` - Returns `(lines, animation_indices)` tuple
+- `src/tui/draw_output.rs` - Patches animation colors in viewport slice
+- `src/app/state/load.rs` - Updated debug dump call site
+
+### Performance Impact
+- Before: ~80% CPU idle (re-rendering 15k events × 4fps)
+- After: Near-zero CPU idle (patching ~5 spans × 4fps)
+
+---
+
 ## 2026-01-28: Fully Stateless Architecture
 
 ### Summary
