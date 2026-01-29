@@ -108,7 +108,7 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
             _ => {}
         }
     } else {
-        app.focus = Focus::Sessions;
+        app.focus = Focus::Worktrees;
     }
     Ok(())
 }

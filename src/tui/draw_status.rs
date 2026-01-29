@@ -59,7 +59,7 @@ pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         msg.clone()
     } else {
         match (app.focus, app.view_mode) {
-            (Focus::Sessions, _) => {
+            (Focus::Worktrees, _) => {
                 if app.is_current_session_running() {
                     "?:help  Space:actions  n:new  b:branches  i:inprompt  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch"
                 } else {

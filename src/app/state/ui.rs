@@ -9,19 +9,19 @@ use super::App;
 impl App {
     pub fn focus_next(&mut self) {
         self.focus = match self.focus {
-            Focus::Sessions => Focus::FileTree,
+            Focus::Worktrees => Focus::FileTree,
             Focus::FileTree => Focus::Viewer,
             Focus::Viewer => Focus::Output,
             Focus::Output => Focus::Input,
-            Focus::Input => Focus::Sessions,
+            Focus::Input => Focus::Worktrees,
             Focus::SessionCreation | Focus::BranchDialog => self.focus,
         };
     }
 
     pub fn focus_prev(&mut self) {
         self.focus = match self.focus {
-            Focus::Sessions => Focus::Input,
-            Focus::FileTree => Focus::Sessions,
+            Focus::Worktrees => Focus::Input,
+            Focus::FileTree => Focus::Worktrees,
             Focus::Viewer => Focus::FileTree,
             Focus::Output => Focus::Viewer,
             Focus::Input => Focus::Output,
@@ -35,7 +35,7 @@ impl App {
     }
 
     pub fn exit_session_creation_mode(&mut self) {
-        self.focus = Focus::Sessions;
+        self.focus = Focus::Worktrees;
         self.clear_session_creation_input();
         self.clear_status();
     }
@@ -52,7 +52,7 @@ impl App {
 
     pub fn close_branch_dialog(&mut self) {
         self.branch_dialog = None;
-        self.focus = Focus::Sessions;
+        self.focus = Focus::Worktrees;
     }
 
     // Diff view
@@ -140,7 +140,7 @@ impl App {
 
     pub fn cancel_wizard(&mut self) {
         self.creation_wizard = None;
-        self.focus = Focus::Sessions;
+        self.focus = Focus::Worktrees;
     }
 
     pub fn is_wizard_active(&self) -> bool { self.creation_wizard.is_some() }

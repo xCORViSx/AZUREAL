@@ -93,4 +93,76 @@ impl App {
         }
         anyhow::bail!("No active session with worktree")
     }
+
+    /// Expand a session's file dropdown and load its session files
+    pub fn expand_session(&mut self, branch_name: &str) {
+        self.sessions_expanded.insert(branch_name.to_string());
+        self.load_session_files(branch_name);
+    }
+
+    /// Collapse a session's file dropdown
+    pub fn collapse_session(&mut self, branch_name: &str) {
+        self.sessions_expanded.remove(branch_name);
+    }
+
+    /// Toggle session expansion state
+    pub fn toggle_session_expanded(&mut self, branch_name: &str) {
+        if self.sessions_expanded.contains(branch_name) {
+            self.collapse_session(branch_name);
+        } else {
+            self.expand_session(branch_name);
+        }
+    }
+
+    /// Load and cache session files for a branch from Claude's project directory
+    pub fn load_session_files(&mut self, branch_name: &str) {
+        let Some(session) = self.sessions.iter().find(|s| s.branch_name == branch_name) else { return };
+        let Some(ref wt_path) = session.worktree_path else { return };
+        let files = crate::config::list_claude_sessions(wt_path);
+        self.session_files.insert(branch_name.to_string(), files);
+        // Initialize selection to 0 (latest) if not set
+        self.session_selected_file_idx.entry(branch_name.to_string()).or_insert(0);
+    }
+
+    /// Select a specific session file by index
+    pub fn select_session_file(&mut self, branch_name: &str, idx: usize) {
+        if let Some(files) = self.session_files.get(branch_name) {
+            if idx < files.len() {
+                self.session_selected_file_idx.insert(branch_name.to_string(), idx);
+                // Load the selected session file
+                self.load_session_output();
+            }
+        }
+    }
+
+    /// Navigate to next file in expanded dropdown (loads immediately)
+    pub fn session_file_next(&mut self) {
+        let Some(session) = self.current_session() else { return };
+        let branch = session.branch_name.clone();
+        let Some(files) = self.session_files.get(&branch) else { return };
+        if files.is_empty() { return; }
+        let current = *self.session_selected_file_idx.get(&branch).unwrap_or(&0);
+        if current + 1 < files.len() {
+            self.session_selected_file_idx.insert(branch, current + 1);
+            self.load_session_output();
+        }
+    }
+
+    /// Navigate to previous file in expanded dropdown (loads immediately)
+    pub fn session_file_prev(&mut self) {
+        let Some(session) = self.current_session() else { return };
+        let branch = session.branch_name.clone();
+        let current = *self.session_selected_file_idx.get(&branch).unwrap_or(&0);
+        if current > 0 {
+            self.session_selected_file_idx.insert(branch, current - 1);
+            self.load_session_output();
+        }
+    }
+
+    /// Check if current session is expanded
+    pub fn is_current_session_expanded(&self) -> bool {
+        self.current_session()
+            .map(|s| self.sessions_expanded.contains(&s.branch_name))
+            .unwrap_or(false)
+    }
 }

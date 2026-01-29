@@ -14,7 +14,7 @@ use crate::config::Config;
 use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input};
 use super::input_file_tree::handle_file_tree_input;
 use super::input_output::handle_output_input;
-use super::input_sessions::handle_sessions_input;
+use super::input_worktrees::handle_worktrees_input;
 use super::input_terminal::{handle_input_mode, handle_session_creation_input};
 use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
@@ -286,7 +286,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     // Mode-specific keybindings (viewport height for scroll-aware handlers)
     let viewport_height = cached_height.saturating_sub(5) as usize;
     match app.focus {
-        Focus::Sessions => handle_sessions_input(key, app)?,
+        Focus::Worktrees => handle_worktrees_input(key, app)?,
         Focus::FileTree => handle_file_tree_input(key, app)?,
         Focus::Viewer => handle_viewer_input(key, app, viewport_height)?,
         Focus::Output => handle_output_input(key, app)?,

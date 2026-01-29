@@ -1,4 +1,4 @@
-//! Sessions panel input handling
+//! Worktrees panel input handling
 
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
@@ -7,11 +7,41 @@ use crate::app::{App, Focus};
 use crate::git::Git;
 use crate::models::{RebaseResult, SessionStatus};
 
-/// Handle keyboard input when Sessions pane is focused
-pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+/// Handle keyboard input when Worktrees pane is focused
+pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Check if current session is expanded (dropdown mode)
+    let is_expanded = app.is_current_session_expanded();
+
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => app.select_next_session(),
-        KeyCode::Char('k') | KeyCode::Up => app.select_prev_session(),
+        // Right: Expand dropdown to show session files
+        KeyCode::Right | KeyCode::Char('l') if !is_expanded => {
+            if let Some(session) = app.current_session() {
+                let branch = session.branch_name.clone();
+                app.expand_session(&branch);
+            }
+        }
+        // Left: Collapse dropdown
+        KeyCode::Left | KeyCode::Char('h') if is_expanded => {
+            if let Some(session) = app.current_session() {
+                let branch = session.branch_name.clone();
+                app.collapse_session(&branch);
+            }
+        }
+        // j/k: Navigate within dropdown when expanded, otherwise navigate sessions
+        KeyCode::Char('j') | KeyCode::Down => {
+            if is_expanded {
+                app.session_file_next();
+            } else {
+                app.select_next_session();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if is_expanded {
+                app.session_file_prev();
+            } else {
+                app.select_prev_session();
+            }
+        }
         KeyCode::Tab => app.focus = Focus::Output,
         KeyCode::Char(' ') | KeyCode::Char('?') => app.open_context_menu(),
         KeyCode::Char('n') => app.start_wizard(),
@@ -85,7 +115,16 @@ pub fn handle_sessions_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
             }
         }
         KeyCode::Enter => {
-            if let Some(session) = app.current_session() {
+            if is_expanded {
+                // Select the highlighted session file and load it
+                if let Some(session) = app.current_session() {
+                    let branch = session.branch_name.clone();
+                    let idx = *app.session_selected_file_idx.get(&branch).unwrap_or(&0);
+                    app.select_session_file(&branch, idx);
+                    app.collapse_session(&branch);
+                    app.set_status("Loaded selected session file");
+                }
+            } else if let Some(session) = app.current_session() {
                 let status = session.status(&app.running_sessions);
                 if status == SessionStatus::Pending || status == SessionStatus::Stopped
                     || status == SessionStatus::Completed || status == SessionStatus::Failed

@@ -153,7 +153,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
         KeyCode::Esc => {
             app.view_mode = ViewMode::Output;
-            app.focus = Focus::Sessions;
+            app.focus = Focus::Worktrees;
         }
         _ => {}
     }

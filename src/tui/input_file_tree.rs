@@ -65,7 +65,7 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
 
         // Escape: unfocus
         KeyCode::Esc => {
-            app.focus = Focus::Sessions;
+            app.focus = Focus::Worktrees;
         }
 
         _ => {}

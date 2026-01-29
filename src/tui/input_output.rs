@@ -110,7 +110,7 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 }
             }
         }
-        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Sessions,
+        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Worktrees,
         _ => {}
     }
     Ok(())

@@ -46,7 +46,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                     app.scroll_terminal_to_bottom();
                 }
                 KeyCode::Char('t') => app.close_terminal(),
-                KeyCode::Esc => app.focus = Focus::Sessions,
+                KeyCode::Esc => app.focus = Focus::Worktrees,
                 KeyCode::Char('+') | KeyCode::Char('=') => app.adjust_terminal_height(2),
                 KeyCode::Char('-') => app.adjust_terminal_height(-2),
                 KeyCode::Char('k') | KeyCode::Up => app.scroll_terminal_up(1),
@@ -69,7 +69,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     if !app.insert_mode {
         match key.code {
             KeyCode::Char('i') => app.insert_mode = true,
-            KeyCode::Esc => app.focus = Focus::Sessions,
+            KeyCode::Esc => app.focus = Focus::Worktrees,
             _ => {}
         }
         return Ok(());

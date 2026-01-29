@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
+use std::time::SystemTime;
 
 use portable_pty::MasterPty;
 
@@ -113,6 +114,12 @@ pub struct App {
     pub assistant_no_message: usize,
     pub assistant_no_content_arr: usize,
     pub assistant_text_blocks: usize,
+    /// Expanded sessions in sidebar (shows dropdown of session files)
+    pub sessions_expanded: HashSet<String>,
+    /// Cached session files per worktree branch (session_id, path, mtime)
+    pub session_files: HashMap<String, Vec<(String, PathBuf, SystemTime)>>,
+    /// Selected file index per session (0 = latest/newest)
+    pub session_selected_file_idx: HashMap<String, usize>,
 }
 
 impl App {
@@ -132,7 +139,7 @@ impl App {
             session_creation_input: String::new(),
             session_creation_cursor: 0,
             view_mode: ViewMode::Output,
-            focus: Focus::Sessions,
+            focus: Focus::Worktrees,
             insert_mode: false,
             should_quit: false,
             status_message: None,
@@ -187,6 +194,9 @@ impl App {
             assistant_no_message: 0,
             assistant_no_content_arr: 0,
             assistant_text_blocks: 0,
+            sessions_expanded: HashSet::new(),
+            session_files: HashMap::new(),
+            session_selected_file_idx: HashMap::new(),
         }
     }
 

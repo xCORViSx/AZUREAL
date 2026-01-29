@@ -25,7 +25,7 @@ mod input_dialogs;
 mod input_file_tree;
 mod input_output;
 mod input_rebase;
-mod input_sessions;
+mod input_worktrees;
 mod input_terminal;
 mod input_viewer;
 mod input_wizard;

@@ -109,9 +109,23 @@ impl App {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
 
-            // Try to get Claude session ID, or auto-discover from Claude's files
-            let mut claude_session_id = session.claude_session_id.clone()
-                .or_else(|| self.claude_session_ids.get(&branch_name).cloned());
+            // Try to get Claude session ID: check selected file first, then cached, then auto-discover
+            let mut claude_session_id = None;
+
+            // First check if user selected a specific session file from the dropdown
+            if let Some(idx) = self.session_selected_file_idx.get(&branch_name) {
+                if let Some(files) = self.session_files.get(&branch_name) {
+                    if let Some((id, _, _)) = files.get(*idx) {
+                        claude_session_id = Some(id.clone());
+                    }
+                }
+            }
+
+            // Fall back to stored session ID or cached ID
+            if claude_session_id.is_none() {
+                claude_session_id = session.claude_session_id.clone()
+                    .or_else(|| self.claude_session_ids.get(&branch_name).cloned());
+            }
 
             // Auto-discover Claude session ID if not set and we have a worktree
             if claude_session_id.is_none() {
