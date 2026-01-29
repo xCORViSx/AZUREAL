@@ -14,7 +14,7 @@ use super::render_wrap::wrap_spans;
 pub fn tool_display_name(tool_name: &str) -> &str {
     match tool_name {
         "Grep" | "grep" => "Search",
-        "Glob" | "glob" => "FindPattern",
+        "Glob" | "glob" => "Find",
         _ => tool_name,
     }
 }
