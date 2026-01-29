@@ -85,19 +85,9 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
                 &json, timestamp, &mut timed_events, &mut user_msg_by_parent,
                 &tool_calls, &mut pending_tools, &mut failed_tools,
                 &mut last_user_msg, &mut ups_hooks,
+                session_slug.as_deref(), &mut plan_inserted,
             ),
             "assistant" => {
-                // Check for EnterPlanMode tool call to insert plan content
-                if !plan_inserted {
-                    if let Some(slug) = &session_slug {
-                        if has_enter_plan_mode(&json) {
-                            if let Some(plan_event) = load_plan_file(slug) {
-                                timed_events.push((timestamp, plan_event));
-                                plan_inserted = true;
-                            }
-                        }
-                    }
-                }
                 parse_assistant_event(
                     &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
                 );
@@ -199,6 +189,8 @@ fn parse_user_event(
     failed_tools: &mut HashSet<String>,
     last_user_msg: &mut Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
+    session_slug: Option<&str>,
+    plan_inserted: &mut bool,
 ) {
     let message = json.get("message");
     let content_val = message.and_then(|m| m.get("content"));
@@ -276,7 +268,7 @@ fn parse_user_event(
             if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                 parse_tool_result_block(
                     block, timestamp, events, tool_calls, pending_tools, failed_tools,
-                    last_user_msg, ups_hooks,
+                    last_user_msg, ups_hooks, session_slug, plan_inserted,
                 );
             }
         }
@@ -292,6 +284,8 @@ fn parse_tool_result_block(
     failed_tools: &mut HashSet<String>,
     last_user_msg: &Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
+    session_slug: Option<&str>,
+    plan_inserted: &mut bool,
 ) {
     let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
     let (tool_name, file_path) = tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
@@ -359,6 +353,11 @@ fn parse_tool_result_block(
         events.push(hook);
     }
 
+    // Check if this is a Write to a plan file before moving values
+    let is_plan_write = tool_name == "Write" && file_path.as_ref()
+        .map(|p| p.contains("/.claude/plans/") && p.ends_with(".md"))
+        .unwrap_or(false);
+
     if !content.is_empty() {
         events.push((timestamp, DisplayEvent::ToolResult {
             tool_use_id,
@@ -366,6 +365,16 @@ fn parse_tool_result_block(
             file_path,
             content,
         }));
+    }
+
+    // Insert plan content after successful Write to plan file
+    if is_plan_write && !is_error && !*plan_inserted {
+        if let Some(slug) = session_slug {
+            if let Some(plan_event) = load_plan_file(slug) {
+                events.push((timestamp, plan_event));
+                *plan_inserted = true;
+            }
+        }
     }
 }
 
@@ -516,18 +525,6 @@ fn parse_progress_event(
     if !output.is_empty() {
         events.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
     }
-}
-
-/// Check if an assistant event contains an EnterPlanMode tool call
-fn has_enter_plan_mode(json: &serde_json::Value) -> bool {
-    json.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_array())
-        .map(|arr| arr.iter().any(|block| {
-            block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                && block.get("name").and_then(|n| n.as_str()) == Some("EnterPlanMode")
-        }))
-        .unwrap_or(false)
 }
 
 /// Load plan file from ~/.claude/plans/{slug}.md
