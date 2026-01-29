@@ -10,6 +10,15 @@ use ratatui::{
 use crate::syntax::SyntaxHighlighter;
 use super::render_wrap::wrap_spans;
 
+/// Map internal tool names to user-friendly display names
+pub fn tool_display_name(tool_name: &str) -> &str {
+    match tool_name {
+        "Grep" | "grep" => "Search",
+        "Glob" | "glob" => "FindPattern",
+        _ => tool_name,
+    }
+}
+
 /// Extract the most relevant parameter from a tool's input for display
 pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String {
     match tool_name {

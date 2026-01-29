@@ -13,7 +13,7 @@ use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
 use super::render_markdown::render_assistant_text;
-use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview};
+use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview, tool_display_name};
 use super::render_wrap::wrap_text;
 
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
@@ -227,8 +227,9 @@ fn render_tool_call(
         ("● ", Color::Green)
     };
 
+    let display_name = tool_display_name(tool_name);
     let tool_line_max = bubble_width + 10;
-    let prefix_len = 3 + 2 + tool_name.len() + 2;
+    let prefix_len = 3 + 2 + display_name.len() + 2;
     let param_max = tool_line_max.saturating_sub(prefix_len);
 
     for (i, wrapped) in wrap_text(&param_raw, param_max).into_iter().enumerate() {
@@ -236,7 +237,7 @@ fn render_tool_call(
             lines.push(Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(tool_color)),
                 Span::styled(indicator, Style::default().fg(indicator_color)),
-                Span::styled(tool_name.to_string(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
+                Span::styled(display_name.to_string(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
                 Span::styled("  ", Style::default()),
                 Span::styled(wrapped, Style::default().fg(ORANGE)),
             ]));
