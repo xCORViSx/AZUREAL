@@ -162,9 +162,11 @@ pub fn render_display_events(
                 let mut in_code_block = false;
                 let text_lines: Vec<&str> = text.lines().collect();
 
-                // Pre-scan for tables to render them properly
-                let mut table_ranges: Vec<(usize, usize)> = Vec::new();
+                // Pre-scan for tables and calculate column widths
+                let mut table_info: Vec<(usize, usize, Vec<usize>)> = Vec::new(); // (start, end, col_widths)
                 let mut table_start: Option<usize> = None;
+                let mut current_widths: Vec<usize> = Vec::new();
+
                 for (idx, tl) in text_lines.iter().enumerate() {
                     let t = tl.trim();
                     let pipe_count = t.matches('|').count();
@@ -172,25 +174,34 @@ pub fn render_display_events(
                     let is_sep = is_table_separator(t);
 
                     if is_table_row || is_sep {
-                        if table_start.is_none() { table_start = Some(idx); }
+                        if table_start.is_none() {
+                            table_start = Some(idx);
+                            current_widths.clear();
+                        }
+                        // Calculate column widths (skip separator rows for width calc)
+                        if !is_sep {
+                            let cells: Vec<&str> = t.split('|').filter(|s| !s.is_empty()).collect();
+                            for (col, cell) in cells.iter().enumerate() {
+                                let w = cell.trim().chars().count();
+                                if col >= current_widths.len() {
+                                    current_widths.push(w);
+                                } else if w > current_widths[col] {
+                                    current_widths[col] = w;
+                                }
+                            }
+                        }
                     } else if let Some(start) = table_start {
-                        table_ranges.push((start, idx));
+                        table_info.push((start, idx, current_widths.clone()));
                         table_start = None;
                     }
                 }
                 if let Some(start) = table_start {
-                    table_ranges.push((start, text_lines.len()));
+                    table_info.push((start, text_lines.len(), current_widths.clone()));
                 }
 
-                // Check if line index is within a table range
-                let in_table_range = |idx: usize| -> bool {
-                    table_ranges.iter().any(|(s, e)| idx >= *s && idx < *e)
-                };
-                let is_table_start = |idx: usize| -> bool {
-                    table_ranges.iter().any(|(s, _)| idx == *s)
-                };
-                let is_table_end = |idx: usize| -> bool {
-                    table_ranges.iter().any(|(_, e)| idx == *e - 1)
+                // Helper to get table info for a line index
+                let get_table_info = |idx: usize| -> Option<&(usize, usize, Vec<usize>)> {
+                    table_info.iter().find(|(s, e, _)| idx >= *s && idx < *e)
                 };
 
                 for (i, line) in text_lines.iter().enumerate() {
@@ -227,18 +238,20 @@ pub fn render_display_events(
                     }
 
                     // Check if this line is part of a table
-                    if in_table_range(i) {
+                    if let Some((table_start, table_end, col_widths)) = get_table_info(i) {
                         let is_sep = is_table_separator(trimmed);
                         let cells: Vec<&str> = trimmed.split('|').filter(|s| !s.is_empty()).collect();
-                        let is_header = is_table_start(i) && text_lines.get(i + 1).map(|l| is_table_separator(l)).unwrap_or(false);
+                        let is_first_row = i == *table_start;
+                        let is_last_row = i == *table_end - 1;
+                        let is_header = is_first_row && text_lines.get(i + 1).map(|l| is_table_separator(l)).unwrap_or(false);
 
                         // Add top border at table start
-                        if is_table_start(i) {
+                        if is_first_row {
                             let mut top = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
                             top.push(Span::styled("┌", Style::default().fg(Color::DarkGray)));
-                            for (j, cell) in cells.iter().enumerate() {
-                                top.push(Span::styled("─".repeat(cell.len() + 2), Style::default().fg(Color::DarkGray)));
-                                if j < cells.len() - 1 {
+                            for (j, w) in col_widths.iter().enumerate() {
+                                top.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+                                if j < col_widths.len() - 1 {
                                     top.push(Span::styled("┬", Style::default().fg(Color::DarkGray)));
                                 }
                             }
@@ -250,9 +263,9 @@ pub fn render_display_events(
                             // Separator row: ├───┼───┤
                             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
                             spans.push(Span::styled("├", Style::default().fg(Color::DarkGray)));
-                            for (j, cell) in cells.iter().enumerate() {
-                                spans.push(Span::styled("─".repeat(cell.len()), Style::default().fg(Color::DarkGray)));
-                                if j < cells.len() - 1 {
+                            for (j, w) in col_widths.iter().enumerate() {
+                                spans.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+                                if j < col_widths.len() - 1 {
                                     spans.push(Span::styled("┼", Style::default().fg(Color::DarkGray)));
                                 }
                             }
@@ -262,8 +275,9 @@ pub fn render_display_events(
                             // Data row: │ cell │ cell │
                             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
                             spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-                            for cell in &cells {
-                                let cell_text = format!(" {} ", cell.trim());
+                            for (j, cell) in cells.iter().enumerate() {
+                                let w = col_widths.get(j).copied().unwrap_or(cell.trim().len());
+                                let cell_text = format!(" {:width$} ", cell.trim(), width = w);
                                 if is_header {
                                     spans.push(Span::styled(cell_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
                                 } else {
@@ -275,12 +289,12 @@ pub fn render_display_events(
                         }
 
                         // Add bottom border at table end
-                        if is_table_end(i) {
+                        if is_last_row {
                             let mut bot = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
                             bot.push(Span::styled("└", Style::default().fg(Color::DarkGray)));
-                            for (j, cell) in cells.iter().enumerate() {
-                                bot.push(Span::styled("─".repeat(cell.len() + 2), Style::default().fg(Color::DarkGray)));
-                                if j < cells.len() - 1 {
+                            for (j, w) in col_widths.iter().enumerate() {
+                                bot.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+                                if j < col_widths.len() - 1 {
                                     bot.push(Span::styled("┴", Style::default().fg(Color::DarkGray)));
                                 }
                             }
