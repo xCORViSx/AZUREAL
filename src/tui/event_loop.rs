@@ -12,9 +12,11 @@ use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 
 use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input};
+use super::input_file_tree::handle_file_tree_input;
 use super::input_output::handle_output_input;
 use super::input_sessions::handle_sessions_input;
 use super::input_terminal::{handle_input_mode, handle_session_creation_input};
+use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
 use super::run::ui;
 
@@ -56,7 +58,7 @@ pub async fn run_app(
             loop {
                 match event::read()? {
                     Event::Key(key) => {
-                        handle_key_event(key, app, &claude_process)?;
+                        handle_key_event(key, app, &claude_process, cached_height)?;
                         had_key_event = true;
                     }
                     Event::Mouse(mouse) => {
@@ -148,25 +150,40 @@ pub async fn run_app(
 }
 
 /// Apply accumulated scroll to the appropriate panel (uses cached terminal size)
-fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_width: u16, term_height: u16) -> bool {
-    let sidebar_width = 30u16;
+/// Layout: Sessions(40) | FileTree(40) | Viewer(50%) | Convo(50%)
+fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width: u16, term_height: u16) -> bool {
+    let sessions_width = 40u16;
+    let file_tree_width = 40u16;
+    let remaining_width = term_width.saturating_sub(sessions_width + file_tree_width);
+    let viewer_width = remaining_width / 2;
+
     let input_height = if app.terminal_mode { app.terminal_height + 2 } else { 3u16 };
     let content_height = term_height.saturating_sub(input_height + 1);
+    let vh = content_height as usize;
 
-    let in_sidebar = col < sidebar_width && row < content_height;
-    let in_output = col >= sidebar_width && row < content_height;
+    let in_sessions = col < sessions_width && row < content_height;
+    let in_file_tree = col >= sessions_width && col < sessions_width + file_tree_width && row < content_height;
+    let in_viewer = col >= sessions_width + file_tree_width && col < sessions_width + file_tree_width + viewer_width && row < content_height;
+    let in_output = col >= sessions_width + file_tree_width + viewer_width && row < content_height;
     let in_terminal = app.terminal_mode && row >= content_height && row < term_height - 1;
 
-    if in_sidebar {
+    if in_sessions {
         if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
         else { for _ in 0..delta.abs() { app.select_prev_session(); } }
+        true
+    } else if in_file_tree {
+        if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
+        else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
+        true
+    } else if in_viewer {
+        if delta > 0 { app.scroll_viewer_down(delta as usize, vh); }
+        else { app.scroll_viewer_up((-delta) as usize); }
         true
     } else if in_terminal {
         if delta > 0 { app.scroll_terminal_down(delta as usize); }
         else { app.scroll_terminal_up((-delta) as usize); }
         true
     } else if in_output {
-        let vh = content_height as usize;
         if delta > 0 {
             match app.view_mode {
                 crate::app::ViewMode::Output => app.scroll_output_down(delta as usize, vh),
@@ -199,7 +216,7 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> R
 }
 
 /// Handle keyboard input events
-fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess, cached_height: u16) -> Result<()> {
     // Global keybindings
     match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
@@ -262,14 +279,16 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         return Ok(());
     }
 
-    // Mode-specific keybindings
+    // Mode-specific keybindings (viewport height for scroll-aware handlers)
+    let viewport_height = cached_height.saturating_sub(5) as usize;
     match app.focus {
         Focus::Sessions => handle_sessions_input(key, app)?,
+        Focus::FileTree => handle_file_tree_input(key, app)?,
+        Focus::Viewer => handle_viewer_input(key, app, viewport_height)?,
         Focus::Output => handle_output_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
         Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
-        Focus::FileTree | Focus::Viewer => {} // Not yet implemented
     }
 
     Ok(())

@@ -19,7 +19,7 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::{draw_dialogs, draw_input, draw_output, draw_sidebar, draw_status, draw_terminal, draw_wizard};
+use super::{draw_dialogs, draw_file_tree, draw_input, draw_output, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -74,15 +74,22 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .split(f.area())
     };
 
-    // Split main content into sidebar and output
+    // Split main content into 4 panes: Sessions, FileTree, Viewer, Convo
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(30), Constraint::Min(40)])
+        .constraints([
+            Constraint::Length(40),      // Sessions
+            Constraint::Length(40),      // FileTree
+            Constraint::Percentage(50),  // Viewer (50% of remaining)
+            Constraint::Percentage(50),  // Convo (50% of remaining)
+        ])
         .split(chunks[0]);
 
     // Draw main components
     draw_sidebar::draw_sidebar(f, app, main_chunks[0]);
-    draw_output::draw_output(f, app, main_chunks[1]);
+    draw_file_tree::draw_file_tree(f, app, main_chunks[1]);
+    draw_viewer::draw_viewer(f, app, main_chunks[2]);
+    draw_output::draw_output(f, app, main_chunks[3]);
 
     // Draw either terminal or input
     if app.terminal_mode {

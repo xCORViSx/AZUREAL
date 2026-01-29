@@ -1,6 +1,26 @@
 //! App type definitions (enums, dialogs, menus)
 
+use std::path::PathBuf;
+
 use crate::models::SessionStatus;
+
+/// Viewer pane display mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewerMode {
+    #[default]
+    Empty, // Nothing selected
+    File, // Showing file from FileTree
+    Diff, // Showing diff from Output
+}
+
+/// Entry in the file tree (file or directory)
+#[derive(Debug, Clone)]
+pub struct FileTreeEntry {
+    pub path: PathBuf,
+    pub name: String,
+    pub is_dir: bool,
+    pub depth: usize,
+}
 
 /// State for the branch selection dialog
 pub struct BranchDialog {

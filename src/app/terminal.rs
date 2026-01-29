@@ -7,11 +7,40 @@ use std::thread;
 
 use super::App;
 
+/// Per-session terminal state (persists independently for each session)
+pub struct SessionTerminal {
+    pub pty: Box<dyn MasterPty + Send>,
+    pub writer: Box<dyn Write + Send>,
+    pub rx: Receiver<Vec<u8>>,
+    pub parser: vt100::Parser,
+    pub scroll: usize,
+    pub rows: u16,
+    pub cols: u16,
+}
+
 impl App {
     /// Open terminal with PTY shell in session's worktree
     pub fn open_terminal(&mut self) {
-        if self.terminal_pty.is_some() { return; }
+        // If PTY already exists (active), just show it
+        if self.terminal_pty.is_some() {
+            self.terminal_mode = true;
+            self.insert_mode = true;
+            self.terminal_needs_resize = true;
+            return;
+        }
 
+        // Check if this session has a saved terminal
+        if let Some(session) = self.current_session() {
+            if self.session_terminals.contains_key(&session.branch_name) {
+                self.restore_session_terminal();
+                self.terminal_mode = true;
+                self.insert_mode = true;
+                self.terminal_needs_resize = true;
+                return;
+            }
+        }
+
+        // Create new terminal
         let cwd = self.current_session()
             .and_then(|s| s.worktree_path.clone())
             .or_else(|| self.project.as_ref().map(|p| p.path.clone()))
@@ -74,8 +103,15 @@ impl App {
         self.insert_mode = true;
     }
 
-    /// Close terminal PTY
+    /// Hide terminal (PTY keeps running in background)
     pub fn close_terminal(&mut self) {
+        self.terminal_mode = false;
+        self.insert_mode = false;
+        // PTY stays alive - terminal_pty, terminal_writer, terminal_rx preserved
+    }
+
+    /// Fully destroy terminal PTY (use when switching sessions or quitting)
+    pub fn destroy_terminal(&mut self) {
         self.terminal_writer = None;
         self.terminal_pty = None;
         self.terminal_rx = None;
@@ -172,5 +208,74 @@ impl App {
     pub fn scroll_terminal_to_bottom(&mut self) {
         self.terminal_scroll = 0;
         self.terminal_parser.screen_mut().set_scrollback(0);
+    }
+
+    /// Save current terminal to session_terminals map (called before switching sessions)
+    pub fn save_current_terminal(&mut self) {
+        // Get current session's branch name
+        let branch_name = match self.current_session() {
+            Some(s) => s.branch_name.clone(),
+            None => return,
+        };
+
+        // Only save if we have a terminal
+        let (pty, writer, rx) = match (
+            self.terminal_pty.take(),
+            self.terminal_writer.take(),
+            self.terminal_rx.take(),
+        ) {
+            (Some(p), Some(w), Some(r)) => (p, w, r),
+            _ => return,
+        };
+
+        // Save terminal state to map
+        let terminal = SessionTerminal {
+            pty,
+            writer,
+            rx,
+            parser: std::mem::replace(
+                &mut self.terminal_parser,
+                vt100::Parser::new(24, 120, 1000),
+            ),
+            scroll: self.terminal_scroll,
+            rows: self.terminal_rows,
+            cols: self.terminal_cols,
+        };
+        self.session_terminals.insert(branch_name, terminal);
+
+        // Reset current terminal state
+        self.terminal_scroll = 0;
+        self.terminal_mode = false;
+    }
+
+    /// Restore terminal for current session from session_terminals map
+    pub fn restore_session_terminal(&mut self) {
+        let branch_name = match self.current_session() {
+            Some(s) => s.branch_name.clone(),
+            None => return,
+        };
+
+        // Try to restore from map
+        if let Some(terminal) = self.session_terminals.remove(&branch_name) {
+            self.terminal_pty = Some(terminal.pty);
+            self.terminal_writer = Some(terminal.writer);
+            self.terminal_rx = Some(terminal.rx);
+            self.terminal_parser = terminal.parser;
+            self.terminal_scroll = terminal.scroll;
+            self.terminal_rows = terminal.rows;
+            self.terminal_cols = terminal.cols;
+            // Don't auto-show terminal - keep terminal_mode as is
+        }
+    }
+
+    /// Check if current session has a terminal (saved or active)
+    pub fn session_has_terminal(&self) -> bool {
+        if self.terminal_pty.is_some() {
+            return true;
+        }
+        if let Some(session) = self.current_session() {
+            return self.session_terminals.contains_key(&session.branch_name);
+        }
+        false
     }
 }

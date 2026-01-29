@@ -41,7 +41,7 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                 Span::raw(prefix),
                 Span::styled(status.symbol(), Style::default().fg(status_color)),
                 Span::raw(" "),
-                Span::styled(truncate(name, 22), style),
+                Span::styled(truncate(name, 38), style),
             ])));
         }
     } else {

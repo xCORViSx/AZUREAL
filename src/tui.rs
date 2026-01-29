@@ -12,18 +12,22 @@
 //! - `util`: Small utility functions
 
 mod draw_dialogs;
+mod draw_file_tree;
 mod draw_input;
 mod draw_output;
 mod draw_sidebar;
 mod draw_status;
 mod draw_terminal;
+mod draw_viewer;
 mod draw_wizard;
 mod event_loop;
 mod input_dialogs;
+mod input_file_tree;
 mod input_output;
 mod input_rebase;
 mod input_sessions;
 mod input_terminal;
+mod input_viewer;
 mod input_wizard;
 mod run;
 

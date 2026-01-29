@@ -1,0 +1,84 @@
+//! File tree navigation and viewer operations
+
+use crate::app::types::ViewerMode;
+
+use super::helpers::build_file_tree;
+use super::App;
+
+impl App {
+    /// Toggle expand/collapse of a directory in the file tree
+    pub fn toggle_file_tree_dir(&mut self) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        if !entry.is_dir { return; }
+
+        // Remember the selected path before rebuilding
+        let selected_path = entry.path.clone();
+
+        if self.file_tree_expanded.contains(&selected_path) {
+            self.file_tree_expanded.remove(&selected_path);
+        } else {
+            self.file_tree_expanded.insert(selected_path.clone());
+        }
+
+        // Rebuild tree and restore selection to same path
+        let Some(session) = self.current_session() else { return };
+        let Some(ref worktree_path) = session.worktree_path else { return };
+
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded);
+        self.file_tree_selected = self.file_tree_entries
+            .iter()
+            .position(|e| e.path == selected_path)
+            .or(Some(0));
+    }
+
+    /// Select next file tree entry
+    pub fn file_tree_next(&mut self) {
+        if let Some(idx) = self.file_tree_selected {
+            if idx + 1 < self.file_tree_entries.len() {
+                self.file_tree_selected = Some(idx + 1);
+            }
+        } else if !self.file_tree_entries.is_empty() {
+            self.file_tree_selected = Some(0);
+        }
+    }
+
+    /// Select previous file tree entry
+    pub fn file_tree_prev(&mut self) {
+        if let Some(idx) = self.file_tree_selected {
+            if idx > 0 {
+                self.file_tree_selected = Some(idx - 1);
+            }
+        }
+    }
+
+    /// Load selected file into viewer
+    pub fn load_file_into_viewer(&mut self) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        if entry.is_dir { return; }
+
+        match std::fs::read_to_string(&entry.path) {
+            Ok(content) => {
+                self.viewer_content = Some(content);
+                self.viewer_path = Some(entry.path.clone());
+                self.viewer_mode = ViewerMode::File;
+                self.viewer_scroll = 0;
+            }
+            Err(e) => {
+                self.viewer_content = Some(format!("Error reading file: {}", e));
+                self.viewer_path = Some(entry.path.clone());
+                self.viewer_mode = ViewerMode::File;
+                self.viewer_scroll = 0;
+            }
+        }
+    }
+
+    /// Clear viewer content
+    pub fn clear_viewer(&mut self) {
+        self.viewer_content = None;
+        self.viewer_path = None;
+        self.viewer_mode = ViewerMode::Empty;
+        self.viewer_scroll = 0;
+    }
+}

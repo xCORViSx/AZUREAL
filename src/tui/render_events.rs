@@ -10,6 +10,7 @@ use ratatui::{
 use std::collections::HashSet;
 
 use crate::events::DisplayEvent;
+use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
 use super::markdown::{parse_markdown_spans, parse_table_row, is_table_separator};
 use super::render_tools::{extract_tool_param, render_tool_result, truncate_line};
@@ -339,15 +340,26 @@ pub fn render_display_events(
     lines
 }
 
-/// Render Edit tool diff inline with the tool call
+/// Render Edit tool diff inline with the tool call (with syntax highlighting)
 fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
 
     if old_str.is_empty() && new_str.is_empty() { return; }
 
+    // Dimmer red/green backgrounds that don't clash with syntax colors
+    let dim_red_bg = Color::Rgb(60, 25, 25);
+    let dim_green_bg = Color::Rgb(25, 50, 25);
+    // Dim white for removed text (brighter than DarkGray but not full white)
+    let dim_white = Color::Rgb(170, 170, 170);
+
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
+
+    // Get syntax highlighter for this file type (only for new/added lines)
+    let filename = file_path.as_deref().unwrap_or("file.txt");
+    let highlighter = SyntaxHighlighter::new();
+    let new_highlighted = highlighter.highlight_file(new_str, filename);
 
     let start_line = file_path.as_ref().and_then(|path| {
         std::fs::read_to_string(path).ok().and_then(|content| {
@@ -365,32 +377,54 @@ fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, f
 
         match (old_line, new_line) {
             (Some(old), Some(new)) if old == new => {
+                // Unchanged line - dim gray, no highlighting needed
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$}   {} ", start_line + i, old, width = num_width), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!(" {:>width$}   ", start_line + i, width = num_width), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", old), Style::default().fg(Color::DarkGray)),
                 ]));
             }
-            (Some(old), Some(new)) => {
+            (Some(old), Some(_new)) => {
+                // Changed line - old (red bg, dim white) and new (green bg, syntax highlighted)
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} - {} ", start_line + i, old, width = num_width), Style::default().fg(Color::White).bg(Color::Red)),
+                    Span::styled(format!(" {:>width$} - ", start_line + i, width = num_width), Style::default().fg(Color::Red)),
+                    Span::styled(format!("{} ", old), Style::default().fg(dim_white).bg(dim_red_bg)),
                 ]));
-                lines.push(Line::from(vec![
+
+                let mut new_spans = vec![
                     Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} + {} ", start_line + i, new, width = num_width), Style::default().fg(Color::Black).bg(Color::Green)),
-                ]));
+                    Span::styled(format!(" {:>width$} + ", start_line + i, width = num_width), Style::default().fg(Color::Green)),
+                ];
+                if let Some(highlighted) = new_highlighted.get(i) {
+                    for span in highlighted {
+                        new_spans.push(Span::styled(span.content.to_string(), span.style.bg(dim_green_bg)));
+                    }
+                }
+                new_spans.push(Span::styled(" ", Style::default().bg(dim_green_bg)));
+                lines.push(Line::from(new_spans));
             }
             (Some(old), None) => {
+                // Deleted line - red bg with dim white text (no syntax highlighting)
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} - {} ", start_line + i, old, width = num_width), Style::default().fg(Color::White).bg(Color::Red)),
+                    Span::styled(format!(" {:>width$} - ", start_line + i, width = num_width), Style::default().fg(Color::Red)),
+                    Span::styled(format!("{} ", old), Style::default().fg(dim_white).bg(dim_red_bg)),
                 ]));
             }
-            (None, Some(new)) => {
-                lines.push(Line::from(vec![
+            (None, Some(_new)) => {
+                // Added line - green bg with syntax highlighting
+                let mut spans = vec![
                     Span::styled(" ┃  ", Style::default().fg(tool_color)),
-                    Span::styled(format!(" {:>width$} + {} ", start_line + i, new, width = num_width), Style::default().fg(Color::Black).bg(Color::Green)),
-                ]));
+                    Span::styled(format!(" {:>width$} + ", start_line + i, width = num_width), Style::default().fg(Color::Green)),
+                ];
+                if let Some(highlighted) = new_highlighted.get(i) {
+                    for span in highlighted {
+                        spans.push(Span::styled(span.content.to_string(), span.style.bg(dim_green_bg)));
+                    }
+                }
+                spans.push(Span::styled(" ", Style::default().bg(dim_green_bg)));
+                lines.push(Line::from(spans));
             }
             (None, None) => {}
         }

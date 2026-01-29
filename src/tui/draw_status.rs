@@ -72,7 +72,8 @@ pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             (Focus::SessionCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
-            (Focus::FileTree, _) | (Focus::Viewer, _) => "?:help  j/k:navigate  Tab:switch",
+            (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  Tab:switch",
+            (Focus::Viewer, _) => "?:help  j/k:scroll  Ctrl+d/u:half-page  g/G:top/bottom  Esc:close  Tab:switch",
         }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));

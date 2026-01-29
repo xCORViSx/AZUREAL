@@ -1,4 +1,4 @@
-//! Output panel rendering
+//! Convopanel rendering
 
 use ratatui::{
     layout::Rect,
@@ -39,9 +39,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
 
                 let scroll_indicator = if total > viewport_height {
-                    format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                    format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
                 } else {
-                    " Output ".to_string()
+                    " Convo ".to_string()
                 };
 
                 (scroll_indicator, lines)
@@ -90,9 +90,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
 
                 let scroll_indicator = if total > viewport_height {
-                    format!(" Output [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                    format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
                 } else {
-                    " Output ".to_string()
+                    " Convo ".to_string()
                 };
 
                 (scroll_indicator, lines)

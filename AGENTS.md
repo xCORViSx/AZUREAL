@@ -47,13 +47,41 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 
 ### TUI Interface
 
-A ratatui-based terminal interface with:
-- Session list panel (left side)
-- Output display panel (main area)
-- Input field with vim-style modal editing
+A ratatui-based terminal interface with 4-pane layout:
+
+```
+┌──────────┬──────────┬─────────────────┬─────────────────┐
+│ Sessions │ FileTree │     Viewer      │     Convo      │
+│   (40)   │   (40)   │  (50% remain)   │  (50% remain)   │
+├──────────┴──────────┴─────────────────┴─────────────────┤
+│                    Input / Terminal                      │
+├─────────────────────────────────────────────────────────┤
+│                      Status Bar                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Panes:**
+- **Sessions** (40 cols): Session list showing all worktrees and archived branches
+- **FileTree** (40 cols): Directory tree for selected session's worktree (supports expand/collapse)
+- **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
+- **Convo** (50% remaining): Claude conversation output with tool results
+- **Input/Terminal**: Prompt input or embedded terminal (toggleable)
+- **Status Bar**: Context-sensitive help and session info
+
+**Viewer Dual Purpose:**
+- When file selected in FileTree → shows syntax-highlighted file content with line numbers
+- When diff selected in Convo → shows diff detail (future)
+
+**Syntax Highlighting:**
+- Uses syntect library with base16-ocean.dark theme
+- Automatic language detection based on file extension
+- Supports Rust, TOML, Markdown, JSON, YAML, and 150+ other languages
+
+Other features:
+- Vim-style modal editing
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
-- Mouse scroll support (scroll panels based on cursor position, Shift+drag for text selection)
+- Mouse scroll support (scroll panels based on cursor position)
 
 **Performance Optimizations:**
 - Event batching: All pending events drained before redrawing
@@ -62,7 +90,7 @@ A ratatui-based terminal interface with:
 - Conditional polling: Terminal rx only polled when terminal mode active
 - Motion discard: Mouse motion events discarded instantly (zero processing)
 
-Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/app/state.rs` for state management.
+Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 **Startup sequence** (`src/tui/run.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
 
@@ -268,7 +296,17 @@ azural/
 ├── src/
 │   ├── app.rs              # Module root (re-exports only)
 │   ├── app/                # Application state module
-│   │   ├── state.rs        # App struct and core methods
+│   │   ├── state.rs        # State module root (re-exports only)
+│   │   ├── state/          # State submodules
+│   │   │   ├── app.rs      # App struct definition + new()
+│   │   │   ├── load.rs     # Session loading and discovery
+│   │   │   ├── sessions.rs # Session navigation and CRUD
+│   │   │   ├── output.rs   # Output processing
+│   │   │   ├── scroll.rs   # Scroll operations
+│   │   │   ├── claude.rs   # Claude session handling
+│   │   │   ├── file_browser.rs # File tree and viewer
+│   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
+│   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
 │   │   ├── types.rs        # Enums (Focus, ViewMode, dialogs)
@@ -276,15 +314,21 @@ azural/
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
 │   ├── tui/                # Terminal UI module
-│   │   ├── run.rs          # TUI entry point and main layout
+│   │   ├── run.rs          # TUI entry point and 4-pane layout
 │   │   ├── event_loop.rs   # Event handling loop
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
 │   │   ├── render_events.rs # DisplayEvent rendering
 │   │   ├── render_tools.rs # Tool result rendering
-│   │   ├── draw_*.rs       # Rendering functions
-│   │   └── input_*.rs      # Mode-specific input handlers
+│   │   ├── draw_sidebar.rs # Sessions pane rendering
+│   │   ├── draw_file_tree.rs # FileTree pane rendering
+│   │   ├── draw_viewer.rs  # Viewer pane rendering
+│   │   ├── draw_output.rs  # Convo pane rendering
+│   │   ├── draw_*.rs       # Other rendering functions
+│   │   ├── input_file_tree.rs # FileTree navigation
+│   │   ├── input_viewer.rs # Viewer scroll handling
+│   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
 │   │   ├── types.rs        # Raw Claude Code event types
@@ -331,7 +375,7 @@ azural/
 - [x] Embedded terminal pane for shell commands
 
 ## Phase 2: Enhanced UX
-- [ ] File viewer/editor pane (third column)
+- [x] File viewer pane (4-pane layout: Sessions, FileTree, Viewer, Convo)
 - [ ] Token estimate counter on input
 - [ ] Auto-rebase hooks when main is ahead
 - [ ] PTY mode for full Claude interactivity
@@ -401,14 +445,33 @@ azural
 |-----|--------|
 | `i` | Enter inprompt mode (focus input) |
 | `t` | Toggle terminal pane |
-| `j/k` | Navigate sessions |
+| `j/k` | Navigate (sessions, files, scroll) |
 | `J/K` | Navigate projects |
-| `Tab` | Cycle focus |
+| `Tab` | Cycle focus (Sessions → FileTree → Viewer → Convo → Input) |
+| `Shift+Tab` | Cycle focus reverse |
 | `n` | New session |
 | `d` | View diff |
-| `Space` | Context menu |
+| `Space` | Context menu (Sessions) / Toggle expand (FileTree) |
 | `?` | Help |
 | `Ctrl+c` | Quit |
+
+### FileTree Pane
+| Key | Action |
+|-----|--------|
+| `j/k` | Navigate up/down |
+| `Enter` | Open file in Viewer / Expand directory |
+| `h/l` | Collapse/Expand directory |
+| `Space` | Toggle directory expand |
+
+### Viewer Pane
+| Key | Action |
+|-----|--------|
+| `j/k` | Scroll up/down |
+| `Ctrl+d/u` | Half-page scroll |
+| `Ctrl+f/b` | Full-page scroll |
+| `g/G` | Jump to top/bottom |
+| `Esc` | Clear viewer, return to FileTree |
+| `q` | Return to FileTree (keep content) |
 
 ### Insert Mode (Input Focused)
 | Key | Action |
