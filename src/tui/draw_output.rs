@@ -26,7 +26,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 // Only re-render if cache is dirty or width changed (NOT for animation tick)
                 if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
-                    let (lines_cache, anim_indices) = render_display_events(
+                    let (lines_cache, anim_indices, bubble_positions) = render_display_events(
                         &app.display_events,
                         inner_width,
                         &app.pending_tool_calls,
@@ -36,6 +36,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     );
                     app.rendered_lines_cache = lines_cache;
                     app.animation_line_indices = anim_indices;
+                    app.message_bubble_positions = bubble_positions;
                     app.rendered_lines_width = inner_width;
                     app.rendered_lines_dirty = false;
                 }

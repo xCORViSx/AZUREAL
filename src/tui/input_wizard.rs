@@ -6,7 +6,7 @@ use crate::app::App;
 use crate::claude::ClaudeProcess;
 use crate::wizard::WizardStep;
 
-/// Handle keyboard input for session creation wizard
+/// Handle keyboard input for worktree creation wizard
 pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &ClaudeProcess) {
     let Some(wizard) = app.creation_wizard.as_mut() else { return; };
 
@@ -19,8 +19,9 @@ pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &Cl
                 _ => {}
             }
         }
-        WizardStep::EnterPrompt => {
+        WizardStep::EnterDetails => {
             match key_code {
+                KeyCode::Tab => wizard.toggle_field(),
                 KeyCode::Char(c) => wizard.input_char(c),
                 KeyCode::Backspace => wizard.input_backspace(),
                 KeyCode::Delete => wizard.input_delete(),
@@ -37,18 +38,19 @@ pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &Cl
             match key_code {
                 KeyCode::Enter => {
                     let prompt = wizard.prompt.clone();
+                    let worktree_name = wizard.final_worktree_name();
 
-                    match app.create_new_session(prompt.clone()) {
-                        Ok(session) => {
-                            let branch_name = session.branch_name.clone();
-                            app.set_status(format!("Created session: {}", session.name()));
+                    match app.create_new_worktree_with_name(worktree_name, prompt.clone()) {
+                        Ok(worktree) => {
+                            let branch_name = worktree.branch_name.clone();
+                            app.set_status(format!("Created worktree: {}", worktree.name()));
 
-                            // Start Claude in the new session
-                            if let Some(ref wt_path) = session.worktree_path {
+                            // Start Claude in the new worktree
+                            if let Some(ref wt_path) = worktree.worktree_path {
                                 match claude_process.spawn(wt_path, &prompt, None) {
                                     Ok(rx) => {
                                         app.register_claude(branch_name.clone(), rx);
-                                        // Find and select the new session
+                                        // Find and select the new worktree
                                         if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == branch_name) {
                                             app.selected_session = Some(idx);
                                             app.load_session_output();
@@ -60,7 +62,7 @@ pub fn handle_wizard_input(app: &mut App, key_code: KeyCode, claude_process: &Cl
 
                             app.cancel_wizard();
                         }
-                        Err(e) => app.set_status(format!("Failed to create session: {}", e)),
+                        Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                     }
                 }
                 KeyCode::Esc => wizard.prev_step(),

@@ -117,4 +117,42 @@ impl App {
     pub fn scroll_viewer_to_bottom(&mut self) {
         self.viewer_scroll = usize::MAX;
     }
+
+    /// Jump to the next message bubble in convo pane
+    /// If include_assistant is true, jumps to both UserMessage and AssistantText bubbles
+    /// Otherwise, only jumps to UserMessage bubbles
+    pub fn jump_to_next_bubble(&mut self, include_assistant: bool) {
+        if self.output_scroll == usize::MAX {
+            self.output_scroll = self.output_natural_bottom();
+        }
+        let current = self.output_scroll;
+        // Find next bubble position after current scroll
+        for &(line_idx, is_user) in &self.message_bubble_positions {
+            if line_idx > current && (include_assistant || is_user) {
+                self.output_scroll = line_idx.min(self.output_max_scroll());
+                return;
+            }
+        }
+        // No more bubbles, scroll to bottom
+        self.output_scroll = self.output_max_scroll();
+    }
+
+    /// Jump to the previous message bubble in convo pane
+    /// If include_assistant is true, jumps to both UserMessage and AssistantText bubbles
+    /// Otherwise, only jumps to UserMessage bubbles
+    pub fn jump_to_prev_bubble(&mut self, include_assistant: bool) {
+        if self.output_scroll == usize::MAX {
+            self.output_scroll = self.output_natural_bottom();
+        }
+        let current = self.output_scroll;
+        // Find previous bubble position before current scroll (iterate in reverse)
+        for &(line_idx, is_user) in self.message_bubble_positions.iter().rev() {
+            if line_idx < current && (include_assistant || is_user) {
+                self.output_scroll = line_idx;
+                return;
+            }
+        }
+        // No previous bubbles, scroll to top
+        self.output_scroll = 0;
+    }
 }

@@ -15,7 +15,7 @@ use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input
 use super::input_file_tree::handle_file_tree_input;
 use super::input_output::handle_output_input;
 use super::input_worktrees::handle_worktrees_input;
-use super::input_terminal::{handle_input_mode, handle_session_creation_input};
+use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
 use super::run::ui;
@@ -300,7 +300,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         Focus::Viewer => handle_viewer_input(key, app)?,
         Focus::Output => handle_output_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
-        Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,
+        Focus::WorktreeCreation => handle_worktree_creation_input(key, app, claude_process)?,
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
     }
 

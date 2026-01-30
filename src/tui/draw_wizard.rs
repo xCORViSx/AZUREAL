@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::wizard::{SessionCreationWizard, WizardStep};
+use crate::wizard::{SessionCreationWizard, WizardField, WizardStep};
 
 /// Draw the wizard modal overlay
 pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
@@ -31,7 +31,7 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
     let modal_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" New Session - {} ", wizard.step_title()))
+        .title(format!(" New Worktree - {} ", wizard.step_title()))
         .style(Style::default().bg(Color::Reset));
     f.render_widget(modal_block, modal_area);
 
@@ -69,7 +69,7 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
                 .style(Style::default().fg(Color::Cyan));
             f.render_widget(info, content_area);
         }
-        WizardStep::EnterPrompt => draw_wizard_prompt_input(f, wizard, content_area),
+        WizardStep::EnterDetails => draw_wizard_details_input(f, wizard, content_area),
         WizardStep::Confirm => draw_wizard_confirmation(f, app, wizard, content_area),
     }
 
@@ -98,43 +98,59 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
     f.render_widget(help, help_area);
 }
 
-fn draw_wizard_prompt_input(f: &mut Frame, wizard: &SessionCreationWizard, area: Rect) {
-    let instruction = Paragraph::new("Enter a prompt to start your Claude Code session:\n(This will be the initial message sent to Claude)")
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: true });
-    f.render_widget(instruction, Rect { x: area.x, y: area.y, width: area.width, height: 3 });
-
-    // Prompt input box
-    let input_area = Rect { x: area.x, y: area.y + 4, width: area.width, height: 5 };
-    let input = Paragraph::new(wizard.prompt.as_str())
+fn draw_wizard_details_input(f: &mut Frame, wizard: &SessionCreationWizard, area: Rect) {
+    // Worktree name field
+    let name_focused = wizard.focused_field == WizardField::Name;
+    let name_border_color = if name_focused { Color::Yellow } else { Color::Gray };
+    let name_area = Rect { x: area.x, y: area.y, width: area.width, height: 3 };
+    let name_input = Paragraph::new(wizard.worktree_name.as_str())
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Prompt ")
-                .border_style(Style::default().fg(Color::Yellow))
+                .title(" Worktree Name ")
+                .border_style(Style::default().fg(name_border_color))
+        );
+    f.render_widget(name_input, name_area);
+
+    // Prompt field
+    let prompt_focused = wizard.focused_field == WizardField::Prompt;
+    let prompt_border_color = if prompt_focused { Color::Yellow } else { Color::Gray };
+    let prompt_area = Rect { x: area.x, y: area.y + 4, width: area.width, height: 6 };
+    let prompt_input = Paragraph::new(wizard.prompt.as_str())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Initial Prompt ")
+                .border_style(Style::default().fg(prompt_border_color))
         )
         .wrap(Wrap { trim: false });
-    f.render_widget(input, input_area);
+    f.render_widget(prompt_input, prompt_area);
 
-    // Cursor
-    let cursor_x = input_area.x + 1 + (wizard.prompt_cursor as u16 % (input_area.width - 2));
-    let cursor_y = input_area.y + 1 + (wizard.prompt_cursor as u16 / (input_area.width - 2));
-    f.set_cursor_position((cursor_x, cursor_y));
-
-    // Session name preview
-    if !wizard.session_name_preview.is_empty() {
-        let preview_area = Rect { x: area.x, y: area.y + 10, width: area.width, height: 3 };
-        let preview = Paragraph::new(format!("Session name: {}", wizard.session_name_preview))
-            .style(Style::default().fg(Color::Cyan))
-            .wrap(Wrap { trim: true });
-        f.render_widget(preview, preview_area);
+    // Cursor position based on focused field
+    match wizard.focused_field {
+        WizardField::Name => {
+            let cursor_x = name_area.x + 1 + wizard.name_cursor as u16;
+            f.set_cursor_position((cursor_x.min(name_area.x + name_area.width - 2), name_area.y + 1));
+        }
+        WizardField::Prompt => {
+            let inner_width = prompt_area.width.saturating_sub(2) as usize;
+            let cursor_x = prompt_area.x + 1 + (wizard.prompt_cursor % inner_width) as u16;
+            let cursor_y = prompt_area.y + 1 + (wizard.prompt_cursor / inner_width) as u16;
+            f.set_cursor_position((cursor_x, cursor_y.min(prompt_area.y + prompt_area.height - 2)));
+        }
     }
+
+    // Hint text
+    let hint_area = Rect { x: area.x, y: area.y + 11, width: area.width, height: 1 };
+    let hint = Paragraph::new("Tab to switch fields • Only alphanumeric, -, _ allowed in name")
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(hint, hint_area);
 }
 
 fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &SessionCreationWizard, area: Rect) {
     let mut lines = vec![
         Line::from(vec![
-            Span::styled("Ready to create session", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("Ready to create worktree", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
     ];
@@ -148,8 +164,12 @@ fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &SessionCreationWi
     }
 
     lines.push(Line::from(vec![
-        Span::styled("Session name: ", Style::default().fg(Color::Gray)),
-        Span::styled(&wizard.session_name_preview, Style::default().fg(Color::Cyan)),
+        Span::styled("Worktree name: ", Style::default().fg(Color::Gray)),
+        Span::styled(&wizard.worktree_name, Style::default().fg(Color::Cyan)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Branch: ", Style::default().fg(Color::Gray)),
+        Span::styled(format!("azural/{}", wizard.final_worktree_name()), Style::default().fg(Color::Cyan)),
     ]));
     lines.push(Line::from(""));
 
@@ -167,7 +187,7 @@ fn draw_wizard_confirmation(f: &mut Frame, app: &App, wizard: &SessionCreationWi
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("Press Enter to create and start the session", Style::default().fg(Color::Green)),
+        Span::styled("Press Enter to create worktree and start Claude", Style::default().fg(Color::Green)),
     ]));
 
     let confirmation = Paragraph::new(lines).wrap(Wrap { trim: false });

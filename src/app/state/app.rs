@@ -35,8 +35,8 @@ pub struct App {
     pub selected_event: Option<usize>,
     pub input: String,
     pub input_cursor: usize,
-    pub session_creation_input: String,
-    pub session_creation_cursor: usize,
+    pub worktree_creation_input: String,
+    pub worktree_creation_cursor: usize,
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub insert_mode: bool,
@@ -155,6 +155,9 @@ pub struct App {
     pub viewer_viewport_height: usize,
     /// Cached viewport height for output/convo pane (set during render, used for scroll)
     pub output_viewport_height: usize,
+    /// Line indices where message bubbles start (for Up/Down navigation)
+    /// Each entry is (line_index, is_user_message) - true for UserMessage, false for AssistantText
+    pub message_bubble_positions: Vec<(usize, bool)>,
 }
 
 impl App {
@@ -173,8 +176,8 @@ impl App {
             selected_event: None,
             input: String::new(),
             input_cursor: 0,
-            session_creation_input: String::new(),
-            session_creation_cursor: 0,
+            worktree_creation_input: String::new(),
+            worktree_creation_cursor: 0,
             view_mode: ViewMode::Output,
             focus: Focus::Worktrees,
             insert_mode: false,
@@ -250,6 +253,7 @@ impl App {
             awaiting_plan_approval: false,
             viewer_viewport_height: 20,
             output_viewport_height: 20,
+            message_bubble_positions: Vec::new(),
         }
     }
 

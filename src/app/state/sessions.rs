@@ -34,14 +34,19 @@ impl App {
         }
     }
 
-    pub fn create_new_session(&mut self, prompt: String) -> anyhow::Result<Session> {
+    /// Create a new git worktree with a Claude session (name auto-generated from prompt)
+    pub fn create_new_worktree(&mut self, prompt: String) -> anyhow::Result<Session> {
+        let name = generate_session_name(&prompt);
+        let worktree_name = sanitize_for_branch(&name);
+        self.create_new_worktree_with_name(worktree_name, prompt)
+    }
+
+    /// Create a new git worktree with a custom name
+    pub fn create_new_worktree_with_name(&mut self, worktree_name: String, _prompt: String) -> anyhow::Result<Session> {
         let Some(project) = self.project.clone() else {
             anyhow::bail!("No project loaded")
         };
 
-        // Generate session name from prompt
-        let name = generate_session_name(&prompt);
-        let worktree_name = sanitize_for_branch(&name);
         let branch_name = format!("azural/{}", worktree_name);
         let worktree_path = project.worktrees_dir().join(&worktree_name);
 
@@ -52,7 +57,7 @@ impl App {
         // Create git worktree
         Git::create_worktree(&project.path, &worktree_path, &branch_name)?;
 
-        let session = Session {
+        let worktree = Session {
             branch_name: branch_name.clone(),
             worktree_path: Some(worktree_path),
             claude_session_id: None,
@@ -61,14 +66,14 @@ impl App {
 
         self.refresh_sessions()?;
 
-        // Select the new session
+        // Select the new worktree
         if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == branch_name) {
             self.save_current_terminal(); // Save before switching
             self.selected_session = Some(idx);
             self.load_session_output();
         }
 
-        Ok(session)
+        Ok(worktree)
     }
 
     pub fn archive_current_session(&mut self) -> anyhow::Result<()> {

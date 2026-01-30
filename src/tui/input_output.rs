@@ -15,18 +15,39 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     }
 
     match (key.modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+        (KeyModifiers::NONE, KeyCode::Char('j')) => {
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_down(1); }
                 ViewMode::Diff => { app.scroll_diff_down(1); }
                 _ => {}
             }
         }
-        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+        (KeyModifiers::NONE, KeyCode::Char('k')) => {
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_up(1); }
                 ViewMode::Diff => { app.scroll_diff_up(1); }
                 _ => {}
+            }
+        }
+        // Arrow keys for bubble navigation: Down/Up = user prompts, Shift = include assistant
+        (KeyModifiers::NONE, KeyCode::Down) => {
+            if app.view_mode == ViewMode::Output {
+                app.jump_to_next_bubble(false);
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Up) => {
+            if app.view_mode == ViewMode::Output {
+                app.jump_to_prev_bubble(false);
+            }
+        }
+        (KeyModifiers::SHIFT, KeyCode::Down) => {
+            if app.view_mode == ViewMode::Output {
+                app.jump_to_next_bubble(true);
+            }
+        }
+        (KeyModifiers::SHIFT, KeyCode::Up) => {
+            if app.view_mode == ViewMode::Output {
+                app.jump_to_prev_bubble(true);
             }
         }
         (KeyModifiers::NONE, KeyCode::Char('G')) => {

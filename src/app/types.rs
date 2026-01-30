@@ -161,6 +161,6 @@ pub enum Focus {
     Viewer,
     Output,
     Input,
-    SessionCreation,
+    WorktreeCreation,
     BranchDialog,
 }

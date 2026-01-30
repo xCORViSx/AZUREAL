@@ -109,8 +109,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     draw_status::draw_status(f, app, chunks[2]);
 
     // Draw overlays
-    if app.focus == Focus::SessionCreation {
-        draw_dialogs::draw_session_creation_modal(f, app);
+    if app.focus == Focus::WorktreeCreation {
+        draw_dialogs::draw_worktree_creation_modal(f, app);
     }
     if let Some(ref dialog) = app.branch_dialog {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());

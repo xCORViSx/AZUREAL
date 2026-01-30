@@ -18,8 +18,9 @@ use super::render_tools::{extract_tool_param, render_tool_result, render_edit_di
 use super::render_wrap::wrap_text;
 
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
-/// Returns (lines, animation_indices) where animation_indices are (line_idx, span_idx) pairs
-/// for pending tool indicators that need animation color patching
+/// Returns (lines, animation_indices, bubble_positions) where:
+/// - animation_indices are (line_idx, span_idx) pairs for pending tool indicators
+/// - bubble_positions are (line_idx, is_user) pairs marking where message bubbles start
 pub fn render_display_events(
     events: &[DisplayEvent],
     width: u16,
@@ -27,9 +28,10 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &SyntaxHighlighter,
     pending_user_message: Option<&str>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
     let mut lines = Vec::new();
     let mut animation_indices = Vec::new();
+    let mut bubble_positions = Vec::new();
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -78,11 +80,15 @@ pub fn render_display_events(
                 saw_content = true;
                 last_hook = None;
                 if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
+                // Track bubble position (line index after the empty lines)
+                bubble_positions.push((lines.len() + 2, true));
                 render_user_message(&mut lines, content, bubble_width, w);
             }
             DisplayEvent::AssistantText { text, .. } => {
                 saw_content = true;
                 last_hook = None;
+                // Track bubble position (line index after the empty lines)
+                bubble_positions.push((lines.len() + 2, false));
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
@@ -131,10 +137,11 @@ pub fn render_display_events(
 
     // Render pending user message (sent but not yet in session file)
     if let Some(msg) = pending_user_message {
+        bubble_positions.push((lines.len() + 2, true));
         render_user_message(&mut lines, msg, bubble_width, w);
     }
 
-    (lines, animation_indices)
+    (lines, animation_indices, bubble_positions)
 }
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {

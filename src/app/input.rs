@@ -83,62 +83,62 @@ impl App {
         self.input_cursor = 0;
     }
 
-    // Session creation input methods
+    // Worktree creation input methods
 
-    /// Handle character input for session creation
-    pub fn session_creation_char(&mut self, c: char) {
-        self.session_creation_input.insert(self.session_creation_cursor, c);
-        self.session_creation_cursor += c.len_utf8();
+    /// Handle character input for worktree creation
+    pub fn worktree_creation_char(&mut self, c: char) {
+        self.worktree_creation_input.insert(self.worktree_creation_cursor, c);
+        self.worktree_creation_cursor += c.len_utf8();
     }
 
-    /// Handle backspace for session creation
-    pub fn session_creation_backspace(&mut self) {
-        if self.session_creation_cursor > 0 {
-            let mut idx = self.session_creation_cursor - 1;
-            while idx > 0 && !self.session_creation_input.is_char_boundary(idx) { idx -= 1; }
-            self.session_creation_input.remove(idx);
-            self.session_creation_cursor = idx;
+    /// Handle backspace for worktree creation
+    pub fn worktree_creation_backspace(&mut self) {
+        if self.worktree_creation_cursor > 0 {
+            let mut idx = self.worktree_creation_cursor - 1;
+            while idx > 0 && !self.worktree_creation_input.is_char_boundary(idx) { idx -= 1; }
+            self.worktree_creation_input.remove(idx);
+            self.worktree_creation_cursor = idx;
         }
     }
 
-    /// Handle delete for session creation
-    pub fn session_creation_delete(&mut self) {
-        if self.session_creation_cursor < self.session_creation_input.len() {
-            self.session_creation_input.remove(self.session_creation_cursor);
+    /// Handle delete for worktree creation
+    pub fn worktree_creation_delete(&mut self) {
+        if self.worktree_creation_cursor < self.worktree_creation_input.len() {
+            self.worktree_creation_input.remove(self.worktree_creation_cursor);
         }
     }
 
-    /// Move cursor left in session creation
-    pub fn session_creation_left(&mut self) {
-        if self.session_creation_cursor > 0 {
-            let mut idx = self.session_creation_cursor - 1;
-            while idx > 0 && !self.session_creation_input.is_char_boundary(idx) { idx -= 1; }
-            self.session_creation_cursor = idx;
+    /// Move cursor left in worktree creation
+    pub fn worktree_creation_left(&mut self) {
+        if self.worktree_creation_cursor > 0 {
+            let mut idx = self.worktree_creation_cursor - 1;
+            while idx > 0 && !self.worktree_creation_input.is_char_boundary(idx) { idx -= 1; }
+            self.worktree_creation_cursor = idx;
         }
     }
 
-    /// Move cursor right in session creation
-    pub fn session_creation_right(&mut self) {
-        if self.session_creation_cursor < self.session_creation_input.len() {
-            let mut idx = self.session_creation_cursor + 1;
-            while idx < self.session_creation_input.len() && !self.session_creation_input.is_char_boundary(idx) { idx += 1; }
-            self.session_creation_cursor = idx;
+    /// Move cursor right in worktree creation
+    pub fn worktree_creation_right(&mut self) {
+        if self.worktree_creation_cursor < self.worktree_creation_input.len() {
+            let mut idx = self.worktree_creation_cursor + 1;
+            while idx < self.worktree_creation_input.len() && !self.worktree_creation_input.is_char_boundary(idx) { idx += 1; }
+            self.worktree_creation_cursor = idx;
         }
     }
 
-    /// Move cursor to start of session creation input
-    pub fn session_creation_home(&mut self) {
-        self.session_creation_cursor = 0;
+    /// Move cursor to start of worktree creation input
+    pub fn worktree_creation_home(&mut self) {
+        self.worktree_creation_cursor = 0;
     }
 
-    /// Move cursor to end of session creation input
-    pub fn session_creation_end(&mut self) {
-        self.session_creation_cursor = self.session_creation_input.len();
+    /// Move cursor to end of worktree creation input
+    pub fn worktree_creation_end(&mut self) {
+        self.worktree_creation_cursor = self.worktree_creation_input.len();
     }
 
-    /// Clear session creation input
-    pub fn clear_session_creation_input(&mut self) {
-        self.session_creation_input.clear();
-        self.session_creation_cursor = 0;
+    /// Clear worktree creation input
+    pub fn clear_worktree_creation_input(&mut self) {
+        self.worktree_creation_input.clear();
+        self.worktree_creation_cursor = 0;
     }
 }

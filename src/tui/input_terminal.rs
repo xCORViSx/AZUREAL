@@ -153,39 +153,39 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     Ok(())
 }
 
-/// Handle keyboard input when session creation modal is focused
-pub fn handle_session_creation_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+/// Handle keyboard input when worktree creation modal is focused
+pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Enter) => {
-            if !app.session_creation_input.is_empty() {
-                let prompt = app.session_creation_input.clone();
-                app.exit_session_creation_mode();
+            if !app.worktree_creation_input.is_empty() {
+                let prompt = app.worktree_creation_input.clone();
+                app.exit_worktree_creation_mode();
 
-                match app.create_new_session(prompt.clone()) {
-                    Ok(session) => {
-                        let branch_name = session.branch_name.clone();
-                        app.set_status(format!("Created session: {}", session.name()));
+                match app.create_new_worktree(prompt.clone()) {
+                    Ok(worktree) => {
+                        let branch_name = worktree.branch_name.clone();
+                        app.set_status(format!("Created worktree: {}", worktree.name()));
 
-                        if let Some(ref wt_path) = session.worktree_path {
+                        if let Some(ref wt_path) = worktree.worktree_path {
                             match claude_process.spawn(wt_path, &prompt, None) {
                                 Ok(rx) => app.register_claude(branch_name, rx),
                                 Err(e) => app.set_status(format!("Failed to start: {}", e)),
                             }
                         }
                     }
-                    Err(e) => app.set_status(format!("Failed to create session: {}", e)),
+                    Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                 }
             }
         }
-        (KeyModifiers::NONE, KeyCode::Enter) => app.session_creation_char('\n'),
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => app.session_creation_char(c),
-        (_, KeyCode::Backspace) => app.session_creation_backspace(),
-        (_, KeyCode::Delete) => app.session_creation_delete(),
-        (_, KeyCode::Left) => app.session_creation_left(),
-        (_, KeyCode::Right) => app.session_creation_right(),
-        (_, KeyCode::Home) => app.session_creation_home(),
-        (_, KeyCode::End) => app.session_creation_end(),
-        (_, KeyCode::Esc) => app.exit_session_creation_mode(),
+        (KeyModifiers::NONE, KeyCode::Enter) => app.worktree_creation_char('\n'),
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => app.worktree_creation_char(c),
+        (_, KeyCode::Backspace) => app.worktree_creation_backspace(),
+        (_, KeyCode::Delete) => app.worktree_creation_delete(),
+        (_, KeyCode::Left) => app.worktree_creation_left(),
+        (_, KeyCode::Right) => app.worktree_creation_right(),
+        (_, KeyCode::Home) => app.worktree_creation_home(),
+        (_, KeyCode::End) => app.worktree_creation_end(),
+        (_, KeyCode::Esc) => app.exit_worktree_creation_mode(),
         _ => {}
     }
     Ok(())

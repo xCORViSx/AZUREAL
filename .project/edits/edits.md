@@ -1,5 +1,27 @@
 # Edit History
 
+## 2026-01-29: Bubble Navigation in Convo Pane
+
+### Feature
+Added n/p and N/P keybindings to jump between message bubbles in the Convo pane.
+
+### Implementation
+- `n/p` jumps to next/previous user prompt bubbles only
+- `N/P` (Shift) includes assistant response bubbles too
+- `render_display_events()` now returns bubble positions as `Vec<(usize, bool)>` where bool is `is_user`
+- Added `message_bubble_positions` field to App state
+- Added `jump_to_next_bubble()` and `jump_to_prev_bubble()` methods in scroll.rs
+
+### Files Changed
+- `src/app/state/app.rs` - Added `message_bubble_positions` field
+- `src/app/state/scroll.rs` - Added bubble navigation methods
+- `src/tui/render_events.rs` - Track bubble positions during rendering
+- `src/tui/input_output.rs` - Added n/p/N/P keybindings
+- `src/tui/draw_output.rs` - Store bubble positions in app state
+- `src/tui/draw_dialogs.rs` - Updated help panel
+
+---
+
 ## 2026-01-29: Plan Mode Display
 
 ### Feature

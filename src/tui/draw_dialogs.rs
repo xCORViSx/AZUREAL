@@ -11,11 +11,170 @@ use ratatui::{
 use crate::app::{App, BranchDialog};
 use super::util::{calculate_cursor_position, truncate};
 
-/// Draw help overlay
+/// Help section with title and key-description pairs
+struct HelpSection {
+    title: &'static str,
+    entries: Vec<(&'static str, &'static str)>,
+}
+
+/// Build all help sections
+fn help_sections() -> Vec<HelpSection> {
+    vec![
+        HelpSection {
+            title: "Global",
+            entries: vec![
+                ("i", "Enter INPROMPT mode"),
+                ("t", "Toggle terminal pane"),
+                ("?", "Toggle this help"),
+                ("Tab", "Cycle focus forward"),
+                ("Shift+Tab", "Cycle focus backward"),
+                ("Ctrl+X", "Cancel Claude response"),
+                ("Ctrl+C", "Quit application"),
+            ],
+        },
+        HelpSection {
+            title: "Worktrees",
+            entries: vec![
+                ("j/k", "Select worktree"),
+                ("J/K", "Select project"),
+                ("Space", "Context menu"),
+                ("Enter", "Start/resume"),
+                ("n", "New worktree"),
+                ("b", "Browse branches"),
+                ("d", "View diff"),
+                ("r", "Rebase onto main"),
+                ("a", "Archive worktree"),
+            ],
+        },
+        HelpSection {
+            title: "FileTree",
+            entries: vec![
+                ("j/k", "Navigate"),
+                ("h/l", "Collapse/expand"),
+                ("Enter", "Open/toggle"),
+                ("Space", "Toggle dir"),
+                ("Esc", "Back to Worktrees"),
+            ],
+        },
+        HelpSection {
+            title: "Viewer",
+            entries: vec![
+                ("j/k", "Scroll line"),
+                ("Ctrl+d/u", "Half page"),
+                ("Ctrl+f/b", "Full page"),
+                ("g/G", "Top/bottom"),
+                ("q", "Close viewer"),
+                ("Esc", "Close and clear"),
+            ],
+        },
+        HelpSection {
+            title: "Convo",
+            entries: vec![
+                ("j/k", "Scroll line"),
+                ("↑/↓", "Prev/next prompt"),
+                ("Shift+↑/↓", "Prev/next message"),
+                ("Ctrl+d/u", "Half page"),
+                ("Ctrl+f/b", "Full page"),
+                ("g/G", "Top/bottom"),
+                ("o", "Output view"),
+                ("d", "Diff view"),
+                ("Esc", "Back to Worktrees"),
+            ],
+        },
+        HelpSection {
+            title: "Input",
+            entries: vec![
+                ("Enter", "Submit prompt"),
+                ("Esc", "Exit to COMMAND"),
+                ("Ctrl+W", "Delete word"),
+            ],
+        },
+        HelpSection {
+            title: "Terminal",
+            entries: vec![
+                ("+/-", "Resize height"),
+                ("j/k", "Scroll line"),
+                ("J/K", "Scroll page"),
+            ],
+        },
+    ]
+}
+
+/// Draw help overlay with auto-sized columns
 pub fn draw_help_overlay(f: &mut Frame) {
     let area = f.area();
-    let help_width = 80.min(area.width - 4);
-    let help_height = 30.min(area.height - 4);
+    let sections = help_sections();
+
+    // Calculate max key width across all sections
+    let key_width = sections.iter()
+        .flat_map(|s| s.entries.iter())
+        .map(|(k, _)| k.len())
+        .max()
+        .unwrap_or(10) + 2; // +2 for padding
+
+    // Calculate max description width
+    let desc_width = sections.iter()
+        .flat_map(|s| s.entries.iter())
+        .map(|(_, d)| d.len())
+        .max()
+        .unwrap_or(20);
+
+    // Column width = key + separator + desc + padding
+    let col_width = key_width + 1 + desc_width + 2;
+
+    // Calculate how many columns fit (min 1, max 3)
+    let available_width = area.width.saturating_sub(4) as usize; // -4 for border
+    let num_cols = (available_width / col_width).clamp(1, 3);
+    let actual_col_width = available_width / num_cols;
+
+    // Distribute sections across columns (roughly equal height)
+    let total_lines: usize = sections.iter().map(|s| s.entries.len() + 2).sum(); // +2 for title + blank
+    let target_per_col = (total_lines + num_cols - 1) / num_cols;
+
+    let mut columns: Vec<Vec<Line>> = vec![Vec::new(); num_cols];
+    let mut current_col = 0;
+    let mut current_height = 0;
+
+    for section in &sections {
+        let section_height = section.entries.len() + 2;
+        // Move to next column if this section would overflow (unless we're on the last column)
+        if current_height + section_height > target_per_col && current_col < num_cols - 1 && current_height > 0 {
+            current_col += 1;
+            current_height = 0;
+        }
+
+        // Add section title
+        columns[current_col].push(Line::from(vec![
+            Span::styled(section.title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        ]));
+
+        // Add entries with proper key/desc separation
+        let desc_available = actual_col_width.saturating_sub(key_width + 1);
+        for (key, desc) in &section.entries {
+            let key_span = Span::styled(
+                format!("{:>width$}", key, width = key_width),
+                Style::default().fg(Color::Cyan)
+            );
+            let desc_str: String = if desc.len() > desc_available {
+                format!("{}…", desc.chars().take(desc_available.saturating_sub(1)).collect::<String>())
+            } else {
+                (*desc).to_string()
+            };
+            let desc_span = Span::raw(format!(" {}", desc_str));
+            columns[current_col].push(Line::from(vec![key_span, desc_span]));
+        }
+
+        // Add blank line after section
+        columns[current_col].push(Line::from(""));
+        current_height += section_height;
+    }
+
+    // Calculate actual height needed (max column height + title + footer + borders)
+    let max_col_height = columns.iter().map(|c| c.len()).max().unwrap_or(0);
+    let help_height = (max_col_height as u16 + 4).min(area.height.saturating_sub(4)); // +4 for title, footer, borders
+
+    // Calculate actual width needed
+    let help_width = ((actual_col_width * num_cols) as u16 + 4).min(area.width.saturating_sub(4)); // +4 for borders + padding
 
     let help_area = Rect {
         x: (area.width.saturating_sub(help_width)) / 2,
@@ -24,87 +183,41 @@ pub fn draw_help_overlay(f: &mut Frame) {
         height: help_height,
     };
 
-    let help_text = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Azural - Keyboard Navigation Help", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        ]),
-        Line::from(""),
-        Line::from(vec![Span::styled("Global (Command Mode)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  i                Enter INPROMPT mode (focus input, start typing)"),
-        Line::from("  ?                Toggle this help"),
-        Line::from("  Tab              Cycle focus forward (Sessions → Files → Viewer → Convo → Input)"),
-        Line::from("  Shift+Tab        Cycle focus backward"),
-        Line::from("  Ctrl+c           Quit application"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Sessions Panel", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  j / Down         Select next session"),
-        Line::from("  k / Up           Select previous session"),
-        Line::from("  J                Select next project"),
-        Line::from("  K                Select previous project"),
-        Line::from("  Space            Open context menu for session actions"),
-        Line::from("  Enter            Start/resume selected session"),
-        Line::from("  n                Create new session (enter prompt)"),
-        Line::from("  b                Browse branches (create worktree)"),
-        Line::from("  d                View diff for selected session"),
-        Line::from("  r                Rebase session onto main branch"),
-        Line::from("  a                Archive selected session"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Convo Panel", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  j / Down         Scroll down one line"),
-        Line::from("  k / Up           Scroll up one line"),
-        Line::from("  Ctrl+d           Scroll down half page (20 lines)"),
-        Line::from("  Ctrl+u           Scroll up half page (20 lines)"),
-        Line::from("  Ctrl+f           Scroll down full page (40 lines)"),
-        Line::from("  Ctrl+b           Scroll up full page (40 lines)"),
-        Line::from("  PageDown         Scroll down 10 lines"),
-        Line::from("  PageUp           Scroll up 10 lines"),
-        Line::from("  g                Jump to top"),
-        Line::from("  G                Jump to bottom"),
-        Line::from("  o                Switch to output view"),
-        Line::from("  d                Switch to diff view"),
-        Line::from("  Esc              Return to Sessions panel"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Input (Vim-style)", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  RED border = COMMAND mode (keys are commands)"),
-        Line::from("  YELLOW border = INPROMPT mode (typing to Claude)"),
-        Line::from("  CYAN border = TERMINAL mode (shell commands)"),
-        Line::from("  i (command)      Enter INPROMPT mode"),
-        Line::from("  t (command)      Toggle terminal pane"),
-        Line::from("  Esc (insert)     Exit to COMMAND mode"),
-        Line::from("  Enter            Submit prompt to Claude"),
-        Line::from("  Arrow keys       Navigate input text"),
-        Line::from("  Ctrl+W           Delete word backward"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Terminal Pane", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  t                Toggle terminal on/off (command mode)"),
-        Line::from("  +/-              Resize terminal height (command mode)"),
-        Line::from("  j/k              Scroll line (command mode)"),
-        Line::from("  J/K              Scroll page (command mode)"),
-        Line::from("  Enter            Execute shell command (insert mode)"),
-        Line::from("  CYAN border = Terminal mode active"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Branch Dialog", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-        Line::from("  j / Down         Select next branch"),
-        Line::from("  k / Up           Select previous branch"),
-        Line::from("  Enter            Confirm selection"),
-        Line::from("  Esc              Cancel"),
-        Line::from("  Type             Filter branches"),
-        Line::from(""),
-        Line::from(vec![Span::styled("Press ? or q or Esc to close this help", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC))]),
-    ];
+    // Clear background
+    f.render_widget(Clear, help_area);
 
-    let help = Paragraph::new(help_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Help ")
-                .border_style(Style::default().fg(Color::Cyan))
-                .style(Style::default().bg(Color::Reset))
-        )
-        .wrap(Wrap { trim: false });
+    // Create inner area for content
+    let inner = Rect {
+        x: help_area.x + 1,
+        y: help_area.y + 1,
+        width: help_area.width.saturating_sub(2),
+        height: help_area.height.saturating_sub(2),
+    };
 
-    f.render_widget(help, help_area);
+    // Split into columns
+    let col_constraints: Vec<Constraint> = (0..num_cols)
+        .map(|_| Constraint::Ratio(1, num_cols as u32))
+        .collect();
+    let col_areas = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(col_constraints)
+        .split(inner);
+
+    // Render border
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Help (? to close) ")
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Reset));
+    f.render_widget(block, help_area);
+
+    // Render each column
+    for (i, col_lines) in columns.iter().enumerate() {
+        if i < col_areas.len() {
+            let para = Paragraph::new(col_lines.clone());
+            f.render_widget(para, col_areas[i]);
+        }
+    }
 }
 
 /// Draw branch selection dialog
@@ -202,7 +315,7 @@ pub fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Cyan))
-                    .title(" Session Actions (↑↓ to navigate, Enter to select, Esc to close) ")
+                    .title(" Worktree Actions (↑↓ to navigate, Enter to select, Esc to close) ")
                     .style(Style::default().bg(Color::Reset)),
             );
 
@@ -211,8 +324,8 @@ pub fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// Draw session creation modal
-pub fn draw_session_creation_modal(f: &mut Frame, app: &App) {
+/// Draw worktree creation modal
+pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
     let area = f.area();
     let modal_width = (area.width * 4) / 5;
     let modal_height = (area.height * 3) / 5;
@@ -230,14 +343,14 @@ pub fn draw_session_creation_modal(f: &mut Frame, app: &App) {
         .split(modal_area);
 
     // Title
-    let title = Paragraph::new("Create New Session")
+    let title = Paragraph::new("Create New Worktree")
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT));
     f.render_widget(title, modal_chunks[0]);
 
     // Input area
-    let input_text = &app.session_creation_input;
+    let input_text = &app.worktree_creation_input;
     let lines: Vec<Line> = input_text.split('\n').map(Line::from).collect();
 
     let input_widget = Paragraph::new(lines)
@@ -252,7 +365,7 @@ pub fn draw_session_creation_modal(f: &mut Frame, app: &App) {
     // Cursor position
     if let Some((cursor_x, cursor_y)) = calculate_cursor_position(
         input_text,
-        app.session_creation_cursor,
+        app.worktree_creation_cursor,
         modal_chunks[1].width.saturating_sub(2) as usize,
     ) {
         f.set_cursor_position((

@@ -1,18 +1,22 @@
 # SUMMARY
 
-Azural (Agent Zones: Unified Runtime for Autonomous LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each "Session" is a git worktree with its own Claude agent, allowing concurrent AI-assisted development across multiple feature branches.
+Azural (Agent Zones: Unified Runtime for Autonomous LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each **worktree** is a git worktree with its own Claude **session**, allowing concurrent AI-assisted development across multiple feature branches.
+
+**Terminology:**
+- **Worktree**: A git worktree with its own working directory and branch (displayed in left panel)
+- **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Convo pane)
 
 **Stateless Architecture:** Azural stores NO persistent data. All state is derived at runtime from:
 - Git repository info via `git rev-parse --show-toplevel`
-- Git worktrees via `git worktree list` for active sessions
-- Git branches via `git branch | grep azural/` for archived sessions
+- Git worktrees via `git worktree list` for active worktrees
+- Git branches via `git branch | grep azural/` for archived worktrees
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 
 # FEATURES
 
-### Multi-Session Claude Management
+### Multi-Worktree Claude Management
 
-The core feature enabling multiple concurrent Claude Code CLI instances. Each session has its own:
+The core feature enabling multiple concurrent Claude Code CLI instances. Each worktree has its own:
 - Git worktree for isolated file changes
 - Claude session ID captured from init event for `--resume`
 - Output stream parsed from `stream-json` format for clean display
@@ -38,7 +42,7 @@ Implementation: `src/claude.rs` spawns processes, `src/app/state.rs` tracks `cla
 
 ### Git Worktree Isolation
 
-Sessions are backed by git worktrees, providing true branch isolation. Each worktree:
+Each worktree provides true branch isolation:
 - Has its own working directory
 - Can have different uncommitted changes
 - Operates on a separate branch from main
@@ -50,19 +54,19 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 A ratatui-based terminal interface with 4-pane layout:
 
 ```
-┌──────────┬──────────┬─────────────────┬─────────────────┐
-│ Sessions │ FileTree │     Viewer      │     Convo      │
-│   (40)   │   (40)   │  (50% remain)   │  (50% remain)   │
-├──────────┴──────────┴─────────────────┴─────────────────┤
-│                    Input / Terminal                      │
-├─────────────────────────────────────────────────────────┤
-│                      Status Bar                          │
-└─────────────────────────────────────────────────────────┘
+┌───────────┬──────────┬─────────────────┬─────────────────┐
+│ Worktrees │ FileTree │     Viewer      │      Convo      │
+│   (40)    │   (40)   │  (50% remain)   │  (50% remain)   │
+├───────────┴──────────┴─────────────────┴─────────────────┤
+│                    Input / Terminal                       │
+├──────────────────────────────────────────────────────────┤
+│                       Status Bar                          │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **Panes:**
-- **Sessions** (40 cols): Session list showing all worktrees and archived branches
-- **FileTree** (40 cols): Directory tree for selected session's worktree (supports expand/collapse)
+- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
+- **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
 - **Convo** (50% remaining): Claude conversation output with tool results
 - **Input/Terminal**: Prompt input or embedded terminal (toggleable)
@@ -598,14 +602,15 @@ azural
 |-----|--------|
 | `i` | Enter inprompt mode (focus input) |
 | `t` | Toggle terminal pane |
-| `j/k` | Navigate (sessions, files, scroll) |
+| `j/k` | Navigate (worktrees, files, scroll) |
 | `J/K` | Navigate projects |
-| `Tab` | Cycle focus (Sessions → FileTree → Viewer → Convo → Input) |
+| `Tab` | Cycle focus (Worktrees → FileTree → Viewer → Convo → Input) |
 | `Shift+Tab` | Cycle focus reverse |
-| `n` | New session |
+| `n` | New worktree |
 | `d` | View diff |
-| `Space` | Context menu (Sessions) / Toggle expand (FileTree) |
+| `Space` | Context menu (Worktrees) / Toggle expand (FileTree) |
 | `?` | Help |
+| `Ctrl+X` | Cancel running Claude response |
 | `Ctrl+c` | Quit |
 
 ### FileTree Pane
@@ -625,6 +630,19 @@ azural
 | `g/G` | Jump to top/bottom |
 | `Esc` | Clear viewer, return to FileTree |
 | `q` | Return to FileTree (keep content) |
+
+### Convo Pane
+| Key | Action |
+|-----|--------|
+| `j/k` | Scroll line |
+| `↑/↓` | Jump to prev/next user prompt |
+| `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
+| `Ctrl+d/u` | Half-page scroll |
+| `Ctrl+f/b` | Full-page scroll |
+| `g/G` | Jump to top/bottom |
+| `o` | Switch to output view |
+| `d` | Switch to diff view |
+| `Esc` | Return to Worktrees |
 
 ### Insert Mode (Input Focused)
 | Key | Action |

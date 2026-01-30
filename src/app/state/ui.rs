@@ -14,7 +14,7 @@ impl App {
             Focus::Viewer => Focus::Output,
             Focus::Output => Focus::Input,
             Focus::Input => Focus::Worktrees,
-            Focus::SessionCreation | Focus::BranchDialog => self.focus,
+            Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
 
@@ -25,7 +25,7 @@ impl App {
             Focus::Viewer => Focus::FileTree,
             Focus::Output => Focus::Viewer,
             Focus::Input => Focus::Output,
-            Focus::SessionCreation | Focus::BranchDialog => self.focus,
+            Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
 
@@ -34,9 +34,9 @@ impl App {
         if self.terminal_mode { self.close_terminal(); } else { self.open_terminal(); }
     }
 
-    pub fn exit_session_creation_mode(&mut self) {
+    pub fn exit_worktree_creation_mode(&mut self) {
         self.focus = Focus::Worktrees;
-        self.clear_session_creation_input();
+        self.clear_worktree_creation_input();
         self.clear_status();
     }
 
