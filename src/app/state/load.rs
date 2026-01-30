@@ -157,6 +157,21 @@ impl App {
                     self.assistant_no_message = parsed.assistant_no_message;
                     self.assistant_no_content_arr = parsed.assistant_no_content_arr;
                     self.assistant_text_blocks = parsed.assistant_text_blocks;
+                    self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+
+                    // Clear pending message if it's now in the loaded events
+                    // Only check the last few events (user message would be recent)
+                    if let Some(ref pending) = self.pending_user_message {
+                        for event in self.display_events.iter().rev().take(5) {
+                            if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                if content == pending {
+                                    self.pending_user_message = None;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     self.invalidate_render_cache();
                 }
             }

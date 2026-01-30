@@ -31,10 +31,8 @@ impl App {
     }
 
     pub fn add_user_message(&mut self, content: String) {
-        self.display_events.push(DisplayEvent::UserMessage {
-            uuid: String::new(),
-            content,
-        });
+        // Store as pending - will be shown until session file contains it
+        self.pending_user_message = Some(content);
         self.invalidate_render_cache();
         self.output_scroll = usize::MAX;
     }

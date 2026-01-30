@@ -8,30 +8,30 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::app::{App, Focus};
 
 /// Handle keyboard input for the Viewer panel
-pub fn handle_viewer_input(key: KeyEvent, app: &mut App, viewport_height: usize) -> Result<()> {
+pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match (key.modifiers, key.code) {
         // Scroll: j/k or arrow keys
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
-            app.scroll_viewer_down(1, viewport_height);
+            app.scroll_viewer_down(1);
         }
         (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
             app.scroll_viewer_up(1);
         }
 
-        // Half-page scroll
+        // Half-page scroll (uses cached viewport height)
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-            app.scroll_viewer_down(viewport_height / 2, viewport_height);
+            app.scroll_viewer_down(app.viewer_viewport_height / 2);
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
-            app.scroll_viewer_up(viewport_height / 2);
+            app.scroll_viewer_up(app.viewer_viewport_height / 2);
         }
 
-        // Full-page scroll
+        // Full-page scroll (uses cached viewport height)
         (KeyModifiers::CONTROL, KeyCode::Char('f')) | (KeyModifiers::NONE, KeyCode::PageDown) => {
-            app.scroll_viewer_down(viewport_height.saturating_sub(2), viewport_height);
+            app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) | (KeyModifiers::NONE, KeyCode::PageUp) => {
-            app.scroll_viewer_up(viewport_height.saturating_sub(2));
+            app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
         }
 
         // Home/End

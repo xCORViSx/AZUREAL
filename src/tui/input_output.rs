@@ -14,13 +14,11 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         return handle_rebase_input(key, app);
     }
 
-    let viewport_height = 20; // Estimate; actual clamping happens in draw_output
-
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(1, viewport_height); }
-                ViewMode::Diff => { app.scroll_diff_down(1, viewport_height); }
+                ViewMode::Output => { app.scroll_output_down(1); }
+                ViewMode::Diff => { app.scroll_diff_down(1); }
                 _ => {}
             }
         }
@@ -33,8 +31,8 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
         (KeyModifiers::NONE, KeyCode::Char('G')) => {
             match app.view_mode {
-                ViewMode::Output => app.scroll_output_to_bottom(viewport_height),
-                ViewMode::Diff => app.scroll_diff_to_bottom(viewport_height),
+                ViewMode::Output => app.scroll_output_to_bottom(),
+                ViewMode::Diff => app.scroll_diff_to_bottom(),
                 _ => {}
             }
         }
@@ -47,8 +45,8 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
         (KeyModifiers::NONE, KeyCode::PageDown) => {
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(10, viewport_height); }
-                ViewMode::Diff => { app.scroll_diff_down(10, viewport_height); }
+                ViewMode::Output => { app.scroll_output_down(10); }
+                ViewMode::Diff => { app.scroll_diff_down(10); }
                 _ => {}
             }
         }
@@ -59,31 +57,37 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 _ => {}
             }
         }
+        // Half-page scroll (uses cached viewport height)
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            let half = app.output_viewport_height / 2;
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(20, viewport_height); }
-                ViewMode::Diff => { app.scroll_diff_down(20, viewport_height); }
+                ViewMode::Output => { app.scroll_output_down(half); }
+                ViewMode::Diff => { app.scroll_diff_down(half); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            let half = app.output_viewport_height / 2;
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(20); }
-                ViewMode::Diff => { app.scroll_diff_up(20); }
+                ViewMode::Output => { app.scroll_output_up(half); }
+                ViewMode::Diff => { app.scroll_diff_up(half); }
                 _ => {}
             }
         }
+        // Full-page scroll (uses cached viewport height)
         (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
+            let page = app.output_viewport_height.saturating_sub(2);
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(40, viewport_height); }
-                ViewMode::Diff => { app.scroll_diff_down(40, viewport_height); }
+                ViewMode::Output => { app.scroll_output_down(page); }
+                ViewMode::Diff => { app.scroll_diff_down(page); }
                 _ => {}
             }
         }
         (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
+            let page = app.output_viewport_height.saturating_sub(2);
             match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(40); }
-                ViewMode::Diff => { app.scroll_diff_up(40); }
+                ViewMode::Output => { app.scroll_output_up(page); }
+                ViewMode::Diff => { app.scroll_diff_up(page); }
                 _ => {}
             }
         }

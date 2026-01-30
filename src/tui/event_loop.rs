@@ -66,7 +66,7 @@ pub async fn run_app(
             loop {
                 match event::read()? {
                     Event::Key(key) => {
-                        handle_key_event(key, app, &claude_process, cached_height)?;
+                        handle_key_event(key, app, &claude_process)?;
                         had_key_event = true;
                     }
                     Event::Mouse(mouse) => {
@@ -163,7 +163,6 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width
 
     let input_height = if app.terminal_mode { app.terminal_height + 2 } else { 3u16 };
     let content_height = term_height.saturating_sub(input_height + 1);
-    let vh = content_height as usize;
 
     let in_sessions = col < sessions_width && row < content_height;
     let in_file_tree = col >= sessions_width && col < sessions_width + file_tree_width && row < content_height;
@@ -182,7 +181,7 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width
         else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
         app.file_tree_selected != old
     } else if in_viewer {
-        if delta > 0 { app.scroll_viewer_down(delta as usize, vh) }
+        if delta > 0 { app.scroll_viewer_down(delta as usize) }
         else { app.scroll_viewer_up((-delta) as usize) }
     } else if in_terminal {
         if delta > 0 { app.scroll_terminal_down(delta as usize); }
@@ -191,8 +190,8 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width
     } else if in_output {
         if delta > 0 {
             match app.view_mode {
-                crate::app::ViewMode::Output => app.scroll_output_down(delta as usize, vh),
-                crate::app::ViewMode::Diff => app.scroll_diff_down(delta as usize, vh),
+                crate::app::ViewMode::Output => app.scroll_output_down(delta as usize),
+                crate::app::ViewMode::Diff => app.scroll_diff_down(delta as usize),
                 _ => false
             }
         } else {
@@ -220,7 +219,7 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> R
 }
 
 /// Handle keyboard input events
-fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess, cached_height: u16) -> Result<()> {
+fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     // Global keybindings
     match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
@@ -283,12 +282,11 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         return Ok(());
     }
 
-    // Mode-specific keybindings (viewport height for scroll-aware handlers)
-    let viewport_height = cached_height.saturating_sub(5) as usize;
+    // Mode-specific keybindings (scroll handlers use cached viewport heights from last render)
     match app.focus {
         Focus::Worktrees => handle_worktrees_input(key, app)?,
         Focus::FileTree => handle_file_tree_input(key, app)?,
-        Focus::Viewer => handle_viewer_input(key, app, viewport_height)?,
+        Focus::Viewer => handle_viewer_input(key, app)?,
         Focus::Output => handle_output_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
         Focus::SessionCreation => handle_session_creation_input(key, app, claude_process)?,

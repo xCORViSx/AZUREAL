@@ -27,6 +27,8 @@ pub struct App {
     pub max_output_lines: usize,
     pub output_buffer: String,
     pub display_events: Vec<DisplayEvent>,
+    /// User message sent but not yet in session file (shown until file updates)
+    pub pending_user_message: Option<String>,
     pub event_parser: EventParser,
     pub selected_event: Option<usize>,
     pub input: String,
@@ -98,6 +100,10 @@ pub struct App {
     pub viewer_mode: ViewerMode,
     /// Cached rendered lines for viewer pane (syntax highlighting is expensive)
     pub viewer_lines_cache: Vec<ratatui::text::Line<'static>>,
+    /// Original line number for each cached viewer line (1-indexed, for title display)
+    pub viewer_line_numbers: Vec<usize>,
+    /// Total original line count in viewer file
+    pub viewer_original_line_count: usize,
     /// Width used for viewer cache (invalidate on resize)
     pub viewer_lines_width: usize,
     /// Flag indicating viewer cache needs refresh
@@ -139,6 +145,12 @@ pub struct App {
     pub file_tree_title_cache: String,
     /// Scroll position used for file tree cache
     pub file_tree_scroll_cached: usize,
+    /// Awaiting user response to plan approval (ExitPlanMode was called)
+    pub awaiting_plan_approval: bool,
+    /// Cached viewport height for viewer pane (set during render, used for scroll)
+    pub viewer_viewport_height: usize,
+    /// Cached viewport height for output/convo pane (set during render, used for scroll)
+    pub output_viewport_height: usize,
 }
 
 impl App {
@@ -151,6 +163,7 @@ impl App {
             max_output_lines: 10000,
             output_buffer: String::new(),
             display_events: Vec::new(),
+            pending_user_message: None,
             event_parser: EventParser::new(),
             selected_event: None,
             input: String::new(),
@@ -204,6 +217,8 @@ impl App {
             viewer_scroll: 0,
             viewer_mode: ViewerMode::Empty,
             viewer_lines_cache: Vec::new(),
+            viewer_line_numbers: Vec::new(),
+            viewer_original_line_count: 0,
             viewer_lines_width: 0,
             viewer_lines_dirty: true,
             rendered_lines_cache: Vec::new(),
@@ -226,6 +241,9 @@ impl App {
             file_tree_dirty: true,
             file_tree_title_cache: String::new(),
             file_tree_scroll_cached: usize::MAX,
+            awaiting_plan_approval: false,
+            viewer_viewport_height: 20,
+            output_viewport_height: 20,
         }
     }
 

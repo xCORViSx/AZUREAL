@@ -108,9 +108,28 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                             app.add_user_message(input.clone());
                             app.process_output_chunk(&prompt_text);
 
+                            // If awaiting plan approval, prepend hidden context explaining the options
+                            // User only sees their input; Claude receives the context + input
+                            let actual_prompt = if app.awaiting_plan_approval {
+                                app.awaiting_plan_approval = false; // Clear flag after use
+                                format!(
+                                    "[SYSTEM: You just called ExitPlanMode. The user is viewing the plan approval prompt with these options:\n\
+                                    1. Yes, clear context and bypass permissions\n\
+                                    2. Yes, and manually approve edits\n\
+                                    3. Yes, and bypass permissions\n\
+                                    4. Yes, manually approve edits\n\
+                                    5. Custom feedback - user will type what to change\n\n\
+                                    The user's response follows. Interpret numbers 1-5 as selecting that option. Any other text is custom feedback (option 5).]\n\n\
+                                    User response: {}",
+                                    input
+                                )
+                            } else {
+                                input.clone()
+                            };
+
                             let resume_id = app.get_claude_session_id(&branch_name).cloned();
 
-                            match claude_process.spawn(&wt_path, &input, resume_id.as_deref()) {
+                            match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref()) {
                                 Ok(rx) => {
                                     app.register_claude(branch_name, rx);
                                     app.set_status("Running...");

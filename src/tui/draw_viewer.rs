@@ -20,6 +20,9 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height.saturating_sub(2) as usize;
     let viewport_width = area.width.saturating_sub(2) as usize;
 
+    // Cache viewport height for scroll operations (input handling uses this)
+    app.viewer_viewport_height = viewport_height;
+
     let (title, lines) = match app.viewer_mode {
         ViewerMode::Empty => {
             let placeholder = vec![
@@ -44,6 +47,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     let content_width = viewport_width.saturating_sub(line_num_width + 3);
 
                     let mut all_lines: Vec<Line> = Vec::new();
+                    let mut line_numbers: Vec<usize> = Vec::new();
                     for (line_idx, spans) in highlighted.into_iter().enumerate() {
                         let wrapped = wrap_spans(spans, content_width);
                         for (wrap_idx, wrapped_spans) in wrapped.into_iter().enumerate() {
@@ -55,21 +59,22 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                             let mut all_spans = vec![Span::styled(line_num, Style::default().fg(Color::DarkGray))];
                             all_spans.extend(wrapped_spans);
                             all_lines.push(Line::from(all_spans));
+                            line_numbers.push(line_idx + 1); // 1-indexed original line
                         }
                     }
 
                     app.viewer_lines_cache = all_lines;
+                    app.viewer_line_numbers = line_numbers;
+                    app.viewer_original_line_count = original_line_count;
                     app.viewer_lines_width = viewport_width;
                     app.viewer_lines_dirty = false;
                 }
 
-                let total = app.viewer_lines_cache.len();
-                let scroll = if app.viewer_scroll == usize::MAX {
-                    total.saturating_sub(viewport_height)
-                } else {
-                    app.viewer_scroll.min(total.saturating_sub(viewport_height))
-                };
-                app.viewer_scroll = scroll;
+                let total = app.viewer_original_line_count;
+
+                // Clamp scroll to valid range (resolves usize::MAX sentinel)
+                app.clamp_viewer_scroll();
+                let scroll = app.viewer_scroll;
 
                 // Build viewport slice directly (single clone operation)
                 let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
@@ -78,11 +83,13 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     .cloned()
                     .collect();
 
-                let original_line_count = app.viewer_content.as_ref().map(|c| c.lines().count()).unwrap_or(0);
-                let title = if total > viewport_height {
-                    format!(" {} [{}/{}] ", path_str, scroll + 1, total)
+                // Find the last visible original line number for the title
+                let last_visible_idx = (scroll + display_lines.len()).saturating_sub(1);
+                let last_visible_line = app.viewer_line_numbers.get(last_visible_idx).copied().unwrap_or(total);
+                let title = if app.viewer_lines_cache.len() > viewport_height {
+                    format!(" {} [{}/{}] ", path_str, last_visible_line, total)
                 } else {
-                    format!(" {} ({} lines) ", path_str, original_line_count)
+                    format!(" {} ({} lines) ", path_str, total)
                 };
 
                 (title, display_lines)
@@ -120,12 +127,10 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 }
 
                 let total = app.viewer_lines_cache.len();
-                let scroll = if app.viewer_scroll == usize::MAX {
-                    total.saturating_sub(viewport_height)
-                } else {
-                    app.viewer_scroll.min(total.saturating_sub(viewport_height))
-                };
-                app.viewer_scroll = scroll;
+
+                // Clamp scroll to valid range (resolves usize::MAX sentinel)
+                app.clamp_viewer_scroll();
+                let scroll = app.viewer_scroll;
 
                 // Build viewport slice directly (single clone operation)
                 let display_lines: Vec<Line> = app.viewer_lines_cache.iter()

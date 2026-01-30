@@ -26,6 +26,7 @@ pub fn render_display_events(
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
     syntax_highlighter: &SyntaxHighlighter,
+    pending_user_message: Option<&str>,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
     let mut lines = Vec::new();
     let mut animation_indices = Vec::new();
@@ -35,6 +36,8 @@ pub fn render_display_events(
     let mut saw_init = false;
     let mut saw_content = false;
     let mut last_hook: Option<(String, String)> = None;
+    // Track if the LAST ExitPlanMode has a user message after it
+    // Reset saw_user_after whenever we see a new ExitPlanMode
     let mut saw_exit_plan_mode = false;
     let mut saw_user_after_exit_plan = false;
 
@@ -99,7 +102,10 @@ pub fn render_display_events(
             DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
                 saw_content = true;
                 last_hook = None;
-                if tool_name == "ExitPlanMode" { saw_exit_plan_mode = true; }
+                if tool_name == "ExitPlanMode" {
+                    saw_exit_plan_mode = true;
+                    saw_user_after_exit_plan = false; // Reset: new plan, no user response yet
+                }
                 render_tool_call(&mut lines, &mut animation_indices, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
             DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
@@ -108,6 +114,10 @@ pub fn render_display_events(
                 let is_failed = failed_tools.contains(tool_use_id);
                 let tool_max = bubble_width + 10;
                 lines.extend(render_tool_result(tool_name, file_path.as_deref(), content, is_failed, tool_max));
+                // Show approval prompt immediately after ExitPlanMode result
+                if tool_name == "ExitPlanMode" && saw_exit_plan_mode && !saw_user_after_exit_plan {
+                    render_plan_approval(&mut lines, w);
+                }
             }
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
                 render_complete(&mut lines, *duration_ms, *cost_usd, *success);
@@ -119,9 +129,9 @@ pub fn render_display_events(
         }
     }
 
-    // Show plan approval prompt if ExitPlanMode was called with no user response yet
-    if saw_exit_plan_mode && !saw_user_after_exit_plan {
-        render_plan_approval(&mut lines, w);
+    // Render pending user message (sent but not yet in session file)
+    if let Some(msg) = pending_user_message {
+        render_user_message(&mut lines, msg, bubble_width, w);
     }
 
     (lines, animation_indices)
@@ -331,7 +341,7 @@ fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
 
     // Options
     let options = [
-        "1. Yes, clear context and bypass",
+        "1. Yes, clear context and bypass permissions",
         "2. Yes, and manually approve edits",
         "3. Yes, and bypass permissions",
         "4. Yes, manually approve edits",
@@ -350,14 +360,6 @@ fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
     // Bottom border
     lines.push(Line::from(vec![
         Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-    ]).alignment(Alignment::Center));
-
-    // Hint
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("Use terminal mode (", Style::default().fg(Color::DarkGray)),
-        Span::styled("t", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(") to respond", Style::default().fg(Color::DarkGray)),
     ]).alignment(Alignment::Center));
 }
 

@@ -25,6 +25,8 @@ pub struct ParsedSession {
     pub assistant_no_message: usize,
     pub assistant_no_content_arr: usize,
     pub assistant_text_blocks: usize,
+    /// True if ExitPlanMode was called and no user message followed
+    pub awaiting_plan_approval: bool,
 }
 
 /// Parse a Claude session JSONL file into display events
@@ -44,6 +46,7 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
             assistant_no_message: 0,
             assistant_no_content_arr: 0,
             assistant_text_blocks: 0,
+            awaiting_plan_approval: false,
         },
     };
 
@@ -104,10 +107,30 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
     }
 
     // Filter out Filtered events and extract just the DisplayEvents
-    let events = timed_events.into_iter()
+    let events: Vec<DisplayEvent> = timed_events.into_iter()
         .filter(|(_, e)| !matches!(e, DisplayEvent::Filtered))
         .map(|(_, e)| e)
         .collect();
+
+    // Determine if awaiting plan approval: LAST ExitPlanMode has no user message after it
+    // Reset saw_user_after whenever we see a new ExitPlanMode (each plan is independent)
+    let awaiting_plan_approval = {
+        let mut saw_exit_plan = false;
+        let mut saw_user_after = false;
+        for event in &events {
+            match event {
+                DisplayEvent::ToolCall { tool_name, .. } if tool_name == "ExitPlanMode" => {
+                    saw_exit_plan = true;
+                    saw_user_after = false; // Reset: new plan, no user response yet
+                }
+                DisplayEvent::UserMessage { .. } if saw_exit_plan => {
+                    saw_user_after = true;
+                }
+                _ => {}
+            }
+        }
+        saw_exit_plan && !saw_user_after
+    };
 
     // Get diagnostics
     let (ast_total, ast_no_msg, ast_no_arr, ast_text) = PARSE_DIAGNOSTICS.with(|d| {
@@ -125,6 +148,7 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
         assistant_no_message: ast_no_msg,
         assistant_no_content_arr: ast_no_arr,
         assistant_text_blocks: ast_text,
+        awaiting_plan_approval,
     }
 }
 

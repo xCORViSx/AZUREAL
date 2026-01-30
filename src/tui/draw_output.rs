@@ -16,6 +16,9 @@ use super::util::{colorize_output, detect_message_type, render_display_events, M
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height.saturating_sub(2) as usize;
 
+    // Cache viewport height for scroll operations (input handling uses this)
+    app.output_viewport_height = viewport_height;
+
     let (title, content) = match app.view_mode {
         ViewMode::Output => {
             if !app.display_events.is_empty() {
@@ -29,6 +32,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         &app.pending_tool_calls,
                         &app.failed_tool_calls,
                         &app.syntax_highlighter,
+                        app.pending_user_message.as_deref(),
                     );
                     app.rendered_lines_cache = lines_cache;
                     app.animation_line_indices = anim_indices;
@@ -38,12 +42,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 let total = app.rendered_lines_cache.len();
 
-                let scroll = if app.output_scroll == usize::MAX {
-                    total.saturating_sub(viewport_height)
-                } else {
-                    app.output_scroll.min(total.saturating_sub(viewport_height))
-                };
-                app.output_scroll = scroll;
+                // Clamp scroll to valid range (resolves usize::MAX sentinel)
+                app.clamp_output_scroll();
+                let scroll = app.output_scroll;
 
                 // Build viewport slice and patch animation colors for pending indicators
                 let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
@@ -110,10 +111,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 }
 
                 let total = all_lines.len();
+                let max_scroll = total.saturating_sub(viewport_height);
                 let scroll = if app.output_scroll == usize::MAX {
-                    total.saturating_sub(viewport_height)
+                    max_scroll
                 } else {
-                    app.output_scroll.min(total.saturating_sub(viewport_height))
+                    app.output_scroll.min(max_scroll)
                 };
                 app.output_scroll = scroll;
 
