@@ -226,6 +226,11 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             app.should_quit = true;
             return Ok(());
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
+            // Cancel running Claude response
+            app.cancel_current_claude();
+            return Ok(());
+        }
         (KeyModifiers::NONE, KeyCode::Char('i')) if !app.insert_mode && !app.show_help && app.context_menu.is_none() && !app.is_wizard_active() => {
             app.focus = Focus::Input;
             app.insert_mode = true;
@@ -249,13 +254,19 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             return Ok(());
         }
         (KeyModifiers::NONE, KeyCode::Tab) => {
-            // Don't cycle focus when in insert mode (typing in input/terminal)
-            if !app.show_help && !app.insert_mode { app.focus_next(); }
+            // Cycle focus (works in both insert and command mode)
+            if !app.show_help {
+                app.insert_mode = false; // Exit insert mode when tabbing away
+                app.focus_next();
+            }
             return Ok(());
         }
         (KeyModifiers::SHIFT, KeyCode::BackTab) => {
-            // Don't cycle focus when in insert mode
-            if !app.show_help && !app.insert_mode { app.focus_prev(); }
+            // Cycle focus backwards (works in both insert and command mode)
+            if !app.show_help {
+                app.insert_mode = false;
+                app.focus_prev();
+            }
             return Ok(());
         }
         _ => {}

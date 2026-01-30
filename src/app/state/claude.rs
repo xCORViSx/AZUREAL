@@ -12,16 +12,47 @@ use super::App;
 impl App {
     pub fn handle_claude_started(&mut self, branch_name: &str, pid: u32) {
         self.running_sessions.insert(branch_name.to_string());
+        self.claude_pids.insert(branch_name.to_string(), pid);
         self.invalidate_sidebar(); // Status indicator changed
         self.set_status(format!("Claude started in {} (PID: {})", branch_name, pid));
     }
 
     pub fn handle_claude_exited(&mut self, branch_name: &str, code: Option<i32>) {
         self.running_sessions.remove(branch_name);
+        self.claude_pids.remove(branch_name);
         self.claude_receivers.remove(branch_name);
         self.interactive_sessions.remove(branch_name);
         self.invalidate_sidebar(); // Status indicator changed
-        self.set_status(format!("{} exited: {:?}", branch_name, code));
+
+        // If there's a staged prompt, restore it to the input field
+        if let Some(prompt) = self.staged_prompt.take() {
+            self.input = prompt;
+            self.input_cursor = self.input.len();
+            self.set_status("Ready - staged prompt restored");
+        } else {
+            self.set_status(format!("{} exited: {:?}", branch_name, code));
+        }
+    }
+
+    /// Cancel the currently running Claude process for the current session
+    pub fn cancel_current_claude(&mut self) {
+        let branch_name = match self.current_session() {
+            Some(s) => s.branch_name.clone(),
+            None => return,
+        };
+        if let Some(pid) = self.claude_pids.get(&branch_name) {
+            #[cfg(unix)]
+            {
+                use std::process::Command;
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+            #[cfg(windows)]
+            {
+                use std::process::Command;
+                let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+            }
+            self.set_status(format!("Cancelled Claude (PID: {})", pid));
+        }
     }
 
     pub fn handle_claude_output(&mut self, branch_name: &str, output_type: OutputType, data: String) {

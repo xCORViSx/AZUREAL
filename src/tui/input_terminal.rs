@@ -98,10 +98,11 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
 
                 if let Some((branch_name, worktree_opt)) = session_data {
                     if let Some(wt_path) = worktree_opt {
+                        // If Claude is already running, cancel it and stage the new prompt
                         if app.is_session_running(&branch_name) {
-                            app.set_status("Claude already running - wait for response");
-                            app.input = input;
-                            app.input_cursor = app.input.len();
+                            app.cancel_current_claude();
+                            app.staged_prompt = Some(input);
+                            app.set_status("Cancelling... prompt staged");
                         } else {
                             // Display user prompt (Claude's session files store the actual messages)
                             let prompt_text = format!("You: {}\n", input.clone());

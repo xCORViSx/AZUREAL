@@ -29,6 +29,8 @@ pub struct App {
     pub display_events: Vec<DisplayEvent>,
     /// User message sent but not yet in session file (shown until file updates)
     pub pending_user_message: Option<String>,
+    /// Prompt staged to send after cancelling current Claude process
+    pub staged_prompt: Option<String>,
     pub event_parser: EventParser,
     pub selected_event: Option<usize>,
     pub input: String,
@@ -42,6 +44,8 @@ pub struct App {
     pub status_message: Option<String>,
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
     pub running_sessions: HashSet<String>,
+    /// PIDs of running Claude processes per branch (for killing)
+    pub claude_pids: HashMap<String, u32>,
     pub claude_session_ids: HashMap<String, String>,
     /// Interactive PTY sessions (kept alive between prompts)
     pub interactive_sessions: HashMap<String, InteractiveSession>,
@@ -164,6 +168,7 @@ impl App {
             output_buffer: String::new(),
             display_events: Vec::new(),
             pending_user_message: None,
+            staged_prompt: None,
             event_parser: EventParser::new(),
             selected_event: None,
             input: String::new(),
@@ -177,6 +182,7 @@ impl App {
             status_message: None,
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
+            claude_pids: HashMap::new(),
             claude_session_ids: HashMap::new(),
             interactive_sessions: HashMap::new(),
             diff_text: None,

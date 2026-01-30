@@ -4,22 +4,23 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
 use crate::app::{App, Focus};
 
-/// Draw the Claude prompt input field
+/// Draw the Claude prompt input field with text wrapping
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let (border_color, title) = if app.insert_mode {
-        (Color::Yellow, " INPROMPT (Esc:command  Enter:submit) ")
+        (Color::Yellow, " INPROMPT (Esc:command | Enter:submit | Ctrl+X:cancel convo) ")
     } else {
-        (Color::Red, " COMMAND (i:inprompt  t:terminal) ")
+        (Color::Red, " COMMAND (i:inprompt | t:terminal | Ctrl+X:cancel convo) ")
     };
 
     let is_focused = app.focus == Focus::Input;
     let input = Paragraph::new(app.input.as_str())
+        .wrap(Wrap { trim: false })
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -39,7 +40,16 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, area);
 
     // Show cursor only in insert mode when focused
+    // Calculate wrapped cursor position
     if app.insert_mode && is_focused {
-        f.set_cursor_position((area.x + 1 + app.input_cursor as u16, area.y + 1));
+        let inner_width = area.width.saturating_sub(2) as usize;
+        if inner_width > 0 {
+            let cursor_row = app.input_cursor / inner_width;
+            let cursor_col = app.input_cursor % inner_width;
+            f.set_cursor_position((
+                area.x + 1 + cursor_col as u16,
+                area.y + 1 + cursor_row as u16,
+            ));
+        }
     }
 }

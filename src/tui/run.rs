@@ -53,6 +53,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
+    // Calculate dynamic input height based on text wrapping
+    let input_inner_width = f.area().width.saturating_sub(2) as usize; // -2 for borders
+    let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
+        (app.input.len() / input_inner_width) + 1
+    } else {
+        1
+    };
+    let input_height = (input_lines as u16 + 2).min(10); // +2 for borders, max 10 lines
+
     // Main layout - terminal mode replaces input with embedded PTY shell
     let chunks = if app.terminal_mode {
         Layout::default()
@@ -68,7 +77,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(10),
-                Constraint::Length(3),
+                Constraint::Length(input_height),
                 Constraint::Length(1),
             ])
             .split(f.area())
