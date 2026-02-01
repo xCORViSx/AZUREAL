@@ -2,7 +2,7 @@
   <img src="azural_icon.png" alt="Azural" width="180" />
 </p>
 
-<h1 align="center">Azural</h1>
+<h1 align="center">azural</h1>
 
 <p align="center">
   <strong>Agent Zones: Unified Runtime for Autonomous LLMs</strong>
