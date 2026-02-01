@@ -47,7 +47,7 @@ fn help_sections() -> Vec<HelpSection> {
             ],
         },
         HelpSection {
-            title: "FileTree",
+            title: "Filetree",
             entries: vec![
                 ("j/k", "Navigate"),
                 ("h/l", "Collapse/expand"),

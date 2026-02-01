@@ -13,9 +13,9 @@ use crate::app::{App, Focus};
 /// Draw the Claude prompt input field with text wrapping
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let (border_color, title) = if app.insert_mode {
-        (Color::Yellow, " INPROMPT (Esc:command | Enter:submit | Ctrl+X:cancel convo) ")
+        (Color::Yellow, " INPROMPT (Esc:command | Enter:submit | Ctrl+X:cancel response) ")
     } else {
-        (Color::Red, " COMMAND (i:inprompt | t:terminal | Ctrl+X:cancel convo) ")
+        (Color::Red, " COMMAND (i:inprompt | t:terminal | Ctrl+X:cancel response) ")
     };
 
     let is_focused = app.focus == Focus::Input;

@@ -90,18 +90,14 @@ impl DiffHighlighter {
                 continue;
             }
 
-            // Removed lines
+            // Removed lines - plain gray, no syntax highlighting
             if line.starts_with('-') && !line.starts_with("---") {
                 let content = &line[1..];
-                let mut spans = vec![Span::styled("-".to_string(), Style::default().fg(Color::Red))];
-
-                if let Some(syntax) = current_syntax {
-                    spans.extend(self.highlight_line(content, syntax, Color::Red));
-                } else {
-                    spans.push(Span::styled(content.to_string(), Style::default().fg(Color::Red)));
-                }
-
-                result.push(spans);
+                let gray = Color::Rgb(100, 100, 100);
+                result.push(vec![
+                    Span::styled("-".to_string(), Style::default().fg(gray)),
+                    Span::styled(content.to_string(), Style::default().fg(gray)),
+                ]);
                 continue;
             }
 
@@ -298,7 +294,7 @@ fn scope_to_color(stack: &syntect::parsing::ScopeStack) -> Color {
 
     // Check scopes from most specific to least specific
     if scope_str.contains("comment") {
-        Color::DarkGray // Comments intentionally dimmer
+        Color::Rgb(140, 140, 140) // Comments: lighter gray than removed lines (100,100,100)
     } else if scope_str.contains("string") || scope_str.contains("char") {
         Color::Green
     } else if scope_str.contains("constant.numeric") || scope_str.contains("number") {

@@ -110,9 +110,9 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let title = if total > viewport_height {
-        format!(" FileTree [{}/{}] ", scroll + display_lines.len().min(total - scroll), total)
+        format!(" Filetree [{}/{}] ", scroll + display_lines.len().min(total - scroll), total)
     } else {
-        " FileTree ".to_string()
+        " Filetree ".to_string()
     };
 
     let widget = Paragraph::new(display_lines).block(

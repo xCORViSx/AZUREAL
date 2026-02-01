@@ -252,8 +252,9 @@ fn render_tool_call(
     let param_raw = file_path.clone().unwrap_or_else(|| extract_tool_param(tool_name, input));
 
     // Use placeholder color for pending - will be patched during viewport rendering
+    // Note: ◐ can misalign in some fonts, using ○ for pending instead
     let (indicator, indicator_color) = if is_pending {
-        ("◐ ", Color::White)
+        ("○ ", Color::White)
     } else if is_failed {
         ("✗ ", Color::Red)
     } else {
