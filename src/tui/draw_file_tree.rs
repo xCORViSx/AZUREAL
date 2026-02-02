@@ -37,7 +37,9 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
 
             let (icon, icon_color) = if entry.is_dir {
                 let expanded = app.file_tree_expanded.contains(&entry.path);
-                if expanded { ("▼ ", Color::Yellow) } else { ("▶ ", Color::Yellow) }
+                // Hidden dirs get dimmed yellow icon
+                let color = if entry.is_hidden { Color::Rgb(120, 100, 60) } else { Color::Yellow };
+                if expanded { ("▼ ", color) } else { ("▶ ", color) }
             } else {
                 let icon = match entry.path.extension().and_then(|e| e.to_str()) {
                     Some("rs") => "🦀",
@@ -48,7 +50,9 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
                     Some("lock") => "🔒",
                     _ => "  ",
                 };
-                (icon, Color::White)
+                // Hidden files get dimmed icon color
+                let color = if entry.is_hidden { Color::Rgb(100, 100, 100) } else { Color::White };
+                (icon, color)
             };
 
             let mut spans = vec![
@@ -59,9 +63,13 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             let name_style = if is_selected {
                 Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
             } else if entry.is_dir {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                // Hidden dirs get dimmed cyan, normal dirs get bright cyan
+                let color = if entry.is_hidden { Color::Rgb(80, 120, 130) } else { Color::Cyan };
+                Style::default().fg(color).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                // Hidden files get dimmed gray, normal files get white
+                let color = if entry.is_hidden { Color::Rgb(100, 100, 100) } else { Color::White };
+                Style::default().fg(color)
             };
 
             let max_name_len = 38usize.saturating_sub(entry.depth * 2 + 2);

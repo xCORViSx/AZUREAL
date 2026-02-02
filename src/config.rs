@@ -57,32 +57,36 @@ impl Config {
     }
 }
 
-/// Get the Azural config directory (project-level .azural/ in git root)
-/// Falls back to ~/.azural/ if not in a git repository
+/// Get the global Azureal config directory (~/.azureal/)
+/// Used for global config like config.toml
 pub fn config_dir() -> PathBuf {
-    // Try to find git root for project-level storage
-    if let Ok(output) = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                return PathBuf::from(path.trim()).join(".azural");
-            }
-        }
-    }
-    // Fallback to home directory if not in git repo
     dirs::home_dir()
         .expect("Could not find home directory")
-        .join(".azural")
+        .join(".azureal")
 }
 
-/// Get the config file path
+/// Get project-specific Azureal data directory (.azureal/ in git root)
+/// Used for run_commands.json, debug-output.txt, etc.
+/// Returns None if not in a git repository
+pub fn project_data_dir() -> Option<PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8(output.stdout).ok()?;
+        Some(PathBuf::from(path.trim()).join(".azureal"))
+    } else {
+        None
+    }
+}
+
+/// Get the config file path (~/.azureal/config.toml)
 pub fn config_file_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
-/// Ensure the config directory exists
+/// Ensure the global config directory exists
 pub fn ensure_config_dir() -> Result<()> {
     let dir = config_dir();
     if !dir.exists() {
@@ -90,6 +94,20 @@ pub fn ensure_config_dir() -> Result<()> {
             .context("Failed to create config directory")?;
     }
     Ok(())
+}
+
+/// Ensure the project data directory exists (creates .azureal/ in git root)
+/// Only call this when actually writing project-specific data
+pub fn ensure_project_data_dir() -> Result<Option<PathBuf>> {
+    if let Some(dir) = project_data_dir() {
+        if !dir.exists() {
+            std::fs::create_dir_all(&dir)
+                .context("Failed to create project data directory")?;
+        }
+        Ok(Some(dir))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Get Claude's session file path for a given project path and session ID

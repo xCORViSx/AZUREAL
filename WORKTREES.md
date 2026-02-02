@@ -1,4 +1,4 @@
-# Azural Worktree Status
+# Azureal Worktree Status
 
 ## Active Worktrees
 

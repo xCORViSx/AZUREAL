@@ -1,10 +1,68 @@
 # Changelog
 
-All notable changes to Azural will be documented in this file.
+All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
 ### Added
+- Viewer edit mode clipboard operations (system clipboard)
+  - `⌘C` - Copy to system clipboard
+  - `⌘X` - Cut to system clipboard
+  - `⌘V` - Paste from system clipboard
+  - `⌘A` - Select all
+  - `Shift+Arrow` - Extend selection
+  - Selection highlighted with blue background
+  - Typing/backspace/delete replaces selection
+  - Works with external apps (copy from browser, paste in azureal, etc.)
+- Hidden files/directories now shown in FileTree (previously filtered out)
+  - Sorted after non-hidden items within each category (dirs/files)
+  - Displayed in dimmed colors: gray for files, muted cyan for directories
+  - Children of hidden directories inherit dimmed styling
+  - Still excludes `target/` and `node_modules/` (too noisy)
+
+### Fixed
+- `.azureal/` directory no longer created eagerly on startup
+  - Global config uses `~/.azureal/` (created only when needed)
+  - Project data uses `.azureal/` in git root (created only when writing data)
+  - Prevents unwanted `.azureal/` directories appearing in every git repo you run azureal from
+- Centralized keybindings module (`src/tui/keybindings.rs`)
+  - All keybindings defined once, used by both input handlers and help dialog
+  - `Action` enum for all possible actions
+  - `Keybinding` struct with primary + alternatives (e.g., j/↓ for same action)
+  - `lookup_action()` for input handler dispatch
+  - `help_sections()` auto-generates help dialog content
+  - Adding/changing a keybinding now updates help automatically
+
+### Changed
+- Keybinding updates for terminal and prompt navigation:
+  - `Esc` now closes terminal (was `t`)
+  - `t` enters terminal type mode (was `i`)
+  - `p` in terminal command mode closes terminal and enters Claude prompt
+  - `p` is now global: closes help panel and enters prompt from anywhere
+  - Terminal title shows context-aware hints: `t:type | p:prompt | Esc:close` in command mode, `Esc:exit` in type mode
+  - Prompt title shows `⌃C:cancel response` in type mode
+
+### Optimized
+- Session file polling now uses lightweight file size check + dirty flag pattern
+  - `check_session_file()` only reads file metadata (no parsing)
+  - `poll_session_file()` defers parsing until idle via dirty flag
+  - `refresh_session_events()` is a lightweight path that skips terminal/file tree reload
+
+### Added
+- Run commands feature: save and execute shell commands/scripts
+  - `r` - Execute run command (picker if multiple, direct if one)
+  - `⌥r` - Add new run command (name + command fields)
+  - Picker dialog supports `j/k` nav, `1-9` quick select, `e` edit, `x` delete
+  - Commands persisted to `.azureal/run_commands.json`
+- Debug output now triggered manually via `⌃⌥⌘D` (Ctrl+Opt+Cmd+D)
+  - Saves session parsing diagnostics to `.azureal/debug-output.txt`
+  - Removed `--out`/`-D` flag and `cargo rd` alias
+- Viewer tabs: `t` to tab current file, `T` for tab dialog, `[`/`]` to switch
+- Clickable file paths for Read, Write, and Edit tools in Convo pane
+- Clickable file paths for Read, Write, and Edit tools in Convo pane
+  - File paths are underlined and can be clicked to open in Viewer
+  - Edit tool clicks show file with diff overlay highlighting changes
+  - Read/Write tool clicks open file without diff overlay
 - 4-pane TUI layout: Sessions (40 cols), FileTree (40 cols), Viewer (50%), Convo (50%)
   - FileTree shows directory structure for selected session's worktree
   - Viewer displays file content with syntax highlighting and line numbers
@@ -41,7 +99,7 @@ All notable changes to Azural will be documented in this file.
   - Created `events/types.rs`, `events/display.rs`, `events/parser.rs` (split from events.rs)
   - Created `tui/run.rs` for TUI entry point and main layout
   - Split `tui/util.rs` into `colorize.rs`, `markdown.rs`, `render_events.rs`, `render_tools.rs`
-- Replaced SQLite database (`azural.db`) with JSON config (`azural.json`) for minimal footprint
+- Replaced SQLite database (`azureal.db`) with JSON config (`azureal.json`) for minimal footprint
   - Session outputs now read exclusively from Claude's JSONL session files
   - One-time automatic migration from SQLite if old database exists
   - Human-readable JSON format for debugging and manual inspection
@@ -71,7 +129,7 @@ All notable changes to Azural will be documented in this file.
 - Filtered out internal Claude messages: `<local-command-caveat>`, `<local-command-stdout>`, meta messages
 - Rewound message deduplication: When user rewinds to edit a message, only the corrected version is shown
   - Detects by `parentUuid` - multiple user messages sharing the same parent, keeps only the most recent
-- Debug dump (debug builds only): Auto-writes `.azural/debug-output.txt` on session load
+- Debug dump (debug builds only): Auto-writes `.azureal/debug-output.txt` on session load
   - Shows rendered output exactly as it appears in the TUI (with styling annotations)
   - Only enabled in debug builds (`cargo run`), not release builds
 - Markdown rendering in Claude response output:
@@ -83,15 +141,15 @@ All notable changes to Azural will be documented in this file.
   - Tables with `|` converted to box-drawing characters
   - Bullet and numbered lists properly indented
   - Blockquotes with vertical bar styling
-- Hooks file watching - azural polls `<project>/.azural/hooks.jsonl` for entries from ALL hook types
+- Hooks file watching - azureal polls `<project>/.azureal/hooks.jsonl` for entries from ALL hook types
   - File-based IPC workaround for Claude Code's stream-json limitation
   - Works with `~/.claude/scripts/log-hook.sh` helper script
   - All hooks (PreToolUse, PostToolUse, UserPromptSubmit, etc.) now display in output pane
-- Live session output - azural continuously polls the Claude session file for changes
+- Live session output - azureal continuously polls the Claude session file for changes
   - Output pane updates in real-time as you chat with Claude in another terminal
   - No need to switch sessions to see new messages
 - PTY-based embedded terminal pane - press `t` to toggle a full shell terminal
-  - Acts as a portal to the user's actual terminal within Azural
+  - Acts as a portal to the user's actual terminal within Azureal
   - Full color support with ANSI escape sequences via `ansi-to-tui`
   - Proper cursor positioning and terminal emulation via `vt100` parser
   - Dynamic resizing to match pane dimensions
@@ -122,8 +180,8 @@ All notable changes to Azural will be documented in this file.
 ### Changed
 - Conversation data now read from Claude's session files with auto-discovery
   - Auto-discovers Claude session files by scanning `~/.claude/projects/<encoded-path>/`
-  - Links most recent session file to azural session automatically
-  - Hooks loaded from `<project>/.azural/hooks.jsonl` and merged by timestamp
+  - Links most recent session file to azureal session automatically
+  - Hooks loaded from `<project>/.azureal/hooks.jsonl` and merged by timestamp
   - Fallback to database when no Claude session files exist
 
 ### Optimized
@@ -135,10 +193,10 @@ All notable changes to Azural will be documented in this file.
   - Conditional terminal polling: only when terminal mode active
 
 ### Changed
-- Storage moved from system-level (`~/.azural/`) to project-level (`.azural/` in git root)
+- Storage moved from system-level (`~/.azureal/`) to project-level (`.azureal/` in git root)
   - Database, hooks.jsonl, and config are now per-project
   - Eliminates cross-project hook pollution
-  - Falls back to `~/.azural/` if not in a git repository
+  - Falls back to `~/.azureal/` if not in a git repository
 - Updated all dependencies to latest versions:
   - ratatui: 0.29 → 0.30
   - crossterm: 0.28 → 0.29

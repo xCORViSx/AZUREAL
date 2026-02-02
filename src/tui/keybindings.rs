@@ -1,0 +1,418 @@
+//! Centralized keybinding definitions
+//!
+//! All keybindings are defined once here and referenced by:
+//! - Input handlers (for executing actions)
+//! - Help dialog (for display)
+
+use crossterm::event::{KeyCode, KeyModifiers};
+use crate::app::Focus;
+
+/// A key combination (modifier + key)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyCombo {
+    pub modifiers: KeyModifiers,
+    pub code: KeyCode,
+}
+
+impl KeyCombo {
+    pub const fn new(modifiers: KeyModifiers, code: KeyCode) -> Self {
+        Self { modifiers, code }
+    }
+
+    pub const fn plain(code: KeyCode) -> Self {
+        Self { modifiers: KeyModifiers::NONE, code }
+    }
+
+    pub const fn shift(code: KeyCode) -> Self {
+        Self { modifiers: KeyModifiers::SHIFT, code }
+    }
+
+    pub const fn ctrl(code: KeyCode) -> Self {
+        Self { modifiers: KeyModifiers::CONTROL, code }
+    }
+
+    pub const fn alt(code: KeyCode) -> Self {
+        Self { modifiers: KeyModifiers::ALT, code }
+    }
+
+    pub const fn cmd(code: KeyCode) -> Self {
+        Self { modifiers: KeyModifiers::SUPER, code }
+    }
+
+    /// Check if key event matches this combo
+    #[inline]
+    pub fn matches(&self, modifiers: KeyModifiers, code: KeyCode) -> bool {
+        self.modifiers == modifiers && self.code == code
+    }
+
+    /// Platform-appropriate display string (macOS symbols)
+    pub fn display(&self) -> String {
+        let mut s = String::new();
+        if self.modifiers.contains(KeyModifiers::CONTROL) { s.push('⌃'); }
+        if self.modifiers.contains(KeyModifiers::ALT) { s.push('⌥'); }
+        if self.modifiers.contains(KeyModifiers::SHIFT) { s.push('⇧'); }
+        if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
+
+        match self.code {
+            KeyCode::Char(c) => s.push(c.to_ascii_uppercase()),
+            KeyCode::Enter => s.push_str("Enter"),
+            KeyCode::Esc => s.push_str("Esc"),
+            KeyCode::Tab => s.push_str("Tab"),
+            KeyCode::BackTab => s.push_str("Tab"),
+            KeyCode::Backspace => s.push('⌫'),
+            KeyCode::Delete => s.push('⌦'),
+            KeyCode::Up => s.push('↑'),
+            KeyCode::Down => s.push('↓'),
+            KeyCode::Left => s.push('←'),
+            KeyCode::Right => s.push('→'),
+            KeyCode::Home => s.push_str("Home"),
+            KeyCode::End => s.push_str("End"),
+            KeyCode::PageUp => s.push_str("PgUp"),
+            KeyCode::PageDown => s.push_str("PgDn"),
+            _ => s.push_str(&format!("{:?}", self.code)),
+        }
+        s
+    }
+}
+
+/// All possible keybinding actions
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    // Global
+    Quit,
+    Restart,
+    DumpDebug,
+    CancelClaude,
+    CopySelection,
+    ToggleHelp,
+    ToggleTerminal,
+    EnterPromptMode,
+    CycleFocusForward,
+    CycleFocusBackward,
+
+    // Navigation (shared across contexts)
+    NavDown,
+    NavUp,
+    NavLeft,
+    NavRight,
+    HalfPageDown,
+    HalfPageUp,
+    FullPageDown,
+    FullPageUp,
+    GoToTop,
+    GoToBottom,
+
+    // Worktrees
+    SelectNextProject,
+    SelectPrevProject,
+    OpenContextMenu,
+    NewWorktree,
+    BrowseBranches,
+    ViewDiff,
+    RunCommand,
+    AddRunCommand,
+    RebaseOntoMain,
+    ArchiveWorktree,
+    StartResume,
+
+    // FileTree
+    ToggleDir,
+    OpenFile,
+
+    // Viewer
+    EnterEditMode,
+    JumpNextEdit,
+    JumpPrevEdit,
+    CloseViewer,
+
+    // Viewer Edit Mode
+    Save,
+    Undo,
+    Redo,
+
+    // Output/Convo
+    JumpNextBubble,
+    JumpPrevBubble,
+    JumpNextMessage,
+    JumpPrevMessage,
+    SwitchToOutput,
+
+    // Input
+    Submit,
+    ExitPromptMode,
+    WordLeft,
+    WordRight,
+    DeleteWord,
+    ClearInput,
+    HistoryPrev,
+    HistoryNext,
+
+    // Terminal
+    ResizeUp,
+    ResizeDown,
+    EnterTerminalType,
+
+    // Dialogs
+    Confirm,
+    Cancel,
+    DeleteSelected,
+    EditSelected,
+
+    // Generic
+    Escape,
+}
+
+/// A keybinding with one or more key alternatives
+#[derive(Debug, Clone)]
+pub struct Keybinding {
+    /// Primary key combo
+    pub primary: KeyCombo,
+    /// Alternative key combos (e.g., j AND Down for same action)
+    pub alternatives: &'static [KeyCombo],
+    /// Description for help dialog
+    pub description: &'static str,
+    /// Action identifier
+    pub action: Action,
+}
+
+impl Keybinding {
+    pub const fn new(primary: KeyCombo, description: &'static str, action: Action) -> Self {
+        Self { primary, alternatives: &[], description, action }
+    }
+
+    pub const fn with_alt(
+        primary: KeyCombo,
+        alternatives: &'static [KeyCombo],
+        description: &'static str,
+        action: Action,
+    ) -> Self {
+        Self { primary, alternatives, description, action }
+    }
+
+    /// Check if any key combo matches
+    #[inline]
+    pub fn matches(&self, modifiers: KeyModifiers, code: KeyCode) -> bool {
+        self.primary.matches(modifiers, code)
+            || self.alternatives.iter().any(|k| k.matches(modifiers, code))
+    }
+
+    /// Display string combining primary and alternatives (e.g., "j/↓")
+    pub fn display_keys(&self) -> String {
+        if self.alternatives.is_empty() {
+            self.primary.display()
+        } else {
+            let mut s = self.primary.display();
+            for alt in self.alternatives {
+                s.push('/');
+                s.push_str(&alt.display());
+            }
+            s
+        }
+    }
+}
+
+/// Help section for UI display
+pub struct HelpSection {
+    pub title: &'static str,
+    pub bindings: &'static [Keybinding],
+}
+
+// Static alternative key arrays for dual-key bindings
+static ALT_DOWN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+static ALT_UP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Up }];
+static ALT_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Left }];
+static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Right }];
+
+// Ctrl+Alt+Cmd modifier combo (for quit/restart/debug)
+const CTRL_ALT_CMD: KeyModifiers = KeyModifiers::from_bits_truncate(
+    KeyModifiers::CONTROL.bits() | KeyModifiers::ALT.bits() | KeyModifiers::SUPER.bits()
+);
+
+// Cmd+Shift modifier combo
+const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
+    KeyModifiers::SUPER.bits() | KeyModifiers::SHIFT.bits()
+);
+
+/// Global keybindings (always active, checked first)
+pub static GLOBAL: [Keybinding; 10] = [
+    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('c')), "Quit azureal", Action::Quit),
+    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('r')), "Restart azureal", Action::Restart),
+    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel Claude response", Action::CancelClaude),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Toggle terminal", Action::ToggleTerminal),
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
+    Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
+];
+
+/// Worktrees context bindings
+pub static WORKTREES: [Keybinding; 15] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse files", Action::NavLeft),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Select project", Action::SelectPrevProject),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Context menu", Action::OpenContextMenu),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "New worktree", Action::NewWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
+    Keybinding::new(KeyCombo::alt(KeyCode::Char('r')), "Add run command", Action::AddRunCommand),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Rebase onto main", Action::RebaseOntoMain),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
+];
+
+/// FileTree bindings
+pub static FILE_TREE: [Keybinding; 7] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand", Action::NavRight),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open/toggle", Action::OpenFile),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle dir", Action::ToggleDir),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
+];
+
+/// Viewer bindings (read-only mode)
+pub static VIEWER: [Keybinding; 10] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Half page", Action::HalfPageDown),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Half page", Action::HalfPageUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Top", Action::GoToTop),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Next Edit", Action::JumpNextEdit),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Prev Edit", Action::JumpPrevEdit),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
+];
+
+/// Edit mode bindings
+pub static EDIT_MODE: [Keybinding; 4] = [
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo),
+    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
+];
+
+/// Convo/Output bindings
+pub static OUTPUT: [Keybinding; 13] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble),
+    Keybinding::new(KeyCombo::plain(KeyCode::Up), "Prev prompt", Action::JumpPrevBubble),
+    Keybinding::new(KeyCombo::shift(KeyCode::Down), "Next message", Action::JumpNextMessage),
+    Keybinding::new(KeyCombo::shift(KeyCode::Up), "Prev message", Action::JumpPrevMessage),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Half page", Action::HalfPageDown),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Half page", Action::HalfPageUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Full page", Action::FullPageDown),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Full page", Action::FullPageUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Top", Action::GoToTop),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
+];
+
+/// Input mode bindings
+pub static INPUT: [Keybinding; 8] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('z')), "Word left", Action::WordLeft),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('x')), "Word right", Action::WordRight),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('w')), "Delete word", Action::DeleteWord),
+    Keybinding::new(KeyCombo::alt(KeyCode::Char('c')), "Clear input", Action::ClearInput),
+    Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev),
+    Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
+];
+
+/// Terminal bindings (command mode)
+pub static TERMINAL: [Keybinding; 7] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::HalfPageDown),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Scroll page", Action::HalfPageUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Enter type mode", Action::EnterTerminalType),
+];
+
+/// Find matching action for current context
+pub fn lookup_action(
+    focus: Focus,
+    modifiers: KeyModifiers,
+    code: KeyCode,
+    is_prompt_mode: bool,
+    is_edit_mode: bool,
+    is_terminal_mode: bool,
+) -> Option<Action> {
+    // Global bindings checked first (some are context-sensitive)
+    for binding in &GLOBAL {
+        let skip = match binding.action {
+            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
+                if is_prompt_mode || is_edit_mode => true,
+            Action::CancelClaude if is_prompt_mode => true,
+            _ => false,
+        };
+        if !skip && binding.matches(modifiers, code) {
+            return Some(binding.action);
+        }
+    }
+
+    // Context-specific bindings
+    let context_bindings: &[Keybinding] = match focus {
+        Focus::Worktrees => &WORKTREES,
+        Focus::FileTree => &FILE_TREE,
+        Focus::Viewer if is_edit_mode => &EDIT_MODE,
+        Focus::Viewer => &VIEWER,
+        Focus::Output => &OUTPUT,
+        Focus::Input if is_terminal_mode => &TERMINAL,
+        Focus::Input if is_prompt_mode => &INPUT,
+        _ => &[],
+    };
+
+    for binding in context_bindings {
+        if binding.matches(modifiers, code) {
+            return Some(binding.action);
+        }
+    }
+
+    None
+}
+
+/// Generate help sections from binding definitions
+pub fn help_sections() -> Vec<HelpSection> {
+    vec![
+        HelpSection { title: "Global", bindings: &GLOBAL },
+        HelpSection { title: "Worktrees", bindings: &WORKTREES },
+        HelpSection { title: "Filetree", bindings: &FILE_TREE },
+        HelpSection { title: "Viewer", bindings: &VIEWER },
+        HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
+        HelpSection { title: "Convo", bindings: &OUTPUT },
+        HelpSection { title: "Input", bindings: &INPUT },
+        HelpSection { title: "Terminal", bindings: &TERMINAL },
+    ]
+}
+
+/// Quick matcher for common navigation (hot path optimization)
+#[inline]
+pub fn is_nav_down(modifiers: KeyModifiers, code: KeyCode) -> bool {
+    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('j') || code == KeyCode::Down)
+}
+
+#[inline]
+pub fn is_nav_up(modifiers: KeyModifiers, code: KeyCode) -> bool {
+    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('k') || code == KeyCode::Up)
+}
+
+#[inline]
+pub fn is_nav_left(modifiers: KeyModifiers, code: KeyCode) -> bool {
+    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('h') || code == KeyCode::Left)
+}
+
+#[inline]
+pub fn is_nav_right(modifiers: KeyModifiers, code: KeyCode) -> bool {
+    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('l') || code == KeyCode::Right)
+}

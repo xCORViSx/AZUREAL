@@ -1,6 +1,7 @@
-//! UI state management: focus, dialogs, menus, wizard, rebase
+//! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, SessionAction, ViewMode};
+use crate::app::types::{BranchDialog, ContextMenu, Focus, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::config::{ensure_project_data_dir, project_data_dir};
 use crate::git::Git;
 use crate::models::RebaseStatus;
 
@@ -55,21 +56,152 @@ impl App {
         self.focus = Focus::Worktrees;
     }
 
-    // Diff view
+    // Diff view - loads git diff into Viewer pane
     pub fn load_diff(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
             if let Some(ref wt_path) = session.worktree_path {
                 if let Some(project) = self.current_project() {
                     let diff = Git::get_diff(wt_path, &project.main_branch)?;
-                    self.diff_text = Some(diff.diff_text);
-                    self.diff_lines_dirty = true;
-                    self.view_mode = ViewMode::Diff;
-                    self.focus = Focus::Output;
+                    self.load_diff_into_viewer(&diff.diff_text, Some(session.name().to_string()));
                     return Ok(());
                 }
             }
         }
         anyhow::bail!("No active session with worktree")
+    }
+
+    /// Load diff content into the Viewer pane
+    pub fn load_diff_into_viewer(&mut self, diff_text: &str, title: Option<String>) {
+        self.viewer_content = Some(diff_text.to_string());
+        self.viewer_mode = crate::app::ViewerMode::Diff;
+        self.viewer_path = title.map(std::path::PathBuf::from);
+        self.viewer_scroll = 0;
+        self.viewer_lines_dirty = true;
+        self.focus = Focus::Viewer;
+    }
+
+    /// Load a file into the viewer with inline Edit diff highlighting
+    /// Shows the full file with syntax highlighting, scrolled to the edit location
+    /// The edit region is highlighted with red/green diff backgrounds
+    pub fn load_file_with_edit_diff(&mut self, file_path: &str, old_string: &str, new_string: &str) {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(file_path);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            // Save previous viewer state if not already in Edit diff view (for Esc restoration)
+            if self.viewer_edit_diff.is_none() {
+                self.viewer_prev_state = Some((
+                    self.viewer_content.clone(),
+                    self.viewer_path.clone(),
+                    self.viewer_scroll,
+                ));
+            }
+
+            // Find edit location using progressively broader searches
+            let edit_line = Self::find_edit_line(&content, old_string, new_string);
+
+            self.viewer_content = Some(content);
+            self.viewer_path = Some(path);
+            self.viewer_mode = crate::app::ViewerMode::File;
+            self.viewer_edit_diff = Some((old_string.to_string(), new_string.to_string()));
+            self.viewer_edit_diff_line = Some(edit_line);
+            self.viewer_scroll = edit_line.saturating_sub(3); // Scroll to show edit with 3 lines context above
+            self.viewer_lines_dirty = true;
+            self.focus = Focus::Viewer;
+        } else {
+            self.set_status(&format!("Cannot read file: {}", file_path));
+        }
+    }
+
+    /// Find the line number where an edit occurs using multiple search strategies
+    fn find_edit_line(content: &str, old_string: &str, new_string: &str) -> usize {
+        // Helper to count newlines before a position
+        let line_at = |pos: usize| content[..pos].chars().filter(|&c| c == '\n').count();
+
+        // Strategy 1: Search for full new_string (most accurate when edit is applied)
+        if !new_string.is_empty() {
+            if let Some(pos) = content.find(new_string) {
+                return line_at(pos);
+            }
+        }
+
+        // Strategy 2: Search for full old_string (when edit not yet applied, or viewing history)
+        if !old_string.is_empty() {
+            if let Some(pos) = content.find(old_string) {
+                return line_at(pos);
+            }
+        }
+
+        // Strategy 3: Search for significant lines from new_string (exact match)
+        if !new_string.is_empty() {
+            let significant_lines: Vec<&str> = new_string.lines()
+                .filter(|l| l.trim().len() > 3)
+                .take(3)
+                .collect();
+            for line in &significant_lines {
+                if let Some(pos) = content.find(*line) {
+                    return line_at(pos);
+                }
+            }
+        }
+
+        // Strategy 4: Same for old_string
+        if !old_string.is_empty() {
+            let significant_lines: Vec<&str> = old_string.lines()
+                .filter(|l| l.trim().len() > 3)
+                .take(3)
+                .collect();
+            for line in &significant_lines {
+                if let Some(pos) = content.find(*line) {
+                    return line_at(pos);
+                }
+            }
+        }
+
+        // Strategy 5: Search for trimmed lines (handles whitespace/indent differences)
+        // Match trimmed content against trimmed lines in file
+        let find_trimmed_line = |search_str: &str| -> Option<usize> {
+            for search_line in search_str.lines() {
+                let trimmed = search_line.trim();
+                if trimmed.len() <= 5 { continue; } // Skip short lines
+                for (line_num, content_line) in content.lines().enumerate() {
+                    if content_line.trim() == trimmed {
+                        return Some(line_num);
+                    }
+                }
+            }
+            None
+        };
+
+        if let Some(line) = find_trimmed_line(new_string) {
+            return line;
+        }
+        if let Some(line) = find_trimmed_line(old_string) {
+            return line;
+        }
+
+        // Strategy 6: Look for unique identifiers (function names, variable names)
+        let find_by_identifier = |s: &str| -> Option<usize> {
+            let mut words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '_')
+                .filter(|w| w.len() >= 6)
+                .collect();
+            words.sort_by(|a, b| b.len().cmp(&a.len()));
+            for word in words.iter().take(5) {
+                if let Some(pos) = content.find(*word) {
+                    return Some(line_at(pos));
+                }
+            }
+            None
+        };
+
+        if let Some(line) = find_by_identifier(new_string) {
+            return line;
+        }
+        if let Some(line) = find_by_identifier(old_string) {
+            return line;
+        }
+
+        0 // Fallback to top of file
     }
 
     // Rebase status
@@ -145,4 +277,63 @@ impl App {
     }
 
     pub fn is_wizard_active(&self) -> bool { self.creation_wizard.is_some() }
+
+    // Run commands
+    pub fn open_run_command_dialog(&mut self) {
+        self.run_command_dialog = Some(RunCommandDialog::new());
+    }
+
+    pub fn open_run_command_picker(&mut self) {
+        if self.run_commands.is_empty() {
+            self.set_status("No run commands. Press ⌥r to add one.");
+            return;
+        }
+        if self.run_commands.len() == 1 {
+            self.execute_run_command(0);
+        } else {
+            self.run_command_picker = Some(RunCommandPicker::new());
+        }
+    }
+
+    pub fn execute_run_command(&mut self, idx: usize) {
+        let Some(cmd) = self.run_commands.get(idx) else { return };
+        let command = cmd.command.clone();
+        let name = cmd.name.clone();
+
+        // Open terminal if not open and send command
+        if !self.terminal_mode {
+            self.open_terminal();
+        }
+        if let Some(ref mut writer) = self.terminal_writer {
+            let _ = writer.write_all(command.as_bytes());
+            let _ = writer.write_all(b"\n");
+            let _ = writer.flush();
+        }
+        self.set_status(format!("Running: {}", name));
+    }
+
+    /// Save run commands to project data directory (.azureal/run_commands.json)
+    pub fn save_run_commands(&self) -> anyhow::Result<()> {
+        let Some(dir) = ensure_project_data_dir()? else { return Ok(()); };
+        let path = dir.join("run_commands.json");
+        let json: Vec<_> = self.run_commands.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
+        std::fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+        Ok(())
+    }
+
+    /// Load run commands from project data directory
+    pub fn load_run_commands(&mut self) {
+        let Some(dir) = project_data_dir() else { return; };
+        let path = dir.join("run_commands.json");
+        if !path.exists() { return; }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                self.run_commands = arr.iter().filter_map(|v| {
+                    let name = v.get("name")?.as_str()?.to_string();
+                    let command = v.get("command")?.as_str()?.to_string();
+                    Some(RunCommand::new(name, command))
+                }).collect();
+            }
+        }
+    }
 }

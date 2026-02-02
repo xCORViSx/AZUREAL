@@ -1,15 +1,15 @@
 # SUMMARY
 
-Azural (Agent Zones: Unified Runtime for Autonomous LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each **worktree** is a git worktree with its own Claude **session**, allowing concurrent AI-assisted development across multiple feature branches.
+Azureal (Agent-Zoned Unified Runtime Environment for Autonomous LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each **worktree** is a git worktree with its own Claude **session**, allowing concurrent AI-assisted development across multiple feature branches.
 
 **Terminology:**
 - **Worktree**: A git worktree with its own working directory and branch (displayed in left panel)
 - **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Convo pane)
 
-**Stateless Architecture:** Azural stores NO persistent data. All state is derived at runtime from:
+**Stateless Architecture:** Azureal stores NO persistent data. All state is derived at runtime from:
 - Git repository info via `git rev-parse --show-toplevel`
 - Git worktrees via `git worktree list` for active worktrees
-- Git branches via `git branch | grep azural/` for archived worktrees
+- Git branches via `git branch | grep azureal/` for archived worktrees
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 
 # FEATURES
@@ -165,6 +165,44 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
 
+### 8. Session File Polling (Deferred Parse Pattern)
+
+```rust
+// ❌ WRONG - Full parse on every poll, blocks UI during large file reads
+fn poll_session_file(&mut self) {
+    if let Some(path) = &self.session_file_path {
+        let parsed = parse_session_file(path);  // BLOCKING: 50-200ms for large sessions
+        self.display_events = parsed.events;
+    }
+}
+
+// ✅ CORRECT - Lightweight check + dirty flag + deferred parse
+pub fn check_session_file(&mut self) {
+    let Some(path) = &self.session_file_path else { return };
+    let Ok(metadata) = std::fs::metadata(path) else { return };
+    if metadata.len() != self.session_file_size {  // FAST: just file metadata
+        self.session_file_size = metadata.len();
+        self.session_file_dirty = true;  // Mark for later parsing
+    }
+}
+
+pub fn poll_session_file(&mut self) -> bool {
+    if self.session_file_dirty {
+        self.session_file_dirty = false;
+        self.refresh_session_events();  // Only parse when dirty AND idle
+        true
+    } else {
+        false
+    }
+}
+```
+
+**Files:** `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`
+
+**Pattern:** Check file metadata frequently (cheap), but only parse when:
+1. File actually changed (size different)
+2. User is idle (no active scrolling/typing)
+
 ### 4. SKIP Redraw When Nothing Changed
 
 ```rust
@@ -255,17 +293,17 @@ Before merging ANY change to render/event code:
 
 The input box uses vim-style modal editing:
 - **Command mode** (red border): Keys are commands, not text input
-- **Inprompt mode** (yellow border): Keys are typed as Claude prompts
+- **Prompt mode** (yellow border): Keys are typed as Claude prompts
 
 **Rationale:** Allows single-letter commands like 't' for terminal toggle without conflicting with text input. The red border in command mode provides immediate visual feedback that typing will execute commands, preventing accidental command execution.
 
 Key mappings:
-- `i` (from anywhere): Enter inprompt mode and focus input
-- `t` (command mode): Toggle terminal pane
-- `Escape` (in inprompt mode): Return to command mode
-- `Enter` (in inprompt mode): Submit prompt
+- `p` (global, except edit mode): Enter prompt mode and focus input (closes terminal/help if open)
+- `t` (command mode): Open terminal pane
+- `Escape` (in prompt mode): Return to command mode
+- `Enter` (in prompt mode): Submit prompt
 
-Implementation: `insert_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
+Implementation: `prompt_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
 ### Terminal Pane
 
@@ -278,9 +316,12 @@ A PTY-based embedded terminal that acts as a portal to the user's actual shell:
 - Resizable height (5-40 lines)
 
 Key mappings:
-- `t` (command mode): Toggle terminal on/off
-- `+/-` (command mode): Increase/decrease terminal height
-- All keystrokes in terminal insert mode forward directly to PTY
+- `t` (command mode): Open terminal / Enter type mode (when in terminal)
+- `Esc` (terminal command mode): Close terminal
+- `p` (terminal command mode): Close terminal and enter Claude prompt
+- `+/-` (terminal command mode): Increase/decrease terminal height
+- `Esc` (terminal type mode): Exit type mode
+- All keystrokes in terminal type mode forward directly to PTY
 
 Implementation:
 - `terminal_pty`, `terminal_writer`, `terminal_rx`, `terminal_parser` in `App` struct
@@ -311,10 +352,10 @@ Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "
 **Tool Result Display Formats:**
 | Tool | Format | Description |
 |------|--------|-------------|
-| Read | First + last line | Shows file boundaries with line count |
+| Read | Clickable link + first/last line | File path underlined and clickable; shows file boundaries with line count |
 | Bash | Last 2 lines | Shows command results (usually at end) |
-| Edit | Full diff | Actual file line numbers, changed lines (red/green bg), unchanged in gray |
-| Write | Purpose line | Line count + first comment (from input content) |
+| Edit | Clickable link + inline diff (last 20) | File path underlined; click to view in Viewer with diff overlay. Last 20 Edit calls also show inline red/green diff preview |
+| Write | Clickable link + purpose line | File path underlined and clickable; shows line count + first comment |
 | Grep | First 3 matches | Preview of search results |
 | Glob | Directory summary | File count grouped by directory |
 | Task | Summary line | First line of agent response |
@@ -326,8 +367,10 @@ Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "
 User messages containing `<command-name>/xxx</command-name>` tags are parsed as slash commands and displayed prominently with centered 3-line banners in magenta.
 
 **Compacting Detection:**
-- "COMPACTING CONVERSATION" (yellow) - shown when user message starts with "This session is being continued from a previous conversation"
-- "CONVERSATION COMPACTED" (green) - shown when `<local-command-stdout>` contains "Compacted"
+- "⏳ Compacting context..." (yellow) - shown when `/compact` command is detected (START of manual compaction)
+- "✓ Context compacted" (green) - shown when `system` event with `subtype: "compact_boundary"` is received (compaction complete)
+
+Note: For auto-compaction, there's no visible "starting" event - we only see the `compact_boundary` after it completes.
 
 **Filtered Messages:**
 - Meta messages (`isMeta: true`) are hidden - internal Claude instructions
@@ -338,7 +381,7 @@ User messages containing `<command-name>/xxx</command-name>` tags are parsed as 
   - Detection: Multiple user messages sharing the same `parentUuid` - keep only the most recent by timestamp
 
 **Debug Output (debug builds only):**
-On debug builds (`cargo run`), azural automatically dumps rendered output to `.azural/debug-output.txt` whenever session output is loaded. Contains exactly what appears in the TUI output pane with style annotations (colors, bold, italic) for debugging rendering issues.
+On debug builds (`cargo run`), azureal automatically dumps rendered output to `.azureal/debug-output.txt` whenever session output is loaded. Contains exactly what appears in the TUI output pane with style annotations (colors, bold, italic) for debugging rendering issues.
 
 **Markdown Rendering:**
 Claude responses are parsed for markdown syntax and rendered with proper styling:
@@ -377,7 +420,7 @@ Claude Code hooks are captured from multiple sources in the session file:
 5. **UserPromptSubmit hook positioning**
    - Claude Code doesn't execute shell commands for UserPromptSubmit hooks (only injects output into context)
    - System-reminder with hook content appears in assistant thinking blocks (not tool_results)
-   - Azural extracts UPS hooks from thinking blocks and assigns them timestamp = user_message_timestamp + 1ms
+   - Azureal extracts UPS hooks from thinking blocks and assigns them timestamp = user_message_timestamp + 1ms
    - When events are sorted by timestamp, UPS hooks naturally appear right after their user message
    - UPS hooks from hooks.jsonl are skipped (duplicates with wrong timestamps)
    - UPS hooks display as dim gray lines: `› UserPromptSubmit: <output>`
@@ -385,7 +428,7 @@ Claude Code hooks are captured from multiple sources in the session file:
 6. **Compaction summary handling**
    - When loading a continued session, the summary message ("This session is being continued...") contains quoted `<system-reminder>` references from conversation history
    - These quoted references should NOT be treated as real hooks
-   - Azural skips hook extraction for the compaction summary and its immediately following tool results
+   - Azureal skips hook extraction for the compaction summary and its immediately following tool results
    - Flag `in_compaction_summary` tracks this state and resets only when a real user prompt is encountered
 
 **Hook Deduplication:**
@@ -406,11 +449,11 @@ Each session maintains conversation history across prompts using Claude's `--res
 - History preserved in Claude Code's session storage until session is destroyed
 
 **Stateless Data Discovery:**
-Azural reads all data at runtime without persisting anything:
+Azureal reads all data at runtime without persisting anything:
 - **Project**: Discovered via `git rev-parse --show-toplevel`, main branch detected from git
-- **Sessions**: Discovered from `git worktree list` (active) + `git branch | grep azural/` (archived)
+- **Sessions**: Discovered from `git worktree list` (active) + `git branch | grep azureal/` (archived)
 - **Conversation**: Read from Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
-- **Auto-discovery**: Azural scans Claude's project directory to find/link session files by worktree path
+- **Auto-discovery**: Azureal scans Claude's project directory to find/link session files by worktree path
 - **Live polling**: Session file is continuously polled for changes; output updates in real-time
 - **Hooks**: Extracted from `system-reminder` tags embedded in Claude's session files (no separate storage)
 
@@ -442,8 +485,8 @@ Implementation: `src/wizard.rs`
 # MANIFEST
 
 ```
-azural/
-├── .azural/                # Project-level azural data (gitignored)
+azureal/
+├── .azureal/                # Project-level azureal data (gitignored)
 │   └── config.toml         # Optional project config
 ├── .project/               # Project management files
 │   ├── edits/              # Edit history
@@ -483,6 +526,7 @@ azural/
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_*.rs       # Other rendering functions
+│   │   ├── keybindings.rs  # Centralized keybinding definitions
 │   │   ├── input_file_tree.rs # FileTree navigation
 │   │   ├── input_viewer.rs # Viewer scroll handling
 │   │   └── input_*.rs      # Other input handlers
@@ -589,10 +633,10 @@ cargo install --path .
 
 ```bash
 # Launch the TUI
-azural tui
+azureal tui
 
 # Or simply
-azural
+azureal
 ```
 
 ## Keybindings
@@ -600,7 +644,7 @@ azural
 ### Global (Command Mode)
 | Key | Action |
 |-----|--------|
-| `i` | Enter inprompt mode (focus input) |
+| `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
 | `j/k` | Navigate (worktrees, files, scroll) |
 | `J/K` | Navigate projects |
@@ -625,11 +669,10 @@ azural
 | Key | Action |
 |-----|--------|
 | `j/k` | Scroll up/down |
-| `Ctrl+d/u` | Half-page scroll |
-| `Ctrl+f/b` | Full-page scroll |
+| `Shift+J/K` | Half-page scroll |
 | `g/G` | Jump to top/bottom |
-| `Esc` | Clear viewer, return to FileTree |
-| `q` | Return to FileTree (keep content) |
+| `f/b` | Next/prev Edit (syncs Convo scroll) |
+| `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
 ### Convo Pane
 | Key | Action |
@@ -637,22 +680,30 @@ azural
 | `j/k` | Scroll line |
 | `↑/↓` | Jump to prev/next user prompt |
 | `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
-| `Ctrl+d/u` | Half-page scroll |
-| `Ctrl+f/b` | Full-page scroll |
+| `Shift+J/K` | Half-page scroll |
 | `g/G` | Jump to top/bottom |
+| `d` | Git worktree diff |
 | `o` | Switch to output view |
-| `d` | Switch to diff view |
 | `Esc` | Return to Worktrees |
 
-### Insert Mode (Input Focused)
+**Clickable Edit Links:** Edit tool file paths are underlined and clickable. Click to open the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). The selected Edit is highlighted with orange background and black text in the Convo pane. Use `f/b` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.
+
+### Prompt Mode (Input Focused)
 | Key | Action |
 |-----|--------|
 | `Escape` | Return to command mode |
 | `Enter` | Submit prompt / execute command (terminal) |
+| `↑/↓` | Browse prompt history (previous/next) |
 
 ### Terminal Mode
 | Key | Action |
 |-----|--------|
-| `t` | Close terminal (command mode) |
+| `Esc` | Close terminal (command mode) |
+| `t` | Enter type mode (command mode) |
+| `p` | Close terminal and enter Claude prompt (command mode) |
 | `+/-` | Resize terminal height (command mode) |
-| `Enter` | Execute shell command (insert mode) |
+| `j/k` | Scroll up/down (command mode) |
+| `J/K` | Scroll 10 lines (command mode) |
+| `g/G` | Jump to top/bottom (command mode) |
+| `Esc` | Exit type mode (type mode) |
+| All keys | Forward to shell (type mode) |

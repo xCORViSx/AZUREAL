@@ -47,7 +47,7 @@
 ### Option A: First 3 Lines
 ```
 [Bash] cargo check
-│ Checking azural v0.1.0
+│ Checking azureal v0.1.0
 │ warning: unused import
 │ warning: unused variable
 │ ... (38 more lines)

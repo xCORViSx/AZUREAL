@@ -32,7 +32,7 @@ impl App {
         let Some(project) = &self.project else { return Ok(()) };
 
         let worktrees = Git::list_worktrees_detailed(&project.path)?;
-        let azural_branches = Git::list_azural_branches(&project.path)?;
+        let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
         let mut sessions = Vec::new();
         let mut active_branches: HashSet<String> = HashSet::new();
@@ -55,7 +55,7 @@ impl App {
             }
         }
 
-        // Add feature worktrees (azural/* branches with active worktrees)
+        // Add feature worktrees (azureal/* branches with active worktrees)
         for wt in &worktrees {
             if !wt.is_main {
                 let branch_name = wt.branch.clone().unwrap_or_default();
@@ -73,8 +73,8 @@ impl App {
             }
         }
 
-        // Add archived sessions (azural/* branches without worktrees)
-        for branch in azural_branches {
+        // Add archived sessions (azureal/* branches without worktrees)
+        for branch in azureal_branches {
             if !active_branches.contains(&branch) {
                 sessions.push(Session {
                     branch_name: branch,
@@ -143,9 +143,10 @@ impl App {
                 if let Some(session_file) = crate::config::claude_session_file(wt_path, &claude_id) {
                     // Track file for live polling
                     self.session_file_path = Some(session_file.clone());
-                    self.session_file_modified = std::fs::metadata(&session_file)
-                        .and_then(|m| m.modified())
-                        .ok();
+                    if let Ok(meta) = std::fs::metadata(&session_file) {
+                        self.session_file_modified = meta.modified().ok();
+                        self.session_file_size = meta.len();
+                    }
 
                     let parsed = crate::app::session_parser::parse_session_file(&session_file);
                     self.display_events = parsed.events;
@@ -179,23 +180,70 @@ impl App {
 
         // Load file tree for new session
         self.load_file_tree();
-
-        // Debug output only in debug builds (expensive operation)
-        #[cfg(debug_assertions)]
-        let _ = self.dump_debug_output();
     }
 
-    /// Poll session file for changes and reload if modified
-    pub fn poll_session_file(&mut self) -> bool {
-        let Some(path) = &self.session_file_path else { return false };
-        let Ok(metadata) = std::fs::metadata(path) else { return false };
-        let Ok(modified) = metadata.modified() else { return false };
+    /// Check if session file changed (lightweight - just checks file size)
+    /// Marks dirty if changed, but doesn't parse yet
+    pub fn check_session_file(&mut self) {
+        let Some(path) = &self.session_file_path else { return };
+        let Ok(metadata) = std::fs::metadata(path) else { return };
+        let new_size = metadata.len();
 
-        if self.session_file_modified.map(|t| modified > t).unwrap_or(true) {
-            self.load_session_output();
+        if new_size != self.session_file_size {
+            self.session_file_size = new_size;
+            self.session_file_modified = metadata.modified().ok();
+            self.session_file_dirty = true;
+        }
+    }
+
+    /// Poll session file - does the actual parse if dirty
+    /// Returns true if display needs refresh
+    pub fn poll_session_file(&mut self) -> bool {
+        if self.session_file_dirty {
+            self.session_file_dirty = false;
+            self.refresh_session_events();
             true
         } else {
             false
+        }
+    }
+
+    /// Lightweight refresh of session events (no terminal/file tree reload)
+    fn refresh_session_events(&mut self) {
+        let Some(path) = self.session_file_path.clone() else { return };
+
+        // Track if we were at bottom before refresh (usize::MAX = follow mode)
+        let was_at_bottom = self.output_scroll == usize::MAX;
+
+        let parsed = crate::app::session_parser::parse_session_file(&path);
+        self.display_events = parsed.events;
+        self.pending_tool_calls = parsed.pending_tools;
+        self.failed_tool_calls = parsed.failed_tools;
+        self.parse_total_lines = parsed.total_lines;
+        self.parse_errors = parsed.parse_errors;
+        self.assistant_total = parsed.assistant_total;
+        self.assistant_no_message = parsed.assistant_no_message;
+        self.assistant_no_content_arr = parsed.assistant_no_content_arr;
+        self.assistant_text_blocks = parsed.assistant_text_blocks;
+        self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+
+        // Clear pending message if it's now in the loaded events
+        if let Some(ref pending) = self.pending_user_message {
+            for event in self.display_events.iter().rev().take(5) {
+                if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                    if content == pending {
+                        self.pending_user_message = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.invalidate_render_cache();
+
+        // If we were following bottom, stay at bottom after content update
+        if was_at_bottom {
+            self.output_scroll = usize::MAX;
         }
     }
 
@@ -217,22 +265,27 @@ impl App {
 
     pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }
 
-    /// Dump debug output to .azural/debug-output.txt (debug builds only)
-    #[cfg(debug_assertions)]
-    pub fn dump_debug_output(&self) -> anyhow::Result<()> {
+    /// Dump debug output to .azureal/debug-output.txt (triggered by Ctrl+Opt+Cmd+D)
+    pub fn dump_debug_output(&mut self) {
+        if let Err(e) = self.dump_debug_output_inner() {
+            self.set_status(format!("Debug dump failed: {}", e));
+        } else {
+            self.set_status("Debug output saved to .azureal/debug-output.txt");
+        }
+    }
+
+    fn dump_debug_output_inner(&self) -> anyhow::Result<()> {
         use std::io::Write;
         use crate::events::DisplayEvent;
 
-        let debug_dir = self.current_session()
-            .and_then(|s| s.worktree_path.as_ref())
-            .map(|p| p.join(".azural"))
-            .unwrap_or_else(crate::config::config_dir);
-        std::fs::create_dir_all(&debug_dir)?;
+        // Use project data dir (.azureal/ in git root) - only creates when actually writing
+        let debug_dir = crate::config::ensure_project_data_dir()?
+            .ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
         let debug_path = debug_dir.join("debug-output.txt");
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header
-        writeln!(file, "=== AZURAL DEBUG DUMP ===")?;
+        writeln!(file, "=== AZUREAL DEBUG DUMP ===")?;
         writeln!(file, "Dump time: {:?}", std::time::SystemTime::now())?;
         writeln!(file, "Session file: {:?}", self.session_file_path)?;
 
@@ -313,7 +366,7 @@ impl App {
         writeln!(file, "")?;
 
         writeln!(file, "=== RENDERED OUTPUT ===")?;
-        let (rendered_lines, _, _) = crate::tui::util::render_display_events(
+        let (rendered_lines, _, _, _, _) = crate::tui::util::render_display_events(
             &self.display_events,
             120,
             &self.pending_tool_calls,

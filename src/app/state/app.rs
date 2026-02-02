@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -39,8 +39,9 @@ pub struct App {
     pub worktree_creation_cursor: usize,
     pub view_mode: ViewMode,
     pub focus: Focus,
-    pub insert_mode: bool,
+    pub prompt_mode: bool,
     pub should_quit: bool,
+    pub should_restart: bool,
     pub status_message: Option<String>,
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
     pub running_sessions: HashSet<String>,
@@ -84,6 +85,10 @@ pub struct App {
     pub session_file_path: Option<PathBuf>,
     /// Last modified time of session file (for change detection)
     pub session_file_modified: Option<std::time::SystemTime>,
+    /// Last known file size (for incremental change detection)
+    pub session_file_size: u64,
+    /// Session file needs re-parse (deferred during user interaction)
+    pub session_file_dirty: bool,
     /// Per-session terminals (persist when switching sessions)
     pub session_terminals: HashMap<String, SessionTerminal>,
     /// FileTree entries for current session's worktree
@@ -158,6 +163,63 @@ pub struct App {
     /// Line indices where message bubbles start (for Up/Down navigation)
     /// Each entry is (line_index, is_user_message) - true for UserMessage, false for AssistantText
     pub message_bubble_positions: Vec<(usize, bool)>,
+    /// Edit/Write tool diffs for navigation: (line_idx, tool_name, file_path, diff_text)
+    pub tool_diff_positions: Vec<(usize, String, String, String)>,
+    /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string)
+    pub clickable_paths: Vec<(usize, usize, usize, String, String, String)>,
+    /// Currently selected tool diff index (for e/E navigation in Output)
+    pub selected_tool_diff: Option<usize>,
+    /// Edit mode active in viewer
+    pub viewer_edit_mode: bool,
+    /// Editable content (copy of file when entering edit mode)
+    pub viewer_edit_content: Vec<String>,
+    /// Cursor position in edit mode (line, column)
+    pub viewer_edit_cursor: (usize, usize),
+    /// Undo stack for edit mode (each entry is full content snapshot)
+    pub viewer_edit_undo: Vec<Vec<String>>,
+    /// Redo stack for edit mode
+    pub viewer_edit_redo: Vec<Vec<String>>,
+    /// Whether edits have been made since entering edit mode
+    pub viewer_edit_dirty: bool,
+    /// Show discard confirmation dialog
+    pub viewer_edit_discard_dialog: bool,
+    /// Show post-save dialog when editing from Edit diff view
+    pub viewer_edit_save_dialog: bool,
+    /// Text selection in edit mode: (start_line, start_col, end_line, end_col)
+    pub viewer_edit_selection: Option<(usize, usize, usize, usize)>,
+    /// Clipboard for copy/cut/paste operations
+    pub clipboard: String,
+    /// Text selection for read-only viewer: (start_visual_line, start_col, end_visual_line, end_col)
+    pub viewer_selection: Option<(usize, usize, usize, usize)>,
+    /// Text selection for output/convo pane: (start_visual_line, start_col, end_visual_line, end_col)
+    pub output_selection: Option<(usize, usize, usize, usize)>,
+    /// Mouse drag in progress
+    pub mouse_drag_start: Option<(u16, u16)>,
+    /// Last click time and position for double-click detection
+    pub last_click: Option<(std::time::Instant, u16, u16)>,
+    /// Edit diff overlay: (old_string, new_string) to highlight in viewer
+    pub viewer_edit_diff: Option<(String, String)>,
+    /// Line number where the edit diff starts (for scrolling to it)
+    pub viewer_edit_diff_line: Option<usize>,
+    /// Previous viewer state before Edit diff (content, path, scroll) for restoration on Esc
+    pub viewer_prev_state: Option<(Option<String>, Option<PathBuf>, usize)>,
+    /// Current position in prompt history (None = new input, Some(idx) = browsing history)
+    /// History is pulled from display_events UserMessage entries (last 50)
+    pub prompt_history_idx: Option<usize>,
+    /// Saved current input when browsing history (restored when returning to bottom)
+    pub prompt_history_temp: Option<String>,
+    /// Viewer tabs (each tab holds file state)
+    pub viewer_tabs: Vec<crate::app::types::ViewerTab>,
+    /// Currently active tab index
+    pub viewer_active_tab: usize,
+    /// Show tab selection dialog
+    pub viewer_tab_dialog: bool,
+    /// Saved run commands
+    pub run_commands: Vec<RunCommand>,
+    /// Run command creation/edit dialog
+    pub run_command_dialog: Option<RunCommandDialog>,
+    /// Run command picker dialog (shown when multiple commands exist)
+    pub run_command_picker: Option<RunCommandPicker>,
 }
 
 impl App {
@@ -180,8 +242,9 @@ impl App {
             worktree_creation_cursor: 0,
             view_mode: ViewMode::Output,
             focus: Focus::Worktrees,
-            insert_mode: false,
+            prompt_mode: false,
             should_quit: false,
+            should_restart: false,
             status_message: None,
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
@@ -216,6 +279,8 @@ impl App {
             animation_tick: 0,
             session_file_path: None,
             session_file_modified: None,
+            session_file_size: 0,
+            session_file_dirty: false,
             session_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),
             file_tree_selected: None,
@@ -254,6 +319,34 @@ impl App {
             viewer_viewport_height: 20,
             output_viewport_height: 20,
             message_bubble_positions: Vec::new(),
+            tool_diff_positions: Vec::new(),
+            selected_tool_diff: None,
+            clickable_paths: Vec::new(),
+            viewer_edit_mode: false,
+            viewer_edit_content: Vec::new(),
+            viewer_edit_cursor: (0, 0),
+            viewer_edit_undo: Vec::new(),
+            viewer_edit_redo: Vec::new(),
+            viewer_edit_dirty: false,
+            viewer_edit_discard_dialog: false,
+            viewer_edit_save_dialog: false,
+            viewer_edit_selection: None,
+            clipboard: String::new(),
+            viewer_selection: None,
+            output_selection: None,
+            mouse_drag_start: None,
+            last_click: None,
+            viewer_edit_diff: None,
+            viewer_edit_diff_line: None,
+            viewer_prev_state: None,
+            prompt_history_idx: None,
+            prompt_history_temp: None,
+            viewer_tabs: Vec::new(),
+            viewer_active_tab: 0,
+            viewer_tab_dialog: false,
+            run_commands: Vec::new(),
+            run_command_dialog: None,
+            run_command_picker: None,
         }
     }
 

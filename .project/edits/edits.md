@@ -1,5 +1,126 @@
 # Edit History
 
+## 2026-02-02: Viewer Edit Mode Clipboard Operations
+
+### Feature
+Added copy, cut, paste, and selection support to the viewer's edit mode.
+
+### Implementation
+- Added `clipboard: String` field to App struct for storing copied/cut text
+- Selection methods: `viewer_edit_start_selection()`, `viewer_edit_extend_selection()`, `viewer_edit_clear_selection()`
+- Selection-aware movement: `viewer_edit_left_select(extend)`, etc. - extend selection with Shift+Arrow
+- `get_selected_text()` extracts text from selection range (handles multi-line)
+- `delete_selection_text()` removes selected text and returns it (used by cut and typing)
+- Clipboard operations: `viewer_edit_copy()`, `viewer_edit_cut()`, `viewer_edit_paste()`
+- `viewer_edit_select_all()` for Cmd+A
+- Normalized selection in draw code so backwards selections render correctly
+
+### Keybindings
+- `⌘C` - Copy selection to clipboard
+- `⌘X` - Cut selection to clipboard
+- `⌘V` - Paste clipboard (replaces selection if any)
+- `⌘A` - Select all
+- `Shift+Arrow` - Extend selection
+- Typing/Backspace/Delete with selection replaces it
+
+### Files Changed
+- `src/app/state/app.rs` - Added `clipboard` field
+- `src/app/state/viewer_edit.rs` - All selection and clipboard methods
+- `src/tui/input_viewer.rs` - Keybindings for clipboard operations
+- `src/tui/draw_viewer.rs` - Normalize selection for rendering
+
+---
+
+## 2026-02-02: Fix .azureal Directory Eager Creation
+
+### Problem
+`.azureal/` directories were being created in every git repository azureal was run from, even when not needed. This was unintended behavior.
+
+### Root Cause
+- `ensure_config_dir()` was called on startup and created `.azureal/` in the current git root
+- No separation between global config and project-specific data
+
+### Solution
+Separated global config from project-specific data with lazy directory creation:
+- `config_dir()` → `~/.azureal/` (global config, home directory)
+- `project_data_dir()` → `.azureal/` (project data in git root, only when needed)
+- `ensure_project_data_dir()` → Creates `.azureal/` only when actually writing data
+
+### Files Changed
+- `src/config.rs` - Added `project_data_dir()` and `ensure_project_data_dir()`
+- `src/app/state/ui.rs` - Use `ensure_project_data_dir()` for run_commands.json
+- `src/app/state/load.rs` - Use `ensure_project_data_dir()` for debug output
+
+---
+
+## 2026-02-02: Show Hidden Files in FileTree
+
+### Feature
+Hidden files and directories (starting with `.`) are now shown in the FileTree pane with dimmed colors, sorted after non-hidden items. Children of hidden directories also inherit the dimmed styling.
+
+### Implementation
+- Added `is_hidden: bool` field to `FileTreeEntry` struct
+- Modified `build_file_tree_recursive()` to include hidden files and mark them
+- Added `parent_hidden` parameter to propagate hidden state to children
+- Sort order: dirs first, then within each (dirs/files): non-hidden before hidden, then alphabetical
+- Dimmed colors: gray (`rgb(100,100,100)`) for hidden files, muted cyan (`rgb(80,120,130)`) for hidden dirs
+- Icons also dimmed for hidden items
+- Still excludes `target/` and `node_modules/` (too noisy to include)
+
+### Files Changed
+- `src/app/types.rs` - Added `is_hidden` field to `FileTreeEntry`
+- `src/app/state/helpers.rs` - Include hidden files in tree, propagate hidden state to children
+- `src/tui/draw_file_tree.rs` - Dimmed styling for hidden items
+
+---
+
+## 2026-02-02: Centralized Keybindings Module
+
+### Feature
+Created a centralized `keybindings.rs` module where all keybindings are defined once and used by both input handlers and the help dialog automatically.
+
+### Architecture
+- `KeyCombo` struct with display methods for platform symbols (⌘, ⌃, ⌥, ⇧)
+- `Action` enum for all possible keybinding actions (~45 actions)
+- `Keybinding` struct with primary + alternatives (e.g., j/↓ for same action)
+- Static binding arrays: GLOBAL, WORKTREES, FILE_TREE, VIEWER, EDIT_MODE, OUTPUT, INPUT, TERMINAL
+- `lookup_action(focus, modifiers, code, ...)` for input handler dispatch
+- `help_sections()` auto-generates help dialog content from same definitions
+
+### Benefits
+- Adding/changing a keybinding now automatically updates help
+- No more duplicate definitions across files
+- Single source of truth for all key mappings
+
+### Files Changed
+- `src/tui/keybindings.rs` - NEW: centralized keybinding definitions (~420 lines)
+- `src/tui.rs` - Added `pub mod keybindings;`
+- `src/tui/draw_dialogs.rs` - Help dialog now uses `keybindings::help_sections()`
+- `src/tui/input_file_tree.rs` - Migrated to use `lookup_action()`
+- `src/tui/input_output.rs` - Migrated to use `lookup_action()`
+- `src/tui/input_worktrees.rs` - Migrated to use `lookup_action()`
+- `src/tui/input_viewer.rs` - Migrated to use `lookup_action()`
+- `src/tui/input_dialogs.rs` - Migrated to use `is_nav_down()/is_nav_up()` helpers
+
+---
+
+## 2026-02-01: Inline Edit Diff for Last 20 Edits
+
+### Feature
+Re-added inline Edit diff display in Convo pane, but only for the last 20 Edit tool calls to avoid clutter. All Edit file paths remain clickable with underline styling.
+
+### Implementation
+- Count total Edit tool calls before rendering loop
+- Track `edit_index` during rendering
+- Show inline diff only when `edit_index >= total_edit_count - 20`
+- Passed `show_inline_diff: bool` to `render_tool_call`
+- Conditionally call `render_edit_diff()` only for last 20 Edits
+
+### Files Changed
+- `src/tui/render_events.rs` - Added edit counting, conditional inline diff rendering
+
+---
+
 ## 2026-01-29: Bubble Navigation in Convo Pane
 
 ### Feature
@@ -92,13 +213,13 @@ Decoupled animation from content caching:
 ## 2026-01-28: Fully Stateless Architecture
 
 ### Summary
-Eliminated ALL persistent storage. Azural now derives all state at runtime from git repository state and Claude's session files.
+Eliminated ALL persistent storage. Azureal now derives all state at runtime from git repository state and Claude's session files.
 
 ### Key Insight
 All essential data was already stored elsewhere:
 - **Project info** → `git rev-parse --show-toplevel` + main branch detection
-- **Active sessions** → `git worktree list` (worktrees with `azural/` branches)
-- **Archived sessions** → `git branch | grep azural/` (branches without worktrees)
+- **Active sessions** → `git worktree list` (worktrees with `azureal/` branches)
+- **Archived sessions** → `git branch | grep azureal/` (branches without worktrees)
 - **Claude session ID** → discovered from Claude's `~/.claude/projects/` directory
 - **Conversation history** → Claude's JSONL session files
 
@@ -116,7 +237,7 @@ All essential data was already stored elsewhere:
 
 2. **`src/models.rs`** - Simplified Session
    - `Session { branch_name, worktree_path: Option<PathBuf>, claude_session_id, archived }`
-   - `name()` method strips `azural/` prefix
+   - `name()` method strips `azureal/` prefix
    - `status()` method derives status from runtime state
 
 3. **`src/cmd/session.rs` and `src/cmd/project.rs`** - Stateless CLI
@@ -128,14 +249,14 @@ All essential data was already stored elsewhere:
    - All handlers properly check for None before git operations
 
 ### Why
-User asked "why do we even need the JSON?" - the answer was we don't. Everything can be derived. This eliminates all persistent state, making azural truly stateless.
+User asked "why do we even need the JSON?" - the answer was we don't. Everything can be derived. This eliminates all persistent state, making azureal truly stateless.
 
 ---
 
 ## 2026-01-28: Remove hooks.jsonl
 
 ### Summary
-Removed hooks.jsonl logging since hooks are already embedded in Claude's session files via `system-reminder` tags. Fully stateless now - azural writes NO files.
+Removed hooks.jsonl logging since hooks are already embedded in Claude's session files via `system-reminder` tags. Fully stateless now - azureal writes NO files.
 
 ### Removed
 - `log_hook_event()` in `src/app/util.rs`
@@ -169,7 +290,7 @@ All resume + tools combinations now work. No longer need to pin to 2.1.18.
 ## 2026-01-28: Improved Task/Subagent Display
 
 ### Problem
-When Claude uses Task tool (subagents like Explore, Plan), only hooks showed in azural's output pane. The actual subagent work was invisible because:
+When Claude uses Task tool (subagents like Explore, Plan), only hooks showed in azureal's output pane. The actual subagent work was invisible because:
 1. Task tool results were truncated to 1 line
 2. Subagent type wasn't shown
 
@@ -306,7 +427,7 @@ Explored Claude Code source (`~/claude-code-main`) and Crystal wrapper (`~/cryst
 - Crystal uses simple `--resume <captured_id>` pattern without forking
 
 ### Failed Attempt: Deterministic `--session-id`
-Tried using `--session-id azural-{session_id}` but Claude Code requires valid UUID format.
+Tried using `--session-id azureal-{session_id}` but Claude Code requires valid UUID format.
 Error: "Invalid session ID. Must be a valid UUID."
 
 ### Final Solution
@@ -323,7 +444,7 @@ Reverted to original approach but WITHOUT `--fork-session`:
    - Re-enabled session ID parsing from init event
 
 2. **src/app.rs** - Back to HashMap
-   - `claude_session_ids: HashMap<String, String>` (azural session → Claude session)
+   - `claude_session_ids: HashMap<String, String>` (azureal session → Claude session)
    - `set_claude_session_id()` / `get_claude_session_id()` methods
 
 3. **src/tui.rs** - Updated to use original pattern
@@ -339,7 +460,7 @@ Simply removing `--fork-session` fixes both issues.
 ## 2026-01-26: Claude Code Bug Confirmed (Upstream Issue)
 
 ### Summary
-After extensive investigation, confirmed that "tool_use ids must be unique" error is a **known Claude Code bug**, not an azural issue.
+After extensive investigation, confirmed that "tool_use ids must be unique" error is a **known Claude Code bug**, not an azureal issue.
 
 ### Investigation
 1. Removed `--fork-session` - didn't fix
@@ -592,3 +713,217 @@ Fixed FileTree cursor reset on expand/collapse, improved pane display, and added
    - Changed `app: &App` to `app: &mut App` for scroll state updates
    - Added auto-scroll logic to keep selection visible in viewport
    - Updates `app.file_tree_scroll` during render
+
+---
+
+## 2026-02-01: Clickable Edit File Paths
+
+### Summary
+Made Edit tool file paths clickable hyperlinks in the Convo pane. Click to open the full file in Viewer with the edit region highlighted using conflict markers.
+
+### Changes
+
+1. **Removed inline diff preview** - Edit tool calls no longer show the full diff inline in the convo. Instead, file paths are underlined and clickable.
+
+2. **Clickable links tracking** - New `clickable_paths` field in App state tracks positions of clickable file paths:
+   - `Vec<(line_idx, start_col, end_col, file_path, old_string, new_string)>`
+
+3. **Underlined file paths** - Edit tool file paths rendered with underline style to indicate clickability
+
+4. **Click handling** - When clicking on a file path, opens the file in Viewer with conflict markers showing the edit:
+   ```
+   <<<<<<< OLD (removed)
+   original content here
+   =======
+   new content here
+   >>>>>>> NEW (added)
+   ```
+
+5. **Keyboard navigation preserved** - `e`/`E` keys still cycle through Edit diffs (shows just the diff, not full file)
+
+### Files Changed
+- `src/app/state/app.rs` - Added `clickable_paths` field
+- `src/app/state/ui.rs` - Added `load_file_with_edit_diff()` method
+- `src/tui/render_events.rs` - Track clickable positions, add underline style, skip inline diff
+- `src/tui/draw_output.rs` - Store clickable_paths from render_display_events
+- `src/tui/event_loop.rs` - Handle clicks on file paths
+- `src/tui/draw_dialogs.rs` - Updated help panel with e/E keybindings
+
+### Why
+User requested clickable Edit file paths instead of inline diffs to save space in the conversation view. The full file with edit context is more useful than just the diff preview.
+
+---
+
+## 2026-02-01: Edit Diff Viewer with Syntax Highlighting
+
+### Summary
+Fixed the clickable Edit file paths to open files with proper syntax highlighting and diff display. Now shows:
+- Full file with syntax highlighting (same as opening from file tree)
+- Deleted lines (old_string) displayed above the edit with red background and "-" line number
+- Added lines (new_string) highlighted with green background
+- Auto-scroll to the edit position with 3 lines of context above
+
+### Changes
+
+1. **ViewerMode::File with diff overlay** - Instead of using ViewerMode::Diff (plain text), now uses ViewerMode::File with a separate `viewer_edit_diff` overlay
+
+2. **New App state fields:**
+   - `viewer_edit_diff: Option<(String, String)>` - stores (old_string, new_string) for overlay
+   - `viewer_edit_diff_line: Option<usize>` - line number where edit starts (for scrolling)
+
+3. **Diff rendering in draw_viewer.rs:**
+   - Inserts deleted (old) lines above the edit position with red background (`Color::Rgb(60, 20, 20)`)
+   - Highlights added (new) lines with green background (`Color::Rgb(20, 60, 20)`)
+   - Shows "-" as line number for deleted lines, normal line numbers for added lines
+
+4. **Auto-scroll to edit position** - Viewer scrolls to show the edit with 3 lines of context above
+
+5. **Clear diff overlay** - When loading files from file tree or clearing viewer, the diff overlay is cleared
+
+### Files Changed
+- `src/app/state/app.rs` - Added `viewer_edit_diff` and `viewer_edit_diff_line` fields
+- `src/app/state/ui.rs` - Updated `load_file_with_edit_diff()` to use File mode with overlay
+- `src/app/state/file_browser.rs` - Clear diff overlay when loading from file tree
+- `src/tui/draw_viewer.rs` - Added diff overlay rendering in File mode
+
+---
+
+## 2026-02-02: Improved Edit Diff Line Finding
+
+### Problem
+Edit diff views didn't always jump to the edited lines when opened. The search logic using `content.find(new_string)` was too simplistic and often failed to locate edits.
+
+### Solution
+Implemented multi-strategy search in `find_edit_line()`:
+1. **Full new_string match** - Most accurate when edit is applied
+2. **Full old_string match** - Works for edit history before application
+3. **Significant lines from new_string** - Skips trivial lines (`{`, `}`, whitespace), searches lines with >3 chars
+4. **Significant lines from old_string** - Same for old content
+5. **Identifier search** - Finds function/variable names (≥6 chars), sorted by length for uniqueness
+
+Each strategy is tried in order until a match is found, with fallback to line 0.
+
+### Files Changed
+- `src/app/state/ui.rs` - Extracted `find_edit_line()` helper with 6-strategy search algorithm
+
+---
+
+## 2026-02-02: Prompt History Navigation
+
+### Feature
+Added Up/Down arrow keys in inprompt mode to scroll through previous prompts from the conversation.
+
+### Implementation
+- Pulls last 50 user messages from `display_events` (conversation history)
+- `prompt_history_idx: Option<usize>` - current position when browsing (None = new input)
+- `prompt_history_temp: Option<String>` - saves current input when starting to browse
+- `get_conversation_history()` - extracts UserMessage content from display_events
+- `prompt_history_prev()` - Up arrow, navigate to older prompts
+- `prompt_history_next()` - Down arrow, navigate to newer prompts or back to current input
+
+### Behavior
+- Up arrow: loads previous prompt from conversation (most recent first)
+- Down arrow while browsing: moves to newer entries
+- Down arrow at newest: restores original input that was being typed
+- History reflects actual conversation, persists across session switches
+
+### Files Changed
+- `src/app/state/app.rs` - Added history navigation state fields
+- `src/app/input.rs` - Added history methods using display_events
+- `src/tui/input_terminal.rs` - Added Up/Down keybindings in Claude prompt mode
+
+---
+
+## 2026-02-02: Rename inprompt to prompt mode + global 'p' key
+
+### Changes
+1. Renamed `insert_mode` to `prompt_mode` throughout codebase
+2. Renamed "INPROMPT" display text to "PROMPT"
+3. Changed 'i' key to 'p' for entering prompt mode
+4. Made 'p' key work globally from any state except viewer edit mode
+
+### Behavior
+- `p` key now enters prompt mode from anywhere (Worktrees, FileTree, Viewer, Convo, Input command mode)
+- Does not work when in viewer edit mode (to allow typing 'p')
+- Status bar help text updated to show `p:prompt` instead of `i:inprompt`
+
+### Files Changed
+- `src/app/state/app.rs` - Renamed `insert_mode` to `prompt_mode`
+- `src/app/terminal.rs` - Renamed `insert_mode` to `prompt_mode`
+- `src/tui/event_loop.rs` - Changed 'i' to 'p', added `!app.viewer_edit_mode` guard
+- `src/tui/input_terminal.rs` - Changed 'i' to 'p' in command mode handlers
+- `src/tui/input_worktrees.rs` - Removed 'i' handler (now handled globally)
+- `src/tui/draw_input.rs` - Updated text "INPROMPT" → "PROMPT", "i:inprompt" → "p:prompt"
+- `src/tui/draw_terminal.rs` - Renamed `insert_mode` to `prompt_mode`
+- `src/tui/draw_status.rs` - Updated help text `i:inprompt` → `p:prompt`
+
+---
+
+## 2026-02-02: Convo Pane Message Counter
+
+### Change
+Changed the Convo pane title from showing line count `[line/total_lines]` to message count `[msg/total_msgs]`.
+
+### Implementation
+- Uses `message_bubble_positions` (already tracked) to count total messages
+- Finds current message by looking for the last bubble position at or before `scroll + 3` lines
+- Shows `[current_msg/total_msgs]` format (e.g., `[5/12]`)
+
+### Files Changed
+- `src/tui/draw_output.rs` - Updated title generation to use message count instead of line count
+
+---
+
+## 2026-02-02: Fix global p and ? keybindings
+
+### Problem
+`p` (prompt) and `?` (help) weren't triggering from all panes as expected.
+
+### Root Causes
+1. `?` key generates `KeyCode::Char('?')` with SHIFT modifier on US keyboards, but handler only checked `KeyModifiers::NONE`
+2. `input_worktrees.rs` had `?` mapped to open context menu, conflicting with global help
+3. Missing `!app.viewer_edit_mode` guard on `?` handler
+
+### Fixes
+1. Changed `?` handler to accept `KeyModifiers::NONE | KeyModifiers::SHIFT`
+2. Removed `?` from worktrees context menu trigger (now just Space)
+3. Added `!app.viewer_edit_mode` guard to `?` handler
+4. Updated status bar help text to show `p:prompt` in more panes
+
+### Files Changed
+- `src/tui/event_loop.rs` - Fixed `?` modifier check, added viewer_edit_mode guard
+- `src/tui/input_worktrees.rs` - Removed `?` from context menu trigger
+- `src/tui/draw_status.rs` - Added `p:prompt` to Output, FileTree, Viewer help text
+
+---
+
+## 2026-02-02: Fix Compacting Indicator Timing
+
+### Problem
+Compacting indicator showed "Compacting context..." AFTER compaction completed, not during. User reported: "rn it doesnt say anything while compacting, then after compacted it says 'Compacting context...'"
+
+### Root Cause
+The detection logic was backwards:
+1. `Compacting` event was triggered by "This session is being continued..." message - but this is the compaction SUMMARY that appears AFTER compaction
+2. Both `Compacting` and `Compacted` were emitting after compaction was done
+
+### Solution
+1. **Removed `DisplayEvent::Compacting` variant** - no longer needed
+2. **Changed "is_compaction_summary" to emit `Compacted`** - the summary message now correctly signals compaction is DONE
+3. **Updated `render_command()` to show "⏳ Compacting context..." for `/compact` command** - the START of manual compaction
+
+### Flow Now
+- **Manual `/compact`**: Command event renders "⏳ Compacting context..." (START), then Compacted event renders "✓ Context compacted" (END)
+- **Auto-compact**: Only shows "✓ Context compacted" when summary appears (no way to detect auto-compact start)
+
+### Files Changed
+- `src/events/display.rs` - Removed `Compacting` variant
+- `src/app/session_parser.rs` - Parse `compact_boundary` system event for clean compaction detection; removed duplicate detection from user messages
+- `src/tui/render_events.rs` - Removed `Compacting` handler; updated `render_command()` to show compacting indicator for "compact" command
+
+### Session File Analysis
+Discovered `system` events with `subtype: "compact_boundary"` which cleanly signal compaction completion:
+```json
+{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":168173}}
+```
+This is more reliable than parsing user message text patterns.
