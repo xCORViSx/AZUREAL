@@ -5,7 +5,17 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Viewer edit mode clipboard operations (system clipboard)
+- Unified "New..." dialog with tabs for creating different resources
+  - `n` from Worktrees pane opens tabbed dialog
+  - Tab 1: Project (placeholder)
+  - Tab 2: Branch (placeholder)
+  - Tab 3: Worktree - existing worktree creation functionality
+  - Tab 4: Session - create new Claude session with optional custom name
+    - Custom names stored in `.azureal/sessions.toml`
+    - Leave name blank to use Claude's auto-generated UUID
+    - Select target worktree for the session
+  - `←`/`→` to switch tabs (except during text input)
+- Clipboard operations for both Viewer edit mode and Prompt input (system clipboard)
   - `⌘C` - Copy to system clipboard
   - `⌘X` - Cut to system clipboard
   - `⌘V` - Paste from system clipboard

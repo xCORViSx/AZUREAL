@@ -6,11 +6,13 @@ Azureal (Agent-Zoned Unified Runtime Environment for Autonomous LLMs) is a Rust 
 - **Worktree**: A git worktree with its own working directory and branch (displayed in left panel)
 - **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Convo pane)
 
-**Stateless Architecture:** Azureal stores NO persistent data. All state is derived at runtime from:
+**Mostly Stateless Architecture:** All runtime state is derived from:
 - Git repository info via `git rev-parse --show-toplevel`
 - Git worktrees via `git worktree list` for active worktrees
 - Git branches via `git branch | grep azureal/` for archived worktrees
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
+
+**Optional State:** `.azureal/sessions.toml` stores custom session name → UUID mappings (only created when user provides custom names)
 
 # FEATURES
 
@@ -403,6 +405,7 @@ Claude Code hooks are captured from multiple sources in the session file:
    - PreToolUse, PostToolUse hooks
    - Hook output extracted from `command` field's echo statements
    - Patterns: `echo 'message'` or `OUT='message'; ...; echo "$OUT"`
+   - **Fallback**: If command format doesn't match, shows `[hookName]` to ensure visibility
 
 2. **system-reminder tags** in assistant "thinking" blocks
    - UserPromptSubmit hooks appear here (Claude Code injects them into context)
@@ -473,14 +476,30 @@ Sessions can be rebased onto main with conflict detection:
 
 Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
 
-### Session Creation Wizard
+### Creation Wizard
 
-Multi-step wizard for creating new sessions:
-- Branch selection
-- Worktree name configuration
-- Initial prompt option
+Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
 
-Implementation: `src/wizard.rs`
+**Tabs:**
+1. **Project** (placeholder) - future project creation
+2. **Branch** (placeholder) - future branch creation
+3. **Worktree** - create git worktree with Claude session
+   - Name: becomes `azureal/{name}` branch
+   - Prompt: initial message to Claude
+4. **Session** - create new Claude session in existing worktree
+   - Name (optional): custom name stored in `.azureal/sessions.toml`
+   - Prompt: initial message to Claude
+   - Worktree: select target from list
+
+**Session Name Storage:**
+Custom session names map to Claude-generated UUIDs in `.azureal/sessions.toml`:
+```toml
+[sessions]
+"9d409dfb-422b-4f4b-9f32-755277e3e527" = "hook-visibility-fix"
+"abc123-def456-..." = "filetree-operations"
+```
+
+Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (rendering), `src/tui/input_wizard.rs` (input handling), `src/app/state/session_names.rs` (name storage)
 
 # MANIFEST
 
