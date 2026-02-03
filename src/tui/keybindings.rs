@@ -257,7 +257,7 @@ pub static WORKTREES: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Select project", Action::SelectPrevProject),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Context menu", Action::OpenContextMenu),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "New worktree", Action::NewWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "New...", Action::NewWorktree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),

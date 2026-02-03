@@ -21,8 +21,10 @@ mod helpers;
 mod load;
 mod output;
 mod scroll;
+mod session_names;
 mod sessions;
 mod ui;
+mod viewer_edit;
 
 // Re-export types used by submodules
 use crate::claude::ClaudeEvent;

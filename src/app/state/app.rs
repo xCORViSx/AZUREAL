@@ -13,7 +13,7 @@ use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
 use crate::syntax::{DiffHighlighter, SyntaxHighlighter};
-use crate::wizard::SessionCreationWizard;
+use crate::wizard::CreationWizard;
 
 use super::ClaudeEvent;
 use super::DisplayEvent;
@@ -64,7 +64,9 @@ pub struct App {
     pub rebase_status: Option<RebaseStatus>,
     pub selected_conflict: Option<usize>,
     pub context_menu: Option<ContextMenu>,
-    pub creation_wizard: Option<SessionCreationWizard>,
+    pub creation_wizard: Option<CreationWizard>,
+    /// Pending session name to save when Claude returns session ID (branch_name, custom_name)
+    pub pending_session_name: Option<(String, String)>,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
     pub terminal_writer: Option<Box<dyn Write + Send>>,
@@ -220,6 +222,8 @@ pub struct App {
     pub run_command_dialog: Option<RunCommandDialog>,
     /// Run command picker dialog (shown when multiple commands exist)
     pub run_command_picker: Option<RunCommandPicker>,
+    /// Terminal insert mode (typing directly to terminal vs command mode)
+    pub insert_mode: bool,
 }
 
 impl App {
@@ -264,6 +268,7 @@ impl App {
             selected_conflict: None,
             context_menu: None,
             creation_wizard: None,
+            pending_session_name: None,
             terminal_mode: false,
             terminal_pty: None,
             terminal_writer: None,
@@ -347,6 +352,7 @@ impl App {
             run_commands: Vec::new(),
             run_command_dialog: None,
             run_command_picker: None,
+            insert_mode: false,
         }
     }
 

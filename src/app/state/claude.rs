@@ -106,6 +106,8 @@ impl App {
     }
 
     pub fn set_claude_session_id(&mut self, branch_name: &str, claude_session_id: String) {
+        // Check if there's a pending custom session name to save
+        self.check_pending_session_name(branch_name, &claude_session_id);
         self.claude_session_ids.insert(branch_name.to_string(), claude_session_id);
     }
 

@@ -255,19 +255,21 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         }
         (KeyModifiers::NONE, KeyCode::Tab) => {
             // Cycle focus (works in both insert and command mode)
-            if !app.show_help {
+            // Skip when wizard is active (wizard uses Tab for field cycling)
+            if !app.show_help && !app.is_wizard_active() {
                 app.insert_mode = false; // Exit insert mode when tabbing away
                 app.focus_next();
+                return Ok(());
             }
-            return Ok(());
         }
         (KeyModifiers::SHIFT, KeyCode::BackTab) => {
             // Cycle focus backwards (works in both insert and command mode)
-            if !app.show_help {
+            // Skip when wizard is active
+            if !app.show_help && !app.is_wizard_active() {
                 app.insert_mode = false;
                 app.focus_prev();
+                return Ok(());
             }
-            return Ok(());
         }
         _ => {}
     }
@@ -289,7 +291,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
 
     // Wizard
     if app.is_wizard_active() {
-        handle_wizard_input(app, key.code, claude_process);
+        handle_wizard_input(app, key, claude_process);
         return Ok(());
     }
 

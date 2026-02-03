@@ -267,7 +267,7 @@ impl App {
 
     // Wizard
     pub fn start_wizard(&mut self) {
-        self.creation_wizard = Some(crate::wizard::SessionCreationWizard::new_single_project(self.project.as_ref()));
+        self.creation_wizard = Some(crate::wizard::CreationWizard::new_single_project(self.project.as_ref()));
         self.focus = Focus::Input;
     }
 
@@ -334,6 +334,75 @@ impl App {
                     Some(RunCommand::new(name, command))
                 }).collect();
             }
+        }
+    }
+
+    // Viewer tabs
+    pub fn viewer_tab_current(&mut self) {
+        // Save current viewer state to a new tab (if we have content)
+        if self.viewer_content.is_some() || self.viewer_path.is_some() {
+            use crate::app::types::ViewerTab;
+            let title = self.viewer_path.as_ref()
+                .and_then(|p| p.file_name())
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Untitled".to_string());
+            let tab = ViewerTab {
+                path: self.viewer_path.clone(),
+                content: self.viewer_content.clone(),
+                scroll: self.viewer_scroll,
+                mode: self.viewer_mode,
+                title,
+            };
+            self.viewer_tabs.push(tab);
+            self.viewer_active_tab = self.viewer_tabs.len() - 1;
+        }
+    }
+
+    pub fn toggle_viewer_tab_dialog(&mut self) {
+        self.viewer_tab_dialog = !self.viewer_tab_dialog;
+    }
+
+    pub fn viewer_next_tab(&mut self) {
+        if !self.viewer_tabs.is_empty() {
+            self.viewer_active_tab = (self.viewer_active_tab + 1) % self.viewer_tabs.len();
+            self.load_tab_to_viewer();
+        }
+    }
+
+    pub fn viewer_prev_tab(&mut self) {
+        if !self.viewer_tabs.is_empty() {
+            self.viewer_active_tab = if self.viewer_active_tab == 0 {
+                self.viewer_tabs.len() - 1
+            } else {
+                self.viewer_active_tab - 1
+            };
+            self.load_tab_to_viewer();
+        }
+    }
+
+    pub fn viewer_close_current_tab(&mut self) {
+        if self.viewer_tabs.is_empty() { return; }
+        self.viewer_tabs.remove(self.viewer_active_tab);
+        if self.viewer_active_tab >= self.viewer_tabs.len() && !self.viewer_tabs.is_empty() {
+            self.viewer_active_tab = self.viewer_tabs.len() - 1;
+        }
+        if self.viewer_tabs.is_empty() {
+            self.viewer_content = None;
+            self.viewer_path = None;
+            self.viewer_mode = crate::app::ViewerMode::Empty;
+            self.viewer_lines_dirty = true;
+        } else {
+            self.load_tab_to_viewer();
+        }
+    }
+
+    pub fn load_tab_to_viewer(&mut self) {
+        if let Some(tab) = self.viewer_tabs.get(self.viewer_active_tab) {
+            self.viewer_content = tab.content.clone();
+            self.viewer_path = tab.path.clone();
+            self.viewer_scroll = tab.scroll;
+            self.viewer_mode = tab.mode;
+            self.viewer_lines_dirty = true;
         }
     }
 }

@@ -20,6 +20,7 @@ pub struct FileTreeEntry {
     pub name: String,
     pub is_dir: bool,
     pub depth: usize,
+    pub is_hidden: bool,
 }
 
 /// State for the branch selection dialog
@@ -163,4 +164,64 @@ pub enum Focus {
     Input,
     WorktreeCreation,
     BranchDialog,
+}
+
+/// A saved run command
+#[derive(Debug, Clone)]
+pub struct RunCommand {
+    pub name: String,
+    pub command: String,
+}
+
+impl RunCommand {
+    pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
+        Self { name: name.into(), command: command.into() }
+    }
+}
+
+/// Dialog for creating/editing run commands
+#[derive(Debug, Clone)]
+pub struct RunCommandDialog {
+    pub name: String,
+    pub command: String,
+    pub name_cursor: usize,
+    pub command_cursor: usize,
+    pub editing_name: bool,
+    pub editing_idx: Option<usize>,
+}
+
+impl RunCommandDialog {
+    pub fn new() -> Self {
+        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None }
+    }
+
+    pub fn edit(idx: usize, cmd: &RunCommand) -> Self {
+        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx) }
+    }
+}
+
+/// Picker for selecting from saved run commands
+#[derive(Debug, Clone)]
+pub struct RunCommandPicker {
+    pub selected: usize,
+}
+
+impl RunCommandPicker {
+    pub fn new() -> Self { Self { selected: 0 } }
+}
+
+/// A viewer tab holding file state
+#[derive(Debug, Clone)]
+pub struct ViewerTab {
+    pub path: Option<PathBuf>,
+    pub content: Option<String>,
+    pub scroll: usize,
+    pub mode: ViewerMode,
+    pub title: String,
+}
+
+impl ViewerTab {
+    pub fn name(&self) -> &str {
+        &self.title
+    }
 }

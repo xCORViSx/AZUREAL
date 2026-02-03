@@ -542,9 +542,13 @@ fn parse_progress_event(
         } else { String::new() }
     } else { String::new() };
 
-    if !output.is_empty() {
-        events.push((timestamp, DisplayEvent::Hook { name: hook_name, output }));
-    }
+    // Always show hooks - use [hookName] as fallback when no output extracted
+    let display_output = if output.is_empty() {
+        format!("[{}]", hook_name)
+    } else {
+        output
+    };
+    events.push((timestamp, DisplayEvent::Hook { name: hook_name, output: display_output }));
 }
 
 /// Load plan file from ~/.claude/plans/{slug}.md

@@ -112,8 +112,13 @@ impl EventParser {
             } else { String::new() }
         } else { String::new() };
 
-        if output.is_empty() { return None; }
-        Some(DisplayEvent::Hook { name: hook_name.to_string(), output })
+        // Always show hooks - use [hookName] as fallback when no output extracted
+        let display_output = if output.is_empty() {
+            format!("[{}]", hook_name)
+        } else {
+            output
+        };
+        Some(DisplayEvent::Hook { name: hook_name.to_string(), output: display_output })
     }
 
     fn parse_user_event(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
