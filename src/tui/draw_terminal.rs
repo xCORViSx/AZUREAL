@@ -43,10 +43,10 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
     // Build title with scroll indicator
     let title = if app.terminal_scroll > 0 {
         format!(" TERMINAL [scroll: {}↑] (G:bottom) ", app.terminal_scroll)
-    } else if app.insert_mode {
-        " TERMINAL (Esc:cmd) ".to_string()
+    } else if app.prompt_mode {
+        " TERMINAL (Esc:exit) ".to_string()
     } else {
-        " TERMINAL (i:type  t:close  +/-:resize  j/k:scroll) ".to_string()
+        " TERMINAL (t:type | p:prompt | Esc:close) ".to_string()
     };
 
     let terminal = Paragraph::new(text)
@@ -61,8 +61,8 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(terminal, area);
 
-    // Show cursor only in insert mode at live view (scroll == 0)
-    if app.insert_mode && app.terminal_mode && app.terminal_scroll == 0 {
+    // Show cursor only in type mode at live view (scroll == 0)
+    if app.prompt_mode && app.terminal_mode && app.terminal_scroll == 0 {
         let (cursor_row, cursor_col) = app.terminal_cursor_position();
         let cursor_x = area.x + 1 + cursor_col;
         let cursor_y = area.y + 1 + cursor_row;

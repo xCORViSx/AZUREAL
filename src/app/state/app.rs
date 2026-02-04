@@ -224,8 +224,6 @@ pub struct App {
     pub run_command_dialog: Option<RunCommandDialog>,
     /// Run command picker dialog (shown when multiple commands exist)
     pub run_command_picker: Option<RunCommandPicker>,
-    /// Terminal insert mode (typing directly to terminal vs command mode)
-    pub insert_mode: bool,
 }
 
 impl App {
@@ -355,7 +353,6 @@ impl App {
             run_commands: Vec::new(),
             run_command_dialog: None,
             run_command_picker: None,
-            insert_mode: false,
         }
     }
 

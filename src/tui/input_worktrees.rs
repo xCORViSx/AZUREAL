@@ -131,7 +131,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                     || status == SessionStatus::Waiting
                 {
                     app.focus = Focus::Input;
-                    app.insert_mode = true;
+                    app.prompt_mode = true;
                     app.set_status("Type your prompt and press Enter to send");
                 }
             }

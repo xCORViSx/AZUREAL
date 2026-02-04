@@ -986,3 +986,63 @@ Implemented two-phase session file change detection:
 - `src/app/state/app.rs` - Added `session_file_size` and `session_file_dirty` fields
 - `src/app/state/load.rs` - Added `check_session_file()`, split `poll_session_file()` into two phases
 - `src/tui/event_loop.rs` - Added `check_session_file()` call before `poll_session_file()`
+
+---
+
+## 2026-02-04: Terminal/Prompt Mode Keybinding Overhaul
+
+### Summary
+Major keybinding refactor to separate terminal type mode from Claude prompt mode, with unified global shortcuts.
+
+### Changes
+
+1. **Renamed `insert_mode` → `prompt_mode`**
+   - More descriptive name for the modal editing state
+   - Removed redundant `insert_mode` field from App struct (was duplicate of `prompt_mode`)
+
+2. **Changed 'i' → 'p' for entering prompt mode**
+   - 'p' is more intuitive for "prompt"
+   - Global keybinding works from any pane (except viewer edit mode)
+
+3. **Global 'p' behavior**
+   - Closes help panel if open
+   - Closes terminal if open
+   - Focuses input field and enters prompt mode
+   - Works from Worktrees, FileTree, Viewer, Output panes
+
+4. **Global 't' behavior**
+   - Only toggles terminal when NOT already in terminal mode
+   - When in terminal command mode, 't' enters type mode instead
+   - Closes help panel if open
+
+5. **Terminal keybinding changes**
+   - `Esc` (command mode): Close terminal
+   - `t` (command mode): Enter type mode (typing to shell)
+   - `p` (command mode): Close terminal and enter Claude prompt
+   - `Esc` (type mode): Exit type mode to command mode
+
+6. **Updated title strings**
+   - Prompt: `PROMPT (Esc:exit | Enter:submit | ⌃X:cancel response)` (type mode)
+   - Prompt: `PROMPT (p:type | t:terminal)` (command mode)
+   - Terminal: `TERMINAL (Esc:exit)` (type mode)
+   - Terminal: `TERMINAL (t:type | p:prompt | Esc:close)` (command mode)
+
+7. **Fixed '?' help toggle**
+   - Now accepts both `KeyModifiers::NONE` and `KeyModifiers::SHIFT`
+   - US keyboards generate '?' with SHIFT modifier
+   - Added `!app.viewer_edit_mode` guard
+
+8. **Convo pane message counter**
+   - Changed from line count `[line/total_lines]` to message count `[msg/total_msgs]`
+   - Uses `message_bubble_positions` to count and locate messages
+   - Shows current message based on scroll position
+
+### Files Changed
+- `src/app/state/app.rs` - Removed `insert_mode` field (using `prompt_mode`)
+- `src/app/terminal.rs` - Updated all `insert_mode` → `prompt_mode`
+- `src/tui/event_loop.rs` - Global p/t handlers, ? modifier fix
+- `src/tui/input_terminal.rs` - Terminal keybinding changes
+- `src/tui/input_worktrees.rs` - Updated `insert_mode` → `prompt_mode`
+- `src/tui/draw_input.rs` - Updated titles and prompt_mode reference
+- `src/tui/draw_terminal.rs` - Updated titles and prompt_mode reference
+- `src/tui/draw_output.rs` - Message counter instead of line counter

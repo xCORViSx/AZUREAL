@@ -70,8 +70,18 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     }
                 }
 
-                let title = if total > viewport_height {
-                    format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                // Build title with message count instead of line count
+                let title = if !app.message_bubble_positions.is_empty() {
+                    let total_msgs = app.message_bubble_positions.len();
+                    // Find current message by checking which bubble position is at or before current scroll + 3 lines
+                    let current_line = scroll.saturating_add(3);
+                    let current_msg = app.message_bubble_positions.iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, (line_idx, _))| *line_idx <= current_line)
+                        .map(|(idx, _)| idx + 1)
+                        .unwrap_or(1);
+                    format!(" Convo [{}/{}] ", current_msg, total_msgs)
                 } else {
                     " Convo ".to_string()
                 };

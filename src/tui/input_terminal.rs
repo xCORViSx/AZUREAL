@@ -10,11 +10,11 @@ use crate::claude::ClaudeProcess;
 pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     // PTY Terminal mode - forward keys directly to shell
     if app.terminal_mode {
-        if app.insert_mode {
-            // Insert mode: send keystrokes to PTY
+        if app.prompt_mode {
+            // Type mode: send keystrokes to PTY
             match (key.modifiers, key.code) {
                 (_, KeyCode::Esc) => {
-                    app.insert_mode = false;
+                    app.prompt_mode = false;
                     app.scroll_terminal_to_bottom();
                 }
                 (KeyModifiers::CONTROL, KeyCode::Char('c')) => app.write_to_terminal(&[0x03]),
@@ -41,12 +41,18 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         } else {
             // Command mode: scrolling and mode switches
             match key.code {
-                KeyCode::Char('i') => {
-                    app.insert_mode = true;
+                KeyCode::Char('t') => {
+                    // Enter type mode (not close terminal - that's Esc now)
+                    app.prompt_mode = true;
                     app.scroll_terminal_to_bottom();
                 }
-                KeyCode::Char('t') => app.close_terminal(),
-                KeyCode::Esc => app.focus = Focus::Worktrees,
+                KeyCode::Char('p') => {
+                    // Close terminal and enter Claude prompt
+                    app.close_terminal();
+                    app.focus = Focus::Input;
+                    app.prompt_mode = true;
+                }
+                KeyCode::Esc => app.close_terminal(),
                 KeyCode::Char('+') | KeyCode::Char('=') => app.adjust_terminal_height(2),
                 KeyCode::Char('-') => app.adjust_terminal_height(-2),
                 KeyCode::Char('k') | KeyCode::Up => app.scroll_terminal_up(1),
@@ -65,10 +71,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         return Ok(());
     }
 
-    // Non-terminal: vim-style insert mode check
-    if !app.insert_mode {
+    // Non-terminal: vim-style prompt mode check
+    if !app.prompt_mode {
         match key.code {
-            KeyCode::Char('i') => app.insert_mode = true,
+            KeyCode::Char('p') => app.prompt_mode = true,
             KeyCode::Esc => app.focus = Focus::Worktrees,
             _ => {}
         }
@@ -99,7 +105,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
 
     // Regular text editing
     match (key.modifiers, key.code) {
-        (_, KeyCode::Esc) => app.insert_mode = false,
+        (_, KeyCode::Esc) => app.prompt_mode = false,
         // Shift+Arrow for selection extension
         (KeyModifiers::SHIFT, KeyCode::Left) => app.input_left_select(true),
         (KeyModifiers::SHIFT, KeyCode::Right) => app.input_right_select(true),

@@ -222,8 +222,8 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> R
 
 /// Handle keyboard input events
 fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
-    // D key (uppercase, i.e. Shift+D) when not in insert mode - Debug dump
-    if !app.insert_mode && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
+    // D key (uppercase, i.e. Shift+D) when not in prompt mode - Debug dump
+    if !app.prompt_mode && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
         app.dump_debug_output();
         return Ok(());
     }
@@ -239,42 +239,50 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             app.cancel_current_claude();
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Char('i')) if !app.insert_mode && !app.show_help && app.context_menu.is_none() && !app.is_wizard_active() => {
+        // Global 'p' - enter Claude prompt mode from anywhere (except viewer edit mode)
+        (KeyModifiers::NONE, KeyCode::Char('p')) if !app.prompt_mode && !app.viewer_edit_mode && app.context_menu.is_none() && !app.is_wizard_active() => {
+            app.show_help = false;
+            if app.terminal_mode {
+                app.close_terminal();
+            }
             app.focus = Focus::Input;
-            app.insert_mode = true;
+            app.prompt_mode = true;
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.insert_mode && !app.show_help && app.context_menu.is_none() && !app.is_wizard_active() => {
+        // Global 't' - toggle terminal (only when not in terminal, otherwise handled by terminal input)
+        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.prompt_mode && !app.terminal_mode && app.context_menu.is_none() && !app.is_wizard_active() => {
+            app.show_help = false;
             app.toggle_terminal();
             app.focus = Focus::Input;
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Char('+')) | (KeyModifiers::SHIFT, KeyCode::Char('+')) if !app.insert_mode && app.terminal_mode => {
+        (KeyModifiers::NONE, KeyCode::Char('+')) | (KeyModifiers::SHIFT, KeyCode::Char('+')) if !app.prompt_mode && app.terminal_mode => {
             app.adjust_terminal_height(2);
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Char('-')) if !app.insert_mode && app.terminal_mode => {
+        (KeyModifiers::NONE, KeyCode::Char('-')) if !app.prompt_mode && app.terminal_mode => {
             app.adjust_terminal_height(-2);
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Char('?')) if !app.insert_mode => {
+        // '?' - toggle help (SHIFT modifier allowed for US keyboards)
+        (KeyModifiers::NONE, KeyCode::Char('?')) | (KeyModifiers::SHIFT, KeyCode::Char('?')) if !app.prompt_mode && !app.viewer_edit_mode => {
             app.toggle_help();
             return Ok(());
         }
         (KeyModifiers::NONE, KeyCode::Tab) => {
-            // Cycle focus (works in both insert and command mode)
+            // Cycle focus (works in both prompt and command mode)
             // Skip when wizard is active (wizard uses Tab for field cycling)
             if !app.show_help && !app.is_wizard_active() {
-                app.insert_mode = false; // Exit insert mode when tabbing away
+                app.prompt_mode = false; // Exit prompt mode when tabbing away
                 app.focus_next();
                 return Ok(());
             }
         }
         (KeyModifiers::SHIFT, KeyCode::BackTab) => {
-            // Cycle focus backwards (works in both insert and command mode)
+            // Cycle focus backwards (works in both prompt and command mode)
             // Skip when wizard is active
             if !app.show_help && !app.is_wizard_active() {
-                app.insert_mode = false;
+                app.prompt_mode = false;
                 app.focus_prev();
                 return Ok(());
             }
@@ -282,7 +290,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         _ => {}
     }
 
-    // Help overlay is open
+    // Help overlay is open - allow p and t to work (they close help first via global handlers above)
     if app.show_help {
         match key.code {
             KeyCode::Char('?') | KeyCode::Esc => app.toggle_help(),

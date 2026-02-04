@@ -24,7 +24,7 @@ impl App {
         // If PTY already exists (active), just show it
         if self.terminal_pty.is_some() {
             self.terminal_mode = true;
-            self.insert_mode = true;
+            self.prompt_mode = true;
             self.terminal_needs_resize = true;
             return;
         }
@@ -34,7 +34,7 @@ impl App {
             if self.session_terminals.contains_key(&session.branch_name) {
                 self.restore_session_terminal();
                 self.terminal_mode = true;
-                self.insert_mode = true;
+                self.prompt_mode = true;
                 self.terminal_needs_resize = true;
                 return;
             }
@@ -100,13 +100,13 @@ impl App {
         self.terminal_scroll = 0;
         self.terminal_mode = true;
         self.terminal_needs_resize = true;
-        self.insert_mode = true;
+        self.prompt_mode = true;
     }
 
     /// Hide terminal (PTY keeps running in background)
     pub fn close_terminal(&mut self) {
         self.terminal_mode = false;
-        self.insert_mode = false;
+        self.prompt_mode = false;
         // PTY stays alive - terminal_pty, terminal_writer, terminal_rx preserved
     }
 
@@ -116,7 +116,7 @@ impl App {
         self.terminal_pty = None;
         self.terminal_rx = None;
         self.terminal_mode = false;
-        self.insert_mode = false;
+        self.prompt_mode = false;
     }
 
     /// Write bytes to terminal PTY

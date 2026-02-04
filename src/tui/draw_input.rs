@@ -12,10 +12,10 @@ use crate::app::{App, Focus};
 
 /// Draw the Claude prompt input field with text wrapping and optional selection highlighting
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
-    let (border_color, title) = if app.insert_mode {
-        (Color::Yellow, " INPROMPT (Esc:command | Enter:submit | Ctrl+X:cancel response) ")
+    let (border_color, title) = if app.prompt_mode {
+        (Color::Yellow, " PROMPT (Esc:exit | Enter:submit | ⌃X:cancel response) ")
     } else {
-        (Color::Red, " COMMAND (i:inprompt | t:terminal | Ctrl+X:cancel response) ")
+        (Color::Red, " PROMPT (p:type | t:terminal) ")
     };
 
     let is_focused = app.focus == Focus::Input;
@@ -44,9 +44,9 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(input, area);
 
-    // Show cursor only in insert mode when focused
+    // Show cursor only in prompt mode when focused
     // Calculate wrapped cursor position correctly using character widths
-    if app.insert_mode && is_focused && inner_width > 0 {
+    if app.prompt_mode && is_focused && inner_width > 0 {
         let chars: Vec<char> = app.input.chars().collect();
         let cursor_char_idx = app.input_cursor.min(chars.len());
 
