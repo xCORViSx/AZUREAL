@@ -35,6 +35,8 @@ pub struct App {
     pub selected_event: Option<usize>,
     pub input: String,
     pub input_cursor: usize,
+    /// Selection range in prompt input: (start, end) as char indices
+    pub input_selection: Option<(usize, usize)>,
     pub worktree_creation_input: String,
     pub worktree_creation_cursor: usize,
     pub view_mode: ViewMode,
@@ -242,6 +244,7 @@ impl App {
             selected_event: None,
             input: String::new(),
             input_cursor: 0,
+            input_selection: None,
             worktree_creation_input: String::new(),
             worktree_creation_cursor: 0,
             view_mode: ViewMode::Output,

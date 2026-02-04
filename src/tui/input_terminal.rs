@@ -76,17 +76,52 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     }
 
     // Claude prompt mode - handle text editing
+    // Clipboard operations (Cmd/Ctrl+C/X/V/A) - handle BEFORE character input
+    match (key.modifiers, key.code) {
+        (KeyModifiers::SUPER, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+            app.input_copy();
+            return Ok(());
+        }
+        (KeyModifiers::SUPER, KeyCode::Char('x')) | (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
+            app.input_cut();
+            return Ok(());
+        }
+        (KeyModifiers::SUPER, KeyCode::Char('v')) | (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
+            app.input_paste();
+            return Ok(());
+        }
+        (KeyModifiers::SUPER, KeyCode::Char('a')) | (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
+            app.input_select_all();
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // Regular text editing
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => app.insert_mode = false,
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => app.input_char(c),
-        (KeyModifiers::NONE, KeyCode::Backspace) => app.input_backspace(),
-        (KeyModifiers::NONE, KeyCode::Delete) => app.input_delete(),
-        (KeyModifiers::NONE, KeyCode::Left) => app.input_left(),
-        (KeyModifiers::NONE, KeyCode::Right) => app.input_right(),
-        (KeyModifiers::NONE, KeyCode::Home) => app.input_home(),
-        (KeyModifiers::NONE, KeyCode::End) => app.input_end(),
-        (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => app.input_word_left(),
-        (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => app.input_word_right(),
+        // Shift+Arrow for selection extension
+        (KeyModifiers::SHIFT, KeyCode::Left) => app.input_left_select(true),
+        (KeyModifiers::SHIFT, KeyCode::Right) => app.input_right_select(true),
+        // Regular character input - clears selection first if typing replaces it
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+            if app.has_input_selection() { app.input_delete_selection(); }
+            app.input_char(c);
+        }
+        (KeyModifiers::NONE, KeyCode::Backspace) => {
+            if app.has_input_selection() { app.input_delete_selection(); }
+            else { app.input_backspace(); }
+        }
+        (KeyModifiers::NONE, KeyCode::Delete) => {
+            if app.has_input_selection() { app.input_delete_selection(); }
+            else { app.input_delete(); }
+        }
+        (KeyModifiers::NONE, KeyCode::Left) => app.input_left_select(false),
+        (KeyModifiers::NONE, KeyCode::Right) => app.input_right_select(false),
+        (KeyModifiers::NONE, KeyCode::Home) => { app.input_clear_selection(); app.input_home(); }
+        (KeyModifiers::NONE, KeyCode::End) => { app.input_clear_selection(); app.input_end(); }
+        (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => { app.input_clear_selection(); app.input_word_left(); }
+        (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
         (KeyModifiers::CONTROL, KeyCode::Backspace) | (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.input_delete_word(),
         (KeyModifiers::NONE, KeyCode::Enter) => {
             if !app.input.is_empty() {

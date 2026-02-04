@@ -220,6 +220,12 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> R
 
 /// Handle keyboard input events
 fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    // D key (uppercase, i.e. Shift+D) when not in insert mode - Debug dump
+    if !app.insert_mode && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
+        app.dump_debug_output();
+        return Ok(());
+    }
+
     // Global keybindings
     match (key.modifiers, key.code) {
         (KeyModifiers::CONTROL, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {

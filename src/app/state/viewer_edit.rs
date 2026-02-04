@@ -338,14 +338,15 @@ impl App {
 
     // ========== CLIPBOARD OPERATIONS ==========
 
-    /// Copy selected text to system clipboard
-    pub fn viewer_edit_copy(&mut self) {
-        let Some(text) = self.get_selected_text() else { return };
+    /// Copy selected text to system clipboard. Returns true if text was copied.
+    pub fn viewer_edit_copy(&mut self) -> bool {
+        let Some(text) = self.get_selected_text() else { return false };
         // Try system clipboard first, fall back to internal
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(&text);
         }
         self.clipboard = text;
+        true
     }
 
     /// Cut selected text to system clipboard

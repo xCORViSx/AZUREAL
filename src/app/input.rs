@@ -141,4 +141,140 @@ impl App {
         self.worktree_creation_input.clear();
         self.worktree_creation_cursor = 0;
     }
+
+    // ========== PROMPT INPUT SELECTION METHODS ==========
+
+    /// Start a new selection at cursor position
+    pub fn input_start_selection(&mut self) {
+        self.input_selection = Some((self.input_cursor, self.input_cursor));
+    }
+
+    /// Extend selection to current cursor position
+    pub fn input_extend_selection(&mut self) {
+        if let Some((start, _)) = self.input_selection {
+            self.input_selection = Some((start, self.input_cursor));
+        }
+    }
+
+    /// Clear selection
+    pub fn input_clear_selection(&mut self) {
+        self.input_selection = None;
+    }
+
+    /// Check if there's an active selection
+    pub fn has_input_selection(&self) -> bool {
+        self.input_selection.map(|(s, e)| s != e).unwrap_or(false)
+    }
+
+    /// Get normalized selection (start <= end)
+    fn get_normalized_input_selection(&self) -> Option<(usize, usize)> {
+        let (s, e) = self.input_selection?;
+        if s <= e { Some((s, e)) } else { Some((e, s)) }
+    }
+
+    /// Get selected text
+    pub fn get_input_selected_text(&self) -> Option<String> {
+        let (start, end) = self.get_normalized_input_selection()?;
+        if start == end { return None; }
+        let chars: Vec<char> = self.input.chars().collect();
+        Some(chars[start..end.min(chars.len())].iter().collect())
+    }
+
+    /// Delete selected text and return it
+    fn delete_input_selection(&mut self) -> Option<String> {
+        let (start, end) = self.get_normalized_input_selection()?;
+        if start == end { return None; }
+        let deleted = self.get_input_selected_text();
+        let chars: Vec<char> = self.input.chars().collect();
+        self.input = chars[..start].iter().chain(chars[end..].iter()).collect();
+        self.input_cursor = start;
+        self.input_selection = None;
+        deleted
+    }
+
+    // ========== PROMPT INPUT CLIPBOARD OPERATIONS ==========
+
+    /// Copy selected text to system clipboard. Returns true if copied successfully.
+    pub fn input_copy(&mut self) -> bool {
+        let Some(text) = self.get_input_selected_text() else { return false };
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            if cb.set_text(&text).is_ok() {
+                self.clipboard = text;
+                return true;
+            }
+        }
+        // Fallback to internal clipboard only
+        self.clipboard = text;
+        true
+    }
+
+    /// Cut selected text to system clipboard
+    pub fn input_cut(&mut self) {
+        let Some(text) = self.delete_input_selection() else { return };
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            let _ = cb.set_text(&text);
+        }
+        self.clipboard = text;
+    }
+
+    /// Paste from system clipboard
+    pub fn input_paste(&mut self) {
+        let paste_text = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut cb| cb.get_text().ok())
+            .unwrap_or_else(|| self.clipboard.clone());
+
+        if paste_text.is_empty() { return; }
+
+        // Delete selection first if any
+        if self.has_input_selection() {
+            self.delete_input_selection();
+        }
+
+        // Insert paste text at cursor (single line only - strip newlines)
+        let paste_single = paste_text.lines().collect::<Vec<_>>().join(" ");
+        let chars: Vec<char> = self.input.chars().collect();
+        let before: String = chars[..self.input_cursor.min(chars.len())].iter().collect();
+        let after: String = chars[self.input_cursor.min(chars.len())..].iter().collect();
+        self.input = before + &paste_single + &after;
+        self.input_cursor += paste_single.chars().count();
+    }
+
+    /// Delete selected text without copying
+    pub fn input_delete_selection(&mut self) {
+        self.delete_input_selection();
+    }
+
+    /// Select all text
+    pub fn input_select_all(&mut self) {
+        let len = self.input.chars().count();
+        self.input_selection = Some((0, len));
+        self.input_cursor = len;
+    }
+
+    // ========== SELECTION-AWARE MOVEMENT ==========
+
+    /// Move left with optional selection extension
+    pub fn input_left_select(&mut self, extend: bool) {
+        if extend {
+            if self.input_selection.is_none() { self.input_start_selection(); }
+            self.input_left();
+            self.input_extend_selection();
+        } else {
+            self.input_clear_selection();
+            self.input_left();
+        }
+    }
+
+    /// Move right with optional selection extension
+    pub fn input_right_select(&mut self, extend: bool) {
+        if extend {
+            if self.input_selection.is_none() { self.input_start_selection(); }
+            self.input_right();
+            self.input_extend_selection();
+        } else {
+            self.input_clear_selection();
+            self.input_right();
+        }
+    }
 }

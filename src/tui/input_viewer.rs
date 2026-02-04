@@ -167,8 +167,7 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
 
         // Copy: Cmd+C
         (KeyModifiers::SUPER, KeyCode::Char('c')) => {
-            app.viewer_edit_copy();
-            if !app.clipboard.is_empty() {
+            if app.viewer_edit_copy() {
                 app.set_status("Copied to clipboard");
             }
         }
