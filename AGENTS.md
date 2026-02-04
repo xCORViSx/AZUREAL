@@ -330,6 +330,35 @@ Implementation:
 - `open_terminal()`, `close_terminal()`, `write_to_terminal()`, `poll_terminal()` in `src/app/terminal.rs`
 - `draw_terminal()` in `src/tui/draw_terminal.rs` syncs vt100 parser dimensions with viewport
 
+### Centralized Keybindings
+
+All keybindings are defined once in `src/tui/keybindings.rs` and used by both input handlers and the help dialog:
+
+**Architecture:**
+- `Action` enum: All possible keybinding actions (NavDown, NavUp, EnterEditMode, Save, etc.)
+- `KeyCombo`: Key + modifier combination with display helpers
+- `Keybinding`: Primary key, alternatives (j/↓), description, and action
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
+
+**Usage pattern:**
+```rust
+// Input handlers use lookup_action() for centralized matching
+let action = lookup_action(Focus::FileTree, key.modifiers, key.code, false, false, false);
+match action {
+    Some(Action::NavDown) => app.file_tree_next(),
+    Some(Action::NavUp) => app.file_tree_prev(),
+    // ...
+}
+```
+
+**Benefits:**
+- Single source of truth for all keybindings
+- Help dialog automatically reflects actual keybindings via `help_sections()`
+- Adding/changing keybindings only requires one code change
+- Dual-key bindings (j/↓) handled via `alternatives` field
+
+Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs` and `src/tui/input_viewer.rs` (use `lookup_action()`)
+
 ### Stream-JSON Parsing
 
 Claude output is received in `stream-json` format and parsed for clean display:
@@ -545,8 +574,8 @@ azureal/
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_*.rs       # Other rendering functions
-│   │   ├── keybindings.rs  # Centralized keybinding definitions
-│   │   ├── input_file_tree.rs # FileTree navigation
+│   │   ├── keybindings.rs  # Centralized keybinding definitions (Action enum, lookup_action(), help_sections())
+│   │   ├── input_file_tree.rs # FileTree navigation (uses lookup_action())
 │   │   ├── input_viewer.rs # Viewer scroll handling
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)

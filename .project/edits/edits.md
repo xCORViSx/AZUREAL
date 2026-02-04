@@ -927,3 +927,62 @@ Discovered `system` events with `subtype: "compact_boundary"` which cleanly sign
 {"type":"system","subtype":"compact_boundary","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":168173}}
 ```
 This is more reliable than parsing user message text patterns.
+
+---
+
+## 2026-02-03: Rename azural → azureal
+
+### Summary
+Renamed the entire codebase from "azural" to "azureal" with the new acronym: **A**gent-**Z**oned **U**nified **R**untime **E**nvironment for **A**utonomous **L**LMs
+
+### Changes
+- Renamed package in `Cargo.toml`
+- Changed CLI command name from `azural` to `azureal`
+- Renamed git branch prefix from `azural/` to `azureal/`
+- Updated function names (`list_azural_branches` → `list_azureal_branches`)
+- Updated all string literals referencing the old name
+- Updated log level prefixes
+- Updated `.gitignore` (`.azural/` → `.azureal/`)
+- Updated README.md with new name and acronym
+
+### Files Changed
+- `Cargo.toml` - Package name
+- `README.md` - Header, description, usage examples
+- `.gitignore` - Local data directory
+- `src/cli/mod.rs` - Command name
+- `src/main.rs` - Log level prefix
+- `src/git/core.rs` - `list_azureal_branches()` function and git branch filter
+- `src/models.rs` - Branch name comments and `strip_prefix()`
+- `src/app/state/sessions.rs` - Branch format string
+- `src/app/state/load.rs` - Variable name and function call
+- `src/cmd/session.rs` - All branch references and comments
+- `src/cmd/project.rs` - Branch counting and CLI hint
+- `src/tui/input_dialogs.rs` - CLI reference in status message and `strip_prefix()`
+- `src/tui/draw_wizard.rs` - Branch preview display
+
+---
+
+## 2026-02-03: Fix App Freeze During Active Claude Conversations
+
+### Problem
+The app would freeze/become unresponsive when Claude was actively working on a conversation. This was especially noticeable during long sessions with large session files.
+
+### Root Cause
+Session file polling was using a full re-parse every 500ms even when the file hadn't changed. The parsing is O(n) where n = number of JSONL lines, which could be tens of thousands for active sessions.
+
+### Solution
+Implemented two-phase session file change detection:
+1. **check_session_file()** - Lightweight check that only compares file size (a simple `stat()` call). Sets `session_file_dirty` flag if size changed.
+2. **poll_session_file()** - Only does the expensive parse if the dirty flag is set.
+
+### Implementation
+- Added `session_file_size: u64` field to track last known file size
+- Added `session_file_dirty: bool` flag for deferred parsing
+- `check_session_file()` compares new file size against cached size, sets dirty flag if different
+- `poll_session_file()` checks dirty flag, only parses if true, clears flag
+- Event loop now calls `check_session_file()` first, then `poll_session_file()`
+
+### Files Changed
+- `src/app/state/app.rs` - Added `session_file_size` and `session_file_dirty` fields
+- `src/app/state/load.rs` - Added `check_session_file()`, split `poll_session_file()` into two phases
+- `src/tui/event_loop.rs` - Added `check_session_file()` call before `poll_session_file()`

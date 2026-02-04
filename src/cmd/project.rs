@@ -82,9 +82,9 @@ pub fn handle_project_show(project_arg: Option<String>, output_format: OutputFor
                 }
             }
 
-            // Count azural branches
-            if let Ok(branches) = Git::list_azural_branches(&project.path) {
-                println!("\nAzural branches: {}", branches.len());
+            // Count azureal branches
+            if let Ok(branches) = Git::list_azureal_branches(&project.path) {
+                println!("\nAzureal branches: {}", branches.len());
             }
         }
     }
@@ -96,7 +96,7 @@ pub fn handle_project_remove(_project_arg: &str, _skip_confirm: bool) -> Result<
     // Projects are discovered from git, not stored
     println!("In stateless mode, projects are discovered from git repositories.");
     println!("There is no project database to remove entries from.");
-    println!("\nTo remove session worktrees, use: azural session cleanup --delete-branches");
+    println!("\nTo remove session worktrees, use: azureal session cleanup --delete-branches");
     Ok(())
 }
 

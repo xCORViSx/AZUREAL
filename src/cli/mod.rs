@@ -14,7 +14,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "azural")]
+#[command(name = "azureal")]
 #[command(about = "Minimal multi-session Claude Code manager with git worktrees")]
 #[command(version)]
 #[command(propagate_version = true)]

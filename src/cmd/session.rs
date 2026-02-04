@@ -26,7 +26,7 @@ fn discover_project() -> Result<Project> {
 /// Discover sessions from git worktrees and branches
 fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
     let worktrees = Git::list_worktrees_detailed(&project.path)?;
-    let azural_branches = Git::list_azural_branches(&project.path)?;
+    let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
     let mut sessions = Vec::new();
     let mut active_branches: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -45,8 +45,8 @@ fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
         active_branches.insert(branch_name);
     }
 
-    // Add archived sessions (azural/* branches without worktrees)
-    for branch in azural_branches {
+    // Add archived sessions (azureal/* branches without worktrees)
+    for branch in azureal_branches {
         if !active_branches.contains(&branch) {
             sessions.push(Session {
                 branch_name: branch,
@@ -67,7 +67,7 @@ fn find_session(sessions: &[Session], query: &str) -> Result<Session> {
         return Ok(s.clone());
     }
 
-    // Match by name (without azural/ prefix)
+    // Match by name (without azureal/ prefix)
     if let Some(s) = sessions.iter().find(|s| s.name() == query) {
         return Ok(s.clone());
     }
@@ -137,7 +137,7 @@ pub fn handle_session_new(
     // Generate session name from prompt
     let name = generate_session_name(&prompt);
     let worktree_name = sanitize_for_branch(&name);
-    let branch_name = format!("azural/{}", worktree_name);
+    let branch_name = format!("azureal/{}", worktree_name);
     let worktree_path = project.worktrees_dir().join(&worktree_name);
 
     if worktree_path.exists() {

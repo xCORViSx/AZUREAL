@@ -47,7 +47,7 @@ impl App {
             anyhow::bail!("No project loaded")
         };
 
-        let branch_name = format!("azural/{}", worktree_name);
+        let branch_name = format!("azureal/{}", worktree_name);
         let worktree_path = project.worktrees_dir().join(&worktree_name);
 
         if worktree_path.exists() {

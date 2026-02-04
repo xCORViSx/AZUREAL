@@ -46,7 +46,7 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
             }
         }
         SessionAction::Delete => {
-            app.set_status("Delete action not yet implemented - use CLI: azural session delete");
+            app.set_status("Delete action not yet implemented - use CLI: azureal session delete");
         }
         SessionAction::ViewDiff => {
             if let Err(e) = app.load_diff() {
@@ -89,7 +89,7 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                 if let Some(branch) = dialog.selected_branch().cloned() {
                     if let Some(project) = app.current_project().cloned() {
                         // Create worktree from existing branch
-                        let worktree_name = branch.strip_prefix("azural/").unwrap_or(&branch);
+                        let worktree_name = branch.strip_prefix("azureal/").unwrap_or(&branch);
                         let worktree_path = project.worktrees_dir().join(worktree_name);
 
                         match Git::create_worktree(&project.path, &worktree_path, &branch) {

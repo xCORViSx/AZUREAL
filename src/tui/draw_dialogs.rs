@@ -9,112 +9,29 @@ use ratatui::{
 };
 
 use crate::app::{App, BranchDialog};
+use super::keybindings;
 use super::util::{calculate_cursor_position, truncate};
 
-/// Help section with title and key-description pairs
-struct HelpSection {
-    title: &'static str,
-    entries: Vec<(&'static str, &'static str)>,
-}
-
-/// Build all help sections
-fn help_sections() -> Vec<HelpSection> {
-    vec![
-        HelpSection {
-            title: "Global",
-            entries: vec![
-                ("i", "Enter INPROMPT mode"),
-                ("t", "Toggle terminal pane"),
-                ("?", "Toggle this help"),
-                ("Tab", "Cycle focus forward"),
-                ("Shift+Tab", "Cycle focus backward"),
-                ("Ctrl+X", "Cancel Claude response"),
-                ("Ctrl+C", "Quit application"),
-            ],
-        },
-        HelpSection {
-            title: "Worktrees",
-            entries: vec![
-                ("j/k", "Select worktree"),
-                ("J/K", "Select project"),
-                ("Space", "Context menu"),
-                ("Enter", "Start/resume"),
-                ("n", "New worktree"),
-                ("b", "Browse branches"),
-                ("d", "View diff"),
-                ("r", "Rebase onto main"),
-                ("a", "Archive worktree"),
-            ],
-        },
-        HelpSection {
-            title: "Filetree",
-            entries: vec![
-                ("j/k", "Navigate"),
-                ("h/l", "Collapse/expand"),
-                ("Enter", "Open/toggle"),
-                ("Space", "Toggle dir"),
-                ("Esc", "Back to Worktrees"),
-            ],
-        },
-        HelpSection {
-            title: "Viewer",
-            entries: vec![
-                ("j/k", "Scroll line"),
-                ("Ctrl+d/u", "Half page"),
-                ("Ctrl+f/b", "Full page"),
-                ("g/G", "Top/bottom"),
-                ("q", "Close viewer"),
-                ("Esc", "Close and clear"),
-            ],
-        },
-        HelpSection {
-            title: "Convo",
-            entries: vec![
-                ("j/k", "Scroll line"),
-                ("↑/↓", "Prev/next prompt"),
-                ("Shift+↑/↓", "Prev/next message"),
-                ("Ctrl+d/u", "Half page"),
-                ("Ctrl+f/b", "Full page"),
-                ("g/G", "Top/bottom"),
-                ("o", "Output view"),
-                ("d", "Diff view"),
-                ("Esc", "Back to Worktrees"),
-            ],
-        },
-        HelpSection {
-            title: "Input",
-            entries: vec![
-                ("Enter", "Submit prompt"),
-                ("Esc", "Exit to COMMAND"),
-                ("Ctrl+W", "Delete word"),
-            ],
-        },
-        HelpSection {
-            title: "Terminal",
-            entries: vec![
-                ("+/-", "Resize height"),
-                ("j/k", "Scroll line"),
-                ("J/K", "Scroll page"),
-            ],
-        },
-    ]
-}
-
-/// Draw help overlay with auto-sized columns
+/// Draw help overlay with auto-sized columns from centralized keybindings
 pub fn draw_help_overlay(f: &mut Frame) {
     let area = f.area();
-    let sections = help_sections();
+    let sections = keybindings::help_sections();
+
+    // Convert keybindings to display entries (key_display, description)
+    let section_entries: Vec<(&str, Vec<(String, &str)>)> = sections.iter()
+        .map(|s| (s.title, s.bindings.iter().map(|b| (b.display_keys(), b.description)).collect()))
+        .collect();
 
     // Calculate max key width across all sections
-    let key_width = sections.iter()
-        .flat_map(|s| s.entries.iter())
+    let key_width = section_entries.iter()
+        .flat_map(|(_, entries)| entries.iter())
         .map(|(k, _)| k.len())
         .max()
         .unwrap_or(10) + 2; // +2 for padding
 
     // Calculate max description width
-    let desc_width = sections.iter()
-        .flat_map(|s| s.entries.iter())
+    let desc_width = section_entries.iter()
+        .flat_map(|(_, entries)| entries.iter())
         .map(|(_, d)| d.len())
         .max()
         .unwrap_or(20);
@@ -128,16 +45,16 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let actual_col_width = available_width / num_cols;
 
     // Distribute sections across columns (roughly equal height)
-    let total_lines: usize = sections.iter().map(|s| s.entries.len() + 2).sum(); // +2 for title + blank
+    let total_lines: usize = section_entries.iter().map(|(_, e)| e.len() + 2).sum(); // +2 for title + blank
     let target_per_col = (total_lines + num_cols - 1) / num_cols;
 
     let mut columns: Vec<Vec<Line>> = vec![Vec::new(); num_cols];
     let mut current_col = 0;
     let mut current_height = 0;
 
-    for section in &sections {
-        let section_height = section.entries.len() + 2;
-        // Move to next column if this section would overflow (unless we're on the last column)
+    for (title, entries) in &section_entries {
+        let section_height = entries.len() + 2;
+        // Move to next column if this section would overflow (unless on last column)
         if current_height + section_height > target_per_col && current_col < num_cols - 1 && current_height > 0 {
             current_col += 1;
             current_height = 0;
@@ -145,12 +62,12 @@ pub fn draw_help_overlay(f: &mut Frame) {
 
         // Add section title
         columns[current_col].push(Line::from(vec![
-            Span::styled(section.title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            Span::styled(*title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         ]));
 
         // Add entries with proper key/desc separation
         let desc_available = actual_col_width.saturating_sub(key_width + 1);
-        for (key, desc) in &section.entries {
+        for (key, desc) in entries {
             let key_span = Span::styled(
                 format!("{:>width$}", key, width = key_width),
                 Style::default().fg(Color::Cyan)
@@ -171,10 +88,10 @@ pub fn draw_help_overlay(f: &mut Frame) {
 
     // Calculate actual height needed (max column height + title + footer + borders)
     let max_col_height = columns.iter().map(|c| c.len()).max().unwrap_or(0);
-    let help_height = (max_col_height as u16 + 4).min(area.height.saturating_sub(4)); // +4 for title, footer, borders
+    let help_height = (max_col_height as u16 + 4).min(area.height.saturating_sub(4));
 
     // Calculate actual width needed
-    let help_width = ((actual_col_width * num_cols) as u16 + 4).min(area.width.saturating_sub(4)); // +4 for borders + padding
+    let help_width = ((actual_col_width * num_cols) as u16 + 4).min(area.width.saturating_sub(4));
 
     let help_area = Rect {
         x: (area.width.saturating_sub(help_width)) / 2,

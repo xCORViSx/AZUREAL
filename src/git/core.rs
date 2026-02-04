@@ -46,10 +46,10 @@ impl Git {
         }
     }
 
-    /// List all azural/* branches (for archived session detection)
-    pub fn list_azural_branches(repo_path: &Path) -> Result<Vec<String>> {
+    /// List all azureal/* branches (for archived session detection)
+    pub fn list_azureal_branches(repo_path: &Path) -> Result<Vec<String>> {
         let output = Command::new("git")
-            .args(["branch", "--list", "azural/*", "--format=%(refname:short)"])
+            .args(["branch", "--list", "azureal/*", "--format=%(refname:short)"])
             .current_dir(repo_path)
             .output()
             .context("Failed to list branches")?;

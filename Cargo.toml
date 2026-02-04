@@ -1,5 +1,5 @@
 [package]
-name = "azural"
+name = "azureal"
 version = "0.1.0"
 edition = "2021"
 description = "Minimal multi-session Claude Code manager with git worktrees"

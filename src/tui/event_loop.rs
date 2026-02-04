@@ -115,9 +115,11 @@ pub async fn run_app(
             }
         }
 
-        // Poll session file for changes (throttled - max 2x/sec for large files)
+        // Poll session file for changes (two-phase: lightweight size check, then parse if needed)
+        // check_session_file() is cheap (just stat()), poll_session_file() does the expensive parse
         let now_poll = Instant::now();
         if now_poll.duration_since(last_session_poll) >= min_poll_interval {
+            app.check_session_file();
             if app.poll_session_file() {
                 needs_redraw = true;
             }

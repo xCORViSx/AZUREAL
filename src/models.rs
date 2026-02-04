@@ -86,7 +86,7 @@ impl SessionStatus {
 /// Derived from git worktrees + Claude session files (stateless)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
-    /// Branch name (e.g., "azural/tui-help-overlay")
+    /// Branch name (e.g., "azureal/tui-help-overlay")
     pub branch_name: String,
     /// Worktree path (None if archived - branch exists but no worktree)
     pub worktree_path: Option<PathBuf>,
@@ -97,9 +97,9 @@ pub struct Session {
 }
 
 impl Session {
-    /// Display name (branch name without azural/ prefix)
+    /// Display name (branch name without azureal/ prefix)
     pub fn name(&self) -> &str {
-        self.branch_name.strip_prefix("azural/").unwrap_or(&self.branch_name)
+        self.branch_name.strip_prefix("azureal/").unwrap_or(&self.branch_name)
     }
 
     /// Session status (derived from runtime state, not stored)

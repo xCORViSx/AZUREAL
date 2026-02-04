@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="azural_icon.png" alt="Azural" width="180" />
+  <img src="azureal_icon.png" alt="Azureal" width="180" />
 </p>
 
-<h1 align="center">azural</h1>
+<h1 align="center">azureal</h1>
 
 <p align="center">
-  <strong>Agent Zones: Unified Runtime for Autonomous LLMs</strong>
+  <strong>Agent-Zoned Unified Runtime Environment for Autonomous LLMs</strong>
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@
 
 ## Hook Display
 
-Azural automatically displays Claude Code hook output in the output pane:
+Azureal automatically displays Claude Code hook output in the output pane:
 - **SessionStart** hooks appear via `hook_response` events
 - **PreToolUse/PostToolUse** hooks appear via `hook_progress` events
 - **UserPromptSubmit** hooks appear from system-reminder tags in the session file
@@ -51,10 +51,10 @@ cargo install --path .
 
 ```bash
 # Launch the TUI
-azural tui
+azureal tui
 
 # Or just
-azural
+azureal
 ```
 
 ### Keybindings
@@ -85,6 +85,6 @@ azural
 MIT
 
 
-non-intrusive : only the binary added to PATH ; no config or database files outside repo azural is working with
+non-intrusive : only the binary added to PATH ; no config or database files outside repo azureal is working with
 
 No file footprint - no database or config files / directly scans git worktrees and ~/.claude directory for session data

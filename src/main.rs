@@ -20,7 +20,7 @@ use cli::{Cli, Commands, ProjectCommands, SessionCommands};
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let log_level = if cli.verbose { "azural=debug" } else { "azural=info" };
+    let log_level = if cli.verbose { "azureal=debug" } else { "azureal=info" };
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(

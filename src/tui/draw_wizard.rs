@@ -231,7 +231,7 @@ fn draw_worktree_confirmation(f: &mut Frame, app: &App, wizard: &WorktreeWizard,
     ]));
     lines.push(Line::from(vec![
         Span::styled("Branch: ", Style::default().fg(Color::Gray)),
-        Span::styled(format!("azural/{}", wizard.final_worktree_name()), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("azureal/{}", wizard.final_worktree_name()), Style::default().fg(Color::Cyan)),
     ]));
     lines.push(Line::from(""));
 

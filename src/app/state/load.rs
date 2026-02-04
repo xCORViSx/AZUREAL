@@ -32,7 +32,7 @@ impl App {
         let Some(project) = &self.project else { return Ok(()) };
 
         let worktrees = Git::list_worktrees_detailed(&project.path)?;
-        let azureal_branches = Git::list_azural_branches(&project.path)?;
+        let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
         let mut sessions = Vec::new();
         let mut active_branches: HashSet<String> = HashSet::new();

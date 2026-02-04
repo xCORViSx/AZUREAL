@@ -3,23 +3,23 @@
 //! Handles keyboard input when the FileTree panel is focused.
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 
 use crate::app::{App, Focus};
+use super::keybindings::{Action, lookup_action};
 
 /// Handle keyboard input for the FileTree panel
 pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
-    match key.code {
+    // Use centralized keybindings lookup
+    let action = lookup_action(Focus::FileTree, key.modifiers, key.code, false, false, false);
+
+    match action {
         // Navigation: j/k or arrow keys
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.file_tree_next();
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.file_tree_prev();
-        }
+        Some(Action::NavDown) => app.file_tree_next(),
+        Some(Action::NavUp) => app.file_tree_prev(),
 
         // Enter: expand directory or load file into viewer
-        KeyCode::Enter => {
+        Some(Action::OpenFile) => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     if entry.is_dir {
@@ -32,15 +32,24 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // h/l or left/right: collapse/expand directory (works from any item in that dir)
-        KeyCode::Char('h') | KeyCode::Left => {
+        // Space: toggle directory expand/collapse
+        Some(Action::ToggleDir) => {
+            if let Some(idx) = app.file_tree_selected {
+                if let Some(entry) = app.file_tree_entries.get(idx) {
+                    if entry.is_dir {
+                        app.toggle_file_tree_dir();
+                    }
+                }
+            }
+        }
+
+        // h/l or left/right: collapse/expand directory
+        Some(Action::NavLeft) => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
                     if entry.is_dir && app.file_tree_expanded.contains(&entry.path) {
-                        // Collapse this directory
                         app.toggle_file_tree_dir();
                     } else if let Some(parent) = entry.path.parent() {
-                        // Find parent dir in entries and collapse it
                         let parent_path = parent.to_path_buf();
                         if let Some(parent_idx) = app.file_tree_entries.iter().position(|e| e.path == parent_path && e.is_dir) {
                             if app.file_tree_expanded.contains(&parent_path) {
@@ -52,15 +61,12 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 }
             }
         }
-        KeyCode::Char('l') | KeyCode::Right => {
+        Some(Action::NavRight) => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
                     if entry.is_dir && !app.file_tree_expanded.contains(&entry.path) {
-                        // Expand this directory
                         app.toggle_file_tree_dir();
                     } else if !entry.is_dir {
-                        // On a file: find parent dir and expand it (usually already expanded)
-                        // This is a no-op if parent is expanded, but allows intuitive behavior
                         if let Some(parent) = entry.path.parent() {
                             let parent_path = parent.to_path_buf();
                             if let Some(parent_idx) = app.file_tree_entries.iter().position(|e| e.path == parent_path && e.is_dir) {
@@ -75,21 +81,8 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // Space: toggle directory expand/collapse
-        KeyCode::Char(' ') => {
-            if let Some(idx) = app.file_tree_selected {
-                if let Some(entry) = app.file_tree_entries.get(idx) {
-                    if entry.is_dir {
-                        app.toggle_file_tree_dir();
-                    }
-                }
-            }
-        }
-
         // Escape: unfocus
-        KeyCode::Esc => {
-            app.focus = Focus::Worktrees;
-        }
+        Some(Action::Escape) => app.focus = Focus::Worktrees,
 
         _ => {}
     }
