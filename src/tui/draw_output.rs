@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
-use super::util::{colorize_output, detect_message_type, render_display_events, MessageType};
+use super::util::{colorize_output, detect_message_type, render_display_events, render_display_events_incremental, MessageType};
 
 /// Draw the main output/diff panel
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
@@ -26,22 +26,46 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 // Only re-render if cache is dirty or width changed (NOT for animation tick)
                 if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
-                    let (lines_cache, anim_indices, bubble_positions) = render_display_events(
-                        &app.display_events,
-                        inner_width,
-                        &app.pending_tool_calls,
-                        &app.failed_tool_calls,
-                        &app.syntax_highlighter,
-                        app.pending_user_message.as_deref(),
-                    );
+                    let event_count = app.display_events.len();
+                    let can_incremental = app.rendered_lines_width == inner_width
+                        && app.rendered_events_count > 0
+                        && event_count > app.rendered_events_count;
+
+                    let (lines_cache, anim_indices, bubble_positions) = if can_incremental {
+                        // Incremental: only render newly appended events
+                        let existing_lines = std::mem::take(&mut app.rendered_lines_cache);
+                        let existing_anim = std::mem::take(&mut app.animation_line_indices);
+                        let existing_bubbles = std::mem::take(&mut app.message_bubble_positions);
+                        render_display_events_incremental(
+                            &app.display_events,
+                            app.rendered_events_count,
+                            inner_width,
+                            &app.pending_tool_calls,
+                            &app.failed_tool_calls,
+                            &app.syntax_highlighter,
+                            app.pending_user_message.as_deref(),
+                            existing_lines,
+                            existing_anim,
+                            existing_bubbles,
+                        )
+                    } else {
+                        // Full re-render (width changed, events reset, or first render)
+                        render_display_events(
+                            &app.display_events,
+                            inner_width,
+                            &app.pending_tool_calls,
+                            &app.failed_tool_calls,
+                            &app.syntax_highlighter,
+                            app.pending_user_message.as_deref(),
+                        )
+                    };
                     app.rendered_lines_cache = lines_cache;
                     app.animation_line_indices = anim_indices;
                     app.message_bubble_positions = bubble_positions;
                     app.rendered_lines_width = inner_width;
+                    app.rendered_events_count = event_count;
                     app.rendered_lines_dirty = false;
                 }
-
-                let total = app.rendered_lines_cache.len();
 
                 // Clamp scroll to valid range (resolves usize::MAX sentinel)
                 app.clamp_output_scroll();

@@ -29,21 +29,85 @@ pub fn render_display_events(
     syntax_highlighter: &SyntaxHighlighter,
     pending_user_message: Option<&str>,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
-    let mut lines = Vec::new();
-    let mut animation_indices = Vec::new();
-    let mut bubble_positions = Vec::new();
+    render_display_events_from(events, 0, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new())
+}
+
+/// Render only events starting from `start_idx`, appending to existing cache data.
+/// Existing lines/animation_indices/bubble_positions are carried forward.
+pub fn render_display_events_incremental(
+    events: &[DisplayEvent],
+    start_idx: usize,
+    width: u16,
+    pending_tools: &HashSet<String>,
+    failed_tools: &HashSet<String>,
+    syntax_highlighter: &SyntaxHighlighter,
+    pending_user_message: Option<&str>,
+    existing_lines: Vec<Line<'static>>,
+    mut existing_anim: Vec<(usize, usize)>,
+    existing_bubbles: Vec<(usize, bool)>,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
+    // Strip any previously-appended pending user message lines from the cache.
+    // The pending message is always re-rendered at the end, so remove old trailing bubble.
+    // We detect this by checking if the last bubble_position was from a pending msg
+    // (its line_idx would be beyond the events' rendered area).
+    // Simpler approach: just strip the pending user message block if present.
+    // The pending message adds: 2 empty lines + header + wrapped content + footer.
+    // We don't know exact count, so instead we'll re-render from start_idx
+    // which naturally handles the pending message correctly.
+
+    // Remove stale animation indices from previous pending tools that may have resolved
+    existing_anim.retain(|&(line_idx, _)| line_idx < existing_lines.len());
+
+    render_display_events_from(events, start_idx, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles)
+}
+
+/// Core renderer: iterates events from `start_idx`, appending to provided vectors.
+fn render_display_events_from(
+    events: &[DisplayEvent],
+    start_idx: usize,
+    width: u16,
+    pending_tools: &HashSet<String>,
+    failed_tools: &HashSet<String>,
+    syntax_highlighter: &SyntaxHighlighter,
+    pending_user_message: Option<&str>,
+    mut lines: Vec<Line<'static>>,
+    mut animation_indices: Vec<(usize, usize)>,
+    mut bubble_positions: Vec<(usize, bool)>,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
+    // Scan earlier events (before start_idx) to establish state flags
     let mut saw_init = false;
     let mut saw_content = false;
     let mut last_hook: Option<(String, String)> = None;
-    // Track if the LAST ExitPlanMode has a user message after it
-    // Reset saw_user_after whenever we see a new ExitPlanMode
     let mut saw_exit_plan_mode = false;
     let mut saw_user_after_exit_plan = false;
 
-    for event in events {
+    // Pre-scan events before start_idx to set state flags correctly
+    for event in events.iter().take(start_idx) {
+        match event {
+            DisplayEvent::Init { .. } => { saw_init = true; }
+            DisplayEvent::Hook { name, output } => { last_hook = Some((name.clone(), output.clone())); }
+            DisplayEvent::Plan { .. } | DisplayEvent::UserMessage { .. } | DisplayEvent::AssistantText { .. }
+            | DisplayEvent::ToolCall { .. } | DisplayEvent::ToolResult { .. } => {
+                saw_content = true;
+                last_hook = None;
+                if let DisplayEvent::ToolCall { tool_name, .. } = event {
+                    if tool_name == "ExitPlanMode" {
+                        saw_exit_plan_mode = true;
+                        saw_user_after_exit_plan = false;
+                    }
+                }
+                if let DisplayEvent::UserMessage { .. } = event {
+                    if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for event in events.iter().skip(start_idx) {
         match event {
             DisplayEvent::Init { model, cwd, .. } => {
                 if saw_init || saw_content { continue; }
@@ -51,9 +115,11 @@ pub fn render_display_events(
                 render_init(&mut lines, model, cwd);
             }
             DisplayEvent::Hook { name, output } => {
-                let key = (name.clone(), output.clone());
-                if last_hook.as_ref() == Some(&key) { continue; }
-                last_hook = Some(key);
+                // Dedup consecutive identical hooks — compare by reference first to avoid clone
+                if let Some((ref ln, ref lo)) = last_hook {
+                    if ln == name && lo == output { continue; }
+                }
+                last_hook = Some((name.clone(), output.clone()));
                 render_hook(&mut lines, name, output, bubble_width);
             }
             DisplayEvent::Command { name } => {
@@ -249,7 +315,12 @@ fn render_tool_call(
 
     lines.push(Line::from(vec![Span::styled(" ┃", Style::default().fg(tool_color))]));
 
-    let param_raw = file_path.clone().unwrap_or_else(|| extract_tool_param(tool_name, input));
+    // Avoid cloning file_path — borrow when available, allocate only for fallback
+    let param_owned;
+    let param_raw: &str = match file_path {
+        Some(fp) => fp.as_str(),
+        None => { param_owned = extract_tool_param(tool_name, input); &param_owned }
+    };
 
     // Use placeholder color for pending - will be patched during viewport rendering
     // Note: ◐ can misalign in some fonts, using ○ for pending instead
@@ -266,7 +337,7 @@ fn render_tool_call(
     let prefix_len = 3 + 2 + display_name.len() + 2;
     let param_max = tool_line_max.saturating_sub(prefix_len);
 
-    for (i, wrapped) in wrap_text(&param_raw, param_max).into_iter().enumerate() {
+    for (i, wrapped) in wrap_text(param_raw, param_max).into_iter().enumerate() {
         if i == 0 {
             // Track line index for animation patching (span index 1 is the indicator)
             if is_pending {

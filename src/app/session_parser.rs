@@ -27,11 +27,155 @@ pub struct ParsedSession {
     pub assistant_text_blocks: usize,
     /// True if ExitPlanMode was called and no user message followed
     pub awaiting_plan_approval: bool,
+    /// Byte offset after the last successfully parsed line (for incremental parsing)
+    pub end_offset: u64,
 }
 
-/// Parse a Claude session JSONL file into display events
+/// Persistent parser state that survives between incremental parses.
+/// Tracks tool_call IDs → names so tool_results from new lines can resolve them,
+/// plus parentUuid dedup maps for user-message rewrites.
+pub struct IncrementalParserState {
+    pub tool_calls: HashMap<String, (String, Option<String>)>,
+    pub user_msg_by_parent: HashMap<String, (usize, DateTime<Utc>)>,
+    pub session_slug: Option<String>,
+}
+
+impl IncrementalParserState {
+    /// Rebuild parser context from existing display_events (cheap — just scans tool_call IDs)
+    pub fn from_events(events: &[DisplayEvent], slug: Option<String>) -> Self {
+        let mut tool_calls = HashMap::new();
+        let user_msg_by_parent = HashMap::new();
+
+        for event in events {
+            if let DisplayEvent::ToolCall { tool_use_id, tool_name, file_path, .. } = event {
+                tool_calls.insert(tool_use_id.clone(), (tool_name.clone(), file_path.clone()));
+            }
+        }
+
+        Self { tool_calls, user_msg_by_parent, session_slug: slug }
+    }
+}
+
+/// Parse a Claude session JSONL file into display events (full parse from byte 0)
 pub fn parse_session_file(session_file: &Path) -> ParsedSession {
-    // Reset diagnostics
+    parse_session_file_from(session_file, 0, None)
+}
+
+/// Incrementally parse only new lines appended after `start_offset`.
+/// `existing` provides the already-parsed events and state to append to.
+/// Falls back to full re-parse if the file shrank or offset is 0.
+pub fn parse_session_file_incremental(
+    session_file: &Path,
+    start_offset: u64,
+    existing_events: &[DisplayEvent],
+    existing_pending: &HashSet<String>,
+    existing_failed: &HashSet<String>,
+) -> ParsedSession {
+    // If offset is 0 or file doesn't exist, do a full parse
+    if start_offset == 0 {
+        return parse_session_file(session_file);
+    }
+
+    // Check file size — if it shrank, full re-parse (shouldn't happen with JSONL append-only)
+    let file_len = std::fs::metadata(session_file).map(|m| m.len()).unwrap_or(0);
+    if file_len < start_offset {
+        return parse_session_file(session_file);
+    }
+
+    // Nothing new to parse
+    if file_len == start_offset {
+        return ParsedSession {
+            events: existing_events.to_vec(),
+            pending_tools: existing_pending.clone(),
+            failed_tools: existing_failed.clone(),
+            total_lines: 0,
+            parse_errors: 0,
+            assistant_total: 0,
+            assistant_no_message: 0,
+            assistant_no_content_arr: 0,
+            assistant_text_blocks: 0,
+            awaiting_plan_approval: check_plan_approval(existing_events),
+            end_offset: start_offset,
+        };
+    }
+
+    // Rebuild parser context from existing events so tool_results can resolve tool names
+    // Slug is None for incremental path — plan file loading only matters on full parse
+    let state = IncrementalParserState::from_events(existing_events, None);
+
+    // Parse only new bytes
+    let result = parse_session_file_from(session_file, start_offset, Some(state));
+
+    // "user" events with parentUuid dedup can rewrite earlier events.
+    // If the new parse produced any Filtered events (user-message rewrites referencing old indices),
+    // we need a full re-parse to handle the cross-reference correctly.
+    // This is rare (only when user edits/rewinds a message).
+    let has_user_rewrite = result.events.iter().any(|e| matches!(e, DisplayEvent::Filtered));
+    if has_user_rewrite {
+        return parse_session_file(session_file);
+    }
+
+    // Merge: existing events + newly parsed events
+    let mut merged_events = existing_events.to_vec();
+    merged_events.extend(result.events);
+
+    let mut merged_pending = existing_pending.clone();
+    // Remove tools that got results in the new batch
+    for id in existing_pending {
+        if !result.pending_tools.contains(id) {
+            // Check if a ToolResult appeared for this tool in the new events
+            let got_result = merged_events.iter().any(|e| {
+                matches!(e, DisplayEvent::ToolResult { tool_use_id, .. } if tool_use_id == id)
+            });
+            if got_result { merged_pending.remove(id); }
+        }
+    }
+    merged_pending.extend(result.pending_tools);
+
+    let mut merged_failed = existing_failed.clone();
+    merged_failed.extend(result.failed_tools);
+
+    ParsedSession {
+        awaiting_plan_approval: check_plan_approval(&merged_events),
+        events: merged_events,
+        pending_tools: merged_pending,
+        failed_tools: merged_failed,
+        total_lines: result.total_lines,
+        parse_errors: result.parse_errors,
+        assistant_total: result.assistant_total,
+        assistant_no_message: result.assistant_no_message,
+        assistant_no_content_arr: result.assistant_no_content_arr,
+        assistant_text_blocks: result.assistant_text_blocks,
+        end_offset: result.end_offset,
+    }
+}
+
+/// Check if awaiting plan approval across a set of events
+fn check_plan_approval(events: &[DisplayEvent]) -> bool {
+    let mut saw_exit_plan = false;
+    let mut saw_user_after = false;
+    for event in events {
+        match event {
+            DisplayEvent::ToolCall { tool_name, .. } if tool_name == "ExitPlanMode" => {
+                saw_exit_plan = true;
+                saw_user_after = false;
+            }
+            DisplayEvent::UserMessage { .. } if saw_exit_plan => {
+                saw_user_after = true;
+            }
+            _ => {}
+        }
+    }
+    saw_exit_plan && !saw_user_after
+}
+
+/// Core parser: reads JSONL starting at `start_offset` bytes.
+/// If `prior_state` is Some, uses it for tool_call resolution (incremental mode).
+fn parse_session_file_from(
+    session_file: &Path,
+    start_offset: u64,
+    prior_state: Option<IncrementalParserState>,
+) -> ParsedSession {
     PARSE_DIAGNOSTICS.with(|d| *d.borrow_mut() = ParseDiagnostics::default());
 
     let file = match File::open(session_file) {
@@ -47,24 +191,52 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
             assistant_no_content_arr: 0,
             assistant_text_blocks: 0,
             awaiting_plan_approval: false,
+            end_offset: 0,
         },
     };
 
-    let reader = BufReader::new(file);
+    // Seek to start_offset if nonzero
+    use std::io::Seek;
+    let mut file = file;
+    if start_offset > 0 {
+        if file.seek(std::io::SeekFrom::Start(start_offset)).is_err() {
+            return parse_session_file(session_file);
+        }
+    }
+
+    let mut reader = BufReader::new(&mut file);
     let mut timed_events: Vec<(DateTime<Utc>, DisplayEvent)> = Vec::new();
-    let mut user_msg_by_parent: HashMap<String, (usize, DateTime<Utc>)> = HashMap::new();
-    let mut tool_calls: HashMap<String, (String, Option<String>)> = HashMap::new();
+
+    // Use prior state if provided (incremental), otherwise start fresh
+    let (mut tool_calls, mut user_msg_by_parent, mut session_slug) = match prior_state {
+        Some(s) => (s.tool_calls, s.user_msg_by_parent, s.session_slug),
+        None => (HashMap::new(), HashMap::new(), None),
+    };
+
     let mut pending_tools: HashSet<String> = HashSet::new();
     let mut failed_tools: HashSet<String> = HashSet::new();
     let mut last_user_msg: Option<(usize, DateTime<Utc>)> = None;
     let mut ups_hooks: Vec<(usize, DateTime<Utc>, DisplayEvent)> = Vec::new();
     let mut total_lines = 0;
     let mut parse_errors = 0;
-    let mut session_slug: Option<String> = None;
+    let mut bytes_read: u64 = 0;
 
-    for line in reader.lines().map_while(Result::ok) {
+    // Read line-by-line tracking byte offset
+    let mut line_buf = String::new();
+    loop {
+        line_buf.clear();
+        let n = match reader.read_line(&mut line_buf) {
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        if n == 0 { break; }
+        bytes_read += n as u64;
+
+        let line = line_buf.trim_end_matches('\n').trim_end_matches('\r');
+        if line.is_empty() { continue; }
+
         total_lines += 1;
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else {
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
             parse_errors += 1;
             continue;
         };
@@ -77,7 +249,6 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
 
         let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
-        // Capture session slug for plan file lookup
         if session_slug.is_none() {
             session_slug = json.get("slug").and_then(|s| s.as_str()).map(|s| s.to_string());
         }
@@ -112,27 +283,8 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
         .map(|(_, e)| e)
         .collect();
 
-    // Determine if awaiting plan approval: LAST ExitPlanMode has no user message after it
-    // Reset saw_user_after whenever we see a new ExitPlanMode (each plan is independent)
-    let awaiting_plan_approval = {
-        let mut saw_exit_plan = false;
-        let mut saw_user_after = false;
-        for event in &events {
-            match event {
-                DisplayEvent::ToolCall { tool_name, .. } if tool_name == "ExitPlanMode" => {
-                    saw_exit_plan = true;
-                    saw_user_after = false; // Reset: new plan, no user response yet
-                }
-                DisplayEvent::UserMessage { .. } if saw_exit_plan => {
-                    saw_user_after = true;
-                }
-                _ => {}
-            }
-        }
-        saw_exit_plan && !saw_user_after
-    };
+    let awaiting_plan_approval = check_plan_approval(&events);
 
-    // Get diagnostics
     let (ast_total, ast_no_msg, ast_no_arr, ast_text) = PARSE_DIAGNOSTICS.with(|d| {
         let d = d.borrow();
         (d.assistant_events_total, d.assistant_events_no_message, d.assistant_events_no_content_arr, d.assistant_text_blocks)
@@ -149,6 +301,7 @@ pub fn parse_session_file(session_file: &Path) -> ParsedSession {
         assistant_no_content_arr: ast_no_arr,
         assistant_text_blocks: ast_text,
         awaiting_plan_approval,
+        end_offset: start_offset + bytes_read,
     }
 }
 

@@ -3,9 +3,14 @@
 use ratatui::{style::Style, text::Span};
 use textwrap::{wrap, Options};
 
-/// Wrap text to fit within max_width, returning wrapped lines
+/// Wrap text to fit within max_width, returning wrapped lines.
+/// Fast path: if text fits in max_width, returns single-element vec without calling textwrap.
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if text.is_empty() { return vec![String::new()]; }
+    // Fast path: text fits in one line — skip textwrap entirely
+    if text.chars().count() <= max_width && !text.contains('\n') {
+        return vec![text.to_string()];
+    }
     let opts = Options::new(max_width).break_words(true);
     wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
 }

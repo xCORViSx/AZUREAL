@@ -91,6 +91,8 @@ pub struct App {
     pub session_file_modified: Option<std::time::SystemTime>,
     /// Last known file size (for incremental change detection)
     pub session_file_size: u64,
+    /// Byte offset of last successful parse (for incremental parsing)
+    pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
     /// Per-session terminals (persist when switching sessions)
@@ -127,6 +129,8 @@ pub struct App {
     pub rendered_lines_width: u16,
     /// Flag indicating cache needs refresh
     pub rendered_lines_dirty: bool,
+    /// How many display_events were rendered into current cache (for incremental append)
+    pub rendered_events_count: usize,
     /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
     pub animation_line_indices: Vec<(usize, usize)>,
     /// Total lines in last parsed session file
@@ -286,6 +290,7 @@ impl App {
             session_file_path: None,
             session_file_modified: None,
             session_file_size: 0,
+            session_file_parse_offset: 0,
             session_file_dirty: false,
             session_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),
@@ -304,6 +309,7 @@ impl App {
             rendered_lines_cache: Vec::new(),
             rendered_lines_width: 0,
             rendered_lines_dirty: true,
+            rendered_events_count: 0,
             animation_line_indices: Vec::new(),
             parse_total_lines: 0,
             parse_errors: 0,

@@ -8,7 +8,7 @@
 
 // Re-export commonly used items
 pub use super::colorize::{colorize_output, detect_message_type, MessageType};
-pub use super::render_events::render_display_events;
+pub use super::render_events::{render_display_events, render_display_events_incremental};
 
 /// Truncate a string to max length, adding ellipsis if needed
 pub fn truncate(s: &str, max: usize) -> String {

@@ -167,43 +167,53 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
 
-### 8. Session File Polling (Deferred Parse Pattern)
+### 8. Session File Polling (Deferred Parse + Incremental)
+
+Three-phase polling pipeline for session files:
+
+1. **Cheap metadata check** (`check_session_file()`): stat() the file, compare size. O(1).
+2. **Incremental parse** (`refresh_session_events()`): Seek to `session_file_parse_offset`, parse only new JSONL lines appended since last read. Rebuilds tool_call context from existing DisplayEvents via `IncrementalParserState`. Falls back to full re-parse if file shrank or user-message rewrite detected (parentUuid dedup).
+3. **Incremental render** (`draw_output()`): If `rendered_events_count < display_events.len()` and width unchanged, renders only newly appended events and appends to `rendered_lines_cache`. Falls back to full re-render on width change or event count decrease (session switch).
 
 ```rust
-// ❌ WRONG - Full parse on every poll, blocks UI during large file reads
-fn poll_session_file(&mut self) {
-    if let Some(path) = &self.session_file_path {
-        let parsed = parse_session_file(path);  // BLOCKING: 50-200ms for large sessions
-        self.display_events = parsed.events;
-    }
-}
-
-// ✅ CORRECT - Lightweight check + dirty flag + deferred parse
+// Phase 1: O(1) metadata check (every 500ms)
 pub fn check_session_file(&mut self) {
-    let Some(path) = &self.session_file_path else { return };
-    let Ok(metadata) = std::fs::metadata(path) else { return };
-    if metadata.len() != self.session_file_size {  // FAST: just file metadata
-        self.session_file_size = metadata.len();
-        self.session_file_dirty = true;  // Mark for later parsing
+    if metadata.len() != self.session_file_size {
+        self.session_file_dirty = true;
     }
 }
 
-pub fn poll_session_file(&mut self) -> bool {
-    if self.session_file_dirty {
-        self.session_file_dirty = false;
-        self.refresh_session_events();  // Only parse when dirty AND idle
-        true
-    } else {
-        false
-    }
+// Phase 2: Incremental parse (only new bytes since last offset)
+fn refresh_session_events(&mut self) {
+    let parsed = parse_session_file_incremental(
+        &path, self.session_file_parse_offset,
+        &self.display_events, &self.pending_tool_calls, &self.failed_tool_calls,
+    );
+    // Merges new events with existing, updates parse offset
+}
+
+// Phase 3: Incremental render (only new events → append to cache)
+// In draw_output():
+if event_count > app.rendered_events_count && width unchanged {
+    render_display_events_incremental(events, start_idx, ..., existing_cache);
 }
 ```
 
-**Files:** `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`
+**Files:**
+- `src/app/session_parser.rs` - `parse_session_file_incremental()`, `IncrementalParserState`
+- `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`
+- `src/tui/render_events.rs` - `render_display_events_incremental()`, `render_display_events_from()`
+- `src/tui/draw_output.rs` - incremental render path selection
 
-**Pattern:** Check file metadata frequently (cheap), but only parse when:
-1. File actually changed (size different)
-2. User is idle (no active scrolling/typing)
+**App state for incremental tracking:**
+- `session_file_parse_offset: u64` — byte offset after last successful parse
+- `rendered_events_count: usize` — how many events were rendered into current cache
+
+**Fallback triggers (reverts to full re-parse/re-render):**
+- File shrank (shouldn't happen with append-only JSONL)
+- User-message rewrite detected (parentUuid dedup → events reference earlier indices)
+- Terminal width changed (need to re-wrap all text)
+- Session switched (event count drops to 0)
 
 ### 4. SKIP Redraw When Nothing Changed
 

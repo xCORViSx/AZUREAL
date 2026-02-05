@@ -100,6 +100,7 @@ impl App {
         self.output_buffer.clear();
         self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
+        self.session_file_parse_offset = 0;
         self.invalidate_render_cache();
         self.event_parser = crate::events::EventParser::new();
         self.selected_event = None;
@@ -159,6 +160,8 @@ impl App {
                     self.assistant_no_content_arr = parsed.assistant_no_content_arr;
                     self.assistant_text_blocks = parsed.assistant_text_blocks;
                     self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+                    // Store byte offset for incremental parsing on subsequent polls
+                    self.session_file_parse_offset = parsed.end_offset;
 
                     // Clear pending message if it's now in the loaded events
                     // Only check the last few events (user message would be recent)
@@ -208,14 +211,22 @@ impl App {
         }
     }
 
-    /// Lightweight refresh of session events (no terminal/file tree reload)
+    /// Lightweight refresh of session events (no terminal/file tree reload).
+    /// Uses incremental parsing — only reads new bytes appended since last parse.
     fn refresh_session_events(&mut self) {
         let Some(path) = self.session_file_path.clone() else { return };
 
         // Track if we were at bottom before refresh (usize::MAX = follow mode)
         let was_at_bottom = self.output_scroll == usize::MAX;
 
-        let parsed = crate::app::session_parser::parse_session_file(&path);
+        // Incremental parse: only read new bytes since last offset
+        let parsed = crate::app::session_parser::parse_session_file_incremental(
+            &path,
+            self.session_file_parse_offset,
+            &self.display_events,
+            &self.pending_tool_calls,
+            &self.failed_tool_calls,
+        );
         self.display_events = parsed.events;
         self.pending_tool_calls = parsed.pending_tools;
         self.failed_tool_calls = parsed.failed_tools;
@@ -226,6 +237,7 @@ impl App {
         self.assistant_no_content_arr = parsed.assistant_no_content_arr;
         self.assistant_text_blocks = parsed.assistant_text_blocks;
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+        self.session_file_parse_offset = parsed.end_offset;
 
         // Clear pending message if it's now in the loaded events
         if let Some(ref pending) = self.pending_user_message {
