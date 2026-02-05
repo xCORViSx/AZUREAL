@@ -269,6 +269,21 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             app.toggle_help();
             return Ok(());
         }
+        // Wizard tab cycling (must be before regular Tab handler)
+        // Alt+Tab or ] to go forward, Shift+Tab or [ to go backward
+        // Note: On macOS, Option+Tab might be intercepted by the system
+        (KeyModifiers::NONE, KeyCode::Char(']')) | (KeyModifiers::ALT, KeyCode::Tab) if app.is_wizard_active() => {
+            if let Some(wizard) = app.creation_wizard.as_mut() {
+                wizard.next_tab();
+            }
+            return Ok(());
+        }
+        (KeyModifiers::NONE, KeyCode::Char('[')) | (KeyModifiers::SHIFT, KeyCode::BackTab) if app.is_wizard_active() => {
+            if let Some(wizard) = app.creation_wizard.as_mut() {
+                wizard.prev_tab();
+            }
+            return Ok(());
+        }
         (KeyModifiers::NONE, KeyCode::Tab) => {
             // Cycle focus (works in both prompt and command mode)
             // Skip when wizard is active (wizard uses Tab for field cycling)

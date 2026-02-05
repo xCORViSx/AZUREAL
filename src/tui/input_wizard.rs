@@ -1,20 +1,15 @@
 //! Wizard input handling
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::app::App;
 use crate::claude::ClaudeProcess;
 use crate::wizard::{WizardTab, WorktreeStep, SessionStep};
 
 /// Handle keyboard input for creation wizard
+/// Note: Tab cycling (Alt+Tab, Shift+Tab, [, ]) is handled in event_loop.rs before this
 pub fn handle_wizard_input(app: &mut App, key: KeyEvent, claude_process: &ClaudeProcess) {
     let Some(wizard) = app.creation_wizard.as_mut() else { return; };
-
-    // Alt+Tab cycles through wizard tabs
-    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Tab {
-        wizard.next_tab();
-        return;
-    }
 
     // Handle input based on active tab
     match wizard.active_tab {

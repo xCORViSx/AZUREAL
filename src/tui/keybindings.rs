@@ -152,6 +152,11 @@ pub enum Action {
     ResizeDown,
     EnterTerminalType,
 
+    // Wizard
+    WizardNextTab,
+    WizardPrevTab,
+    WizardNextField,
+
     // Dialogs
     Confirm,
     Cancel,
@@ -339,6 +344,13 @@ pub static TERMINAL: [Keybinding; 7] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Enter type mode", Action::EnterTerminalType),
 ];
 
+/// Wizard/New dialog bindings
+pub static WIZARD: [Keybinding; 3] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::WizardNextTab),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::WizardPrevTab),
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Next field", Action::WizardNextField),
+];
+
 /// Find matching action for current context
 pub fn lookup_action(
     focus: Focus,
@@ -393,6 +405,7 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Convo", bindings: &OUTPUT },
         HelpSection { title: "Input", bindings: &INPUT },
         HelpSection { title: "Terminal", bindings: &TERMINAL },
+        HelpSection { title: "New... Dialog", bindings: &WIZARD },
     ]
 }
 
