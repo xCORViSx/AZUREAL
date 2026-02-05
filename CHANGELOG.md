@@ -5,6 +5,14 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Optimized
+- Deferred initial render: large conversations (200+ events) only render the tail on initial load
+  - User starts at bottom, sees recent messages instantly (no 10s+ wait)
+  - Full render happens lazily when scrolling to top
+- Edit diff render no longer reads files from disk (was O(file_size) per Edit event)
+  - Eliminated `std::fs::read_to_string()` + substring search per Edit tool call
+  - Uses relative line numbers instead — convo panel is a summary view
+- Edit diff syntax highlighting reduced from 3→2 calls per event
+  - Reuses base syntect parse, applies background colors via cheap span iteration
 - Incremental JSONL parsing: seeks to last byte offset, parses only newly appended lines
   - Rebuilds tool_call context from existing DisplayEvents via `IncrementalParserState`
   - Falls back to full re-parse if file shrank or user-message rewrite detected

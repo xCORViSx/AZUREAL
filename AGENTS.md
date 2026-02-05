@@ -224,12 +224,60 @@ if event_count > app.rendered_events_count && width unchanged {
 **App state for incremental tracking:**
 - `session_file_parse_offset: u64` — byte offset after last successful parse
 - `rendered_events_count: usize` — how many events were rendered into current cache
+- `rendered_events_start: usize` — start index for deferred render (>0 means early events skipped)
 
 **Fallback triggers (reverts to full re-parse/re-render):**
 - File shrank (shouldn't happen with append-only JSONL)
 - User-message rewrite detected (parentUuid dedup → events reference earlier indices)
 - Terminal width changed (need to re-wrap all text)
 - Session switched (event count drops to 0)
+
+### 10. Deferred Initial Render for Large Conversations
+
+For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`output_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when user scrolls to the top.
+
+```rust
+// On initial full render with many events, skip early ones:
+let deferred_start = if event_count > DEFERRED_RENDER_TAIL {
+    event_count.saturating_sub(DEFERRED_RENDER_TAIL)
+} else {
+    0
+};
+render_display_events(&events[deferred_start..], ...);
+app.rendered_events_start = deferred_start;
+
+// When user scrolls to top and there are unrendered early events:
+if app.rendered_events_start > 0 && app.output_scroll == 0 {
+    // Expand to full render
+    app.rendered_events_start = 0;
+    app.rendered_events_count = 0;
+    app.rendered_lines_dirty = true;
+}
+```
+
+**Files:** `src/tui/draw_output.rs` (DEFERRED_RENDER_TAIL const, deferred render logic)
+
+### 11. NEVER Do File I/O in Render Path
+
+```rust
+// ❌ WRONG - Reads file from disk for EVERY Edit event during render
+fn render_edit_diff(...) {
+    let start_line = std::fs::read_to_string(path).ok().and_then(|content| {
+        content.find(new_str).map(|pos| ...)  // O(file_size) per Edit event
+    });
+}
+
+// ✅ CORRECT - Use relative line numbers, no disk I/O
+fn render_edit_diff(...) {
+    let start_line = 1usize;  // Relative numbering, no file read
+}
+```
+
+For a session with 200 Edit events, the wrong approach reads the file 200 times × O(file_size) per read. The correct approach uses relative line numbers (1-based) since the convo panel is a summary view.
+
+**Also:** Syntax highlighting calls per Edit event reduced from 3→2 by reusing the base syntect parse and applying background colors via cheap span iteration instead of re-parsing.
+
+**Files:** `src/tui/render_tools.rs` (`render_edit_diff()`)
 
 ### 4. SKIP Redraw When Nothing Changed
 
