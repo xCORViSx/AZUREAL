@@ -50,7 +50,10 @@ impl KeyCombo {
         let mut s = String::new();
         if self.modifiers.contains(KeyModifiers::CONTROL) { s.push('⌃'); }
         if self.modifiers.contains(KeyModifiers::ALT) { s.push('⌥'); }
-        if self.modifiers.contains(KeyModifiers::SHIFT) { s.push('⇧'); }
+        // Only show ⇧ for non-char keys (arrows, enter, etc.) — uppercase chars imply Shift
+        if self.modifiers.contains(KeyModifiers::SHIFT) && !matches!(self.code, KeyCode::Char(_)) {
+            s.push('⇧');
+        }
         if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
 
         match self.code {
@@ -240,8 +243,8 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 
 /// Global keybindings (always active, checked first)
 pub static GLOBAL: [Keybinding; 10] = [
-    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('c')), "Quit azureal", Action::Quit),
-    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('r')), "Restart azureal", Action::Restart),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel Claude response", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),

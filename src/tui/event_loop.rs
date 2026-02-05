@@ -230,11 +230,16 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
 
     // Global keybindings
     match (key.modifiers, key.code) {
-        (KeyModifiers::CONTROL, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
+        (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
             app.should_quit = true;
             return Ok(());
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
+        (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
+            app.should_restart = true;
+            app.should_quit = true;
+            return Ok(());
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
             // Cancel running Claude response
             app.cancel_current_claude();
             return Ok(());
