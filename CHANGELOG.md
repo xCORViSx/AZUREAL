@@ -13,6 +13,9 @@ All notable changes to Azureal will be documented in this file.
   - Pre-scans existing events to establish state flags for correct continuation
 - Fast path in `wrap_text()`: skips textwrap entirely when text fits in one line
 - Reduced clones in render pipeline: borrow file_path, reference-compare hooks before cloning
+- Removed redundant `.wrap(Wrap { trim: false })` from Convo Paragraph
+  - Content is pre-wrapped by `wrap_text()`/`wrap_spans()` — ratatui was re-wrapping every viewport line char-by-char per frame
+- Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
 
 ### Added
 - Unified "New..." dialog with tabs for creating different resources

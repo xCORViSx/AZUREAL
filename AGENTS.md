@@ -162,10 +162,26 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 
 **Files:** `src/tui/draw_output.rs` patches colors in viewport; `src/tui/render_events.rs` returns `animation_line_indices`
 
+**Animation guard:** The animation patching loop is skipped entirely when `animation_line_indices` is empty (no pending tools). This avoids pulse_color computation and viewport iteration on every scroll frame when nothing is animating.
+
 **Throttle values in `src/tui/event_loop.rs`:**
 - `min_draw_interval = 100ms` (10fps scroll)
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
+
+### 9. NEVER Use `.wrap()` on Pre-Wrapped Content
+
+```rust
+// ❌ WRONG - ratatui re-wraps every viewport line char-by-char during render()
+let para = Paragraph::new(pre_wrapped_lines).wrap(Wrap { trim: false });
+
+// ✅ CORRECT - content is already wrapped by wrap_text()/wrap_spans(), no re-wrapping needed
+let para = Paragraph::new(pre_wrapped_lines);
+```
+
+Convo pane content is pre-wrapped to `inner_width` by `wrap_text()` and `wrap_spans()` in `render_events.rs`. Adding `.wrap()` causes ratatui's `Paragraph::render()` to iterate every character of every span to compute line breaks that already exist — pure redundant O(viewport_chars) work per frame.
+
+**Files:** `src/tui/draw_output.rs` renders Paragraph without `.wrap()`. If you add a new Paragraph that displays pre-wrapped content, do NOT add `.wrap()`.
 
 ### 8. Session File Polling (Deferred Parse + Incremental)
 
