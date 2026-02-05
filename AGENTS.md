@@ -564,6 +564,8 @@ azureal/
 │   │   │   ├── claude.rs   # Claude session handling
 │   │   │   ├── file_browser.rs # File tree and viewer
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
+│   │   │   ├── viewer_edit.rs # Viewer edit mode operations
+│   │   │   ├── session_names.rs # Custom session name storage
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
@@ -577,8 +579,9 @@ azureal/
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
-│   │   ├── render_events.rs # DisplayEvent rendering
+│   │   ├── render_events.rs # DisplayEvent rendering (full + incremental)
 │   │   ├── render_tools.rs # Tool result rendering
+│   │   ├── render_wrap.rs  # Text/span wrapping utilities
 │   │   ├── draw_sidebar.rs # Sessions pane rendering
 │   │   ├── draw_file_tree.rs # FileTree pane rendering
 │   │   ├── draw_viewer.rs  # Viewer pane rendering

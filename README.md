@@ -16,30 +16,28 @@
 
 ## Features
 
-- **Session Management** — Create, switch, and manage multiple Claude Code sessions
-- **Git Worktree Isolation** — Each session runs in its own worktree for clean separation
-- **TUI Interface** — Terminal UI for navigating sessions, viewing output, and diffs
-- **Vim-Style Input** — Modal editing with command/insert modes (red/yellow border)
-- **Embedded Terminal** — Full PTY-based shell terminal with color support in the worktree
-- **Real-time Output** — Stream Claude's responses with ANSI color support
+- **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
+- **4-Pane TUI** — Worktrees, FileTree, Viewer, and Convo panes with Tab cycling
+- **File Browser** — Navigate worktree files with expand/collapse, open in syntax-highlighted Viewer
+- **Vim-Style Input** — Modal editing with command/prompt modes (red/yellow border)
+- **Embedded Terminal** — Full PTY-based shell per worktree with color support
+- **Real-time Output** — Live-polls Claude's session file; output updates as Claude responds
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
-- **Mouse Scroll** — Scroll panels based on cursor position (independent of focus)
-- **Diff Viewer** — Syntax-highlighted diffs showing changes per session
-- **Rebase Support** — Interactive rebase with conflict detection
+- **Clickable Edit Links** — Click file paths in Convo to view diffs in the Viewer pane
+- **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
+- **Mouse Support** — Scroll panels by cursor position, Shift+drag for text selection, click file links
+- **Diff Viewer** — Syntax-highlighted git diffs per worktree
+- **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
+- **Run Commands** — Save and execute shell commands/scripts per project
+- **Hook Display** — All Claude Code hook types displayed inline in conversation
+- **Rebase Support** — Interactive rebase with conflict detection and resolution
+- **Zero Footprint** — No database or config files; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements
 
-- **Claude Code ≤ 2.1.18** — Version 2.1.19 has a bug breaking `-p --resume` with tool calls ([#20508](https://github.com/anthropics/claude-code/issues/20508)). Install 2.1.18 if needed:
-  ```bash
-  npm install -g @anthropic-ai/claude-code@2.1.18
-  ```
-
-## Hook Display
-
-Azureal automatically displays Claude Code hook output in the output pane:
-- **SessionStart** hooks appear via `hook_response` events
-- **PreToolUse/PostToolUse** hooks appear via `hook_progress` events
-- **UserPromptSubmit** hooks appear from system-reminder tags in the session file
+- **Rust** (latest stable)
+- **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
+- **Git** with worktree support
 
 ## Installation
 
@@ -61,30 +59,35 @@ azureal
 
 | Key | Action |
 |-----|--------|
-| `i` | Enter inprompt mode (start typing) |
+| `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
 | `Esc` | Return to command mode |
-| `j/k` | Navigate sessions |
-| `J/K` | Navigate projects |
-| `Tab` | Cycle focus (sessions → output → input) |
-| `n` | New session |
-| `b` | Browse branches |
+| `j/k` | Navigate (worktrees, files, scroll) |
+| `Tab` | Cycle focus (Worktrees > FileTree > Viewer > Convo > Input) |
+| `n` | New worktree/session (creation wizard) |
+| `r` | Run command |
 | `d` | View diff |
-| `r` | Rebase onto main |
-| `Space` | Context menu |
+| `Space` | Context menu / Toggle expand |
 | `?` | Help |
+| `Ctrl+X` | Cancel running Claude response |
 | `Ctrl+c` | Quit |
 
 **Input Modes:**
+
 - Red border = Command mode (keys are commands)
-- Yellow border = Inprompt mode (typing to Claude)
+- Yellow border = Prompt mode (typing to Claude)
 - Cyan border = Terminal mode (typing shell commands)
+
+## Architecture
+
+Azureal is **mostly stateless** — all runtime state is derived from:
+
+- Git worktrees via `git worktree list`
+- Git branches via `git branch | grep azureal/`
+- Claude's session files at `~/.claude/projects/<encoded-path>/*.jsonl`
+
+No database. No config files required. Optional `.azureal/sessions.toml` stores custom session name mappings.
 
 ## License
 
 MIT
-
-
-non-intrusive : only the binary added to PATH ; no config or database files outside repo azureal is working with
-
-No file footprint - no database or config files / directly scans git worktrees and ~/.claude directory for session data

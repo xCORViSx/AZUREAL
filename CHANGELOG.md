@@ -4,6 +4,16 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Optimized
+- Incremental JSONL parsing: seeks to last byte offset, parses only newly appended lines
+  - Rebuilds tool_call context from existing DisplayEvents via `IncrementalParserState`
+  - Falls back to full re-parse if file shrank or user-message rewrite detected
+- Incremental rendering: appends only new display events to cached rendered lines
+  - Skips full re-render when width unchanged and events only grew
+  - Pre-scans existing events to establish state flags for correct continuation
+- Fast path in `wrap_text()`: skips textwrap entirely when text fits in one line
+- Reduced clones in render pipeline: borrow file_path, reference-compare hooks before cloning
+
 ### Added
 - Unified "New..." dialog with tabs for creating different resources
   - `n` from Worktrees pane opens tabbed dialog
