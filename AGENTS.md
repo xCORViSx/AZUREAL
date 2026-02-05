@@ -531,6 +531,31 @@ Sessions can be rebased onto main with conflict detection:
 
 Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
 
+### Run Commands
+
+User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are stored per-project in `.azureal/run_commands.json` and executed in the embedded terminal.
+
+**Keybindings (from Worktrees pane):**
+- `r` — Open picker (if multiple saved commands) or execute directly (if only 1)
+- `⌥r` — Open dialog to create a new run command
+
+**Picker overlay:**
+- `j/k` / `↑/↓` — Navigate selection
+- `1-9` — Quick-select by number
+- `Enter` — Execute selected command
+- `e` — Edit selected command
+- `x` — Delete selected command
+- `a` — Add new command
+
+**Dialog overlay:**
+- `Tab` — Toggle between Name and Command fields
+- `Enter` — Save
+- `Esc` — Cancel
+
+**Storage:** `.azureal/run_commands.json` — JSON array of `{name, command}` objects, loaded on startup.
+
+Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker), state methods in `src/app/state/ui.rs`, input handling in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`
+
 ### Creation Wizard
 
 Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
@@ -727,12 +752,26 @@ azureal
 | `J/K` | Navigate projects |
 | `Tab` | Cycle focus (Worktrees → FileTree → Viewer → Convo → Input) |
 | `Shift+Tab` | Cycle focus reverse |
-| `n` | New worktree |
-| `d` | View diff |
-| `Space` | Context menu (Worktrees) / Toggle expand (FileTree) |
 | `?` | Help |
 | `Ctrl+X` | Cancel running Claude response |
 | `Ctrl+c` | Quit |
+
+### Worktrees Pane
+| Key | Action |
+|-----|--------|
+| `j/k` | Navigate worktrees |
+| `J/K` | Navigate projects |
+| `l/→` | Expand session files dropdown |
+| `h/←` | Collapse session files dropdown |
+| `Enter` | Start/resume Claude session |
+| `Space` | Context menu |
+| `n` | New worktree/session wizard |
+| `b` | Browse branches |
+| `d` | View diff |
+| `r` | Run command (picker or execute) |
+| `⌥r` | Add new run command |
+| `R` | Rebase onto main |
+| `a` | Archive worktree |
 
 ### FileTree Pane
 | Key | Action |

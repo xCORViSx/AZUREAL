@@ -65,7 +65,9 @@ azureal
 | `j/k` | Navigate (worktrees, files, scroll) |
 | `Tab` | Cycle focus (Worktrees > FileTree > Viewer > Convo > Input) |
 | `n` | New worktree/session (creation wizard) |
-| `r` | Run command |
+| `r` | Run command (picker or execute) |
+| `⌥r` | Add new run command |
+| `R` | Rebase onto main |
 | `d` | View diff |
 | `Space` | Context menu / Toggle expand |
 | `?` | Help |

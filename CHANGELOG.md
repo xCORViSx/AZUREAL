@@ -19,8 +19,15 @@ All notable changes to Azureal will be documented in this file.
 
 ### Fixed
 - Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions.toml` instead of truncated UUIDs
+- `KeyCombo::display()` now preserves character case — previously uppercased all chars (e.g., `r` showed as `R`)
 
 ### Added
+- Run command system: save, pick, edit, delete, and execute shell commands from Worktrees pane
+  - `r` opens picker (or executes directly if only 1 command saved)
+  - `⌥r` opens dialog to add a new run command
+  - `R` now performs rebase onto main (moved from `r`)
+  - Picker: `j/k` navigate, `1-9` quick-select, `e` edit, `x` delete, `a` add
+  - Commands persisted in `.azureal/run_commands.json`, loaded on startup
 - Unified "New..." dialog with tabs for creating different resources
   - `n` from Worktrees pane opens tabbed dialog
   - Tab 1: Project (placeholder)
