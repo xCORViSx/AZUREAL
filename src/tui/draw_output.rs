@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
@@ -71,24 +71,24 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 app.clamp_output_scroll();
                 let scroll = app.output_scroll;
 
-                // Build viewport slice and patch animation colors for pending indicators
-                let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
-                let pulse_idx = (app.animation_tick / 2) as usize % pulse_colors.len();
-                let pulse_color = pulse_colors[pulse_idx];
-
+                // Build viewport slice from cache, patch animation only if tools pending
                 let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
                     .skip(scroll)
                     .take(viewport_height)
                     .cloned()
                     .collect();
 
-                // Patch animation colors for pending tool indicators in viewport
-                for &(line_idx, span_idx) in &app.animation_line_indices {
-                    if line_idx >= scroll && line_idx < scroll + viewport_height {
-                        let viewport_idx = line_idx - scroll;
-                        if let Some(line) = lines.get_mut(viewport_idx) {
-                            if let Some(span) = line.spans.get_mut(span_idx) {
-                                span.style = span.style.fg(pulse_color);
+                // Patch animation colors only when there are pending tool indicators to animate
+                if !app.animation_line_indices.is_empty() {
+                    let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
+                    let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
+                    for &(line_idx, span_idx) in &app.animation_line_indices {
+                        if line_idx >= scroll && line_idx < scroll + viewport_height {
+                            let viewport_idx = line_idx - scroll;
+                            if let Some(line) = lines.get_mut(viewport_idx) {
+                                if let Some(span) = line.spans.get_mut(span_idx) {
+                                    span.style = span.style.fg(pulse_color);
+                                }
                             }
                         }
                     }
@@ -219,8 +219,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 }),
-        )
-        .wrap(Wrap { trim: false });
+        );
 
     f.render_widget(output, area);
 }
