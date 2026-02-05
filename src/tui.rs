@@ -29,7 +29,7 @@ mod input_worktrees;
 mod input_terminal;
 mod input_viewer;
 mod input_wizard;
-mod keybindings;
+pub mod keybindings;
 mod run;
 
 pub mod colorize;

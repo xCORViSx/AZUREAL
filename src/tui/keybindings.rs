@@ -395,6 +395,7 @@ pub fn lookup_action(
 }
 
 /// Generate help sections from binding definitions
+/// Note: Wizard bindings are shown in the wizard's own legend, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
         HelpSection { title: "Global", bindings: &GLOBAL },
@@ -405,7 +406,6 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Convo", bindings: &OUTPUT },
         HelpSection { title: "Input", bindings: &INPUT },
         HelpSection { title: "Terminal", bindings: &TERMINAL },
-        HelpSection { title: "New... Dialog", bindings: &WIZARD },
     ]
 }
 
@@ -439,6 +439,35 @@ pub fn terminal_command_title() -> String {
 /// Generate title hints for terminal (scrolled)
 pub fn terminal_scroll_title(scroll: usize) -> String {
     format!(" TERMINAL [scroll: {}↑] (G:bottom) ", scroll)
+}
+
+/// Generate wizard help text for "coming soon" tabs
+pub fn wizard_coming_soon_help() -> String {
+    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
+    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
+    format!("{}/{}:switch tabs  (Coming soon)", prev, next)
+}
+
+/// Generate wizard help text for selection step (worktree or session list selection)
+pub fn wizard_select_help() -> String {
+    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
+    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
+    format!("{}/{}:tabs  j/k:select  Enter:next  Esc:cancel", prev, next)
+}
+
+/// Generate wizard help text for details entry step
+pub fn wizard_details_help() -> String {
+    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
+    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
+    let field = find_key_for_action(&WIZARD, Action::WizardNextField).unwrap_or("Tab".to_string());
+    format!("{}/{}:tabs  {}:field  Enter:next  Esc:back", prev, next, field)
+}
+
+/// Generate wizard help text for confirmation step
+pub fn wizard_confirm_help() -> String {
+    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
+    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
+    format!("{}/{}:tabs  Enter:create  Esc:back", prev, next)
 }
 
 /// Find the display key for a given action in a binding list

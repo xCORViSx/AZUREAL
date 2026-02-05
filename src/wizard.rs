@@ -3,6 +3,9 @@
 //! Provides a tabbed dialog for creating different resource types.
 
 use crate::models::Project;
+use crate::tui::keybindings::{
+    wizard_coming_soon_help, wizard_select_help, wizard_details_help, wizard_confirm_help
+};
 
 /// Main wizard container with tabs for different creation types
 #[derive(Debug, Clone)]
@@ -164,11 +167,10 @@ impl CreationWizard {
         self.active_tab = self.active_tab.prev();
     }
 
-    /// Get help text for current tab
-    pub fn help_text(&self) -> &'static str {
+    /// Get help text for current tab (dynamically sourced from keybindings)
+    pub fn help_text(&self) -> String {
         match self.active_tab {
-            WizardTab::Project => "⌥Tab:type  (Coming soon)",
-            WizardTab::Branch => "⌥Tab:type  (Coming soon)",
+            WizardTab::Project | WizardTab::Branch => wizard_coming_soon_help(),
             WizardTab::Worktree => self.worktree.help_text(),
             WizardTab::Session => self.session.help_text(),
         }
@@ -412,12 +414,12 @@ impl WorktreeWizard {
         }
     }
 
-    /// Get help text for the current step
-    pub fn help_text(&self) -> &'static str {
+    /// Get help text for the current step (dynamically sourced from keybindings)
+    pub fn help_text(&self) -> String {
         match self.step {
-            WorktreeStep::SelectProject => "⌥Tab:type  j/k:select  Enter:next  Esc:cancel",
-            WorktreeStep::EnterDetails => "⌥Tab:type  Tab:field  Enter:next  Esc:back",
-            WorktreeStep::Confirm => "⌥Tab:type  Enter:create  Esc:back  q:cancel",
+            WorktreeStep::SelectProject => wizard_select_help(),
+            WorktreeStep::EnterDetails => wizard_details_help(),
+            WorktreeStep::Confirm => wizard_confirm_help(),
         }
     }
 
@@ -626,12 +628,12 @@ impl SessionWizard {
         }
     }
 
-    /// Get help text for the current step
-    pub fn help_text(&self) -> &'static str {
+    /// Get help text for the current step (dynamically sourced from keybindings)
+    pub fn help_text(&self) -> String {
         match self.step {
-            SessionStep::SelectWorktree => "⌥Tab:type  j/k:select  Enter:next  Esc:cancel",
-            SessionStep::EnterDetails => "⌥Tab:type  Tab:field  Enter:next  Esc:back",
-            SessionStep::Confirm => "⌥Tab:type  Enter:create  Esc:back  q:cancel",
+            SessionStep::SelectWorktree => wizard_select_help(),
+            SessionStep::EnterDetails => wizard_details_help(),
+            SessionStep::Confirm => wizard_confirm_help(),
         }
     }
 

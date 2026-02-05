@@ -13,6 +13,7 @@ use crate::wizard::{
     CreationWizard, WizardTab, WorktreeWizard, WorktreeField, WorktreeStep,
     SessionWizard, SessionField, SessionStep,
 };
+use super::keybindings::wizard_coming_soon_help;
 
 /// Draw the wizard modal overlay
 pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
@@ -105,6 +106,7 @@ fn draw_tabs(f: &mut Frame, wizard: &CreationWizard, area: Rect) {
 }
 
 fn draw_coming_soon(f: &mut Frame, feature: &str, area: Rect) {
+    let help = wizard_coming_soon_help();
     let lines = vec![
         Line::from(""),
         Line::from(vec![
@@ -112,7 +114,7 @@ fn draw_coming_soon(f: &mut Frame, feature: &str, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Use ⌥Tab to switch tabs", Style::default().fg(Color::DarkGray)),
+            Span::styled(help, Style::default().fg(Color::DarkGray)),
         ]),
     ];
     let para = Paragraph::new(lines);
