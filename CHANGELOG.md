@@ -17,6 +17,9 @@ All notable changes to Azureal will be documented in this file.
   - Content is pre-wrapped by `wrap_text()`/`wrap_spans()` — ratatui was re-wrapping every viewport line char-by-char per frame
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
 
+### Fixed
+- Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions.toml` instead of truncated UUIDs
+
 ### Added
 - Unified "New..." dialog with tabs for creating different resources
   - `n` from Worktrees pane opens tabbed dialog
