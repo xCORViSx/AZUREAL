@@ -33,6 +33,13 @@ impl App {
         names.get(session_id).cloned()
     }
 
+    /// Load all custom session name mappings (session_id → custom_name)
+    pub fn load_all_session_names(&self) -> HashMap<String, String> {
+        let Some(ref project) = self.project else { return HashMap::new() };
+        let sessions_path = project.path.join(".azureal").join("sessions.toml");
+        load_session_names(&sessions_path)
+    }
+
     /// Check if there's a pending session name to save and save it
     pub fn check_pending_session_name(&mut self, branch_name: &str, session_id: &str) {
         if let Some((pending_branch, custom_name)) = self.pending_session_name.take() {

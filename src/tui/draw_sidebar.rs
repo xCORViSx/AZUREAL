@@ -14,6 +14,8 @@ use super::util::truncate;
 /// Build sidebar items (extracted for caching)
 fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
     let mut items: Vec<ListItem> = Vec::new();
+    // Load custom session names once for all lookups (only called on sidebar rebuild, not per-frame)
+    let session_names = app.load_all_session_names();
 
     if let Some(ref project) = app.project {
         items.push(ListItem::new(Line::from(vec![
@@ -59,8 +61,10 @@ fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
                         } else {
                             Style::default().fg(Color::DarkGray)
                         };
-                        // Truncate session ID for display
-                        let id_display = if session_id.len() > 16 {
+                        // Show custom name if available, otherwise truncated UUID
+                        let id_display = if let Some(name) = session_names.get(session_id.as_str()) {
+                            truncate(name, 24)
+                        } else if session_id.len() > 16 {
                             format!("{}…", &session_id[..15])
                         } else {
                             session_id.clone()
