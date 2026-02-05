@@ -54,7 +54,7 @@ impl KeyCombo {
         if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
 
         match self.code {
-            KeyCode::Char(c) => s.push(c.to_ascii_uppercase()),
+            KeyCode::Char(c) => s.push(c),
             KeyCode::Enter => s.push_str("Enter"),
             KeyCode::Esc => s.push_str("Esc"),
             KeyCode::Tab => s.push_str("Tab"),

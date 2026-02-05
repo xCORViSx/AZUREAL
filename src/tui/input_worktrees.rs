@@ -1,7 +1,7 @@
 //! Worktrees panel input handling
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::git::Git;
@@ -58,7 +58,16 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 app.set_status(format!("Failed to get diff: {}", e));
             }
         }
-        KeyCode::Char('r') => {
+        // r: open run command picker (or execute directly if only 1 command)
+        KeyCode::Char('r') if key.modifiers == KeyModifiers::NONE => {
+            app.open_run_command_picker();
+        }
+        // ⌥r: open dialog to add a new run command
+        KeyCode::Char('r') if key.modifiers == KeyModifiers::ALT => {
+            app.open_run_command_dialog();
+        }
+        // R (Shift+R): rebase current worktree onto main
+        KeyCode::Char('R') => {
             if let Some(session) = app.current_session() {
                 if let (Some(ref wt_path), Some(project)) = (&session.worktree_path, app.current_project()) {
                     let wt = wt_path.clone();
@@ -75,7 +84,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                             let conflict_count = status.conflicted_files.len();
                             app.set_rebase_status(status);
                             app.set_status(format!(
-                                "Rebase conflicts: {} file(s) need resolution. Press 'R' for rebase menu.",
+                                "Rebase conflicts: {} file(s) need resolution",
                                 conflict_count
                             ));
                         }
@@ -92,20 +101,6 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                     }
                 } else {
                     app.set_status("Session has no worktree");
-                }
-            }
-        }
-        KeyCode::Char('R') => {
-            if let Some(session) = app.current_session() {
-                if let Some(ref wt_path) = session.worktree_path {
-                    if Git::is_rebase_in_progress(wt_path) {
-                        match Git::get_rebase_status(wt_path) {
-                            Ok(status) => app.set_rebase_status(status),
-                            Err(e) => app.set_status(format!("Failed to get rebase status: {}", e)),
-                        }
-                    } else {
-                        app.set_status("No rebase in progress");
-                    }
                 }
             }
         }

@@ -302,3 +302,121 @@ pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT));
     f.render_widget(info, modal_chunks[2]);
 }
+
+/// Draw run command picker overlay (select from saved commands)
+pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
+    let Some(ref picker) = app.run_command_picker else { return };
+    let cmd_count = app.run_commands.len();
+
+    // Size: fit all commands + title + footer + borders
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = (cmd_count as u16 + 4).min(area.height.saturating_sub(4));
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    f.render_widget(Clear, dialog_area);
+
+    // Build list items with number shortcuts and selection highlight
+    let items: Vec<ListItem> = app.run_commands.iter().enumerate().map(|(idx, cmd)| {
+        let is_selected = idx == picker.selected;
+        let style = if is_selected {
+            Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let key_style = if is_selected {
+            Style::default().bg(Color::Cyan).fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+
+        // Show 1-9 number shortcuts, then just spaces for 10+
+        let num_hint = if idx < 9 { format!(" [{}] ", idx + 1) } else { "     ".to_string() };
+        let max_name = (dialog_width as usize).saturating_sub(num_hint.len() + 4);
+
+        ListItem::new(Line::from(vec![
+            Span::styled(num_hint, key_style),
+            Span::styled(truncate(&cmd.name, max_name), style),
+        ]))
+    }).collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(" Run Command (j/k:nav  1-9:quick  e:edit  x:del  a:add) ")
+            .style(Style::default().bg(Color::Reset)),
+    );
+    f.render_widget(list, dialog_area);
+}
+
+/// Draw run command dialog overlay (create/edit a command)
+pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
+    let Some(ref dialog) = app.run_command_dialog else { return };
+    let area = f.area();
+
+    // Compact dialog: two text fields (name + command) stacked
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = 9u16.min(area.height.saturating_sub(4)); // title(3) + name(3) + command(3)
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    f.render_widget(Clear, dialog_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Length(3)])
+        .split(dialog_area);
+
+    // Title bar
+    let title_text = if dialog.editing_idx.is_some() { "Edit Run Command" } else { "New Run Command" };
+    let title = Paragraph::new(title_text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .block(
+            Block::default()
+                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+    f.render_widget(title, chunks[0]);
+
+    // Name field - highlighted when active
+    let name_border_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let name = Paragraph::new(dialog.name.as_str())
+        .block(
+            Block::default()
+                .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
+                .border_style(Style::default().fg(name_border_color))
+                .title(" Name "),
+        );
+    f.render_widget(name, chunks[1]);
+
+    // Place cursor in name field when editing name
+    if dialog.editing_name {
+        f.set_cursor_position((
+            chunks[1].x + 1 + dialog.name_cursor as u16,
+            chunks[1].y,
+        ));
+    }
+
+    // Command field - highlighted when active
+    let cmd_border_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let command = Paragraph::new(dialog.command.as_str())
+        .block(
+            Block::default()
+                .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
+                .border_style(Style::default().fg(cmd_border_color))
+                .title(" Command (Tab:switch  Enter:save  Esc:cancel) "),
+        );
+    f.render_widget(command, chunks[2]);
+
+    // Place cursor in command field when editing command
+    if !dialog.editing_name {
+        f.set_cursor_position((
+            chunks[2].x + 1 + dialog.command_cursor as u16,
+            chunks[2].y,
+        ));
+    }
+}

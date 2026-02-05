@@ -31,6 +31,7 @@ pub async fn run() -> Result<()> {
 
     let mut app = App::new();
     app.load()?;
+    app.load_run_commands();
 
     // Load output for the initially selected session
     app.load_session_output();
@@ -120,5 +121,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
     if app.context_menu.is_some() {
         draw_dialogs::draw_context_menu(f, app, f.area());
+    }
+    // Run command overlays (picker takes priority over dialog)
+    if app.run_command_picker.is_some() {
+        draw_dialogs::draw_run_command_picker(f, app, f.area());
+    } else if app.run_command_dialog.is_some() {
+        draw_dialogs::draw_run_command_dialog(f, app);
     }
 }

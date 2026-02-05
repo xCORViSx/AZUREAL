@@ -11,7 +11,7 @@ use crate::app::{App, Focus};
 use crate::claude::{ClaudeEvent, ClaudeProcess};
 use crate::config::Config;
 
-use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input};
+use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input};
 use super::input_file_tree::handle_file_tree_input;
 use super::input_output::handle_output_input;
 use super::input_worktrees::handle_worktrees_input;
@@ -323,6 +323,16 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     // Wizard
     if app.is_wizard_active() {
         handle_wizard_input(app, key, claude_process);
+        return Ok(());
+    }
+
+    // Run command overlays (picker and dialog intercept all input)
+    if app.run_command_picker.is_some() {
+        handle_run_command_picker_input(key, app)?;
+        return Ok(());
+    }
+    if app.run_command_dialog.is_some() {
+        handle_run_command_dialog_input(key, app)?;
         return Ok(());
     }
 
