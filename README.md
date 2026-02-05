@@ -71,8 +71,9 @@ azureal
 | `d` | View diff |
 | `Space` | Context menu / Toggle expand |
 | `?` | Help |
-| `Ctrl+X` | Cancel running Claude response |
-| `Ctrl+c` | Quit |
+| `⌃c` | Cancel running Claude response |
+| `⌃q` | Quit |
+| `⌃r` | Restart |
 
 **Input Modes:**
 

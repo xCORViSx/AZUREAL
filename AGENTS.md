@@ -753,8 +753,9 @@ azureal
 | `Tab` | Cycle focus (Worktrees → FileTree → Viewer → Convo → Input) |
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
-| `Ctrl+X` | Cancel running Claude response |
-| `Ctrl+c` | Quit |
+| `⌃c` | Cancel running Claude response |
+| `⌃q` | Quit |
+| `⌃r` | Restart |
 
 ### Worktrees Pane
 | Key | Action |

@@ -20,6 +20,9 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions.toml` instead of truncated UUIDs
 - `KeyCombo::display()` now preserves character case — previously uppercased all chars (e.g., `r` showed as `R`)
+- `KeyCombo::display()` no longer shows `⇧` prefix for uppercase char keys (J, K, G, R show as-is)
+- Quit simplified to `⌃q` (was `⌃⌥⌘c`), Restart to `⌃r` (was `⌃⌥⌘r`)
+- `⌃c` now cancels Claude response only (was also quit)
 
 ### Added
 - Run command system: save, pick, edit, delete, and execute shell commands from Worktrees pane
