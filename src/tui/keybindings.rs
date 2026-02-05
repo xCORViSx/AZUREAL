@@ -396,6 +396,45 @@ pub fn help_sections() -> Vec<HelpSection> {
     ]
 }
 
+/// Generate title hints for prompt input (type mode)
+pub fn prompt_type_title() -> String {
+    let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".to_string());
+    let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".to_string());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃X".to_string());
+    format!(" PROMPT ({}:exit | {}:submit | {}:cancel response) ", esc, submit, cancel)
+}
+
+/// Generate title hints for prompt input (command mode)
+pub fn prompt_command_title() -> String {
+    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".to_string());
+    let terminal = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".to_string());
+    format!(" PROMPT ({}:type | {}:terminal) ", prompt, terminal)
+}
+
+/// Generate title hints for terminal (type mode)
+pub fn terminal_type_title() -> String {
+    " TERMINAL (Esc:exit) ".to_string()
+}
+
+/// Generate title hints for terminal (command mode)
+pub fn terminal_command_title() -> String {
+    let type_mode = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".to_string());
+    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".to_string());
+    format!(" TERMINAL ({}:type | {}:prompt | Esc:close) ", type_mode, prompt)
+}
+
+/// Generate title hints for terminal (scrolled)
+pub fn terminal_scroll_title(scroll: usize) -> String {
+    format!(" TERMINAL [scroll: {}↑] (G:bottom) ", scroll)
+}
+
+/// Find the display key for a given action in a binding list
+fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<String> {
+    bindings.iter()
+        .find(|b| b.action == action)
+        .map(|b| b.primary.display())
+}
+
 /// Quick matcher for common navigation (hot path optimization)
 #[inline]
 pub fn is_nav_down(modifiers: KeyModifiers, code: KeyCode) -> bool {

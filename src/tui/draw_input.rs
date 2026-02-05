@@ -9,13 +9,14 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus};
+use super::keybindings::{prompt_type_title, prompt_command_title};
 
 /// Draw the Claude prompt input field with text wrapping and optional selection highlighting
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let (border_color, title) = if app.prompt_mode {
-        (Color::Yellow, " PROMPT (Esc:exit | Enter:submit | ⌃X:cancel response) ")
+        (Color::Yellow, prompt_type_title())
     } else {
-        (Color::Red, " PROMPT (p:type | t:terminal) ")
+        (Color::Red, prompt_command_title())
     };
 
     let is_focused = app.focus == Focus::Input;

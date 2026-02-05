@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus};
+use super::keybindings::{terminal_type_title, terminal_command_title, terminal_scroll_title};
 
 /// Draw the embedded PTY terminal pane
 pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
@@ -40,13 +41,13 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
         Text::from(String::from_utf8_lossy(&content).to_string())
     });
 
-    // Build title with scroll indicator
+    // Build title with scroll indicator (sourced from keybindings.rs)
     let title = if app.terminal_scroll > 0 {
-        format!(" TERMINAL [scroll: {}↑] (G:bottom) ", app.terminal_scroll)
+        terminal_scroll_title(app.terminal_scroll)
     } else if app.prompt_mode {
-        " TERMINAL (Esc:exit) ".to_string()
+        terminal_type_title()
     } else {
-        " TERMINAL (t:type | p:prompt | Esc:close) ".to_string()
+        terminal_command_title()
     };
 
     let terminal = Paragraph::new(text)
