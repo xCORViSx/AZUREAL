@@ -12,6 +12,11 @@ use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
 use super::util::{colorize_output, detect_message_type, render_display_events, render_display_events_incremental, MessageType};
 
+/// On initial load of large conversations, only render this many events from the tail.
+/// The user starts at the bottom so they see the most recent messages instantly.
+/// Full render happens lazily when they scroll to the top.
+const DEFERRED_RENDER_TAIL: usize = 200;
+
 /// Draw the main output/diff panel
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height.saturating_sub(2) as usize;
@@ -24,12 +29,21 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             if !app.display_events.is_empty() {
                 let inner_width = area.width.saturating_sub(2);
 
+                // Deferred render: if user scrolled to top and there are unrendered early events,
+                // expand to full render now (they want to see old messages)
+                if app.rendered_events_start > 0 && app.output_scroll == 0 {
+                    app.rendered_lines_dirty = true;
+                    app.rendered_events_start = 0;
+                    app.rendered_events_count = 0;
+                }
+
                 // Only re-render if cache is dirty or width changed (NOT for animation tick)
                 if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
                     let event_count = app.display_events.len();
                     let can_incremental = app.rendered_lines_width == inner_width
                         && app.rendered_events_count > 0
-                        && event_count > app.rendered_events_count;
+                        && event_count > app.rendered_events_count
+                        && app.rendered_events_start == 0;
 
                     let (lines_cache, anim_indices, bubble_positions) = if can_incremental {
                         // Incremental: only render newly appended events
@@ -49,15 +63,28 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                             existing_bubbles,
                         )
                     } else {
-                        // Full re-render (width changed, events reset, or first render)
-                        render_display_events(
-                            &app.display_events,
+                        // Deferred initial render: for large conversations (>200 events),
+                        // only render the tail on first load. User starts at bottom so
+                        // they won't notice. Full render happens lazily on scroll-to-top.
+                        let deferred_start = if app.rendered_events_start == 0
+                            && app.rendered_events_count == 0
+                            && event_count > DEFERRED_RENDER_TAIL
+                        {
+                            event_count.saturating_sub(DEFERRED_RENDER_TAIL)
+                        } else {
+                            0
+                        };
+
+                        let (l, a, b) = render_display_events(
+                            &app.display_events[deferred_start..],
                             inner_width,
                             &app.pending_tool_calls,
                             &app.failed_tool_calls,
                             &app.syntax_highlighter,
                             app.pending_user_message.as_deref(),
-                        )
+                        );
+                        app.rendered_events_start = deferred_start;
+                        (l, a, b)
                     };
                     app.rendered_lines_cache = lines_cache;
                     app.animation_line_indices = anim_indices;

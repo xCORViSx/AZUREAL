@@ -131,6 +131,9 @@ pub struct App {
     pub rendered_lines_dirty: bool,
     /// How many display_events were rendered into current cache (for incremental append)
     pub rendered_events_count: usize,
+    /// Start index of deferred render (events before this are not yet rendered).
+    /// 0 means everything is rendered. >0 means we skipped early events for fast initial load.
+    pub rendered_events_start: usize,
     /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
     pub animation_line_indices: Vec<(usize, usize)>,
     /// Total lines in last parsed session file
@@ -310,6 +313,7 @@ impl App {
             rendered_lines_width: 0,
             rendered_lines_dirty: true,
             rendered_events_count: 0,
+            rendered_events_start: 0,
             animation_line_indices: Vec::new(),
             parse_total_lines: 0,
             parse_errors: 0,

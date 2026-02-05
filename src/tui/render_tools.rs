@@ -240,7 +240,9 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
     lines
 }
 
-/// Render Edit tool diff inline with syntax highlighting
+/// Render Edit tool diff inline with syntax highlighting.
+/// Uses relative line numbers (1-based) to avoid expensive disk I/O
+/// that would otherwise read the entire file per Edit event.
 pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &SyntaxHighlighter) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
@@ -255,18 +257,19 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file.txt".to_string());
 
-    let old_highlighted = highlighter.highlight_with_bg(old_str, &filename, Some(dim_red_bg));
+    // Single syntect parse for old_str, then apply bg colors cheaply.
+    // Avoids 3x highlight_file calls per Edit event.
+    let base_highlighted = highlighter.highlight_file(old_str, &filename);
+    let old_highlighted: Vec<Vec<Span<'static>>> = base_highlighted.iter().map(|line_spans| {
+        line_spans.iter().map(|s| Span::styled(s.content.clone(), s.style.bg(dim_red_bg))).collect()
+    }).collect();
     let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
-    let unchanged_highlighted = highlighter.highlight_file(old_str, &filename);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
 
-    let start_line = file_path.as_ref().and_then(|path| {
-        std::fs::read_to_string(path).ok().and_then(|content| {
-            content.find(new_str).map(|pos| content[..pos].chars().filter(|&c| c == '\n').count() + 1)
-        })
-    }).unwrap_or(1);
+    // Use relative line numbers — no disk I/O needed
+    let start_line = 1usize;
 
     let max_line = start_line + old_lines.len().max(new_lines.len());
     let num_width = max_line.to_string().len().max(2);
@@ -279,7 +282,7 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
 
         match (old_line, new_line) {
             (Some(old), Some(new)) if old == new => {
-                let spans = unchanged_highlighted.get(i).cloned().unwrap_or_default();
+                let spans = base_highlighted.get(i).cloned().unwrap_or_default();
                 let dimmed: Vec<Span<'static>> = spans.into_iter().map(|s| {
                     Span::styled(s.content, Style::default().fg(Color::DarkGray))
                 }).collect();
