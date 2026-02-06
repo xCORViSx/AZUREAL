@@ -379,7 +379,7 @@ Key mappings:
 - `Escape` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt
 
-Multi-line input is supported via Shift+Enter, which inserts a newline. The input field dynamically grows in height (up to 10 rows) to accommodate multiple lines, with proper cursor positioning accounting for both newlines and word-wrapping.
+Multi-line input is supported via Shift+Enter (requires Kitty keyboard protocol) or Ctrl+J (universal fallback). The Kitty protocol is enabled on startup via `PushKeyboardEnhancementFlags` — terminals that don't support it (e.g. Terminal.app) silently ignore it, but Ctrl+J always works. The input field dynamically grows in height (up to 10 rows) to accommodate multiple lines, with proper cursor positioning accounting for both newlines and word-wrapping.
 
 Implementation: `prompt_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
@@ -866,7 +866,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
 **Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode

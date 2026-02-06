@@ -4,7 +4,10 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{
+        DisableMouseCapture, EnableMouseCapture,
+        KeyboardEnhancementFlags, PushKeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -26,6 +29,15 @@ pub async fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+
+    // Enable Kitty keyboard protocol so Shift+Enter is distinguishable from Enter.
+    // Terminals that don't support it (Terminal.app) silently ignore this.
+    // We still provide Ctrl+J as a universal fallback for newline insertion.
+    let kbd_enhanced = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
+    ).is_ok();
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -39,6 +51,10 @@ pub async fn run() -> Result<()> {
     let config = Config::load().unwrap_or_default();
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;
 
+    // Pop keyboard enhancement before leaving (only if we pushed it)
+    if kbd_enhanced {
+        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+    }
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;

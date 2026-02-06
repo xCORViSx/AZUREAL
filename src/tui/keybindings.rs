@@ -142,6 +142,7 @@ pub enum Action {
 
     // Input
     Submit,
+    InsertNewline,
     ExitPromptMode,
     WordLeft,
     WordRight,
@@ -233,6 +234,8 @@ static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, cod
 // ⌃← alternative for ⌥← (word nav in prompt input)
 static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
 static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
+/// ⌃J is a universal fallback for Shift+Enter (terminals that lack Kitty protocol)
+static CTRL_J: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('j') }];
 
 // Ctrl+Alt+Cmd modifier combo (for quit/restart/debug)
 const CTRL_ALT_CMD: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -329,8 +332,10 @@ pub static OUTPUT: [Keybinding; 13] = [
 
 /// Input mode bindings — keys that work in Claude prompt type mode
 /// Word nav uses standard macOS shortcuts (⌥← / ⌥→), not ⌃z/⌃x which conflict with clipboard
-pub static INPUT: [Keybinding; 8] = [
+/// Newline: ⇧Enter (Kitty protocol terminals) or ⌃J (universal fallback)
+pub static INPUT: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Enter), &CTRL_J, "Insert newline", Action::InsertNewline),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
@@ -423,13 +428,14 @@ pub fn help_sections() -> Vec<HelpSection> {
 pub fn prompt_type_title() -> String {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
+    let newline = find_key_for_action(&INPUT, Action::InsertNewline).unwrap_or("⇧Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
-    let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌥c".into());
+    let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
-        esc, submit, cancel, hprev, hnext, dw, cl
+        " PROMPT ({}:exit | {}:submit | {}/⌃j:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
+        esc, submit, newline, cancel, hprev, hnext, dw, cl
     )
 }
 
