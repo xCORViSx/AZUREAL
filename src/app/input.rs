@@ -77,10 +77,72 @@ impl App {
         self.input_cursor = pos;
     }
 
-    /// Clear input
+    /// Clear input and reset selection
     pub fn clear_input(&mut self) {
         self.input.clear();
         self.input_cursor = 0;
+        self.input_selection = None;
+        self.prompt_history_idx = None;
+        self.prompt_history_temp = None;
+    }
+
+    /// Collect prompt history from display_events UserMessage entries (most recent last)
+    fn collect_prompt_history(&self) -> Vec<String> {
+        self.display_events.iter().filter_map(|ev| {
+            if let crate::events::DisplayEvent::UserMessage { content, .. } = ev {
+                let trimmed = content.trim();
+                if !trimmed.is_empty() { Some(trimmed.to_string()) } else { None }
+            } else { None }
+        }).collect()
+    }
+
+    /// Navigate to previous prompt in history (↑)
+    pub fn prompt_history_prev(&mut self) {
+        let history = self.collect_prompt_history();
+        if history.is_empty() { return; }
+        match self.prompt_history_idx {
+            None => {
+                // First press: save current input, jump to most recent history entry
+                self.prompt_history_temp = Some(self.input.clone());
+                let idx = history.len() - 1;
+                self.prompt_history_idx = Some(idx);
+                self.input = history[idx].clone();
+                self.input_cursor = self.input.chars().count();
+                self.input_selection = None;
+            }
+            Some(idx) if idx > 0 => {
+                // Move further back in history
+                let new_idx = idx - 1;
+                self.prompt_history_idx = Some(new_idx);
+                self.input = history[new_idx].clone();
+                self.input_cursor = self.input.chars().count();
+                self.input_selection = None;
+            }
+            _ => {} // already at oldest entry
+        }
+    }
+
+    /// Navigate to next prompt in history (↓)
+    pub fn prompt_history_next(&mut self) {
+        let history = self.collect_prompt_history();
+        match self.prompt_history_idx {
+            Some(idx) if idx + 1 < history.len() => {
+                // Move forward in history
+                let new_idx = idx + 1;
+                self.prompt_history_idx = Some(new_idx);
+                self.input = history[new_idx].clone();
+                self.input_cursor = self.input.chars().count();
+                self.input_selection = None;
+            }
+            Some(_) => {
+                // Past the newest entry — restore saved input
+                self.prompt_history_idx = None;
+                self.input = self.prompt_history_temp.take().unwrap_or_default();
+                self.input_cursor = self.input.chars().count();
+                self.input_selection = None;
+            }
+            None => {} // not browsing history
+        }
     }
 
     // Worktree creation input methods

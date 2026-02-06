@@ -860,7 +860,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌃z:wrd← | ⌃x:wrd→ | ⌃w:del wrd | ⌥c:clear)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌥c:clear)`
 **Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode

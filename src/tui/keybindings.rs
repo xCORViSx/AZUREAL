@@ -230,6 +230,9 @@ static ALT_DOWN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code
 static ALT_UP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Up }];
 static ALT_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Left }];
 static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Right }];
+// ⌃← alternative for ⌥← (word nav in prompt input)
+static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
+static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
 
 // Ctrl+Alt+Cmd modifier combo (for quit/restart/debug)
 const CTRL_ALT_CMD: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -324,12 +327,13 @@ pub static OUTPUT: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
 ];
 
-/// Input mode bindings
+/// Input mode bindings — keys that work in Claude prompt type mode
+/// Word nav uses standard macOS shortcuts (⌥← / ⌥→), not ⌃z/⌃x which conflict with clipboard
 pub static INPUT: [Keybinding; 8] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('z')), "Word left", Action::WordLeft),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('x')), "Word right", Action::WordRight),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('w')), "Delete word", Action::DeleteWord),
     Keybinding::new(KeyCombo::alt(KeyCode::Char('c')), "Clear input", Action::ClearInput),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev),
@@ -421,13 +425,11 @@ pub fn prompt_type_title() -> String {
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
-    let wl = find_key_for_action(&INPUT, Action::WordLeft).unwrap_or("⌃z".into());
-    let wr = find_key_for_action(&INPUT, Action::WordRight).unwrap_or("⌃x".into());
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌥c".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | {}:cancel | {}/{}:history | {}:wrd← | {}:wrd→ | {}:del wrd | {}:clear) ",
-        esc, submit, cancel, hprev, hnext, wl, wr, dw, cl
+        " PROMPT ({}:exit | {}:submit | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
+        esc, submit, cancel, hprev, hnext, dw, cl
     )
 }
 
