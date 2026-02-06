@@ -48,6 +48,10 @@ All notable changes to Azureal will be documented in this file.
   - Word nav now uses standard macOS ⌥←/⌥→ (and ⌃←/⌃→) matching the actual handler
   - Added missing handlers for ⌃u (clear input), ↑ (history prev), ↓ (history next)
   - Prompt history browses UserMessage entries from the session conversation
+- Prompt input no longer crashes on multi-byte characters (e.g., `ç` from ⌥+c)
+  - `input_cursor` was used as both char index and byte offset — `String::insert()`/`remove()` need byte offsets
+  - Added `char_to_byte()` conversion; all String operations now use byte offsets derived from char index
+  - Also fixed `input_right()` and `input_end()` comparing char index against `String::len()` (bytes)
 - User prompts no longer appear twice in the Convo pane
   - `pending_user_message` dedup was limited to last 5 events; Claude's rapid output (hooks, tools, text) pushed the matching `UserMessage` beyond that window
   - Now scans backward to the most recent `UserMessage` regardless of distance from tail

@@ -187,7 +187,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                     } else {
                         app.set_status("Session has no worktree (archived?)");
                         app.input = input;
-                        app.input_cursor = app.input.len();
+                        app.input_cursor = app.input.chars().count();
                     }
                 } else {
                     app.set_status("Select a session first");

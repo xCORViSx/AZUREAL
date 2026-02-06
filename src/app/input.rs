@@ -1,11 +1,22 @@
 //! Input handling methods for App
+//!
+//! `input_cursor` is a CHAR INDEX (not byte offset). String methods like
+//! `insert()` and `remove()` need byte offsets, so we convert via
+//! `char_to_byte()` before calling them. This prevents panics on multi-byte
+//! characters like `ç` (⌥+c on macOS sends unicode).
 
 use super::App;
 
 impl App {
+    /// Convert char index to byte offset in self.input
+    fn char_to_byte(&self, char_idx: usize) -> usize {
+        self.input.char_indices().nth(char_idx).map(|(b, _)| b).unwrap_or(self.input.len())
+    }
+
     /// Handle input character
     pub fn input_char(&mut self, c: char) {
-        self.input.insert(self.input_cursor, c);
+        let byte_pos = self.char_to_byte(self.input_cursor);
+        self.input.insert(byte_pos, c);
         self.input_cursor += 1;
     }
 
@@ -13,14 +24,17 @@ impl App {
     pub fn input_backspace(&mut self) {
         if self.input_cursor > 0 {
             self.input_cursor -= 1;
-            self.input.remove(self.input_cursor);
+            let byte_pos = self.char_to_byte(self.input_cursor);
+            self.input.remove(byte_pos);
         }
     }
 
     /// Handle delete
     pub fn input_delete(&mut self) {
-        if self.input_cursor < self.input.len() {
-            self.input.remove(self.input_cursor);
+        let char_count = self.input.chars().count();
+        if self.input_cursor < char_count {
+            let byte_pos = self.char_to_byte(self.input_cursor);
+            self.input.remove(byte_pos);
         }
     }
 
@@ -31,7 +45,7 @@ impl App {
 
     /// Move cursor right
     pub fn input_right(&mut self) {
-        if self.input_cursor < self.input.len() { self.input_cursor += 1; }
+        if self.input_cursor < self.input.chars().count() { self.input_cursor += 1; }
     }
 
     /// Move cursor to start
@@ -41,7 +55,7 @@ impl App {
 
     /// Move cursor to end
     pub fn input_end(&mut self) {
-        self.input_cursor = self.input.len();
+        self.input_cursor = self.input.chars().count();
     }
 
     /// Move cursor to previous word boundary
