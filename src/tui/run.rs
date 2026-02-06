@@ -31,11 +31,16 @@ pub async fn run() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
     // Enable Kitty keyboard protocol so Shift+Enter is distinguishable from Enter.
-    // Terminals that don't support it (Terminal.app) silently ignore this.
-    // We still provide Ctrl+J as a universal fallback for newline insertion.
+    // DISAMBIGUATE + REPORT_ALL_KEYS makes Enter report as CSI sequences
+    // instead of raw 0x0d, allowing Shift+Enter (CSI 13;2u) to be detected.
+    // Known broken: Kitty-on-macOS (terminal bug), Terminal.app (no support).
+    // Ctrl+J is the universal fallback that works everywhere.
     let kbd_enhanced = execute!(
         stdout,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES)
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+        )
     ).is_ok();
 
     let backend = CrosstermBackend::new(stdout);

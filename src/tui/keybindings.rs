@@ -428,14 +428,13 @@ pub fn help_sections() -> Vec<HelpSection> {
 pub fn prompt_type_title() -> String {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
-    let newline = find_key_for_action(&INPUT, Action::InsertNewline).unwrap_or("⇧Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | {}/⌃j:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
-        esc, submit, newline, cancel, hprev, hnext, dw, cl
+        " PROMPT ({}:exit | {}:submit | ⌃j:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
+        esc, submit, cancel, hprev, hnext, dw, cl
     )
 }
 
