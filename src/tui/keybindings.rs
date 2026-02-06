@@ -398,7 +398,7 @@ pub fn lookup_action(
 }
 
 /// Generate help sections from binding definitions
-/// Note: Wizard bindings are shown in the wizard's own legend, not here
+/// Note: Wizard and Terminal bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
         HelpSection { title: "Global", bindings: &GLOBAL },
@@ -408,7 +408,6 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
         HelpSection { title: "Convo", bindings: &OUTPUT },
         HelpSection { title: "Input", bindings: &INPUT },
-        HelpSection { title: "Terminal", bindings: &TERMINAL },
     ]
 }
 
@@ -427,21 +426,19 @@ pub fn prompt_command_title() -> String {
     format!(" PROMPT ({}:type | {}:terminal) ", prompt, terminal)
 }
 
-/// Generate title hints for terminal (type mode)
+/// Generate title hints for terminal (type mode) — all keys forward to PTY except Esc
 pub fn terminal_type_title() -> String {
-    " TERMINAL (Esc:exit) ".to_string()
+    " TERMINAL  Esc:exit ".to_string()
 }
 
-/// Generate title hints for terminal (command mode)
+/// Generate title hints for terminal (command mode) — shows ALL keybindings so help panel can omit them
 pub fn terminal_command_title() -> String {
-    let type_mode = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".to_string());
-    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".to_string());
-    format!(" TERMINAL ({}:type | {}:prompt | Esc:close) ", type_mode, prompt)
+    " TERMINAL  t:type  p:prompt  Esc:close  j/k:scroll  J/K:page  g/G:top/bottom  +/-:resize ".to_string()
 }
 
-/// Generate title hints for terminal (scrolled)
+/// Generate title hints for terminal (scrolled) — shows scroll position + relevant keys
 pub fn terminal_scroll_title(scroll: usize) -> String {
-    format!(" TERMINAL [scroll: {}↑] (G:bottom) ", scroll)
+    format!(" TERMINAL [{}↑]  j/k:scroll  J/K:page  g:top  G:bottom  t:type  Esc:close ", scroll)
 }
 
 /// Generate wizard help text for "coming soon" tabs

@@ -413,6 +413,7 @@ All keybindings are defined once in `src/tui/keybindings.rs` and used by both in
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, and action
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
+- Terminal bindings shown in title bar only (not in help panel) via `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()`
 
 **Usage pattern:**
 ```rust
@@ -861,14 +862,9 @@ azureal
 | `↑/↓` | Browse prompt history (previous/next) |
 
 ### Terminal Mode
-| Key | Action |
-|-----|--------|
-| `Esc` | Close terminal (command mode) |
-| `t` | Enter type mode (command mode) |
-| `p` | Close terminal and enter Claude prompt (command mode) |
-| `+/-` | Resize terminal height (command mode) |
-| `j/k` | Scroll up/down (command mode) |
-| `J/K` | Scroll 10 lines (command mode) |
-| `g/G` | Jump to top/bottom (command mode) |
-| `Esc` | Exit type mode (type mode) |
-| All keys | Forward to shell (type mode) |
+
+Terminal keybindings are displayed directly in the terminal pane's title bar (not in the help panel).
+
+**Command mode title shows:** `t:type  p:prompt  Esc:close  j/k:scroll  J/K:page  g/G:top/bottom  +/-:resize`
+**Type mode title shows:** `Esc:exit`
+**Scroll mode title shows:** scroll position + navigation keys

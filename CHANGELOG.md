@@ -25,6 +25,13 @@ All notable changes to Azureal will be documented in this file.
   - Content is pre-wrapped by `wrap_text()`/`wrap_spans()` — ratatui was re-wrapping every viewport line char-by-char per frame
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
 
+### Changed
+- Terminal keybindings moved from help panel to terminal pane title bar
+  - Command mode title shows all keys: `t:type  p:prompt  Esc:close  j/k:scroll  J/K:page  g/G:top/bottom  +/-:resize`
+  - Type mode title shows `Esc:exit`
+  - Scroll mode title shows scroll position + navigation keys
+  - Help panel (`?`) no longer has a Terminal section
+
 ### Fixed
 - User prompts no longer appear twice in the Convo pane
   - `pending_user_message` dedup was limited to last 5 events; Claude's rapid output (hooks, tools, text) pushed the matching `UserMessage` beyond that window
