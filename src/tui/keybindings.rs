@@ -335,7 +335,7 @@ pub static INPUT: [Keybinding; 8] = [
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('w')), "Delete word", Action::DeleteWord),
-    Keybinding::new(KeyCombo::alt(KeyCode::Char('c')), "Clear input", Action::ClearInput),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('u')), "Clear input", Action::ClearInput),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
 ];

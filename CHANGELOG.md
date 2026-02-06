@@ -37,7 +37,7 @@ All notable changes to Azureal will be documented in this file.
   - Help panel (`?`) no longer has a Terminal section
   - All title hints dynamically sourced from `TERMINAL` binding array (single source of truth)
 - Input keybindings moved from help panel to prompt input pane title bar
-  - Type mode title: `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌥c:clear)`
+  - Type mode title: `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
   - Command mode title: `(p:type | t:terminal)`
   - Help panel (`?`) no longer has an Input section
   - All title hints dynamically sourced from `INPUT` binding array (single source of truth)
@@ -46,7 +46,7 @@ All notable changes to Azureal will be documented in this file.
 - Prompt input keybindings now actually work: ⌥c (clear), ↑/↓ (history), word nav
   - INPUT binding array previously declared ⌃z/⌃x for word nav, which conflicted with clipboard cut/undo
   - Word nav now uses standard macOS ⌥←/⌥→ (and ⌃←/⌃→) matching the actual handler
-  - Added missing handlers for ⌥c (clear input), ↑ (history prev), ↓ (history next)
+  - Added missing handlers for ⌃u (clear input), ↑ (history prev), ↓ (history next)
   - Prompt history browses UserMessage entries from the session conversation
 - User prompts no longer appear twice in the Convo pane
   - `pending_user_message` dedup was limited to last 5 events; Claude's rapid output (hooks, tools, text) pushed the matching `UserMessage` beyond that window

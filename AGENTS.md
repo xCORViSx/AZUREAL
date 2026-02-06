@@ -434,6 +434,8 @@ match action {
 - Adding/changing keybindings only requires one code change
 - Dual-key bindings (j/↓) handled via `alternatives` field
 
+**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. Never use `⌥+letter` combos for keybindings in text input modes. Use `⌃+letter` (Ctrl) instead — those send real control codes. `⌥+arrow` keys work fine since arrows don't produce Unicode.
+
 Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs` and `src/tui/input_viewer.rs` (use `lookup_action()`)
 
 ### Stream-JSON Parsing
@@ -860,7 +862,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌥c:clear)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
 **Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode

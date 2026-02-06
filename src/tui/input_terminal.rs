@@ -106,8 +106,8 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     // Regular text editing
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => app.prompt_mode = false,
-        // ⌥c — clear entire input
-        (KeyModifiers::ALT, KeyCode::Char('c')) => { app.clear_input(); }
+        // ⌃u — clear entire input (standard Unix kill-line; ⌥+letter won't work on macOS)
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => { app.clear_input(); }
         // ↑/↓ — browse prompt history (pulled from display_events UserMessage entries)
         (KeyModifiers::NONE, KeyCode::Up) => app.prompt_history_prev(),
         (KeyModifiers::NONE, KeyCode::Down) => app.prompt_history_next(),
