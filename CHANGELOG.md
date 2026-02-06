@@ -27,9 +27,9 @@ All notable changes to Azureal will be documented in this file.
 
 ### Changed
 - Terminal keybindings moved from help panel to terminal pane title bar
-  - Command mode title shows all keys: `t:type  p:prompt  Esc:close  j/k:scroll  J/K:page  g/G:top/bottom  +/-:resize`
-  - Type mode title shows `Esc:exit`
-  - Scroll mode title shows scroll position + navigation keys
+  - Command mode title: `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | g/G:top/bottom | +/-:resize)`
+  - Type mode title: `(Esc:exit)`
+  - Scroll mode title: `[N↑] (j/k:scroll | ... | Esc:close)`
   - Help panel (`?`) no longer has a Terminal section
   - All title hints dynamically sourced from `TERMINAL` binding array (single source of truth)
 

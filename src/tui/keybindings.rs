@@ -434,7 +434,7 @@ pub fn prompt_command_title() -> String {
 /// Generate title hints for terminal (type mode) — all keys forward to PTY except Esc
 pub fn terminal_type_title() -> String {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
-    format!(" TERMINAL  {}:exit ", esc)
+    format!(" TERMINAL ({}:exit) ", esc)
 }
 
 /// Generate title hints for terminal (command mode) — shows ALL keybindings so help panel can omit them
@@ -447,7 +447,7 @@ pub fn terminal_command_title() -> String {
     let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "g", "G");
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
     format!(
-        " TERMINAL  {}:type  {}:prompt  {}:close  {}/{}:scroll  {}/{}:page  {}/{}:top/bottom  {}/{}:resize ",
+        " TERMINAL ({}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize) ",
         t, p, esc, down, up, pdn, pup, top, bot, rup, rdn
     )
 }
@@ -461,7 +461,7 @@ pub fn terminal_scroll_title(scroll: usize) -> String {
     let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     format!(
-        " TERMINAL [{}↑]  {}/{}:scroll  {}/{}:page  {}:top  {}:bottom  {}:type  {}:close ",
+        " TERMINAL [{}↑] ({}/{}:scroll | {}/{}:page | {}:top | {}:bottom | {}:type | {}:close) ",
         scroll, down, up, pdn, pup, top, bot, t, esc
     )
 }
