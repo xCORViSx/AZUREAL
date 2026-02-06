@@ -19,7 +19,7 @@
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
 - **4-Pane TUI** — Worktrees, FileTree, Viewer, and Convo panes with Tab cycling
 - **File Browser** — Navigate worktree files with expand/collapse, open in syntax-highlighted Viewer
-- **Vim-Style Input** — Modal editing with command/prompt modes (red/yellow border)
+- **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
 - **Real-time Output** — Live-polls Claude's session file; output updates as Claude responds
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling

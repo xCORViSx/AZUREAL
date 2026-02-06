@@ -134,6 +134,11 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => { app.input_clear_selection(); app.input_word_left(); }
         (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
         (KeyModifiers::CONTROL, KeyCode::Backspace) | (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.input_delete_word(),
+        // Shift+Enter — insert newline (Enter alone submits)
+        (KeyModifiers::SHIFT, KeyCode::Enter) => {
+            if app.has_input_selection() { app.input_delete_selection(); }
+            app.input_char('\n');
+        }
         (KeyModifiers::NONE, KeyCode::Enter) => {
             if !app.input.is_empty() {
                 let input = app.input.clone();

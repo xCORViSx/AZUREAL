@@ -90,10 +90,22 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let input_height = if app.terminal_mode {
         app.terminal_height + 2
     } else {
-        // Dynamic input height based on text wrapping (use left_width for wrap calc)
+        // Dynamic input height: count visual lines from newlines + word-wrapping
         let input_inner_width = left_width.saturating_sub(2) as usize;
         let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
-            (app.input.len() / input_inner_width) + 1
+            let mut rows = 1usize;
+            let mut col = 0usize;
+            for c in app.input.chars() {
+                if c == '\n' {
+                    rows += 1;
+                    col = 0;
+                } else {
+                    let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                    if col + w > input_inner_width { rows += 1; col = w; }
+                    else { col += w; }
+                }
+            }
+            rows
         } else {
             1
         };
