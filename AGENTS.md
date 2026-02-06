@@ -413,7 +413,9 @@ All keybindings are defined once in `src/tui/keybindings.rs` and used by both in
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, and action
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
-- Terminal bindings shown in title bar only (not in help panel) via `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()`
+- Terminal and Input bindings shown in title bar only (not in help panel) via title functions
+- `prompt_type_title()`, `prompt_command_title()` for Input pane
+- `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
 
 **Usage pattern:**
 ```rust
@@ -855,11 +857,11 @@ azureal
 **Clickable Edit Links:** Edit tool file paths are underlined and clickable. Click to open the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). The selected Edit is highlighted with orange background and black text in the Convo pane. Use `f/b` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.
 
 ### Prompt Mode (Input Focused)
-| Key | Action |
-|-----|--------|
-| `Escape` | Return to command mode |
-| `Enter` | Submit prompt / execute command (terminal) |
-| `↑/↓` | Browse prompt history (previous/next) |
+
+Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
+
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌃z:wrd← | ⌃x:wrd→ | ⌃w:del wrd | ⌥c:clear)`
+**Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode
 

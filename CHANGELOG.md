@@ -36,6 +36,11 @@ All notable changes to Azureal will be documented in this file.
   - Scroll mode title: `[N↑] (j/k:scroll | ... | Esc:close)`
   - Help panel (`?`) no longer has a Terminal section
   - All title hints dynamically sourced from `TERMINAL` binding array (single source of truth)
+- Input keybindings moved from help panel to prompt input pane title bar
+  - Type mode title: `(Esc:exit | Enter:submit | ⌃c:cancel | ↑/↓:history | ⌃z:wrd← | ⌃x:wrd→ | ⌃w:del wrd | ⌥c:clear)`
+  - Command mode title: `(p:type | t:terminal)`
+  - Help panel (`?`) no longer has an Input section
+  - All title hints dynamically sourced from `INPUT` binding array (single source of truth)
 
 ### Fixed
 - User prompts no longer appear twice in the Convo pane

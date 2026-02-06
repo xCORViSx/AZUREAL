@@ -403,7 +403,7 @@ pub fn lookup_action(
 }
 
 /// Generate help sections from binding definitions
-/// Note: Wizard and Terminal bindings are shown in their own title bars, not here
+/// Note: Wizard, Terminal, and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
         HelpSection { title: "Global", bindings: &GLOBAL },
@@ -412,22 +412,29 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
         HelpSection { title: "Convo", bindings: &OUTPUT },
-        HelpSection { title: "Input", bindings: &INPUT },
     ]
 }
 
-/// Generate title hints for prompt input (type mode)
+/// Generate title hints for prompt input (type mode) — shows ALL input keybindings
 pub fn prompt_type_title() -> String {
-    let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".to_string());
-    let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".to_string());
-    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃X".to_string());
-    format!(" PROMPT ({}:exit | {}:submit | {}:cancel response) ", esc, submit, cancel)
+    let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
+    let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
+    let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
+    let wl = find_key_for_action(&INPUT, Action::WordLeft).unwrap_or("⌃z".into());
+    let wr = find_key_for_action(&INPUT, Action::WordRight).unwrap_or("⌃x".into());
+    let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
+    let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌥c".into());
+    format!(
+        " PROMPT ({}:exit | {}:submit | {}:cancel | {}/{}:history | {}:wrd← | {}:wrd→ | {}:del wrd | {}:clear) ",
+        esc, submit, cancel, hprev, hnext, wl, wr, dw, cl
+    )
 }
 
 /// Generate title hints for prompt input (command mode)
 pub fn prompt_command_title() -> String {
-    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".to_string());
-    let terminal = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".to_string());
+    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
+    let terminal = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".into());
     format!(" PROMPT ({}:type | {}:terminal) ", prompt, terminal)
 }
 
