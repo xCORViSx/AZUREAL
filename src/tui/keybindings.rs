@@ -336,15 +336,20 @@ pub static INPUT: [Keybinding; 8] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
 ];
 
-/// Terminal bindings (command mode)
-pub static TERMINAL: [Keybinding; 7] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
+/// Terminal bindings (command mode) — ALL terminal keybindings live here
+/// so title bar hints can source from them dynamically
+pub static TERMINAL: [Keybinding; 11] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Enter type mode", Action::EnterTerminalType),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Close & prompt", Action::EnterPromptMode),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close terminal", Action::Escape),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::HalfPageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Scroll page", Action::HalfPageUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Enter type mode", Action::EnterTerminalType),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Scroll to top", Action::GoToTop),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Scroll to bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
 ];
 
 /// Wizard/New dialog bindings
@@ -428,17 +433,37 @@ pub fn prompt_command_title() -> String {
 
 /// Generate title hints for terminal (type mode) — all keys forward to PTY except Esc
 pub fn terminal_type_title() -> String {
-    " TERMINAL  Esc:exit ".to_string()
+    let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
+    format!(" TERMINAL  {}:exit ", esc)
 }
 
 /// Generate title hints for terminal (command mode) — shows ALL keybindings so help panel can omit them
 pub fn terminal_command_title() -> String {
-    " TERMINAL  t:type  p:prompt  Esc:close  j/k:scroll  J/K:page  g/G:top/bottom  +/-:resize ".to_string()
+    let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
+    let p = find_key_for_action(&TERMINAL, Action::EnterPromptMode).unwrap_or("p".into());
+    let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
+    let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
+    let (pdn, pup) = find_key_pair(&TERMINAL, Action::HalfPageDown, Action::HalfPageUp, "J", "K");
+    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "g", "G");
+    let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
+    format!(
+        " TERMINAL  {}:type  {}:prompt  {}:close  {}/{}:scroll  {}/{}:page  {}/{}:top/bottom  {}/{}:resize ",
+        t, p, esc, down, up, pdn, pup, top, bot, rup, rdn
+    )
 }
 
 /// Generate title hints for terminal (scrolled) — shows scroll position + relevant keys
 pub fn terminal_scroll_title(scroll: usize) -> String {
-    format!(" TERMINAL [{}↑]  j/k:scroll  J/K:page  g:top  G:bottom  t:type  Esc:close ", scroll)
+    let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
+    let (pdn, pup) = find_key_pair(&TERMINAL, Action::HalfPageDown, Action::HalfPageUp, "J", "K");
+    let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or("g".into());
+    let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or("G".into());
+    let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
+    let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
+    format!(
+        " TERMINAL [{}↑]  {}/{}:scroll  {}/{}:page  {}:top  {}:bottom  {}:type  {}:close ",
+        scroll, down, up, pdn, pup, top, bot, t, esc
+    )
 }
 
 /// Generate wizard help text for "coming soon" tabs
@@ -475,6 +500,14 @@ fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<String
     bindings.iter()
         .find(|b| b.action == action)
         .map(|b| b.primary.display())
+}
+
+/// Find a pair of keys for two related actions (e.g., NavDown/NavUp → "j"/"k")
+fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db: &str) -> (String, String) {
+    (
+        find_key_for_action(bindings, a).unwrap_or_else(|| da.into()),
+        find_key_for_action(bindings, b).unwrap_or_else(|| db.into()),
+    )
 }
 
 /// Quick matcher for common navigation (hot path optimization)

@@ -31,6 +31,7 @@ All notable changes to Azureal will be documented in this file.
   - Type mode title shows `Esc:exit`
   - Scroll mode title shows scroll position + navigation keys
   - Help panel (`?`) no longer has a Terminal section
+  - All title hints dynamically sourced from `TERMINAL` binding array (single source of truth)
 
 ### Fixed
 - User prompts no longer appear twice in the Convo pane
