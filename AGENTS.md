@@ -379,7 +379,7 @@ Key mappings:
 - `Escape` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt
 
-Multi-line input is supported via Ctrl+J (universal) or Shift+Enter (limited terminal support). Shift+Enter requires the Kitty keyboard protocol (`PushKeyboardEnhancementFlags` enabled on startup) but is broken on Kitty-on-macOS (known terminal bug) and unsupported on Terminal.app. **Use Ctrl+J** — it works on all terminals. The input field dynamically grows in height (up to 10 rows) to accommodate multiple lines, with proper cursor positioning accounting for both newlines and word-wrapping.
+Multi-line input is supported via Shift+Enter or Ctrl+J. The Kitty keyboard protocol is enabled on startup via `PushKeyboardEnhancementFlags`. Kitty-on-macOS has a bug where Shift+Enter sends codepoint 57447 (RightShift) with SHIFT modifier instead of codepoint 13 (Enter) with SHIFT — azureal detects this and treats it as a newline. Ctrl+J is a universal fallback for terminals without Kitty protocol support (e.g. Terminal.app). The input field dynamically grows in height (up to 10 rows) to accommodate multiple lines, with proper cursor positioning accounting for both newlines and word-wrapping.
 
 Implementation: `prompt_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
@@ -866,7 +866,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
 **Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode

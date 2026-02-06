@@ -433,7 +433,7 @@ pub fn prompt_type_title() -> String {
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | ⌃j:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
+        " PROMPT ({}:exit | {}:submit | ⇧Enter/⌃j:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
         esc, submit, cancel, hprev, hnext, dw, cl
     )
 }
