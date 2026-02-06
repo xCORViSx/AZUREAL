@@ -1,7 +1,7 @@
 //! Core event loop and event handling
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -66,8 +66,14 @@ pub async fn run_app(
             loop {
                 match event::read()? {
                     Event::Key(key) => {
-                        handle_key_event(key, app, &claude_process)?;
-                        had_key_event = true;
+                        // With Kitty protocol REPORT_EVENT_TYPES, we get Release
+                        // and Repeat events. Only process Press events — Release
+                        // events for modifier keys (bare Shift, Ctrl, etc.) must
+                        // be discarded to avoid false triggers.
+                        if key.kind == KeyEventKind::Press {
+                            handle_key_event(key, app, &claude_process)?;
+                            had_key_event = true;
+                        }
                     }
                     Event::Mouse(mouse) => {
                         // Accumulate scroll events, discard motion/clicks
@@ -226,6 +232,10 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> R
 
 /// Handle keyboard input events
 fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    // With Kitty protocol REPORT_ALL_KEYS, bare modifier presses (Shift, Ctrl, Alt)
+    // arrive as key events. Ignore them globally — no handler cares about these.
+    if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
+
     // D key (uppercase, i.e. Shift+D) when not in prompt mode - Debug dump
     if !app.prompt_mode && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
         app.dump_debug_output();

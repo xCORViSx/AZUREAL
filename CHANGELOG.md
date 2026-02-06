@@ -43,9 +43,9 @@ All notable changes to Azureal will be documented in this file.
   - All title hints dynamically sourced from `INPUT` binding array (single source of truth)
 - Multi-line prompt input via Shift+Enter or Ctrl+J
   - Inserts a newline at cursor position; Enter alone still submits
-  - Kitty keyboard protocol enabled on startup for Shift+Enter detection
-  - Workaround for Kitty-macOS bug: Shift+Enter sends codepoint 57447 (RightShift+SHIFT)
-    instead of 13 (Enter+SHIFT) — detected and handled as newline
+  - Kitty keyboard protocol enabled on startup (DISAMBIGUATE + REPORT_EVENT_TYPES + REPORT_ALL_KEYS)
+  - Kitty-macOS workaround: Shift+Enter arrives as RightShift→Enter(ALT)→RightShift Release;
+    matched via `(ALT, Enter)` arm. Bare modifier presses filtered globally in event loop.
   - Ctrl+J works as universal fallback on all terminals (including Terminal.app)
   - Input field height grows dynamically (up to 10 rows) to fit content
   - Cursor positioning accounts for both newlines and word-wrapping

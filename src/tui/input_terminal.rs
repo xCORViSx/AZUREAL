@@ -1,7 +1,7 @@
 //! Terminal and Claude prompt input handling
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode, KeyModifiers, ModifierKeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
@@ -135,14 +135,14 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
         (KeyModifiers::CONTROL, KeyCode::Backspace) | (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.input_delete_word(),
         // Shift+Enter — insert newline (Enter alone submits)
-        // Three ways this arrives depending on terminal:
-        //   1. SHIFT+Enter (CSI 13;2u) — correct Kitty protocol
-        //   2. Kitty-macOS bug: sends CSI 57447;2u (RightShift with SHIFT modifier)
-        //      instead of CSI 13;2u. crossterm parses 57447 as Modifier(RightShift).
-        //      A real RightShift press alone has no SHIFT modifier, so this is safe.
+        // How this arrives depending on terminal:
+        //   1. SHIFT+Enter (CSI 13;2u) — correct Kitty protocol on Linux
+        //   2. Kitty-macOS bug: sends RightShift Press → Enter(ALT) Press → RightShift Release.
+        //      crossterm reports the Enter part as (ALT, Enter). We match that here.
+        //      Bare modifier Press events are filtered out in the event loop (Release ignored).
         //   3. Ctrl+J — universal fallback (LF 0x0a) for terminals without Kitty protocol
         (KeyModifiers::SHIFT, KeyCode::Enter)
-        | (KeyModifiers::SHIFT, KeyCode::Modifier(ModifierKeyCode::RightShift))
+        | (KeyModifiers::ALT, KeyCode::Enter)
         | (KeyModifiers::CONTROL, KeyCode::Char('j')) => {
             if app.has_input_selection() { app.input_delete_selection(); }
             app.input_char('\n');

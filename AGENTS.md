@@ -379,7 +379,7 @@ Key mappings:
 - `Escape` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt
 
-Multi-line input is supported via Shift+Enter or Ctrl+J. The Kitty keyboard protocol is enabled on startup via `PushKeyboardEnhancementFlags`. Kitty-on-macOS has a bug where Shift+Enter sends codepoint 57447 (RightShift) with SHIFT modifier instead of codepoint 13 (Enter) with SHIFT — azureal detects this and treats it as a newline. Ctrl+J is a universal fallback for terminals without Kitty protocol support (e.g. Terminal.app). The input field dynamically grows in height (up to 10 rows) to accommodate multiple lines, with proper cursor positioning accounting for both newlines and word-wrapping.
+Multi-line input is supported via Shift+Enter or Ctrl+J. The Kitty keyboard protocol is enabled on startup via `PushKeyboardEnhancementFlags` (DISAMBIGUATE + REPORT_EVENT_TYPES + REPORT_ALL_KEYS). Kitty-on-macOS sends Shift+Enter as a 3-event sequence: RightShift Press → Enter(ALT) Press → RightShift Release. The `(ALT, Enter)` arm catches this. Bare modifier presses (Shift alone, etc.) are filtered globally in the event loop. Release/Repeat events are dropped (only Press processed). Ctrl+J is a universal fallback for terminals without Kitty protocol (e.g. Terminal.app). The input field dynamically grows in height (up to 10 rows) with proper cursor positioning for newlines and word-wrapping.
 
 Implementation: `prompt_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
