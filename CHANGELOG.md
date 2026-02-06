@@ -41,12 +41,10 @@ All notable changes to Azureal will be documented in this file.
   - Command mode title: `(p:type | t:terminal)`
   - Help panel (`?`) no longer has an Input section
   - All title hints dynamically sourced from `INPUT` binding array (single source of truth)
-- Multi-line prompt input via Shift+Enter or Ctrl+J
+- Multi-line prompt input via Shift+Enter
   - Inserts a newline at cursor position; Enter alone still submits
-  - Kitty keyboard protocol enabled on startup (DISAMBIGUATE + REPORT_EVENT_TYPES + REPORT_ALL_KEYS)
-  - Kitty-macOS workaround: Shift+Enter arrives as RightShift→Enter(ALT)→RightShift Release;
-    matched via `(ALT, Enter)` arm. Bare modifier presses filtered globally in event loop.
-  - Ctrl+J works as universal fallback on all terminals (including Terminal.app)
+  - Kitty keyboard protocol enabled on startup (DISAMBIGUATE + REPORT_EVENT_TYPES)
+  - `REPORT_ALL_KEYS` intentionally omitted — it broke Shift+letter secondary characters (!, @, #, etc.)
   - Input field height grows dynamically (up to 10 rows) to fit content
   - Cursor positioning accounts for both newlines and word-wrapping
   - Selection highlighting works correctly across line boundaries

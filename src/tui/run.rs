@@ -31,17 +31,16 @@ pub async fn run() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
     // Enable Kitty keyboard protocol so Shift+Enter is distinguishable from Enter.
-    // REPORT_EVENT_TYPES is needed so we get Press/Release events — this lets us
-    // filter out bare modifier key presses (Shift alone) that would otherwise be
-    // indistinguishable from Shift+Enter on Kitty-macOS.
-    // Kitty-macOS sends Shift+Enter as: RightShift Press → Enter(ALT) Press → RightShift Release.
-    // Ctrl+J is the universal fallback for terminals without Kitty protocol.
+    // DISAMBIGUATE alone makes Enter → CSI 13u, Shift+Enter → CSI 13;2u.
+    // REPORT_EVENT_TYPES adds Press/Release/Repeat — only Press is processed.
+    // We intentionally omit REPORT_ALL_KEYS because it makes Shift+letter
+    // arrive as (SHIFT, Char('1')) instead of (NONE, Char('!')), breaking
+    // secondary character input (!, @, #, etc.).
     let kbd_enhanced = execute!(
         stdout,
         PushKeyboardEnhancementFlags(
             KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         )
     ).is_ok();
 

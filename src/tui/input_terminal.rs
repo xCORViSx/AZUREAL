@@ -135,15 +135,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
         (KeyModifiers::CONTROL, KeyCode::Backspace) | (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.input_delete_word(),
         // Shift+Enter — insert newline (Enter alone submits)
-        // How this arrives depending on terminal:
-        //   1. SHIFT+Enter (CSI 13;2u) — correct Kitty protocol on Linux
-        //   2. Kitty-macOS bug: sends RightShift Press → Enter(ALT) Press → RightShift Release.
-        //      crossterm reports the Enter part as (ALT, Enter). We match that here.
-        //      Bare modifier Press events are filtered out in the event loop (Release ignored).
-        //   3. Ctrl+J — universal fallback (LF 0x0a) for terminals without Kitty protocol
+        // With DISAMBIGUATE_ESCAPE_CODES, Shift+Enter sends CSI 13;2u → (SHIFT, Enter).
+        // ALT+Enter arm kept as safety net for Kitty-macOS edge cases.
         (KeyModifiers::SHIFT, KeyCode::Enter)
-        | (KeyModifiers::ALT, KeyCode::Enter)
-        | (KeyModifiers::CONTROL, KeyCode::Char('j')) => {
+        | (KeyModifiers::ALT, KeyCode::Enter) => {
             if app.has_input_selection() { app.input_delete_selection(); }
             app.input_char('\n');
         }
