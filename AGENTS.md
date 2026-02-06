@@ -56,22 +56,22 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 A ratatui-based terminal interface with 4-pane layout:
 
 ```
-┌───────────┬──────────┬─────────────────┬─────────────────┐
-│ Worktrees │ FileTree │     Viewer      │      Convo      │
-│   (40)    │   (40)   │  (50% remain)   │  (50% remain)   │
-├───────────┴──────────┴─────────────────┴─────────────────┤
-│                    Input / Terminal                       │
-├──────────────────────────────────────────────────────────┤
-│                       Status Bar                          │
-└──────────────────────────────────────────────────────────┘
+┌───────────┬──────────┬─────────────┬─────────────────┐
+│ Worktrees │ FileTree │   Viewer    │                 │
+│   (40)    │   (40)   │ (50% rem)   │      Convo      │
+├───────────┴──────────┴─────────────┤  (50% rem,      │
+│     Input / Terminal               │   full height)  │
+├────────────────────────────────────┴────────────────┤
+│                    Status Bar                        │
+└─────────────────────────────────────────────────────┘
 ```
 
 **Panes:**
 - **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
 - **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
-- **Convo** (50% remaining): Claude conversation output with tool results
-- **Input/Terminal**: Prompt input or embedded terminal (toggleable)
+- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar
+- **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
 - **Status Bar**: Context-sensitive help and session info
 
 **Viewer Dual Purpose:**

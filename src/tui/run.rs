@@ -54,60 +54,85 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Calculate dynamic input height based on text wrapping
-    let input_inner_width = f.area().width.saturating_sub(2) as usize; // -2 for borders
-    let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
-        (app.input.len() / input_inner_width) + 1
-    } else {
-        1
-    };
-    let input_height = (input_lines as u16 + 2).min(10); // +2 for borders, max 10 lines
+    // Layout: Convo gets full height, Input/Terminal spans first 3 panes only
+    //
+    // ┌──────────┬──────────┬─────────────┬─────────────┐
+    // │ Sessions │ FileTree │   Viewer    │             │
+    // ├──────────┴──────────┴─────────────┤    Convo    │
+    // │     Input / Terminal              │             │
+    // ├───────────────────────────────────┴─────────────┤
+    // │                 Status Bar                      │
+    // └────────────────────────────────────────────────┘
 
-    // Main layout - terminal mode replaces input with embedded PTY shell
-    let chunks = if app.terminal_mode {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(10),
-                Constraint::Length(app.terminal_height + 2),
-                Constraint::Length(1),
-            ])
-            .split(f.area())
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(10),
-                Constraint::Length(input_height),
-                Constraint::Length(1),
-            ])
-            .split(f.area())
-    };
+    // Step 1: Reserve status bar at bottom
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .split(f.area());
+    let content_area = outer[0];
+    let status_area = outer[1];
 
-    // Split main content into 4 panes: Sessions, FileTree, Viewer, Convo
-    let main_chunks = Layout::default()
+    // Step 2: Split content horizontally — left side (3 panes + input) vs Convo (full height)
+    let h_split = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(40),      // Sessions
-            Constraint::Length(40),      // FileTree
-            Constraint::Percentage(50),  // Viewer (50% of remaining)
-            Constraint::Percentage(50),  // Convo (50% of remaining)
+            Constraint::Length(40 + 40), // Sessions + FileTree base width
+            Constraint::Percentage(50),  // Viewer (50% of remaining after 80 cols)
+            Constraint::Percentage(50),  // Convo (50% of remaining after 80 cols)
         ])
-        .split(chunks[0]);
+        .split(content_area);
 
-    // Draw main components
-    draw_sidebar::draw_sidebar(f, app, main_chunks[0]);
-    draw_file_tree::draw_file_tree(f, app, main_chunks[1]);
-    draw_viewer::draw_viewer(f, app, main_chunks[2]);
-    draw_output::draw_output(f, app, main_chunks[3]);
+    // Merge first two chunks into "left side" for the vertical split
+    let left_width = h_split[0].width + h_split[1].width;
+    let convo_area = h_split[2];
 
-    // Draw either terminal or input
-    if app.terminal_mode {
-        draw_terminal::draw_terminal(f, app, chunks[1]);
+    // Step 3: Split left side vertically — top 3 panes + input/terminal at bottom
+    let input_height = if app.terminal_mode {
+        app.terminal_height + 2
     } else {
-        draw_input::draw_input(f, app, chunks[1]);
+        // Dynamic input height based on text wrapping (use left_width for wrap calc)
+        let input_inner_width = left_width.saturating_sub(2) as usize;
+        let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
+            (app.input.len() / input_inner_width) + 1
+        } else {
+            1
+        };
+        (input_lines as u16 + 2).min(10) // +2 for borders, max 10
+    };
+
+    // Build a Rect for the left side manually (covers Sessions + FileTree + Viewer)
+    let left_rect = ratatui::layout::Rect::new(
+        content_area.x, content_area.y, left_width, content_area.height,
+    );
+    let left_v = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(input_height)])
+        .split(left_rect);
+    let top_panes_area = left_v[0];
+    let input_area = left_v[1];
+
+    // Step 4: Split top 3 panes horizontally
+    let top_h = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(40),  // Sessions
+            Constraint::Length(40),  // FileTree
+            Constraint::Min(10),    // Viewer (all remaining left-side width)
+        ])
+        .split(top_panes_area);
+
+    // Draw panes
+    draw_sidebar::draw_sidebar(f, app, top_h[0]);
+    draw_file_tree::draw_file_tree(f, app, top_h[1]);
+    draw_viewer::draw_viewer(f, app, top_h[2]);
+    draw_output::draw_output(f, app, convo_area);
+
+    if app.terminal_mode {
+        draw_terminal::draw_terminal(f, app, input_area);
+    } else {
+        draw_input::draw_input(f, app, input_area);
     }
-    draw_status::draw_status(f, app, chunks[2]);
+    draw_status::draw_status(f, app, status_area);
 
     // Draw overlays
     if app.focus == Focus::WorktreeCreation {

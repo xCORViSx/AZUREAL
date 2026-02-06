@@ -26,6 +26,10 @@ All notable changes to Azureal will be documented in this file.
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
 
 ### Changed
+- Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal
+  - Input/Terminal pane now spans only the first 3 panes (Sessions, FileTree, Viewer)
+  - Gives Convo pane more vertical space for reading conversation history
+  - Mouse scroll dispatch updated for asymmetric layout
 - Terminal keybindings moved from help panel to terminal pane title bar
   - Command mode title: `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | g/G:top/bottom | +/-:resize)`
   - Type mode title: `(Esc:exit)`

@@ -156,21 +156,25 @@ pub async fn run_app(
 }
 
 /// Apply accumulated scroll to the appropriate panel (uses cached terminal size)
-/// Layout: Sessions(40) | FileTree(40) | Viewer(50%) | Convo(50%)
+/// Layout: Left (Sessions+FileTree+Viewer over Input/Terminal) | Convo (full height)
 fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width: u16, term_height: u16) -> bool {
     let sessions_width = 40u16;
     let file_tree_width = 40u16;
+    // Left side = Sessions(40) + FileTree(40) + Viewer(50% of remaining)
     let remaining_width = term_width.saturating_sub(sessions_width + file_tree_width);
     let viewer_width = remaining_width / 2;
+    let left_width = sessions_width + file_tree_width + viewer_width;
 
+    // Left panes have input/terminal below; Convo extends to status bar
     let input_height = if app.terminal_mode { app.terminal_height + 2 } else { 3u16 };
-    let content_height = term_height.saturating_sub(input_height + 1);
+    let left_content_height = term_height.saturating_sub(input_height + 1);
+    let convo_bottom = term_height.saturating_sub(1); // only status bar below convo
 
-    let in_sessions = col < sessions_width && row < content_height;
-    let in_file_tree = col >= sessions_width && col < sessions_width + file_tree_width && row < content_height;
-    let in_viewer = col >= sessions_width + file_tree_width && col < sessions_width + file_tree_width + viewer_width && row < content_height;
-    let in_output = col >= sessions_width + file_tree_width + viewer_width && row < content_height;
-    let in_terminal = app.terminal_mode && row >= content_height && row < term_height - 1;
+    let in_sessions = col < sessions_width && row < left_content_height;
+    let in_file_tree = col >= sessions_width && col < sessions_width + file_tree_width && row < left_content_height;
+    let in_viewer = col >= sessions_width + file_tree_width && col < left_width && row < left_content_height;
+    let in_output = col >= left_width && row < convo_bottom;
+    let in_terminal = app.terminal_mode && col < left_width && row >= left_content_height && row < term_height - 1;
 
     if in_sessions {
         let old = app.selected_session;
