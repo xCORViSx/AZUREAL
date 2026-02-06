@@ -166,15 +166,17 @@ impl App {
                     // Store byte offset for incremental parsing on subsequent polls
                     self.session_file_parse_offset = parsed.end_offset;
 
-                    // Clear pending message if it's now in the loaded events
-                    // Only check the last few events (user message would be recent)
+                    // Clear pending message once it appears in the parsed events.
+                    // Scan all events from the end — Claude may have emitted many
+                    // events (hooks, tool calls, text) after the user message, pushing
+                    // it far from the tail.
                     if let Some(ref pending) = self.pending_user_message {
-                        for event in self.display_events.iter().rev().take(5) {
+                        for event in self.display_events.iter().rev() {
                             if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
                                 if content == pending {
                                     self.pending_user_message = None;
-                                    break;
                                 }
+                                break; // stop at first UserMessage either way
                             }
                         }
                     }
@@ -242,14 +244,16 @@ impl App {
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
         self.session_file_parse_offset = parsed.end_offset;
 
-        // Clear pending message if it's now in the loaded events
+        // Clear pending message once it appears in the parsed events.
+        // Scan all events from the end — Claude may have emitted many
+        // events (hooks, tool calls, text) after the user message.
         if let Some(ref pending) = self.pending_user_message {
-            for event in self.display_events.iter().rev().take(5) {
+            for event in self.display_events.iter().rev() {
                 if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
                     if content == pending {
                         self.pending_user_message = None;
-                        break;
                     }
+                    break; // stop at first UserMessage either way
                 }
             }
         }

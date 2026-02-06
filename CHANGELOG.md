@@ -26,6 +26,9 @@ All notable changes to Azureal will be documented in this file.
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
 
 ### Fixed
+- User prompts no longer appear twice in the Convo pane
+  - `pending_user_message` dedup was limited to last 5 events; Claude's rapid output (hooks, tools, text) pushed the matching `UserMessage` beyond that window
+  - Now scans backward to the most recent `UserMessage` regardless of distance from tail
 - Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions.toml` instead of truncated UUIDs
 - `KeyCombo::display()` now preserves character case — previously uppercased all chars (e.g., `r` showed as `R`)
 - `KeyCombo::display()` no longer shows `⇧` prefix for uppercase char keys (J, K, G, R show as-is)
