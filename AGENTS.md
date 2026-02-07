@@ -306,6 +306,7 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Cached terminal size:** Only updated on resize events, not every frame
 - **Tiered redraw throttling:** Key events always redraw immediately (typing responsiveness). Background changes (Claude streaming, animations, terminal output) throttled to 10fps (`min_busy_draw_interval = 100ms`) so expensive convo rendering doesn't starve the event loop during streaming.
 - **Viewport cache:** Convo pane caches the cloned viewport slice (`output_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
+- **Pre-render outside draw lock:** Expensive convo rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs via `update_convo_cache()` in the event loop BEFORE `terminal.draw()`. This means the draw call only does cheap viewport cloning, keeping the terminal lock held for minimal time. `draw_output()` has a width-mismatch fallback that re-renders if the event loop's width estimate was off (rare, only on resize).
 
 ### 6. Pre-Format Expensive Data at Load Time
 

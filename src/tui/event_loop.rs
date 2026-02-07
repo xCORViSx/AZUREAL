@@ -18,6 +18,7 @@ use super::input_worktrees::handle_worktrees_input;
 use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
+use super::draw_output::update_convo_cache;
 use super::run::ui;
 
 /// Main TUI event loop
@@ -162,6 +163,14 @@ pub async fn run_app(
         };
 
         if should_draw {
+            // Pre-render convo content BEFORE terminal.draw() so the expensive
+            // markdown/syntax/wrapping work doesn't block the draw lock.
+            // Convo width = terminal_width - left_panes(80) split 50/50, take right half.
+            // This matches the layout in run::ui() — Length(80) + Percentage(50) + Percentage(50).
+            if app.rendered_lines_dirty {
+                let convo_width = cached_width.saturating_sub(80) / 2;
+                update_convo_cache(app, convo_width);
+            }
             terminal.draw(|f| ui(f, app))?;
             last_draw = now;
         }

@@ -1,4 +1,8 @@
-//! Convopanel rendering
+//! Convo pane rendering
+//!
+//! Expensive work (markdown parsing, syntax highlighting, text wrapping) lives in
+//! `update_convo_cache()` which runs in the event loop BEFORE `terminal.draw()`.
+//! The draw function itself is cheap — just clones a viewport slice and renders.
 
 use ratatui::{
     layout::Rect,
@@ -17,7 +21,86 @@ use super::util::{colorize_output, detect_message_type, render_display_events, r
 /// Full render happens lazily when they scroll to the top.
 const DEFERRED_RENDER_TAIL: usize = 200;
 
-/// Draw the main output/diff panel
+/// Pre-render convo pane content OUTSIDE of terminal.draw().
+/// This is the expensive part (markdown parsing, syntax highlighting, wrapping).
+/// Called from the event loop so it doesn't block the terminal draw lock.
+/// `convo_width` is the full convo area width (inner_width = convo_width - 2 for borders).
+pub fn update_convo_cache(app: &mut App, convo_width: u16) {
+    if app.display_events.is_empty() || app.view_mode != ViewMode::Output { return; }
+
+    let inner_width = convo_width.saturating_sub(2);
+
+    // Deferred render: if user scrolled to top and there are unrendered early events,
+    // expand to full render now (they want to see old messages)
+    if app.rendered_events_start > 0 && app.output_scroll == 0 {
+        app.rendered_lines_dirty = true;
+        app.rendered_events_start = 0;
+        app.rendered_events_count = 0;
+    }
+
+    // Only re-render if cache is dirty or width changed (NOT for animation tick)
+    if !app.rendered_lines_dirty && app.rendered_lines_width == inner_width { return; }
+
+    let event_count = app.display_events.len();
+    let can_incremental = app.rendered_lines_width == inner_width
+        && app.rendered_events_count > 0
+        && event_count > app.rendered_events_count
+        && app.rendered_events_start == 0;
+
+    let (lines_cache, anim_indices, bubble_positions) = if can_incremental {
+        // Incremental: only render newly appended events
+        let existing_lines = std::mem::take(&mut app.rendered_lines_cache);
+        let existing_anim = std::mem::take(&mut app.animation_line_indices);
+        let existing_bubbles = std::mem::take(&mut app.message_bubble_positions);
+        render_display_events_incremental(
+            &app.display_events,
+            app.rendered_events_count,
+            inner_width,
+            &app.pending_tool_calls,
+            &app.failed_tool_calls,
+            &app.syntax_highlighter,
+            app.pending_user_message.as_deref(),
+            existing_lines,
+            existing_anim,
+            existing_bubbles,
+        )
+    } else {
+        // Deferred initial render: for large conversations (>200 events),
+        // only render the tail on first load. User starts at bottom so
+        // they won't notice. Full render happens lazily on scroll-to-top.
+        let deferred_start = if app.rendered_events_start == 0
+            && app.rendered_events_count == 0
+            && event_count > DEFERRED_RENDER_TAIL
+        {
+            event_count.saturating_sub(DEFERRED_RENDER_TAIL)
+        } else {
+            0
+        };
+
+        let (l, a, b) = render_display_events(
+            &app.display_events[deferred_start..],
+            inner_width,
+            &app.pending_tool_calls,
+            &app.failed_tool_calls,
+            &app.syntax_highlighter,
+            app.pending_user_message.as_deref(),
+        );
+        app.rendered_events_start = deferred_start;
+        (l, a, b)
+    };
+
+    app.rendered_lines_cache = lines_cache;
+    app.animation_line_indices = anim_indices;
+    app.message_bubble_positions = bubble_positions;
+    app.rendered_lines_width = inner_width;
+    app.rendered_events_count = event_count;
+    app.rendered_lines_dirty = false;
+
+    // Invalidate viewport cache since underlying content changed
+    app.output_viewport_scroll = usize::MAX;
+}
+
+/// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height.saturating_sub(2) as usize;
 
@@ -26,88 +109,28 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let (title, content) = match app.view_mode {
         ViewMode::Output => {
-            if !app.display_events.is_empty() {
-                let inner_width = area.width.saturating_sub(2);
+            // Safety: if pre-render in event loop used a slightly different width
+            // (rounding), or if this is the very first frame, re-render here.
+            // This is rare — normally update_convo_cache() already ran.
+            let inner_width = area.width.saturating_sub(2);
+            if !app.display_events.is_empty()
+                && (app.rendered_lines_dirty || app.rendered_lines_width != inner_width)
+            {
+                update_convo_cache(app, area.width);
+            }
 
-                // Deferred render: if user scrolled to top and there are unrendered early events,
-                // expand to full render now (they want to see old messages)
-                if app.rendered_events_start > 0 && app.output_scroll == 0 {
-                    app.rendered_lines_dirty = true;
-                    app.rendered_events_start = 0;
-                    app.rendered_events_count = 0;
-                }
-
-                // Only re-render if cache is dirty or width changed (NOT for animation tick)
-                if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
-                    let event_count = app.display_events.len();
-                    let can_incremental = app.rendered_lines_width == inner_width
-                        && app.rendered_events_count > 0
-                        && event_count > app.rendered_events_count
-                        && app.rendered_events_start == 0;
-
-                    let (lines_cache, anim_indices, bubble_positions) = if can_incremental {
-                        // Incremental: only render newly appended events
-                        let existing_lines = std::mem::take(&mut app.rendered_lines_cache);
-                        let existing_anim = std::mem::take(&mut app.animation_line_indices);
-                        let existing_bubbles = std::mem::take(&mut app.message_bubble_positions);
-                        render_display_events_incremental(
-                            &app.display_events,
-                            app.rendered_events_count,
-                            inner_width,
-                            &app.pending_tool_calls,
-                            &app.failed_tool_calls,
-                            &app.syntax_highlighter,
-                            app.pending_user_message.as_deref(),
-                            existing_lines,
-                            existing_anim,
-                            existing_bubbles,
-                        )
-                    } else {
-                        // Deferred initial render: for large conversations (>200 events),
-                        // only render the tail on first load. User starts at bottom so
-                        // they won't notice. Full render happens lazily on scroll-to-top.
-                        let deferred_start = if app.rendered_events_start == 0
-                            && app.rendered_events_count == 0
-                            && event_count > DEFERRED_RENDER_TAIL
-                        {
-                            event_count.saturating_sub(DEFERRED_RENDER_TAIL)
-                        } else {
-                            0
-                        };
-
-                        let (l, a, b) = render_display_events(
-                            &app.display_events[deferred_start..],
-                            inner_width,
-                            &app.pending_tool_calls,
-                            &app.failed_tool_calls,
-                            &app.syntax_highlighter,
-                            app.pending_user_message.as_deref(),
-                        );
-                        app.rendered_events_start = deferred_start;
-                        (l, a, b)
-                    };
-                    app.rendered_lines_cache = lines_cache;
-                    app.animation_line_indices = anim_indices;
-                    app.message_bubble_positions = bubble_positions;
-                    app.rendered_lines_width = inner_width;
-                    app.rendered_events_count = event_count;
-                    app.rendered_lines_dirty = false;
-                }
-
+            if !app.rendered_lines_cache.is_empty() {
                 // Clamp scroll to valid range (resolves usize::MAX sentinel)
                 app.clamp_output_scroll();
                 let scroll = app.output_scroll;
 
-                // Check if viewport cache is still valid — skip the expensive clone if so.
-                // Cache invalidates on: scroll change, content change (rendered_events_count
-                // already updated above which sets rendered_lines_dirty=false), animation tick,
-                // or viewport height mismatch.
+                // Check if viewport cache is still valid — skip the clone if so.
                 let cache_valid = scroll == app.output_viewport_scroll
                     && app.animation_tick == app.output_viewport_anim_tick
                     && app.output_viewport_cache.len() == viewport_height.min(app.rendered_lines_cache.len().saturating_sub(scroll));
 
                 if !cache_valid {
-                    // Clone viewport slice from cache
+                    // Clone viewport slice from the pre-rendered line cache
                     let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
                         .skip(scroll)
                         .take(viewport_height)
@@ -145,7 +168,6 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         " Convo ".to_string()
                     };
 
-                    // Store in cache for reuse on subsequent frames
                     app.output_viewport_cache = lines;
                     app.output_viewport_scroll = scroll;
                     app.output_viewport_anim_tick = app.animation_tick;
@@ -153,27 +175,21 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 }
 
                 (app.output_viewport_title.clone(), app.output_viewport_cache.clone())
-            } else {
+            } else if !app.output_lines.is_empty() || !app.output_buffer.is_empty() {
                 // Fallback: using output_lines with colorize_output
                 let mut all_lines: Vec<Line> = Vec::new();
                 let mut last_msg_type = MessageType::Other;
 
                 for line in app.output_lines.iter() {
                     let msg_type = detect_message_type(line);
-
-                    // Add spacing when transitioning between user and assistant
                     if (last_msg_type == MessageType::User && msg_type == MessageType::Assistant)
                         || (last_msg_type == MessageType::Assistant && msg_type == MessageType::User)
                     {
                         all_lines.push(Line::from(""));
                         all_lines.push(Line::from(""));
                     }
-
                     all_lines.push(colorize_output(line));
-
-                    if msg_type != MessageType::Other {
-                        last_msg_type = msg_type;
-                    }
+                    if msg_type != MessageType::Other { last_msg_type = msg_type; }
                 }
 
                 if !app.output_buffer.is_empty() {
@@ -189,49 +205,37 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 let total = all_lines.len();
                 let max_scroll = total.saturating_sub(viewport_height);
-                let scroll = if app.output_scroll == usize::MAX {
-                    max_scroll
-                } else {
-                    app.output_scroll.min(max_scroll)
-                };
+                let scroll = if app.output_scroll == usize::MAX { max_scroll }
+                    else { app.output_scroll.min(max_scroll) };
                 app.output_scroll = scroll;
-
                 let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
-
-                let scroll_indicator = if total > viewport_height {
+                let title = if total > viewport_height {
                     format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
                 } else {
                     " Convo ".to_string()
                 };
-
-                (scroll_indicator, lines)
+                (title, lines)
+            } else {
+                (" Convo ".to_string(), vec![])
             }
         }
         ViewMode::Diff => {
             if let Some(ref diff) = app.diff_text {
-                // Cache diff highlighting (expensive - don't do per-frame)
                 if app.diff_lines_dirty {
                     app.diff_lines_cache = app.diff_highlighter.colorize_diff(diff);
                     app.diff_lines_dirty = false;
                 }
-
                 let total = app.diff_lines_cache.len();
                 let scroll = app.diff_scroll.min(total.saturating_sub(viewport_height));
                 app.diff_scroll = scroll;
-
-                // Build viewport slice directly (single clone operation)
                 let lines: Vec<Line> = app.diff_lines_cache.iter()
-                    .skip(scroll)
-                    .take(viewport_height)
-                    .map(|spans| Line::from(spans.clone()))
-                    .collect();
-
+                    .skip(scroll).take(viewport_height)
+                    .map(|spans| Line::from(spans.clone())).collect();
                 let title = if total > viewport_height {
                     format!(" Diff (Syntax Highlighted) [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
                 } else {
                     " Diff (Syntax Highlighted) ".to_string()
                 };
-
                 (title, lines)
             } else {
                 (" Diff ".to_string(), vec![Line::from("No diff available")])
@@ -323,7 +327,6 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
             ]));
-
             for (idx, file) in status.conflicted_files.iter().enumerate() {
                 let is_selected = app.selected_conflict == Some(idx);
                 let style = if is_selected {
@@ -337,7 +340,6 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
                     Span::styled(file.clone(), style),
                 ]));
             }
-
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
                 Span::styled("Commands: ", Style::default().add_modifier(Modifier::BOLD)),
