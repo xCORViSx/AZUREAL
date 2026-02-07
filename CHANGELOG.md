@@ -80,6 +80,9 @@ All notable changes to Azureal will be documented in this file.
 - User prompt no longer shows twice (or more) during live streaming
   - `pending_user_message` (the "You:" bubble shown immediately on submit) was never cleared by the live stream path — `handle_claude_output()` now clears it when the matching `UserMessage` arrives
   - Incremental renders accumulated duplicate pending bubbles: the existing cache already contained the bubble, and `render_display_events_from()` appended it again. Fixed by tracking `rendered_content_line_count` and trimming the stale bubble before submitting incremental requests
+- Pending user prompt now fully visible on send (no scroll-down needed)
+  - `output_scroll` was resolved from `usize::MAX` sentinel to a concrete value based on the OLD (shorter) cache before the background render completed with the new (longer) cache
+  - `poll_render_result()` now re-sets the follow-bottom sentinel when the user was at/near the bottom of the old cache
 - Terminal typing no longer blanks the PTY display
   - `fast_draw_input()` was firing in terminal type mode (which sets `prompt_mode=true`), writing empty `app.input` over the terminal area
   - Deferred draw was also skipping `terminal.draw()` on terminal keystrokes, but PTY output has no fast-path — it needs ratatui to render
