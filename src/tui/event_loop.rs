@@ -31,12 +31,13 @@ pub async fn run_app(
     let mut last_draw = Instant::now();
     let mut last_session_poll = Instant::now();
     let mut last_animation = Instant::now();
-    let min_draw_interval = Duration::from_millis(100); // Max 10fps for scroll
+    // Every draw costs ~18ms (terminal I/O). To avoid blocking key events, we
+    // throttle ALL draws — even key-triggered ones — to this interval. This
+    // guarantees at least one event-only loop iteration between draws, giving
+    // crossterm a window to buffer incoming keystrokes.
+    let min_draw_interval = Duration::from_millis(33); // ~30fps max
     let min_poll_interval = Duration::from_millis(500); // Poll session file max 2x/sec
     let min_animation_interval = Duration::from_millis(250); // 4fps for pulsating indicators
-    // When convo is updating AND user is typing, throttle full redraws so key
-    // events aren't blocked by expensive convo rendering (syntax/markdown/clone).
-    let min_busy_draw_interval = Duration::from_millis(100);
 
     // Cache terminal size, update on resize events
     let (mut cached_width, mut cached_height) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -73,10 +74,6 @@ pub async fn run_app(
             loop {
                 match event::read()? {
                     Event::Key(key) => {
-                        // With Kitty protocol REPORT_EVENT_TYPES, we get Release
-                        // and Repeat events. Only process Press events — Release
-                        // events for modifier keys (bare Shift, Ctrl, etc.) must
-                        // be discarded to avoid false triggers.
                         if key.kind == KeyEventKind::Press {
                             handle_key_event(key, app, &claude_process)?;
                             had_key_event = true;
@@ -142,8 +139,6 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
-        // Debug dump removed - too expensive for every redraw
-
         // Apply accumulated scroll using cached terminal size
         let mut scroll_changed = false;
         if scroll_delta != 0 {
@@ -164,24 +159,18 @@ pub async fn run_app(
             needs_redraw = true;
         }
 
-        // Redraw strategy:
-        //   - Key events: always redraw immediately (typing must feel instant)
-        //   - Background changes (convo/animation/terminal/render): throttle to 10fps
-        //   - Scroll: throttle to 10fps
+        // Redraw throttle: terminal.draw() costs ~18ms (terminal I/O), so we
+        // NEVER draw more than ~30fps. This ensures at least one event-only loop
+        // iteration between draws — crucial for catching keystrokes typed during
+        // the previous draw's 18ms blocking window.
         let now = Instant::now();
-        let elapsed = now.duration_since(last_draw);
-        let should_draw = if had_key_event {
-            true
-        } else if needs_redraw {
-            elapsed >= min_busy_draw_interval
-        } else {
-            scroll_changed && elapsed >= min_draw_interval
-        };
+        let draw_ready = now.duration_since(last_draw) >= min_draw_interval;
+        let should_draw = draw_ready && (had_key_event || needs_redraw || scroll_changed);
 
         if should_draw {
-            // Drain any key events that arrived during processing/render-poll
-            // above — without this, keys typed during the ~5-20ms between
-            // the first drain and terminal.draw() would be delayed a full frame.
+            // Pre-draw drain: catch any events that arrived between the first
+            // event drain (top of loop) and right now (~0-5ms gap). Without this,
+            // those keys would be delayed by the ~18ms draw below.
             while event::poll(Duration::from_millis(0))? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Modifier(_)) => {
@@ -192,7 +181,7 @@ pub async fn run_app(
                 }
             }
             terminal.draw(|f| ui(f, app))?;
-            last_draw = now;
+            last_draw = Instant::now(); // Use actual post-draw time, not pre-draw
         }
 
         if app.should_quit { break; }
