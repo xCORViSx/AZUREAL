@@ -50,7 +50,10 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
         && event_count > app.rendered_events_count
         && app.rendered_events_start == 0;
 
-    // Build the render request with cloned data (the thread works on its own copy)
+    // Build the render request with cloned data (the thread works on its own copy).
+    // IMPORTANT: we clone (not take) the existing cache so the main thread still has
+    // content to display while the render thread works. Taking would empty the cache,
+    // breaking scroll-to-bottom (clamp_output_scroll sees 0 lines → jumps to top).
     let req = if can_incremental {
         RenderRequest {
             events: app.display_events.clone(),
@@ -59,9 +62,9 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: app.pending_user_message.clone(),
-            existing_lines: std::mem::take(&mut app.rendered_lines_cache),
-            existing_anim: std::mem::take(&mut app.animation_line_indices),
-            existing_bubbles: std::mem::take(&mut app.message_bubble_positions),
+            existing_lines: app.rendered_lines_cache.clone(),
+            existing_anim: app.animation_line_indices.clone(),
+            existing_bubbles: app.message_bubble_positions.clone(),
             deferred_start: 0,
             seq: 0, // filled by send()
         }

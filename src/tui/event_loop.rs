@@ -64,8 +64,11 @@ pub async fn run_app(
         let mut scroll_row: u16 = 0;
         let mut had_key_event = false;
 
-        // First wait for at least one event
-        if event::poll(Duration::from_millis(100))? {
+        // Poll timeout: short when busy (render in-flight or Claude streaming)
+        // so we pick up completed renders and key events quickly. Longer when
+        // idle to avoid burning CPU spinning on an empty event queue.
+        let poll_ms = if app.render_in_flight || !app.claude_receivers.is_empty() { 16 } else { 100 };
+        if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
                 match event::read()? {
@@ -176,6 +179,18 @@ pub async fn run_app(
         };
 
         if should_draw {
+            // Drain any key events that arrived during processing/render-poll
+            // above — without this, keys typed during the ~5-20ms between
+            // the first drain and terminal.draw() would be delayed a full frame.
+            while event::poll(Duration::from_millis(0))? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Modifier(_)) => {
+                        handle_key_event(key, app, &claude_process)?;
+                    }
+                    Event::Resize(w, h) => { cached_width = w; cached_height = h; }
+                    _ => {}
+                }
+            }
             terminal.draw(|f| ui(f, app))?;
             last_draw = now;
         }
