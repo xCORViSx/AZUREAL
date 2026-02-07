@@ -217,7 +217,7 @@ if event_count > app.rendered_events_count && width unchanged {
 ```
 
 **Streaming vs Polling (Dual-Source Prevention):**
-During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
+During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). The live stream path also clears `pending_user_message` when a matching `UserMessage` arrives (using `contains()` because hooks prepend `<system-reminder>` tags). When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
 
 **Files:**
 - `src/app/session_parser.rs` - `parse_session_file_incremental()`, `IncrementalParserState`
