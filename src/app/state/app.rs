@@ -146,6 +146,9 @@ pub struct App {
     /// True when state changed and a draw is needed. Draw is deferred if keys
     /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
     pub draw_pending: bool,
+    /// Cached input area rect from last full draw — used for fast-path direct
+    /// input rendering that bypasses terminal.draw() during rapid typing.
+    pub input_area: ratatui::layout::Rect,
     /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
     pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
@@ -337,6 +340,7 @@ impl App {
             render_seq_applied: 0,
             render_in_flight: false,
             draw_pending: false,
+            input_area: ratatui::layout::Rect::default(),
             output_viewport_cache: Vec::new(),
             output_viewport_scroll: usize::MAX,
             output_viewport_anim_tick: u64::MAX,

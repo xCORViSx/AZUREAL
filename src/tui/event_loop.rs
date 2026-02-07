@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::{cursor, execute, style};
 use std::io;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -166,15 +168,16 @@ pub async fn run_app(
             app.draw_pending = true;
         }
 
-        // Draw strategy: terminal.draw() costs ~18ms (measured). During those
-        // 18ms the event loop is blocked and can't read keystrokes. To prevent
-        // missed keys during rapid typing:
-        //   1. If keys arrived THIS iteration, SKIP draw — loop back immediately
-        //      so the next keystroke (arriving ~20-50ms later) gets read first.
-        //   2. Draw only on "quiet" iterations (no key events) after the throttle
-        //      interval. The key event's visual update appears 1 iteration later
-        //      (~16ms), which is imperceptible.
-        //   3. Pre-draw drain catches any stragglers right before the 18ms block.
+        // Fast-path input rendering: when the user is typing in prompt mode,
+        // skip the expensive terminal.draw() (~18ms) and instead write the
+        // input box content directly via crossterm (~0.1ms). This gives instant
+        // keystroke feedback while the full UI catches up on the next quiet frame.
+        if had_key_event && app.prompt_mode && app.focus == Focus::Input && app.input_area.width > 2 {
+            fast_draw_input(app);
+        }
+
+        // Full draw: terminal.draw() costs ~18ms. Only run on quiet iterations
+        // (no key events) to avoid blocking the event loop during typing.
         let now = Instant::now();
         let draw_ready = now.duration_since(last_draw) >= min_draw_interval;
         let should_draw = app.draw_pending && draw_ready && !had_key_event;
@@ -204,6 +207,112 @@ pub async fn run_app(
     }
 
     Ok(())
+}
+
+/// Fast-path: render ONLY the input box content via direct crossterm writes.
+/// Costs ~0.1ms vs ~18ms for terminal.draw(). Used during rapid typing so
+/// keystrokes get instant visual feedback while the full UI catches up later.
+/// Writes the input text into the cached input_area rect, positions the cursor,
+/// and flushes. Ratatui's internal buffer becomes stale but the next full draw
+/// will reconcile everything.
+fn fast_draw_input(app: &App) {
+    let area = app.input_area;
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let visible_rows = area.height.saturating_sub(2) as usize;
+    if inner_width == 0 || visible_rows == 0 { return; }
+
+    // Figure out cursor row for scroll offset (same logic as draw_input.rs)
+    let cursor_row = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
+    let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
+        cursor_row - visible_rows + 1
+    } else { 0 };
+
+    // Build visible lines from input text with word-wrapping
+    let chars: Vec<char> = app.input.chars().collect();
+    let mut visual_lines: Vec<String> = Vec::new();
+    let mut current_line = String::new();
+    let mut col = 0usize;
+    for &c in &chars {
+        if c == '\n' {
+            visual_lines.push(current_line);
+            current_line = String::new();
+            col = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+            if col + w > inner_width {
+                visual_lines.push(current_line);
+                current_line = String::new();
+                col = 0;
+            }
+            current_line.push(c);
+            col += w;
+        }
+    }
+    visual_lines.push(current_line);
+
+    let mut stdout = io::stdout();
+
+    // Write each visible row inside the border (x+1, y+1 = inside border)
+    for row_idx in 0..visible_rows {
+        let line_idx = scroll_offset + row_idx;
+        let text = visual_lines.get(line_idx).map(|s| s.as_str()).unwrap_or("");
+        // Pad to inner_width (display columns) to overwrite stale content
+        let text_width: usize = text.chars()
+            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+            .sum();
+        let pad = inner_width.saturating_sub(text_width);
+        let padded = format!("{}{}", text, " ".repeat(pad));
+        let _ = execute!(
+            stdout,
+            cursor::MoveTo(area.x + 1, area.y + 1 + row_idx as u16),
+            style::Print(&padded)
+        );
+    }
+
+    // Position cursor at the right spot
+    let cursor_col = compute_cursor_col_fast(&app.input, app.input_cursor, inner_width);
+    let adjusted_row = cursor_row.saturating_sub(scroll_offset);
+    let _ = execute!(
+        stdout,
+        cursor::MoveTo(
+            area.x + 1 + cursor_col as u16,
+            area.y + 1 + adjusted_row as u16,
+        ),
+        cursor::Show
+    );
+    let _ = stdout.flush();
+}
+
+/// Compute visual row for cursor (word-wrap aware) — standalone version for
+/// fast_draw_input to avoid depending on draw_input module.
+fn compute_cursor_row_fast(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
+    let chars: Vec<char> = input.chars().collect();
+    let target = cursor_idx.min(chars.len());
+    let mut row = 0usize;
+    let mut col = 0usize;
+    for i in 0..target {
+        if chars[i] == '\n' { row += 1; col = 0; }
+        else {
+            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
+            if col + w > inner_width { row += 1; col = w; } else { col += w; }
+        }
+    }
+    row
+}
+
+/// Compute visual column for cursor — standalone version for fast_draw_input.
+fn compute_cursor_col_fast(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
+    let chars: Vec<char> = input.chars().collect();
+    let target = cursor_idx.min(chars.len());
+    let mut col = 0usize;
+    for i in 0..target {
+        if chars[i] == '\n' { col = 0; }
+        else {
+            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
+            if col + w > inner_width { col = w; } else { col += w; }
+        }
+    }
+    col
 }
 
 /// Apply accumulated scroll to the appropriate panel (uses cached terminal size)
