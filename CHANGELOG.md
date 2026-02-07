@@ -45,7 +45,7 @@ All notable changes to Azureal will be documented in this file.
   - Inserts a newline at cursor position; Enter alone still submits
   - Kitty keyboard protocol enabled on startup (DISAMBIGUATE + REPORT_EVENT_TYPES)
   - `REPORT_ALL_KEYS` intentionally omitted — it broke Shift+letter secondary characters (!, @, #, etc.)
-  - Input field height grows dynamically (up to 10 rows) to fit content
+  - Input field grows dynamically up to 3/4 of terminal height, then scrolls
   - Cursor positioning accounts for both newlines and word-wrapping
   - Selection highlighting works correctly across line boundaries
 

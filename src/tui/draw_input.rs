@@ -2,7 +2,8 @@
 //!
 //! Supports multi-line input via Shift+Enter. Newlines split the text into
 //! separate `Line`s for ratatui. Cursor positioning accounts for both
-//! newlines and word-wrapping within each line.
+//! newlines and word-wrapping within each line. When content exceeds the
+//! visible area, the view scrolls to keep the cursor visible.
 
 use ratatui::{
     layout::Rect,
@@ -25,12 +26,30 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 
     let is_focused = app.focus == Focus::Input;
     let inner_width = area.width.saturating_sub(2) as usize;
+    // Visible rows inside the border (total height minus top+bottom border)
+    let visible_rows = area.height.saturating_sub(2) as usize;
 
     // Build styled content with selection highlighting, split on newlines
     let content = build_input_content(app);
 
+    // Figure out which visual row the cursor sits on (accounting for wrapping)
+    // so we can scroll the Paragraph to keep the cursor in view
+    let cursor_row = if inner_width > 0 {
+        compute_cursor_row(&app.input, app.input_cursor, inner_width)
+    } else {
+        0
+    };
+
+    // Scroll offset: keep cursor visible within the box
+    let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
+        (cursor_row - visible_rows + 1) as u16
+    } else {
+        0
+    };
+
     let input = Paragraph::new(content)
         .wrap(Wrap { trim: false })
+        .scroll((scroll_offset, 0))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -50,36 +69,52 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, area);
 
     // Show cursor only in prompt mode when focused
-    // Walk chars accounting for newlines and word-wrapping
     if app.prompt_mode && is_focused && inner_width > 0 {
-        let chars: Vec<char> = app.input.chars().collect();
-        let cursor_char_idx = app.input_cursor.min(chars.len());
-
-        let mut visual_col = 0usize;
-        let mut visual_row = 0usize;
-        for i in 0..cursor_char_idx {
-            let c = chars[i];
-            if c == '\n' {
-                // Newline: move to start of next row
-                visual_row += 1;
-                visual_col = 0;
-            } else {
-                let char_width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if visual_col + char_width > inner_width {
-                    // Word-wrap: overflow to next row
-                    visual_row += 1;
-                    visual_col = char_width;
-                } else {
-                    visual_col += char_width;
-                }
-            }
-        }
+        let visual_col = compute_cursor_col(&app.input, app.input_cursor, inner_width);
+        // Adjust row for scroll offset so cursor renders in the visible portion
+        let adjusted_row = cursor_row as u16 - scroll_offset;
 
         f.set_cursor_position((
             area.x + 1 + visual_col as u16,
-            area.y + 1 + visual_row as u16,
+            area.y + 1 + adjusted_row,
         ));
     }
+}
+
+/// Compute the visual row the cursor is on, accounting for newlines and word-wrap
+fn compute_cursor_row(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
+    let chars: Vec<char> = input.chars().collect();
+    let target = cursor_idx.min(chars.len());
+    let mut row = 0usize;
+    let mut col = 0usize;
+    for i in 0..target {
+        if chars[i] == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
+            if col + w > inner_width { row += 1; col = w; }
+            else { col += w; }
+        }
+    }
+    row
+}
+
+/// Compute the visual column the cursor is on within its current row
+fn compute_cursor_col(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
+    let chars: Vec<char> = input.chars().collect();
+    let target = cursor_idx.min(chars.len());
+    let mut col = 0usize;
+    for i in 0..target {
+        if chars[i] == '\n' {
+            col = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
+            if col + w > inner_width { col = w; }
+            else { col += w; }
+        }
+    }
+    col
 }
 
 /// Build styled input content split on newlines, with selection highlighting

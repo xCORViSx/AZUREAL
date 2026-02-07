@@ -131,7 +131,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         } else {
             1
         };
-        (input_lines as u16 + 2).min(10) // +2 for borders, max 10
+        // Cap at 3/4 of available height so top panes stay visible
+        let max_input = (content_area.height * 3 / 4).max(3);
+        (input_lines as u16 + 2).min(max_input) // +2 for borders
     };
 
     // Build a Rect for the left side manually (covers Sessions + FileTree + Viewer)
