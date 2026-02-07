@@ -73,6 +73,10 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Fixed
+- Terminal typing no longer blanks the PTY display
+  - `fast_draw_input()` was firing in terminal type mode (which sets `prompt_mode=true`), writing empty `app.input` over the terminal area
+  - Deferred draw was also skipping `terminal.draw()` on terminal keystrokes, but PTY output has no fast-path — it needs ratatui to render
+  - Fast-path now excludes terminal mode; draw deferral only applies to Claude prompt typing
 - Input no longer freezes or drops characters while convo pane is updating
   - Background redraws (Claude streaming, animations) throttled to 10fps; key events always draw immediately
   - Expensive convo rendering (markdown/syntax/wrapping) now runs on a dedicated background thread (`RenderThread`)
