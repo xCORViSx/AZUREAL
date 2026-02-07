@@ -39,6 +39,7 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
         app.rendered_lines_dirty = true;
         app.rendered_events_start = 0;
         app.rendered_events_count = 0;
+        app.rendered_content_line_count = 0;
     }
 
     // Only submit if cache is dirty or width changed
@@ -55,6 +56,21 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
     // content to display while the render thread works. Taking would empty the cache,
     // breaking scroll-to-bottom (clamp_output_scroll sees 0 lines → jumps to top).
     let req = if can_incremental {
+        // Trim existing cache to content_line_count to strip the trailing
+        // pending user message bubble (if any). The render thread re-appends
+        // it at the correct position after the new events.
+        let trim = app.rendered_content_line_count;
+        let mut existing_lines = app.rendered_lines_cache.clone();
+        let mut existing_anim = app.animation_line_indices.clone();
+        let mut existing_bubbles = app.message_bubble_positions.clone();
+        if trim < existing_lines.len() {
+            existing_lines.truncate(trim);
+            existing_anim.retain(|&(idx, _)| idx < trim);
+            // Remove the trailing pending bubble position
+            if let Some(&(line_idx, _)) = existing_bubbles.last() {
+                if line_idx >= trim { existing_bubbles.pop(); }
+            }
+        }
         RenderRequest {
             events: app.display_events.clone(),
             start_idx: app.rendered_events_count,
@@ -62,9 +78,9 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: app.pending_user_message.clone(),
-            existing_lines: app.rendered_lines_cache.clone(),
-            existing_anim: app.animation_line_indices.clone(),
-            existing_bubbles: app.message_bubble_positions.clone(),
+            existing_lines,
+            existing_anim,
+            existing_bubbles,
             deferred_start: 0,
             seq: 0, // filled by send()
         }
@@ -109,12 +125,23 @@ pub fn poll_render_result(app: &mut App) -> bool {
     // Discard stale results (a newer request was already applied)
     if result.seq <= app.render_seq_applied { return false; }
 
+    // Compute content line count (lines before the trailing pending bubble).
+    // If the last bubble is a user bubble AND there's a pending_user_message,
+    // the pending bubble starts 2 lines before its recorded position.
+    let total_lines = result.lines.len();
+    let content_lines = if app.pending_user_message.is_some() {
+        if let Some(&(line_idx, true)) = result.bubble_positions.last() {
+            if line_idx >= 2 { line_idx - 2 } else { total_lines }
+        } else { total_lines }
+    } else { total_lines };
+
     // Apply the completed render to app state
     app.rendered_lines_cache = result.lines;
     app.animation_line_indices = result.anim_indices;
     app.message_bubble_positions = result.bubble_positions;
     app.rendered_lines_width = result.width;
     app.rendered_events_count = result.events_count;
+    app.rendered_content_line_count = content_lines;
     app.rendered_events_start = result.events_start;
     app.render_seq_applied = result.seq;
     app.render_in_flight = false;

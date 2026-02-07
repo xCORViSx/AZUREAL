@@ -46,16 +46,8 @@ pub fn render_display_events_incremental(
     mut existing_anim: Vec<(usize, usize)>,
     existing_bubbles: Vec<(usize, bool)>,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
-    // Strip any previously-appended pending user message lines from the cache.
-    // The pending message is always re-rendered at the end, so remove old trailing bubble.
-    // We detect this by checking if the last bubble_position was from a pending msg
-    // (its line_idx would be beyond the events' rendered area).
-    // Simpler approach: just strip the pending user message block if present.
-    // The pending message adds: 2 empty lines + header + wrapped content + footer.
-    // We don't know exact count, so instead we'll re-render from start_idx
-    // which naturally handles the pending message correctly.
-
-    // Remove stale animation indices from previous pending tools that may have resolved
+    // Pending user message bubble is stripped from existing_lines by
+    // submit_render_request() BEFORE sending — no duplicate trimming needed here.
     existing_anim.retain(|&(line_idx, _)| line_idx < existing_lines.len());
 
     render_display_events_from(events, start_idx, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles)

@@ -104,6 +104,7 @@ impl App {
         self.invalidate_render_cache();
         // Reset deferred render state so the new session gets fast initial load
         self.rendered_events_count = 0;
+        self.rendered_content_line_count = 0;
         self.rendered_events_start = 0;
         self.event_parser = crate::events::EventParser::new();
         self.selected_event = None;

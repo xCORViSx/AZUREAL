@@ -132,6 +132,9 @@ pub struct App {
     pub rendered_lines_dirty: bool,
     /// How many display_events were rendered into current cache (for incremental append)
     pub rendered_events_count: usize,
+    /// Line count in cache BEFORE the pending user message bubble was appended.
+    /// Used by incremental renders to trim the stale pending bubble before re-appending.
+    pub rendered_content_line_count: usize,
     /// Start index of deferred render (events before this are not yet rendered).
     /// 0 means everything is rendered. >0 means we skipped early events for fast initial load.
     pub rendered_events_start: usize,
@@ -334,6 +337,7 @@ impl App {
             rendered_lines_width: 0,
             rendered_lines_dirty: true,
             rendered_events_count: 0,
+            rendered_content_line_count: 0,
             rendered_events_start: 0,
             animation_line_indices: Vec::new(),
             render_thread: RenderThread::spawn(),
