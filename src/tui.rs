@@ -21,6 +21,7 @@ mod draw_terminal;
 mod draw_viewer;
 mod draw_wizard;
 mod event_loop;
+pub mod render_thread;
 mod input_dialogs;
 mod input_file_tree;
 mod input_output;

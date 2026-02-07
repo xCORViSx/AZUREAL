@@ -1,0 +1,147 @@
+//! Background render thread for convo pane
+//!
+//! The expensive work of rendering display events (markdown parsing, syntax
+//! highlighting, text wrapping) runs on a dedicated thread so the main event
+//! loop is NEVER blocked. The main thread sends render requests and receives
+//! completed results via channels — zero blocking on either side.
+//!
+//! If a new request arrives while one is in progress, the render thread
+//! finishes the current render but the main thread discards stale results
+//! by comparing sequence numbers. This "latest-wins" approach ensures the
+//! UI always shows the most recent state without wasting CPU on stale data.
+
+use std::collections::HashSet;
+use std::sync::mpsc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use ratatui::text::Line;
+
+use crate::events::DisplayEvent;
+use crate::syntax::SyntaxHighlighter;
+
+/// Everything the render thread needs to produce a frame.
+/// All fields are owned (cloned from App) so the thread works independently.
+pub struct RenderRequest {
+    pub events: Vec<DisplayEvent>,
+    pub start_idx: usize,
+    pub width: u16,
+    pub pending_tools: HashSet<String>,
+    pub failed_tools: HashSet<String>,
+    pub pending_user_message: Option<String>,
+    /// Existing cache for incremental append (empty = full render)
+    pub existing_lines: Vec<Line<'static>>,
+    pub existing_anim: Vec<(usize, usize)>,
+    pub existing_bubbles: Vec<(usize, bool)>,
+    /// Deferred render start offset (events before this were skipped)
+    pub deferred_start: usize,
+    /// Monotonic sequence number — main thread discards results older than latest applied
+    pub seq: u64,
+}
+
+/// Completed render result sent back to the main thread
+pub struct RenderResult {
+    pub lines: Vec<Line<'static>>,
+    pub anim_indices: Vec<(usize, usize)>,
+    pub bubble_positions: Vec<(usize, bool)>,
+    pub events_count: usize,
+    pub events_start: usize,
+    pub width: u16,
+    pub seq: u64,
+}
+
+/// Handle for the main thread to communicate with the render thread.
+/// Dropping this struct signals the render thread to exit (sender drops → recv fails).
+pub struct RenderThread {
+    /// Send render requests to the background thread
+    tx: mpsc::Sender<RenderRequest>,
+    /// Receive completed render results from the background thread
+    rx: mpsc::Receiver<RenderResult>,
+    /// Monotonically increasing sequence number for request ordering
+    seq: Arc<AtomicU64>,
+    /// Thread handle (kept alive so thread doesn't get detached)
+    _handle: std::thread::JoinHandle<()>,
+}
+
+impl RenderThread {
+    /// Spawn a dedicated render thread with its own SyntaxHighlighter.
+    /// The thread blocks waiting for requests — uses zero CPU when idle.
+    pub fn spawn() -> Self {
+        let (req_tx, req_rx) = mpsc::channel::<RenderRequest>();
+        let (res_tx, res_rx) = mpsc::channel::<RenderResult>();
+        let seq = Arc::new(AtomicU64::new(0));
+
+        let handle = std::thread::Builder::new()
+            .name("render".into())
+            .spawn(move || {
+                let highlighter = SyntaxHighlighter::new();
+                render_loop(req_rx, res_tx, &highlighter);
+            })
+            .expect("failed to spawn render thread");
+
+        Self { tx: req_tx, rx: res_rx, seq, _handle: handle }
+    }
+
+    /// Submit a render request (non-blocking). Returns the assigned sequence number.
+    pub fn send(&self, mut req: RenderRequest) -> u64 {
+        let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+        req.seq = seq;
+        let _ = self.tx.send(req);
+        seq
+    }
+
+    /// Check for a completed render result (non-blocking).
+    /// May return multiple results if renders completed faster than we poll —
+    /// caller should drain and keep only the latest.
+    pub fn try_recv(&self) -> Option<RenderResult> {
+        // Drain all available results — keep only the highest seq
+        let mut best: Option<RenderResult> = None;
+        while let Ok(result) = self.rx.try_recv() {
+            best = Some(match best {
+                Some(prev) if prev.seq > result.seq => prev,
+                _ => result,
+            });
+        }
+        best
+    }
+}
+
+/// Render thread main loop. Blocks on recv() when idle (zero CPU).
+/// For each request: drain to latest → render → send result.
+fn render_loop(
+    rx: mpsc::Receiver<RenderRequest>,
+    tx: mpsc::Sender<RenderResult>,
+    highlighter: &SyntaxHighlighter,
+) {
+    while let Ok(mut req) = rx.recv() {
+        // Drain queued requests — only render the latest one
+        while let Ok(newer) = rx.try_recv() { req = newer; }
+
+        let event_count = req.events.len();
+        let width = req.width;
+        let seq = req.seq;
+        let deferred_start = req.deferred_start;
+
+        // Incremental if existing cache was provided, full otherwise
+        let (lines, anim, bubbles) = if !req.existing_lines.is_empty() && req.start_idx > 0 {
+            super::render_events::render_display_events_incremental(
+                &req.events, req.start_idx, width,
+                &req.pending_tools, &req.failed_tools, highlighter,
+                req.pending_user_message.as_deref(),
+                req.existing_lines, req.existing_anim, req.existing_bubbles,
+            )
+        } else {
+            super::render_events::render_display_events(
+                &req.events[deferred_start..], width,
+                &req.pending_tools, &req.failed_tools, highlighter,
+                req.pending_user_message.as_deref(),
+            )
+        };
+
+        let _ = tx.send(RenderResult {
+            lines, anim_indices: anim, bubble_positions: bubbles,
+            events_count: event_count, events_start: deferred_start,
+            width, seq,
+        });
+    }
+}

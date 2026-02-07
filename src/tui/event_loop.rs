@@ -18,7 +18,7 @@ use super::input_worktrees::handle_worktrees_input;
 use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
-use super::draw_output::update_convo_cache;
+use super::draw_output::{submit_render_request, poll_render_result};
 use super::run::ui;
 
 /// Main TUI event loop
@@ -147,10 +147,23 @@ pub async fn run_app(
             scroll_changed = apply_scroll_cached(app, scroll_delta, scroll_col, scroll_row, cached_width, cached_height);
         }
 
+        // Submit render request to background thread if convo cache is dirty.
+        // This is NON-BLOCKING — the render thread does the expensive work while
+        // we keep processing events. No more frozen input during convo updates!
+        if app.rendered_lines_dirty {
+            let convo_width = cached_width.saturating_sub(80) / 2;
+            submit_render_request(app, convo_width);
+        }
+
+        // Poll for completed render results from the background thread (non-blocking).
+        // If fresh content arrived, trigger a redraw to show it.
+        if poll_render_result(app) {
+            needs_redraw = true;
+        }
+
         // Redraw strategy:
         //   - Key events: always redraw immediately (typing must feel instant)
-        //   - Background changes (convo/animation/terminal): throttle to 10fps
-        //     so expensive convo rendering doesn't starve the event loop
+        //   - Background changes (convo/animation/terminal/render): throttle to 10fps
         //   - Scroll: throttle to 10fps
         let now = Instant::now();
         let elapsed = now.duration_since(last_draw);
@@ -161,19 +174,6 @@ pub async fn run_app(
         } else {
             scroll_changed && elapsed >= min_draw_interval
         };
-
-        // Pre-render convo content OUTSIDE of terminal.draw() so the expensive
-        // markdown/syntax/wrapping work doesn't hold the stdout lock.
-        // Convo width = terminal_width - left_panes(80) split 50/50, take right half.
-        // This matches the layout in run::ui() — Length(80) + Percentage(50) + Percentage(50).
-        if app.rendered_lines_dirty {
-            let convo_width = cached_width.saturating_sub(80) / 2;
-            update_convo_cache(app, convo_width);
-            // After an expensive render, skip this draw and loop back to drain
-            // any key events that queued up during the render. The next iteration
-            // will draw with the fresh cache + any pending input applied.
-            if !app.should_quit { continue; }
-        }
 
         if should_draw {
             terminal.draw(|f| ui(f, app))?;

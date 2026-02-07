@@ -13,6 +13,7 @@ use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
 use crate::syntax::{DiffHighlighter, SyntaxHighlighter};
+use crate::tui::render_thread::RenderThread;
 use crate::wizard::CreationWizard;
 
 use super::ClaudeEvent;
@@ -136,6 +137,12 @@ pub struct App {
     pub rendered_events_start: usize,
     /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
     pub animation_line_indices: Vec<(usize, usize)>,
+    /// Background render thread — expensive convo rendering runs here, never blocks the event loop
+    pub render_thread: RenderThread,
+    /// Sequence number of the last applied render result (discard results with lower seq)
+    pub render_seq_applied: u64,
+    /// True while a render request is in-flight (waiting for background thread to finish)
+    pub render_in_flight: bool,
     /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
     pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
@@ -323,6 +330,9 @@ impl App {
             rendered_events_count: 0,
             rendered_events_start: 0,
             animation_line_indices: Vec::new(),
+            render_thread: RenderThread::spawn(),
+            render_seq_applied: 0,
+            render_in_flight: false,
             output_viewport_cache: Vec::new(),
             output_viewport_scroll: usize::MAX,
             output_viewport_anim_tick: u64::MAX,

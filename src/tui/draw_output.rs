@@ -1,8 +1,10 @@
 //! Convo pane rendering
 //!
-//! Expensive work (markdown parsing, syntax highlighting, text wrapping) lives in
-//! `update_convo_cache()` which runs in the event loop BEFORE `terminal.draw()`.
-//! The draw function itself is cheap — just clones a viewport slice and renders.
+//! Expensive work (markdown parsing, syntax highlighting, text wrapping) runs
+//! on a background render thread. The main event loop sends render requests
+//! via `submit_render_request()` (non-blocking) and polls for completed results
+//! via `poll_render_result()` (non-blocking). The draw function itself is cheap —
+//! just clones a viewport slice and renders from the pre-built cache.
 
 use ratatui::{
     layout::Rect,
@@ -14,18 +16,19 @@ use ratatui::{
 
 use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
-use super::util::{colorize_output, detect_message_type, render_display_events, render_display_events_incremental, MessageType};
+use super::render_thread::RenderRequest;
+use super::util::{colorize_output, detect_message_type, MessageType};
 
 /// On initial load of large conversations, only render this many events from the tail.
 /// The user starts at the bottom so they see the most recent messages instantly.
 /// Full render happens lazily when they scroll to the top.
 const DEFERRED_RENDER_TAIL: usize = 200;
 
-/// Pre-render convo pane content OUTSIDE of terminal.draw().
-/// This is the expensive part (markdown parsing, syntax highlighting, wrapping).
-/// Called from the event loop so it doesn't block the terminal draw lock.
-/// `convo_width` is the full convo area width (inner_width = convo_width - 2 for borders).
-pub fn update_convo_cache(app: &mut App, convo_width: u16) {
+/// Submit a render request to the background thread (NON-BLOCKING).
+/// The main event loop calls this when `rendered_lines_dirty` is true.
+/// The actual rendering happens on the render thread — the main thread
+/// keeps processing events immediately after this returns.
+pub fn submit_render_request(app: &mut App, convo_width: u16) {
     if app.display_events.is_empty() || app.view_mode != ViewMode::Output { return; }
 
     let inner_width = convo_width.saturating_sub(2);
@@ -38,7 +41,7 @@ pub fn update_convo_cache(app: &mut App, convo_width: u16) {
         app.rendered_events_count = 0;
     }
 
-    // Only re-render if cache is dirty or width changed (NOT for animation tick)
+    // Only submit if cache is dirty or width changed
     if !app.rendered_lines_dirty && app.rendered_lines_width == inner_width { return; }
 
     let event_count = app.display_events.len();
@@ -47,27 +50,22 @@ pub fn update_convo_cache(app: &mut App, convo_width: u16) {
         && event_count > app.rendered_events_count
         && app.rendered_events_start == 0;
 
-    let (lines_cache, anim_indices, bubble_positions) = if can_incremental {
-        // Incremental: only render newly appended events
-        let existing_lines = std::mem::take(&mut app.rendered_lines_cache);
-        let existing_anim = std::mem::take(&mut app.animation_line_indices);
-        let existing_bubbles = std::mem::take(&mut app.message_bubble_positions);
-        render_display_events_incremental(
-            &app.display_events,
-            app.rendered_events_count,
-            inner_width,
-            &app.pending_tool_calls,
-            &app.failed_tool_calls,
-            &app.syntax_highlighter,
-            app.pending_user_message.as_deref(),
-            existing_lines,
-            existing_anim,
-            existing_bubbles,
-        )
+    // Build the render request with cloned data (the thread works on its own copy)
+    let req = if can_incremental {
+        RenderRequest {
+            events: app.display_events.clone(),
+            start_idx: app.rendered_events_count,
+            width: inner_width,
+            pending_tools: app.pending_tool_calls.clone(),
+            failed_tools: app.failed_tool_calls.clone(),
+            pending_user_message: app.pending_user_message.clone(),
+            existing_lines: std::mem::take(&mut app.rendered_lines_cache),
+            existing_anim: std::mem::take(&mut app.animation_line_indices),
+            existing_bubbles: std::mem::take(&mut app.message_bubble_positions),
+            deferred_start: 0,
+            seq: 0, // filled by send()
+        }
     } else {
-        // Deferred initial render: for large conversations (>200 events),
-        // only render the tail on first load. User starts at bottom so
-        // they won't notice. Full render happens lazily on scroll-to-top.
         let deferred_start = if app.rendered_events_start == 0
             && app.rendered_events_count == 0
             && event_count > DEFERRED_RENDER_TAIL
@@ -77,27 +75,50 @@ pub fn update_convo_cache(app: &mut App, convo_width: u16) {
             0
         };
 
-        let (l, a, b) = render_display_events(
-            &app.display_events[deferred_start..],
-            inner_width,
-            &app.pending_tool_calls,
-            &app.failed_tool_calls,
-            &app.syntax_highlighter,
-            app.pending_user_message.as_deref(),
-        );
-        app.rendered_events_start = deferred_start;
-        (l, a, b)
+        RenderRequest {
+            events: app.display_events.clone(),
+            start_idx: 0,
+            width: inner_width,
+            pending_tools: app.pending_tool_calls.clone(),
+            failed_tools: app.failed_tool_calls.clone(),
+            pending_user_message: app.pending_user_message.clone(),
+            existing_lines: Vec::new(),
+            existing_anim: Vec::new(),
+            existing_bubbles: Vec::new(),
+            deferred_start,
+            seq: 0,
+        }
     };
 
-    app.rendered_lines_cache = lines_cache;
-    app.animation_line_indices = anim_indices;
-    app.message_bubble_positions = bubble_positions;
-    app.rendered_lines_width = inner_width;
-    app.rendered_events_count = event_count;
+    app.render_thread.send(req);
+    app.render_in_flight = true;
+    // Mark dirty as false so we don't re-submit every loop iteration.
+    // If new events arrive before the render completes, invalidate_render_cache()
+    // sets dirty=true again and we'll submit a new request.
     app.rendered_lines_dirty = false;
+}
+
+/// Check for completed render results from the background thread (NON-BLOCKING).
+/// Returns true if new content was applied (caller should trigger a redraw).
+pub fn poll_render_result(app: &mut App) -> bool {
+    let Some(result) = app.render_thread.try_recv() else { return false; };
+
+    // Discard stale results (a newer request was already applied)
+    if result.seq <= app.render_seq_applied { return false; }
+
+    // Apply the completed render to app state
+    app.rendered_lines_cache = result.lines;
+    app.animation_line_indices = result.anim_indices;
+    app.message_bubble_positions = result.bubble_positions;
+    app.rendered_lines_width = result.width;
+    app.rendered_events_count = result.events_count;
+    app.rendered_events_start = result.events_start;
+    app.render_seq_applied = result.seq;
+    app.render_in_flight = false;
 
     // Invalidate viewport cache since underlying content changed
     app.output_viewport_scroll = usize::MAX;
+    true
 }
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
@@ -109,14 +130,15 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let (title, content) = match app.view_mode {
         ViewMode::Output => {
-            // Safety: if pre-render in event loop used a slightly different width
-            // (rounding), or if this is the very first frame, re-render here.
-            // This is rare — normally update_convo_cache() already ran.
+            // If the cache width doesn't match the actual draw area (e.g. resize),
+            // mark dirty so the next loop iteration submits a new render request.
+            // We NEVER render synchronously here — draw uses whatever cache exists.
             let inner_width = area.width.saturating_sub(2);
             if !app.display_events.is_empty()
-                && (app.rendered_lines_dirty || app.rendered_lines_width != inner_width)
+                && app.rendered_lines_width != inner_width
+                && !app.rendered_lines_dirty
             {
-                update_convo_cache(app, area.width);
+                app.rendered_lines_dirty = true;
             }
 
             if !app.rendered_lines_cache.is_empty() {
