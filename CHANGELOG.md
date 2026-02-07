@@ -35,11 +35,12 @@ All notable changes to Azureal will be documented in this file.
   - Render cache cloned (not taken) for incremental requests — convo stays visible during background render
 - Pre-draw event drain: keys typed during processing/render-poll are caught before `terminal.draw()`
 - Adaptive poll timeout: 16ms when busy (render in-flight / Claude streaming), 100ms when idle
-- Universal draw throttle: ALL draws (including key-triggered) throttled to 33ms (~30fps)
-  - `terminal.draw()` measured at ~18ms per call — blocking event loop during that window
-  - Old behavior: key events bypassed throttle, causing draws on every iteration during typing
-  - New behavior: guaranteed event-only iterations between draws for keystroke pickup
-  - `last_draw` uses post-draw `Instant::now()` so the 33ms gap measures from draw completion
+- Deferred draw: when keys arrive, draw is SKIPPED — key processed, loop iterates back immediately
+  - `terminal.draw()` measured at ~18ms per call — during which event loop is blocked
+  - Draw happens on next quiet iteration (no key events, ~16ms later) — imperceptible delay
+  - Pre-draw drain aborts if a last-moment key arrives, preventing even that 18ms block
+  - `draw_pending` flag on App tracks deferred draws; poll timeout drops to 16ms while pending
+  - Throttle floor at 33ms (~30fps) prevents CPU burn on rapid background updates
 
 ### Changed
 - Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal

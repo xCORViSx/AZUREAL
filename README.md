@@ -92,7 +92,7 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 
 No database. No config files required. Optional `.azureal/sessions.toml` stores custom session name mappings.
 
-**Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results, so input is never blocked by rendering. Sequence numbers ensure only the latest result is applied. All draws are throttled to ~30fps with guaranteed event-processing windows between draws to prevent missed keystrokes.
+**Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results, so input is never blocked by rendering. Sequence numbers ensure only the latest result is applied. Draws are deferred while keys are being typed (the ~18ms `terminal.draw()` call is skipped, processing the keystroke instead), so typing is never blocked by screen updates.
 
 ## License
 
