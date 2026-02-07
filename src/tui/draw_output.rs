@@ -135,6 +135,14 @@ pub fn poll_render_result(app: &mut App) -> bool {
         } else { total_lines }
     } else { total_lines };
 
+    // If the user was at/near the bottom of the OLD cache (or the sentinel was
+    // already resolved to a concrete position), re-set the follow-bottom sentinel
+    // so the next draw scrolls to the NEW bottom. Without this, the scroll position
+    // stays at the old bottom and the newly appended pending bubble is off-screen.
+    let old_len = app.rendered_lines_cache.len();
+    let was_at_bottom = app.output_scroll == usize::MAX
+        || app.output_scroll >= old_len.saturating_sub(app.output_viewport_height);
+
     // Apply the completed render to app state
     app.rendered_lines_cache = result.lines;
     app.animation_line_indices = result.anim_indices;
@@ -145,6 +153,9 @@ pub fn poll_render_result(app: &mut App) -> bool {
     app.rendered_events_start = result.events_start;
     app.render_seq_applied = result.seq;
     app.render_in_flight = false;
+
+    // Re-set follow-bottom sentinel so the next draw shows the new content
+    if was_at_bottom { app.output_scroll = usize::MAX; }
 
     // Invalidate viewport cache since underlying content changed
     app.output_viewport_scroll = usize::MAX;
