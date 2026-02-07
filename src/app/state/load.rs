@@ -204,16 +204,19 @@ impl App {
         }
     }
 
-    /// Poll session file - does the actual parse if dirty
-    /// Returns true if display needs refresh
+    /// Poll session file - does the actual parse if dirty.
+    /// SKIP when Claude is actively streaming to this session — the live
+    /// `handle_claude_output()` path already adds events in real-time.
+    /// Polling the file too would duplicate every event (live adds to
+    /// display_events, then incremental parse treats those as "existing"
+    /// and appends the same events again from the file).
     pub fn poll_session_file(&mut self) -> bool {
-        if self.session_file_dirty {
-            self.session_file_dirty = false;
-            self.refresh_session_events();
-            true
-        } else {
-            false
-        }
+        if !self.session_file_dirty { return false; }
+        self.session_file_dirty = false;
+        // Live stream already provides events — polling would duplicate them
+        if self.is_current_session_running() { return false; }
+        self.refresh_session_events();
+        true
     }
 
     /// Lightweight refresh of session events (no terminal/file tree reload).

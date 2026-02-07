@@ -24,6 +24,16 @@ impl App {
         self.interactive_sessions.remove(branch_name);
         self.invalidate_sidebar(); // Status indicator changed
 
+        // Force a full re-parse from the session file now that streaming is done.
+        // During streaming, session file polling was skipped (to avoid duplicates).
+        // The authoritative session file has hook extraction, rewrite handling, etc.
+        // that the live EventParser doesn't — a full parse reconciles everything.
+        let is_current = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
+        if is_current {
+            self.session_file_parse_offset = 0;
+            self.session_file_dirty = true;
+        }
+
         // If there's a staged prompt, restore it to the input field
         if let Some(prompt) = self.staged_prompt.take() {
             self.input = prompt;
