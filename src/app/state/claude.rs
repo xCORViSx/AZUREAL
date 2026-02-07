@@ -88,6 +88,22 @@ impl App {
                 }
             }
 
+            // Clear pending user message if the stream now contains it —
+            // prevents the "pending" bubble from rendering alongside the
+            // real UserMessage that just arrived from Claude's stream-json.
+            // Use contains() because the streamed content may have
+            // <system-reminder> tags prepended by hooks.
+            if let Some(ref pending) = self.pending_user_message {
+                for ev in &events {
+                    if let DisplayEvent::UserMessage { content, .. } = ev {
+                        if content == pending || content.contains(pending.as_str()) {
+                            self.pending_user_message = None;
+                            break;
+                        }
+                    }
+                }
+            }
+
             self.display_events.extend(events);
             self.invalidate_render_cache();
 
