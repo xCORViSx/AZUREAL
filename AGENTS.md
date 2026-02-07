@@ -227,6 +227,7 @@ During active Claude streaming, events are added to `display_events` by the live
 - `src/tui/draw_output.rs` - incremental render path selection
 
 **App state for incremental tracking:**
+- `rendered_content_line_count: usize` — line count in cache BEFORE pending bubble was appended (used to trim stale bubble on incremental renders)
 - `session_file_parse_offset: u64` — byte offset after last successful parse
 - `rendered_events_count: usize` — how many events were rendered into current cache
 - `rendered_events_start: usize` — start index for deferred render (>0 means early events skipped)
