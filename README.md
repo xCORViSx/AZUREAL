@@ -24,6 +24,7 @@
 - **Real-time Output** — Live-polls Claude's session file; output updates as Claude responds
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
 - **Clickable Edit Links** — Click file paths in Convo to view diffs in the Viewer pane
+- **Async Rendering** — Convo pane renders on a background thread; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
 - **Mouse Support** — Scroll panels by cursor position, Shift+drag for text selection, click file links
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
@@ -90,6 +91,8 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 - Claude's session files at `~/.claude/projects/<encoded-path>/*.jsonl`
 
 No database. No config files required. Optional `.azureal/sessions.toml` stores custom session name mappings.
+
+**Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results, so input is never blocked by rendering. Sequence numbers ensure only the latest result is applied.
 
 ## License
 

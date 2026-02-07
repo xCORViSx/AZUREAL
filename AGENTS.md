@@ -89,7 +89,7 @@ Other features:
 - Help overlay with keybindings
 - Mouse scroll support (scroll panels based on cursor position)
 
-Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/app/state/` for state management (split into 9 focused submodules).
+Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 ---
 
@@ -127,7 +127,7 @@ if app.rendered_lines_dirty || app.rendered_lines_width != width {
 let lines = app.rendered_lines_cache.iter().skip(scroll).take(height).cloned().collect();
 ```
 
-**Files:** `src/tui/draw_output.rs` uses `app.rendered_lines_cache`; call `app.invalidate_render_cache()` when `display_events` changes
+**Files:** `src/tui/draw_output.rs` uses `app.rendered_lines_cache`; render cache is updated asynchronously by the background `RenderThread` — call `app.invalidate_render_cache()` when `display_events` changes to trigger a new render request
 
 **Diff caching:** Same pattern for diff view - `app.diff_lines_cache` stores colorized diff output. Set `app.diff_lines_dirty = true` when `diff_text` changes. `src/tui/draw_output.rs` checks dirty flag before re-highlighting.
 
@@ -306,7 +306,7 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Cached terminal size:** Only updated on resize events, not every frame
 - **Tiered redraw throttling:** Key events always redraw immediately (typing responsiveness). Background changes (Claude streaming, animations, terminal output) throttled to 10fps (`min_busy_draw_interval = 100ms`) so expensive convo rendering doesn't starve the event loop during streaming.
 - **Viewport cache:** Convo pane caches the cloned viewport slice (`output_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
-- **Pre-render outside draw lock:** Expensive convo rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs via `update_convo_cache()` in the event loop BEFORE `terminal.draw()`. After the pre-render completes, the loop `continue`s back to drain any queued key events before drawing — so the user's keystrokes are never blocked by a render+draw in the same iteration. `draw_output()` has a width-mismatch fallback that re-renders if the event loop's width estimate was off (rare, only on resize).
+- **Background render thread:** Expensive convo rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs on a dedicated background thread (`RenderThread`). The event loop sends render requests via `submit_render_request()` (non-blocking channel send) and polls for results via `poll_render_result()` (non-blocking channel recv). Input is NEVER blocked by rendering — the main thread only does cheap draw operations. Sequence numbers ensure stale results are discarded (latest-wins). The render thread drains to the latest request when multiple are queued, and uses zero CPU when idle (blocks on `mpsc::recv`). `draw_output()` has a width-mismatch fallback that re-renders if the terminal width changed since the request was submitted (rare, only on resize).
 
 ### 6. Pre-Format Expensive Data at Load Time
 
@@ -366,6 +366,41 @@ Before merging ANY change to render/event code:
 - [ ] Test: scroll aggressively, CPU must stay <5%
 
 ---
+
+### Background Render Thread (Convo Pane)
+
+The convo pane's expensive rendering pipeline (markdown parsing, syntax highlighting, text wrapping) runs on a dedicated background thread. This ensures the main event loop is never blocked by rendering, eliminating input freezing and character dropping during convo updates.
+
+**Architecture:**
+- `RenderThread` owns its own `SyntaxHighlighter` (no cross-thread sharing needed)
+- Requests carry cloned data (`Vec<DisplayEvent>`, `HashSet<String>`, etc.) so threads work independently
+- Communication via `mpsc` channels: `submit_tx` (main → render), `result_rx` (render → main)
+- Sequence numbers (`u64`) ensure stale results are discarded — only the latest result is applied
+- Render thread drains to the latest request when multiple are queued (skips intermediate states)
+- Zero CPU when idle (blocks on `mpsc::recv`)
+
+**Event loop integration:**
+```rust
+// Non-blocking send — never blocks the event loop
+submit_render_request(&app);  // Sends cloned state to render thread
+
+// Non-blocking poll — checks if a completed render is available
+if let Some(result) = poll_render_result(&mut app) {
+    if result.seq > app.render_seq_applied {
+        app.rendered_lines_cache = result.lines;
+        app.render_seq_applied = result.seq;
+    }
+}
+```
+
+**App state fields:**
+- `render_thread: RenderThread` — handle to the background thread
+- `render_seq_applied: u64` — sequence number of the last applied render result
+- `render_in_flight: bool` — whether a render request is currently being processed
+
+**Evolution:** Previous iterations moved rendering outside `terminal.draw()` (commit 8834050) and split render/draw into separate loop iterations (commit 5192228), but those were still synchronous. The background thread makes rendering fully asynchronous.
+
+**Files:** `src/tui/render_thread.rs` (RenderThread struct, request/result types), `src/tui/draw_output.rs` (`submit_render_request()`, `poll_render_result()`), `src/tui/event_loop.rs` (submit/poll integration), `src/app/state/app.rs` (render_thread fields)
 
 **Startup sequence** (`src/tui/run.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
 
@@ -682,6 +717,7 @@ azureal/
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
 │   │   ├── render_events.rs # DisplayEvent rendering (full + incremental)
+│   │   ├── render_thread.rs # Background render thread for async convo rendering
 │   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── render_wrap.rs  # Text/span wrapping utilities
 │   │   ├── draw_sidebar.rs # Sessions pane rendering

@@ -24,6 +24,14 @@ All notable changes to Azureal will be documented in this file.
 - Removed redundant `.wrap(Wrap { trim: false })` from Convo Paragraph
   - Content is pre-wrapped by `wrap_text()`/`wrap_spans()` — ratatui was re-wrapping every viewport line char-by-char per frame
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
+- Background render thread for convo pane (`src/tui/render_thread.rs`)
+  - Markdown parsing, syntax highlighting, and text wrapping run on a dedicated thread
+  - RenderThread owns its own SyntaxHighlighter (no cross-thread sharing)
+  - Requests carry cloned data so threads work independently
+  - Sequence numbers ensure stale results are discarded (latest-wins)
+  - Render thread drains to latest request when multiple are queued
+  - Zero CPU when idle (blocks on `mpsc::recv`)
+  - `update_convo_cache()` replaced with non-blocking `submit_render_request()` + `poll_render_result()`
 
 ### Changed
 - Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal
@@ -52,7 +60,9 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Input no longer freezes or drops characters while convo pane is updating
   - Background redraws (Claude streaming, animations) throttled to 10fps; key events always draw immediately
-  - Expensive convo rendering (markdown/syntax/wrapping) moved out of `terminal.draw()` into event loop via `update_convo_cache()` — after render, loop continues to drain queued keys before drawing
+  - Expensive convo rendering (markdown/syntax/wrapping) now runs on a dedicated background thread (`RenderThread`)
+  - Main event loop sends non-blocking render requests and polls for results — input is never blocked
+  - Previous iterations: moved rendering outside `terminal.draw()` lock, then split render/draw into separate loop iterations, now fully asynchronous via background thread
   - Convo viewport cached — avoids cloning full rendered_lines_cache on typing-only frames
 - Prompt input keybindings now actually work: ⌥c (clear), ↑/↓ (history), word nav
   - INPUT binding array previously declared ⌃z/⌃x for word nav, which conflicted with clipboard cut/undo
