@@ -143,6 +143,9 @@ pub struct App {
     pub render_seq_applied: u64,
     /// True while a render request is in-flight (waiting for background thread to finish)
     pub render_in_flight: bool,
+    /// True when state changed and a draw is needed. Draw is deferred if keys
+    /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
+    pub draw_pending: bool,
     /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
     pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
@@ -333,6 +336,7 @@ impl App {
             render_thread: RenderThread::spawn(),
             render_seq_applied: 0,
             render_in_flight: false,
+            draw_pending: false,
             output_viewport_cache: Vec::new(),
             output_viewport_scroll: usize::MAX,
             output_viewport_anim_tick: u64::MAX,

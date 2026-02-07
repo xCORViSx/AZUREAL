@@ -68,7 +68,9 @@ pub async fn run_app(
         // Poll timeout: short when busy (render in-flight or Claude streaming)
         // so we pick up completed renders and key events quickly. Longer when
         // idle to avoid burning CPU spinning on an empty event queue.
-        let poll_ms = if app.render_in_flight || !app.claude_receivers.is_empty() { 16 } else { 100 };
+        // Short poll when we have pending work: draw waiting, render in-flight,
+        // or Claude streaming. Ensures fast pickup without burning CPU when idle.
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -159,29 +161,43 @@ pub async fn run_app(
             needs_redraw = true;
         }
 
-        // Redraw throttle: terminal.draw() costs ~18ms (terminal I/O), so we
-        // NEVER draw more than ~30fps. This ensures at least one event-only loop
-        // iteration between draws — crucial for catching keystrokes typed during
-        // the previous draw's 18ms blocking window.
+        // Mark that we need a draw (will be fulfilled on a quiet iteration)
+        if had_key_event || needs_redraw || scroll_changed {
+            app.draw_pending = true;
+        }
+
+        // Draw strategy: terminal.draw() costs ~18ms (measured). During those
+        // 18ms the event loop is blocked and can't read keystrokes. To prevent
+        // missed keys during rapid typing:
+        //   1. If keys arrived THIS iteration, SKIP draw — loop back immediately
+        //      so the next keystroke (arriving ~20-50ms later) gets read first.
+        //   2. Draw only on "quiet" iterations (no key events) after the throttle
+        //      interval. The key event's visual update appears 1 iteration later
+        //      (~16ms), which is imperceptible.
+        //   3. Pre-draw drain catches any stragglers right before the 18ms block.
         let now = Instant::now();
         let draw_ready = now.duration_since(last_draw) >= min_draw_interval;
-        let should_draw = draw_ready && (had_key_event || needs_redraw || scroll_changed);
+        let should_draw = app.draw_pending && draw_ready && !had_key_event;
 
         if should_draw {
-            // Pre-draw drain: catch any events that arrived between the first
-            // event drain (top of loop) and right now (~0-5ms gap). Without this,
-            // those keys would be delayed by the ~18ms draw below.
+            // Pre-draw drain: catch events that arrived between the top-of-loop
+            // drain and now (~0-5ms gap). If a key arrives here, skip draw.
+            let mut got_key = false;
             while event::poll(Duration::from_millis(0))? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Modifier(_)) => {
                         handle_key_event(key, app, &claude_process)?;
+                        got_key = true;
                     }
                     Event::Resize(w, h) => { cached_width = w; cached_height = h; }
                     _ => {}
                 }
             }
-            terminal.draw(|f| ui(f, app))?;
-            last_draw = Instant::now(); // Use actual post-draw time, not pre-draw
+            if !got_key {
+                terminal.draw(|f| ui(f, app))?;
+                last_draw = Instant::now();
+                app.draw_pending = false;
+            }
         }
 
         if app.should_quit { break; }
