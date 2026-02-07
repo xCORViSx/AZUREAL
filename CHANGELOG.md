@@ -35,12 +35,18 @@ All notable changes to Azureal will be documented in this file.
   - Render cache cloned (not taken) for incremental requests — convo stays visible during background render
 - Pre-draw event drain: keys typed during processing/render-poll are caught before `terminal.draw()`
 - Adaptive poll timeout: 16ms when busy (render in-flight / Claude streaming), 100ms when idle
-- Deferred draw: when keys arrive, draw is SKIPPED — key processed, loop iterates back immediately
+- Deferred draw: when keys arrive, `terminal.draw()` is SKIPPED entirely
   - `terminal.draw()` measured at ~18ms per call — during which event loop is blocked
   - Draw happens on next quiet iteration (no key events, ~16ms later) — imperceptible delay
   - Pre-draw drain aborts if a last-moment key arrives, preventing even that 18ms block
   - `draw_pending` flag on App tracks deferred draws; poll timeout drops to 16ms while pending
   - Throttle floor at 33ms (~30fps) prevents CPU burn on rapid background updates
+- Fast-path direct input rendering: `fast_draw_input()` writes input box content directly
+  via crossterm (~0.1ms) when typing in prompt mode, bypassing `terminal.draw()` entirely
+  - `app.input_area` cached from last full draw provides screen coordinates
+  - Word-wrap and scroll-offset aware cursor positioning
+  - Unicode display-width aware padding to overwrite stale content
+  - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
 ### Changed
 - Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal
