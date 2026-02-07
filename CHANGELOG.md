@@ -52,7 +52,7 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Input no longer freezes or drops characters while convo pane is updating
   - Background redraws (Claude streaming, animations) throttled to 10fps; key events always draw immediately
-  - Expensive convo rendering (markdown/syntax/wrapping) moved out of `terminal.draw()` into event loop via `update_convo_cache()` — draw lock held for minimal time
+  - Expensive convo rendering (markdown/syntax/wrapping) moved out of `terminal.draw()` into event loop via `update_convo_cache()` — after render, loop continues to drain queued keys before drawing
   - Convo viewport cached — avoids cloning full rendered_lines_cache on typing-only frames
 - Prompt input keybindings now actually work: ⌥c (clear), ↑/↓ (history), word nav
   - INPUT binding array previously declared ⌃z/⌃x for word nav, which conflicted with clipboard cut/undo

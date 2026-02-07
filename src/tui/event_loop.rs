@@ -162,15 +162,20 @@ pub async fn run_app(
             scroll_changed && elapsed >= min_draw_interval
         };
 
+        // Pre-render convo content OUTSIDE of terminal.draw() so the expensive
+        // markdown/syntax/wrapping work doesn't hold the stdout lock.
+        // Convo width = terminal_width - left_panes(80) split 50/50, take right half.
+        // This matches the layout in run::ui() — Length(80) + Percentage(50) + Percentage(50).
+        if app.rendered_lines_dirty {
+            let convo_width = cached_width.saturating_sub(80) / 2;
+            update_convo_cache(app, convo_width);
+            // After an expensive render, skip this draw and loop back to drain
+            // any key events that queued up during the render. The next iteration
+            // will draw with the fresh cache + any pending input applied.
+            if !app.should_quit { continue; }
+        }
+
         if should_draw {
-            // Pre-render convo content BEFORE terminal.draw() so the expensive
-            // markdown/syntax/wrapping work doesn't block the draw lock.
-            // Convo width = terminal_width - left_panes(80) split 50/50, take right half.
-            // This matches the layout in run::ui() — Length(80) + Percentage(50) + Percentage(50).
-            if app.rendered_lines_dirty {
-                let convo_width = cached_width.saturating_sub(80) / 2;
-                update_convo_cache(app, convo_width);
-            }
             terminal.draw(|f| ui(f, app))?;
             last_draw = now;
         }
