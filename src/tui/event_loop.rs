@@ -171,7 +171,7 @@ pub async fn run_app(
         // skip the expensive terminal.draw() (~18ms) and instead write the
         // input box content directly via crossterm (~0.1ms). This gives instant
         // keystroke feedback while the full UI catches up on the next quiet frame.
-        if had_key_event && app.prompt_mode && app.focus == Focus::Input && app.input_area.width > 2 {
+        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 {
             fast_draw_input(app);
         }
 
@@ -179,7 +179,10 @@ pub async fn run_app(
         // (no key events) to avoid blocking the event loop during typing.
         let now = Instant::now();
         let draw_ready = now.duration_since(last_draw) >= min_draw_interval;
-        let should_draw = app.draw_pending && draw_ready && !had_key_event;
+        // Defer draw when typing in Claude prompt (fast-path handles it).
+        // Terminal mode needs immediate draws — PTY output has no fast-path.
+        let defer_for_typing = had_key_event && !(app.terminal_mode && app.prompt_mode);
+        let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
         if should_draw {
             // Pre-draw drain: catch events that arrived between the top-of-loop
