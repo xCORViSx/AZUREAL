@@ -136,6 +136,14 @@ pub struct App {
     pub rendered_events_start: usize,
     /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
     pub animation_line_indices: Vec<(usize, usize)>,
+    /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
+    /// Only rebuilt when scroll position, content, or animation tick changes.
+    pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
+    /// Scroll position and animation tick used to build the viewport cache (invalidation key)
+    pub output_viewport_scroll: usize,
+    pub output_viewport_anim_tick: u64,
+    /// Title string corresponding to the cached viewport
+    pub output_viewport_title: String,
     /// Total lines in last parsed session file
     pub parse_total_lines: usize,
     /// Parse errors in last parsed session file
@@ -315,6 +323,10 @@ impl App {
             rendered_events_count: 0,
             rendered_events_start: 0,
             animation_line_indices: Vec::new(),
+            output_viewport_cache: Vec::new(),
+            output_viewport_scroll: usize::MAX,
+            output_viewport_anim_tick: u64::MAX,
+            output_viewport_title: String::new(),
             parse_total_lines: 0,
             parse_errors: 0,
             assistant_total: 0,

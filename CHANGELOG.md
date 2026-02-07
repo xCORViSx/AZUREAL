@@ -50,6 +50,9 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Fixed
+- Input no longer freezes or drops characters while convo pane is updating
+  - Background redraws (Claude streaming, animations) throttled to 10fps; key events always draw immediately
+  - Convo viewport cached — avoids cloning full rendered_lines_cache on typing-only frames
 - Prompt input keybindings now actually work: ⌥c (clear), ↑/↓ (history), word nav
   - INPUT binding array previously declared ⌃z/⌃x for word nav, which conflicted with clipboard cut/undo
   - Word nav now uses standard macOS ⌥←/⌥→ (and ⌃←/⌃→) matching the actual handler

@@ -33,6 +33,9 @@ pub async fn run_app(
     let min_draw_interval = Duration::from_millis(100); // Max 10fps for scroll
     let min_poll_interval = Duration::from_millis(500); // Poll session file max 2x/sec
     let min_animation_interval = Duration::from_millis(250); // 4fps for pulsating indicators
+    // When convo is updating AND user is typing, throttle full redraws so key
+    // events aren't blocked by expensive convo rendering (syntax/markdown/clone).
+    let min_busy_draw_interval = Duration::from_millis(100);
 
     // Cache terminal size, update on resize events
     let (mut cached_width, mut cached_height) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -143,12 +146,20 @@ pub async fn run_app(
             scroll_changed = apply_scroll_cached(app, scroll_delta, scroll_col, scroll_row, cached_width, cached_height);
         }
 
-        // Key events, Claude events, terminal output: redraw immediately
-        // Scroll events: throttle to max 20fps
+        // Redraw strategy:
+        //   - Key events: always redraw immediately (typing must feel instant)
+        //   - Background changes (convo/animation/terminal): throttle to 10fps
+        //     so expensive convo rendering doesn't starve the event loop
+        //   - Scroll: throttle to 10fps
         let now = Instant::now();
-        let should_draw = if had_key_event || needs_redraw {
+        let elapsed = now.duration_since(last_draw);
+        let should_draw = if had_key_event {
             true
-        } else { scroll_changed && now.duration_since(last_draw) >= min_draw_interval };
+        } else if needs_redraw {
+            elapsed >= min_busy_draw_interval
+        } else {
+            scroll_changed && elapsed >= min_draw_interval
+        };
 
         if should_draw {
             terminal.draw(|f| ui(f, app))?;

@@ -166,6 +166,7 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 
 **Throttle values in `src/tui/event_loop.rs`:**
 - `min_draw_interval = 100ms` (10fps scroll)
+- `min_busy_draw_interval = 100ms` (10fps background/convo updates — throttled so typing isn't blocked)
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
 
@@ -303,6 +304,8 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Motion discard:** Mouse motion events discarded instantly (zero processing)
 - **Conditional polling:** Terminal rx only polled when `app.terminal_mode == true`
 - **Cached terminal size:** Only updated on resize events, not every frame
+- **Tiered redraw throttling:** Key events always redraw immediately (typing responsiveness). Background changes (Claude streaming, animations, terminal output) throttled to 10fps (`min_busy_draw_interval = 100ms`) so expensive convo rendering doesn't starve the event loop during streaming.
+- **Viewport cache:** Convo pane caches the cloned viewport slice (`output_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
 
 ### 6. Pre-Format Expensive Data at Load Time
 

@@ -98,46 +98,61 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 app.clamp_output_scroll();
                 let scroll = app.output_scroll;
 
-                // Build viewport slice from cache, patch animation only if tools pending
-                let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
-                    .skip(scroll)
-                    .take(viewport_height)
-                    .cloned()
-                    .collect();
+                // Check if viewport cache is still valid — skip the expensive clone if so.
+                // Cache invalidates on: scroll change, content change (rendered_events_count
+                // already updated above which sets rendered_lines_dirty=false), animation tick,
+                // or viewport height mismatch.
+                let cache_valid = scroll == app.output_viewport_scroll
+                    && app.animation_tick == app.output_viewport_anim_tick
+                    && app.output_viewport_cache.len() == viewport_height.min(app.rendered_lines_cache.len().saturating_sub(scroll));
 
-                // Patch animation colors only when there are pending tool indicators to animate
-                if !app.animation_line_indices.is_empty() {
-                    let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
-                    let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
-                    for &(line_idx, span_idx) in &app.animation_line_indices {
-                        if line_idx >= scroll && line_idx < scroll + viewport_height {
-                            let viewport_idx = line_idx - scroll;
-                            if let Some(line) = lines.get_mut(viewport_idx) {
-                                if let Some(span) = line.spans.get_mut(span_idx) {
-                                    span.style = span.style.fg(pulse_color);
+                if !cache_valid {
+                    // Clone viewport slice from cache
+                    let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
+                        .skip(scroll)
+                        .take(viewport_height)
+                        .cloned()
+                        .collect();
+
+                    // Patch animation colors only when there are pending tool indicators
+                    if !app.animation_line_indices.is_empty() {
+                        let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
+                        let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
+                        for &(line_idx, span_idx) in &app.animation_line_indices {
+                            if line_idx >= scroll && line_idx < scroll + viewport_height {
+                                let viewport_idx = line_idx - scroll;
+                                if let Some(line) = lines.get_mut(viewport_idx) {
+                                    if let Some(span) = line.spans.get_mut(span_idx) {
+                                        span.style = span.style.fg(pulse_color);
+                                    }
                                 }
                             }
                         }
                     }
+
+                    // Build title with message count
+                    let title = if !app.message_bubble_positions.is_empty() {
+                        let total_msgs = app.message_bubble_positions.len();
+                        let current_line = scroll.saturating_add(3);
+                        let current_msg = app.message_bubble_positions.iter()
+                            .enumerate()
+                            .rev()
+                            .find(|(_, (line_idx, _))| *line_idx <= current_line)
+                            .map(|(idx, _)| idx + 1)
+                            .unwrap_or(1);
+                        format!(" Convo [{}/{}] ", current_msg, total_msgs)
+                    } else {
+                        " Convo ".to_string()
+                    };
+
+                    // Store in cache for reuse on subsequent frames
+                    app.output_viewport_cache = lines;
+                    app.output_viewport_scroll = scroll;
+                    app.output_viewport_anim_tick = app.animation_tick;
+                    app.output_viewport_title = title;
                 }
 
-                // Build title with message count instead of line count
-                let title = if !app.message_bubble_positions.is_empty() {
-                    let total_msgs = app.message_bubble_positions.len();
-                    // Find current message by checking which bubble position is at or before current scroll + 3 lines
-                    let current_line = scroll.saturating_add(3);
-                    let current_msg = app.message_bubble_positions.iter()
-                        .enumerate()
-                        .rev()
-                        .find(|(_, (line_idx, _))| *line_idx <= current_line)
-                        .map(|(idx, _)| idx + 1)
-                        .unwrap_or(1);
-                    format!(" Convo [{}/{}] ", current_msg, total_msgs)
-                } else {
-                    " Convo ".to_string()
-                };
-
-                (title, lines)
+                (app.output_viewport_title.clone(), app.output_viewport_cache.clone())
             } else {
                 // Fallback: using output_lines with colorize_output
                 let mut all_lines: Vec<Line> = Vec::new();
