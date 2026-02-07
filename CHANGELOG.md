@@ -32,6 +32,9 @@ All notable changes to Azureal will be documented in this file.
   - Render thread drains to latest request when multiple are queued
   - Zero CPU when idle (blocks on `mpsc::recv`)
   - `update_convo_cache()` replaced with non-blocking `submit_render_request()` + `poll_render_result()`
+  - Render cache cloned (not taken) for incremental requests — convo stays visible during background render
+- Pre-draw event drain: keys typed during processing/render-poll are caught before `terminal.draw()`
+- Adaptive poll timeout: 16ms when busy (render in-flight / Claude streaming), 100ms when idle
 
 ### Changed
 - Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal
