@@ -88,28 +88,28 @@ impl App {
                 }
             }
 
-            // Clear pending user message if the stream now contains it —
-            // prevents the "pending" bubble from rendering alongside the
-            // real UserMessage that just arrived from Claude's stream-json.
-            // Use contains() because the streamed content may have
-            // <system-reminder> tags prepended by hooks.
-            if let Some(ref pending) = self.pending_user_message {
-                for ev in &events {
-                    if let DisplayEvent::UserMessage { content, .. } = ev {
-                        if content == pending || content.contains(pending.as_str()) {
-                            self.pending_user_message = None;
-                            // Trim the stale pending bubble from the current cache
-                            // immediately so it doesn't linger while the background
-                            // render thread processes the full re-render.
-                            let trim = self.rendered_content_line_count;
-                            if trim < self.rendered_lines_cache.len() {
-                                self.rendered_lines_cache.truncate(trim);
-                                self.animation_line_indices.retain(|&(idx, _)| idx < trim);
-                                if let Some(&(line_idx, _)) = self.message_bubble_positions.last() {
-                                    if line_idx >= trim { self.message_bubble_positions.pop(); }
-                                }
-                            }
-                            break;
+            // Clear pending user message when Claude starts responding.
+            // stream-json does NOT include user events in stdout (only
+            // system/assistant/result/progress), so we can't match on
+            // UserMessage. Instead, any assistant or tool event proves
+            // Claude received our prompt — the pending bubble is no
+            // longer needed. Trim the stale bubble from the cache
+            // immediately so it doesn't linger while the background
+            // render thread processes the re-render.
+            if self.pending_user_message.is_some() {
+                let has_response = events.iter().any(|ev| matches!(ev,
+                    DisplayEvent::AssistantText { .. }
+                    | DisplayEvent::ToolCall { .. }
+                    | DisplayEvent::ToolResult { .. }
+                ));
+                if has_response {
+                    self.pending_user_message = None;
+                    let trim = self.rendered_content_line_count;
+                    if trim < self.rendered_lines_cache.len() {
+                        self.rendered_lines_cache.truncate(trim);
+                        self.animation_line_indices.retain(|&(idx, _)| idx < trim);
+                        if let Some(&(line_idx, _)) = self.message_bubble_positions.last() {
+                            if line_idx >= trim { self.message_bubble_positions.pop(); }
                         }
                     }
                 }
