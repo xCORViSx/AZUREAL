@@ -3,8 +3,7 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use crossterm::{cursor, execute, style};
-use std::io;
-use std::io::Write;
+use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use ratatui::{backend::CrosstermBackend, Terminal};
