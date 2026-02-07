@@ -165,10 +165,10 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 **Animation guard:** The animation patching loop is skipped entirely when `animation_line_indices` is empty (no pending tools). This avoids pulse_color computation and viewport iteration on every scroll frame when nothing is animating.
 
 **Throttle values in `src/tui/event_loop.rs`:**
-- `min_draw_interval = 100ms` (10fps scroll)
-- `min_busy_draw_interval = 100ms` (10fps background/convo updates — throttled so typing isn't blocked)
+- `min_draw_interval = 33ms` (~30fps — ALL draws throttled uniformly. `terminal.draw()` costs ~18ms, so this guarantees at least one event-only loop iteration between draws for keystroke pickup)
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
+- `poll_ms = 16ms` when busy (render in-flight / Claude streaming), `100ms` when idle
 
 ### 9. NEVER Use `.wrap()` on Pre-Wrapped Content
 
@@ -304,7 +304,9 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Motion discard:** Mouse motion events discarded instantly (zero processing)
 - **Conditional polling:** Terminal rx only polled when `app.terminal_mode == true`
 - **Cached terminal size:** Only updated on resize events, not every frame
-- **Tiered redraw throttling:** Key events always redraw immediately (typing responsiveness). Background changes (Claude streaming, animations, terminal output) throttled to 10fps (`min_busy_draw_interval = 100ms`) so expensive convo rendering doesn't starve the event loop during streaming.
+- **Universal draw throttle (33ms / ~30fps):** `terminal.draw()` costs ~18ms (measured). ALL draws — including key-triggered ones — are throttled to 33ms minimum interval. This guarantees at least one event-only loop iteration between draws, giving crossterm a window to pick up keystrokes typed during the previous draw's 18ms blocking window. The old approach of bypassing throttle for key events caused missed keystrokes during Claude streaming.
+- **Pre-draw event drain:** Right before `terminal.draw()`, drain any key events that arrived since the top-of-loop drain (~0-5ms gap). Catches keys that would otherwise be delayed by the 18ms draw.
+- **Adaptive poll timeout:** 16ms when busy (render in-flight or Claude streaming via receivers), 100ms when idle. Ensures quick pickup of completed renders and key events without burning CPU when nothing is happening.
 - **Viewport cache:** Convo pane caches the cloned viewport slice (`output_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
 - **Background render thread:** Expensive convo rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs on a dedicated background thread (`RenderThread`). The event loop sends render requests via `submit_render_request()` (non-blocking channel send) and polls for results via `poll_render_result()` (non-blocking channel recv). Input is NEVER blocked by rendering — the main thread only does cheap draw operations. Sequence numbers ensure stale results are discarded (latest-wins). The render thread drains to the latest request when multiple are queued, and uses zero CPU when idle (blocks on `mpsc::recv`). `draw_output()` has a width-mismatch fallback that re-renders if the terminal width changed since the request was submitted (rare, only on resize).
 
