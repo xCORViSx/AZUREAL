@@ -216,9 +216,13 @@ if event_count > app.rendered_events_count && width unchanged {
 }
 ```
 
+**Streaming vs Polling (Dual-Source Prevention):**
+During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
+
 **Files:**
 - `src/app/session_parser.rs` - `parse_session_file_incremental()`, `IncrementalParserState`
 - `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`
+- `src/app/state/claude.rs` - `handle_claude_output()` (live events), `handle_claude_exited()` (full re-parse trigger)
 - `src/tui/render_events.rs` - `render_display_events_incremental()`, `render_display_events_from()`
 - `src/tui/draw_output.rs` - incremental render path selection
 

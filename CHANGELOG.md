@@ -73,6 +73,10 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Fixed
+- Convo messages no longer duplicated during active Claude sessions
+  - During streaming, events came from BOTH the live process (`handle_claude_output`) AND session file polling (`refresh_session_events`)
+  - Session file polling now skipped when Claude is actively streaming to the current session
+  - On Claude exit, a full re-parse from the session file reconciles live-streamed events with the authoritative JSONL (which has hook extraction, rewrite handling, etc.)
 - Terminal typing no longer blanks the PTY display
   - `fast_draw_input()` was firing in terminal type mode (which sets `prompt_mode=true`), writing empty `app.input` over the terminal area
   - Deferred draw was also skipping `terminal.draw()` on terminal keystrokes, but PTY output has no fast-path — it needs ratatui to render
