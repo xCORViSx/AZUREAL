@@ -99,6 +99,14 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
         _ => {
             // Viewer-specific keys not in centralized bindings yet
             match (key.modifiers, key.code) {
+                // Select All: selects entire viewer cache so ⌘C can copy it
+                (KeyModifiers::SUPER, KeyCode::Char('a')) => {
+                    let last = app.viewer_lines_cache.len().saturating_sub(1);
+                    let last_col = app.viewer_lines_cache.last()
+                        .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
+                        .unwrap_or(0);
+                    app.viewer_selection = Some((0, 0, last, last_col));
+                }
                 // Full-page scroll (Cmd+Shift+J/K)
                 (m, KeyCode::Char('J')) if m == KeyModifiers::SHIFT | KeyModifiers::SUPER => {
                     app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
