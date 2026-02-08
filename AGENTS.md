@@ -263,25 +263,13 @@ if app.rendered_events_start > 0 && app.output_scroll == 0 {
 
 **Files:** `src/tui/draw_output.rs` (DEFERRED_RENDER_TAIL const, deferred render logic)
 
-### 11. NEVER Do File I/O in Render Path
+### 11. NEVER Do File I/O in the DRAW Path (Render Thread Is Fine)
 
-```rust
-// ❌ WRONG - Reads file from disk for EVERY Edit event during render
-fn render_edit_diff(...) {
-    let start_line = std::fs::read_to_string(path).ok().and_then(|content| {
-        content.find(new_str).map(|pos| ...)  // O(file_size) per Edit event
-    });
-}
+File I/O in `terminal.draw()` or any function called during frame rendering blocks the event loop. However, `render_edit_diff()` runs on the **background render thread** — file I/O there is safe because it doesn't block input or drawing.
 
-// ✅ CORRECT - Use relative line numbers, no disk I/O
-fn render_edit_diff(...) {
-    let start_line = 1usize;  // Relative numbering, no file read
-}
-```
+`render_edit_diff()` reads the file once per Edit event to find where `old_string` occurs, yielding actual line numbers. This is acceptable because the render thread is async. Falls back to line 1 if the file can't be read.
 
-For a session with 200 Edit events, the wrong approach reads the file 200 times × O(file_size) per read. The correct approach uses relative line numbers (1-based) since the convo panel is a summary view.
-
-**Also:** Syntax highlighting calls per Edit event reduced from 3→2 by reusing the base syntect parse and applying background colors via cheap span iteration instead of re-parsing.
+**Edit diff styling:** Removed lines (red) use plain grey text on dim red bg — no syntax highlighting. Only added lines (green) get syntax highlighting. This keeps removed lines visually distinct and reduces highlight calls to 1 per Edit event.
 
 **Files:** `src/tui/render_tools.rs` (`render_edit_diff()`)
 
@@ -518,7 +506,7 @@ Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "
 |------|--------|-------------|
 | Read | Clickable link + first/last line | File path underlined and clickable; shows file boundaries with line count |
 | Bash | Last 2 lines | Shows command results (usually at end) |
-| Edit | Clickable link + inline diff (last 20) | File path underlined; click to view in Viewer with diff overlay. Last 20 Edit calls also show inline red/green diff preview |
+| Edit | Clickable link + inline diff (last 20) | File path underlined; click to view in Viewer with diff overlay. Last 20 Edit calls show inline diff: removed lines in grey on dim red bg (no syntax highlighting), added lines syntax-highlighted on dim green bg, with actual file line numbers |
 | Write | Clickable link + purpose line | File path underlined and clickable; shows line count + first comment |
 | Grep | First 3 matches | Preview of search results |
 | Glob | Directory summary | File count grouped by directory |

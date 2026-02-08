@@ -73,6 +73,13 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Fixed
+- Edit diff inline previews now show actual file line numbers instead of always starting at 1
+  - Reads file on background render thread to find where `old_string` occurs
+  - Falls back to line 1 if file can't be read or string not found
+- Edit diff removed (red) lines no longer have syntax highlighting
+  - Removed lines now show grey text on dim red background for visual distinction
+  - Only added (green) lines get syntax highlighting on dim green background
+  - Reduces highlight calls from 2→1 per Edit event
 - Convo messages no longer duplicated during active Claude sessions
   - During streaming, events came from BOTH the live process (`handle_claude_output`) AND session file polling (`refresh_session_events`)
   - Session file polling now skipped when Claude is actively streaming to the current session
