@@ -386,7 +386,7 @@ fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'stat
 }
 
 /// Apply selection highlighting to a line based on visual line indices
-fn apply_selection_to_line(
+pub(crate) fn apply_selection_to_line(
     spans: Vec<Span<'static>>,
     line_content: &str,
     visual_line_idx: usize,

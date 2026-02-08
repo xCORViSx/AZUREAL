@@ -239,6 +239,8 @@ pub struct App {
     pub viewer_selection: Option<(usize, usize, usize, usize)>,
     /// Text selection for output/convo pane: (start_visual_line, start_col, end_visual_line, end_col)
     pub output_selection: Option<(usize, usize, usize, usize)>,
+    /// Cached output selection for viewport cache invalidation (rebuild viewport when selection changes)
+    pub output_selection_cached: Option<(usize, usize, usize, usize)>,
     /// Mouse drag in progress
     pub mouse_drag_start: Option<(u16, u16)>,
     /// Last click time and position for double-click detection
@@ -401,6 +403,7 @@ impl App {
             clipboard: String::new(),
             viewer_selection: None,
             output_selection: None,
+            output_selection_cached: None,
             mouse_drag_start: None,
             last_click: None,
             viewer_edit_diff: None,

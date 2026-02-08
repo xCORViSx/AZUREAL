@@ -188,8 +188,10 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 let scroll = app.output_scroll;
 
                 // Check if viewport cache is still valid — skip the clone if so.
+                // Selection changes also invalidate (must re-apply highlight)
                 let cache_valid = scroll == app.output_viewport_scroll
                     && app.animation_tick == app.output_viewport_anim_tick
+                    && app.output_selection == app.output_selection_cached
                     && app.output_viewport_cache.len() == viewport_height.min(app.rendered_lines_cache.len().saturating_sub(scroll));
 
                 if !cache_valid {
@@ -215,6 +217,21 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                             }
                         }
                     }
+
+                    // Apply text selection highlighting if active
+                    if let Some((sl, sc, el, ec)) = app.output_selection {
+                        for (vi, line) in lines.iter_mut().enumerate() {
+                            let ci = scroll + vi;
+                            if ci >= sl && ci <= el {
+                                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                                let new_spans = super::draw_viewer::apply_selection_to_line(
+                                    line.spans.clone(), &text, ci, sl, sc, el, ec,
+                                );
+                                *line = Line::from(new_spans);
+                            }
+                        }
+                    }
+                    app.output_selection_cached = app.output_selection;
 
                     // Build title with message count
                     let title = if !app.message_bubble_positions.is_empty() {

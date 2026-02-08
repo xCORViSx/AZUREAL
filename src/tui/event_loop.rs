@@ -94,13 +94,26 @@ pub async fn run_app(
                                 scroll_col = mouse.column;
                                 scroll_row = mouse.row;
                             }
-                            // Left click: focus pane, select item, position cursor
+                            // Left click: record drag start, clear selections, focus/select
                             MouseEventKind::Down(MouseButton::Left) => {
+                                app.mouse_drag_start = Some((mouse.column, mouse.row));
+                                app.viewer_selection = None;
+                                app.output_selection = None;
                                 if handle_mouse_click(app, mouse.column, mouse.row) {
                                     needs_redraw = true;
                                 }
                             }
-                            _ => {} // Discard motion, right-click, drag
+                            // Drag: compute text selection from start to current
+                            MouseEventKind::Drag(MouseButton::Left) => {
+                                if handle_mouse_drag(app, mouse.column, mouse.row) {
+                                    needs_redraw = true;
+                                }
+                            }
+                            // Release: stop drag tracking, keep selection
+                            MouseEventKind::Up(MouseButton::Left) => {
+                                app.mouse_drag_start = None;
+                            }
+                            _ => {} // Discard motion, right-click
                         }
                     }
                     Event::Resize(w, h) => {
@@ -343,6 +356,7 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
         else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
         app.file_tree_selected != old
     } else if app.pane_viewer.contains(pos) {
+        app.viewer_selection = None;
         if delta > 0 { app.scroll_viewer_down(delta as usize) }
         else { app.scroll_viewer_up((-delta) as usize) }
     } else if app.terminal_mode && app.input_area.contains(pos) {
@@ -350,6 +364,7 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
         else { app.scroll_terminal_up((-delta) as usize); }
         true
     } else if app.pane_convo.contains(pos) {
+        app.output_selection = None;
         if delta > 0 {
             match app.view_mode {
                 crate::app::ViewMode::Output => app.scroll_output_down(delta as usize),
@@ -548,6 +563,119 @@ fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     app.input_cursor = best_idx;
 }
 
+/// Map screen coordinates to (cache_line, cache_col) within a bordered pane.
+/// Returns None if outside the content area (inside borders).
+fn screen_to_cache_pos(
+    screen_col: u16, screen_row: u16,
+    pane: ratatui::layout::Rect, scroll: usize, cache_len: usize,
+) -> Option<(usize, usize)> {
+    // Content sits inside the 1px border on all sides
+    let cx = pane.x + 1;
+    let cy = pane.y + 1;
+    let ch = pane.height.saturating_sub(2) as usize;
+    if screen_col < cx || screen_row < cy { return None; }
+    let vrow = (screen_row - cy) as usize;
+    let col = (screen_col - cx) as usize;
+    if vrow >= ch { return None; }
+    let line = scroll + vrow;
+    if line >= cache_len { return None; }
+    Some((line, col))
+}
+
+/// Handle mouse drag: compute text selection from drag start to current position.
+/// Works in Viewer and Convo panes. Returns true if selection changed.
+fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
+    use ratatui::layout::Position;
+    let Some((start_col, start_row)) = app.mouse_drag_start else { return false };
+    let start_pos = Position::new(start_col, start_row);
+
+    // --- Viewer pane ---
+    if app.pane_viewer.contains(start_pos) {
+        let scroll = app.viewer_scroll;
+        let clen = app.viewer_lines_cache.len();
+        // Clamp end to pane content bounds
+        let ec = col.max(app.pane_viewer.x + 1).min(app.pane_viewer.x + app.pane_viewer.width.saturating_sub(1));
+        let er = row.max(app.pane_viewer.y + 1).min(app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1));
+        // Auto-scroll when dragging above/below pane
+        if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
+        else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
+        let Some((sl, sc)) = screen_to_cache_pos(start_col, start_row, app.pane_viewer, scroll, clen) else { return false };
+        let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_viewer, scroll, clen) else { return false };
+        // Normalize so start <= end
+        let sel = if sl < el || (sl == el && sc <= ecc) { (sl, sc, el, ecc) } else { (el, ecc, sl, sc) };
+        let new = Some(sel);
+        if app.viewer_selection != new { app.viewer_selection = new; return true; }
+        return false;
+    }
+
+    // --- Convo pane ---
+    if app.pane_convo.contains(start_pos) {
+        app.clamp_output_scroll();
+        let scroll = app.output_scroll;
+        let clen = app.rendered_lines_cache.len();
+        let ec = col.max(app.pane_convo.x + 1).min(app.pane_convo.x + app.pane_convo.width.saturating_sub(1));
+        let er = row.max(app.pane_convo.y + 1).min(app.pane_convo.y + app.pane_convo.height.saturating_sub(1));
+        // Auto-scroll when dragging above/below pane
+        if row < app.pane_convo.y + 1 { app.scroll_output_up(1); }
+        else if row >= app.pane_convo.y + app.pane_convo.height.saturating_sub(1) { app.scroll_output_down(1); }
+        let Some((sl, sc)) = screen_to_cache_pos(start_col, start_row, app.pane_convo, scroll, clen) else { return false };
+        let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_convo, scroll, clen) else { return false };
+        let sel = if sl < el || (sl == el && sc <= ecc) { (sl, sc, el, ecc) } else { (el, ecc, sl, sc) };
+        let new = Some(sel);
+        if app.output_selection != new {
+            app.output_selection = new;
+            // Invalidate viewport cache so selection highlighting is rendered
+            app.output_viewport_scroll = usize::MAX;
+            return true;
+        }
+        return false;
+    }
+
+    false
+}
+
+/// Extract plain text from a slice of ratatui Lines within a selection range.
+/// Lines are joined with newlines. First/last line use column offsets.
+fn extract_text_from_cache(
+    cache: &[ratatui::text::Line],
+    sl: usize, sc: usize, el: usize, ec: usize,
+) -> String {
+    let mut out = String::new();
+    for idx in sl..=el {
+        let Some(line) = cache.get(idx) else { continue };
+        // Flatten all spans into one string
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let chars: Vec<char> = text.chars().collect();
+        let start = if idx == sl { sc.min(chars.len()) } else { 0 };
+        let end = if idx == el { ec.min(chars.len()) } else { chars.len() };
+        if start < end {
+            out.extend(&chars[start..end]);
+        }
+        if idx < el { out.push('\n'); }
+    }
+    out
+}
+
+/// Copy text selected in the viewer pane to clipboard
+fn copy_viewer_selection(app: &mut App) {
+    let Some((sl, sc, el, ec)) = app.viewer_selection else { return };
+    let text = extract_text_from_cache(&app.viewer_lines_cache, sl, sc, el, ec);
+    if text.is_empty() { return; }
+    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+    app.clipboard = text;
+    app.set_status("Copied to clipboard");
+}
+
+/// Copy text selected in the convo pane to clipboard
+fn copy_output_selection(app: &mut App) {
+    let Some((sl, sc, el, ec)) = app.output_selection else { return };
+    let text = extract_text_from_cache(&app.rendered_lines_cache, sl, sc, el, ec);
+    if text.is_empty() { return; }
+    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+    app.clipboard = text;
+    app.set_status("Copied to clipboard");
+}
+
 /// Handle Claude process events for a specific session
 fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> Result<()> {
     match event {
@@ -586,6 +714,17 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
             // Cancel running Claude response
             app.cancel_current_claude();
+            return Ok(());
+        }
+        // ⌘C — copy from whichever pane has an active selection
+        (KeyModifiers::SUPER, KeyCode::Char('c')) => {
+            if app.prompt_mode && app.has_input_selection() {
+                app.input_copy();
+            } else if app.viewer_selection.is_some() {
+                copy_viewer_selection(app);
+            } else if app.output_selection.is_some() {
+                copy_output_selection(app);
+            }
             return Ok(());
         }
         // Global 'p' - enter Claude prompt mode from anywhere (except viewer edit mode)
@@ -638,6 +777,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             // Skip when wizard is active (wizard uses Tab for field cycling)
             if !app.show_help && !app.is_wizard_active() {
                 app.prompt_mode = false; // Exit prompt mode when tabbing away
+                app.viewer_selection = None;
+                app.output_selection = None;
                 app.focus_next();
                 return Ok(());
             }
@@ -647,6 +788,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             // Skip when wizard is active
             if !app.show_help && !app.is_wizard_active() {
                 app.prompt_mode = false;
+                app.viewer_selection = None;
+                app.output_selection = None;
                 app.focus_prev();
                 return Ok(());
             }
