@@ -423,6 +423,7 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         let entry_idx = visual_row + app.file_tree_scroll;
         if entry_idx < app.file_tree_entries.len() {
             app.file_tree_selected = Some(entry_idx);
+            app.invalidate_file_tree();
             // Double-click detection: same row within 500ms → open/toggle
             let now = std::time::Instant::now();
             let is_double = app.last_click.map_or(false, |(t, c, r)| {
