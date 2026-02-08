@@ -163,6 +163,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                             app.add_user_message(input.clone());
                             app.process_output_chunk(&prompt_text);
 
+                            // Clear stale todo widget — new turn starts fresh;
+                            // Claude will send a new TodoWrite if it has tasks
+                            app.current_todos.clear();
+
                             // If awaiting plan approval, prepend hidden context explaining the options
                             // User only sees their input; Claude receives the context + input
                             let actual_prompt = if app.awaiting_plan_approval {

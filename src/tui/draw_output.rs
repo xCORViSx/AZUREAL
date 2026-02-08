@@ -164,10 +164,9 @@ pub fn poll_render_result(app: &mut App) -> bool {
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
-    // Split area for sticky todo widget at bottom (if active)
-    let has_active_todos = !app.current_todos.is_empty()
-        && app.current_todos.iter().any(|t| t.status != crate::app::TodoStatus::Completed);
-    let todo_height = if has_active_todos {
+    // Split area for sticky todo widget at bottom (visible whenever todos exist —
+    // stays visible even when all completed, cleared on next user prompt or session switch)
+    let todo_height = if !app.current_todos.is_empty() {
         // +2 for border top/bottom
         (app.current_todos.len() as u16 + 2).min(area.height.saturating_sub(10))
     } else { 0 };
@@ -404,7 +403,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(output, area);
 
     // Render sticky todo widget at bottom of convo pane
-    if has_active_todos && todo_height > 0 {
+    if todo_height > 0 {
         draw_todo_widget(f, &app.current_todos, todo_area, app.animation_tick);
     }
 }
