@@ -240,9 +240,10 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
     lines
 }
 
-/// Render Edit tool diff inline with syntax highlighting.
-/// Uses relative line numbers (1-based) to avoid expensive disk I/O
-/// that would otherwise read the entire file per Edit event.
+/// Render Edit tool diff inline.
+/// Reads file to find actual line numbers (runs on background render thread,
+/// not the draw path). Removed lines show grey text on dim red bg (no syntax
+/// highlighting). Added lines get syntax highlighting on dim green bg.
 pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &SyntaxHighlighter) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
@@ -257,19 +258,35 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file.txt".to_string());
 
-    // Single syntect parse for old_str, then apply bg colors cheaply.
-    // Avoids 3x highlight_file calls per Edit event.
-    let base_highlighted = highlighter.highlight_file(old_str, &filename);
-    let old_highlighted: Vec<Vec<Span<'static>>> = base_highlighted.iter().map(|line_spans| {
-        line_spans.iter().map(|s| Span::styled(s.content.clone(), s.style.bg(dim_red_bg))).collect()
-    }).collect();
+    // Find actual line number by reading the file and locating old_string.
+    // This runs on the background render thread so file I/O is safe here.
+    // Falls back to line 1 if file can't be read or old_string not found.
+    let start_line = if !old_str.is_empty() {
+        file_path.as_ref().and_then(|p| {
+            std::fs::read_to_string(p).ok().and_then(|content| {
+                content.find(old_str).map(|byte_pos| {
+                    content[..byte_pos].lines().count() + 1
+                })
+            })
+        }).unwrap_or(1)
+    } else {
+        // Pure insertion — find where new_string starts in the file
+        file_path.as_ref().and_then(|p| {
+            std::fs::read_to_string(p).ok().and_then(|content| {
+                content.find(new_str).map(|byte_pos| {
+                    content[..byte_pos].lines().count() + 1
+                })
+            })
+        }).unwrap_or(1)
+    };
+
+    // Syntax highlight only new (added) lines — removed lines use plain grey
     let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
+    // Removed lines: grey text on dim red background (no syntax highlighting)
+    let removed_style = Style::default().fg(Color::Gray).bg(dim_red_bg);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
-
-    // Use relative line numbers — no disk I/O needed
-    let start_line = 1usize;
 
     let max_line = start_line + old_lines.len().max(new_lines.len());
     let num_width = max_line.to_string().len().max(2);
@@ -281,11 +298,9 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         let new_line = new_lines.get(i).copied();
 
         match (old_line, new_line) {
+            // Unchanged context — dim grey, no background
             (Some(old), Some(new)) if old == new => {
-                let spans = base_highlighted.get(i).cloned().unwrap_or_default();
-                let dimmed: Vec<Span<'static>> = spans.into_iter().map(|s| {
-                    Span::styled(s.content, Style::default().fg(Color::DarkGray))
-                }).collect();
+                let dimmed = vec![Span::styled(old.to_string(), Style::default().fg(Color::DarkGray))];
                 for (j, wrapped_spans) in wrap_spans(dimmed, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$}   ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
                     let mut all_spans = vec![
@@ -296,8 +311,10 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                     lines.push(Line::from(all_spans));
                 }
             }
-            (Some(_), Some(_)) => {
-                let old_spans = old_highlighted.get(i).cloned().unwrap_or_default();
+            // Changed: show removed then added
+            (Some(old_text), Some(_)) => {
+                // Removed line — grey text, dim red bg, NO syntax highlighting
+                let old_spans = vec![Span::styled(old_text.to_string(), removed_style)];
                 for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
                     let mut all_spans = vec![
@@ -307,7 +324,7 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                     all_spans.extend(wrapped_spans);
                     lines.push(Line::from(all_spans));
                 }
-
+                // Added line — syntax highlighted, dim green bg
                 let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
                 for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
@@ -319,8 +336,9 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                     lines.push(Line::from(all_spans));
                 }
             }
-            (Some(_), None) => {
-                let old_spans = old_highlighted.get(i).cloned().unwrap_or_default();
+            // Removed only — grey text, dim red bg
+            (Some(old_text), None) => {
+                let old_spans = vec![Span::styled(old_text.to_string(), removed_style)];
                 for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
                     let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
                     let mut all_spans = vec![
@@ -331,6 +349,7 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                     lines.push(Line::from(all_spans));
                 }
             }
+            // Added only — syntax highlighted, dim green bg
             (None, Some(_)) => {
                 let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
                 for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
