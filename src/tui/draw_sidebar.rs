@@ -8,12 +8,14 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, SidebarRowAction};
 use super::util::truncate;
 
-/// Build sidebar items (extracted for caching)
-fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
+/// Build sidebar items and row→action map for mouse click handling.
+/// Each ListItem pushed gets a corresponding SidebarRowAction pushed to row_map.
+fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowAction>) {
     let mut items: Vec<ListItem> = Vec::new();
+    let mut row_map: Vec<SidebarRowAction> = Vec::new();
     // Load custom session names once for all lookups (only called on sidebar rebuild, not per-frame)
     let session_names = app.load_all_session_names();
 
@@ -22,6 +24,7 @@ fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
             Span::styled("▸ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(project.name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ])));
+        row_map.push(SidebarRowAction::ProjectHeader);
 
         for (sess_idx, session) in app.sessions.iter().enumerate() {
             let is_selected = app.selected_session == Some(sess_idx);
@@ -46,6 +49,7 @@ fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
                 Span::raw(" "),
                 Span::styled(truncate(session.name(), 34), style),
             ])));
+            row_map.push(SidebarRowAction::Session(sess_idx));
 
             // If expanded, show session file dropdown
             if is_expanded {
@@ -75,12 +79,16 @@ fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
                             Span::raw(" "),
                             Span::styled(time_str.clone(), Style::default().fg(Color::DarkGray)),
                         ])));
+                        row_map.push(SidebarRowAction::SessionFile(sess_idx, j));
                     }
                 } else {
                     items.push(ListItem::new(Line::from(vec![
                         Span::raw("     "),
                         Span::styled("(no sessions)", Style::default().fg(Color::DarkGray)),
                     ])));
+                    // "(no sessions)" placeholder — clicking does nothing useful,
+                    // but map to the parent session so focus still works
+                    row_map.push(SidebarRowAction::Session(sess_idx));
                 }
             }
         }
@@ -88,9 +96,10 @@ fn build_sidebar_items(app: &App) -> Vec<ListItem<'static>> {
         items.push(ListItem::new(Line::from(vec![
             Span::styled("No project", Style::default().fg(Color::Red)),
         ])));
+        row_map.push(SidebarRowAction::ProjectHeader);
     }
 
-    items
+    (items, row_map)
 }
 
 /// Draw the sidebar showing project and sessions
@@ -99,7 +108,9 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Only rebuild sidebar items if cache is dirty or focus changed (styling depends on focus)
     if app.sidebar_dirty || app.sidebar_focus_cached != is_focused {
-        app.sidebar_cache = build_sidebar_items(app);
+        let (items, row_map) = build_sidebar_items(app);
+        app.sidebar_cache = items;
+        app.sidebar_row_map = row_map;
         app.sidebar_dirty = false;
         app.sidebar_focus_cached = is_focused;
     }

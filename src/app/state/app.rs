@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -154,6 +154,15 @@ pub struct App {
     /// Cached input area rect from last full draw — used for fast-path direct
     /// input rendering that bypasses terminal.draw() during rapid typing.
     pub input_area: ratatui::layout::Rect,
+    /// Cached pane rects from last full draw — used for mouse click hit-testing
+    /// and scroll dispatch without recalculating layout
+    pub pane_sessions: ratatui::layout::Rect,
+    pub pane_file_tree: ratatui::layout::Rect,
+    pub pane_viewer: ratatui::layout::Rect,
+    pub pane_convo: ratatui::layout::Rect,
+    /// Maps sidebar visual rows (0-indexed) to clickable actions.
+    /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
+    pub sidebar_row_map: Vec<SidebarRowAction>,
     /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
     pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
@@ -348,6 +357,11 @@ impl App {
             render_in_flight: false,
             draw_pending: false,
             input_area: ratatui::layout::Rect::default(),
+            pane_sessions: ratatui::layout::Rect::default(),
+            pane_file_tree: ratatui::layout::Rect::default(),
+            pane_viewer: ratatui::layout::Rect::default(),
+            pane_convo: ratatui::layout::Rect::default(),
+            sidebar_row_map: Vec::new(),
             output_viewport_cache: Vec::new(),
             output_viewport_scroll: usize::MAX,
             output_viewport_anim_tick: u64::MAX,

@@ -157,8 +157,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         ])
         .split(top_panes_area);
 
-    // Cache input area for fast-path direct rendering during typing
+    // Cache all pane rects for mouse click hit-testing and fast-path rendering
     app.input_area = input_area;
+    app.pane_sessions = top_h[0];
+    app.pane_file_tree = top_h[1];
+    app.pane_viewer = top_h[2];
+    app.pane_convo = convo_area;
 
     // Draw panes
     draw_sidebar::draw_sidebar(f, app, top_h[0]);

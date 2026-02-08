@@ -1,7 +1,7 @@
 //! Core event loop and event handling
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use crossterm::{cursor, execute, style};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -83,7 +83,6 @@ pub async fn run_app(
                         }
                     }
                     Event::Mouse(mouse) => {
-                        // Accumulate scroll events, discard motion/clicks
                         match mouse.kind {
                             MouseEventKind::ScrollDown => {
                                 scroll_delta += 3;
@@ -95,7 +94,13 @@ pub async fn run_app(
                                 scroll_col = mouse.column;
                                 scroll_row = mouse.row;
                             }
-                            _ => {} // Discard motion, clicks instantly
+                            // Left click: focus pane, select item, position cursor
+                            MouseEventKind::Down(MouseButton::Left) => {
+                                if handle_mouse_click(app, mouse.column, mouse.row) {
+                                    needs_redraw = true;
+                                }
+                            }
+                            _ => {} // Discard motion, right-click, drag
                         }
                     }
                     Event::Resize(w, h) => {
@@ -322,45 +327,29 @@ fn compute_cursor_col_fast(input: &str, cursor_idx: usize, inner_width: usize) -
     col
 }
 
-/// Apply accumulated scroll to the appropriate panel (uses cached terminal size)
-/// Layout: Left (Sessions+FileTree+Viewer over Input/Terminal) | Convo (full height)
-fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width: u16, term_height: u16) -> bool {
-    let sessions_width = 40u16;
-    let file_tree_width = 40u16;
-    // Left side = Sessions(40) + FileTree(40) + Viewer(50% of remaining)
-    let remaining_width = term_width.saturating_sub(sessions_width + file_tree_width);
-    let viewer_width = remaining_width / 2;
-    let left_width = sessions_width + file_tree_width + viewer_width;
+/// Apply accumulated scroll to the appropriate panel using cached pane rects
+fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_width: u16, _term_height: u16) -> bool {
+    use ratatui::layout::Position;
+    let pos = Position::new(col, row);
 
-    // Left panes have input/terminal below; Convo extends to status bar
-    let input_height = if app.terminal_mode { app.terminal_height + 2 } else { 3u16 };
-    let left_content_height = term_height.saturating_sub(input_height + 1);
-    let convo_bottom = term_height.saturating_sub(1); // only status bar below convo
-
-    let in_sessions = col < sessions_width && row < left_content_height;
-    let in_file_tree = col >= sessions_width && col < sessions_width + file_tree_width && row < left_content_height;
-    let in_viewer = col >= sessions_width + file_tree_width && col < left_width && row < left_content_height;
-    let in_output = col >= left_width && row < convo_bottom;
-    let in_terminal = app.terminal_mode && col < left_width && row >= left_content_height && row < term_height - 1;
-
-    if in_sessions {
+    if app.pane_sessions.contains(pos) {
         let old = app.selected_session;
         if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
         else { for _ in 0..delta.abs() { app.select_prev_session(); } }
         app.selected_session != old
-    } else if in_file_tree {
+    } else if app.pane_file_tree.contains(pos) {
         let old = app.file_tree_selected;
         if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
         else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
         app.file_tree_selected != old
-    } else if in_viewer {
+    } else if app.pane_viewer.contains(pos) {
         if delta > 0 { app.scroll_viewer_down(delta as usize) }
         else { app.scroll_viewer_up((-delta) as usize) }
-    } else if in_terminal {
+    } else if app.terminal_mode && app.input_area.contains(pos) {
         if delta > 0 { app.scroll_terminal_down(delta as usize); }
         else { app.scroll_terminal_up((-delta) as usize); }
-        true // Terminal scroll doesn't have boundary check yet
-    } else if in_output {
+        true
+    } else if app.pane_convo.contains(pos) {
         if delta > 0 {
             match app.view_mode {
                 crate::app::ViewMode::Output => app.scroll_output_down(delta as usize),
@@ -377,6 +366,185 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, term_width
     } else {
         false
     }
+}
+
+/// Handle left-click: focus pane, select items, position input cursor.
+/// Returns true if a redraw is needed.
+fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
+    use ratatui::layout::Position;
+    use crate::app::SidebarRowAction;
+    let pos = Position::new(col, row);
+
+    // Overlays first — clicking anywhere dismisses them
+    if app.show_help { app.show_help = false; return true; }
+    if app.context_menu.is_some() { app.context_menu = None; return true; }
+    if app.run_command_picker.is_some() { app.run_command_picker = None; return true; }
+    if app.run_command_dialog.is_some() { app.run_command_dialog = None; return true; }
+    if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
+    if app.creation_wizard.is_some() { app.creation_wizard = None; app.focus = Focus::Worktrees; return true; }
+
+    // Sessions pane — click to select session or session file
+    if app.pane_sessions.contains(pos) {
+        app.focus = Focus::Worktrees;
+        // Map screen row to sidebar item (1 for top border)
+        let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
+        if let Some(action) = app.sidebar_row_map.get(visual_row).cloned() {
+            match action {
+                SidebarRowAction::Session(idx) => {
+                    if app.selected_session != Some(idx) {
+                        app.save_current_terminal();
+                        app.selected_session = Some(idx);
+                        app.load_session_output();
+                        app.invalidate_sidebar();
+                    }
+                }
+                SidebarRowAction::SessionFile(sess_idx, file_idx) => {
+                    // First select the session if different
+                    if app.selected_session != Some(sess_idx) {
+                        app.save_current_terminal();
+                        app.selected_session = Some(sess_idx);
+                    }
+                    // Then select the session file
+                    if let Some(session) = app.sessions.get(sess_idx) {
+                        let branch = session.branch_name.clone();
+                        app.select_session_file(&branch, file_idx);
+                    }
+                }
+                SidebarRowAction::ProjectHeader => {} // Just focus
+            }
+        }
+        return true;
+    }
+
+    // FileTree pane — click to select entry, double-click to open/expand
+    if app.pane_file_tree.contains(pos) {
+        app.focus = Focus::FileTree;
+        let visual_row = (row.saturating_sub(app.pane_file_tree.y + 1)) as usize;
+        let entry_idx = visual_row + app.file_tree_scroll;
+        if entry_idx < app.file_tree_entries.len() {
+            app.file_tree_selected = Some(entry_idx);
+            // Double-click detection: same row within 500ms → open/toggle
+            let now = std::time::Instant::now();
+            let is_double = app.last_click.map_or(false, |(t, c, r)| {
+                c == col && r == row && now.duration_since(t).as_millis() < 500
+            });
+            if is_double {
+                let entry = &app.file_tree_entries[entry_idx];
+                if entry.is_dir {
+                    app.toggle_file_tree_dir();
+                } else {
+                    app.load_file_into_viewer();
+                    app.focus = Focus::Viewer;
+                }
+            }
+        }
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
+
+    // Viewer pane — just focus
+    if app.pane_viewer.contains(pos) {
+        app.focus = Focus::Viewer;
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
+
+    // Convo pane — focus
+    if app.pane_convo.contains(pos) {
+        app.focus = Focus::Output;
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
+
+    // Input/Terminal pane — enter prompt mode or position cursor
+    if app.input_area.contains(pos) {
+        if app.terminal_mode {
+            // Clicking terminal area — no cursor positioning needed
+            return true;
+        }
+        // Enter prompt mode and position cursor at click point
+        if !app.prompt_mode {
+            app.prompt_mode = true;
+        }
+        app.focus = Focus::Input;
+        app.input_selection = None;
+        click_to_input_cursor(app, col, row);
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
+
+    false
+}
+
+/// Position the input cursor at the clicked screen coordinates.
+/// Walks the input text with the same char-level wrapping logic as
+/// fast_draw_input() and draw_input() to find which char index
+/// corresponds to the clicked (col, row) within the input box.
+fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
+    let inner_x = app.input_area.x + 1;
+    let inner_y = app.input_area.y + 1;
+    let inner_width = (app.input_area.width.saturating_sub(2)) as usize;
+    if inner_width == 0 { return; }
+
+    let target_row = (click_row.saturating_sub(inner_y)) as usize;
+    let target_col = (click_col.saturating_sub(inner_x)) as usize;
+
+    // Account for scroll offset (input can scroll when multi-line overflows)
+    let visible_rows = app.input_area.height.saturating_sub(2) as usize;
+    let cursor_row_current = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
+    let scroll_offset = if visible_rows > 0 && cursor_row_current >= visible_rows {
+        cursor_row_current - visible_rows + 1
+    } else { 0 };
+    let actual_row = target_row + scroll_offset;
+
+    // Walk chars counting visual rows and columns (same wrapping as compute_cursor_row_fast)
+    let chars: Vec<char> = app.input.chars().collect();
+    let mut row = 0usize;
+    let mut col_pos = 0usize;
+    let mut best_idx = chars.len(); // default: end of input
+
+    for (i, &c) in chars.iter().enumerate() {
+        // Check if we've reached or passed the target row
+        if row == actual_row && col_pos >= target_col {
+            best_idx = i;
+            break;
+        }
+        if row > actual_row {
+            best_idx = i;
+            break;
+        }
+        if c == '\n' {
+            if row == actual_row {
+                // Click is on this row past the newline — place at newline position
+                best_idx = i;
+                break;
+            }
+            row += 1;
+            col_pos = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+            if col_pos + w > inner_width {
+                // Wrap to next row
+                if row == actual_row {
+                    best_idx = i;
+                    break;
+                }
+                row += 1;
+                col_pos = w;
+            } else {
+                col_pos += w;
+            }
+        }
+    }
+    // If we walked through all chars and target row matches last row,
+    // place cursor at end
+    if row == actual_row && best_idx == chars.len() {
+        // Already at end — correct
+    } else if row < actual_row {
+        best_idx = chars.len(); // Target row beyond content → end
+    }
+
+    app.input_cursor = best_idx;
 }
 
 /// Handle Claude process events for a specific session

@@ -16,4 +16,4 @@ pub(crate) mod types;
 mod util;
 
 pub use state::App;
-pub use types::{BranchDialog, Focus, RunCommand, SessionAction, ViewMode, ViewerMode};
+pub use types::{BranchDialog, Focus, RunCommand, SessionAction, SidebarRowAction, ViewMode, ViewerMode};

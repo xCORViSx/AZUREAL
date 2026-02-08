@@ -166,6 +166,18 @@ pub enum Focus {
     BranchDialog,
 }
 
+/// Maps sidebar visual rows to clickable actions for mouse click handling.
+/// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
+#[derive(Debug, Clone)]
+pub enum SidebarRowAction {
+    /// Project header row (just focuses pane)
+    ProjectHeader,
+    /// A session/worktree row — index into app.sessions
+    Session(usize),
+    /// An expanded session file row — (session_idx, file_idx)
+    SessionFile(usize, usize),
+}
+
 /// A saved run command
 #[derive(Debug, Clone)]
 pub struct RunCommand {
