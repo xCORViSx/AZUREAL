@@ -7,23 +7,53 @@ use super::helpers::{generate_session_name, sanitize_for_branch};
 use super::App;
 
 impl App {
-    /// Whether a session at the given index passes the current sidebar filter
+    /// Whether a session at the given index passes the current sidebar filter.
+    /// Matches against: worktree display name, session file custom names, and session UUIDs.
+    /// `names` is pre-loaded session names to avoid repeated disk reads.
+    fn session_matches_filter_with_names(&self, idx: usize, filter: &str, names: &std::collections::HashMap<String, String>) -> bool {
+        let Some(session) = self.sessions.get(idx) else { return false };
+        // Match on worktree/branch display name
+        if session.name().to_lowercase().contains(filter) { return true; }
+        // Match on session file UUIDs and custom names
+        if let Some(files) = self.session_files.get(&session.branch_name) {
+            for (session_id, _, _) in files {
+                if session_id.to_lowercase().contains(filter) { return true; }
+                if let Some(name) = names.get(session_id.as_str()) {
+                    if name.to_lowercase().contains(filter) { return true; }
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether a session at the given index passes the current sidebar filter.
     fn session_matches_filter(&self, idx: usize) -> bool {
         if self.sidebar_filter.is_empty() { return true; }
-        self.sessions.get(idx)
-            .map(|s| s.name().to_lowercase().contains(&self.sidebar_filter.to_lowercase()))
-            .unwrap_or(false)
+        let filter = self.sidebar_filter.to_lowercase();
+        let names = self.load_all_session_names();
+        self.session_matches_filter_with_names(idx, &filter, &names)
     }
 
     pub fn select_next_session(&mut self) {
         let start = self.selected_session.map(|i| i + 1).unwrap_or(0);
-        // Find next session that passes the filter
-        if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter(i)) {
-            if self.selected_session != Some(next) {
+        if self.sidebar_filter.is_empty() {
+            // No filter — simple index bump
+            if start < self.sessions.len() {
                 self.save_current_terminal();
-                self.selected_session = Some(next);
+                self.selected_session = Some(start);
                 self.load_session_output();
                 self.invalidate_sidebar();
+            }
+        } else {
+            let filter = self.sidebar_filter.to_lowercase();
+            let names = self.load_all_session_names();
+            if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+                if self.selected_session != Some(next) {
+                    self.save_current_terminal();
+                    self.selected_session = Some(next);
+                    self.load_session_output();
+                    self.invalidate_sidebar();
+                }
             }
         }
     }
@@ -32,12 +62,14 @@ impl App {
     /// Called after each keystroke in the sidebar filter input.
     pub fn snap_selection_to_filter(&mut self) {
         if self.sidebar_filter.is_empty() { return; }
+        let filter = self.sidebar_filter.to_lowercase();
+        let names = self.load_all_session_names();
         // Current selection already matches — keep it
         if let Some(idx) = self.selected_session {
-            if self.session_matches_filter(idx) { return; }
+            if self.session_matches_filter_with_names(idx, &filter, &names) { return; }
         }
         // Find first matching session
-        if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter(i)) {
+        if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
             self.save_current_terminal();
             self.selected_session = Some(first);
             self.load_session_output();
@@ -47,12 +79,20 @@ impl App {
     pub fn select_prev_session(&mut self) {
         let Some(current) = self.selected_session else { return };
         if current == 0 { return; }
-        // Find prev session that passes the filter (search backward)
-        if let Some(prev) = (0..current).rev().find(|&i| self.session_matches_filter(i)) {
+        if self.sidebar_filter.is_empty() {
             self.save_current_terminal();
-            self.selected_session = Some(prev);
+            self.selected_session = Some(current - 1);
             self.load_session_output();
             self.invalidate_sidebar();
+        } else {
+            let filter = self.sidebar_filter.to_lowercase();
+            let names = self.load_all_session_names();
+            if let Some(prev) = (0..current).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+                self.save_current_terminal();
+                self.selected_session = Some(prev);
+                self.load_session_output();
+                self.invalidate_sidebar();
+            }
         }
     }
 

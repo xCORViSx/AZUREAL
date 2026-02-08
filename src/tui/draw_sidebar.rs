@@ -30,9 +30,17 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
         row_map.push(SidebarRowAction::ProjectHeader);
 
         for (sess_idx, session) in app.sessions.iter().enumerate() {
-            // Skip sessions that don't match the filter (case-insensitive substring on display name)
-            if !filter.is_empty() && !session.name().to_lowercase().contains(&filter) {
-                continue;
+            // Skip sessions that don't match the filter.
+            // Matches on: worktree name, session file UUIDs, and custom session names.
+            if !filter.is_empty() {
+                let name_match = session.name().to_lowercase().contains(&filter);
+                let file_match = app.session_files.get(&session.branch_name).map(|files| {
+                    files.iter().any(|(sid, _, _)| {
+                        sid.to_lowercase().contains(&filter)
+                            || session_names.get(sid.as_str()).map(|n| n.to_lowercase().contains(&filter)).unwrap_or(false)
+                    })
+                }).unwrap_or(false);
+                if !name_match && !file_match { continue; }
             }
 
             let is_selected = app.selected_session == Some(sess_idx);
