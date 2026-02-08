@@ -76,7 +76,8 @@ All notable changes to Azureal will be documented in this file.
 - Token usage percentage counter on Convo pane title border
   - Color-coded badge: green (<60%), yellow (60-80%), red (>80%) of context window
   - Extracted from Claude's `message.usage` in JSONL session files (exact API counts, no estimation)
-  - Context window dynamically detected from `message.model` (not hardcoded)
+  - Context window from `result` event's `modelUsage.*.contextWindow` (authoritative API value)
+  - Heuristic fallback from `message.model` for mid-turn display before result event arrives
   - Auto-detects 1M beta context when token usage exceeds standard 200k window
   - Updates in real-time during live streaming and from session file polls
   - Helps predict when context compaction will occur
