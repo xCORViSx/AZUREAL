@@ -1,22 +1,22 @@
 //! Input field rendering
 //!
-//! Supports multi-line input via Shift+Enter. Newlines split the text into
-//! separate `Line`s for ratatui. Cursor positioning accounts for both
-//! newlines and word-wrapping within each line. When content exceeds the
-//! visible area, the view scrolls to keep the cursor visible.
+//! Supports multi-line input via Shift+Enter. Text is pre-wrapped at character
+//! boundaries (not word boundaries) so cursor positioning is always accurate.
+//! Each `Line` given to ratatui represents exactly one visual row — no `.wrap()`
+//! is used, eliminating mismatch between cursor math and text layout.
 
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
 use crate::app::{App, Focus};
 use super::keybindings::{prompt_type_title, prompt_command_title};
 
-/// Draw the Claude prompt input field with text wrapping and optional selection highlighting
+/// Draw the Claude prompt input field with pre-wrapped text and cursor positioning
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let (border_color, title) = if app.prompt_mode {
         (Color::Yellow, prompt_type_title())
@@ -29,16 +29,10 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     // Visible rows inside the border (total height minus top+bottom border)
     let visible_rows = area.height.saturating_sub(2) as usize;
 
-    // Build styled content with selection highlighting, split on newlines
-    let content = build_input_content(app);
-
-    // Figure out which visual row the cursor sits on (accounting for wrapping)
-    // so we can scroll the Paragraph to keep the cursor in view
-    let cursor_row = if inner_width > 0 {
-        compute_cursor_row(&app.input, app.input_cursor, inner_width)
-    } else {
-        0
-    };
+    // Pre-wrap content at character boundaries and compute cursor position
+    // in a single pass — both use identical wrapping logic so they always agree
+    let (content, cursor_row, cursor_col) =
+        build_wrapped_content(app, inner_width);
 
     // Scroll offset: keep cursor visible within the box
     let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
@@ -47,8 +41,8 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         0
     };
 
+    // No .wrap() — content is already pre-wrapped, one Line per visual row
     let input = Paragraph::new(content)
-        .wrap(Wrap { trim: false })
         .scroll((scroll_offset, 0))
         .block(
             Block::default()
@@ -70,61 +64,29 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 
     // Show cursor only in prompt mode when focused
     if app.prompt_mode && is_focused && inner_width > 0 {
-        let visual_col = compute_cursor_col(&app.input, app.input_cursor, inner_width);
-        // Adjust row for scroll offset so cursor renders in the visible portion
         let adjusted_row = cursor_row as u16 - scroll_offset;
-
         f.set_cursor_position((
-            area.x + 1 + visual_col as u16,
+            area.x + 1 + cursor_col as u16,
             area.y + 1 + adjusted_row,
         ));
     }
 }
 
-/// Compute the visual row the cursor is on, accounting for newlines and word-wrap
-fn compute_cursor_row(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
-    let chars: Vec<char> = input.chars().collect();
-    let target = cursor_idx.min(chars.len());
-    let mut row = 0usize;
-    let mut col = 0usize;
-    for i in 0..target {
-        if chars[i] == '\n' {
-            row += 1;
-            col = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
-            if col + w > inner_width { row += 1; col = w; }
-            else { col += w; }
-        }
-    }
-    row
-}
-
-/// Compute the visual column the cursor is on within its current row
-fn compute_cursor_col(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
-    let chars: Vec<char> = input.chars().collect();
-    let target = cursor_idx.min(chars.len());
-    let mut col = 0usize;
-    for i in 0..target {
-        if chars[i] == '\n' {
-            col = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
-            if col + w > inner_width { col = w; }
-            else { col += w; }
-        }
-    }
-    col
-}
-
-/// Build styled input content split on newlines, with selection highlighting
-fn build_input_content(app: &App) -> Vec<Line<'static>> {
+/// Build pre-wrapped lines AND compute cursor position in one pass.
+/// Returns (visual_lines, cursor_row, cursor_col).
+///
+/// Each output Line is exactly one visual row — wrapping happens at character
+/// boundaries (col + char_width > inner_width triggers a new row), identical
+/// to how run.rs computes input_height and fast_draw_input renders text.
+fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, usize, usize) {
     let chars: Vec<char> = app.input.chars().collect();
     if chars.is_empty() {
-        return vec![Line::from("")];
+        return (vec![Line::from("")], 0, 0);
     }
 
-    // Get normalized selection range (if any)
+    let target = app.input_cursor.min(chars.len());
+
+    // Normalized selection range (if any)
     let selection = app.input_selection.and_then(|(s, e)| {
         if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) }
     });
@@ -132,59 +94,89 @@ fn build_input_content(app: &App) -> Vec<Line<'static>> {
     let normal_style = Style::default();
     let selection_style = Style::default().bg(Color::Blue).fg(Color::White);
 
-    // Split input into lines at '\n', tracking char position for selection overlay
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut line_spans: Vec<Span<'static>> = Vec::new();
-    let mut seg_start = 0usize;
+    // Current visual row being built: segments of (start_char_idx, end_char_idx)
+    let mut row_start = 0usize; // char index where current row started
+    let mut col = 0usize;       // current column width in current row
+    let mut cursor_row = 0usize;
+    let mut cursor_col = 0usize;
 
     for (i, &c) in chars.iter().enumerate() {
+        // Track cursor position BEFORE processing this character.
+        // When cursor == i, it's positioned right before char[i].
+        if i == target {
+            cursor_row = lines.len();
+            cursor_col = col;
+        }
+
         if c == '\n' {
-            // Flush segment before newline
-            flush_segment(&chars, seg_start, i, selection, normal_style, selection_style, &mut line_spans);
-            lines.push(Line::from(line_spans));
-            line_spans = Vec::new();
-            seg_start = i + 1;
+            // Flush current row, start new one
+            flush_row(&chars, row_start, i, selection, normal_style, selection_style, &mut lines);
+            row_start = i + 1;
+            col = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+            // Wrap: if this char would exceed width, start a new visual row
+            if inner_width > 0 && col + w > inner_width {
+                flush_row(&chars, row_start, i, selection, normal_style, selection_style, &mut lines);
+                row_start = i;
+                col = 0;
+                // Re-check cursor — it might land at the start of this new wrapped row
+                if i == target {
+                    cursor_row = lines.len();
+                    cursor_col = 0;
+                }
+            }
+            col += w;
         }
     }
-    // Flush final segment (after last newline or entire string if no newlines)
-    flush_segment(&chars, seg_start, chars.len(), selection, normal_style, selection_style, &mut line_spans);
-    lines.push(Line::from(line_spans));
 
-    lines
+    // Cursor at the very end (after all chars)
+    if target == chars.len() {
+        cursor_row = lines.len();
+        cursor_col = col;
+    }
+
+    // Flush final row
+    flush_row(&chars, row_start, chars.len(), selection, normal_style, selection_style, &mut lines);
+
+    (lines, cursor_row, cursor_col)
 }
 
-/// Emit spans for chars[start..end] with selection highlighting into `out`
-fn flush_segment(
+/// Emit one visual row as a Line with selection highlighting
+fn flush_row(
     chars: &[char],
     start: usize,
     end: usize,
     selection: Option<(usize, usize)>,
     normal: Style,
     selected: Style,
-    out: &mut Vec<Span<'static>>,
+    lines: &mut Vec<Line<'static>>,
 ) {
-    if start >= end { return; }
+    if start >= end {
+        lines.push(Line::from(""));
+        return;
+    }
 
+    let mut spans: Vec<Span<'static>> = Vec::new();
     match selection {
         Some((sel_s, sel_e)) => {
-            // Clamp selection to this segment's range
+            // Clamp selection to this row's char range
             let s = sel_s.max(start);
             let e = sel_e.min(end);
-            // Before selection
             if start < s {
-                out.push(Span::styled(chars[start..s].iter().collect::<String>(), normal));
+                spans.push(Span::styled(chars[start..s].iter().collect::<String>(), normal));
             }
-            // Selected portion (if any overlaps this segment)
             if s < e {
-                out.push(Span::styled(chars[s..e].iter().collect::<String>(), selected));
+                spans.push(Span::styled(chars[s..e].iter().collect::<String>(), selected));
             }
-            // After selection
             if e < end {
-                out.push(Span::styled(chars[e..end].iter().collect::<String>(), normal));
+                spans.push(Span::styled(chars[e..end].iter().collect::<String>(), normal));
             }
         }
         None => {
-            out.push(Span::styled(chars[start..end].iter().collect::<String>(), normal));
+            spans.push(Span::styled(chars[start..end].iter().collect::<String>(), normal));
         }
     }
+    lines.push(Line::from(spans));
 }
