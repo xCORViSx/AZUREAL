@@ -87,6 +87,16 @@ impl App {
 
         self.sessions = sessions;
         self.selected_session = if self.sessions.is_empty() { None } else { Some(0) };
+
+        // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
+        for session in &self.sessions {
+            if let Some(ref wt_path) = session.worktree_path {
+                let files = crate::config::list_claude_sessions(wt_path);
+                self.session_files.insert(session.branch_name.clone(), files);
+                self.session_selected_file_idx.entry(session.branch_name.clone()).or_insert(0);
+            }
+        }
+
         self.invalidate_sidebar();
 
         Ok(())

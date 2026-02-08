@@ -8,9 +8,13 @@ use super::App;
 
 impl App {
     /// Whether a session at the given index passes the current sidebar filter.
-    /// Matches against: worktree display name, session file custom names, and session UUIDs.
+    /// Matches against: project name, worktree display name, session file custom names, and UUIDs.
     /// `names` is pre-loaded session names to avoid repeated disk reads.
     fn session_matches_filter_with_names(&self, idx: usize, filter: &str, names: &std::collections::HashMap<String, String>) -> bool {
+        // Project name matches → all sessions visible
+        if let Some(ref project) = self.project {
+            if project.name.to_lowercase().contains(filter) { return true; }
+        }
         let Some(session) = self.sessions.get(idx) else { return false };
         // Match on worktree/branch display name
         if session.name().to_lowercase().contains(filter) { return true; }
