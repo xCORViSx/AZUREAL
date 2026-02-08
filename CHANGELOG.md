@@ -73,6 +73,9 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Added
+- `⌘A` select-all in Viewer pane (read-only mode)
+  - Selects entire viewer cache from first to last line, then `⌘C` to copy
+  - Complements existing `⌘A` in edit mode and input pane
 - Full mouse click interaction for all panes
   - Click any pane to focus it (border highlights with double border)
   - Click sessions/session files in sidebar to select them

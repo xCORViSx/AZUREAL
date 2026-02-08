@@ -906,6 +906,7 @@ azureal
 | `Shift+J/K` | Half-page scroll |
 | `g/G` | Jump to top/bottom |
 | `f/b` | Next/prev Edit (syncs Convo scroll) |
+| `⌘A` | Select all (then `⌘C` to copy) |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
 ### Convo Pane
