@@ -94,6 +94,16 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - File tree entries now highlight when clicked
   - Missing `invalidate_file_tree()` call after setting selection from mouse click — cache was never rebuilt
+- Shift+Arrow selection highlight now visible in input pane
+  - `fast_draw_input()` was writing raw text without selection styling, overwriting what `build_wrapped_content()` renders
+  - Fast-path and draw deferral now skipped when `has_input_selection()` is true
+- Mouse drag selection now works in input pane
+  - `handle_mouse_drag()` only handled viewer and convo panes — added input handling with `screen_to_input_char()`
+  - pane_id=2 in `mouse_drag_start` tuple for input pane targeting
+- Scroll-during-drag no longer loses prior selection
+  - `mouse_drag_start` changed from screen coords `(u16, u16)` to cache coords `(usize, usize, u8)` with pane_id
+  - Anchor position computed once on MouseDown; only the end position is re-converted on each Drag event
+  - Auto-scroll no longer shifts the anchor because it's stored in cache space, not screen space
 - Edit diff inline previews now show actual file line numbers instead of always starting at 1
   - Reads file on background render thread to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file)
   - Falls back to line 1 if file can't be read or new_string is empty (pure deletion)
