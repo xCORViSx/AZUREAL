@@ -41,6 +41,9 @@ All notable changes to Azureal will be documented in this file.
   - Pre-draw drain aborts if a last-moment key arrives, preventing even that 18ms block
   - `draw_pending` flag on App tracks deferred draws; poll timeout drops to 16ms while pending
   - Throttle floor at 33ms (~30fps) prevents CPU burn on rapid background updates
+- Token usage badge cached as `(String, Color)` — only recomputed when new token data is parsed
+  - `update_token_badge()` called from load, refresh, and live stream paths
+  - Draw path reads cached value with zero computation (was recomputing percentage every frame)
 - Fast-path direct input rendering: `fast_draw_input()` writes input box content directly
   via crossterm (~0.1ms) when typing in prompt mode, bypassing `terminal.draw()` entirely
   - `app.input_area` cached from last full draw provides screen coordinates
