@@ -707,30 +707,41 @@ fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
 
 /// Extract plain text from a slice of ratatui Lines within a selection range.
 /// Lines are joined with newlines. First/last line use column offsets.
+/// `gutter` chars are stripped from the start of every line (for viewer line numbers).
 fn extract_text_from_cache(
     cache: &[ratatui::text::Line],
     sl: usize, sc: usize, el: usize, ec: usize,
+    gutter: usize,
 ) -> String {
     let mut out = String::new();
     for idx in sl..=el {
         let Some(line) = cache.get(idx) else { continue };
-        // Flatten all spans into one string
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         let chars: Vec<char> = text.chars().collect();
-        let start = if idx == sl { sc.min(chars.len()) } else { 0 };
-        let end = if idx == el { ec.min(chars.len()) } else { chars.len() };
-        if start < end {
-            out.extend(&chars[start..end]);
+        // Shift columns past the gutter so line numbers are never copied
+        let start = if idx == sl { sc.max(gutter) } else { gutter };
+        let end = if idx == el { ec.max(gutter) } else { chars.len() };
+        if start < end && start < chars.len() {
+            out.extend(&chars[start..end.min(chars.len())]);
         }
         if idx < el { out.push('\n'); }
     }
     out
 }
 
-/// Copy text selected in the viewer pane to clipboard
+/// Copy text selected in the viewer pane to clipboard.
+/// Strips line number gutter (first span per line) when viewer is in File mode,
+/// so copied text contains only file content — no "  1 │ " prefixes.
 fn copy_viewer_selection(app: &mut App) {
     let Some((sl, sc, el, ec)) = app.viewer_selection else { return };
-    let text = extract_text_from_cache(&app.viewer_lines_cache, sl, sc, el, ec);
+    // In File mode, first span of each cache line is the line number gutter
+    let gutter = if app.viewer_mode == crate::app::ViewerMode::File {
+        app.viewer_lines_cache.first()
+            .and_then(|l| l.spans.first())
+            .map(|s| s.content.chars().count())
+            .unwrap_or(0)
+    } else { 0 };
+    let text = extract_text_from_cache(&app.viewer_lines_cache, sl, sc, el, ec, gutter);
     if text.is_empty() { return; }
     if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
     app.clipboard = text;
@@ -740,7 +751,7 @@ fn copy_viewer_selection(app: &mut App) {
 /// Copy text selected in the convo pane to clipboard
 fn copy_output_selection(app: &mut App) {
     let Some((sl, sc, el, ec)) = app.output_selection else { return };
-    let text = extract_text_from_cache(&app.rendered_lines_cache, sl, sc, el, ec);
+    let text = extract_text_from_cache(&app.rendered_lines_cache, sl, sc, el, ec, 0);
     if text.is_empty() { return; }
     if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
     app.clipboard = text;
