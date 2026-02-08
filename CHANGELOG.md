@@ -83,6 +83,9 @@ All notable changes to Azureal will be documented in this file.
   - Incremental renders accumulated duplicate pending bubbles: fixed by tracking `rendered_content_line_count` and trimming the stale bubble before submitting incremental requests
   - Stale bubble immediately trimmed from `rendered_lines_cache` on clear (no waiting for background render)
   - `poll_render_result()` re-sets the follow-bottom sentinel when the user was at/near the old bottom
+- Multi-line input cursor no longer mispositioned after Shift+Enter
+  - `fast_draw_input()` used the cached `input_area` from the last full draw, which had the wrong height when newlines were added/removed
+  - Fast-path now skipped for multi-line input; draw deferral also disabled so the input box resizes immediately
 - Terminal typing no longer blanks the PTY display
   - `fast_draw_input()` was firing in terminal type mode (which sets `prompt_mode=true`), writing empty `app.input` over the terminal area
   - Deferred draw was also skipping `terminal.draw()` on terminal keystrokes, but PTY output has no fast-path — it needs ratatui to render
