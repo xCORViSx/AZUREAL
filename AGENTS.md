@@ -70,7 +70,7 @@ A ratatui-based terminal interface with 4-pane layout:
 - **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
 - **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
-- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border shows title on the left and PID/exit code on the right (border characters fill the gap, not spaces). PID shown in green while Claude is running; switches to exit code on process exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Right`.
+- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border shows title on the left and token usage + PID/exit code on the right (border characters fill the gap, not spaces). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%) representing context window consumption — helps predict when context compaction will occur. PID shown in green while Claude is running; switches to exit code on process exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
 - **Status Bar**: Context-sensitive help and session info
 
@@ -615,6 +615,33 @@ Claude Code hooks are captured from multiple sources in the session file:
 
 Implementation: `extract_hooks_from_content()` in `src/app/session_parser.rs`, `parse_progress_event()` in `src/events/parser.rs`
 
+### Token Usage Counter
+
+Color-coded context window usage percentage displayed on the Convo pane's right border title. Helps users predict when context compaction will occur.
+
+**Data source:** Claude's JSONL session files already contain `message.usage` on every assistant event with `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and `cache_creation_input_tokens`. No external tokenization library needed — exact counts from the API.
+
+**Metric:** `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` = effective context size. Each assistant event overwrites the previous — the last one reflects the most recent context window consumption.
+
+**Color thresholds:**
+| Range | Color | Meaning |
+|-------|-------|---------|
+| 0–59% | Green | Plenty of context remaining |
+| 60–79% | Yellow | Context getting full |
+| 80–100% | Red | Near compaction threshold |
+
+**Context window:** Default 200,000 tokens (all current Claude models). Stored as `model_context_window: u64` on App state.
+
+**Data flow:**
+1. **Session file parse:** `parse_assistant_event()` in `src/app/session_parser.rs` extracts `message.usage` → `ParsedSession.session_tokens`
+2. **Load propagation:** `load_session_output()` and `refresh_session_events()` in `src/app/state/load.rs` copy to `app.session_tokens`
+3. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` extracts from raw JSON during active streaming
+4. **Display:** `draw_output_pane()` in `src/tui/draw_output.rs` renders as right-aligned spans before PID/exit code
+
+**Reset:** `session_tokens` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
+
+Implementation: `session_tokens: Option<(u64, u64)>` and `model_context_window: u64` in `src/app/state/app.rs`, extraction in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`
+
 ### Conversation Persistence
 
 Each session maintains conversation history across prompts using Claude's `--resume` flag:
@@ -796,7 +823,7 @@ azureal/
 
 ## Phase 2: Enhanced UX
 - [x] File viewer pane (4-pane layout: Sessions, FileTree, Viewer, Convo)
-- [ ] Token estimate counter on input
+- [x] Token usage percentage on Convo pane title
 - [ ] Auto-rebase hooks when main is ahead
 - [ ] PTY mode for full Claude interactivity
 - [ ] Session templates

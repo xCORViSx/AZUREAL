@@ -31,6 +31,7 @@
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
 - **Run Commands** — Save and execute shell commands/scripts per project
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
+- **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Zero Footprint** — No database or config files; scans git worktrees and `~/.claude/` at runtime
 

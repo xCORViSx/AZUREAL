@@ -73,6 +73,12 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Added
+- Token usage percentage counter on Convo pane title border
+  - Color-coded badge: green (<60%), yellow (60-80%), red (>80%) of context window
+  - Extracted from Claude's `message.usage` in JSONL session files (exact API counts, no estimation)
+  - Updates in real-time during live streaming and from session file polls
+  - Helps predict when context compaction will occur
+  - Displayed alongside PID/exit code in the right-aligned title
 - `⌘A` select-all in Viewer pane (read-only mode)
   - Selects entire viewer cache from first to last line, then `⌘C` to copy
   - Complements existing `⌘A` in edit mode and input pane
