@@ -692,7 +692,7 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Session Search/Filter
 
-Press `/` in the Worktrees pane to activate a search filter. Type to narrow the session list by name (case-insensitive substring match on display name, i.e. branch name without `azureal/` prefix). The filter bar appears at the top of the sidebar with a match count.
+Press `/` in the Worktrees pane to activate a search filter. Type to narrow the session list (case-insensitive substring match). The filter matches against: worktree display name (branch name without `azureal/` prefix), session file UUIDs, and custom session names from `sessions.toml`. The filter bar appears at the top of the sidebar with a match count.
 
 **Keybindings (while filter is active):**
 - Type characters — appended to filter, sidebar updates live
@@ -701,7 +701,7 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 - `Enter` — accept filter (keep text visible, exit filter input mode)
 - `↑/↓` — navigate filtered results while typing
 
-**Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching session. `j/k` navigation skips filtered-out sessions via `session_matches_filter()`.
+**Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching session. `j/k` navigation skips filtered-out sessions via `session_matches_filter_with_names()` (pre-loads session names once per operation to avoid repeated disk reads).
 
 **Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `t`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
 

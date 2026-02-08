@@ -84,7 +84,7 @@ All notable changes to Azureal will be documented in this file.
   - TodoWrite tool calls and results suppressed from inline convo stream
 - Session search/filter in Worktrees pane
   - Press `/` to activate filter bar at top of sidebar
-  - Type to filter sessions by name (case-insensitive substring match)
+  - Type to filter by worktree name, session file UUID, or custom session name
   - Esc clears filter, Enter accepts, Backspace removes chars
   - Selection auto-snaps to first match; j/k skip filtered-out sessions
   - Match count shown as `N/total` in filter bar
