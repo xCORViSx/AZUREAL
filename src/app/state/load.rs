@@ -112,6 +112,7 @@ impl App {
         self.failed_tool_calls.clear();
         self.session_tokens = None;
         self.model_context_window = None;
+        self.token_badge_cache = None;
         self.current_todos.clear();
         self.awaiting_ask_user_question = false;
         self.ask_user_questions_cache = None;
@@ -171,6 +172,7 @@ impl App {
                     self.awaiting_plan_approval = parsed.awaiting_plan_approval;
                     self.session_tokens = parsed.session_tokens;
                     self.model_context_window = parsed.context_window;
+                    self.update_token_badge();
                     // Extract latest TodoWrite and AskUserQuestion state from parsed events
                     self.extract_skill_tools_from_events();
                     // Store byte offset for incremental parsing on subsequent polls
@@ -258,12 +260,16 @@ impl App {
         // Extract latest TodoWrite and AskUserQuestion state from parsed events
         self.extract_skill_tools_from_events();
         // Update tokens and context window if the new parse found assistant events
+        let mut tokens_changed = false;
         if parsed.session_tokens.is_some() {
             self.session_tokens = parsed.session_tokens;
+            tokens_changed = true;
         }
         if parsed.context_window.is_some() {
             self.model_context_window = parsed.context_window;
+            tokens_changed = true;
         }
+        if tokens_changed { self.update_token_badge(); }
         self.session_file_parse_offset = parsed.end_offset;
 
         // Clear pending message once it appears in the parsed events.

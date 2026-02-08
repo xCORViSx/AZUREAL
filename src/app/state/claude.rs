@@ -139,6 +139,7 @@ impl App {
             // assistant events give us token counts + model heuristic (available mid-turn).
             // result events give us the authoritative contextWindow from the API (end of turn).
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                let mut tokens_changed = false;
                 match json.get("type").and_then(|t| t.as_str()) {
                     Some("assistant") => if let Some(msg) = json.get("message") {
                         if let Some(usage) = msg.get("usage") {
@@ -147,6 +148,7 @@ impl App {
                             let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                             let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                             self.session_tokens = Some((input + cache_read + cache_create, output));
+                            tokens_changed = true;
                         }
                         // Heuristic fallback — result event will overwrite with exact value
                         if self.model_context_window.is_none() {
@@ -154,6 +156,7 @@ impl App {
                                 self.model_context_window = Some(
                                     crate::app::session_parser::context_window_for_model(model)
                                 );
+                                tokens_changed = true;
                             }
                         }
                     },
@@ -170,12 +173,14 @@ impl App {
                                     .and_then(|v| v.as_u64())
                                 {
                                     self.model_context_window = Some(cw);
+                                    tokens_changed = true;
                                 }
                             }
                         }
                     },
                     _ => {}
                 }
+                if tokens_changed { self.update_token_badge(); }
             }
 
             self.display_events.extend(events);

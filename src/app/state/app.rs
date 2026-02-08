@@ -275,6 +275,8 @@ pub struct App {
     pub session_tokens: Option<(u64, u64)>,
     /// Context window size detected from model string (None = not yet known, default 200k)
     pub model_context_window: Option<u64>,
+    /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
+    pub token_badge_cache: Option<(String, ratatui::style::Color)>,
     /// Current todo list from latest TodoWrite tool call
     pub current_todos: Vec<TodoItem>,
     /// Awaiting user response to AskUserQuestion tool call
@@ -448,6 +450,7 @@ impl App {
             run_command_picker: None,
             session_tokens: None,
             model_context_window: None,
+            token_badge_cache: None,
             current_todos: Vec::new(),
             awaiting_ask_user_question: false,
             ask_user_questions_cache: None,
@@ -467,6 +470,20 @@ impl App {
     /// Mark file tree cache as dirty
     pub fn invalidate_file_tree(&mut self) {
         self.file_tree_dirty = true;
+    }
+
+    /// Recompute the cached token usage badge from current session_tokens + model_context_window.
+    /// Call this whenever session_tokens or model_context_window changes — draw path just reads the cache.
+    pub fn update_token_badge(&mut self) {
+        self.token_badge_cache = self.session_tokens.map(|(ctx_tokens, _)| {
+            let base_window = self.model_context_window.unwrap_or(200_000);
+            let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
+            let pct = (ctx_tokens as f64 / window as f64 * 100.0).min(100.0);
+            let color = if pct < 60.0 { ratatui::style::Color::Green }
+                else if pct < 80.0 { ratatui::style::Color::Yellow }
+                else { ratatui::style::Color::Red };
+            (format!(" {:.0}% ", pct), color)
+        });
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }

@@ -352,18 +352,10 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let right_title: Option<Line<'static>> = {
         let mut spans: Vec<Span<'static>> = Vec::new();
 
-        // Token usage percentage badge (color-coded: green <60%, yellow 60-80%, red >80%)
-        if let Some((ctx_tokens, _)) = app.session_tokens {
-            // Use model-detected window, or default 200k. If tokens exceed the known
-            // window, the user has 1M beta — bump to 1M automatically.
-            let base_window = app.model_context_window.unwrap_or(200_000);
-            let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
-            let pct = (ctx_tokens as f64 / window as f64 * 100.0).min(100.0);
-            let color = if pct < 60.0 { Color::Green }
-                else if pct < 80.0 { Color::Yellow }
-                else { Color::Red };
+        // Token usage percentage badge — pre-computed in update_token_badge(), just read the cache
+        if let Some((ref text, color)) = app.token_badge_cache {
             spans.push(Span::styled(
-                format!(" {:.0}% ", pct),
+                text.clone(),
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             ));
         }
