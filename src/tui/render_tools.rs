@@ -258,19 +258,11 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file.txt".to_string());
 
-    // Find actual line number by reading the file and locating old_string.
-    // This runs on the background render thread so file I/O is safe here.
-    // Falls back to line 1 if file can't be read or old_string not found.
-    let start_line = if !old_str.is_empty() {
-        file_path.as_ref().and_then(|p| {
-            std::fs::read_to_string(p).ok().and_then(|content| {
-                content.find(old_str).map(|byte_pos| {
-                    content[..byte_pos].lines().count() + 1
-                })
-            })
-        }).unwrap_or(1)
-    } else {
-        // Pure insertion — find where new_string starts in the file
+    // Find actual line number by reading the current file and locating new_string.
+    // By the time the render thread runs, Claude has already applied the edit,
+    // so old_string is GONE from the file — only new_string exists there now.
+    // For pure deletions (new_str empty), fall back to line 1.
+    let start_line = if !new_str.is_empty() {
         file_path.as_ref().and_then(|p| {
             std::fs::read_to_string(p).ok().and_then(|content| {
                 content.find(new_str).map(|byte_pos| {
@@ -278,12 +270,15 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                 })
             })
         }).unwrap_or(1)
+    } else {
+        1
     };
 
     // Syntax highlight only new (added) lines — removed lines use plain grey
     let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
-    // Removed lines: grey text on dim red background (no syntax highlighting)
-    let removed_style = Style::default().fg(Color::Gray).bg(dim_red_bg);
+    // Removed lines: dark grey text on dim red bg (darker than comment grey
+    // in syntax-highlighted green lines, which is typically ~128 grey)
+    let removed_style = Style::default().fg(Color::Rgb(100, 100, 100)).bg(dim_red_bg);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
