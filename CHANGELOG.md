@@ -82,9 +82,12 @@ All notable changes to Azureal will be documented in this file.
   - In-progress items show `activeForm` text; pending/completed show `content`
   - Widget stays visible after all items completed (shows checkmarks); clears on next user prompt
   - TodoWrite tool calls and results suppressed from inline convo stream
-- Session search/filter in Worktrees pane
+- Hierarchical session search/filter in Worktrees pane
   - Press `/` to activate filter bar at top of sidebar
-  - Type to filter by worktree name, session file UUID, or custom session name
+  - Searches across project name, worktree names, session file UUIDs, and custom session names simultaneously
+  - Matching items shown with parent hierarchy preserved (e.g., matching session UUID shows under its worktree and project)
+  - Session files eagerly loaded at startup so UUIDs are searchable without manual expansion
+  - Worktrees auto-expand to reveal matching session files
   - Esc clears filter, Enter accepts, Backspace removes chars
   - Selection auto-snaps to first match; j/k skip filtered-out sessions
   - Match count shown as `N/total` in filter bar

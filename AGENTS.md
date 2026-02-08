@@ -692,7 +692,13 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Session Search/Filter
 
-Press `/` in the Worktrees pane to activate a search filter. Type to narrow the session list (case-insensitive substring match). The filter matches against: worktree display name (branch name without `azureal/` prefix), session file UUIDs, and custom session names from `sessions.toml`. The filter bar appears at the top of the sidebar with a match count.
+Press `/` in the Worktrees pane to activate a search filter. Type to narrow the sidebar (case-insensitive substring match). The filter searches **hierarchically** across all three levels simultaneously: project name, worktree display names (branch name without `azureal/` prefix), session file UUIDs, and custom session names from `sessions.toml`. Matching items are shown with their parent hierarchy preserved — e.g. a matching session UUID appears under its worktree and project header even if those parents don't match the filter. Session files are eagerly loaded at startup so UUIDs are searchable without manual expansion.
+
+**Hierarchy rules:**
+- **Project name matches** → all worktrees and sessions shown (no filtering below)
+- **Worktree name matches** → that worktree shown normally (all files if expanded)
+- **Session file matches** → parent worktree auto-expanded, only matching session files shown
+- **No match** → worktree hidden entirely
 
 **Keybindings (while filter is active):**
 - Type characters — appended to filter, sidebar updates live
@@ -705,9 +711,9 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 
 **Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `t`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
 
-**Rendering:** `build_sidebar_items()` skips sessions that don't match the filter. A 3-line filter bar (borders + text) is rendered above the session list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count shown as right-aligned title (e.g., ` 3/12 `).
+**Rendering:** `build_sidebar_items()` performs a two-pass filter: first determines which worktrees/files match at each level, then builds the item list showing only matching items with parent context. A 3-line filter bar (borders + text) is rendered above the session list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count (visible worktrees) shown as right-aligned title (e.g., ` 3/12 `).
 
-Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, filter bar in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/event_loop.rs`
+Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter_with_names()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/event_loop.rs`, eager session file loading in `src/app/state/load.rs`
 
 ### Conversation Persistence
 
