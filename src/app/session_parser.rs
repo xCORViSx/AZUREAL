@@ -32,6 +32,8 @@ pub struct ParsedSession {
     /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
     /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
     pub session_tokens: Option<(u64, u64)>,
+    /// Model context window size detected from assistant events' message.model field
+    pub context_window: Option<u64>,
 }
 
 /// Persistent parser state that survives between incremental parses.
@@ -100,6 +102,7 @@ pub fn parse_session_file_incremental(
             awaiting_plan_approval: check_plan_approval(existing_events),
             end_offset: start_offset,
             session_tokens: None,
+            context_window: None,
         };
     }
 
@@ -153,6 +156,7 @@ pub fn parse_session_file_incremental(
         end_offset: result.end_offset,
         // Use new parse's tokens if present, otherwise keep None (no assistant events in this batch)
         session_tokens: result.session_tokens,
+        context_window: result.context_window,
     }
 }
 
@@ -199,6 +203,7 @@ fn parse_session_file_from(
             awaiting_plan_approval: false,
             end_offset: 0,
             session_tokens: None,
+            context_window: None,
         },
     };
 
@@ -229,6 +234,8 @@ fn parse_session_file_from(
     let mut bytes_read: u64 = 0;
     // Tracks latest assistant event's token usage (overwritten each time, last wins)
     let mut session_tokens: Option<(u64, u64)> = None;
+    // Context window detected from model string (overwritten each assistant event, last wins)
+    let mut context_window: Option<u64> = None;
 
     // Read line-by-line tracking byte offset
     let mut line_buf = String::new();
@@ -272,7 +279,7 @@ fn parse_session_file_from(
             "assistant" => {
                 parse_assistant_event(
                     &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
-                    &mut session_tokens,
+                    &mut session_tokens, &mut context_window,
                 );
             }
             "result" => parse_result_event(&json, timestamp, &mut timed_events),
@@ -313,6 +320,7 @@ fn parse_session_file_from(
         awaiting_plan_approval,
         end_offset: start_offset + bytes_read,
         session_tokens,
+        context_window,
     }
 }
 
@@ -575,6 +583,25 @@ thread_local! {
     pub static PARSE_DIAGNOSTICS: std::cell::RefCell<ParseDiagnostics> = std::cell::RefCell::new(ParseDiagnostics::default());
 }
 
+/// Map a Claude model string to its context window size in tokens.
+/// Model strings from message.model look like "claude-opus-4-6", "claude-sonnet-4-5-20250929", etc.
+/// Falls back to 200k for unknown models — safe default since all Claude models have at least 200k.
+pub fn context_window_for_model(model: &str) -> u64 {
+    // Claude 3.5 and earlier: 200k across the board
+    // Claude 4.x family: default 200k, but Opus 4.6 and Sonnet 4.5 support 1M (beta)
+    // We use 200k as default since 1M beta requires special access and we auto-detect
+    // via actual token counts if they exceed 200k (see draw_output.rs)
+    if model.contains("opus-4-6") { return 200_000; }
+    if model.contains("sonnet-4-5") { return 200_000; }
+    if model.contains("haiku-4-5") { return 200_000; }
+    if model.contains("sonnet-4-") { return 200_000; }
+    if model.contains("opus-4-") { return 200_000; }
+    // Claude 3.x family
+    if model.contains("claude-3") { return 200_000; }
+    // Unknown model — safe default
+    200_000
+}
+
 fn parse_assistant_event(
     json: &serde_json::Value,
     timestamp: DateTime<Utc>,
@@ -582,6 +609,7 @@ fn parse_assistant_event(
     tool_calls: &mut HashMap<String, (String, Option<String>)>,
     pending_tools: &mut HashSet<String>,
     session_tokens: &mut Option<(u64, u64)>,
+    context_window: &mut Option<u64>,
 ) {
     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
 
@@ -601,6 +629,11 @@ fn parse_assistant_event(
         let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
         let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
         *session_tokens = Some((input + cache_read + cache_create, output));
+    }
+
+    // Extract model string → context window size (each assistant event has message.model)
+    if let Some(model) = message.get("model").and_then(|m| m.as_str()) {
+        *context_window = Some(context_window_for_model(model));
     }
 
     for block in content_arr {

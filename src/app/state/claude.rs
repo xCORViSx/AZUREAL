@@ -126,15 +126,22 @@ impl App {
                 }
             }
 
-            // Extract token usage from live assistant events (same data the EventParser just parsed)
+            // Extract token usage + model from live assistant events
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
                 if json.get("type").and_then(|t| t.as_str()) == Some("assistant") {
-                    if let Some(usage) = json.get("message").and_then(|m| m.get("usage")) {
-                        let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        self.session_tokens = Some((input + cache_read + cache_create, output));
+                    if let Some(msg) = json.get("message") {
+                        if let Some(usage) = msg.get("usage") {
+                            let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            self.session_tokens = Some((input + cache_read + cache_create, output));
+                        }
+                        if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
+                            self.model_context_window = Some(
+                                crate::app::session_parser::context_window_for_model(model)
+                            );
+                        }
                     }
                 }
             }

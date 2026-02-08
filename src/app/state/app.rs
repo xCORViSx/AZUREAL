@@ -273,8 +273,8 @@ pub struct App {
     /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
     /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
     pub session_tokens: Option<(u64, u64)>,
-    /// Model context window size in tokens (all current Claude models = 200k)
-    pub model_context_window: u64,
+    /// Context window size detected from model string (None = not yet known, default 200k)
+    pub model_context_window: Option<u64>,
 }
 
 impl App {
@@ -425,7 +425,7 @@ impl App {
             run_command_dialog: None,
             run_command_picker: None,
             session_tokens: None,
-            model_context_window: 200_000,
+            model_context_window: None,
         }
     }
 

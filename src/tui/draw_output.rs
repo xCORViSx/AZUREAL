@@ -343,7 +343,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
         // Token usage percentage badge (color-coded: green <60%, yellow 60-80%, red >80%)
         if let Some((ctx_tokens, _)) = app.session_tokens {
-            let pct = (ctx_tokens as f64 / app.model_context_window as f64 * 100.0).min(100.0);
+            // Use model-detected window, or default 200k. If tokens exceed the known
+            // window, the user has 1M beta — bump to 1M automatically.
+            let base_window = app.model_context_window.unwrap_or(200_000);
+            let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
+            let pct = (ctx_tokens as f64 / window as f64 * 100.0).min(100.0);
             let color = if pct < 60.0 { Color::Green }
                 else if pct < 80.0 { Color::Yellow }
                 else { Color::Red };
