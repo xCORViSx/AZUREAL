@@ -77,6 +77,7 @@ All notable changes to Azureal will be documented in this file.
   - Selects entire viewer cache from first to last line, then `⌘C` to copy
   - Complements existing `⌘A` in edit mode and input pane
   - Copied text excludes line number gutter — only file content is copied
+  - Selection highlight skips line number column (gutter stays unhighlighted)
 - Full mouse click interaction for all panes
   - Click any pane to focus it (border highlights with double border)
   - Click sessions/session files in sidebar to select them

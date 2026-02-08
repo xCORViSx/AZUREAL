@@ -107,7 +107,7 @@ Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for ren
 - Selection stored as `Option<(start_line, start_col, end_line, end_col)>` in cache-line indices (normalized so start <= end)
 - Viewer selection rendered in `draw_viewer.rs` via `apply_selection_to_line()` (already existed)
 - Convo selection rendered in `draw_output.rs` by calling `apply_selection_to_line()` after viewport build — `output_selection_cached` used as viewport cache invalidation key
-- `apply_selection_to_line()` is `pub(crate)` in `draw_viewer.rs` — splits spans at selection boundaries, patches with `Rgb(60,60,100)` bg. O(spans_in_line) per viewport line, negligible cost.
+- `apply_selection_to_line()` is `pub(crate)` in `draw_viewer.rs` — splits spans at selection boundaries, patches with `Rgb(60,60,100)` bg. Takes `gutter` param to skip line number column from highlighting (File mode computes from first span width; Diff/Convo pass 0). O(spans_in_line) per viewport line, negligible cost.
 - `⌘C` copies from whichever pane has active selection (viewer, convo, or input) via `extract_text_from_cache()` → `arboard::Clipboard`. Viewer copy strips line number gutter (first span per line) so only file content is copied.
 - Selections cleared on: click, scroll, Tab, focus change
 - **Fast-path exclusion:** `fast_draw_input()` and draw deferral are both skipped when `has_input_selection()` is true — fast-path writes raw text without selection styling
