@@ -72,6 +72,17 @@ All notable changes to Azureal will be documented in this file.
   - Cursor positioning accounts for both newlines and word-wrapping
   - Selection highlighting works correctly across line boundaries
 
+### Added
+- Full mouse click interaction for all panes
+  - Click any pane to focus it (border highlights with double border)
+  - Click sessions/session files in sidebar to select them
+  - Click file tree entries to select; double-click to open files or expand/collapse directories
+  - Click input pane to enter prompt mode and position cursor at click location
+  - Click outside overlays (help, context menu, wizard, branch dialog, run command picker/dialog) to dismiss
+  - Pane hit-testing via cached `Rect::contains()` — shared by both click and scroll handlers
+  - Sidebar uses `SidebarRowAction` row map built alongside sidebar cache for O(1) click-to-item lookup
+  - Scroll handler refactored to use cached pane rects (was duplicating layout math)
+
 ### Fixed
 - Edit diff inline previews now show actual file line numbers instead of always starting at 1
   - Reads file on background render thread to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file)

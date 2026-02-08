@@ -87,9 +87,17 @@ Other features:
 - Vim-style modal editing
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
-- Mouse scroll support (scroll panels based on cursor position)
+- Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs
 
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
+
+**Mouse Click Architecture:**
+- All 5 pane `Rect`s cached on App struct during `ui()` draw: `pane_sessions`, `pane_file_tree`, `pane_viewer`, `pane_convo`, `input_area`
+- Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
+- Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader`, `Session(idx)`, or `SessionFile(sess_idx, file_idx)`
+- FileTree uses entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
+- Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — walks chars with character-level wrapping to map screen coords to char index
+- Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
 ---
 
@@ -705,7 +713,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
@@ -719,7 +727,7 @@ azureal/
 │   │   ├── render_thread.rs # Background render thread for async convo rendering
 │   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── render_wrap.rs  # Text/span wrapping utilities
-│   │   ├── draw_sidebar.rs # Sessions pane rendering
+│   │   ├── draw_sidebar.rs # Sessions pane rendering (builds sidebar_row_map for click handling)
 │   │   ├── draw_file_tree.rs # FileTree pane rendering
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
