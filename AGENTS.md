@@ -899,6 +899,9 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 ## Test Categories
 
 - Unit tests for parsing functions (`parse_stream_json_for_display`, event parsing)
+- Unit tests for TodoWrite parsing (`parse_todos_from_input` — 5 tests)
+- Unit tests for AskUserQuestion context builder (`build_ask_user_context` — 5 tests)
+- Unit tests for AskUserQuestion rendering (`render_ask_user_question` — 4 tests)
 - Integration tests for git operations (worktree create/delete/list)
 - Integration tests for session discovery from git state
 - E2E tests for TUI event handling (would require mock terminal)
