@@ -84,6 +84,8 @@ All notable changes to Azureal will be documented in this file.
   - Scroll handler refactored to use cached pane rects (was duplicating layout math)
 
 ### Fixed
+- File tree entries now highlight when clicked
+  - Missing `invalidate_file_tree()` call after setting selection from mouse click — cache was never rebuilt
 - Edit diff inline previews now show actual file line numbers instead of always starting at 1
   - Reads file on background render thread to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file)
   - Falls back to line 1 if file can't be read or new_string is empty (pure deletion)
