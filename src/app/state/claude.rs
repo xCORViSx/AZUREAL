@@ -271,3 +271,92 @@ pub fn parse_todos_from_input(input: &serde_json::Value) -> Vec<super::app::Todo
         Some(super::app::TodoItem { content, status, active_form })
     }).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::app::TodoStatus;
+    use serde_json::json;
+
+    /// Verifies parse_todos_from_input correctly parses a real TodoWrite input
+    /// with mixed statuses (in_progress, pending, completed).
+    /// This test exists because TodoWrite JSON has a specific structure from
+    /// Claude Code's tool calls — getting the field names or status strings wrong
+    /// would silently produce empty results.
+    #[test]
+    fn test_parse_todos_real_data_mixed_statuses() {
+        let input = json!({
+            "todos": [
+                {
+                    "content": "Add all terminal keybindings to title bar hints",
+                    "status": "in_progress",
+                    "activeForm": "Adding terminal keybindings to title bar"
+                },
+                {
+                    "content": "Remove Terminal section from help_sections()",
+                    "status": "pending",
+                    "activeForm": "Removing Terminal from help panel"
+                },
+                {
+                    "content": "Build check and verify",
+                    "status": "completed",
+                    "activeForm": "Verifying build"
+                }
+            ]
+        });
+        let todos = parse_todos_from_input(&input);
+        assert_eq!(todos.len(), 3, "Should parse all 3 todos");
+        assert_eq!(todos[0].content, "Add all terminal keybindings to title bar hints");
+        assert_eq!(todos[0].status, TodoStatus::InProgress);
+        assert_eq!(todos[0].active_form, "Adding terminal keybindings to title bar");
+        assert_eq!(todos[1].status, TodoStatus::Pending);
+        assert_eq!(todos[2].status, TodoStatus::Completed);
+    }
+
+    /// Verifies empty or missing "todos" array returns empty Vec (no panic).
+    /// Without this, a missing "todos" field would need to be handled gracefully.
+    #[test]
+    fn test_parse_todos_empty_input() {
+        assert!(parse_todos_from_input(&json!({})).is_empty());
+        assert!(parse_todos_from_input(&json!({"todos": []})).is_empty());
+        assert!(parse_todos_from_input(&json!({"todos": "not_array"})).is_empty());
+    }
+
+    /// Verifies that missing optional fields don't cause panics.
+    /// activeForm is optional in the Claude schema — should default to empty string.
+    #[test]
+    fn test_parse_todos_missing_active_form() {
+        let input = json!({
+            "todos": [{"content": "Test item", "status": "pending"}]
+        });
+        let todos = parse_todos_from_input(&input);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].active_form, "");
+        assert_eq!(todos[0].status, TodoStatus::Pending);
+    }
+
+    /// Verifies unknown status strings default to Pending (defensive parsing).
+    /// Claude might add new statuses in the future — should not panic.
+    #[test]
+    fn test_parse_todos_unknown_status_defaults_pending() {
+        let input = json!({
+            "todos": [{"content": "x", "status": "blocked", "activeForm": ""}]
+        });
+        let todos = parse_todos_from_input(&input);
+        assert_eq!(todos[0].status, TodoStatus::Pending);
+    }
+
+    /// Verifies todos with missing content field are skipped (filter_map returns None).
+    #[test]
+    fn test_parse_todos_missing_content_skipped() {
+        let input = json!({
+            "todos": [
+                {"status": "pending", "activeForm": "No content"},
+                {"content": "Has content", "status": "pending", "activeForm": ""}
+            ]
+        });
+        let todos = parse_todos_from_input(&input);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].content, "Has content");
+    }
+}

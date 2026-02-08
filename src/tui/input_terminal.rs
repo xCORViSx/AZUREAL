@@ -289,3 +289,96 @@ fn build_ask_user_context(input: &serde_json::Value) -> String {
     ctx.push_str("\n\nThe user's response follows. Interpret numbers as selecting that option. Any other text is custom input (\"Other\").]");
     ctx
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Verifies build_ask_user_context produces correct system context from
+    /// a real AskUserQuestion input with 2 options and single-select.
+    /// This test exists because the context string is invisible to the user
+    /// but critical for Claude to interpret numbered responses.
+    #[test]
+    fn test_build_context_single_question_two_options() {
+        let input = json!({
+            "questions": [{
+                "question": "Use tiktoken-rs with cl100k_base encoding?",
+                "header": "Approach",
+                "options": [
+                    {"label": "tiktoken-rs (Recommended)", "description": "~95% accurate"},
+                    {"label": "Character heuristic", "description": "~4 chars/token"}
+                ],
+                "multiSelect": false
+            }]
+        });
+        let ctx = build_ask_user_context(&input);
+        assert!(ctx.contains("[SYSTEM:"), "Should start with system prefix");
+        assert!(ctx.contains("Use tiktoken-rs"), "Should include question text");
+        assert!(ctx.contains("1. tiktoken-rs (Recommended)"), "Should number first option");
+        assert!(ctx.contains("2. Character heuristic"), "Should number second option");
+        assert!(ctx.contains("3. Other (custom text)"), "Should include Other option");
+        assert!(!ctx.contains("multi-select"), "Single-select should not mention multi");
+        assert!(ctx.contains("Interpret numbers"), "Should explain number semantics");
+    }
+
+    /// Verifies multi-select questions are annotated.
+    #[test]
+    fn test_build_context_multi_select() {
+        let input = json!({
+            "questions": [{
+                "question": "Which features?",
+                "header": "Features",
+                "options": [{"label": "A", "description": ""}, {"label": "B", "description": ""}],
+                "multiSelect": true
+            }]
+        });
+        let ctx = build_ask_user_context(&input);
+        assert!(ctx.contains("(multi-select)"), "Multi-select should be annotated");
+    }
+
+    /// Verifies multiple questions get Q1/Q2 prefixes.
+    #[test]
+    fn test_build_context_multiple_questions() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "First?",
+                    "header": "Q1",
+                    "options": [{"label": "Yes", "description": ""}],
+                    "multiSelect": false
+                },
+                {
+                    "question": "Second?",
+                    "header": "Q2",
+                    "options": [{"label": "No", "description": ""}],
+                    "multiSelect": false
+                }
+            ]
+        });
+        let ctx = build_ask_user_context(&input);
+        assert!(ctx.contains("Q1: First?"), "Should prefix first question with Q1");
+        assert!(ctx.contains("Q2: Second?"), "Should prefix second question with Q2");
+    }
+
+    /// Verifies missing/invalid questions field returns empty string (no panic).
+    #[test]
+    fn test_build_context_empty_input() {
+        assert!(build_ask_user_context(&json!({})).is_empty());
+        assert!(build_ask_user_context(&json!({"questions": "not_array"})).is_empty());
+    }
+
+    /// Verifies options with missing fields use "?" fallback.
+    #[test]
+    fn test_build_context_missing_label_fallback() {
+        let input = json!({
+            "questions": [{
+                "question": "Test?",
+                "options": [{"description": "no label"}],
+                "multiSelect": false
+            }]
+        });
+        let ctx = build_ask_user_context(&input);
+        assert!(ctx.contains("1. ?"), "Missing label should show ?");
+    }
+}

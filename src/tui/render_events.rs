@@ -710,3 +710,101 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
 
     lines.push(Line::from(""));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Verifies render_ask_user_question produces visible lines with
+    /// box borders, question text, numbered options, and an "Other" entry.
+    /// This test exists because the rendering is the user-facing presentation
+    /// of AskUserQuestion — if box drawing or numbering is wrong, the user
+    /// can't correctly select options.
+    #[test]
+    fn test_render_ask_user_question_basic_structure() {
+        let input = json!({
+            "questions": [{
+                "question": "Which approach?",
+                "header": "Approach",
+                "options": [
+                    {"label": "Option A", "description": "First choice"},
+                    {"label": "Option B", "description": "Second choice"}
+                ],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+
+        // Flatten all span content into strings for assertion
+        let text: Vec<String> = lines.iter().map(|l| {
+            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+        }).collect();
+
+        // Box borders present
+        assert!(text.iter().any(|l| l.contains('┌') && l.contains('┐')), "Missing top border");
+        assert!(text.iter().any(|l| l.contains('└') && l.contains('┘')), "Missing bottom border");
+        assert!(text.iter().any(|l| l.contains('├') && l.contains('┤')), "Missing separator");
+
+        // Question text visible
+        assert!(text.iter().any(|l| l.contains("Which approach?")), "Missing question text");
+
+        // Numbered options
+        assert!(text.iter().any(|l| l.contains("1. Option A")), "Missing option 1");
+        assert!(text.iter().any(|l| l.contains("2. Option B")), "Missing option 2");
+
+        // Descriptions visible
+        assert!(text.iter().any(|l| l.contains("First choice")), "Missing option 1 description");
+        assert!(text.iter().any(|l| l.contains("Second choice")), "Missing option 2 description");
+
+        // Other option present
+        assert!(text.iter().any(|l| l.contains("3. Other")), "Missing Other option");
+    }
+
+    /// Verifies multi-select annotation appears in the header.
+    #[test]
+    fn test_render_ask_user_question_multi_select_icon() {
+        let input = json!({
+            "questions": [{
+                "question": "Select features",
+                "options": [{"label": "A", "description": ""}],
+                "multiSelect": true
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text: Vec<String> = lines.iter().map(|l| {
+            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+        }).collect();
+        // Multi-select uses ☑ icon instead of ❓
+        assert!(text.iter().any(|l| l.contains('☑')), "Multi-select should show checkbox icon");
+    }
+
+    /// Verifies empty questions array produces no output (no panic).
+    #[test]
+    fn test_render_ask_user_question_empty() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &json!({}), 80);
+        assert!(lines.is_empty(), "Empty input should produce no lines");
+        render_ask_user_question(&mut lines, &json!({"questions": []}), 80);
+        assert!(lines.is_empty(), "Empty questions array should produce no lines");
+    }
+
+    /// Verifies narrow width doesn't panic or produce garbled output.
+    /// This tests the wrapping logic with constrained box width.
+    #[test]
+    fn test_render_ask_user_question_narrow_width() {
+        let input = json!({
+            "questions": [{
+                "question": "A very long question that should wrap within the narrow box width to test text wrapping behavior",
+                "options": [{"label": "Short", "description": "Also a description"}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        // Minimum usable width (box_width = 60.min(width-4) = 16)
+        render_ask_user_question(&mut lines, &input, 20);
+        assert!(!lines.is_empty(), "Should produce output even at narrow width");
+    }
+}
