@@ -15,5 +15,5 @@ mod terminal;
 pub(crate) mod types;
 mod util;
 
-pub use state::App;
+pub use state::{App, TodoItem, TodoStatus};
 pub use types::{BranchDialog, Focus, RunCommand, SessionAction, SidebarRowAction, ViewMode, ViewerMode};

@@ -83,8 +83,17 @@ impl App {
 
             for event in &events {
                 match event {
-                    DisplayEvent::ToolCall { tool_use_id, .. } => {
+                    DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
                         self.pending_tool_calls.insert(tool_use_id.clone());
+                        // TodoWrite: update sticky todo widget with latest state
+                        if tool_name == "TodoWrite" {
+                            self.current_todos = parse_todos_from_input(input);
+                        }
+                        // AskUserQuestion: flag for special input handling
+                        if tool_name == "AskUserQuestion" {
+                            self.awaiting_ask_user_question = true;
+                            self.ask_user_questions_cache = Some(input.clone());
+                        }
                     }
                     DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
@@ -245,4 +254,20 @@ impl App {
     pub fn cleanup_interactive_session(&mut self, branch_name: &str) {
         self.interactive_sessions.remove(branch_name);
     }
+}
+
+/// Parse TodoWrite input JSON into TodoItem vec.
+/// Input structure: { "todos": [{ "content": "...", "status": "pending"|"in_progress"|"completed", "activeForm": "..." }] }
+pub fn parse_todos_from_input(input: &serde_json::Value) -> Vec<super::app::TodoItem> {
+    let Some(todos) = input.get("todos").and_then(|v| v.as_array()) else { return Vec::new() };
+    todos.iter().filter_map(|t| {
+        let content = t.get("content")?.as_str()?.to_string();
+        let active_form = t.get("activeForm").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let status = match t.get("status").and_then(|v| v.as_str()).unwrap_or("pending") {
+            "in_progress" => super::app::TodoStatus::InProgress,
+            "completed" => super::app::TodoStatus::Completed,
+            _ => super::app::TodoStatus::Pending,
+        };
+        Some(super::app::TodoItem { content, status, active_form })
+    }).collect()
 }

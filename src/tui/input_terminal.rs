@@ -166,7 +166,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                             // If awaiting plan approval, prepend hidden context explaining the options
                             // User only sees their input; Claude receives the context + input
                             let actual_prompt = if app.awaiting_plan_approval {
-                                app.awaiting_plan_approval = false; // Clear flag after use
+                                app.awaiting_plan_approval = false;
                                 format!(
                                     "[SYSTEM: You just called ExitPlanMode. The user is viewing the plan approval prompt with these options:\n\
                                     1. Yes, clear context and bypass permissions\n\
@@ -178,6 +178,20 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                                     User response: {}",
                                     input
                                 )
+                            } else if app.awaiting_ask_user_question {
+                                app.awaiting_ask_user_question = false;
+                                // Build context from cached questions so Claude knows which options were shown
+                                let ctx = if let Some(ref q) = app.ask_user_questions_cache {
+                                    build_ask_user_context(q)
+                                } else {
+                                    String::new()
+                                };
+                                app.ask_user_questions_cache = None;
+                                if ctx.is_empty() {
+                                    input.clone()
+                                } else {
+                                    format!("{}\n\nUser response: {}", ctx, input)
+                                }
                             } else {
                                 input.clone()
                             };
@@ -243,4 +257,35 @@ pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, claud
         _ => {}
     }
     Ok(())
+}
+
+/// Build a hidden system context string from the cached AskUserQuestion JSON.
+/// This gets prepended to the user's response so Claude knows which numbered
+/// options were displayed and can interpret "1", "2", etc. correctly.
+/// Input shape: { "questions": [{ "question": "...", "options": [{ "label": "...", "description": "..." }], "multiSelect": bool }] }
+fn build_ask_user_context(input: &serde_json::Value) -> String {
+    let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else {
+        return String::new();
+    };
+    let mut ctx = String::from("[SYSTEM: You just called AskUserQuestion. The user was shown these options:\n");
+    for (qi, q) in questions.iter().enumerate() {
+        let text = q.get("question").and_then(|v| v.as_str()).unwrap_or("?");
+        let multi = q.get("multiSelect").and_then(|v| v.as_bool()).unwrap_or(false);
+        if questions.len() > 1 {
+            ctx.push_str(&format!("\nQ{}: {}", qi + 1, text));
+        } else {
+            ctx.push_str(&format!("\n{}", text));
+        }
+        if multi { ctx.push_str(" (multi-select)"); }
+        if let Some(opts) = q.get("options").and_then(|v| v.as_array()) {
+            for (i, opt) in opts.iter().enumerate() {
+                let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("?");
+                ctx.push_str(&format!("\n  {}. {}", i + 1, label));
+            }
+            // "Other" is always implicitly available in AskUserQuestion
+            ctx.push_str(&format!("\n  {}. Other (custom text)", opts.len() + 1));
+        }
+    }
+    ctx.push_str("\n\nThe user's response follows. Interpret numbers as selecting that option. Any other text is custom input (\"Other\").]");
+    ctx
 }

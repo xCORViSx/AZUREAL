@@ -75,6 +75,9 @@ fn render_display_events_from(
     let mut last_hook: Option<(String, String)> = None;
     let mut saw_exit_plan_mode = false;
     let mut saw_user_after_exit_plan = false;
+    let mut saw_ask_user_question = false;
+    let mut saw_user_after_ask = false;
+    let mut last_ask_input: Option<serde_json::Value> = None;
 
     // Pre-scan events before start_idx to set state flags correctly
     for event in events.iter().take(start_idx) {
@@ -85,14 +88,20 @@ fn render_display_events_from(
             | DisplayEvent::ToolCall { .. } | DisplayEvent::ToolResult { .. } => {
                 saw_content = true;
                 last_hook = None;
-                if let DisplayEvent::ToolCall { tool_name, .. } = event {
+                if let DisplayEvent::ToolCall { tool_name, input, .. } = event {
                     if tool_name == "ExitPlanMode" {
                         saw_exit_plan_mode = true;
                         saw_user_after_exit_plan = false;
                     }
+                    if tool_name == "AskUserQuestion" {
+                        saw_ask_user_question = true;
+                        saw_user_after_ask = false;
+                        last_ask_input = Some(input.clone());
+                    }
                 }
                 if let DisplayEvent::UserMessage { .. } = event {
                     if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
+                    if saw_ask_user_question { saw_user_after_ask = true; }
                 }
             }
             _ => {}
@@ -138,6 +147,7 @@ fn render_display_events_from(
                 saw_content = true;
                 last_hook = None;
                 if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
+                if saw_ask_user_question { saw_user_after_ask = true; }
                 // Track bubble position (line index after the empty lines)
                 bubble_positions.push((lines.len() + 2, true));
                 render_user_message(&mut lines, content, bubble_width, w);
@@ -168,19 +178,34 @@ fn render_display_events_from(
                 last_hook = None;
                 if tool_name == "ExitPlanMode" {
                     saw_exit_plan_mode = true;
-                    saw_user_after_exit_plan = false; // Reset: new plan, no user response yet
+                    saw_user_after_exit_plan = false;
                 }
+                if tool_name == "AskUserQuestion" {
+                    saw_ask_user_question = true;
+                    saw_user_after_ask = false;
+                    last_ask_input = Some(input.clone());
+                }
+                // TodoWrite rendered as sticky widget, skip inline display
+                if tool_name == "TodoWrite" { continue; }
                 render_tool_call(&mut lines, &mut animation_indices, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
             DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
                 saw_content = true;
                 last_hook = None;
+                // TodoWrite result is noise ("Todos have been modified successfully"), skip it
+                if tool_name == "TodoWrite" { continue; }
                 let is_failed = failed_tools.contains(tool_use_id);
                 let tool_max = bubble_width + 10;
                 lines.extend(render_tool_result(tool_name, file_path.as_deref(), content, is_failed, tool_max));
                 // Show approval prompt immediately after ExitPlanMode result
                 if tool_name == "ExitPlanMode" && saw_exit_plan_mode && !saw_user_after_exit_plan {
                     render_plan_approval(&mut lines, w);
+                }
+                // Show AskUserQuestion options box after the tool result
+                if tool_name == "AskUserQuestion" && saw_ask_user_question && !saw_user_after_ask {
+                    if let Some(ref input) = last_ask_input {
+                        render_ask_user_question(&mut lines, input, w);
+                    }
                 }
             }
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
@@ -432,6 +457,94 @@ fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
     lines.push(Line::from(vec![
         Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
     ]).alignment(Alignment::Center));
+}
+
+/// Render AskUserQuestion tool call as a numbered options box.
+/// Input structure: { "questions": [{ "question": "...", "header": "...",
+///   "options": [{ "label": "...", "description": "..." }], "multiSelect": bool }] }
+fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, width: usize) {
+    let color = Color::Magenta;
+    let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else { return };
+
+    for q in questions {
+        let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("?");
+        let options = q.get("options").and_then(|v| v.as_array());
+        let multi = q.get("multiSelect").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        // Box width: fit content or cap at panel width
+        let box_width = 60.min(width.saturating_sub(4));
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
+
+        // Top border
+        lines.push(Line::from(vec![
+            Span::styled(format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+        ]).alignment(Alignment::Center));
+
+        // Header with question text (wrap if needed)
+        let header_icon = if multi { "☑ " } else { "❓ " };
+        let header_max = box_width.saturating_sub(4 + header_icon.len());
+        for (i, chunk) in wrap_text(question, header_max).into_iter().enumerate() {
+            let prefix = if i == 0 { header_icon } else { "   " };
+            let text = format!("{}{}", prefix, chunk);
+            let pad = box_width.saturating_sub(text.chars().count() + 2);
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(color)),
+                Span::styled(text, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+            ]).alignment(Alignment::Center));
+        }
+
+        // Separator
+        lines.push(Line::from(vec![
+            Span::styled(format!("├{}┤", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+        ]).alignment(Alignment::Center));
+
+        // Numbered options
+        if let Some(opts) = options {
+            for (idx, opt) in opts.iter().enumerate() {
+                let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("?");
+                let desc = opt.get("description").and_then(|v| v.as_str());
+                // Option label line
+                let opt_text = format!("{}. {}", idx + 1, label);
+                let pad = box_width.saturating_sub(opt_text.chars().count() + 4);
+                lines.push(Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(color)),
+                    Span::styled(opt_text, Style::default().fg(Color::Cyan)),
+                    Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+                ]).alignment(Alignment::Center));
+                // Option description (dimmer, indented)
+                if let Some(d) = desc {
+                    let indent = "   ";
+                    let desc_max = box_width.saturating_sub(4 + indent.len());
+                    for chunk in wrap_text(d, desc_max) {
+                        let text = format!("{}{}", indent, chunk);
+                        let pad = box_width.saturating_sub(text.chars().count() + 4);
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(color)),
+                            Span::styled(text, Style::default().fg(Color::DarkGray)),
+                            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+                        ]).alignment(Alignment::Center));
+                    }
+                }
+            }
+        }
+
+        // "Other" note
+        let other_text = format!("{}. Other (type your answer)", options.map(|o| o.len() + 1).unwrap_or(1));
+        let pad = box_width.saturating_sub(other_text.chars().count() + 4);
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(color)),
+            Span::styled(other_text, Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+        ]).alignment(Alignment::Center));
+
+        // Bottom border
+        lines.push(Line::from(vec![
+            Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
+        ]).alignment(Alignment::Center));
+    }
 }
 
 /// Render a plan block with prominent full-width styling and markdown highlighting

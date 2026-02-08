@@ -112,6 +112,9 @@ impl App {
         self.failed_tool_calls.clear();
         self.session_tokens = None;
         self.model_context_window = None;
+        self.current_todos.clear();
+        self.awaiting_ask_user_question = false;
+        self.ask_user_questions_cache = None;
 
         if let Some(session) = self.current_session() {
             let branch_name = session.branch_name.clone();
@@ -168,6 +171,8 @@ impl App {
                     self.awaiting_plan_approval = parsed.awaiting_plan_approval;
                     self.session_tokens = parsed.session_tokens;
                     self.model_context_window = parsed.context_window;
+                    // Extract latest TodoWrite and AskUserQuestion state from parsed events
+                    self.extract_skill_tools_from_events();
                     // Store byte offset for incremental parsing on subsequent polls
                     self.session_file_parse_offset = parsed.end_offset;
 
@@ -250,6 +255,8 @@ impl App {
         self.assistant_no_content_arr = parsed.assistant_no_content_arr;
         self.assistant_text_blocks = parsed.assistant_text_blocks;
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+        // Extract latest TodoWrite and AskUserQuestion state from parsed events
+        self.extract_skill_tools_from_events();
         // Update tokens and context window if the new parse found assistant events
         if parsed.session_tokens.is_some() {
             self.session_tokens = parsed.session_tokens;
@@ -298,6 +305,35 @@ impl App {
     }
 
     pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }
+
+    /// Scan display_events backwards for the latest TodoWrite and AskUserQuestion.
+    /// TodoWrite: update sticky todo widget. AskUserQuestion: check if awaiting response.
+    fn extract_skill_tools_from_events(&mut self) {
+        let mut found_ask = false;
+        let mut saw_user_after_ask = false;
+        // Forward scan for AskUserQuestion response tracking (need ordering)
+        for event in &self.display_events {
+            match event {
+                crate::events::DisplayEvent::ToolCall { tool_name, input, .. } => {
+                    if tool_name == "TodoWrite" {
+                        self.current_todos = super::claude::parse_todos_from_input(input);
+                    }
+                    if tool_name == "AskUserQuestion" {
+                        self.ask_user_questions_cache = Some(input.clone());
+                        found_ask = true;
+                        saw_user_after_ask = false;
+                    }
+                }
+                crate::events::DisplayEvent::UserMessage { .. } => {
+                    if found_ask { saw_user_after_ask = true; }
+                }
+                _ => {}
+            }
+        }
+        // Only awaiting if AskUserQuestion was called and no user responded yet
+        self.awaiting_ask_user_question = found_ask && !saw_user_after_ask;
+        if !found_ask { self.ask_user_questions_cache = None; }
+    }
 
     /// Dump debug output to .azureal/debug-output.txt (triggered by Ctrl+Opt+Cmd+D)
     pub fn dump_debug_output(&mut self) {

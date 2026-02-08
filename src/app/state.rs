@@ -33,8 +33,8 @@ use crate::events::DisplayEvent;
 // Re-export FileTreeEntry for helpers module
 pub use crate::app::types::FileTreeEntry;
 
-// Re-export App as the main public type
-pub use app::App;
+// Re-export App and todo types as public
+pub use app::{App, TodoItem, TodoStatus};
 
 // Re-export helper functions for external use (used by sessions.rs)
 pub(crate) use helpers::{generate_session_name, sanitize_for_branch};

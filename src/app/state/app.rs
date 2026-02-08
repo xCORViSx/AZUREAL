@@ -275,6 +275,28 @@ pub struct App {
     pub session_tokens: Option<(u64, u64)>,
     /// Context window size detected from model string (None = not yet known, default 200k)
     pub model_context_window: Option<u64>,
+    /// Current todo list from latest TodoWrite tool call
+    pub current_todos: Vec<TodoItem>,
+    /// Awaiting user response to AskUserQuestion tool call
+    pub awaiting_ask_user_question: bool,
+    /// Cached questions from last AskUserQuestion (for context prefix on response)
+    pub ask_user_questions_cache: Option<serde_json::Value>,
+}
+
+/// A single todo item from Claude's TodoWrite tool call
+#[derive(Clone, Debug)]
+pub struct TodoItem {
+    pub content: String,
+    pub status: TodoStatus,
+    pub active_form: String,
+}
+
+/// Status of a todo item
+#[derive(Clone, Debug, PartialEq)]
+pub enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
 }
 
 impl App {
@@ -426,6 +448,9 @@ impl App {
             run_command_picker: None,
             session_tokens: None,
             model_context_window: None,
+            current_todos: Vec::new(),
+            awaiting_ask_user_question: false,
+            ask_user_questions_cache: None,
         }
     }
 

@@ -7,7 +7,7 @@
 //! just clones a viewport slice and renders from the pre-built cache.
 
 use ratatui::{
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
@@ -164,6 +164,18 @@ pub fn poll_render_result(app: &mut App) -> bool {
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
+    // Split area for sticky todo widget at bottom (if active)
+    let has_active_todos = !app.current_todos.is_empty()
+        && app.current_todos.iter().any(|t| t.status != crate::app::TodoStatus::Completed);
+    let todo_height = if has_active_todos {
+        // +2 for border top/bottom
+        (app.current_todos.len() as u16 + 2).min(area.height.saturating_sub(10))
+    } else { 0 };
+    let [convo_area, todo_area] = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(todo_height),
+    ]).areas(area);
+    let area = convo_area;
     let viewport_height = area.height.saturating_sub(2) as usize;
 
     // Cache viewport height for scroll operations (input handling uses this)
@@ -390,6 +402,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let output = Paragraph::new(content).block(block);
     f.render_widget(output, area);
+
+    // Render sticky todo widget at bottom of convo pane
+    if has_active_todos && todo_height > 0 {
+        draw_todo_widget(f, &app.current_todos, todo_area, app.animation_tick);
+    }
 }
 
 /// Draw rebase status content
@@ -484,4 +501,49 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
     }
 
     lines
+}
+
+/// Render the sticky todo widget — shows at the bottom of the convo pane.
+/// Checkboxes: ✓ (completed, green), ● (in_progress, yellow pulse), ○ (pending, dim)
+fn draw_todo_widget(
+    f: &mut Frame,
+    todos: &[crate::app::TodoItem],
+    area: Rect,
+    animation_tick: u64,
+) {
+    use crate::app::TodoStatus;
+
+    let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+    let pulse = pulse_colors[(animation_tick / 3) as usize % pulse_colors.len()];
+
+    let todo_lines: Vec<Line> = todos.iter().map(|t| {
+        let (icon, color) = match t.status {
+            TodoStatus::Completed => ("✓ ", Color::Green),
+            TodoStatus::InProgress => ("● ", pulse),
+            TodoStatus::Pending => ("○ ", Color::DarkGray),
+        };
+        // Show active_form for in-progress items, content otherwise
+        let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
+            &t.active_form
+        } else {
+            &t.content
+        };
+        Line::from(vec![
+            Span::styled(icon, Style::default().fg(color)),
+            Span::styled(text.clone(), Style::default().fg(if t.status == TodoStatus::Completed {
+                Color::DarkGray
+            } else {
+                Color::White
+            })),
+        ])
+    }).collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(Span::styled(" Tasks ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let widget = Paragraph::new(todo_lines).block(block);
+    f.render_widget(widget, area);
 }
