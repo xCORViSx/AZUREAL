@@ -225,7 +225,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                             if ci >= sl && ci <= el {
                                 let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
                                 let new_spans = super::draw_viewer::apply_selection_to_line(
-                                    line.spans.clone(), &text, ci, sl, sc, el, ec,
+                                    line.spans.clone(), &text, ci, sl, sc, el, ec, 0,
                                 );
                                 *line = Line::from(new_spans);
                             }

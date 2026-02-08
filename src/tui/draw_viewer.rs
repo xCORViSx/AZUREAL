@@ -171,6 +171,12 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 app.clamp_viewer_scroll();
                 let scroll = app.viewer_scroll;
 
+                // Gutter = char width of line number column (first span, e.g. "  1 │ ")
+                let gutter = app.viewer_lines_cache.first()
+                    .and_then(|l| l.spans.first())
+                    .map(|s| s.content.chars().count())
+                    .unwrap_or(0);
+
                 // Build viewport slice with selection highlighting if active
                 let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
                     .enumerate()
@@ -186,6 +192,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                                     visual_idx,
                                     sel_start_line, sel_start_col,
                                     sel_end_line, sel_end_col,
+                                    gutter,
                                 );
                                 Line::from(new_spans)
                             } else {
@@ -252,7 +259,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 app.clamp_viewer_scroll();
                 let scroll = app.viewer_scroll;
 
-                // Build viewport slice with selection highlighting if active
+                // Build viewport slice with selection highlighting if active (no gutter in Diff mode)
                 let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
                     .enumerate()
                     .skip(scroll)
@@ -267,6 +274,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                                     visual_idx,
                                     sel_start_line, sel_start_col,
                                     sel_end_line, sel_end_col,
+                                    0,
                                 );
                                 Line::from(new_spans)
                             } else {
@@ -385,7 +393,8 @@ fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'stat
     result
 }
 
-/// Apply selection highlighting to a line based on visual line indices
+/// Apply selection highlighting to a line based on visual line indices.
+/// `gutter` skips that many leading chars (line number column) from highlighting.
 pub(crate) fn apply_selection_to_line(
     spans: Vec<Span<'static>>,
     line_content: &str,
@@ -394,10 +403,11 @@ pub(crate) fn apply_selection_to_line(
     sel_start_col: usize,
     sel_end_line: usize,
     sel_end_col: usize,
+    gutter: usize,
 ) -> Vec<Span<'static>> {
     let line_len = line_content.chars().count();
-    let sel_start = if visual_line_idx == sel_start_line { sel_start_col } else { 0 };
-    let sel_end = if visual_line_idx == sel_end_line { sel_end_col } else { line_len };
+    let sel_start = if visual_line_idx == sel_start_line { sel_start_col.max(gutter) } else { gutter };
+    let sel_end = if visual_line_idx == sel_end_line { sel_end_col.max(gutter) } else { line_len };
 
     if sel_start >= sel_end || sel_end == 0 { return spans; }
 
