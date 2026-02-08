@@ -267,9 +267,9 @@ if app.rendered_events_start > 0 && app.output_scroll == 0 {
 
 File I/O in `terminal.draw()` or any function called during frame rendering blocks the event loop. However, `render_edit_diff()` runs on the **background render thread** — file I/O there is safe because it doesn't block input or drawing.
 
-`render_edit_diff()` reads the file once per Edit event to find where `old_string` occurs, yielding actual line numbers. This is acceptable because the render thread is async. Falls back to line 1 if the file can't be read.
+`render_edit_diff()` reads the file once per Edit event to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file). Falls back to line 1 if the file can't be read or `new_string` is empty (pure deletion).
 
-**Edit diff styling:** Removed lines (red) use plain grey text on dim red bg — no syntax highlighting. Only added lines (green) get syntax highlighting. This keeps removed lines visually distinct and reduces highlight calls to 1 per Edit event.
+**Edit diff styling:** Removed lines (red) use dark grey text (`Rgb(100,100,100)`) on dim red bg — no syntax highlighting, deliberately darker than comment grey in syntax-highlighted green lines. Only added lines (green) get syntax highlighting. This keeps removed lines visually receded and reduces highlight calls to 1 per Edit event.
 
 **Files:** `src/tui/render_tools.rs` (`render_edit_diff()`)
 
