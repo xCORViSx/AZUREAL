@@ -690,6 +690,25 @@ Claude's `AskUserQuestion` tool calls are parsed from session JSONL and rendered
 
 Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `build_ask_user_context()` in `src/tui/input_terminal.rs`, state in `src/app/state/app.rs`
 
+### Session Search/Filter
+
+Press `/` in the Worktrees pane to activate a search filter. Type to narrow the session list by name (case-insensitive substring match on display name, i.e. branch name without `azureal/` prefix). The filter bar appears at the top of the sidebar with a match count.
+
+**Keybindings (while filter is active):**
+- Type characters — appended to filter, sidebar updates live
+- `Backspace` — remove last char (auto-deactivates when empty)
+- `Esc` — clear filter and deactivate
+- `Enter` — accept filter (keep text visible, exit filter input mode)
+- `↑/↓` — navigate filtered results while typing
+
+**Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching session. `j/k` navigation skips filtered-out sessions via `session_matches_filter()`.
+
+**Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `t`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
+
+**Rendering:** `build_sidebar_items()` skips sessions that don't match the filter. A 3-line filter bar (borders + text) is rendered above the session list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count shown as right-aligned title (e.g., ` 3/12 `).
+
+Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, filter bar in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/event_loop.rs`
+
 ### Conversation Persistence
 
 Each session maintains conversation history across prompts using Claude's `--resume` flag:
@@ -879,7 +898,7 @@ azureal/
 - [ ] Per-project configuration
 - [ ] Theme customization
 - [ ] Input history persistence
-- [ ] Search/filter sessions
+- [x] Search/filter sessions (`/` in Worktrees pane)
 
 ## Phase 3: Advanced Features
 - [ ] Session export/reporting
@@ -969,6 +988,7 @@ azureal
 | `⌥r` | Add new run command |
 | `R` | Rebase onto main |
 | `a` | Archive worktree |
+| `/` | Search/filter sessions |
 
 ### FileTree Pane
 | Key | Action |

@@ -82,6 +82,13 @@ All notable changes to Azureal will be documented in this file.
   - In-progress items show `activeForm` text; pending/completed show `content`
   - Widget stays visible after all items completed (shows checkmarks); clears on next user prompt
   - TodoWrite tool calls and results suppressed from inline convo stream
+- Session search/filter in Worktrees pane
+  - Press `/` to activate filter bar at top of sidebar
+  - Type to filter sessions by name (case-insensitive substring match)
+  - Esc clears filter, Enter accepts, Backspace removes chars
+  - Selection auto-snaps to first match; j/k skip filtered-out sessions
+  - Match count shown as `N/total` in filter bar
+  - Global keys (p, t, ?, D) suppressed while filter is active
 - AskUserQuestion rendered as numbered options box (instead of raw JSON)
   - Magenta-bordered box with question header, numbered options (label + description), and implicit "Other"
   - User responds with a number or custom text; hidden system context prefix ensures Claude interprets correctly
