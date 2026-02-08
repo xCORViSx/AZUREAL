@@ -117,6 +117,11 @@ All notable changes to Azureal will be documented in this file.
 - `⌃c` now cancels Claude response only (was also quit)
 
 ### Added
+- PID and exit code now shown in the convo pane's top border (right corner)
+  - Green `PID:12345` while Claude is running
+  - Switches to exit code on process exit: green `exit:0` for success, red `exit:N` for non-zero
+  - Border line characters (─/═) fill the gap between title and PID — no spaces
+  - PID removed from status bar messages (now visible in border instead)
 - Run command system: save, pick, edit, delete, and execute shell commands from Worktrees pane
   - `r` opens picker (or executes directly if only 1 command saved)
   - `⌥r` opens dialog to add a new run command

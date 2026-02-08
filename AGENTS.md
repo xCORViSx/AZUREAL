@@ -70,7 +70,7 @@ A ratatui-based terminal interface with 4-pane layout:
 - **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
 - **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
-- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar
+- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border shows title on the left and PID/exit code on the right (border characters fill the gap, not spaces). PID shown in green while Claude is running; switches to exit code on process exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
 - **Status Bar**: Context-sensitive help and session info
 
