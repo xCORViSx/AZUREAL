@@ -630,17 +630,17 @@ Color-coded context window usage percentage displayed on the Convo pane's right 
 | 60–79% | Yellow | Context getting full |
 | 80–100% | Red | Near compaction threshold |
 
-**Context window:** Default 200,000 tokens (all current Claude models). Stored as `model_context_window: u64` on App state.
+**Context window:** Dynamically detected from `message.model` string on each assistant event via `context_window_for_model()` in `src/app/session_parser.rs`. Maps model ID prefixes (e.g., `opus-4-6`, `sonnet-4-5`, `haiku-4-5`, `claude-3`) to their standard context window (currently 200k for all). If actual token usage exceeds the detected window, auto-bumps to 1M (1M beta detection). Stored as `model_context_window: Option<u64>` on App state — `None` until first assistant event is parsed.
 
 **Data flow:**
-1. **Session file parse:** `parse_assistant_event()` in `src/app/session_parser.rs` extracts `message.usage` → `ParsedSession.session_tokens`
-2. **Load propagation:** `load_session_output()` and `refresh_session_events()` in `src/app/state/load.rs` copy to `app.session_tokens`
-3. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` extracts from raw JSON during active streaming
+1. **Session file parse:** `parse_assistant_event()` in `src/app/session_parser.rs` extracts `message.usage` → `ParsedSession.session_tokens` and `message.model` → `ParsedSession.context_window`
+2. **Load propagation:** `load_session_output()` and `refresh_session_events()` in `src/app/state/load.rs` copy to `app.session_tokens` and `app.model_context_window`
+3. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` extracts usage + model from raw JSON during active streaming
 4. **Display:** `draw_output_pane()` in `src/tui/draw_output.rs` renders as right-aligned spans before PID/exit code
 
-**Reset:** `session_tokens` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
+**Reset:** `session_tokens` and `model_context_window` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
 
-Implementation: `session_tokens: Option<(u64, u64)>` and `model_context_window: u64` in `src/app/state/app.rs`, extraction in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`
+Implementation: `session_tokens: Option<(u64, u64)>` and `model_context_window: Option<u64>` in `src/app/state/app.rs`, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`
 
 ### Conversation Persistence
 
