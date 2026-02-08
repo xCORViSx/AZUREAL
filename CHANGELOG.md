@@ -77,7 +77,7 @@ All notable changes to Azureal will be documented in this file.
   - Persistent checkbox list showing Claude's task progress during streaming and on session load
   - Status icons: ✓ (completed, green), ● (in_progress, yellow pulsing), ○ (pending, dim)
   - In-progress items show `activeForm` text; pending/completed show `content`
-  - Widget hides when all todos completed; clears on session switch
+  - Widget stays visible after all items completed (shows checkmarks); clears on next user prompt
   - TodoWrite tool calls and results suppressed from inline convo stream
 - AskUserQuestion rendered as numbered options box (instead of raw JSON)
   - Magenta-bordered box with question header, numbered options (label + description), and implicit "Other"

@@ -666,6 +666,8 @@ In-progress items show their `activeForm` text (present tense, e.g., "Building p
 3. **Session switch:** `current_todos` cleared on session switch and rebuilt from new session's events
 4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below
 
+**Lifecycle:** Widget stays visible even after all items are completed (showing all checkmarks). It clears when the user submits their next prompt (`current_todos.clear()` in the Enter handler). This ensures the user sees the final completed state before it disappears.
+
 **Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline convo stream (`render_display_events()` skips them). The sticky widget is the only representation.
 
 Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs`, `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output.rs`, suppression in `src/tui/render_events.rs`
