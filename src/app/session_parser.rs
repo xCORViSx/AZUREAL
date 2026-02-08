@@ -282,7 +282,7 @@ fn parse_session_file_from(
                     &mut session_tokens, &mut context_window,
                 );
             }
-            "result" => parse_result_event(&json, timestamp, &mut timed_events),
+            "result" => parse_result_event(&json, timestamp, &mut timed_events, &mut context_window),
             "system" => parse_system_event(&json, timestamp, &mut timed_events),
             "progress" => parse_progress_event(&json, timestamp, &mut timed_events),
             _ => {}
@@ -684,6 +684,7 @@ fn parse_result_event(
     json: &serde_json::Value,
     timestamp: DateTime<Utc>,
     events: &mut Vec<(DateTime<Utc>, DisplayEvent)>,
+    context_window: &mut Option<u64>,
 ) {
     if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
         let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
@@ -693,6 +694,15 @@ fn parse_result_event(
             cost_usd: cost,
             success: true,
         }));
+    }
+    // modelUsage contains the authoritative contextWindow from the API — overrides
+    // the heuristic from context_window_for_model(). Session JSONL uses camelCase.
+    if let Some(obj) = json.get("modelUsage").and_then(|v| v.as_object()) {
+        for (_model, usage) in obj {
+            if let Some(cw) = usage.get("contextWindow").and_then(|v| v.as_u64()) {
+                *context_window = Some(cw);
+            }
+        }
     }
 }
 

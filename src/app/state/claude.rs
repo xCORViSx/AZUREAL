@@ -126,10 +126,12 @@ impl App {
                 }
             }
 
-            // Extract token usage + model from live assistant events
+            // Extract token usage, model, and context window from live stream events.
+            // assistant events give us token counts + model heuristic (available mid-turn).
+            // result events give us the authoritative contextWindow from the API (end of turn).
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
-                if json.get("type").and_then(|t| t.as_str()) == Some("assistant") {
-                    if let Some(msg) = json.get("message") {
+                match json.get("type").and_then(|t| t.as_str()) {
+                    Some("assistant") => if let Some(msg) = json.get("message") {
                         if let Some(usage) = msg.get("usage") {
                             let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                             let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -137,12 +139,33 @@ impl App {
                             let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                             self.session_tokens = Some((input + cache_read + cache_create, output));
                         }
-                        if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
-                            self.model_context_window = Some(
-                                crate::app::session_parser::context_window_for_model(model)
-                            );
+                        // Heuristic fallback — result event will overwrite with exact value
+                        if self.model_context_window.is_none() {
+                            if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
+                                self.model_context_window = Some(
+                                    crate::app::session_parser::context_window_for_model(model)
+                                );
+                            }
                         }
-                    }
+                    },
+                    // result event contains modelUsage.<model_id>.contextWindow — the
+                    // exact context window from the API, overriding any heuristic guess
+                    Some("result") => {
+                        if let Some(obj) = json.get("model_usage")
+                            .or_else(|| json.get("modelUsage"))
+                            .and_then(|v| v.as_object())
+                        {
+                            for (_model, usage) in obj {
+                                if let Some(cw) = usage.get("context_window")
+                                    .or_else(|| usage.get("contextWindow"))
+                                    .and_then(|v| v.as_u64())
+                                {
+                                    self.model_context_window = Some(cw);
+                                }
+                            }
+                        }
+                    },
+                    _ => {}
                 }
             }
 
