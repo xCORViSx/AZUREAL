@@ -647,6 +647,46 @@ Stored as `model_context_window: Option<u64>` on App state — `None` until firs
 
 Implementation: `session_tokens: Option<(u64, u64)>` and `model_context_window: Option<u64>` in `src/app/state/app.rs`, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`
 
+### TodoWrite Sticky Widget
+
+Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Convo pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed.
+
+**Status icons:**
+| Icon | Color | Meaning |
+|------|-------|---------|
+| ✓ | Green | Completed |
+| ● | Yellow (pulsating) | In progress |
+| ○ | Dim gray | Pending |
+
+In-progress items show their `activeForm` text (present tense, e.g., "Building project"), while pending/completed items show `content` (imperative, e.g., "Build project").
+
+**Data flow:**
+1. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` detects `TodoWrite` ToolCall events and parses `input.todos[]` into `app.current_todos`
+2. **Session load:** `extract_skill_tools_from_events()` in `src/app/state/load.rs` scans all display_events forward to find the latest TodoWrite and restore todo state
+3. **Session switch:** `current_todos` cleared on session switch and rebuilt from new session's events
+4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below
+
+**Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline convo stream (`render_display_events()` skips them). The sticky widget is the only representation.
+
+Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs`, `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output.rs`, suppression in `src/tui/render_events.rs`
+
+### AskUserQuestion Options Box
+
+Claude's `AskUserQuestion` tool calls are parsed from session JSONL and rendered as a numbered options box (similar to plan approval prompts) instead of raw JSON. The user responds by typing a number or custom text.
+
+**Rendering:** A magenta-bordered box per question with the question header, numbered options (label + description), and an implicit "Other" option at the end. Multi-select questions are annotated. Rendered inline in the convo stream when the tool result arrives (positioned after the result, before user response).
+
+**Input handling:** When `awaiting_ask_user_question` is true, the user's response gets a hidden system context prefix (`build_ask_user_context()` in `src/tui/input_terminal.rs`) listing the questions and numbered options that were shown. This lets Claude interpret "1", "2", etc. as option selections. The context is invisible to the user — they just see their typed response.
+
+**State tracking:**
+- `awaiting_ask_user_question: bool` — set when AskUserQuestion ToolCall detected, cleared on user submit
+- `ask_user_questions_cache: Option<serde_json::Value>` — cached input JSON for building context prefix
+- `saw_ask_user_question` / `saw_user_after_ask` in render pipeline for conditional box display
+
+**Session load:** `extract_skill_tools_from_events()` tracks whether the last AskUserQuestion was answered by scanning for a subsequent UserMessage. If unanswered, restores the awaiting state.
+
+Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `build_ask_user_context()` in `src/tui/input_terminal.rs`, state in `src/app/state/app.rs`
+
 ### Conversation Persistence
 
 Each session maintains conversation history across prompts using Claude's `--resume` flag:
@@ -829,8 +869,9 @@ azureal/
 ## Phase 2: Enhanced UX
 - [x] File viewer pane (4-pane layout: Sessions, FileTree, Viewer, Convo)
 - [x] Token usage percentage on Convo pane title
+- [x] TodoWrite sticky widget (persistent checkbox list at bottom of Convo pane)
+- [x] AskUserQuestion options box (numbered options with context-aware response handling)
 - [ ] Auto-rebase hooks when main is ahead
-- [ ] PTY mode for full Claude interactivity
 - [ ] Session templates
 - [ ] Per-project configuration
 - [ ] Theme customization

@@ -32,6 +32,8 @@
 - **Run Commands** — Save and execute shell commands/scripts per project
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
 - **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction
+- **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude's task progress (✓/●/○)
+- **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Zero Footprint** — No database or config files; scans git worktrees and `~/.claude/` at runtime
 

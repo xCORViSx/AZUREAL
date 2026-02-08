@@ -73,6 +73,16 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Added
+- TodoWrite sticky widget at bottom of Convo pane
+  - Persistent checkbox list showing Claude's task progress during streaming and on session load
+  - Status icons: ✓ (completed, green), ● (in_progress, yellow pulsing), ○ (pending, dim)
+  - In-progress items show `activeForm` text; pending/completed show `content`
+  - Widget hides when all todos completed; clears on session switch
+  - TodoWrite tool calls and results suppressed from inline convo stream
+- AskUserQuestion rendered as numbered options box (instead of raw JSON)
+  - Magenta-bordered box with question header, numbered options (label + description), and implicit "Other"
+  - User responds with a number or custom text; hidden system context prefix ensures Claude interprets correctly
+  - State restored on session load if the last AskUserQuestion was unanswered
 - Token usage percentage counter on Convo pane title border
   - Color-coded badge: green (<60%), yellow (60-80%), red (>80%) of context window
   - Extracted from Claude's `message.usage` in JSONL session files (exact API counts, no estimation)
