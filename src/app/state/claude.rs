@@ -13,8 +13,10 @@ impl App {
     pub fn handle_claude_started(&mut self, branch_name: &str, pid: u32) {
         self.running_sessions.insert(branch_name.to_string());
         self.claude_pids.insert(branch_name.to_string(), pid);
-        self.invalidate_sidebar(); // Status indicator changed
-        self.set_status(format!("Claude started in {} (PID: {})", branch_name, pid));
+        // Clear previous exit code — process is running again
+        self.claude_exit_codes.remove(branch_name);
+        self.invalidate_sidebar();
+        self.set_status(format!("Claude started in {}", branch_name));
     }
 
     pub fn handle_claude_exited(&mut self, branch_name: &str, code: Option<i32>) {
@@ -22,7 +24,11 @@ impl App {
         self.claude_pids.remove(branch_name);
         self.claude_receivers.remove(branch_name);
         self.interactive_sessions.remove(branch_name);
-        self.invalidate_sidebar(); // Status indicator changed
+        // Store exit code so the convo pane title can show it
+        if let Some(c) = code {
+            self.claude_exit_codes.insert(branch_name.to_string(), c);
+        }
+        self.invalidate_sidebar();
 
         // Force a full re-parse from the session file now that streaming is done.
         // During streaming, session file polling was skipped (to avoid duplicates).
@@ -40,7 +46,12 @@ impl App {
             self.input_cursor = self.input.len();
             self.set_status("Ready - staged prompt restored");
         } else {
-            self.set_status(format!("{} exited: {:?}", branch_name, code));
+            let exit_str = match code {
+                Some(0) => "exited OK".to_string(),
+                Some(c) => format!("exited: {}", c),
+                None => "exited".to_string(),
+            };
+            self.set_status(format!("{} {}", branch_name, exit_str));
         }
     }
 
@@ -61,7 +72,7 @@ impl App {
                 use std::process::Command;
                 let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
             }
-            self.set_status(format!("Cancelled Claude (PID: {})", pid));
+            self.set_status("Cancelled Claude".to_string());
         }
     }
 

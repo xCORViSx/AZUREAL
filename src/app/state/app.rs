@@ -50,6 +50,8 @@ pub struct App {
     pub running_sessions: HashSet<String>,
     /// PIDs of running Claude processes per branch (for killing)
     pub claude_pids: HashMap<String, u32>,
+    /// Last exit code per branch (shown in convo pane title after Claude exits)
+    pub claude_exit_codes: HashMap<String, i32>,
     pub claude_session_ids: HashMap<String, String>,
     /// Interactive PTY sessions (kept alive between prompts)
     pub interactive_sessions: HashMap<String, InteractiveSession>,
@@ -285,6 +287,7 @@ impl App {
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
             claude_pids: HashMap::new(),
+            claude_exit_codes: HashMap::new(),
             claude_session_ids: HashMap::new(),
             interactive_sessions: HashMap::new(),
             diff_text: None,

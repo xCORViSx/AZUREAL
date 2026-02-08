@@ -7,7 +7,7 @@
 //! just clones a viewport slice and renders from the pre-built cache.
 
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
@@ -313,23 +313,47 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let is_focused = app.focus == Focus::Output;
-    let output = Paragraph::new(content)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-                .title(if is_focused {
-                    Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-                } else {
-                    Span::styled(title, Style::default().fg(Color::White))
-                })
-                .border_style(if is_focused {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                }),
-        );
+    let border_style = if is_focused {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
 
+    // Build right-aligned title: PID while running, exit code after
+    let branch = app.current_session().map(|s| s.branch_name.clone());
+    let right_title: Option<Line<'static>> = branch.as_deref().and_then(|b| {
+        if let Some(&pid) = app.claude_pids.get(b) {
+            // Running — show PID in green
+            Some(Line::from(Span::styled(
+                format!(" PID:{} ", pid),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            )).alignment(Alignment::Right))
+        } else if let Some(&code) = app.claude_exit_codes.get(b) {
+            // Exited — show exit code (green for 0, red for non-zero)
+            let (text, color) = if code == 0 {
+                (" exit:0 ".to_string(), Color::Green)
+            } else {
+                (format!(" exit:{} ", code), Color::Red)
+            };
+            Some(Line::from(Span::styled(text, Style::default().fg(color)))
+                .alignment(Alignment::Right))
+        } else {
+            None
+        }
+    });
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .title(Span::styled(title, border_style))
+        .border_style(border_style);
+
+    // Add right-aligned PID/exit title — ratatui fills gap with border chars
+    if let Some(rt) = right_title {
+        block = block.title(rt);
+    }
+
+    let output = Paragraph::new(content).block(block);
     f.render_widget(output, area);
 }
 
