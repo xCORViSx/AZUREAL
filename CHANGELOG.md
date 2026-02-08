@@ -82,6 +82,14 @@ All notable changes to Azureal will be documented in this file.
   - Pane hit-testing via cached `Rect::contains()` — shared by both click and scroll handlers
   - Sidebar uses `SidebarRowAction` row map built alongside sidebar cache for O(1) click-to-item lookup
   - Scroll handler refactored to use cached pane rects (was duplicating layout math)
+- Text selection via mouse drag in Convo and Viewer panes
+  - Click-drag to select text with `Rgb(60,60,100)` highlight background
+  - Screen-to-cache coordinate mapping via `screen_to_cache_pos()` helper
+  - Auto-scroll when dragging above/below pane content area
+  - `⌘C` copies selected text from any pane (viewer, convo, or input) to system clipboard
+  - Selections cleared on click, scroll, Tab, or focus change
+  - Convo viewport cache invalidated on selection change (no extra cost when no selection)
+  - Reuses existing `apply_selection_to_line()` from Viewer (made `pub(crate)`)
 
 ### Fixed
 - File tree entries now highlight when clicked

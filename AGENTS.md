@@ -87,7 +87,7 @@ Other features:
 - Vim-style modal editing
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
-- Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs
+- Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
 
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
@@ -98,6 +98,17 @@ Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for ren
 - FileTree uses entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — walks chars with character-level wrapping to map screen coords to char index
 - Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
+
+**Text Selection (Mouse Drag):**
+- `MouseDown(Left)` records `mouse_drag_start` and clears existing `viewer_selection` / `output_selection`
+- `MouseDrag(Left)` calls `handle_mouse_drag()` which maps screen coords to cache indices via `screen_to_cache_pos(col, row, pane_rect, scroll, cache_len)` — returns `(cache_line, cache_col)` inside bordered pane
+- Auto-scroll when dragging above/below pane content area
+- Selection stored as `Option<(start_line, start_col, end_line, end_col)>` in cache-line indices (normalized so start <= end)
+- Viewer selection rendered in `draw_viewer.rs` via `apply_selection_to_line()` (already existed)
+- Convo selection rendered in `draw_output.rs` by calling `apply_selection_to_line()` after viewport build — `output_selection_cached` used as viewport cache invalidation key
+- `apply_selection_to_line()` is `pub(crate)` in `draw_viewer.rs` — splits spans at selection boundaries, patches with `Rgb(60,60,100)` bg. O(spans_in_line) per viewport line, negligible cost.
+- `⌘C` copies from whichever pane has active selection (viewer, convo, or input) via `extract_text_from_cache()` → `arboard::Clipboard`
+- Selections cleared on: click, scroll, Tab, focus change
 
 ---
 
