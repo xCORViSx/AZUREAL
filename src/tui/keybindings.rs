@@ -106,6 +106,7 @@ pub enum Action {
     GoToBottom,
 
     // Worktrees
+    SearchFilter,
     SelectNextProject,
     SelectPrevProject,
     OpenContextMenu,
@@ -260,7 +261,8 @@ pub static GLOBAL: [Keybinding; 10] = [
 ];
 
 /// Worktrees context bindings
-pub static WORKTREES: [Keybinding; 15] = [
+pub static WORKTREES: [Keybinding; 16] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight),

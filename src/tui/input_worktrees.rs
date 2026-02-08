@@ -9,10 +9,50 @@ use crate::models::{RebaseResult, SessionStatus};
 
 /// Handle keyboard input when Worktrees pane is focused
 pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // When sidebar filter is active, typing goes to filter input (not commands)
+    if app.sidebar_filter_active {
+        match key.code {
+            KeyCode::Esc => {
+                // Clear filter and deactivate
+                app.sidebar_filter.clear();
+                app.sidebar_filter_active = false;
+                app.invalidate_sidebar();
+            }
+            KeyCode::Enter => {
+                // Accept filter (keep text, exit filter input mode)
+                app.sidebar_filter_active = false;
+            }
+            KeyCode::Backspace => {
+                app.sidebar_filter.pop();
+                if app.sidebar_filter.is_empty() {
+                    app.sidebar_filter_active = false;
+                }
+                app.snap_selection_to_filter();
+                app.invalidate_sidebar();
+            }
+            // Navigate filtered results while typing
+            KeyCode::Down => app.select_next_session(),
+            KeyCode::Up => app.select_prev_session(),
+            KeyCode::Char(c) => {
+                app.sidebar_filter.push(c);
+                app.snap_selection_to_filter();
+                app.invalidate_sidebar();
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Check if current session is expanded (dropdown mode)
     let is_expanded = app.is_current_session_expanded();
 
     match key.code {
+        // / activates sidebar search filter
+        KeyCode::Char('/') => {
+            app.sidebar_filter_active = true;
+            app.sidebar_filter.clear();
+            app.invalidate_sidebar();
+        }
         // Right: Expand dropdown to show session files
         KeyCode::Right | KeyCode::Char('l') if !is_expanded => {
             if let Some(session) = app.current_session() {

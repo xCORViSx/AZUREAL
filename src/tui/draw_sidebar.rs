@@ -1,10 +1,10 @@
 //! Sidebar rendering for Worktrees panel
 
 use ratatui::{
-    layout::Rect,
+    layout::{Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
     Frame,
 };
 
@@ -13,11 +13,14 @@ use super::util::truncate;
 
 /// Build sidebar items and row→action map for mouse click handling.
 /// Each ListItem pushed gets a corresponding SidebarRowAction pushed to row_map.
+/// When sidebar_filter is non-empty, only sessions matching the filter are shown.
 fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowAction>) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut row_map: Vec<SidebarRowAction> = Vec::new();
     // Load custom session names once for all lookups (only called on sidebar rebuild, not per-frame)
     let session_names = app.load_all_session_names();
+    // Pre-lowercase the filter once for all comparisons
+    let filter = app.sidebar_filter.to_lowercase();
 
     if let Some(ref project) = app.project {
         items.push(ListItem::new(Line::from(vec![
@@ -27,6 +30,11 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
         row_map.push(SidebarRowAction::ProjectHeader);
 
         for (sess_idx, session) in app.sessions.iter().enumerate() {
+            // Skip sessions that don't match the filter (case-insensitive substring on display name)
+            if !filter.is_empty() && !session.name().to_lowercase().contains(&filter) {
+                continue;
+            }
+
             let is_selected = app.selected_session == Some(sess_idx);
             let is_expanded = app.sessions_expanded.contains(&session.branch_name);
             let status = session.status(&app.running_sessions);
@@ -115,6 +123,43 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         app.sidebar_focus_cached = is_focused;
     }
 
+    // Split area: filter bar (1 line + borders = 3) at top when filter is active or has text
+    let has_filter = app.sidebar_filter_active || !app.sidebar_filter.is_empty();
+    let (filter_area, list_area) = if has_filter {
+        let chunks = Layout::vertical([
+            ratatui::layout::Constraint::Length(3),
+            ratatui::layout::Constraint::Min(1),
+        ]).split(area);
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, area)
+    };
+
+    // Draw filter input bar when active
+    if let Some(fa) = filter_area {
+        let match_count = app.sidebar_cache.len().saturating_sub(1); // subtract project header
+        let total = app.sessions.len();
+        let title = format!(" {}/{} ", match_count, total);
+        let border_color = if app.sidebar_filter_active { Color::Yellow } else { Color::DarkGray };
+        let filter_widget = Paragraph::new(app.sidebar_filter.clone())
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(Span::styled("🔍", Style::default()))
+                .title(Line::from(Span::styled(title, Style::default().fg(Color::DarkGray))).alignment(ratatui::layout::Alignment::Right)),
+            );
+        f.render_widget(filter_widget, fa);
+
+        // Show cursor in filter bar when actively typing
+        if app.sidebar_filter_active {
+            let cursor_x = fa.x + 1 + app.sidebar_filter.len() as u16;
+            let cursor_y = fa.y + 1;
+            if cursor_x < fa.right() {
+                f.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+    }
+
     let sidebar = List::new(app.sidebar_cache.clone())
         .block(
             Block::default()
@@ -133,5 +178,5 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    f.render_widget(sidebar, area);
+    f.render_widget(sidebar, list_area);
 }

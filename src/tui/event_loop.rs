@@ -777,7 +777,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
     // D key (uppercase, i.e. Shift+D) when not in prompt mode - Debug dump
-    if !app.prompt_mode && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
+    if !app.prompt_mode && !app.sidebar_filter_active && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
         app.dump_debug_output();
         return Ok(());
     }
@@ -809,8 +809,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             }
             return Ok(());
         }
-        // Global 'p' - enter Claude prompt mode from anywhere (except viewer edit mode)
-        (KeyModifiers::NONE, KeyCode::Char('p')) if !app.prompt_mode && !app.viewer_edit_mode && app.context_menu.is_none() && !app.is_wizard_active() => {
+        // Global 'p' - enter Claude prompt mode from anywhere (except viewer edit mode or sidebar filter)
+        (KeyModifiers::NONE, KeyCode::Char('p')) if !app.prompt_mode && !app.viewer_edit_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
             app.show_help = false;
             if app.terminal_mode {
                 app.close_terminal();
@@ -820,7 +820,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             return Ok(());
         }
         // Global 't' - toggle terminal (only when not in terminal, otherwise handled by terminal input)
-        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.prompt_mode && !app.terminal_mode && app.context_menu.is_none() && !app.is_wizard_active() => {
+        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.prompt_mode && !app.terminal_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
             app.show_help = false;
             app.toggle_terminal();
             app.focus = Focus::Input;
@@ -835,7 +835,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             return Ok(());
         }
         // '?' - toggle help (SHIFT modifier allowed for US keyboards)
-        (KeyModifiers::NONE, KeyCode::Char('?')) | (KeyModifiers::SHIFT, KeyCode::Char('?')) if !app.prompt_mode && !app.viewer_edit_mode => {
+        (KeyModifiers::NONE, KeyCode::Char('?')) | (KeyModifiers::SHIFT, KeyCode::Char('?')) if !app.prompt_mode && !app.viewer_edit_mode && !app.sidebar_filter_active => {
             app.toggle_help();
             return Ok(());
         }
@@ -858,6 +858,12 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             // Cycle focus (works in both prompt and command mode)
             // Skip when wizard is active (wizard uses Tab for field cycling)
             if !app.show_help && !app.is_wizard_active() {
+                // Clear sidebar filter on focus change
+                if app.sidebar_filter_active || !app.sidebar_filter.is_empty() {
+                    app.sidebar_filter.clear();
+                    app.sidebar_filter_active = false;
+                    app.invalidate_sidebar();
+                }
                 app.prompt_mode = false; // Exit prompt mode when tabbing away
                 app.viewer_selection = None;
                 app.output_selection = None;
@@ -869,6 +875,11 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             // Cycle focus backwards (works in both prompt and command mode)
             // Skip when wizard is active
             if !app.show_help && !app.is_wizard_active() {
+                if app.sidebar_filter_active || !app.sidebar_filter.is_empty() {
+                    app.sidebar_filter.clear();
+                    app.sidebar_filter_active = false;
+                    app.invalidate_sidebar();
+                }
                 app.prompt_mode = false;
                 app.viewer_selection = None;
                 app.output_selection = None;

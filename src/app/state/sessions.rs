@@ -7,30 +7,52 @@ use super::helpers::{generate_session_name, sanitize_for_branch};
 use super::App;
 
 impl App {
+    /// Whether a session at the given index passes the current sidebar filter
+    fn session_matches_filter(&self, idx: usize) -> bool {
+        if self.sidebar_filter.is_empty() { return true; }
+        self.sessions.get(idx)
+            .map(|s| s.name().to_lowercase().contains(&self.sidebar_filter.to_lowercase()))
+            .unwrap_or(false)
+    }
+
     pub fn select_next_session(&mut self) {
-        if let Some(idx) = self.selected_session {
-            if idx + 1 < self.sessions.len() {
-                self.save_current_terminal(); // Save BEFORE changing selection
-                self.selected_session = Some(idx + 1);
+        let start = self.selected_session.map(|i| i + 1).unwrap_or(0);
+        // Find next session that passes the filter
+        if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter(i)) {
+            if self.selected_session != Some(next) {
+                self.save_current_terminal();
+                self.selected_session = Some(next);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
-        } else if !self.sessions.is_empty() {
+        }
+    }
+
+    /// If the current selection doesn't match the filter, snap to the first matching session.
+    /// Called after each keystroke in the sidebar filter input.
+    pub fn snap_selection_to_filter(&mut self) {
+        if self.sidebar_filter.is_empty() { return; }
+        // Current selection already matches — keep it
+        if let Some(idx) = self.selected_session {
+            if self.session_matches_filter(idx) { return; }
+        }
+        // Find first matching session
+        if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter(i)) {
             self.save_current_terminal();
-            self.selected_session = Some(0);
+            self.selected_session = Some(first);
             self.load_session_output();
-            self.invalidate_sidebar();
         }
     }
 
     pub fn select_prev_session(&mut self) {
-        if let Some(idx) = self.selected_session {
-            if idx > 0 {
-                self.save_current_terminal(); // Save BEFORE changing selection
-                self.selected_session = Some(idx - 1);
-                self.load_session_output();
-                self.invalidate_sidebar();
-            }
+        let Some(current) = self.selected_session else { return };
+        if current == 0 { return; }
+        // Find prev session that passes the filter (search backward)
+        if let Some(prev) = (0..current).rev().find(|&i| self.session_matches_filter(i)) {
+            self.save_current_terminal();
+            self.selected_session = Some(prev);
+            self.load_session_output();
+            self.invalidate_sidebar();
         }
     }
 

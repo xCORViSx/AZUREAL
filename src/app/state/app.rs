@@ -277,6 +277,10 @@ pub struct App {
     pub model_context_window: Option<u64>,
     /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
     pub token_badge_cache: Option<(String, ratatui::style::Color)>,
+    /// Sidebar search filter text (empty = no filter). Case-insensitive substring match on session names.
+    pub sidebar_filter: String,
+    /// Whether the sidebar filter input is active (typing goes to filter, not commands)
+    pub sidebar_filter_active: bool,
     /// Current todo list from latest TodoWrite tool call
     pub current_todos: Vec<TodoItem>,
     /// Awaiting user response to AskUserQuestion tool call
@@ -451,6 +455,8 @@ impl App {
             session_tokens: None,
             model_context_window: None,
             token_badge_cache: None,
+            sidebar_filter: String::new(),
+            sidebar_filter_active: false,
             current_todos: Vec::new(),
             awaiting_ask_user_question: false,
             ask_user_questions_cache: None,
