@@ -29,6 +29,9 @@ pub struct ParsedSession {
     pub awaiting_plan_approval: bool,
     /// Byte offset after the last successfully parsed line (for incremental parsing)
     pub end_offset: u64,
+    /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
+    /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
+    pub session_tokens: Option<(u64, u64)>,
 }
 
 /// Persistent parser state that survives between incremental parses.
@@ -96,6 +99,7 @@ pub fn parse_session_file_incremental(
             assistant_text_blocks: 0,
             awaiting_plan_approval: check_plan_approval(existing_events),
             end_offset: start_offset,
+            session_tokens: None,
         };
     }
 
@@ -147,6 +151,8 @@ pub fn parse_session_file_incremental(
         assistant_no_content_arr: result.assistant_no_content_arr,
         assistant_text_blocks: result.assistant_text_blocks,
         end_offset: result.end_offset,
+        // Use new parse's tokens if present, otherwise keep None (no assistant events in this batch)
+        session_tokens: result.session_tokens,
     }
 }
 
@@ -192,6 +198,7 @@ fn parse_session_file_from(
             assistant_text_blocks: 0,
             awaiting_plan_approval: false,
             end_offset: 0,
+            session_tokens: None,
         },
     };
 
@@ -220,6 +227,8 @@ fn parse_session_file_from(
     let mut total_lines = 0;
     let mut parse_errors = 0;
     let mut bytes_read: u64 = 0;
+    // Tracks latest assistant event's token usage (overwritten each time, last wins)
+    let mut session_tokens: Option<(u64, u64)> = None;
 
     // Read line-by-line tracking byte offset
     let mut line_buf = String::new();
@@ -263,6 +272,7 @@ fn parse_session_file_from(
             "assistant" => {
                 parse_assistant_event(
                     &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
+                    &mut session_tokens,
                 );
             }
             "result" => parse_result_event(&json, timestamp, &mut timed_events),
@@ -302,6 +312,7 @@ fn parse_session_file_from(
         assistant_text_blocks: ast_text,
         awaiting_plan_approval,
         end_offset: start_offset + bytes_read,
+        session_tokens,
     }
 }
 
@@ -570,6 +581,7 @@ fn parse_assistant_event(
     events: &mut Vec<(DateTime<Utc>, DisplayEvent)>,
     tool_calls: &mut HashMap<String, (String, Option<String>)>,
     pending_tools: &mut HashSet<String>,
+    session_tokens: &mut Option<(u64, u64)>,
 ) {
     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
 
@@ -581,6 +593,15 @@ fn parse_assistant_event(
         PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_no_content_arr += 1);
         return;
     };
+
+    // Extract token usage — each assistant event overwrites previous (last = most recent context)
+    if let Some(usage) = message.get("usage") {
+        let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        *session_tokens = Some((input + cache_read + cache_create, output));
+    }
 
     for block in content_arr {
         let Some(block_type) = block.get("type").and_then(|t| t.as_str()) else { continue };

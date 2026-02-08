@@ -110,6 +110,7 @@ impl App {
         self.selected_event = None;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
+        self.session_tokens = None;
 
         if let Some(session) = self.current_session() {
             let branch_name = session.branch_name.clone();
@@ -164,6 +165,7 @@ impl App {
                     self.assistant_no_content_arr = parsed.assistant_no_content_arr;
                     self.assistant_text_blocks = parsed.assistant_text_blocks;
                     self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+                    self.session_tokens = parsed.session_tokens;
                     // Store byte offset for incremental parsing on subsequent polls
                     self.session_file_parse_offset = parsed.end_offset;
 
@@ -246,6 +248,10 @@ impl App {
         self.assistant_no_content_arr = parsed.assistant_no_content_arr;
         self.assistant_text_blocks = parsed.assistant_text_blocks;
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+        // Update tokens if the new parse found assistant events with usage data
+        if parsed.session_tokens.is_some() {
+            self.session_tokens = parsed.session_tokens;
+        }
         self.session_file_parse_offset = parsed.end_offset;
 
         // Clear pending message once it appears in the parsed events.

@@ -336,28 +336,42 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::White)
     };
 
-    // Build right-aligned title: PID while running, exit code after
+    // Build right-aligned title: token percentage + PID/exit code
     let branch = app.current_session().map(|s| s.branch_name.clone());
-    let right_title: Option<Line<'static>> = branch.as_deref().and_then(|b| {
-        if let Some(&pid) = app.claude_pids.get(b) {
-            // Running — show PID in green
-            Some(Line::from(Span::styled(
-                format!(" PID:{} ", pid),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            )).alignment(Alignment::Right))
-        } else if let Some(&code) = app.claude_exit_codes.get(b) {
-            // Exited — show exit code (green for 0, red for non-zero)
-            let (text, color) = if code == 0 {
-                (" exit:0 ".to_string(), Color::Green)
-            } else {
-                (format!(" exit:{} ", code), Color::Red)
-            };
-            Some(Line::from(Span::styled(text, Style::default().fg(color)))
-                .alignment(Alignment::Right))
-        } else {
-            None
+    let right_title: Option<Line<'static>> = {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        // Token usage percentage badge (color-coded: green <60%, yellow 60-80%, red >80%)
+        if let Some((ctx_tokens, _)) = app.session_tokens {
+            let pct = (ctx_tokens as f64 / app.model_context_window as f64 * 100.0).min(100.0);
+            let color = if pct < 60.0 { Color::Green }
+                else if pct < 80.0 { Color::Yellow }
+                else { Color::Red };
+            spans.push(Span::styled(
+                format!(" {:.0}% ", pct),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ));
         }
-    });
+
+        // PID while running, exit code after
+        if let Some(b) = branch.as_deref() {
+            if let Some(&pid) = app.claude_pids.get(b) {
+                spans.push(Span::styled(
+                    format!(" PID:{} ", pid),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                ));
+            } else if let Some(&code) = app.claude_exit_codes.get(b) {
+                let (text, color) = if code == 0 {
+                    (" exit:0 ".to_string(), Color::Green)
+                } else {
+                    (format!(" exit:{} ", code), Color::Red)
+                };
+                spans.push(Span::styled(text, Style::default().fg(color)));
+            }
+        }
+
+        if spans.is_empty() { None } else { Some(Line::from(spans).alignment(Alignment::Right)) }
+    };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
