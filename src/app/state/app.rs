@@ -241,8 +241,10 @@ pub struct App {
     pub output_selection: Option<(usize, usize, usize, usize)>,
     /// Cached output selection for viewport cache invalidation (rebuild viewport when selection changes)
     pub output_selection_cached: Option<(usize, usize, usize, usize)>,
-    /// Mouse drag in progress
-    pub mouse_drag_start: Option<(u16, u16)>,
+    /// Mouse drag anchor in cache coordinates: (cache_line_or_char, cache_col, pane_id)
+    /// pane_id: 0=viewer, 1=convo, 2=input. Stored as cache coords so auto-scroll
+    /// during drag doesn't shift the anchor.
+    pub mouse_drag_start: Option<(usize, usize, u8)>,
     /// Last click time and position for double-click detection
     pub last_click: Option<(std::time::Instant, u16, u16)>,
     /// Edit diff overlay: (old_string, new_string) to highlight in viewer

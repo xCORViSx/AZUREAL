@@ -94,12 +94,31 @@ pub async fn run_app(
                                 scroll_col = mouse.column;
                                 scroll_row = mouse.row;
                             }
-                            // Left click: record drag start, clear selections, focus/select
+                            // Left click: convert screen→cache coords for drag anchor,
+                            // clear selections, focus/select. Cache coords stored so
+                            // auto-scroll during drag doesn't shift the anchor.
                             MouseEventKind::Down(MouseButton::Left) => {
-                                app.mouse_drag_start = Some((mouse.column, mouse.row));
                                 app.viewer_selection = None;
                                 app.output_selection = None;
-                                if handle_mouse_click(app, mouse.column, mouse.row) {
+                                let (mc, mr) = (mouse.column, mouse.row);
+                                use ratatui::layout::Position;
+                                let mpos = Position::new(mc, mr);
+                                if app.pane_viewer.contains(mpos) {
+                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
+                                        app.mouse_drag_start = Some((cl, cc, 0));
+                                    }
+                                } else if app.pane_convo.contains(mpos) {
+                                    app.clamp_output_scroll();
+                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) {
+                                        app.mouse_drag_start = Some((cl, cc, 1));
+                                    }
+                                } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
+                                    let ci = screen_to_input_char(app, mc, mr);
+                                    app.mouse_drag_start = Some((ci, 0, 2));
+                                } else {
+                                    app.mouse_drag_start = None;
+                                }
+                                if handle_mouse_click(app, mc, mr) {
                                     needs_redraw = true;
                                 }
                             }
@@ -192,7 +211,9 @@ pub async fn run_app(
         // Skip fast-path for multi-line input — the input box must resize via
         // full draw when newlines are added/removed. Single-line typing (the
         // common case) still gets the fast path.
-        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') {
+        // Skip fast-path when selection is active — fast_draw_input doesn't
+        // render selection highlighting, so the full draw_input must handle it
+        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
             fast_draw_input(app);
         }
 
@@ -203,7 +224,7 @@ pub async fn run_app(
         // Defer draw when typing single-line in Claude prompt (fast-path handles it).
         // Multi-line input needs immediate full draw to resize the input box.
         // Terminal mode needs immediate draws — PTY output has no fast-path.
-        let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n');
+        let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
         let defer_for_typing = had_key_event && has_fast_path;
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
@@ -563,6 +584,43 @@ fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     app.input_cursor = best_idx;
 }
 
+/// Map screen coordinates to a char index in the input text.
+/// Same walk logic as click_to_input_cursor but returns the index.
+fn screen_to_input_char(app: &App, click_col: u16, click_row: u16) -> usize {
+    let inner_x = app.input_area.x + 1;
+    let inner_y = app.input_area.y + 1;
+    let inner_width = (app.input_area.width.saturating_sub(2)) as usize;
+    if inner_width == 0 { return 0; }
+    let target_row = (click_row.saturating_sub(inner_y)) as usize;
+    let target_col = (click_col.saturating_sub(inner_x)) as usize;
+    let visible_rows = app.input_area.height.saturating_sub(2) as usize;
+    let cursor_row_current = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
+    let scroll_offset = if visible_rows > 0 && cursor_row_current >= visible_rows {
+        cursor_row_current - visible_rows + 1
+    } else { 0 };
+    let actual_row = target_row + scroll_offset;
+    let chars: Vec<char> = app.input.chars().collect();
+    let mut row = 0usize;
+    let mut col_pos = 0usize;
+    let mut best_idx = chars.len();
+    for (i, &c) in chars.iter().enumerate() {
+        if row == actual_row && col_pos >= target_col { best_idx = i; break; }
+        if row > actual_row { best_idx = i; break; }
+        if c == '\n' {
+            if row == actual_row { best_idx = i; break; }
+            row += 1; col_pos = 0;
+        } else {
+            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+            if col_pos + w > inner_width {
+                if row == actual_row { best_idx = i; break; }
+                row += 1; col_pos = w;
+            } else { col_pos += w; }
+        }
+    }
+    if row < actual_row { best_idx = chars.len(); }
+    best_idx
+}
+
 /// Map screen coordinates to (cache_line, cache_col) within a bordered pane.
 /// Returns None if outside the content area (inside borders).
 fn screen_to_cache_pos(
@@ -582,56 +640,69 @@ fn screen_to_cache_pos(
     Some((line, col))
 }
 
-/// Handle mouse drag: compute text selection from drag start to current position.
-/// Works in Viewer and Convo panes. Returns true if selection changed.
+/// Handle mouse drag: compute text selection from drag anchor to current position.
+/// Drag anchor is stored in cache coordinates (computed on MouseDown) so
+/// auto-scroll during drag doesn't shift the start point.
 fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
-    use ratatui::layout::Position;
-    let Some((start_col, start_row)) = app.mouse_drag_start else { return false };
-    let start_pos = Position::new(start_col, start_row);
+    let Some((anchor_line, anchor_col, pane_id)) = app.mouse_drag_start else { return false };
 
-    // --- Viewer pane ---
-    if app.pane_viewer.contains(start_pos) {
-        let scroll = app.viewer_scroll;
-        let clen = app.viewer_lines_cache.len();
-        // Clamp end to pane content bounds
-        let ec = col.max(app.pane_viewer.x + 1).min(app.pane_viewer.x + app.pane_viewer.width.saturating_sub(1));
-        let er = row.max(app.pane_viewer.y + 1).min(app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1));
-        // Auto-scroll when dragging above/below pane
-        if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
-        else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
-        let Some((sl, sc)) = screen_to_cache_pos(start_col, start_row, app.pane_viewer, scroll, clen) else { return false };
-        let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_viewer, scroll, clen) else { return false };
-        // Normalize so start <= end
-        let sel = if sl < el || (sl == el && sc <= ecc) { (sl, sc, el, ecc) } else { (el, ecc, sl, sc) };
-        let new = Some(sel);
-        if app.viewer_selection != new { app.viewer_selection = new; return true; }
-        return false;
-    }
-
-    // --- Convo pane ---
-    if app.pane_convo.contains(start_pos) {
-        app.clamp_output_scroll();
-        let scroll = app.output_scroll;
-        let clen = app.rendered_lines_cache.len();
-        let ec = col.max(app.pane_convo.x + 1).min(app.pane_convo.x + app.pane_convo.width.saturating_sub(1));
-        let er = row.max(app.pane_convo.y + 1).min(app.pane_convo.y + app.pane_convo.height.saturating_sub(1));
-        // Auto-scroll when dragging above/below pane
-        if row < app.pane_convo.y + 1 { app.scroll_output_up(1); }
-        else if row >= app.pane_convo.y + app.pane_convo.height.saturating_sub(1) { app.scroll_output_down(1); }
-        let Some((sl, sc)) = screen_to_cache_pos(start_col, start_row, app.pane_convo, scroll, clen) else { return false };
-        let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_convo, scroll, clen) else { return false };
-        let sel = if sl < el || (sl == el && sc <= ecc) { (sl, sc, el, ecc) } else { (el, ecc, sl, sc) };
-        let new = Some(sel);
-        if app.output_selection != new {
-            app.output_selection = new;
-            // Invalidate viewport cache so selection highlighting is rendered
-            app.output_viewport_scroll = usize::MAX;
-            return true;
+    match pane_id {
+        // --- Input pane: anchor_line = char index, anchor_col unused ---
+        2 => {
+            let end_idx = screen_to_input_char(app, col, row);
+            if anchor_line != end_idx {
+                let new_sel = Some((anchor_line, end_idx));
+                if app.input_selection != new_sel {
+                    app.input_selection = new_sel;
+                    app.input_cursor = end_idx;
+                    return true;
+                }
+            }
+            false
         }
-        return false;
+        // --- Viewer pane: anchor = (cache_line, cache_col) ---
+        0 => {
+            // Auto-scroll when dragging above/below pane
+            if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
+            else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
+            // Clamp end to pane content bounds
+            let ec = col.max(app.pane_viewer.x + 1).min(app.pane_viewer.x + app.pane_viewer.width.saturating_sub(1));
+            let er = row.max(app.pane_viewer.y + 1).min(app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1));
+            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) else { return false };
+            // Normalize so start <= end (anchor is always the fixed point)
+            let sel = if anchor_line < el || (anchor_line == el && anchor_col <= ecc) {
+                (anchor_line, anchor_col, el, ecc)
+            } else {
+                (el, ecc, anchor_line, anchor_col)
+            };
+            let new = Some(sel);
+            if app.viewer_selection != new { app.viewer_selection = new; return true; }
+            false
+        }
+        // --- Convo pane: anchor = (cache_line, cache_col) ---
+        1 => {
+            app.clamp_output_scroll();
+            // Auto-scroll when dragging above/below pane
+            if row < app.pane_convo.y + 1 { app.scroll_output_up(1); }
+            else if row >= app.pane_convo.y + app.pane_convo.height.saturating_sub(1) { app.scroll_output_down(1); }
+            let ec = col.max(app.pane_convo.x + 1).min(app.pane_convo.x + app.pane_convo.width.saturating_sub(1));
+            let er = row.max(app.pane_convo.y + 1).min(app.pane_convo.y + app.pane_convo.height.saturating_sub(1));
+            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) else { return false };
+            let sel = if anchor_line < el || (anchor_line == el && anchor_col <= ecc) {
+                (anchor_line, anchor_col, el, ecc)
+            } else {
+                (el, ecc, anchor_line, anchor_col)
+            };
+            let new = Some(sel);
+            if app.output_selection != new {
+                app.output_selection = new;
+                app.output_viewport_scroll = usize::MAX;
+                return true;
+            }
+            false
+        }
+        _ => false,
     }
-
-    false
 }
 
 /// Extract plain text from a slice of ratatui Lines within a selection range.
