@@ -865,13 +865,16 @@ User-defined shell commands that can be saved and executed from the Worktrees pa
 - `a` — Add new command
 
 **Dialog overlay:**
-- `Tab` — Toggle between Name and Command fields
-- `Enter` — Save
+- `Tab` — In Name field: advance to Command/Prompt field. In Command/Prompt field: cycle between Command and Prompt modes.
+- `⇧Tab` — Go back to Name field from Command/Prompt field
+- `Enter` — In Name field: advance. In Command mode: save. In Prompt mode: generate (spawns Claude session).
 - `Esc` — Cancel
+
+**Command vs Prompt mode:** The second field has a right-aligned title showing the current mode and Tab hint. In **Command** mode, user types a raw shell command directly. In **Prompt** mode, user types a natural-language description and Enter spawns a new Claude session on the main branch that reads the description, determines the right shell command, and writes it to `.azureal/run_commands.json`. The session is named `[NewRunCmd] <name>` in `.azureal/sessions.toml`. Run commands auto-reload when the `[NewRunCmd]` session exits (via `handle_claude_exited()` check on `title_session_name`).
 
 **Storage:** `.azureal/run_commands.json` — JSON array of `{name, command}` objects, loaded on startup.
 
-Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker), state methods in `src/app/state/ui.rs`, input handling in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`
+Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker, CommandFieldMode), state methods in `src/app/state/ui.rs`, input handling + `spawn_run_command_prompt()` in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`, auto-reload in `src/app/state/claude.rs`
 
 ### Projects Panel
 

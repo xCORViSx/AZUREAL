@@ -11,6 +11,12 @@ All notable changes to Azureal will be documented in this file.
 - Command box title now shows `⌃d:debug` and `Tab/⇧Tab:focus` (both directions); Global section commented out from help panel
 
 ### Added
+- Prompt mode for New Run Command dialog
+  - Tab cycles between Command and Prompt modes when the second field is focused
+  - In Prompt mode, Enter spawns a Claude session on the main branch that generates the shell command
+  - Claude reads/writes `.azureal/run_commands.json` based on the user's natural-language description
+  - Session named `[NewRunCmd] <name>` in `.azureal/sessions.toml`
+  - Run commands auto-reload when the `[NewRunCmd]` session exits
 - Projects panel: persistent project management via `~/.azureal/projects.txt`
   - Auto-registers git repos on startup; shown full-screen when launched outside a git repo
   - `P` from Worktrees pane opens panel; supports add, delete, rename, and git init

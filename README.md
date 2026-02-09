@@ -29,7 +29,7 @@
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
-- **Run Commands** — Save and execute shell commands/scripts per project
+- **Run Commands** — Save and execute shell commands/scripts per project; Prompt mode lets Claude generate commands from natural-language descriptions
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
 - **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude’s task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix
