@@ -327,12 +327,14 @@ impl App {
     fn extract_skill_tools_from_events(&mut self) {
         let mut found_ask = false;
         let mut saw_user_after_ask = false;
-        // Forward scan for AskUserQuestion response tracking (need ordering)
+        let mut saw_user_after_todo = false;
+        // Forward scan — track whether user responded after the last TodoWrite/AskUserQuestion
         for event in &self.display_events {
             match event {
                 crate::events::DisplayEvent::ToolCall { tool_name, input, .. } => {
                     if tool_name == "TodoWrite" {
                         self.current_todos = super::claude::parse_todos_from_input(input);
+                        saw_user_after_todo = false;
                     }
                     if tool_name == "AskUserQuestion" {
                         self.ask_user_questions_cache = Some(input.clone());
@@ -342,10 +344,13 @@ impl App {
                 }
                 crate::events::DisplayEvent::UserMessage { .. } => {
                     if found_ask { saw_user_after_ask = true; }
+                    saw_user_after_todo = true;
                 }
                 _ => {}
             }
         }
+        // Clear stale todos — user sent a new prompt after the last TodoWrite
+        if saw_user_after_todo { self.current_todos.clear(); }
         // Only awaiting if AskUserQuestion was called and no user responded yet
         self.awaiting_ask_user_question = found_ask && !saw_user_after_ask;
         if !found_ask { self.ask_user_questions_cache = None; }
