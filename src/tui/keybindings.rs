@@ -250,7 +250,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
-    Keybinding::new(KeyCombo::new(CTRL_ALT_CMD, KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel Claude response", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),

@@ -776,9 +776,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     // arrive as key events. Ignore them globally — no handler cares about these.
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
-    // D key (uppercase, i.e. Shift+D) when not in prompt mode - Debug dump
-    // Shift+D: without REPORT_ALL_KEYS, shifted letters arrive as (NONE, Char('D'))
-    if !app.prompt_mode && !app.sidebar_filter_active && key.modifiers.is_empty() && key.code == KeyCode::Char('D') {
+    // Ctrl+D — Debug dump (obfuscated output to .azureal/debug-output.txt)
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('d') {
         app.dump_debug_output();
         return Ok(());
     }
