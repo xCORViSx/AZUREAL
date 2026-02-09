@@ -69,7 +69,8 @@ azureal
 | `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
 | `Esc` | Return to command mode |
-| `j/k` | Navigate (worktrees, files, scroll) |
+| `j/k` | Navigate / scroll line |
+| `J/K` | Page scroll (viewport minus 2 overlap lines) |
 | `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
 | `Tab` | Cycle focus (Worktrees > FileTree > Viewer > Convo > Input) |
 | `n` | New worktree/session (creation wizard) |

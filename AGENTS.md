@@ -501,7 +501,7 @@ match action {
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
-Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs` and `src/tui/input_viewer.rs` (use `lookup_action()`)
+Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs`, `src/tui/input_viewer.rs`, and `src/tui/input_output.rs` (all use `lookup_action()`)
 
 ### Stream-JSON Parsing
 
@@ -885,7 +885,8 @@ azureal/
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # Centralized keybinding definitions (Action enum, lookup_action(), help_sections())
 │   │   ├── input_file_tree.rs # FileTree navigation (uses lookup_action())
-│   │   ├── input_viewer.rs # Viewer scroll handling
+│   │   ├── input_viewer.rs # Viewer scroll handling (uses lookup_action())
+│   │   ├── input_output.rs # Convo/Output input handling (uses lookup_action())
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1009,8 +1010,8 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
-| `j/k` | Navigate (worktrees, files, scroll) |
-| `J/K` | Navigate projects |
+| `j/k` | Navigate / scroll line |
+| `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `Tab` | Cycle focus (Worktrees → FileTree → Viewer → Convo → Input) |
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
@@ -1022,7 +1023,7 @@ azureal
 | Key | Action |
 |-----|--------|
 | `j/k` | Navigate worktrees |
-| `J/K` | Navigate projects |
+| `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `l/→` | Expand session files dropdown |
 | `h/←` | Collapse session files dropdown |
 | `Enter` | Start/resume Claude session |
@@ -1050,7 +1051,7 @@ azureal
 | Key | Action |
 |-----|--------|
 | `j/k` | Scroll up/down |
-| `Shift+J/K` | Half-page scroll |
+| `J/K` | Page scroll (viewport minus 2 overlap) |
 | `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
 | `f/b` | Next/prev Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
@@ -1062,10 +1063,11 @@ azureal
 | `j/k` | Scroll line |
 | `↑/↓` | Jump to prev/next user prompt |
 | `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
-| `Shift+J/K` | Half-page scroll |
+| `J/K` | Page scroll (viewport minus 2 overlap) |
 | `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
-| `d` | Git worktree diff |
 | `o` | Switch to output view |
+| `d` | Git worktree diff |
+| `R` | Rebase status |
 | `Esc` | Return to Worktrees |
 
 **Clickable Edit Links:** Edit tool file paths are underlined and clickable. Click to open the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). The selected Edit is highlighted with orange background and black text in the Convo pane. Use `f/b` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.

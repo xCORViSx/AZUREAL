@@ -52,6 +52,9 @@ All notable changes to Azureal will be documented in this file.
   - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
 ### Changed
+- Simplified scroll system — removed half-page (`⌃d`/`⌃u`) and full-page (`f`/`b`) scroll bindings. `J`/`K` now does full-page scroll across all panes.
+- `input_output.rs` now uses centralized `lookup_action()` from `keybindings.rs` — all input handlers are now fully centralized.
+- Added `SwitchToOutput`, `ViewDiff`, `RebaseStatus`, `PageDown`, `PageUp` actions to keybindings enum for complete output pane coverage.
 - Debug dump keybinding changed from `D` to `⌃D` and now obfuscates all sensitive content before writing to `.azureal/debug-output.txt`
   - User/assistant messages, file paths, and rendered output replaced with deterministic fake words
   - Tool names, event types, parsing stats, and structural markers preserved for diagnostics
@@ -312,7 +315,7 @@ All notable changes to Azureal will be documented in this file.
   - Viewer dual-purpose: file preview from FileTree OR diff detail from Convo
   - Tab cycles through all 4 panes plus Input
 - FileTree navigation with j/k, Enter to open, Space/l to expand, h to collapse
-- Viewer scroll with j/k, Ctrl+d/u, Ctrl+f/b, g/G
+- Viewer scroll with j/k (line), J/K (page), g/G (top/bottom)
 - Per-session terminal persistence: each session maintains its own PTY shell session
 
 ### Changed

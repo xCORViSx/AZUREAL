@@ -41,8 +41,8 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
         }
         Some(Action::NavDown) => { app.scroll_viewer_down(1); }
         Some(Action::NavUp) => { app.scroll_viewer_up(1); }
-        Some(Action::HalfPageDown) => { app.scroll_viewer_down(app.viewer_viewport_height / 2); }
-        Some(Action::HalfPageUp) => { app.scroll_viewer_up(app.viewer_viewport_height / 2); }
+        Some(Action::PageDown) => { app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2)); }
+        Some(Action::PageUp) => { app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2)); }
         Some(Action::GoToTop) => app.viewer_scroll = 0,
         Some(Action::GoToBottom) => { app.scroll_viewer_to_bottom(); }
         Some(Action::JumpNextEdit) => {

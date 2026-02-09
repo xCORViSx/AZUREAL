@@ -1,104 +1,55 @@
 //! Output panel input handling
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode, KeyModifiers};
+use crossterm::event;
 
 use crate::app::{App, Focus, ViewMode};
 use crate::git::Git;
 use super::input_rebase::handle_rebase_input;
+use super::keybindings::{Action, lookup_action};
 
 /// Handle keyboard input when Output pane is focused
 pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    // Handle rebase mode separately
+    // Rebase mode has its own handler
     if app.view_mode == ViewMode::Rebase {
         return handle_rebase_input(key, app);
     }
 
-    match (key.modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Char('j')) => {
+    // Route through centralized keybinding lookup
+    let action = lookup_action(Focus::Output, key.modifiers, key.code, false, false, false);
+
+    match action {
+        // j/k/↓/↑ line-by-line scroll (NavDown/NavUp only fires for j/k since ↓/↑ are mapped to JumpNext/PrevBubble)
+        Some(Action::NavDown) => {
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_down(1); }
                 ViewMode::Diff => { app.scroll_diff_down(1); }
                 _ => {}
             }
         }
-        (KeyModifiers::NONE, KeyCode::Char('k')) => {
+        Some(Action::NavUp) => {
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_up(1); }
                 ViewMode::Diff => { app.scroll_diff_up(1); }
                 _ => {}
             }
         }
-        // Arrow keys for bubble navigation: Down/Up = user prompts, Shift = include assistant
-        (KeyModifiers::NONE, KeyCode::Down) => {
-            if app.view_mode == ViewMode::Output {
-                app.jump_to_next_bubble(false);
-            }
+        // ↓/↑ jump between user prompts (convo mode only)
+        Some(Action::JumpNextBubble) => {
+            if app.view_mode == ViewMode::Output { app.jump_to_next_bubble(false); }
         }
-        (KeyModifiers::NONE, KeyCode::Up) => {
-            if app.view_mode == ViewMode::Output {
-                app.jump_to_prev_bubble(false);
-            }
+        Some(Action::JumpPrevBubble) => {
+            if app.view_mode == ViewMode::Output { app.jump_to_prev_bubble(false); }
         }
-        (KeyModifiers::SHIFT, KeyCode::Down) => {
-            if app.view_mode == ViewMode::Output {
-                app.jump_to_next_bubble(true);
-            }
+        // ⇧↓/⇧↑ jump between all messages including assistant
+        Some(Action::JumpNextMessage) => {
+            if app.view_mode == ViewMode::Output { app.jump_to_next_bubble(true); }
         }
-        (KeyModifiers::SHIFT, KeyCode::Up) => {
-            if app.view_mode == ViewMode::Output {
-                app.jump_to_prev_bubble(true);
-            }
+        Some(Action::JumpPrevMessage) => {
+            if app.view_mode == ViewMode::Output { app.jump_to_prev_bubble(true); }
         }
-        // Scroll to bottom: G or ⌥↓
-        (KeyModifiers::NONE, KeyCode::Char('G')) | (KeyModifiers::ALT, KeyCode::Down) => {
-            match app.view_mode {
-                ViewMode::Output => app.scroll_output_to_bottom(),
-                ViewMode::Diff => app.scroll_diff_to_bottom(),
-                _ => {}
-            }
-        }
-        // Scroll to top: g or ⌥↑
-        (KeyModifiers::NONE, KeyCode::Char('g')) | (KeyModifiers::ALT, KeyCode::Up) => {
-            match app.view_mode {
-                ViewMode::Output => app.output_scroll = 0,
-                ViewMode::Diff => app.diff_scroll = 0,
-                _ => {}
-            }
-        }
-        (KeyModifiers::NONE, KeyCode::PageDown) => {
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(10); }
-                ViewMode::Diff => { app.scroll_diff_down(10); }
-                _ => {}
-            }
-        }
-        (KeyModifiers::NONE, KeyCode::PageUp) => {
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(10); }
-                ViewMode::Diff => { app.scroll_diff_up(10); }
-                _ => {}
-            }
-        }
-        // Half-page scroll (uses cached viewport height)
-        (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-            let half = app.output_viewport_height / 2;
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(half); }
-                ViewMode::Diff => { app.scroll_diff_down(half); }
-                _ => {}
-            }
-        }
-        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
-            let half = app.output_viewport_height / 2;
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(half); }
-                ViewMode::Diff => { app.scroll_diff_up(half); }
-                _ => {}
-            }
-        }
-        // Full-page scroll (uses cached viewport height)
-        (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
+        // J/K page scroll (full viewport minus 2 for overlap)
+        Some(Action::PageDown) => {
             let page = app.output_viewport_height.saturating_sub(2);
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_down(page); }
@@ -106,7 +57,7 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 _ => {}
             }
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
+        Some(Action::PageUp) => {
             let page = app.output_viewport_height.saturating_sub(2);
             match app.view_mode {
                 ViewMode::Output => { app.scroll_output_up(page); }
@@ -114,20 +65,37 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 _ => {}
             }
         }
-        (KeyModifiers::NONE, KeyCode::Tab) => app.focus = Focus::Input,
-        (KeyModifiers::NONE, KeyCode::Char('o')) => {
-            app.view_mode = ViewMode::Output;
-            app.output_scroll = usize::MAX; // Scroll to bottom (most recent)
+        // g/⌥↑ scroll to top
+        Some(Action::GoToTop) => {
+            match app.view_mode {
+                ViewMode::Output => app.output_scroll = 0,
+                ViewMode::Diff => app.diff_scroll = 0,
+                _ => {}
+            }
         }
-        (KeyModifiers::NONE, KeyCode::Char('d')) => {
+        // G/⌥↓ scroll to bottom
+        Some(Action::GoToBottom) => {
+            match app.view_mode {
+                ViewMode::Output => app.scroll_output_to_bottom(),
+                ViewMode::Diff => app.scroll_diff_to_bottom(),
+                _ => {}
+            }
+        }
+        // o: switch to output view
+        Some(Action::SwitchToOutput) => {
+            app.view_mode = ViewMode::Output;
+            app.output_scroll = usize::MAX; // follow bottom
+        }
+        // d: view diff
+        Some(Action::ViewDiff) => {
             if let Err(e) = app.load_diff() {
                 app.set_status(format!("Failed to get diff: {}", e));
             } else {
                 app.diff_scroll = 0;
             }
         }
-        // Shift+R: without REPORT_ALL_KEYS, arrives as (NONE, 'R')
-        (KeyModifiers::NONE, KeyCode::Char('R')) => {
+        // R: show rebase status
+        Some(Action::RebaseStatus) => {
             if let Some(session) = app.current_session() {
                 if let Some(ref wt_path) = session.worktree_path {
                     if Git::is_rebase_in_progress(wt_path) {
@@ -138,7 +106,10 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 }
             }
         }
-        (KeyModifiers::NONE, KeyCode::Esc) => app.focus = Focus::Worktrees,
+        // Tab: switch focus to input (handled by global, but catch if it leaks through)
+        Some(Action::CycleFocusForward) => app.focus = Focus::Input,
+        // Esc: back to worktrees sidebar
+        Some(Action::Escape) => app.focus = Focus::Worktrees,
         _ => {}
     }
     Ok(())
