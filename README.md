@@ -21,7 +21,7 @@
 - **File Browser** — Navigate worktree files with expand/collapse, open in syntax-highlighted Viewer
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
-- **Real-time Output** — Live-polls Claude's session file; output updates as Claude responds
+- **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
 - **Clickable Edit Links** — Click file paths in Convo to view diffs in the Viewer pane
 - **Async Rendering** — Convo pane renders on a background thread; input is never blocked by markdown/syntax processing

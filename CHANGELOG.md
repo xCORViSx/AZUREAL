@@ -4,6 +4,14 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Kernel-level file watching via `notify` crate (replaces 500ms stat() polling)
+  - Session file changes detected instantly via kqueue (macOS) / inotify (Linux)
+  - File tree auto-refreshes when worktree files change (500ms debounce for rapid creates)
+  - Background `FileWatcher` thread follows RenderThread/SttHandle pattern (mpsc channels, non-blocking)
+  - Graceful fallback to stat() polling if notify fails to initialize
+  - Noisy paths filtered: `target/`, `.git/`, `node_modules/`, editor swap files
+
 ### Optimized
 - Edit mode rendering: cached syntax highlighting + viewport-only line construction
   - Syntax highlighting cached in `viewer_edit_highlight_cache`, only re-run when content changes (tracked via undo stack depth)

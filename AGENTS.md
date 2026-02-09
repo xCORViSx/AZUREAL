@@ -235,35 +235,47 @@ if app.viewer_edit_highlight_ver != undo_ver {
 
 **Files:** `src/tui/draw_viewer.rs::draw_edit_mode()`, `src/app/state/app.rs` (cache fields), `src/app/state/viewer_edit.rs` (cache cleanup)
 
-### 8. Session File Polling (Deferred Parse + Incremental)
+### 8. File Watching + Session File Polling (Notify + Deferred Parse + Incremental)
 
-Three-phase polling pipeline for session files:
+**Change detection** uses kernel-level filesystem notifications via the `notify` crate (kqueue on macOS, inotify on Linux, ReadDirectoryChangesW on Windows). A background `FileWatcher` thread (`src/watcher.rs`) owns a `notify::RecommendedWatcher` and forwards classified events to the main thread via mpsc channels — zero CPU between events, near-instant detection.
 
-1. **Cheap metadata check** (`check_session_file()`): stat() the file, compare size. O(1).
+**Watch targets** (re-registered on session switch via `sync_file_watches()`):
+- **Session JSONL file** — `NonRecursive` watch, sets `session_file_dirty = true` on change
+- **Worktree directory** — `Recursive` watch, triggers debounced file tree refresh (500ms)
+
+**Noise filtering** happens in the watcher thread: `/target/`, `/.git/`, `/node_modules/`, `.DS_Store`, `.swp`/`.swo`/`~` files are dropped before reaching the main thread. Events are coalesced (at most one `SessionFileChanged` + one `WorktreeChanged` per 200ms drain cycle).
+
+**Graceful fallback:** If `notify` fails to initialize (`FileWatcher::spawn()` returns `None`) or the watcher thread errors at runtime (`WatcherFailed` event), the event loop falls back to the original stat()-based polling (500ms interval) seamlessly.
+
+Three-phase parse+render pipeline for session files:
+
+1. **Change detection** (notify-driven or fallback stat()): Sets `session_file_dirty = true`.
 2. **Incremental parse** (`refresh_session_events()`): Seek to `session_file_parse_offset`, parse only new JSONL lines appended since last read. Rebuilds tool_call context from existing DisplayEvents via `IncrementalParserState`. Falls back to full re-parse if file shrank or user-message rewrite detected (parentUuid dedup).
 3. **Incremental render** (`draw_output()`): If `rendered_events_count < display_events.len()` and width unchanged, renders only newly appended events and appends to `rendered_lines_cache`. Falls back to full re-render on width change or event count decrease (session switch).
 
 ```rust
-// Phase 1: O(1) metadata check (every 500ms)
-pub fn check_session_file(&mut self) {
-    if metadata.len() != self.session_file_size {
-        self.session_file_dirty = true;
+// Watcher thread classifies filesystem events:
+pub enum WatchEvent {
+    SessionFileChanged,  // session JSONL modified
+    WorktreeChanged,     // file created/deleted/modified in worktree
+    WatcherFailed(String),
+}
+
+// Main thread drains events (non-blocking):
+while let Some(evt) = watcher.try_recv() {
+    match evt {
+        SessionFileChanged => app.session_file_dirty = true,
+        WorktreeChanged => { app.file_tree_refresh_pending = true; },
+        WatcherFailed(_) => { app.file_watcher = None; break; },
     }
 }
 
-// Phase 2: Incremental parse (only new bytes since last offset)
+// Incremental parse (only new bytes since last offset)
 fn refresh_session_events(&mut self) {
     let parsed = parse_session_file_incremental(
         &path, self.session_file_parse_offset,
         &self.display_events, &self.pending_tool_calls, &self.failed_tool_calls,
     );
-    // Merges new events with existing, updates parse offset
-}
-
-// Phase 3: Incremental render (only new events → append to cache)
-// In draw_output():
-if event_count > app.rendered_events_count && width unchanged {
-    render_display_events_incremental(events, start_idx, ..., existing_cache);
 }
 ```
 
@@ -271,13 +283,18 @@ if event_count > app.rendered_events_count && width unchanged {
 During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). **Important:** stream-json stdout does NOT include `user` type events — only system/assistant/result/progress. The live stream path clears `pending_user_message` when the **first assistant/tool event** arrives (proof Claude received the prompt), and **immediately trims the stale pending bubble from `rendered_lines_cache`** using `rendered_content_line_count`. When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
 
 **Files:**
+- `src/watcher.rs` - `FileWatcher` thread, `WatchEvent`/`WatchCommand` types, noise filtering
 - `src/app/session_parser.rs` - `parse_session_file_incremental()`, `IncrementalParserState`
-- `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`
+- `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`, `sync_file_watches()`
 - `src/app/state/claude.rs` - `handle_claude_output()` (live events), `handle_claude_exited()` (full re-parse trigger)
 - `src/tui/render_events.rs` - `render_display_events_incremental()`, `render_display_events_from()`
 - `src/tui/draw_output.rs` - incremental render path selection
+- `src/tui/event_loop.rs` - watcher event drain, fallback polling, debounced file tree refresh
 
 **App state for incremental tracking:**
+- `file_watcher: Option<FileWatcher>` — background watcher thread handle (None = fallback to polling)
+- `file_tree_refresh_pending: bool` — set by WorktreeChanged, cleared after debounced refresh
+- `worktree_last_notify: Instant` — timestamp of last worktree change (for 500ms debounce)
 - `rendered_content_line_count: usize` — line count in cache BEFORE pending bubble was appended (used to trim stale bubble on incremental renders)
 - `session_file_parse_offset: u64` — byte offset after last successful parse
 - `rendered_events_count: usize` — how many events were rendered into current cache
@@ -955,6 +972,7 @@ azureal/
 │   ├── models.rs           # Domain models (Session, Project, etc.)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
 │   ├── syntax.rs           # Syntax highlighting for diffs
+│   ├── watcher.rs          # Filesystem watcher (notify crate — kqueue/inotify/ReadDirectoryChangesW)
 │   └── wizard.rs           # Session creation wizard
 ├── worktrees/              # Git worktrees for sessions
 ├── AGENTS.md               # This file
