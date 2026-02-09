@@ -570,22 +570,43 @@ impl App {
         true
     }
 
-    /// Insert transcribed text at the current input cursor position.
-    /// Adds a leading space if the cursor isn't at the start and the previous char isn't whitespace.
+    /// Insert transcribed text at the current cursor position.
+    /// Routes to viewer edit buffer when in edit mode, otherwise to prompt input.
+    /// Adds a leading space if the previous char isn't whitespace.
     fn insert_stt_text(&mut self, text: &str) {
         let trimmed = text.trim();
         if trimmed.is_empty() { return; }
-        // Add space separator if needed (cursor not at start, previous char not whitespace)
-        if self.input_cursor > 0 {
-            let chars: Vec<char> = self.input.chars().collect();
-            if let Some(&prev) = chars.get(self.input_cursor - 1) {
-                if !prev.is_whitespace() {
-                    self.input_char(' ');
+
+        if self.viewer_edit_mode {
+            // Insert into viewer edit buffer at cursor position
+            let (line, col) = self.viewer_edit_cursor;
+            if let Some(line_str) = self.viewer_edit_content.get(line) {
+                // Add space if previous char isn't whitespace
+                if col > 0 {
+                    if let Some(prev) = line_str.chars().nth(col - 1) {
+                        if !prev.is_whitespace() {
+                            self.viewer_edit_char(' ');
+                        }
+                    }
                 }
             }
-        }
-        for c in trimmed.chars() {
-            self.input_char(c);
+            for c in trimmed.chars() {
+                self.viewer_edit_char(c);
+            }
+            self.viewer_edit_scroll_to_cursor();
+        } else {
+            // Insert into prompt input at cursor position
+            if self.input_cursor > 0 {
+                let chars: Vec<char> = self.input.chars().collect();
+                if let Some(&prev) = chars.get(self.input_cursor - 1) {
+                    if !prev.is_whitespace() {
+                        self.input_char(' ');
+                    }
+                }
+            }
+            for c in trimmed.chars() {
+                self.input_char(c);
+            }
         }
     }
 }

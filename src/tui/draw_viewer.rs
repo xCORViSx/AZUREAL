@@ -510,8 +510,16 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
         .unwrap_or_else(|| "File".to_string());
 
-    // Title on left, modified indicator on right
-    let title = format!(" EDIT: {} ", path_str);
+    // Title on left — show REC/... prefix when STT is active, modified indicator on right
+    let title = if app.stt_recording {
+        format!(" REC EDIT: {} ", path_str)
+    } else if app.stt_transcribing {
+        format!(" ... EDIT: {} ", path_str)
+    } else {
+        format!(" EDIT: {} ", path_str)
+    };
+    // Border color: magenta during voice input, yellow normally
+    let border_color = if app.stt_recording || app.stt_transcribing { Color::Magenta } else { Color::Yellow };
 
     let total_lines = app.viewer_edit_content.len();
     let line_num_width = total_lines.to_string().len().max(3);
@@ -589,19 +597,19 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     let title_line = if app.viewer_edit_dirty {
         let padding = area.width.saturating_sub(title.len() as u16 + 13) as usize;
         Line::from(vec![
-            Span::styled(title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
             Span::raw(" ".repeat(padding)),
-            Span::styled("[modified]", Style::default().fg(Color::Yellow)),
+            Span::styled("[modified]", Style::default().fg(border_color)),
         ])
     } else {
-        Line::from(Span::styled(title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        Line::from(Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)))
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(title_line)
-        .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD));
 
     let widget = Paragraph::new(final_lines).block(block);
     f.render_widget(widget, area);
