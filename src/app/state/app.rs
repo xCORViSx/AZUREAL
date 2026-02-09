@@ -151,6 +151,10 @@ pub struct App {
     /// True when state changed and a draw is needed. Draw is deferred if keys
     /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
     pub draw_pending: bool,
+    /// Cached CPU usage string for status bar (updated every ~1s via getrusage delta)
+    pub cpu_usage_text: String,
+    /// Last getrusage sample: (wall_time, cpu_time_micros)
+    pub cpu_last_sample: (std::time::Instant, u64),
     /// Cached input area rect from last full draw — used for fast-path direct
     /// input rendering that bypasses terminal.draw() during rapid typing.
     pub input_area: ratatui::layout::Rect,
@@ -407,6 +411,8 @@ impl App {
             render_seq_applied: 0,
             render_in_flight: false,
             draw_pending: false,
+            cpu_usage_text: String::new(),
+            cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),
             input_area: ratatui::layout::Rect::default(),
             pane_sessions: ratatui::layout::Rect::default(),
             pane_file_tree: ratatui::layout::Rect::default(),
@@ -510,6 +516,20 @@ impl App {
                 else { ratatui::style::Color::Red };
             (format!(" {:.0}% ", pct), color)
         });
+    }
+
+    /// Sample getrusage and update cached CPU% string. Called from draw path;
+    /// only recomputes if ≥1s has elapsed since last sample (avoids overhead).
+    pub fn update_cpu_usage(&mut self) {
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.cpu_last_sample.0);
+        if elapsed.as_millis() < 1000 { return; }
+        let cpu_now = get_cpu_time_micros();
+        let cpu_delta = cpu_now.saturating_sub(self.cpu_last_sample.1) as f64;
+        let wall_delta = elapsed.as_micros() as f64;
+        let pct = if wall_delta > 0.0 { cpu_delta / wall_delta * 100.0 } else { 0.0 };
+        self.cpu_usage_text = format!("{:.0}%", pct);
+        self.cpu_last_sample = (now, cpu_now);
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
@@ -619,5 +639,17 @@ impl App {
                 self.input_char(c);
             }
         }
+    }
+}
+
+/// Get cumulative user+system CPU time for this process in microseconds.
+/// Uses libc::getrusage(RUSAGE_SELF) — works on macOS and Linux.
+fn get_cpu_time_micros() -> u64 {
+    unsafe {
+        let mut usage: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut usage);
+        let user = usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
+        let sys = usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;
+        user + sys
     }
 }

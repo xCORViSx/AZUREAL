@@ -61,6 +61,10 @@ All notable changes to Azureal will be documented in this file.
 - Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
 - Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
 
+### Added
+- Status bar badge (bottom-right): CPU usage % and PID for the current azureal instance
+  - CPU% sampled via `getrusage(RUSAGE_SELF)` delta every ~1s (zero overhead between samples)
+
 ### Changed
 - Input box title in command mode renamed from "PROMPT" to "COMMAND" and now shows all global keybindings (type, terminal, help, focus, cancel, quit, restart); removed Global section from help panel
 - Sending a prompt mid-conversation now cancels Claude and sends the new prompt in one Enter press (previously required Enter to cancel, then Enter again to send)

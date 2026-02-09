@@ -12,7 +12,9 @@ use crate::app::{App, Focus, ViewMode};
 use super::util::truncate;
 
 /// Draw the status bar at the bottom
-pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
+pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
+    // Sample CPU usage (~1s interval, cheap getrusage delta)
+    app.update_cpu_usage();
     let mut status_spans = Vec::new();
 
     // Session info (left side)
@@ -78,8 +80,24 @@ pub fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
+    // Right badge: CPU% + PID
+    let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
+    let badge_width = badge_text.len() as u16;
+
+    // Left side: status content (leave room for badge on right)
+    let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
     let status = Paragraph::new(Line::from(status_spans))
         .style(Style::default().bg(Color::Reset));
+    f.render_widget(status, left_area);
 
-    f.render_widget(status, area);
+    // Right side: badge
+    let right_area = Rect {
+        x: area.x + area.width.saturating_sub(badge_width),
+        width: badge_width,
+        ..area
+    };
+    let badge_widget = Paragraph::new(Line::from(
+        Span::styled(badge_text, Style::default().fg(Color::DarkGray))
+    ));
+    f.render_widget(badge_widget, right_area);
 }
