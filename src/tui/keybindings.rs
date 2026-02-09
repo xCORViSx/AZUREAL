@@ -233,6 +233,9 @@ static ALT_DOWN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code
 static ALT_UP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Up }];
 static ALT_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Left }];
 static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Right }];
+// ⌥↑/⌥↓ alternatives for g/G (jump to top/bottom)
+static GOTO_TOP_ALT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Up }];
+static GOTO_BOTTOM_ALT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Down }];
 // ⌃← alternative for ⌥← (word nav in prompt input)
 static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
 static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
@@ -262,12 +265,14 @@ pub static GLOBAL: [Keybinding; 10] = [
 ];
 
 /// Worktrees context bindings
-pub static WORKTREES: [Keybinding; 16] = [
+pub static WORKTREES: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse files", Action::NavLeft),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Select project", Action::SelectPrevProject),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Context menu", Action::OpenContextMenu),
@@ -282,11 +287,13 @@ pub static WORKTREES: [Keybinding; 16] = [
 ];
 
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 7] = [
+pub static FILE_TREE: [Keybinding; 9] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand", Action::NavRight),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "First in folder", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Last in folder", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open/toggle", Action::OpenFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle dir", Action::ToggleDir),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
@@ -298,8 +305,8 @@ pub static VIEWER: [Keybinding; 10] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Half page", Action::HalfPageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Half page", Action::HalfPageUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Top", Action::GoToTop),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Bottom", Action::GoToBottom),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Top", Action::GoToTop),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Next Edit", Action::JumpNextEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
@@ -326,8 +333,8 @@ pub static OUTPUT: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Half page", Action::HalfPageUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Full page", Action::FullPageDown),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Full page", Action::FullPageUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Top", Action::GoToTop),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Bottom", Action::GoToBottom),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Top", Action::GoToTop),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
 ];
 
@@ -357,8 +364,8 @@ pub static TERMINAL: [Keybinding; 11] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::HalfPageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Scroll page", Action::HalfPageUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "Scroll to top", Action::GoToTop),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Scroll to bottom", Action::GoToBottom),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Scroll to top", Action::GoToTop),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Scroll to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
 ];

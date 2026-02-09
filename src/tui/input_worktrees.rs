@@ -46,53 +46,53 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
     // Check if current session is expanded (dropdown mode)
     let is_expanded = app.is_current_session_expanded();
 
-    match key.code {
+    match (key.modifiers, key.code) {
         // / activates sidebar search filter
-        KeyCode::Char('/') => {
+        (KeyModifiers::NONE, KeyCode::Char('/')) => {
             app.sidebar_filter_active = true;
             app.sidebar_filter.clear();
             app.invalidate_sidebar();
         }
+        // ⌥↑/⌥↓: jump to first/last within current context (must come before plain ↑/↓)
+        (KeyModifiers::ALT, KeyCode::Up) => {
+            if is_expanded { app.session_file_first(); } else { app.select_first_session(); }
+        }
+        (KeyModifiers::ALT, KeyCode::Down) => {
+            if is_expanded { app.session_file_last(); } else { app.select_last_session(); }
+        }
         // Right: Expand dropdown to show session files
-        KeyCode::Right | KeyCode::Char('l') if !is_expanded => {
+        (_, KeyCode::Right) | (_, KeyCode::Char('l')) if !is_expanded => {
             if let Some(session) = app.current_session() {
                 let branch = session.branch_name.clone();
                 app.expand_session(&branch);
             }
         }
         // Left: Collapse dropdown
-        KeyCode::Left | KeyCode::Char('h') if is_expanded => {
+        (_, KeyCode::Left) | (_, KeyCode::Char('h')) if is_expanded => {
             if let Some(session) = app.current_session() {
                 let branch = session.branch_name.clone();
                 app.collapse_session(&branch);
             }
         }
         // j/k: Navigate within dropdown when expanded, otherwise navigate sessions
-        KeyCode::Char('j') | KeyCode::Down => {
+        (_, KeyCode::Char('j')) | (_, KeyCode::Down) => {
             if is_expanded {
                 app.session_file_next();
             } else {
                 app.select_next_session();
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        (_, KeyCode::Char('k')) | (_, KeyCode::Up) => {
             if is_expanded {
                 app.session_file_prev();
             } else {
                 app.select_prev_session();
             }
         }
-        // ⌥↑/⌥↓: jump to first/last within current context
-        _ if key.modifiers == KeyModifiers::ALT && key.code == KeyCode::Up => {
-            if is_expanded { app.session_file_first(); } else { app.select_first_session(); }
-        }
-        _ if key.modifiers == KeyModifiers::ALT && key.code == KeyCode::Down => {
-            if is_expanded { app.session_file_last(); } else { app.select_last_session(); }
-        }
-        KeyCode::Tab => app.focus = Focus::Output,
-        KeyCode::Char(' ') | KeyCode::Char('?') => app.open_context_menu(),
-        KeyCode::Char('n') => app.start_wizard(),
-        KeyCode::Char('b') => {
+        (_, KeyCode::Tab) => app.focus = Focus::Output,
+        (_, KeyCode::Char(' ')) | (_, KeyCode::Char('?')) => app.open_context_menu(),
+        (_, KeyCode::Char('n')) => app.start_wizard(),
+        (_, KeyCode::Char('b')) => {
             if let Some(project) = app.current_project() {
                 match Git::list_available_branches(&project.path) {
                     Ok(branches) => app.open_branch_dialog(branches),
@@ -100,25 +100,25 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 }
             }
         }
-        KeyCode::Char('d') => {
+        (_, KeyCode::Char('d')) => {
             if let Err(e) = app.load_diff() {
                 app.set_status(format!("Failed to get diff: {}", e));
             }
         }
         // r: open run command picker (or execute directly if only 1 command)
-        KeyCode::Char('r') if key.modifiers == KeyModifiers::NONE => {
+        (KeyModifiers::NONE, KeyCode::Char('r')) => {
             app.open_run_command_picker();
         }
         // ⌥r: open dialog to add a new run command
-        KeyCode::Char('r') if key.modifiers == KeyModifiers::ALT => {
+        (KeyModifiers::ALT, KeyCode::Char('r')) => {
             app.open_run_command_dialog();
         }
         // macOS ⌥+letter produces unicode — use macos_opt_key() lookup
-        KeyCode::Char(c) if super::keybindings::macos_opt_key(c) == Some('r') => {
+        (_, KeyCode::Char(c)) if super::keybindings::macos_opt_key(c) == Some('r') => {
             app.open_run_command_dialog();
         }
         // R (Shift+R): rebase current worktree onto main
-        KeyCode::Char('R') => {
+        (_, KeyCode::Char('R')) => {
             if let Some(session) = app.current_session() {
                 if let (Some(ref wt_path), Some(project)) = (&session.worktree_path, app.current_project()) {
                     let wt = wt_path.clone();
@@ -155,12 +155,12 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 }
             }
         }
-        KeyCode::Char('a') => {
+        (_, KeyCode::Char('a')) => {
             if let Err(e) = app.archive_current_session() {
                 app.set_status(format!("Failed to archive: {}", e));
             }
         }
-        KeyCode::Enter => {
+        (_, KeyCode::Enter) => {
             if is_expanded {
                 // Select the highlighted session file and load it
                 if let Some(session) = app.current_session() {
@@ -182,7 +182,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 }
             }
         }
-        KeyCode::Char('i') => {
+        (_, KeyCode::Char('i')) => {
             if app.is_current_session_running() {
                 app.focus = Focus::Input;
                 app.set_status("Enter input to send to Claude:");
@@ -190,7 +190,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 app.set_status("No Claude running in this session");
             }
         }
-        KeyCode::Char('s') => {
+        (_, KeyCode::Char('s')) => {
             if let Some(session) = app.current_session() {
                 let branch_name = session.branch_name.clone();
                 let session_name = session.name().to_string();
