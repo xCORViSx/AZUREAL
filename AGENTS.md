@@ -100,7 +100,9 @@ Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for ren
 - Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
 **Text Selection (Mouse Drag):**
-- `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=convo, 2=input. Clears existing `viewer_selection` / `output_selection`.
+- `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=convo, 2=input, 3=edit-mode-viewer. Clears existing `viewer_selection` / `output_selection`.
+- **Edit mode click:** When `viewer_edit_mode` is true and click lands in viewer pane, `screen_to_edit_pos()` maps screen coords → `(source_line, source_col)` by walking source lines and summing wrap counts. Sets `viewer_edit_cursor` and clears `viewer_edit_selection`. Drag anchor stored as pane_id=3.
+- **Edit mode drag (pane_id=3):** Maps current drag position via `screen_to_edit_pos()`, sets `viewer_edit_selection = Some((anchor_line, anchor_col, drag_line, drag_col))` and moves cursor to drag end. Auto-scrolls when dragging above/below pane.
 - `MouseDrag(Left)` calls `handle_mouse_drag()` which uses the cached anchor (pane_id from `mouse_drag_start`) and maps only the current cursor position from screen to cache coords via `screen_to_cache_pos()`. For input pane, uses `screen_to_input_char()` to map to char index.
 - Anchor stored in cache coords so auto-scroll during drag doesn't shift the selection start
 - Auto-scroll when dragging above/below pane content area
@@ -204,6 +206,32 @@ let para = Paragraph::new(pre_wrapped_lines);
 Convo pane content is pre-wrapped to `inner_width` by `wrap_text()` and `wrap_spans()` in `render_events.rs`. Adding `.wrap()` causes ratatui's `Paragraph::render()` to iterate every character of every span to compute line breaks that already exist — pure redundant O(viewport_chars) work per frame.
 
 **Files:** `src/tui/draw_output.rs` renders Paragraph without `.wrap()`. If you add a new Paragraph that displays pre-wrapped content, do NOT add `.wrap()`.
+
+### 13. Edit Mode: Cache Highlighting + Viewport-Only Rendering
+
+```rust
+// ❌ WRONG - Re-highlights entire file and builds all visual lines EVERY FRAME
+let full_content = app.viewer_edit_content.join("\n");
+let highlighted = app.syntax_highlighter.highlight_file(&full_content, &path_str);
+// Then iterates ALL source lines to build all_lines...
+
+// ✅ CORRECT - Cache highlighting, only re-run on content change; only process visible lines
+let undo_ver = app.viewer_edit_undo.len();
+if app.viewer_edit_highlight_ver != undo_ver {
+    // Only re-highlight when content actually changed (undo stack depth shifted)
+    app.viewer_edit_highlight_cache = app.syntax_highlighter.highlight_file(...);
+    app.viewer_edit_highlight_ver = undo_ver;
+}
+// Walk source lines to find visible range, only build Lines for viewport
+```
+
+**Impact:** AGENTS.md (~1000+ lines) caused 90%+ CPU in edit mode — syntect was parsing the entire file every frame at 30fps. Now: highlight once on enter/edit (~50ms), then zero highlight cost per frame. Viewport-only line construction means O(viewport_height) not O(file_size) per frame.
+
+**Cache invalidation:** `viewer_edit_highlight_ver` tracks `viewer_edit_undo.len()`. Every edit calls `push_undo()` which changes undo stack depth → cache miss → re-highlight. Scrolling, cursor movement, and selection don't change undo depth → cache hit → zero cost. Cleared on `exit_viewer_edit_mode()`.
+
+**Cursor position:** Computed arithmetically by summing wrap counts for source lines before cursor. No `all_lines` array needed.
+
+**Files:** `src/tui/draw_viewer.rs::draw_edit_mode()`, `src/app/state/app.rs` (cache fields), `src/app/state/viewer_edit.rs` (cache cleanup)
 
 ### 8. Session File Polling (Deferred Parse + Incremental)
 
@@ -502,6 +530,20 @@ match action {
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
 Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs`, `src/tui/input_viewer.rs`, and `src/tui/input_output.rs` (all use `lookup_action()`)
+
+### Wrap-Aware Edit Cursor
+
+The viewer edit mode cursor navigates wrapped visual lines, not just source lines. Long lines wrap at `content_width = viewport_width - line_num_width - 3` characters. The wrap width is cached in `app.viewer_edit_content_width` (set by `draw_edit_mode()`).
+
+**Up/Down navigation:** `viewer_edit_up()` / `viewer_edit_down()` use `col / cw` to determine which wrap row the cursor is on. Moving up from wrap_row > 0 stays on the same source line; from wrap_row 0 it jumps to the previous source line's last wrap row. Same logic in reverse for down. The visual column (`col % cw`) is preserved across wrap rows.
+
+**Scroll-to-cursor:** `viewer_edit_scroll_to_cursor()` sums wrap counts for all source lines before the cursor line, adds the cursor's wrap offset, and scrolls the viewport to keep that visual line visible.
+
+**Mouse click/drag:** `screen_to_edit_pos()` maps screen coordinates to `(source_line, source_col)` by walking source lines and summing their wrap counts until the clicked visual row is found. Stored as drag anchor with pane_id=3 for edit-mode drag selection.
+
+**Hard char-boundary wrapping:** Edit mode uses `wrap_spans_hard()` instead of `wrap_spans()`. The regular `wrap_spans()` uses `textwrap::wrap()` which does word-boundary wrapping — lines break at spaces/hyphens. This causes wrap points to vary vs the fixed-width assumption (`col / cw`, `col % cw`) used by cursor math and `screen_to_edit_pos()`. `wrap_spans_hard()` splits spans at exact `content_width` char boundaries so visual layout perfectly matches cursor positioning.
+
+Implementation: `src/app/state/viewer_edit.rs` (cursor movement, scroll), `src/tui/event_loop.rs` (`screen_to_edit_pos()`, pane_id=3 handling), `src/tui/draw_viewer.rs` (`wrap_spans_hard()`, caches `content_width`)
 
 ### Stream-JSON Parsing
 
@@ -859,7 +901,7 @@ azureal/
 │   │   │   ├── claude.rs   # Claude session handling
 │   │   │   ├── file_browser.rs # File tree and viewer
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
-│   │   │   ├── viewer_edit.rs # Viewer edit mode operations
+│   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing

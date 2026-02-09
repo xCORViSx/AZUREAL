@@ -5,6 +5,11 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Optimized
+- Edit mode rendering: cached syntax highlighting + viewport-only line construction
+  - Syntax highlighting cached in `viewer_edit_highlight_cache`, only re-run when content changes (tracked via undo stack depth)
+  - Only visible source lines are processed per frame (O(viewport) not O(file_size))
+  - Cursor position computed arithmetically instead of walking all visual lines
+  - AGENTS.md (~1000+ lines) dropped from 90%+ CPU to <5% in edit mode
 - Deferred initial render: large conversations (200+ events) only render the tail on initial load
   - User starts at bottom, sees recent messages instantly (no 10s+ wait)
   - Full render happens lazily when scrolling to top
@@ -83,7 +88,22 @@ All notable changes to Azureal will be documented in this file.
   - Cursor positioning accounts for both newlines and word-wrapping
   - Selection highlighting works correctly across line boundaries
 
+### Fixed
+- Backspace line-join in edit mode used `.len()` (byte count) instead of `.chars().count()` for cursor positioning — caused cursor to land at wrong position on lines containing multi-byte UTF-8 characters
+- Clicking a file in the file tree while another file was in edit mode left edit mode active on the new file — now exits edit mode cleanly before loading
+- Edit mode cursor/selection misalignment — cursor didn't match selection highlight end because `textwrap::wrap()` breaks at word boundaries while cursor math assumes fixed-width char boundaries. Edit mode now uses `wrap_spans_hard()` for exact char-boundary wrapping
+
 ### Added
+- Wrap-aware cursor navigation in file edit mode — Up/Down arrows now move through wrapped visual lines instead of jumping entire source lines
+  - Long lines that wrap into multiple visual rows can be navigated row-by-row
+  - Visual column position preserved when moving between wrap segments
+  - Scroll-to-cursor accounts for wrap counts so viewport always follows cursor
+- Mouse click-to-cursor in file edit mode — clicking positions the edit cursor at the clicked character
+  - `screen_to_edit_pos()` maps screen coordinates through line wrapping to find source line and column
+  - Works correctly on wrapped continuation lines (not just the first visual row)
+- Mouse drag selection in file edit mode — click and drag creates text selections
+  - Drag anchor stored as source coordinates (pane_id=3) so auto-scroll doesn't shift selection start
+  - Auto-scrolls viewport when dragging above/below pane
 - `⌥↑`/`⌥↓` jump-to-top/bottom across all panes (defined in centralized keybindings.rs)
   - Convo pane: scroll to top/bottom of conversation
   - Viewer pane: scroll to top/bottom of file

@@ -26,7 +26,7 @@
 - **Clickable Edit Links** — Click file paths in Convo to view diffs in the Viewer pane
 - **Async Rendering** — Convo pane renders on a background thread; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
-- **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection
+- **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
 - **Run Commands** — Save and execute shell commands/scripts per project

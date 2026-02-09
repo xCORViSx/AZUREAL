@@ -36,6 +36,8 @@ impl App {
         self.viewer_edit_redo.clear();
         self.viewer_edit_dirty = false;
         self.viewer_edit_discard_dialog = false;
+        self.viewer_edit_highlight_cache.clear();
+        self.viewer_edit_highlight_ver = usize::MAX;
     }
 
     /// Save edits to file
@@ -122,7 +124,8 @@ impl App {
             // Join with previous line
             self.push_undo();
             let current_line = self.viewer_edit_content.remove(line);
-            let prev_len = self.viewer_edit_content[line - 1].len();
+            // Use char count (not byte len) — cursor is a char index
+            let prev_len = self.viewer_edit_content[line - 1].chars().count();
             self.viewer_edit_content[line - 1].push_str(&current_line);
             self.viewer_edit_cursor = (line - 1, prev_len);
             self.viewer_edit_dirty = true;
@@ -189,21 +192,53 @@ impl App {
         }
     }
 
-    /// Move cursor up
+    /// Move cursor up through wrapped visual lines.
+    /// If the cursor is on a wrapped continuation line (wrap_row > 0),
+    /// it moves up one visual row within the same source line.
+    /// Otherwise it jumps to the previous source line's last wrap row.
     pub fn viewer_edit_up(&mut self) {
         let (line, col) = self.viewer_edit_cursor;
-        if line > 0 {
+        let cw = self.viewer_edit_content_width.max(1);
+        // Which visual column within the current wrap segment
+        let visual_col = col % cw;
+        // Which wrap row we're on (0 = first visual row of this source line)
+        let wrap_row = col / cw;
+
+        if wrap_row > 0 {
+            // Move up one visual row within the same source line
+            let new_col = (wrap_row - 1) * cw + visual_col;
+            let line_len = self.viewer_edit_content[line].chars().count();
+            self.viewer_edit_cursor.1 = new_col.min(line_len);
+        } else if line > 0 {
+            // Jump to previous source line's last wrap row at same visual_col
             let prev_len = self.viewer_edit_content[line - 1].chars().count();
-            self.viewer_edit_cursor = (line - 1, col.min(prev_len));
+            let prev_wraps = ((prev_len.max(1) - 1) / cw) + 1;
+            let new_col = (prev_wraps - 1) * cw + visual_col;
+            self.viewer_edit_cursor = (line - 1, new_col.min(prev_len));
         }
     }
 
-    /// Move cursor down
+    /// Move cursor down through wrapped visual lines.
+    /// If the cursor isn't on the last wrap row of its source line,
+    /// it moves down one visual row within the same source line.
+    /// Otherwise it jumps to the next source line's first wrap row.
     pub fn viewer_edit_down(&mut self) {
         let (line, col) = self.viewer_edit_cursor;
-        if line + 1 < self.viewer_edit_content.len() {
+        let cw = self.viewer_edit_content_width.max(1);
+        let visual_col = col % cw;
+        let wrap_row = col / cw;
+        let line_len = self.viewer_edit_content[line].chars().count();
+        // Total visual rows this source line occupies
+        let total_wraps = if line_len == 0 { 1 } else { ((line_len - 1) / cw) + 1 };
+
+        if wrap_row + 1 < total_wraps {
+            // Move down one visual row within the same source line
+            let new_col = (wrap_row + 1) * cw + visual_col;
+            self.viewer_edit_cursor.1 = new_col.min(line_len);
+        } else if line + 1 < self.viewer_edit_content.len() {
+            // Jump to next source line's first wrap row at same visual_col
             let next_len = self.viewer_edit_content[line + 1].chars().count();
-            self.viewer_edit_cursor = (line + 1, col.min(next_len));
+            self.viewer_edit_cursor = (line + 1, visual_col.min(next_len));
         }
     }
 
@@ -220,18 +255,27 @@ impl App {
         }
     }
 
-    /// Ensure cursor line is visible in viewport
+    /// Ensure cursor is visible in viewport, accounting for line wrapping.
+    /// Computes the visual line index by summing wrap counts for all source
+    /// lines before the cursor, plus the cursor's own wrap offset.
     pub fn viewer_edit_scroll_to_cursor(&mut self) {
-        let (cursor_line, _) = self.viewer_edit_cursor;
+        let (cursor_line, cursor_col) = self.viewer_edit_cursor;
+        let cw = self.viewer_edit_content_width.max(1);
         let viewport = self.viewer_viewport_height;
 
-        // Scroll up if cursor above viewport
-        if cursor_line < self.viewer_scroll {
-            self.viewer_scroll = cursor_line;
+        // Sum visual lines for all source lines before cursor_line
+        let mut visual_line: usize = 0;
+        for i in 0..cursor_line.min(self.viewer_edit_content.len()) {
+            let len = self.viewer_edit_content[i].chars().count();
+            visual_line += if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
         }
-        // Scroll down if cursor below viewport
-        else if cursor_line >= self.viewer_scroll + viewport {
-            self.viewer_scroll = cursor_line.saturating_sub(viewport - 1);
+        // Add cursor's wrap offset within its source line
+        visual_line += cursor_col / cw;
+
+        if visual_line < self.viewer_scroll {
+            self.viewer_scroll = visual_line;
+        } else if visual_line >= self.viewer_scroll + viewport {
+            self.viewer_scroll = visual_line.saturating_sub(viewport - 1);
         }
     }
 

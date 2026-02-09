@@ -393,6 +393,47 @@ fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'stat
     result
 }
 
+/// Hard char-boundary wrapping for edit mode. Splits spans at exact
+/// `max_width` character positions (no word-boundary logic). This
+/// ensures cursor math (`col / cw`, `col % cw`) perfectly matches
+/// the visual layout — textwrap's word-wrapping breaks at word
+/// boundaries which shifts characters vs the fixed-width assumption.
+fn wrap_spans_hard(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
+    if max_width == 0 { return vec![spans]; }
+
+    // Flatten all spans into a list of (char, style) pairs
+    let mut chars_styled: Vec<(char, Style)> = Vec::new();
+    for span in &spans {
+        let style = span.style;
+        for c in span.content.chars() {
+            chars_styled.push((c, style));
+        }
+    }
+    if chars_styled.is_empty() { return vec![vec![]]; }
+
+    // Split into chunks of exactly max_width chars
+    let mut result: Vec<Vec<Span<'static>>> = Vec::new();
+    for chunk in chars_styled.chunks(max_width) {
+        // Merge consecutive chars with same style into spans
+        let mut line_spans: Vec<Span<'static>> = Vec::new();
+        let mut buf = String::new();
+        let mut cur_style = chunk[0].1;
+        for &(c, style) in chunk {
+            if style == cur_style {
+                buf.push(c);
+            } else {
+                if !buf.is_empty() { line_spans.push(Span::styled(std::mem::take(&mut buf), cur_style)); }
+                buf.push(c);
+                cur_style = style;
+            }
+        }
+        if !buf.is_empty() { line_spans.push(Span::styled(buf, cur_style)); }
+        result.push(line_spans);
+    }
+    if result.is_empty() { result.push(vec![]); }
+    result
+}
+
 /// Apply selection highlighting to a line based on visual line indices.
 /// `gutter` skips that many leading chars (line number column) from highlighting.
 pub(crate) fn apply_selection_to_line(
@@ -524,13 +565,22 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     let total_lines = app.viewer_edit_content.len();
     let line_num_width = total_lines.to_string().len().max(3);
     let content_width = viewport_width.saturating_sub(line_num_width + 3);
+    // Cache so cursor movement logic can navigate wrapped visual lines
+    app.viewer_edit_content_width = content_width;
 
-    // Get syntax highlighting for all edit content
-    let full_content = app.viewer_edit_content.join("\n");
-    let highlighted = app.syntax_highlighter.highlight_file(&full_content, &path_str);
+    // Cache syntax highlighting — only re-run when content actually changes.
+    // Track via undo stack len: every edit pushes undo, so len changes = content changed.
+    // Also invalidate when cache is empty (first render) or entering edit mode (ver = MAX).
+    let undo_ver = app.viewer_edit_undo.len();
+    if app.viewer_edit_highlight_ver != undo_ver || app.viewer_edit_highlight_cache.is_empty() {
+        let full_content = app.viewer_edit_content.join("\n");
+        app.viewer_edit_highlight_cache = app.syntax_highlighter.highlight_file(&full_content, &path_str);
+        app.viewer_edit_highlight_ver = undo_ver;
+    }
 
     let scroll = app.viewer_scroll;
     let (cursor_line, cursor_col) = app.viewer_edit_cursor;
+    let cw = content_width.max(1);
 
     // Normalize selection so start <= end (user can select backwards)
     let selection = app.viewer_edit_selection.map(|(sl, sc, el, ec)| {
@@ -541,18 +591,49 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         }
     });
 
-    // Build all wrapped lines with source line tracking
-    // Each entry: (source_line_idx, wrap_idx, Line)
-    let mut all_lines: Vec<(usize, usize, Line)> = Vec::new();
-    for (idx, line_content) in app.viewer_edit_content.iter().enumerate() {
+    // Find which source lines are visible. Walk source lines summing wrap
+    // counts until we've covered scroll + viewport_height visual lines.
+    // Only process those source lines (avoids O(file) per frame).
+    let mut visual_row = 0usize;
+    let mut first_src = 0usize; // first visible source line
+    let mut first_wrap_skip = 0usize; // wrap rows to skip on first source line
+    let mut found_first = false;
+    let mut last_src = app.viewer_edit_content.len(); // exclusive
+
+    for (i, line_str) in app.viewer_edit_content.iter().enumerate() {
+        let len = line_str.chars().count();
+        let wraps = if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+
+        if !found_first {
+            if visual_row + wraps > scroll {
+                first_src = i;
+                first_wrap_skip = scroll - visual_row;
+                found_first = true;
+            }
+        }
+        visual_row += wraps;
+        if found_first && visual_row >= scroll + viewport_height {
+            last_src = i + 1;
+            break;
+        }
+    }
+    if !found_first { first_src = app.viewer_edit_content.len(); }
+
+    // Build only the visible display lines
+    let mut final_lines: Vec<Line> = Vec::with_capacity(viewport_height);
+    // Track which source lines are in the viewport (for cursor positioning)
+    let mut viewport_visual_base = scroll; // visual index of first display line
+    let _ = viewport_visual_base; // used implicitly via scroll
+
+    for idx in first_src..last_src.min(app.viewer_edit_content.len()) {
+        let line_content = &app.viewer_edit_content[idx];
         let line_num_style = if idx == cursor_line {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
-        // Get highlighted spans for this line and wrap them
-        let spans = highlighted.get(idx).cloned().unwrap_or_default();
+        let spans = app.viewer_edit_highlight_cache.get(idx).cloned().unwrap_or_default();
 
         // Apply selection highlighting if this line is in selection range
         let spans = if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) = selection {
@@ -565,9 +646,13 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
             spans
         };
 
-        let wrapped = wrap_spans(spans, content_width);
+        let wrapped = wrap_spans_hard(spans, content_width);
 
         for (wrap_idx, wrapped_spans) in wrapped.into_iter().enumerate() {
+            // Skip wrap rows before scroll start (only applies to first_src)
+            if idx == first_src && wrap_idx < first_wrap_skip { continue; }
+            if final_lines.len() >= viewport_height { break; }
+
             let line_num = if wrap_idx == 0 {
                 format!("{:>width$} │ ", idx + 1, width = line_num_width)
             } else {
@@ -575,19 +660,12 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
             };
             let mut line_spans = vec![Span::styled(line_num, line_num_style)];
             line_spans.extend(wrapped_spans);
-            all_lines.push((idx, wrap_idx, Line::from(line_spans)));
+            final_lines.push(Line::from(line_spans));
         }
+        if final_lines.len() >= viewport_height { break; }
     }
 
-    // Get display lines based on scroll
-    let display_lines: Vec<Line> = all_lines.iter()
-        .skip(scroll)
-        .take(viewport_height)
-        .map(|(_, _, line)| line.clone())
-        .collect();
-
     // Pad with empty lines if needed
-    let mut final_lines = display_lines;
     while final_lines.len() < viewport_height {
         let line_num = format!("{:>width$} │ ", "~", width = line_num_width);
         final_lines.push(Line::from(Span::styled(line_num, Style::default().fg(Color::DarkGray))));
@@ -614,57 +692,23 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     let widget = Paragraph::new(final_lines).block(block);
     f.render_widget(widget, area);
 
-    // Calculate cursor position accounting for wrapping
-    // Find which visual line the cursor is on
-    let mut cursor_visual_line: Option<usize> = None;
-    let mut cursor_visual_col = cursor_col;
-
-    for (visual_idx, (src_line, wrap_idx, _)) in all_lines.iter().enumerate() {
-        if *src_line == cursor_line {
-            let wrap_start = wrap_idx * content_width;
-            let wrap_end = wrap_start + content_width;
-            if cursor_col >= wrap_start && cursor_col < wrap_end {
-                cursor_visual_line = Some(visual_idx);
-                cursor_visual_col = cursor_col - wrap_start;
-                break;
-            } else if cursor_col >= wrap_end && *wrap_idx == 0 {
-                // Continue looking for the right wrap segment
-            } else if *wrap_idx > 0 && cursor_col < wrap_start {
-                // Cursor is before this wrap, use previous
-                cursor_visual_line = Some(visual_idx.saturating_sub(1));
-                cursor_visual_col = content_width; // End of previous line
-                break;
-            }
-        }
-        // If we passed the cursor line, cursor is at end of last wrap
-        if *src_line > cursor_line && cursor_visual_line.is_none() {
-            cursor_visual_line = Some(visual_idx.saturating_sub(1));
-            break;
-        }
+    // Compute cursor visual position arithmetically — no all_lines walk needed.
+    // Sum wrap counts for source lines 0..cursor_line, add cursor's wrap offset.
+    let mut cursor_visual_line = 0usize;
+    for i in 0..cursor_line.min(app.viewer_edit_content.len()) {
+        let len = app.viewer_edit_content[i].chars().count();
+        cursor_visual_line += if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
     }
-
-    // Handle cursor at end of line
-    if cursor_visual_line.is_none() && cursor_line < app.viewer_edit_content.len() {
-        // Find last visual line for cursor_line
-        for (visual_idx, (src_line, _, _)) in all_lines.iter().enumerate().rev() {
-            if *src_line == cursor_line {
-                cursor_visual_line = Some(visual_idx);
-                let line_len = app.viewer_edit_content[cursor_line].chars().count();
-                cursor_visual_col = cursor_col.min(line_len) % content_width.max(1);
-                break;
-            }
-        }
-    }
+    cursor_visual_line += cursor_col / cw;
+    let cursor_visual_col = cursor_col % cw;
 
     // Position cursor if visible in viewport
-    if let Some(visual_line) = cursor_visual_line {
-        if visual_line >= scroll && visual_line < scroll + viewport_height {
-            let screen_line = visual_line - scroll;
-            f.set_cursor_position((
-                area.x + 1 + line_num_width as u16 + 3 + cursor_visual_col as u16,
-                area.y + 1 + screen_line as u16,
-            ));
-        }
+    if cursor_visual_line >= scroll && cursor_visual_line < scroll + viewport_height {
+        let screen_line = cursor_visual_line - scroll;
+        f.set_cursor_position((
+            area.x + 1 + line_num_width as u16 + 3 + cursor_visual_col as u16,
+            area.y + 1 + screen_line as u16,
+        ));
     }
 }
 

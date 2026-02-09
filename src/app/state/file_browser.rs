@@ -110,18 +110,25 @@ impl App {
         let Some(idx) = self.file_tree_selected else { return };
         let Some(entry) = self.file_tree_entries.get(idx) else { return };
         if entry.is_dir { return; }
+        // Clone path early so the borrow on file_tree_entries is dropped
+        // before we call exit_viewer_edit_mode (needs &mut self)
+        let path = entry.path.clone();
 
-        match std::fs::read_to_string(&entry.path) {
+        if self.viewer_edit_mode {
+            self.exit_viewer_edit_mode();
+        }
+
+        match std::fs::read_to_string(&path) {
             Ok(content) => {
                 self.viewer_content = Some(content);
-                self.viewer_path = Some(entry.path.clone());
+                self.viewer_path = Some(path);
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
             }
             Err(e) => {
                 self.viewer_content = Some(format!("Error reading file: {}", e));
-                self.viewer_path = Some(entry.path.clone());
+                self.viewer_path = Some(path);
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;

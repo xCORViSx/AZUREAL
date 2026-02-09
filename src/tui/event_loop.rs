@@ -104,7 +104,12 @@ pub async fn run_app(
                                 use ratatui::layout::Position;
                                 let mpos = Position::new(mc, mr);
                                 if app.pane_viewer.contains(mpos) {
-                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
+                                    if app.viewer_edit_mode {
+                                        // Edit mode: click sets edit cursor, drag anchor stores source coords
+                                        if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
+                                            app.mouse_drag_start = Some((src_line, src_col, 3));
+                                        }
+                                    } else if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
                                         app.mouse_drag_start = Some((cl, cc, 0));
                                     }
                                 } else if app.pane_convo.contains(mpos) {
@@ -486,9 +491,15 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         return true;
     }
 
-    // Viewer pane — just focus
+    // Viewer pane — focus, and position edit cursor if in edit mode
     if app.pane_viewer.contains(pos) {
         app.focus = Focus::Viewer;
+        if app.viewer_edit_mode {
+            if let Some((src_line, src_col)) = screen_to_edit_pos(app, col, row) {
+                app.viewer_edit_cursor = (src_line, src_col);
+                app.viewer_edit_selection = None;
+            }
+        }
         app.last_click = Some((std::time::Instant::now(), col, row));
         return true;
     }
@@ -647,6 +658,53 @@ fn screen_to_cache_pos(
     Some((line, col))
 }
 
+/// Map screen coordinates to (source_line, source_col) in the edit buffer.
+/// Walks source lines summing their visual wrap counts to find which source
+/// line the clicked visual row falls on, then computes the source column
+/// from the wrap segment offset + click column within content area.
+fn screen_to_edit_pos(app: &App, screen_col: u16, screen_row: u16) -> Option<(usize, usize)> {
+    let pane = app.pane_viewer;
+    let cx = pane.x + 1; // inside left border
+    let cy = pane.y + 1; // inside top border
+    if screen_row < cy || screen_col < cx { return None; }
+
+    let total_lines = app.viewer_edit_content.len();
+    let line_num_width = total_lines.to_string().len().max(3);
+    let gutter = line_num_width + 3; // "NNN │ " = line_num_width + " │ "
+    let cw = app.viewer_edit_content_width.max(1);
+
+    // Click column relative to content area (after gutter)
+    let click_x = if (screen_col as usize) >= (cx as usize + gutter) {
+        (screen_col as usize) - (cx as usize) - gutter
+    } else {
+        0
+    };
+    // Click visual row (absolute, accounting for scroll)
+    let visual_row = app.viewer_scroll + (screen_row - cy) as usize;
+
+    // Walk source lines, summing visual line counts, to find which source
+    // line the clicked visual row falls on
+    let mut running = 0usize;
+    for (i, line_str) in app.viewer_edit_content.iter().enumerate() {
+        let len = line_str.chars().count();
+        let wraps = if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+        if visual_row < running + wraps {
+            // Found it — wrap_seg tells us which visual row within this source line
+            let wrap_seg = visual_row - running;
+            let src_col = (wrap_seg * cw + click_x).min(len);
+            return Some((i, src_col));
+        }
+        running += wraps;
+    }
+    // Click is past last line — place at end of last line
+    if !app.viewer_edit_content.is_empty() {
+        let last = total_lines - 1;
+        let last_len = app.viewer_edit_content[last].chars().count();
+        return Some((last, last_len));
+    }
+    None
+}
+
 /// Handle mouse drag: compute text selection from drag anchor to current position.
 /// Drag anchor is stored in cache coordinates (computed on MouseDown) so
 /// auto-scroll during drag doesn't shift the start point.
@@ -704,6 +762,21 @@ fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
             if app.output_selection != new {
                 app.output_selection = new;
                 app.output_viewport_scroll = usize::MAX;
+                return true;
+            }
+            false
+        }
+        // --- Edit mode viewer: anchor = (source_line, source_col) ---
+        3 => {
+            // Auto-scroll when dragging above/below pane
+            if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
+            else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
+            let Some((el, ec)) = screen_to_edit_pos(app, col, row) else { return false };
+            // Update edit selection from anchor to current drag position
+            let new = Some((anchor_line, anchor_col, el, ec));
+            if app.viewer_edit_selection != new {
+                app.viewer_edit_selection = new;
+                app.viewer_edit_cursor = (el, ec);
                 return true;
             }
             false

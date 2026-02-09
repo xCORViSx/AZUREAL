@@ -233,6 +233,14 @@ pub struct App {
     pub viewer_edit_save_dialog: bool,
     /// Text selection in edit mode: (start_line, start_col, end_line, end_col)
     pub viewer_edit_selection: Option<(usize, usize, usize, usize)>,
+    /// Wrap width for edit mode (viewport chars available per visual line).
+    /// Cached from draw_edit_mode so cursor movement can navigate wrapped visual lines.
+    pub viewer_edit_content_width: usize,
+    /// Cached syntax-highlighted spans per source line. Only recomputed when
+    /// `viewer_edit_highlight_ver` doesn't match `viewer_edit_undo.len()` (content changed).
+    pub viewer_edit_highlight_cache: Vec<Vec<ratatui::text::Span<'static>>>,
+    /// Version counter for highlight cache invalidation (tracks undo stack depth at last highlight)
+    pub viewer_edit_highlight_ver: usize,
     /// Clipboard for copy/cut/paste operations
     pub clipboard: String,
     /// Text selection for read-only viewer: (start_visual_line, start_col, end_visual_line, end_col)
@@ -441,6 +449,9 @@ impl App {
             viewer_edit_discard_dialog: false,
             viewer_edit_save_dialog: false,
             viewer_edit_selection: None,
+            viewer_edit_content_width: 80,
+            viewer_edit_highlight_cache: Vec::new(),
+            viewer_edit_highlight_ver: usize::MAX,
             clipboard: String::new(),
             viewer_selection: None,
             output_selection: None,
