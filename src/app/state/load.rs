@@ -211,6 +211,9 @@ impl App {
             }
         }
 
+        // Cache the session title for the title bar (avoids file I/O on every draw frame)
+        self.update_title_session_name();
+
         // Load file tree for new session
         self.load_file_tree();
 
@@ -233,6 +236,28 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Cache the session display name for the title bar.
+    /// Reads session_names TOML once here so draw_title_bar() is zero I/O.
+    pub fn update_title_session_name(&mut self) {
+        let Some(session) = self.current_session() else {
+            self.title_session_name.clear();
+            return;
+        };
+        let branch = session.branch_name.clone();
+        let names = self.load_all_session_names();
+        // Resolve the active claude session ID for this worktree
+        let session_id = self.session_selected_file_idx.get(&branch)
+            .and_then(|idx| self.session_files.get(&branch).and_then(|f| f.get(*idx)))
+            .map(|(id, _, _)| id.clone())
+            .or_else(|| self.sessions.get(self.selected_session?)
+                .and_then(|s| s.claude_session_id.clone()))
+            .or_else(|| self.claude_session_ids.get(&branch).cloned());
+        self.title_session_name = match session_id {
+            Some(id) => names.get(&id).cloned().unwrap_or_else(|| format_uuid_short(&id)),
+            None => String::new(),
+        };
     }
 
     /// Check if session file changed (lightweight - just checks file size)
@@ -603,4 +628,12 @@ impl App {
 
         Ok(())
     }
+}
+
+/// Format a UUID-like session ID as "xxxxxxxx-…" (first group + dash + ellipsis)
+fn format_uuid_short(id: &str) -> String {
+    if let Some(dash) = id.find('-') {
+        if dash >= 8 { return format!("{}-…", &id[..dash]); }
+    }
+    if id.len() > 12 { format!("{}…", &id[..11]) } else { id.to_string() }
 }

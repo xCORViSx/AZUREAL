@@ -13,13 +13,17 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
     Frame, Terminal,
 };
 use std::io;
 
 use crate::app::{App, Focus};
 use crate::config::Config;
+use super::util::AZURE;
 
 use super::event_loop;
 use super::{draw_dialogs, draw_file_tree, draw_input, draw_output, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
@@ -86,13 +90,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // │                 Status Bar                      │
     // └────────────────────────────────────────────────┘
 
-    // Step 1: Reserve status bar at bottom
+    // Step 1: Reserve title bar at top and status bar at bottom
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .constraints([Constraint::Length(1), Constraint::Min(5), Constraint::Length(1)])
         .split(f.area());
-    let content_area = outer[0];
-    let status_area = outer[1];
+    let title_area = outer[0];
+    let content_area = outer[1];
+    let status_area = outer[2];
 
     // Step 2: Split content horizontally — left side (3 panes + input) vs Convo (full height)
     let h_split = Layout::default()
@@ -164,6 +169,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     app.pane_viewer = top_h[2];
     app.pane_convo = convo_area;
 
+    // Draw title bar
+    draw_title_bar(f, app, title_area);
+
     // Draw panes
     draw_sidebar::draw_sidebar(f, app, top_h[0]);
     draw_file_tree::draw_file_tree(f, app, top_h[1]);
@@ -196,4 +204,70 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     } else if app.run_command_dialog.is_some() {
         draw_dialogs::draw_run_command_dialog(f, app);
     }
+}
+
+/// Draw the title bar: "azureal" left, session title centered, branch right
+fn draw_title_bar(f: &mut Frame, app: &App, area: Rect) {
+    let width = area.width as usize;
+
+    // Left: app name
+    let left = " azureal ";
+    let left_len = left.len();
+
+    // Right: branch name (if session selected)
+    let right_text = app.current_session().map(|s| format!(" {} ", s.name())).unwrap_or_default();
+    let right_len = right_text.len();
+
+    // Center: session title wrapped in brackets, ellipsied to fit between left and right
+    // Uses cached title_session_name (updated on session switch, zero I/O here)
+    let center_text = &app.title_session_name;
+
+    // Wrap center text in brackets and ellipsis to fit available space
+    let max_center = width.saturating_sub(left_len + right_len + 2);
+    let bracketed = if center_text.is_empty() {
+        String::new()
+    } else {
+        let inner_max = max_center.saturating_sub(2); // room for [ ]
+        if center_text.chars().count() <= inner_max {
+            format!("[{}]", center_text)
+        } else if inner_max > 3 {
+            // Ellipsis the center text
+            let truncated: String = center_text.chars().take(inner_max - 1).collect();
+            format!("[{}…]", truncated)
+        } else {
+            String::new()
+        }
+    };
+
+    // Build the full line: left-pad center to be visually centered, fill rest with spaces
+    let center_len = bracketed.chars().count();
+    // Target center position (middle of total width)
+    let center_start = if center_len > 0 {
+        (width / 2).saturating_sub(center_len / 2).max(left_len)
+    } else {
+        0
+    };
+    // Clamp so center doesn't overlap right
+    let center_start = center_start.min(width.saturating_sub(right_len + center_len));
+    let gap_left = center_start.saturating_sub(left_len);
+    let gap_right = width.saturating_sub(center_start + center_len + right_len);
+
+    let mut spans = vec![
+        Span::styled(left, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+    ];
+    if center_len > 0 {
+        spans.push(Span::raw(" ".repeat(gap_left)));
+        spans.push(Span::styled(bracketed, Style::default().fg(Color::White)));
+    } else {
+        spans.push(Span::raw(" ".repeat(gap_left)));
+    }
+    spans.push(Span::raw(" ".repeat(gap_right)));
+    if !right_text.is_empty() {
+        spans.push(Span::styled(right_text.clone(), Style::default().fg(Color::DarkGray)));
+    }
+
+    let bar = Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(Color::Rgb(20, 20, 30)))
+        .alignment(Alignment::Left);
+    f.render_widget(bar, area);
 }
