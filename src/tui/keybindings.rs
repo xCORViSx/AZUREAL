@@ -423,6 +423,7 @@ pub fn lookup_action(
 /// Note: Wizard, Terminal, and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
+        HelpSection { title: "Global", bindings: &GLOBAL },
         HelpSection { title: "Worktrees", bindings: &WORKTREES },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
