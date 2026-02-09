@@ -521,7 +521,10 @@ impl App {
         self.token_badge_cache = self.session_tokens.map(|(ctx_tokens, _)| {
             let base_window = self.model_context_window.unwrap_or(200_000);
             let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
-            let pct = (ctx_tokens as f64 / window as f64 * 100.0).min(100.0);
+            // Claude reserves ~33k tokens as auto-compact buffer (compacts at ~83.5% raw).
+            // Subtract the buffer so percentage reflects usable context, not total window.
+            let usable = window.saturating_sub(33_000);
+            let pct = (ctx_tokens as f64 / usable as f64 * 100.0).min(100.0);
             let color = if pct < 60.0 { ratatui::style::Color::Green }
                 else if pct < 80.0 { ratatui::style::Color::Yellow }
                 else { ratatui::style::Color::Red };
