@@ -777,7 +777,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
     // D key (uppercase, i.e. Shift+D) when not in prompt mode - Debug dump
-    if !app.prompt_mode && !app.sidebar_filter_active && key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('D') {
+    // Shift+D: without REPORT_ALL_KEYS, shifted letters arrive as (NONE, Char('D'))
+    if !app.prompt_mode && !app.sidebar_filter_active && key.modifiers.is_empty() && key.code == KeyCode::Char('D') {
         app.dump_debug_output();
         return Ok(());
     }

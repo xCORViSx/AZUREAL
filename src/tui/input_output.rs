@@ -124,7 +124,8 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 app.diff_scroll = 0;
             }
         }
-        (KeyModifiers::SHIFT, KeyCode::Char('R')) => {
+        // Shift+R: without REPORT_ALL_KEYS, arrives as (NONE, 'R')
+        (KeyModifiers::NONE, KeyCode::Char('R')) => {
             if let Some(session) = app.current_session() {
                 if let Some(ref wt_path) = session.worktree_path {
                     if Git::is_rebase_in_progress(wt_path) {

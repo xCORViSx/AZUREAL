@@ -125,7 +125,8 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 // t: tab current file (save to tab bar)
                 (KeyModifiers::NONE, KeyCode::Char('t')) => app.viewer_tab_current(),
                 // T: open tab dialog
-                (KeyModifiers::SHIFT, KeyCode::Char('T')) => {
+                // Shift+T: without REPORT_ALL_KEYS, arrives as (NONE, 'T')
+                (KeyModifiers::NONE, KeyCode::Char('T')) => {
                     if !app.viewer_tabs.is_empty() {
                         app.toggle_viewer_tab_dialog();
                     }
@@ -310,7 +311,7 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
 fn handle_tab_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match (key.modifiers, key.code) {
         // Close dialog
-        (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::SHIFT, KeyCode::Char('T')) => {
+        (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::NONE, KeyCode::Char('T')) => {
             app.viewer_tab_dialog = false;
         }
 
