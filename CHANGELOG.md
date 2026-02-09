@@ -5,6 +5,11 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Projects panel: persistent project management via `~/.azureal/projects.txt`
+  - Auto-registers git repos on startup; shown full-screen when launched outside a git repo
+  - `P` from Worktrees pane opens panel; supports add, delete, rename, and git init
+  - Project switching kills all Claude processes and reloads all session state
+  - Sidebar project header replaced with project name in Worktrees pane border title
 - Session title on Convo pane border: centered `[session name]` between left title and right badges
   - Custom session names from `.azureal/sessions.toml` shown when available
   - Raw UUIDs truncated as `[xxxxxxxx-…]` (first 8 chars)

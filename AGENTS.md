@@ -12,7 +12,9 @@ Azureal (Agent-Zoned Unified Runtime Environment for Autonomous LLMs) is a Rust 
 - Git branches via `git branch | grep azureal/` for archived worktrees
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 
-**Optional State:** `.azureal/sessions.toml` stores custom session name → UUID mappings (only created when user provides custom names)
+**Persistent State:**
+- `~/.azureal/projects.txt` stores registered project paths (auto-created on first launch in a git repo)
+- `.azureal/sessions.toml` stores custom session name → UUID mappings (only created when user provides custom names)
 
 # FEATURES
 
@@ -871,6 +873,29 @@ User-defined shell commands that can be saved and executed from the Worktrees pa
 
 Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker), state methods in `src/app/state/ui.rs`, input handling in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`
 
+### Projects Panel
+
+Persistent project management across azureal sessions. Projects are stored in `~/.azureal/projects.txt` (one path per line, optional `|display_name` suffix). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
+
+**Behavior:**
+- When launched inside a git repo, auto-registers the repo in `projects.txt` and loads normally
+- When launched outside a git repo, shows the Projects panel full-screen so user can pick a project
+- The sidebar no longer shows a project header row — project name appears in the Worktrees pane border title instead
+
+**Panel Actions:**
+- `Enter`: switch to selected project (kills all Claude processes, reloads sessions/files)
+- `a`: add a new project by path (validates it's a git repo)
+- `d`: delete selected project from list (does NOT delete the repo)
+- `n`: rename the selected project's display name
+- `i`: initialize a new git repo at a specified path (or cwd if blank)
+- `Esc`: close panel (only if a project is already loaded)
+- `⌃Q`: quit azureal
+
+**Project Switching:**
+When switching projects, azureal kills all running Claude processes, clears all session/render state (sessions, display events, caches, file watcher), sets the new project via `Project::from_path()`, and reloads sessions, output, and run commands.
+
+Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
+
 ### Creation Wizard
 
 Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
@@ -925,7 +950,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, ProjectsPanel, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
@@ -940,12 +965,14 @@ azureal/
 │   │   ├── render_thread.rs # Background render thread for async convo rendering
 │   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── render_wrap.rs  # Text/span wrapping utilities
-│   │   ├── draw_sidebar.rs # Sessions pane rendering (builds sidebar_row_map for click handling)
+│   │   ├── draw_projects.rs # Projects panel modal (full-screen project selection/management)
+│   │   ├── draw_sidebar.rs # Worktrees pane rendering (project name in border title)
 │   │   ├── draw_file_tree.rs # FileTree pane rendering
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # Centralized keybinding definitions (Action enum, lookup_action(), help_sections())
+│   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree navigation (uses lookup_action())
 │   │   ├── input_viewer.rs # Viewer scroll handling (uses lookup_action())
 │   │   ├── input_output.rs # Convo/Output input handling (uses lookup_action())
@@ -967,7 +994,7 @@ azureal/
 │   │   └── project.rs      # Project info command
 │   ├── claude.rs           # Claude CLI process management
 │   ├── cli/mod.rs          # CLI argument parsing
-│   ├── config.rs           # Configuration paths, Claude session discovery
+│   ├── config.rs           # Configuration paths, Claude session discovery, projects persistence
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)

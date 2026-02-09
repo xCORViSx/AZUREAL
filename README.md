@@ -36,8 +36,9 @@
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
 - **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
+- **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
-- **Zero Footprint** — No database or config files; scans git worktrees and `~/.claude/` at runtime
+- **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements
 
@@ -76,6 +77,7 @@ azureal
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
+| `P` | Projects panel |
 | `R` | Rebase onto main |
 | `d` | View diff |
 | `/` | Search/filter sessions (in Worktrees) |
@@ -100,7 +102,7 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 - Git branches via `git branch | grep azureal/`
 - Claude's session files at `~/.claude/projects/<encoded-path>/*.jsonl`
 
-No database. No config files required. Optional `.azureal/sessions.toml` stores custom session name mappings.
+No database. Minimal config: `~/.azureal/projects.txt` stores registered project paths; optional `.azureal/sessions.toml` stores custom session name mappings.
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 
