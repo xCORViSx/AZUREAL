@@ -140,7 +140,9 @@ All notable changes to Azureal will be documented in this file.
   - Without `REPORT_ALL_KEYS`, shifted letters arrive as `(NONE, Char('D'))` not `(SHIFT, Char('D'))`
   - All three handlers were matching on `SHIFT` modifier which never fires in our Kitty protocol config
 - `⌥r` (add run command) now works on macOS
-  - macOS ⌥+r produces unicode `®`, not ALT modifier — added `Char('®')` match arm
+  - macOS ⌥+letter produces unicode chars (⌥r→®, ⌥c→ç, etc.), not ALT modifier
+  - Added `macos_opt_key()` lookup in keybindings.rs mapping all 26 ⌥+letter chars back to original letters
+  - All future ⌥+letter bindings should use `macos_opt_key(c) == Some('x')` pattern
 - File tree entries now highlight when clicked
   - Missing `invalidate_file_tree()` call after setting selection from mouse click — cache was never rebuilt
 - Shift+Arrow selection highlight now visible in input pane

@@ -497,7 +497,7 @@ match action {
 - Adding/changing keybindings only requires one code change
 - Dual-key bindings (j/↓) handled via `alternatives` field
 
-**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. Never use `⌥+letter` combos for keybindings in text input modes. Use `⌃+letter` (Ctrl) instead — those send real control codes. `⌥+arrow` keys work fine since arrows don't produce Unicode.
+**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For non-input keybindings that use `⌥+letter`, use `macos_opt_key()` from `src/tui/keybindings.rs` to map the unicode char back to the original letter (covers all 26 a-z). Pattern: match `KeyCode::Char(c) if macos_opt_key(c) == Some('r')` alongside the `ALT + 'r'` arm for cross-platform support. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes.
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
