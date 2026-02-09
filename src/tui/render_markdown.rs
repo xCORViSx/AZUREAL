@@ -18,8 +18,8 @@ pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'stati
     let mut in_code_block = false;
     let text_lines: Vec<&str> = text.lines().collect();
 
-    // Pre-scan for tables and calculate column widths
-    let table_info = scan_tables(&text_lines);
+    // Pre-scan for tables and calculate column widths, clamped to fit bubble
+    let table_info = scan_tables(&text_lines, bubble_width);
 
     let get_table_info = |idx: usize| -> Option<&(usize, usize, Vec<usize>)> {
         table_info.iter().find(|(s, e, _)| idx >= *s && idx < *e)
@@ -101,8 +101,10 @@ pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'stati
     lines
 }
 
-/// Pre-scan text to identify table ranges and calculate column widths
-fn scan_tables(text_lines: &[&str]) -> Vec<(usize, usize, Vec<usize>)> {
+/// Pre-scan text to identify table ranges and calculate column widths.
+/// Column widths are clamped so the total table fits within bubble_width.
+/// Layout budget: 2 (orange gutter "│ ") + 1 (left border) + sum(col+2) + (ncols-1) separators + 1 (right border)
+fn scan_tables(text_lines: &[&str], bubble_width: usize) -> Vec<(usize, usize, Vec<usize>)> {
     let mut table_info = Vec::new();
     let mut table_start: Option<usize> = None;
     let mut current_widths: Vec<usize> = Vec::new();
@@ -130,15 +132,53 @@ fn scan_tables(text_lines: &[&str]) -> Vec<(usize, usize, Vec<usize>)> {
                 }
             }
         } else if let Some(start) = table_start {
+            clamp_col_widths(&mut current_widths, bubble_width);
             table_info.push((start, idx, current_widths.clone()));
             table_start = None;
         }
     }
     if let Some(start) = table_start {
+        clamp_col_widths(&mut current_widths, bubble_width);
         table_info.push((start, text_lines.len(), current_widths.clone()));
     }
 
     table_info
+}
+
+/// Shrink column widths proportionally so the table fits within bubble_width.
+/// Each column gets at least 3 chars (enough for "a…" + padding).
+fn clamp_col_widths(widths: &mut [usize], bubble_width: usize) {
+    if widths.is_empty() { return; }
+    // Total table width = 2 (gutter) + 1 (border) + sum(w+2) + (n-1) separators + 1 (border)
+    // = 4 + sum(w+2) + (n-1) = 4 + 2*n + sum(w) + n - 1 = 3 + 3*n + sum(w)
+    let n = widths.len();
+    let overhead = 3 + 3 * n;
+    let total: usize = widths.iter().sum();
+    let table_width = overhead + total;
+    if table_width <= bubble_width { return; }
+
+    // Available space for all column content combined
+    let available = bubble_width.saturating_sub(overhead);
+    if available == 0 {
+        for w in widths.iter_mut() { *w = 1; }
+        return;
+    }
+
+    // Proportional shrink: each col gets (original_w / total) * available, min 3
+    let min_w = 3usize;
+    for w in widths.iter_mut() {
+        let shrunk = (*w as f64 / total as f64 * available as f64).floor() as usize;
+        *w = shrunk.max(min_w).min(available);
+    }
+
+    // If rounding left us over budget, trim largest columns one char at a time
+    let mut sum: usize = widths.iter().sum();
+    while sum > available {
+        let max_idx = widths.iter().enumerate().max_by_key(|(_, w)| **w).map(|(i, _)| i).unwrap();
+        if widths[max_idx] <= min_w { break; }
+        widths[max_idx] -= 1;
+        sum -= 1;
+    }
 }
 
 /// Render a table row with borders
@@ -179,11 +219,19 @@ fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, t
         spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
         for (j, cell) in cells.iter().enumerate() {
             let w = col_widths.get(j).copied().unwrap_or(cell.trim().len());
-            let cell_text = format!(" {:width$} ", cell.trim(), width = w);
-            if is_header {
-                spans.push(Span::styled(cell_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+            // Truncate cell text with ellipsis if it exceeds column width
+            let trimmed_cell = cell.trim();
+            let cell_chars: usize = trimmed_cell.chars().count();
+            let display_text = if cell_chars > w && w >= 2 {
+                let truncated: String = trimmed_cell.chars().take(w - 1).collect();
+                format!(" {}… ", truncated)
             } else {
-                spans.push(Span::styled(cell_text, Style::default().fg(Color::White)));
+                format!(" {:width$} ", trimmed_cell, width = w)
+            };
+            if is_header {
+                spans.push(Span::styled(display_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+            } else {
+                spans.push(Span::styled(display_text, Style::default().fg(Color::White)));
             }
             spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
         }
