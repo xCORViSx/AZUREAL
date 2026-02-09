@@ -17,7 +17,7 @@
 ## Features
 
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
-- **4-Pane TUI + Title Bar** — Worktrees, FileTree, Viewer, and Convo panes with Tab cycling; title bar shows `[session name]` centered with branch on right
+- **4-Pane TUI** — Worktrees, FileTree, Viewer, and Convo panes with Tab cycling; Convo border shows centered `[session name]`
 - **File Browser** — Navigate worktree files with expand/collapse, open in syntax-highlighted Viewer
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support

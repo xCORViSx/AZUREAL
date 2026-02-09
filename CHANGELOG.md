@@ -5,10 +5,10 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Title bar at top of TUI: "azureal" left, session name centered in `[brackets]`, branch name right
+- Session title on Convo pane border: centered `[session name]` between left title and right badges
   - Custom session names from `.azureal/sessions.toml` shown when available
-  - Raw UUIDs truncated as `[xxxxxxxx-...]` (first 8 chars)
-  - Ellipsis before overlapping left/right labels
+  - Raw UUIDs truncated as `[xxxxxxxx-…]` (first 8 chars)
+  - Ellipsis when name would overlap adjacent titles
   - Title cached on session switch (zero file I/O in render path)
 - Kernel-level file watching via `notify` crate (replaces 500ms stat() polling)
   - Session file changes detected instantly via kqueue (macOS) / inotify (Linux)

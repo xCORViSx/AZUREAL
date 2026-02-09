@@ -53,30 +53,26 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 
 ### TUI Interface
 
-A ratatui-based terminal interface with 4-pane layout, title bar, and status bar:
+A ratatui-based terminal interface with 4-pane layout and status bar:
 
 ```
-┌─ azureal ──────────── [session name] ──────── branch ─┐
-├───────────┬──────────┬─────────────┬─────────────────┤
-│ Worktrees │ FileTree │   Viewer    │                 │
-│   (40)    │   (40)   │ (50% rem)   │      Convo      │
-├───────────┴──────────┴─────────────┤  (50% rem,      │
-│     Input / Terminal               │   full height)  │
-├────────────────────────────────────┴────────────────┤
-│                    Status Bar                        │
-└─────────────────────────────────────────────────────┘
+┌───────────┬──────────┬─────────────┬─ Convo [session] ─┐
+│ Worktrees │ FileTree │   Viewer    │                    │
+│   (40)    │   (40)   │ (50% rem)   │      Convo         │
+├───────────┴──────────┴─────────────┤  (50% rem,         │
+│     Input / Terminal               │   full height)     │
+├────────────────────────────────────┴───────────────────┤
+│                    Status Bar                           │
+└────────────────────────────────────────────────────────┘
 ```
-
-**Bars:**
-- **Title Bar** (1 row, top): "azureal" bold azure on left, session name centered in `[brackets]`, branch name dimmed on right. Custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`. Center text ellipsied before reaching left/right labels. Dark background (`Rgb(20,20,30)`). Title cached on session switch (`title_session_name` field) — zero file I/O in render path.
-- **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
 **Panes:**
 - **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
 - **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
-- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border shows title on the left and token usage + PID/exit code on the right (border characters fill the gap, not spaces). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%) representing context window consumption — helps predict when context compaction will occur. PID shown in green while Claude is running; switches to exit code on process exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Right`.
+- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
+- **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#007FFF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
