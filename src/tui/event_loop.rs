@@ -72,7 +72,7 @@ pub async fn run_app(
         // idle to avoid burning CPU spinning on an empty event queue.
         // Short poll when we have pending work: draw waiting, render in-flight,
         // or Claude streaming. Ensures fast pickup without burning CPU when idle.
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing { 16 } else { 100 };
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -181,17 +181,53 @@ pub async fn run_app(
             }
         }
 
-        // Poll session file for changes (two-phase: lightweight size check, then parse if needed)
-        // check_session_file() is cheap (just stat()), poll_session_file() does the expensive parse
+        // --- File watcher: drain kernel-level notify events (non-blocking) ---
+        // When notify is active, filesystem events set dirty flags directly.
+        // Falls back to stat() polling if the watcher failed to initialize.
+        if let Some(ref watcher) = app.file_watcher {
+            while let Some(evt) = watcher.try_recv() {
+                match evt {
+                    crate::watcher::WatchEvent::SessionFileChanged => {
+                        app.session_file_dirty = true;
+                    }
+                    crate::watcher::WatchEvent::WorktreeChanged => {
+                        app.file_tree_refresh_pending = true;
+                        app.worktree_last_notify = Instant::now();
+                    }
+                    crate::watcher::WatchEvent::WatcherFailed(_) => {
+                        app.file_watcher = None;
+                        break;
+                    }
+                }
+            }
+        }
+
         let now_poll = Instant::now();
-        if now_poll.duration_since(last_session_poll) >= min_poll_interval {
+
+        // Parse session file when dirty (set by watcher or fallback polling)
+        if app.session_file_dirty {
+            if app.poll_session_file() { needs_redraw = true; }
+        }
+
+        // Fallback: stat() polling when watcher is unavailable
+        if app.file_watcher.is_none() && now_poll.duration_since(last_session_poll) >= min_poll_interval {
             app.check_session_file();
-            if app.poll_session_file() {
-                needs_redraw = true;
-            }
-            if app.poll_interactive_sessions() {
-                needs_redraw = true;
-            }
+            if app.poll_session_file() { needs_redraw = true; }
+        }
+
+        // Debounced file tree refresh: wait 500ms after last worktree change
+        // to coalesce rapid creates/deletes (e.g., Claude creating many files)
+        if app.file_tree_refresh_pending
+            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
+        {
+            app.load_file_tree();
+            app.file_tree_refresh_pending = false;
+            needs_redraw = true;
+        }
+
+        // Interactive sessions + timer-based housekeeping
+        if now_poll.duration_since(last_session_poll) >= min_poll_interval {
+            if app.poll_interactive_sessions() { needs_redraw = true; }
             last_session_poll = now_poll;
         }
 

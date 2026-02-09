@@ -98,6 +98,13 @@ pub struct App {
     pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
+    /// Kernel-level file watcher (replaces stat() polling for change detection).
+    /// None if notify failed to initialize — falls back to polling in that case.
+    pub file_watcher: Option<crate::watcher::FileWatcher>,
+    /// Whether the worktree directory changed (debounced file tree refresh)
+    pub file_tree_refresh_pending: bool,
+    /// Timestamp of last worktree change notification (for 500ms debounce)
+    pub worktree_last_notify: std::time::Instant,
     /// Per-session terminals (persist when switching sessions)
     pub session_terminals: HashMap<String, SessionTerminal>,
     /// FileTree entries for current session's worktree
@@ -394,6 +401,9 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
+            file_watcher: crate::watcher::FileWatcher::spawn(),
+            file_tree_refresh_pending: false,
+            worktree_last_notify: std::time::Instant::now(),
             session_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),
             file_tree_selected: None,

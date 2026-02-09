@@ -213,6 +213,26 @@ impl App {
 
         // Load file tree for new session
         self.load_file_tree();
+
+        // Register file watches for the new session file and worktree
+        self.sync_file_watches();
+    }
+
+    /// Tell the file watcher thread to watch the current session file and
+    /// worktree directory. Called after session switch (from load_session_output).
+    pub fn sync_file_watches(&self) {
+        let Some(ref watcher) = self.file_watcher else { return };
+        watcher.send(crate::watcher::WatchCommand::ClearAll);
+        if let Some(ref path) = self.session_file_path {
+            watcher.send(crate::watcher::WatchCommand::WatchSessionFile(path.clone()));
+        }
+        if let Some(idx) = self.selected_session {
+            if let Some(session) = self.sessions.get(idx) {
+                if let Some(ref wt_path) = session.worktree_path {
+                    watcher.send(crate::watcher::WatchCommand::WatchWorktree(wt_path.to_path_buf()));
+                }
+            }
+        }
     }
 
     /// Check if session file changed (lightweight - just checks file size)

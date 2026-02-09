@@ -44,6 +44,9 @@ syntect = "5.2"
 textwrap = "0.16.2"
 unicode-width = "0.2"
 
+# File watching (kqueue on macOS, inotify on Linux, ReadDirectoryChangesW on Windows)
+notify = "8.2"
+
 # Clipboard
 arboard = "3"
 
