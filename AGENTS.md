@@ -609,7 +609,7 @@ Claude responses are parsed for markdown syntax and rendered with proper styling
 - `*italic*` → italic text without markers
 - `` `inline code` `` → yellow text on dark background
 - ``` code blocks ``` → box-drawn borders with language label
-- `| table | rows |` → box-drawing characters (│, ├, ┼, ┤)
+- `| table | rows |` → box-drawing characters (│, ├, ┼, ┤), column widths clamped to fit bubble width (cells truncated with `…` when too wide)
 - `- bullet` and `1. numbered` lists → indented with cyan bullets
 - `> blockquotes` → gray vertical bar with italic text
 
@@ -918,6 +918,7 @@ azureal/
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
+│   │   ├── render_markdown.rs # Markdown rendering (tables, headers, lists, quotes, code blocks)
 │   │   ├── render_events.rs # DisplayEvent rendering (full + incremental)
 │   │   ├── render_thread.rs # Background render thread for async convo rendering
 │   │   ├── render_tools.rs # Tool result rendering

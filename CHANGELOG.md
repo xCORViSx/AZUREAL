@@ -57,6 +57,10 @@ All notable changes to Azureal will be documented in this file.
   - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
 ### Fixed
+- Tables in convo pane now wrap to fit bubble width instead of clipping at viewport edge
+  - Column widths proportionally shrunk when total table width exceeds available bubble width
+  - Cell text truncated with `…` ellipsis when it overflows its clamped column width
+  - Overhead budget calculated as `3 + 3*ncols + sum(col_widths)` for gutter, borders, and padding
 - Holding arrow keys now repeats cursor movement (was only moving once because `KeyEventKind::Repeat` events were dropped)
 - Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
 - Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
