@@ -133,6 +133,9 @@ All notable changes to Azureal will be documented in this file.
   - Reuses existing `apply_selection_to_line()` from Viewer (made `pub(crate)`)
 
 ### Fixed
+- TodoWrite sticky widget now clears when user sends the next prompt
+  - `extract_skill_tools_from_events()` was setting todos from the last TodoWrite but never clearing when a UserMessage appeared after it
+  - Now tracks `saw_user_after_todo` flag to clear stale todos on session file re-parse
 - Uppercase keybindings (`D` debug dump, `R` rebase, `T` tab dialog) now work correctly
   - Without `REPORT_ALL_KEYS`, shifted letters arrive as `(NONE, Char('D'))` not `(SHIFT, Char('D'))`
   - All three handlers were matching on `SHIFT` modifier which never fires in our Kitty protocol config
