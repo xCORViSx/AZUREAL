@@ -133,9 +133,11 @@ impl App {
             // system/assistant/result/progress), so we can't match on
             // UserMessage. Instead, any assistant or tool event proves
             // Claude received our prompt — the pending bubble is no
-            // longer needed. Trim the stale bubble from the cache
-            // immediately so it doesn't linger while the background
-            // render thread processes the re-render.
+            // longer needed. Just clear the flag and invalidate; the next
+            // background render will naturally exclude the bubble.
+            // NOTE: we do NOT truncate the cache here — rendered_content_line_count
+            // can be stale (from a previous render cycle) and truncating to a stale
+            // value destroys real content, causing messages to vanish permanently.
             if self.pending_user_message.is_some() {
                 let has_response = events.iter().any(|ev| matches!(ev,
                     DisplayEvent::AssistantText { .. }
@@ -144,14 +146,6 @@ impl App {
                 ));
                 if has_response {
                     self.pending_user_message = None;
-                    let trim = self.rendered_content_line_count;
-                    if trim < self.rendered_lines_cache.len() {
-                        self.rendered_lines_cache.truncate(trim);
-                        self.animation_line_indices.retain(|&(idx, _)| idx < trim);
-                        if let Some(&(line_idx, _)) = self.message_bubble_positions.last() {
-                            if line_idx >= trim { self.message_bubble_positions.pop(); }
-                        }
-                    }
                 }
             }
 
