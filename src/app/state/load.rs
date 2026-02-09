@@ -126,6 +126,7 @@ impl App {
         self.current_todos.clear();
         self.subagent_todos.clear();
         self.active_task_tool_ids.clear();
+        self.subagent_parent_idx = None;
         self.awaiting_ask_user_question = false;
         self.ask_user_questions_cache = None;
 

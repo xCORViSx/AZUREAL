@@ -85,8 +85,14 @@ impl App {
                     DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
                         self.pending_tool_calls.insert(tool_use_id.clone());
                         // Track subagent (Task) tool calls — while active, TodoWrite
-                        // events go to subagent_todos instead of overwriting main todos
+                        // events go to subagent_todos instead of overwriting main todos.
+                        // On first Task spawn, snapshot which main todo is in_progress
+                        // so subtasks render directly beneath that parent item.
                         if tool_name == "Task" {
+                            if self.active_task_tool_ids.is_empty() {
+                                self.subagent_parent_idx = self.current_todos.iter()
+                                    .position(|t| t.status == crate::app::TodoStatus::InProgress);
+                            }
                             self.active_task_tool_ids.insert(tool_use_id.clone());
                         }
                         // TodoWrite: route to subagent_todos if a Task is active,
@@ -106,9 +112,10 @@ impl App {
                     }
                     DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
-                        // When a Task (subagent) completes, clear subagent todos
+                        // When a Task (subagent) completes, clear subagent state
                         if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
                             self.subagent_todos.clear();
+                            self.subagent_parent_idx = None;
                         }
                         let lower = content.to_lowercase();
                         if lower.contains("error:") || lower.contains("failed")

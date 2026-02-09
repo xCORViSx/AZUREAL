@@ -416,7 +416,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Render sticky todo widget at bottom of convo pane (main + subagent todos)
     if todo_height > 0 {
-        draw_todo_widget(f, &app.current_todos, &app.subagent_todos, todo_area, app.animation_tick);
+        draw_todo_widget(f, &app.current_todos, &app.subagent_todos, app.subagent_parent_idx, todo_area, app.animation_tick);
     }
 }
 
@@ -515,11 +515,13 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
 }
 
 /// Render the sticky todo widget — shows at the bottom of the convo pane.
-/// Main agent todos show as ✓/●/○, subagent todos show indented with "↳" prefix.
+/// Main agent todos show as ✓/●/○. Subagent todos show indented with "↳" prefix
+/// directly after the parent todo item (the in_progress item when the Task spawned).
 fn draw_todo_widget(
     f: &mut Frame,
     todos: &[crate::app::TodoItem],
     subagent_todos: &[crate::app::TodoItem],
+    parent_idx: Option<usize>,
     area: Rect,
     animation_tick: u64,
 ) {
@@ -528,31 +530,46 @@ fn draw_todo_widget(
     let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
     let pulse = pulse_colors[(animation_tick / 3) as usize % pulse_colors.len()];
 
-    // Build lines from a todo list. If is_subtask, prefix each line with "↳ ".
-    let build_lines = |items: &[crate::app::TodoItem], is_subtask: bool| -> Vec<Line> {
-        items.iter().map(|t| {
-            let (icon, color) = match t.status {
-                TodoStatus::Completed => ("✓ ", Color::Green),
-                TodoStatus::InProgress => ("● ", pulse),
-                TodoStatus::Pending => ("○ ", Color::DarkGray),
-            };
-            let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
-                &t.active_form
-            } else { &t.content };
-            let text_color = if t.status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
-            let mut spans = Vec::new();
-            if is_subtask {
-                spans.push(Span::styled("↳ ", Style::default().fg(Color::DarkGray)));
-            }
-            spans.push(Span::styled(icon, Style::default().fg(color)));
-            spans.push(Span::styled(text.clone(), Style::default().fg(text_color)));
-            Line::from(spans)
-        }).collect()
+    // Convert a single TodoItem into a Line with optional "↳ " indent prefix
+    let make_line = |t: &crate::app::TodoItem, is_subtask: bool| -> Line {
+        let (icon, color) = match t.status {
+            TodoStatus::Completed => ("✓ ", Color::Green),
+            TodoStatus::InProgress => ("● ", pulse),
+            TodoStatus::Pending => ("○ ", Color::DarkGray),
+        };
+        let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
+            &t.active_form
+        } else { &t.content };
+        let text_color = if t.status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+        let mut spans = Vec::new();
+        if is_subtask {
+            spans.push(Span::styled("↳ ", Style::default().fg(Color::DarkGray)));
+        }
+        spans.push(Span::styled(icon, Style::default().fg(color)));
+        spans.push(Span::styled(text.clone(), Style::default().fg(text_color)));
+        Line::from(spans)
     };
 
-    let mut todo_lines = build_lines(todos, false);
-    // Subagent todos shown indented below main todos
-    todo_lines.extend(build_lines(subagent_todos, true));
+    // Insert position: right after the parent todo item.
+    // If no parent tracked, fall back to end of list (append).
+    let insert_after = parent_idx.unwrap_or(todos.len().saturating_sub(1));
+
+    let mut todo_lines: Vec<Line> = Vec::with_capacity(todos.len() + subagent_todos.len());
+    for (i, t) in todos.iter().enumerate() {
+        todo_lines.push(make_line(t, false));
+        // Inject subagent subtasks right after the parent item
+        if i == insert_after && !subagent_todos.is_empty() {
+            for sub in subagent_todos {
+                todo_lines.push(make_line(sub, true));
+            }
+        }
+    }
+    // Edge case: no main todos but subagent todos exist (shouldn't happen, but safe)
+    if todos.is_empty() {
+        for sub in subagent_todos {
+            todo_lines.push(make_line(sub, true));
+        }
+    }
 
     let block = Block::default()
         .borders(Borders::ALL)
