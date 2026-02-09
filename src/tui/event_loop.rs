@@ -812,8 +812,19 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App, clau
         ClaudeEvent::Error(e) => app.handle_claude_error(session_id, e),
     }
 
-    // Auto-send staged prompt after Claude exits — no second Enter needed
+    // Auto-send staged prompt after Claude exits — no second Enter needed.
+    // CRITICAL: force a session file re-parse BEFORE spawning the new process.
+    // handle_claude_exited() sets parse_offset=0 + dirty=true, but once the new
+    // process starts, is_current_session_running() returns true and poll_session_file()
+    // skips the parse. Without this, user messages and responses from the previous
+    // turn never get loaded from the JSONL (they only existed as live-stream events
+    // which were cleared), causing messages to vanish.
     if is_exit {
+        if app.staged_prompt.is_some() {
+            // Session is NOT running right now (just exited) — parse will succeed
+            app.check_session_file();
+            app.poll_session_file();
+        }
         if let Some(prompt) = app.staged_prompt.take() {
             if let Some(wt_path) = app.current_session().and_then(|s| s.worktree_path.clone()) {
                 let branch = app.current_session().map(|s| s.branch_name.clone()).unwrap_or_default();
