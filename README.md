@@ -35,6 +35,7 @@
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude's task progress (✓/●/○)
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
+- **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Zero Footprint** — No database or config files; scans git worktrees and `~/.claude/` at runtime
 
@@ -43,6 +44,7 @@
 - **Rust** (latest stable)
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
+- **Whisper model** (optional, for voice input): `mkdir -p ~/.azureal/models && curl -L -o ~/.azureal/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
 
 ## Installation
 
@@ -85,6 +87,7 @@ azureal
 
 - Red border = Command mode (keys are commands)
 - Yellow border = Prompt mode (typing to Claude)
+- Magenta border = Voice recording/transcribing (`⌃s` to toggle)
 - Cyan border = Terminal mode (typing shell commands)
 
 ## Architecture

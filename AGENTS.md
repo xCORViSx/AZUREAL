@@ -717,6 +717,42 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 
 Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter_with_names()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/event_loop.rs`, eager session file loading in `src/app/state/load.rs`
 
+### Speech-to-Text Input
+
+Press `⌃s` in prompt mode to toggle voice recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position.
+
+**Architecture:**
+- Background thread (`stt_loop`) blocks on `mpsc::recv()` when idle (zero CPU)
+- Same pattern as RenderThread and Terminal PTY: mpsc channels, `try_recv()` polling in event loop
+- `SttHandle` lazy-initialized on first `⌃s` press (no resources allocated until needed)
+- `WhisperContext` lazy-loaded on first transcription and cached for reuse
+
+**Audio pipeline:**
+1. cpal callback pushes `f32` samples to `Arc<Mutex<Vec<f32>>>` (~10μs lock per callback)
+2. Device sample rate captured from default input config (typically 44100 or 48000 Hz)
+3. Stereo/multi-channel audio mixed down to mono in the callback
+4. On stop: samples drained, resampled to 16kHz mono via linear interpolation
+5. Whisper transcription with `Greedy { best_of: 1 }`, single-segment mode
+6. Transcribed text inserted at cursor with smart space handling
+
+**Visual feedback:**
+- Recording: magenta border + `REC` prefix in input title
+- Transcribing: magenta border + `...` prefix in input title
+- Status bar shows progress messages (Recording..., Transcribing Xs of audio..., Loading Whisper model...)
+
+**Model:** `~/.azureal/models/ggml-base.en.bin` (~142MB). If missing, status bar shows download instructions:
+```bash
+mkdir -p ~/.azureal/models && curl -L -o ~/.azureal/models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+```
+
+**Event loop integration:**
+- `poll_stt()` called every iteration when `stt_handle` exists
+- Events collected into Vec first (avoids borrow conflict: `try_recv` borrows handle, processing borrows `&mut self`)
+- Short poll timeout (16ms) when `stt_recording || stt_transcribing`
+
+Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs`, polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs`
+
 ### Conversation Persistence
 
 Each session maintains conversation history across prompts using Claude's `--resume` flag:
@@ -871,6 +907,7 @@ azureal/
 │   ├── config.rs           # Configuration paths, Claude session discovery
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
+│   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
 │   ├── syntax.rs           # Syntax highlighting for diffs
 │   └── wizard.rs           # Session creation wizard
 ├── worktrees/              # Git worktrees for sessions
@@ -907,6 +944,7 @@ azureal/
 - [ ] Theme customization
 - [ ] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
+- [x] Speech-to-text voice input (`⌃s` in prompt mode)
 
 ## Phase 3: Advanced Features
 - [ ] Session export/reporting
@@ -1034,7 +1072,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear | ⌃s:voice)`
 **Command mode title shows:** `(p:type | t:terminal)`
 
 ### Terminal Mode

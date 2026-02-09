@@ -80,6 +80,15 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Added
+- Speech-to-text voice input in prompt mode (`⌃s` to toggle)
+  - Microphone capture via cpal (CoreAudio on macOS)
+  - Local transcription via whisper.cpp with Metal GPU acceleration
+  - Background thread with zero CPU when idle (blocks on `mpsc::recv`)
+  - Lazy initialization: STT thread only spawned on first `⌃s` press
+  - Whisper model lazy-loaded on first transcription and cached
+  - Magenta border + REC/... indicator during recording/transcription
+  - Transcribed text inserted at cursor with smart space handling
+  - Model: `~/.azureal/models/ggml-base.en.bin` (~142MB, user-downloaded)
 - TodoWrite sticky widget at bottom of Convo pane
   - Persistent checkbox list showing Claude's task progress during streaming and on session load
   - Status icons: ✓ (completed, green), ● (in_progress, yellow pulsing), ○ (pending, dim)
