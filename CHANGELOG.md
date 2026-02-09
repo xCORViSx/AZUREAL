@@ -61,6 +61,7 @@ All notable changes to Azureal will be documented in this file.
 - Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
 - Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
 - Subtask todos now render directly beneath their parent item (tracked via `subagent_parent_idx`) instead of appended at the end of the todo list
+- Messages disappearing after mid-conversation prompt send — force session file re-parse before auto-sending staged prompt
 
 ### Added
 - Status bar badge (bottom-right): CPU usage % and PID for the current azureal instance
