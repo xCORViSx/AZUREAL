@@ -1,7 +1,7 @@
 //! Input field rendering
 //!
-//! Supports multi-line input via Shift+Enter. Text is pre-wrapped at character
-//! boundaries (not word boundaries) so cursor positioning is always accurate.
+//! Supports multi-line input via Shift+Enter. Text is pre-wrapped at word
+//! boundaries (falls back to char boundaries when a word exceeds the width).
 //! Each `Line` given to ratatui represents exactly one visual row — no `.wrap()`
 //! is used, eliminating mismatch between cursor math and text layout.
 
@@ -81,9 +81,10 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 /// Build pre-wrapped lines AND compute cursor position in one pass.
 /// Returns (visual_lines, cursor_row, cursor_col).
 ///
-/// Each output Line is exactly one visual row — wrapping happens at character
-/// boundaries (col + char_width > inner_width triggers a new row), identical
-/// to how run.rs computes input_height and fast_draw_input renders text.
+/// Wraps at word boundaries when possible (last space before width limit).
+/// Falls back to char-boundary break when a single word exceeds the width.
+/// Uses `word_wrap_break_points()` to pre-compute break indices so cursor
+/// math and rendering agree perfectly.
 fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, usize, usize) {
     let chars: Vec<char> = app.input.chars().collect();
     if chars.is_empty() {
@@ -91,8 +92,8 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
     }
 
     let target = app.input_cursor.min(chars.len());
+    let breaks = word_wrap_break_points(&chars, inner_width);
 
-    // Normalized selection range (if any)
     let selection = app.input_selection.and_then(|(s, e)| {
         if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) }
     });
@@ -101,52 +102,91 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
     let selection_style = Style::default().bg(Color::Blue).fg(Color::White);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
-    // Current visual row being built: segments of (start_char_idx, end_char_idx)
-    let mut row_start = 0usize; // char index where current row started
-    let mut col = 0usize;       // current column width in current row
     let mut cursor_row = 0usize;
     let mut cursor_col = 0usize;
 
-    for (i, &c) in chars.iter().enumerate() {
-        // Track cursor position BEFORE processing this character.
-        // When cursor == i, it's positioned right before char[i].
-        if i == target {
+    // Walk rows defined by break points
+    let mut prev = 0usize;
+    for &bp in &breaks {
+        // Cursor falls in this row if target is in [prev, bp)
+        if target >= prev && target < bp {
             cursor_row = lines.len();
-            cursor_col = col;
+            cursor_col = display_width(&chars[prev..target]);
         }
-
-        if c == '\n' {
-            // Flush current row, start new one
-            flush_row(&chars, row_start, i, selection, normal_style, selection_style, &mut lines);
-            row_start = i + 1;
-            col = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-            // Wrap: if this char would exceed width, start a new visual row
-            if inner_width > 0 && col + w > inner_width {
-                flush_row(&chars, row_start, i, selection, normal_style, selection_style, &mut lines);
-                row_start = i;
-                col = 0;
-                // Re-check cursor — it might land at the start of this new wrapped row
-                if i == target {
-                    cursor_row = lines.len();
-                    cursor_col = 0;
-                }
-            }
-            col += w;
+        flush_row(&chars, prev, bp, selection, normal_style, selection_style, &mut lines);
+        prev = bp;
+        // Skip newline char (it's not displayed, next row starts after it)
+        if prev > 0 && prev <= chars.len() && prev > 0 && chars.get(prev - 1) == Some(&'\n') {
+            // newline already consumed by break point logic
         }
     }
-
-    // Cursor at the very end (after all chars)
-    if target == chars.len() {
+    // Final row
+    if target >= prev {
         cursor_row = lines.len();
-        cursor_col = col;
+        cursor_col = display_width(&chars[prev..target.min(chars.len())]);
     }
-
-    // Flush final row
-    flush_row(&chars, row_start, chars.len(), selection, normal_style, selection_style, &mut lines);
+    flush_row(&chars, prev, chars.len(), selection, normal_style, selection_style, &mut lines);
 
     (lines, cursor_row, cursor_col)
+}
+
+/// Compute display width of a char slice (sum of unicode widths)
+pub(crate) fn display_width(chars: &[char]) -> usize {
+    chars.iter().map(|c| unicode_width::UnicodeWidthChar::width(*c).unwrap_or(1)).sum()
+}
+
+/// Compute word-wrap break points for a char array at the given width.
+/// Returns a sorted Vec of char indices where line breaks occur.
+/// A break at index `i` means chars[prev..i] is one visual row.
+/// Newlines produce a break at `i+1` (the char after '\n').
+/// Word-wrap prefers breaking at the char after the last space before
+/// the width limit. Falls back to hard char break if no space exists.
+pub(crate) fn word_wrap_break_points(chars: &[char], width: usize) -> Vec<usize> {
+    if width == 0 || chars.is_empty() { return vec![]; }
+    let mut breaks = Vec::new();
+    let mut _row_start = 0usize;
+    let mut col = 0usize;
+    // Track last space position (char index) and column width at that point
+    let mut last_space: Option<usize> = None;
+
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '\n' {
+            // Newline: break here. Next row starts at i+1.
+            breaks.push(i + 1);
+            _row_start =i + 1;
+            col = 0;
+            last_space = None;
+            continue;
+        }
+
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+        if col + w > width {
+            // Need to wrap. Prefer breaking at last space.
+            if let Some(sp) = last_space {
+                // Break after the space: row is [row_start..sp+1], new row starts at sp+1
+                breaks.push(sp + 1);
+                _row_start =sp + 1;
+                // Recompute col from sp+1 to current char (inclusive)
+                col = display_width(&chars[sp + 1..i]) + w;
+                last_space = None;
+                // Check for spaces in the carried-over portion
+                for j in (sp + 1)..i {
+                    if chars[j] == ' ' { last_space = Some(j); }
+                }
+            } else {
+                // No space on this row — hard break at current char
+                breaks.push(i);
+                _row_start =i;
+                col = w;
+                last_space = None;
+            }
+        } else {
+            col += w;
+        }
+
+        if c == ' ' { last_space = Some(i); }
+    }
+    breaks
 }
 
 /// Emit one visual row as a Line with selection highlighting

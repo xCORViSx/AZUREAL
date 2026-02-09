@@ -56,7 +56,16 @@ All notable changes to Azureal will be documented in this file.
   - Unicode display-width aware padding to overwrite stale content
   - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
+### Fixed
+- Holding arrow keys now repeats cursor movement (was only moving once because `KeyEventKind::Repeat` events were dropped)
+- Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
+
 ### Changed
+- Input box now wraps at word boundaries instead of character boundaries
+  - Prefers breaking at last space before width limit; falls back to char break for long words
+  - `word_wrap_break_points()` and `display_width()` centralized in `draw_input.rs` (pub(crate))
+  - All 6 input wrapping consumers updated: `build_wrapped_content()`, `fast_draw_input()`, `compute_cursor_row_fast()`, `click_to_input_cursor()`, `screen_to_input_char()`, `row_col_to_char_index()`
+  - Mouse click/drag and cursor positioning all use identical word-wrap logic
 - `p` key now refocuses prompt input when prompt mode is already active but focus is on another pane (previously only worked to enter prompt mode from command mode)
 - Simplified scroll system — removed half-page (`⌃d`/`⌃u`) and full-page (`f`/`b`) scroll bindings. `J`/`K` now does full-page scroll across all panes.
 - Removed `g`/`G` keybindings for scroll-to-top/scroll-to-bottom. `⌥↑`/`⌥↓` is now the only way to jump to top/bottom across all panes (Convo, Viewer, Terminal, FileTree, Worktrees).

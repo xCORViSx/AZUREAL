@@ -304,7 +304,7 @@ fn scope_to_color(stack: &syntect::parsing::ScopeStack) -> Color {
     } else if scope_str.contains("keyword") || scope_str.contains("storage") {
         Color::Magenta
     } else if scope_str.contains("entity.name.function") || scope_str.contains("support.function") {
-        Color::Blue
+        Color::Rgb(100, 160, 255) // Light blue for functions — ANSI Blue is too dark on dark backgrounds
     } else if scope_str.contains("entity.name.type") || scope_str.contains("support.type") || scope_str.contains("entity.name.class") {
         Color::Yellow
     } else if scope_str.contains("variable.parameter") {

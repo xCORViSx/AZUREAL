@@ -20,6 +20,7 @@ use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::input_viewer::handle_viewer_input;
 use super::input_wizard::handle_wizard_input;
 use super::draw_output::{submit_render_request, poll_render_result};
+use super::draw_input::{word_wrap_break_points, display_width};
 use super::run::ui;
 
 /// Main TUI event loop
@@ -77,7 +78,10 @@ pub async fn run_app(
             loop {
                 match event::read()? {
                     Event::Key(key) => {
-                        if key.kind == KeyEventKind::Press {
+                        // Accept Press AND Repeat — Repeat fires when a key
+                        // is held down (Kitty REPORT_EVENT_TYPES). Without this,
+                        // holding arrow keys only moves cursor once.
+                        if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                             handle_key_event(key, app, &claude_process)?;
                             had_key_event = true;
                         }
@@ -246,7 +250,7 @@ pub async fn run_app(
             let mut got_key = false;
             while event::poll(Duration::from_millis(0))? {
                 match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press && !matches!(key.code, KeyCode::Modifier(_)) => {
+                    Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) && !matches!(key.code, KeyCode::Modifier(_)) => {
                         handle_key_event(key, app, &claude_process)?;
                         got_key = true;
                     }
@@ -279,34 +283,37 @@ fn fast_draw_input(app: &App) {
     let visible_rows = area.height.saturating_sub(2) as usize;
     if inner_width == 0 || visible_rows == 0 { return; }
 
-    // Figure out cursor row for scroll offset (same logic as draw_input.rs)
-    let cursor_row = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
-    let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
+    // Compute word-wrap break points (identical logic as draw_input.rs)
+    let chars: Vec<char> = app.input.chars().collect();
+    let breaks = word_wrap_break_points(&chars, inner_width);
+    let target = app.input_cursor.min(chars.len());
+
+    // Walk rows from break points to find cursor row + col + build visual lines
+    let mut visual_lines: Vec<String> = Vec::new();
+    let mut cursor_row = 0usize;
+    let mut cursor_col = 0usize;
+    let mut prev = 0usize;
+    for &bp in &breaks {
+        if target >= prev && target < bp {
+            cursor_row = visual_lines.len();
+            cursor_col = display_width(&chars[prev..target]);
+        }
+        // Collect row text (exclude trailing newline if any)
+        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') { bp - 1 } else { bp };
+        visual_lines.push(chars[prev..end].iter().collect());
+        prev = bp;
+    }
+    // Final row
+    if target >= prev {
+        cursor_row = visual_lines.len();
+        cursor_col = display_width(&chars[prev..target.min(chars.len())]);
+    }
+    visual_lines.push(chars[prev..].iter().collect());
+
+    // Scroll offset: keep cursor visible
+    let scroll_offset = if cursor_row >= visible_rows {
         cursor_row - visible_rows + 1
     } else { 0 };
-
-    // Build visible lines from input text with word-wrapping
-    let chars: Vec<char> = app.input.chars().collect();
-    let mut visual_lines: Vec<String> = Vec::new();
-    let mut current_line = String::new();
-    let mut col = 0usize;
-    for &c in &chars {
-        if c == '\n' {
-            visual_lines.push(current_line);
-            current_line = String::new();
-            col = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-            if col + w > inner_width {
-                visual_lines.push(current_line);
-                current_line = String::new();
-                col = 0;
-            }
-            current_line.push(c);
-            col += w;
-        }
-    }
-    visual_lines.push(current_line);
 
     let mut stdout = io::stdout();
 
@@ -327,8 +334,7 @@ fn fast_draw_input(app: &App) {
         );
     }
 
-    // Position cursor at the right spot
-    let cursor_col = compute_cursor_col_fast(&app.input, app.input_cursor, inner_width);
+    // Position cursor
     let adjusted_row = cursor_row.saturating_sub(scroll_offset);
     let _ = execute!(
         stdout,
@@ -341,36 +347,59 @@ fn fast_draw_input(app: &App) {
     let _ = stdout.flush();
 }
 
-/// Compute visual row for cursor (word-wrap aware) — standalone version for
-/// fast_draw_input to avoid depending on draw_input module.
+/// Compute visual row for cursor using word-wrap break points (matches draw_input.rs)
 fn compute_cursor_row_fast(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
     let chars: Vec<char> = input.chars().collect();
     let target = cursor_idx.min(chars.len());
+    let breaks = word_wrap_break_points(&chars, inner_width);
+    // Each break point starts a new row; cursor is on row N if target falls in
+    // the range [breaks[N-1]..breaks[N]) (with breaks[-1] = 0)
     let mut row = 0usize;
-    let mut col = 0usize;
-    for i in 0..target {
-        if chars[i] == '\n' { row += 1; col = 0; }
-        else {
-            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
-            if col + w > inner_width { row += 1; col = w; } else { col += w; }
-        }
+    let mut prev = 0usize;
+    for &bp in &breaks {
+        if target >= prev && target < bp { return row; }
+        row += 1;
+        prev = bp;
     }
-    row
+    row // cursor in final row
 }
 
-/// Compute visual column for cursor — standalone version for fast_draw_input.
-fn compute_cursor_col_fast(input: &str, cursor_idx: usize, inner_width: usize) -> usize {
+/// Map a visual (row, col) coordinate back to a char index in the input text.
+/// Uses word-wrap break points so clicking and cursor math agree with rendering.
+fn row_col_to_char_index(input: &str, target_row: usize, target_col: usize, inner_width: usize) -> usize {
     let chars: Vec<char> = input.chars().collect();
-    let target = cursor_idx.min(chars.len());
-    let mut col = 0usize;
-    for i in 0..target {
-        if chars[i] == '\n' { col = 0; }
-        else {
-            let w = unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
-            if col + w > inner_width { col = w; } else { col += w; }
-        }
+    if chars.is_empty() { return 0; }
+    let breaks = word_wrap_break_points(&chars, inner_width);
+
+    // Find the start and end char indices for the target row
+    let mut row = 0usize;
+    let mut prev = 0usize;
+    let mut row_start = 0usize;
+    let mut row_end = chars.len();
+    let mut found = false;
+    for &bp in &breaks {
+        if row == target_row { row_start = prev; row_end = bp; found = true; break; }
+        row += 1;
+        prev = bp;
     }
-    col
+    // If target_row is the last (or only) row
+    if !found {
+        if row == target_row { row_start = prev; row_end = chars.len(); }
+        else { return chars.len(); } // clicked below content
+    }
+
+    // Skip trailing newline from row content (it's not a visible character)
+    let content_end = if row_end > row_start && chars.get(row_end - 1) == Some(&'\n') {
+        row_end - 1
+    } else { row_end };
+
+    // Walk chars in this row until display width reaches or passes target_col
+    let mut col_accum = 0usize;
+    for i in row_start..content_end {
+        if col_accum >= target_col { return i; }
+        col_accum += unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
+    }
+    content_end // click past row content → place at row end
 }
 
 /// Apply accumulated scroll to the appropriate panel using cached pane rects
@@ -532,19 +561,17 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
 }
 
 /// Position the input cursor at the clicked screen coordinates.
-/// Walks the input text with the same char-level wrapping logic as
-/// fast_draw_input() and draw_input() to find which char index
-/// corresponds to the clicked (col, row) within the input box.
+/// Uses word-wrap break points (identical to draw_input.rs) to map
+/// the clicked (col, row) → char index in the input buffer.
 fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     let inner_x = app.input_area.x + 1;
     let inner_y = app.input_area.y + 1;
     let inner_width = (app.input_area.width.saturating_sub(2)) as usize;
     if inner_width == 0 { return; }
-
-    let target_row = (click_row.saturating_sub(inner_y)) as usize;
     let target_col = (click_col.saturating_sub(inner_x)) as usize;
+    let target_row = (click_row.saturating_sub(inner_y)) as usize;
 
-    // Account for scroll offset (input can scroll when multi-line overflows)
+    // Scroll offset so we map screen row → absolute visual row
     let visible_rows = app.input_area.height.saturating_sub(2) as usize;
     let cursor_row_current = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
     let scroll_offset = if visible_rows > 0 && cursor_row_current >= visible_rows {
@@ -552,58 +579,11 @@ fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     } else { 0 };
     let actual_row = target_row + scroll_offset;
 
-    // Walk chars counting visual rows and columns (same wrapping as compute_cursor_row_fast)
-    let chars: Vec<char> = app.input.chars().collect();
-    let mut row = 0usize;
-    let mut col_pos = 0usize;
-    let mut best_idx = chars.len(); // default: end of input
-
-    for (i, &c) in chars.iter().enumerate() {
-        // Check if we've reached or passed the target row
-        if row == actual_row && col_pos >= target_col {
-            best_idx = i;
-            break;
-        }
-        if row > actual_row {
-            best_idx = i;
-            break;
-        }
-        if c == '\n' {
-            if row == actual_row {
-                // Click is on this row past the newline — place at newline position
-                best_idx = i;
-                break;
-            }
-            row += 1;
-            col_pos = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-            if col_pos + w > inner_width {
-                // Wrap to next row
-                if row == actual_row {
-                    best_idx = i;
-                    break;
-                }
-                row += 1;
-                col_pos = w;
-            } else {
-                col_pos += w;
-            }
-        }
-    }
-    // If we walked through all chars and target row matches last row,
-    // place cursor at end
-    if row == actual_row && best_idx == chars.len() {
-        // Already at end — correct
-    } else if row < actual_row {
-        best_idx = chars.len(); // Target row beyond content → end
-    }
-
-    app.input_cursor = best_idx;
+    app.input_cursor = row_col_to_char_index(&app.input, actual_row, target_col, inner_width);
 }
 
 /// Map screen coordinates to a char index in the input text.
-/// Same walk logic as click_to_input_cursor but returns the index.
+/// Uses word-wrap break points to find the exact char at (row, col).
 fn screen_to_input_char(app: &App, click_col: u16, click_row: u16) -> usize {
     let inner_x = app.input_area.x + 1;
     let inner_y = app.input_area.y + 1;
@@ -617,26 +597,7 @@ fn screen_to_input_char(app: &App, click_col: u16, click_row: u16) -> usize {
         cursor_row_current - visible_rows + 1
     } else { 0 };
     let actual_row = target_row + scroll_offset;
-    let chars: Vec<char> = app.input.chars().collect();
-    let mut row = 0usize;
-    let mut col_pos = 0usize;
-    let mut best_idx = chars.len();
-    for (i, &c) in chars.iter().enumerate() {
-        if row == actual_row && col_pos >= target_col { best_idx = i; break; }
-        if row > actual_row { best_idx = i; break; }
-        if c == '\n' {
-            if row == actual_row { best_idx = i; break; }
-            row += 1; col_pos = 0;
-        } else {
-            let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-            if col_pos + w > inner_width {
-                if row == actual_row { best_idx = i; break; }
-                row += 1; col_pos = w;
-            } else { col_pos += w; }
-        }
-    }
-    if row < actual_row { best_idx = chars.len(); }
-    best_idx
+    row_col_to_char_index(&app.input, actual_row, target_col, inner_width)
 }
 
 /// Map screen coordinates to (cache_line, cache_col) within a bordered pane.
