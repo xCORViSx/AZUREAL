@@ -305,8 +305,8 @@ pub static VIEWER: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Next Edit", Action::JumpNextEdit),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Prev Edit", Action::JumpPrevEdit),
+    Keybinding::new(KeyCombo::alt(KeyCode::Right), "Next Edit", Action::JumpNextEdit),
+    Keybinding::new(KeyCombo::alt(KeyCode::Left), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
 ];
