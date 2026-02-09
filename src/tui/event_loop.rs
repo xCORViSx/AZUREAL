@@ -169,7 +169,7 @@ pub async fn run_app(
                 .collect();
 
             for (session_id, claude_event) in claude_events {
-                handle_claude_event(&session_id, claude_event, app)?;
+                handle_claude_event(&session_id, claude_event, app, &claude_process)?;
                 needs_redraw = true;
             }
         }
@@ -799,14 +799,34 @@ fn copy_output_selection(app: &mut App) {
     app.set_status("Copied to clipboard");
 }
 
-/// Handle Claude process events for a specific session
-fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App) -> Result<()> {
+/// Handle Claude process events for a specific session.
+/// After an exit event, auto-sends any staged prompt (user hit Enter mid-convo
+/// which cancelled the old run and staged the new prompt in one keystroke).
+fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    let is_exit = matches!(event, ClaudeEvent::Exited { .. });
     match event {
         ClaudeEvent::Output(output) => app.handle_claude_output(session_id, output.output_type, output.data),
         ClaudeEvent::Started { pid } => app.handle_claude_started(session_id, pid),
         ClaudeEvent::SessionId(claude_session_id) => app.set_claude_session_id(session_id, claude_session_id),
         ClaudeEvent::Exited { code } => app.handle_claude_exited(session_id, code),
         ClaudeEvent::Error(e) => app.handle_claude_error(session_id, e),
+    }
+
+    // Auto-send staged prompt after Claude exits — no second Enter needed
+    if is_exit {
+        if let Some(prompt) = app.staged_prompt.take() {
+            if let Some(wt_path) = app.current_session().and_then(|s| s.worktree_path.clone()) {
+                let branch = app.current_session().map(|s| s.branch_name.clone()).unwrap_or_default();
+                app.add_user_message(prompt.clone());
+                app.process_output_chunk(&format!("You: {}\n", prompt));
+                app.current_todos.clear();
+                let resume_id = app.get_claude_session_id(&branch).cloned();
+                match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
+                    Ok(rx) => { app.register_claude(branch, rx); app.set_status("Running..."); }
+                    Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                }
+            }
+        }
     }
     Ok(())
 }

@@ -40,11 +40,10 @@ impl App {
             self.session_file_dirty = true;
         }
 
-        // If there's a staged prompt, restore it to the input field
-        if let Some(prompt) = self.staged_prompt.take() {
-            self.input = prompt;
-            self.input_cursor = self.input.len();
-            self.set_status("Ready - staged prompt restored");
+        // If a staged prompt exists, leave it for the event loop to auto-send.
+        // Otherwise show exit status.
+        if self.staged_prompt.is_some() {
+            self.set_status("Sending staged prompt...");
         } else {
             let exit_str = match code {
                 Some(0) => "exited OK".to_string(),

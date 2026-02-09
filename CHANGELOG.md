@@ -62,6 +62,7 @@ All notable changes to Azureal will be documented in this file.
 - Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
 
 ### Changed
+- Sending a prompt mid-conversation now cancels Claude and sends the new prompt in one Enter press (previously required Enter to cancel, then Enter again to send)
 - Input box now wraps at word boundaries instead of character boundaries
   - Prefers breaking at last space before width limit; falls back to char break for long words
   - `word_wrap_break_points()` and `display_width()` centralized in `draw_input.rs` (pub(crate))
