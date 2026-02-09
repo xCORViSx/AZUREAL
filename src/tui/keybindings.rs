@@ -232,9 +232,6 @@ static ALT_DOWN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code
 static ALT_UP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Up }];
 static ALT_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Left }];
 static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Right }];
-// ⌥↑/⌥↓ alternatives for g/G (jump to top/bottom)
-static GOTO_TOP_ALT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Up }];
-static GOTO_BOTTOM_ALT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Down }];
 // ⌃← alternative for ⌥← (word nav in prompt input)
 static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
 static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
@@ -304,8 +301,8 @@ pub static VIEWER: [Keybinding; 10] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Page down", Action::PageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Top", Action::GoToTop),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Next Edit", Action::JumpNextEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
@@ -330,8 +327,8 @@ pub static OUTPUT: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Up), "Prev message", Action::JumpPrevMessage),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Page down", Action::PageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Top", Action::GoToTop),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Switch to output", Action::SwitchToOutput),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('R')), "Rebase status", Action::RebaseStatus),
@@ -364,8 +361,8 @@ pub static TERMINAL: [Keybinding; 11] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::PageDown),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Scroll page", Action::PageUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('g')), &GOTO_TOP_ALT, "Scroll to top", Action::GoToTop),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('G')), &GOTO_BOTTOM_ALT, "Scroll to bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Scroll to top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Scroll to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
 ];
@@ -468,7 +465,7 @@ pub fn terminal_command_title() -> String {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
-    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "g", "G");
+    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "⌥↑", "⌥↓");
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
     format!(
         " TERMINAL ({}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize) ",
@@ -480,8 +477,8 @@ pub fn terminal_command_title() -> String {
 pub fn terminal_scroll_title(scroll: usize) -> String {
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
-    let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or("g".into());
-    let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or("G".into());
+    let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or("⌥↑".into());
+    let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or("⌥↓".into());
     let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     format!(

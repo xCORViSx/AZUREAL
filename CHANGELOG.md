@@ -53,6 +53,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Changed
 - Simplified scroll system — removed half-page (`⌃d`/`⌃u`) and full-page (`f`/`b`) scroll bindings. `J`/`K` now does full-page scroll across all panes.
+- Removed `g`/`G` keybindings for scroll-to-top/scroll-to-bottom. `⌥↑`/`⌥↓` is now the only way to jump to top/bottom across all panes (Convo, Viewer, Terminal, FileTree, Worktrees).
 - `input_output.rs` now uses centralized `lookup_action()` from `keybindings.rs` — all input handlers are now fully centralized.
 - Added `SwitchToOutput`, `ViewDiff`, `RebaseStatus`, `PageDown`, `PageUp` actions to keybindings enum for complete output pane coverage.
 - Debug dump keybinding changed from `D` to `⌃D` and now obfuscates all sensitive content before writing to `.azureal/debug-output.txt`
@@ -64,7 +65,7 @@ All notable changes to Azureal will be documented in this file.
   - Gives Convo pane more vertical space for reading conversation history
   - Mouse scroll dispatch updated for asymmetric layout
 - Terminal keybindings moved from help panel to terminal pane title bar
-  - Command mode title: `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | g/G:top/bottom | +/-:resize)`
+  - Command mode title: `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | ⌥↑/⌥↓:top/bottom | +/-:resize)`
   - Type mode title: `(Esc:exit)`
   - Scroll mode title: `[N↑] (j/k:scroll | ... | Esc:close)`
   - Help panel (`?`) no longer has a Terminal section
@@ -84,11 +85,11 @@ All notable changes to Azureal will be documented in this file.
 
 ### Added
 - `⌥↑`/`⌥↓` jump-to-top/bottom across all panes (defined in centralized keybindings.rs)
-  - Convo pane: scroll to top/bottom of conversation (alternative to `g`/`G`)
-  - Viewer pane: scroll to top/bottom of file (alternative to `Home`/`End`/`g`/`G`)
+  - Convo pane: scroll to top/bottom of conversation
+  - Viewer pane: scroll to top/bottom of file
   - FileTree pane: jump to first/last sibling within the current folder
   - Worktrees pane: jump to first/last session; when dropdown is expanded, first/last session file
-  - Terminal pane: scroll to top/bottom (alternative to `g`/`G`)
+  - Terminal pane: scroll to top/bottom
 - Speech-to-text voice input in prompt mode (`⌃s` to toggle)
   - Microphone capture via cpal (CoreAudio on macOS)
   - Local transcription via whisper.cpp with Metal GPU acceleration
@@ -315,7 +316,7 @@ All notable changes to Azureal will be documented in this file.
   - Viewer dual-purpose: file preview from FileTree OR diff detail from Convo
   - Tab cycles through all 4 panes plus Input
 - FileTree navigation with j/k, Enter to open, Space/l to expand, h to collapse
-- Viewer scroll with j/k (line), J/K (page), g/G (top/bottom)
+- Viewer scroll with j/k (line), J/K (page), ⌥↑/⌥↓ (top/bottom)
 - Per-session terminal persistence: each session maintains its own PTY shell session
 
 ### Changed
@@ -454,7 +455,7 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - Sessions now load scrolled to bottom (most recent messages visible)
   - Initial load, session switch, and 'o' key all scroll to bottom
-  - Use 'g' to scroll to top if needed
+  - Use `⌥↑` to scroll to top if needed
 
 ### Fixed
 - Output pane now loads conversation history on startup (was empty until switching sessions)

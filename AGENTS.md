@@ -1052,7 +1052,7 @@ azureal
 |-----|--------|
 | `j/k` | Scroll up/down |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
-| `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
+| `⌥↑/⌥↓` | Jump to top/bottom |
 | `f/b` | Next/prev Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
@@ -1064,7 +1064,7 @@ azureal
 | `↑/↓` | Jump to prev/next user prompt |
 | `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
-| `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
+| `⌥↑/⌥↓` | Jump to top/bottom |
 | `o` | Switch to output view |
 | `d` | Git worktree diff |
 | `R` | Rebase status |
@@ -1083,6 +1083,6 @@ Prompt keybindings are displayed directly in the Input pane's title bar (not in 
 
 Terminal keybindings are displayed directly in the terminal pane's title bar (not in the help panel). All title hints are dynamically sourced from the `TERMINAL` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Command mode title shows:** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | g/G:top/bottom | +/-:resize)`
+**Command mode title shows:** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | ⌥↑/⌥↓:top/bottom | +/-:resize)`
 **Type mode title shows:** `(Esc:exit)`
-**Scroll mode title shows:** `[N↑] (j/k:scroll | J/K:page | g:top | G:bottom | t:type | Esc:close)`
+**Scroll mode title shows:** `[N↑] (j/k:scroll | J/K:page | ⌥↑:top | ⌥↓:bottom | t:type | Esc:close)`

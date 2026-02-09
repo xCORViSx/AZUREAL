@@ -40,31 +40,32 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
             }
         } else {
             // Command mode: scrolling and mode switches
-            match key.code {
-                KeyCode::Char('t') => {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Char('t')) => {
                     // Enter type mode (not close terminal - that's Esc now)
                     app.prompt_mode = true;
                     app.scroll_terminal_to_bottom();
                 }
-                KeyCode::Char('p') => {
+                (KeyModifiers::NONE, KeyCode::Char('p')) => {
                     // Close terminal and enter Claude prompt
                     app.close_terminal();
                     app.focus = Focus::Input;
                     app.prompt_mode = true;
                 }
-                KeyCode::Esc => app.close_terminal(),
-                KeyCode::Char('+') | KeyCode::Char('=') => app.adjust_terminal_height(2),
-                KeyCode::Char('-') => app.adjust_terminal_height(-2),
-                KeyCode::Char('k') | KeyCode::Up => app.scroll_terminal_up(1),
-                KeyCode::Char('j') | KeyCode::Down => app.scroll_terminal_down(1),
-                KeyCode::Char('K') => app.scroll_terminal_up(10),
-                KeyCode::Char('J') => app.scroll_terminal_down(10),
-                KeyCode::Char('g') => {
+                (_, KeyCode::Esc) => app.close_terminal(),
+                (KeyModifiers::NONE, KeyCode::Char('+')) | (KeyModifiers::NONE, KeyCode::Char('=')) => app.adjust_terminal_height(2),
+                (KeyModifiers::NONE, KeyCode::Char('-')) => app.adjust_terminal_height(-2),
+                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_terminal_up(1),
+                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_terminal_down(1),
+                (KeyModifiers::NONE, KeyCode::Char('K')) => app.scroll_terminal_up(10),
+                (KeyModifiers::NONE, KeyCode::Char('J')) => app.scroll_terminal_down(10),
+                // ⌥↑/⌥↓ scroll to top/bottom
+                (KeyModifiers::ALT, KeyCode::Up) => {
                     app.terminal_scroll = 10000;
                     app.terminal_parser.screen_mut().set_scrollback(10000);
                     app.terminal_scroll = app.terminal_parser.screen().scrollback();
                 }
-                KeyCode::Char('G') => app.scroll_terminal_to_bottom(),
+                (KeyModifiers::ALT, KeyCode::Down) => app.scroll_terminal_to_bottom(),
                 _ => {}
             }
         }
