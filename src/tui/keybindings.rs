@@ -116,6 +116,7 @@ pub enum Action {
     RebaseOntoMain,
     ArchiveWorktree,
     StartResume,
+    OpenProjects,
 
     // FileTree
     ToggleDir,
@@ -261,7 +262,7 @@ pub static GLOBAL: [Keybinding; 10] = [
 ];
 
 /// Worktrees context bindings
-pub static WORKTREES: [Keybinding; 18] = [
+pub static WORKTREES: [Keybinding; 19] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
@@ -280,6 +281,7 @@ pub static WORKTREES: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Char('r')), "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Rebase onto main", Action::RebaseOntoMain),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
 /// FileTree bindings

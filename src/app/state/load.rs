@@ -9,18 +9,24 @@ use super::helpers::build_file_tree;
 use super::App;
 
 impl App {
-    /// Load project and sessions from git (stateless discovery)
+    /// Load project and sessions from git (stateless discovery).
+    /// If cwd is a git repo, auto-register it in ~/.azureal/projects.txt and load it.
+    /// If NOT in a git repo, open the Projects panel so user can pick a project.
     pub fn load(&mut self) -> anyhow::Result<()> {
         let cwd = std::env::current_dir()?;
 
-        // Find git repo root
         if !Git::is_git_repo(&cwd) {
+            // Not in a git repo — show the Projects panel so user can pick one
+            self.open_projects_panel();
             return Ok(());
         }
 
         let repo_root = Git::repo_root(&cwd)?;
-        let main_branch = Git::get_main_branch(&repo_root)?;
 
+        // Auto-register this repo in ~/.azureal/projects.txt (no-op if already there)
+        crate::config::register_project(&repo_root);
+
+        let main_branch = Git::get_main_branch(&repo_root)?;
         self.project = Some(Project::from_path(repo_root, main_branch));
         self.load_sessions()?;
 

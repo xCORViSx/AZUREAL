@@ -22,7 +22,7 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::{draw_dialogs, draw_file_tree, draw_input, draw_output, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
+use super::{draw_dialogs, draw_file_tree, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -70,6 +70,12 @@ pub async fn run() -> Result<()> {
 
 /// Main UI layout and rendering
 pub fn ui(f: &mut Frame, app: &mut App) {
+    // Projects panel takes over the screen (shown on startup without git repo, or via 'P')
+    if app.is_projects_panel_active() {
+        draw_projects::draw_projects_panel(f, app);
+        return;
+    }
+
     // Wizard modal takes over the screen
     if app.is_wizard_active() {
         draw_wizard::draw_wizard_modal(f, app);

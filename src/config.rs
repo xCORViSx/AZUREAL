@@ -174,3 +174,92 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
 pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<String> {
     list_claude_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
 }
+
+// ── Projects persistence (~/.azureal/projects.txt) ──
+
+/// A registered project entry: absolute path + optional display name
+#[derive(Debug, Clone)]
+pub struct ProjectEntry {
+    pub path: PathBuf,
+    pub display_name: String,
+}
+
+/// Path to the projects registry file
+fn projects_file_path() -> PathBuf {
+    config_dir().join("projects.txt")
+}
+
+/// Expand ~ to home dir and canonicalize if the path exists on disk
+fn resolve_path(raw: &str) -> PathBuf {
+    let expanded = if let Some(rest) = raw.strip_prefix("~/") {
+        dirs::home_dir().unwrap_or_default().join(rest)
+    } else if raw == "~" {
+        dirs::home_dir().unwrap_or_default()
+    } else {
+        PathBuf::from(raw)
+    };
+    std::fs::canonicalize(&expanded).unwrap_or(expanded)
+}
+
+/// Shorten a path by replacing home dir with ~
+pub fn display_path(path: &std::path::Path) -> String {
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(rel) = path.strip_prefix(&home) {
+            return format!("~/{}", rel.display());
+        }
+    }
+    path.display().to_string()
+}
+
+/// Load all registered projects from ~/.azureal/projects.txt
+/// Format per line: `/path/to/repo` or `/path/to/repo|Display Name`
+/// Lines starting with # are comments. Empty lines skipped.
+pub fn load_projects() -> Vec<ProjectEntry> {
+    let path = projects_file_path();
+    let Ok(content) = std::fs::read_to_string(&path) else { return Vec::new() };
+    content.lines().filter_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { return None; }
+        let (raw_path, name) = if let Some((p, n)) = line.split_once('|') {
+            (p.trim(), Some(n.trim().to_string()))
+        } else {
+            (line, None)
+        };
+        let resolved = resolve_path(raw_path);
+        // Derive display name from last path component if not specified
+        let display_name = name.unwrap_or_else(|| {
+            resolved.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| raw_path.to_string())
+        });
+        Some(ProjectEntry { path: resolved, display_name })
+    }).collect()
+}
+
+/// Save the project list back to ~/.azureal/projects.txt
+pub fn save_projects(entries: &[ProjectEntry]) {
+    let path = projects_file_path();
+    let content: String = entries.iter().map(|e| {
+        let short = display_path(&e.path);
+        let derived = e.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        // Only write |name if it differs from the auto-derived name
+        if e.display_name != derived {
+            format!("{}|{}", short, e.display_name)
+        } else {
+            short
+        }
+    }).collect::<Vec<_>>().join("\n");
+    let _ = std::fs::write(&path, if content.is_empty() { content } else { content + "\n" });
+}
+
+/// Auto-register a project path if it isn't already in projects.txt.
+/// Called on startup when azureal detects a git repo.
+pub fn register_project(repo_path: &std::path::Path) {
+    let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
+    let mut entries = load_projects();
+    // Check if already registered (compare canonical paths)
+    if entries.iter().any(|e| e.path == canonical) { return; }
+    let display_name = canonical.file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| canonical.display().to_string());
+    entries.push(ProjectEntry { path: canonical, display_name });
+    save_projects(&entries);
+}

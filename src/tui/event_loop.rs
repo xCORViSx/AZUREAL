@@ -18,6 +18,7 @@ use super::input_output::handle_output_input;
 use super::input_worktrees::handle_worktrees_input;
 use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::input_viewer::handle_viewer_input;
+use super::input_projects::handle_projects_input;
 use super::input_wizard::handle_wizard_input;
 use super::draw_output::{submit_render_request, poll_render_result};
 use super::draw_input::{word_wrap_break_points, display_width};
@@ -523,7 +524,6 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                         app.select_session_file(&branch, file_idx);
                     }
                 }
-                SidebarRowAction::ProjectHeader => {} // Just focus
             }
         }
         return true;
@@ -1011,6 +1011,12 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     // Context menu
     if app.context_menu.is_some() {
         handle_context_menu_input(key, app, claude_process)?;
+        return Ok(());
+    }
+
+    // Projects panel (full-screen modal — intercepts all input)
+    if app.is_projects_panel_active() {
+        handle_projects_input(key, app)?;
         return Ok(());
     }
 

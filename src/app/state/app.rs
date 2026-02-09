@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -70,6 +70,8 @@ pub struct App {
     pub selected_conflict: Option<usize>,
     pub context_menu: Option<ContextMenu>,
     pub creation_wizard: Option<CreationWizard>,
+    /// Projects panel state (full-screen overlay for project selection)
+    pub projects_panel: Option<ProjectsPanel>,
     /// Pending session name to save when Claude returns session ID (branch_name, custom_name)
     pub pending_session_name: Option<(String, String)>,
     pub terminal_mode: bool,
@@ -384,6 +386,7 @@ impl App {
             selected_conflict: None,
             context_menu: None,
             creation_wizard: None,
+            projects_panel: None,
             pending_session_name: None,
             terminal_mode: false,
             terminal_pty: None,

@@ -117,6 +117,10 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
         (_, KeyCode::Char(c)) if super::keybindings::macos_opt_key(c) == Some('r') => {
             app.open_run_command_dialog();
         }
+        // P (Shift+P): open Projects panel
+        (_, KeyCode::Char('P')) => {
+            app.open_projects_panel();
+        }
         // R (Shift+R): rebase current worktree onto main
         (_, KeyCode::Char('R')) => {
             if let Some(session) = app.current_session() {

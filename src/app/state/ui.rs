@@ -1,9 +1,9 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
-use crate::config::{ensure_project_data_dir, project_data_dir};
+use crate::app::types::{BranchDialog, ContextMenu, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::config::{ensure_project_data_dir, load_projects, project_data_dir};
 use crate::git::Git;
-use crate::models::RebaseStatus;
+use crate::models::{Project, RebaseStatus};
 
 use super::App;
 
@@ -403,6 +403,95 @@ impl App {
             self.viewer_scroll = tab.scroll;
             self.viewer_mode = tab.mode;
             self.viewer_lines_dirty = true;
+        }
+    }
+
+    // ── Projects panel ──
+
+    /// Open the Projects panel overlay (loads entries from ~/.azureal/projects.txt)
+    pub fn open_projects_panel(&mut self) {
+        let entries = load_projects();
+        self.projects_panel = Some(ProjectsPanel::new(entries));
+    }
+
+    /// Close the Projects panel and return focus to Worktrees
+    pub fn close_projects_panel(&mut self) {
+        self.projects_panel = None;
+        self.focus = Focus::Worktrees;
+    }
+
+    pub fn is_projects_panel_active(&self) -> bool { self.projects_panel.is_some() }
+
+    /// Switch to a different project by path. Kills all Claude processes,
+    /// clears all session/render state, and reloads everything for the new project.
+    pub fn switch_project(&mut self, path: std::path::PathBuf) {
+        // Kill all running Claude processes first
+        self.cancel_all_claude();
+
+        // Clear all session and render state
+        self.sessions.clear();
+        self.selected_session = None;
+        self.display_events.clear();
+        self.output_lines.clear();
+        self.output_buffer.clear();
+        self.output_scroll = usize::MAX;
+        self.pending_user_message = None;
+        self.staged_prompt = None;
+        self.event_parser = crate::events::EventParser::new();
+        self.selected_event = None;
+        self.session_file_path = None;
+        self.session_file_modified = None;
+        self.session_file_size = 0;
+        self.session_file_parse_offset = 0;
+        self.session_file_dirty = false;
+        self.pending_tool_calls.clear();
+        self.failed_tool_calls.clear();
+        self.claude_session_ids.clear();
+        self.claude_exit_codes.clear();
+        self.sessions_expanded.clear();
+        self.session_files.clear();
+        self.session_selected_file_idx.clear();
+        self.file_tree_entries.clear();
+        self.file_tree_selected = None;
+        self.file_tree_expanded.clear();
+        self.viewer_content = None;
+        self.viewer_path = None;
+        self.viewer_tabs.clear();
+        self.title_session_name.clear();
+        self.current_todos.clear();
+        self.subagent_todos.clear();
+        self.invalidate_render_cache();
+        self.invalidate_sidebar();
+        self.invalidate_file_tree();
+        self.rendered_events_count = 0;
+        self.rendered_content_line_count = 0;
+        self.rendered_events_start = 0;
+
+        // Set the new project
+        let main_branch = Git::get_main_branch(&path).unwrap_or_else(|_| "main".to_string());
+        self.project = Some(Project::from_path(path, main_branch));
+
+        // Reload sessions and output
+        let _ = self.load_sessions();
+        self.load_session_output();
+        self.load_run_commands();
+
+        // Close the panel and return focus
+        self.projects_panel = None;
+        self.focus = Focus::Worktrees;
+    }
+
+    /// Kill all running Claude processes across all sessions
+    pub fn cancel_all_claude(&mut self) {
+        let pids: Vec<(String, u32)> = self.claude_pids.drain().collect();
+        for (branch, pid) in pids {
+            #[cfg(unix)]
+            { let _ = std::process::Command::new("kill").arg(pid.to_string()).status(); }
+            #[cfg(windows)]
+            { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
+            self.running_sessions.remove(&branch);
+            self.claude_receivers.remove(&branch);
+            self.interactive_sessions.remove(&branch);
         }
     }
 }

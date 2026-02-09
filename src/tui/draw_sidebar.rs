@@ -26,22 +26,11 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
     let filter = app.sidebar_filter.to_lowercase();
 
     let Some(ref project) = app.project else {
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("No project", Style::default().fg(Color::Red)),
-        ])));
-        row_map.push(SidebarRowAction::ProjectHeader);
         return (items, row_map);
     };
 
-    // If project name matches, show everything (no filtering below)
+    // If project name matches filter, show everything (no filtering below)
     let project_matches = !filter.is_empty() && project.name.to_lowercase().contains(&filter);
-
-    // Always show project header
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("▸ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-        Span::styled(project.name.clone(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-    ])));
-    row_map.push(SidebarRowAction::ProjectHeader);
 
     for (sess_idx, session) in app.sessions.iter().enumerate() {
         // When filter is active, figure out what matched at each level:
@@ -200,15 +189,22 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    // Show project name in border title: " Worktrees (projectname) "
+    let title_text = if let Some(ref project) = app.project {
+        format!(" {} ", project.name)
+    } else {
+        " Worktrees ".to_string()
+    };
+
     let sidebar = List::new(app.sidebar_cache.clone())
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
                 .title(if is_focused {
-                    Span::styled(" Worktrees ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
+                    Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
                 } else {
-                    Span::styled(" Worktrees ", Style::default().fg(Color::White))
+                    Span::styled(title_text, Style::default().fg(Color::White))
                 })
                 .border_style(if is_focused {
                     Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
