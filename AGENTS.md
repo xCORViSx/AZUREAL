@@ -1035,11 +1035,13 @@ azureal
 | `R` | Rebase onto main |
 | `a` | Archive worktree |
 | `/` | Search/filter sessions |
+| `⌥↑/⌥↓` | Jump to first/last session (or session file when dropdown expanded) |
 
 ### FileTree Pane
 | Key | Action |
 |-----|--------|
 | `j/k` | Navigate up/down |
+| `⌥↑/⌥↓` | Jump to first/last sibling in current folder |
 | `Enter` | Open file in Viewer / Expand directory |
 | `h/l` | Collapse/Expand directory |
 | `Space` | Toggle directory expand |
@@ -1049,7 +1051,7 @@ azureal
 |-----|--------|
 | `j/k` | Scroll up/down |
 | `Shift+J/K` | Half-page scroll |
-| `g/G` | Jump to top/bottom |
+| `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
 | `f/b` | Next/prev Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
@@ -1061,7 +1063,7 @@ azureal
 | `↑/↓` | Jump to prev/next user prompt |
 | `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
 | `Shift+J/K` | Half-page scroll |
-| `g/G` | Jump to top/bottom |
+| `g/G` or `⌥↑/⌥↓` | Jump to top/bottom |
 | `d` | Git worktree diff |
 | `o` | Switch to output view |
 | `Esc` | Return to Worktrees |

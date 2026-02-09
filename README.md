@@ -70,6 +70,7 @@ azureal
 | `t` | Toggle terminal pane |
 | `Esc` | Return to command mode |
 | `j/k` | Navigate (worktrees, files, scroll) |
+| `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
 | `Tab` | Cycle focus (Worktrees > FileTree > Viewer > Convo > Input) |
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |

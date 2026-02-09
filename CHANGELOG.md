@@ -80,6 +80,11 @@ All notable changes to Azureal will be documented in this file.
   - Selection highlighting works correctly across line boundaries
 
 ### Added
+- `⌥↑`/`⌥↓` jump-to-top/bottom across all panes
+  - Convo pane: scroll to top/bottom of conversation (same as `g`/`G`)
+  - Viewer pane: scroll to top/bottom of file (same as `Home`/`End`)
+  - FileTree pane: jump to first/last sibling within the current folder
+  - Worktrees pane: jump to first/last session; when dropdown is expanded, first/last session file
 - Speech-to-text voice input in prompt mode (`⌃s` to toggle)
   - Microphone capture via cpal (CoreAudio on macOS)
   - Local transcription via whisper.cpp with Metal GPU acceleration
