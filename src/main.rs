@@ -6,6 +6,7 @@ mod config;
 mod events;
 mod git;
 mod models;
+mod stt;
 mod syntax;
 mod tui;
 mod wizard;

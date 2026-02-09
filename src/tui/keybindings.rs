@@ -151,6 +151,7 @@ pub enum Action {
     ClearInput,
     HistoryPrev,
     HistoryNext,
+    ToggleStt,
 
     // Terminal
     ResizeUp,
@@ -333,7 +334,7 @@ pub static OUTPUT: [Keybinding; 13] = [
 /// Input mode bindings — keys that work in Claude prompt type mode
 /// Word nav uses standard macOS shortcuts (⌥← / ⌥→), not ⌃z/⌃x which conflict with clipboard
 /// Newline: ⇧Enter (Kitty keyboard protocol makes this distinguishable from bare Enter)
-pub static INPUT: [Keybinding; 9] = [
+pub static INPUT: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
     Keybinding::new(KeyCombo::shift(KeyCode::Enter), "Insert newline", Action::InsertNewline),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
@@ -343,6 +344,7 @@ pub static INPUT: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('u')), "Clear input", Action::ClearInput),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
 ];
 
 /// Terminal bindings (command mode) — ALL terminal keybindings live here
@@ -432,9 +434,10 @@ pub fn prompt_type_title() -> String {
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
+    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear) ",
-        esc, submit, cancel, hprev, hnext, dw, cl
+        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear | {}:voice) ",
+        esc, submit, cancel, hprev, hnext, dw, cl, stt
     )
 }
 

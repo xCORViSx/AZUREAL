@@ -18,7 +18,13 @@ use super::keybindings::{prompt_type_title, prompt_command_title};
 
 /// Draw the Claude prompt input field with pre-wrapped text and cursor positioning
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
-    let (border_color, title) = if app.prompt_mode {
+    // Border color reflects current input state:
+    // magenta = STT recording/transcribing, yellow = prompt mode, red = command mode
+    let (border_color, title) = if app.stt_recording {
+        (Color::Magenta, format!(" REC {}", prompt_type_title().trim_start()))
+    } else if app.stt_transcribing {
+        (Color::Magenta, format!(" ... {}", prompt_type_title().trim_start()))
+    } else if app.prompt_mode {
         (Color::Yellow, prompt_type_title())
     } else {
         (Color::Red, prompt_command_title())

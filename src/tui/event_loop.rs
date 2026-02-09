@@ -71,7 +71,7 @@ pub async fn run_app(
         // idle to avoid burning CPU spinning on an empty event queue.
         // Short poll when we have pending work: draw waiting, render in-flight,
         // or Claude streaming. Ensures fast pickup without burning CPU when idle.
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() { 16 } else { 100 };
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -161,6 +161,13 @@ pub async fn run_app(
 
             for (session_id, claude_event) in claude_events {
                 handle_claude_event(&session_id, claude_event, app)?;
+                needs_redraw = true;
+            }
+        }
+
+        // Poll speech-to-text events (non-blocking, only if handle exists)
+        if app.stt_handle.is_some() {
+            if app.poll_stt() {
                 needs_redraw = true;
             }
         }

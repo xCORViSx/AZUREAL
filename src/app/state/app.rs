@@ -287,6 +287,12 @@ pub struct App {
     pub awaiting_ask_user_question: bool,
     /// Cached questions from last AskUserQuestion (for context prefix on response)
     pub ask_user_questions_cache: Option<serde_json::Value>,
+    /// Speech-to-text engine handle (lazy-initialized on first ⌃s press)
+    pub stt_handle: Option<crate::stt::SttHandle>,
+    /// Whether STT is currently recording audio from the microphone
+    pub stt_recording: bool,
+    /// Whether STT is currently transcribing recorded audio (between stop and result)
+    pub stt_transcribing: bool,
 }
 
 /// A single todo item from Claude's TodoWrite tool call
@@ -460,6 +466,9 @@ impl App {
             current_todos: Vec::new(),
             awaiting_ask_user_question: false,
             ask_user_questions_cache: None,
+            stt_handle: None,
+            stt_recording: false,
+            stt_transcribing: false,
         }
     }
 
@@ -505,4 +514,78 @@ impl App {
 
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }
     pub fn clear_status(&mut self) { self.status_message = None; }
+
+    /// Toggle speech-to-text recording. Lazy-initializes the STT background thread on first use.
+    /// Press once to start recording (magenta border), press again to stop and transcribe.
+    pub fn toggle_stt(&mut self) {
+        // Lazy-init: spawn the STT thread only when the user first presses ⌃s
+        if self.stt_handle.is_none() {
+            self.stt_handle = Some(crate::stt::SttHandle::spawn());
+        }
+        let handle = self.stt_handle.as_ref().unwrap();
+        if self.stt_recording {
+            handle.send(crate::stt::SttCommand::StopRecording);
+        } else {
+            handle.send(crate::stt::SttCommand::StartRecording);
+        }
+    }
+
+    /// Poll STT events from background thread (non-blocking). Returns true if state changed.
+    /// Called every event loop iteration when stt_handle exists.
+    /// Collects events first to avoid borrow conflict (try_recv borrows handle, processing borrows &mut self).
+    pub fn poll_stt(&mut self) -> bool {
+        // Drain all pending events into a local vec, then drop the handle borrow
+        let events: Vec<_> = self.stt_handle.as_ref()
+            .map(|h| std::iter::from_fn(|| h.try_recv()).collect())
+            .unwrap_or_default();
+        if events.is_empty() { return false; }
+        // Now we can freely mutate self while processing each event
+        for event in events {
+            match event {
+                crate::stt::SttEvent::RecordingStarted => {
+                    self.stt_recording = true;
+                    self.set_status("Recording...");
+                }
+                crate::stt::SttEvent::RecordingStopped { duration_secs } => {
+                    self.stt_recording = false;
+                    self.set_status(format!("Transcribing {:.1}s of audio...", duration_secs));
+                }
+                crate::stt::SttEvent::Transcribed(text) => {
+                    self.stt_transcribing = false;
+                    self.insert_stt_text(&text);
+                    self.clear_status();
+                }
+                crate::stt::SttEvent::Error(msg) => {
+                    self.stt_recording = false;
+                    self.stt_transcribing = false;
+                    self.set_status(format!("STT: {}", msg));
+                }
+                crate::stt::SttEvent::ModelLoading => {
+                    self.stt_transcribing = true;
+                    self.set_status("Loading Whisper model...");
+                }
+                crate::stt::SttEvent::ModelReady => {}
+            }
+        }
+        true
+    }
+
+    /// Insert transcribed text at the current input cursor position.
+    /// Adds a leading space if the cursor isn't at the start and the previous char isn't whitespace.
+    fn insert_stt_text(&mut self, text: &str) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() { return; }
+        // Add space separator if needed (cursor not at start, previous char not whitespace)
+        if self.input_cursor > 0 {
+            let chars: Vec<char> = self.input.chars().collect();
+            if let Some(&prev) = chars.get(self.input_cursor - 1) {
+                if !prev.is_whitespace() {
+                    self.input_char(' ');
+                }
+            }
+        }
+        for c in trimmed.chars() {
+            self.input_char(c);
+        }
+    }
 }

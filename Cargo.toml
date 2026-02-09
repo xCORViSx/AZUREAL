@@ -47,6 +47,10 @@ unicode-width = "0.2"
 # Clipboard
 arboard = "3"
 
+# Speech-to-text
+whisper-rs = { version = "0.15", features = ["metal"] }
+cpal = "0.17"
+
 # Platform-specific
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
