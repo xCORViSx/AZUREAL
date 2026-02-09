@@ -46,26 +46,37 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
         Some(Action::GoToTop) => app.viewer_scroll = 0,
         Some(Action::GoToBottom) => { app.scroll_viewer_to_bottom(); }
         Some(Action::JumpNextEdit) => {
-            if !app.clickable_paths.is_empty() {
-                let next_idx = match app.selected_tool_diff {
-                    Some(idx) => (idx + 1) % app.clickable_paths.len(),
+            // Only cycle through Edit entries (non-empty old/new strings)
+            let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
+                .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                .map(|(i, _)| i).collect();
+            if !edits.is_empty() {
+                let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
+                let next = match cur {
+                    Some(pos) => (pos + 1) % edits.len(),
                     None => 0,
                 };
-                app.selected_tool_diff = Some(next_idx);
-                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(next_idx).cloned() {
+                let idx = edits[next];
+                app.selected_tool_diff = Some(idx);
+                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                     app.output_scroll = line_idx.saturating_sub(3);
                 }
             }
         }
         Some(Action::JumpPrevEdit) => {
-            if !app.clickable_paths.is_empty() {
-                let prev_idx = match app.selected_tool_diff {
-                    Some(idx) if idx > 0 => idx - 1,
-                    _ => app.clickable_paths.len() - 1,
+            let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
+                .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                .map(|(i, _)| i).collect();
+            if !edits.is_empty() {
+                let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
+                let prev = match cur {
+                    Some(0) | None => edits.len() - 1,
+                    Some(pos) => pos - 1,
                 };
-                app.selected_tool_diff = Some(prev_idx);
-                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(prev_idx).cloned() {
+                let idx = edits[prev];
+                app.selected_tool_diff = Some(idx);
+                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                     app.output_scroll = line_idx.saturating_sub(3);
                 }
