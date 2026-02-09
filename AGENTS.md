@@ -1143,7 +1143,7 @@ azureal
 | `j/k` | Scroll up/down |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` | Jump to top/bottom |
-| `f/b` | Next/prev Edit (syncs Convo scroll) |
+| `⌥←/⌥→` | Prev/next Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
@@ -1160,7 +1160,7 @@ azureal
 | `R` | Rebase status |
 | `Esc` | Return to Worktrees |
 
-**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). Clicking a Read or Write path opens the file plain in the Viewer. The clicked path is highlighted with inverted colors (orange background, black text) in the Convo pane. Use `f/b` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.
+**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). Clicking a Read or Write path opens the file plain in the Viewer. The clicked path is highlighted with inverted colors (orange background, black text) in the Convo pane. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.
 
 ### Prompt Mode (Input Focused)
 
