@@ -696,7 +696,7 @@ Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Opt
 
 ### TodoWrite Sticky Widget
 
-Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Convo pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed.
+Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Convo pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed. When a subagent (Task tool) is active, its TodoWrite calls are shown as indented subtasks below the main agent's todos, prefixed with `↳`. Subagent todos are cleared when the Task tool completes.
 
 **Status icons:**
 | Icon | Color | Meaning |
@@ -708,7 +708,7 @@ Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a 
 In-progress items show their `activeForm` text (present tense, e.g., "Building project"), while pending/completed items show `content` (imperative, e.g., "Build project").
 
 **Data flow:**
-1. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` detects `TodoWrite` ToolCall events and parses `input.todos[]` into `app.current_todos`
+1. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` detects `TodoWrite` ToolCall events and routes them: if a Task tool is active (`active_task_tool_ids` non-empty), todos go to `app.subagent_todos`; otherwise to `app.current_todos`. Task tool calls are tracked via `active_task_tool_ids` — when the last Task completes, subagent todos are cleared.
 2. **Session load:** `extract_skill_tools_from_events()` in `src/app/state/load.rs` scans all display_events forward to find the latest TodoWrite and restore todo state
 3. **Session switch:** `current_todos` cleared on session switch and rebuilt from new session's events
 4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below
@@ -717,7 +717,7 @@ In-progress items show their `activeForm` text (present tense, e.g., "Building p
 
 **Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline convo stream (`render_display_events()` skips them). The sticky widget is the only representation.
 
-Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs`, `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output.rs`, suppression in `src/tui/render_events.rs`
+Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs` (includes `subagent_todos` and `active_task_tool_ids` fields), `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output.rs` (renders both main + subagent lists with `↳` prefix for subtasks), suppression in `src/tui/render_events.rs`
 
 ### AskUserQuestion Options Box
 

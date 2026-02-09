@@ -124,6 +124,8 @@ impl App {
         self.model_context_window = None;
         self.token_badge_cache = None;
         self.current_todos.clear();
+        self.subagent_todos.clear();
+        self.active_task_tool_ids.clear();
         self.awaiting_ask_user_question = false;
         self.ask_user_questions_cache = None;
 

@@ -64,6 +64,10 @@ All notable changes to Azureal will be documented in this file.
 ### Added
 - Status bar badge (bottom-right): CPU usage % and PID for the current azureal instance
   - CPU% sampled via `getrusage(RUSAGE_SELF)` delta every ~1s (zero overhead between samples)
+- Subagent subtask display in tasks panel
+  - When a Task (subagent) tool is active, its TodoWrite calls appear as indented subtasks below the main agent's todos, prefixed with ↳
+  - `active_task_tool_ids` tracks active Task tool calls; TodoWrite events routed to `subagent_todos` while any Task is in-flight
+  - Subagent todos auto-clear when the last Task tool completes
 
 ### Changed
 - All accent colors changed from ANSI Cyan to Azure (#007FFF) to align with the "Azureal" name

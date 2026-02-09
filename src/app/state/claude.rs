@@ -84,9 +84,19 @@ impl App {
                 match event {
                     DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
                         self.pending_tool_calls.insert(tool_use_id.clone());
-                        // TodoWrite: update sticky todo widget with latest state
+                        // Track subagent (Task) tool calls — while active, TodoWrite
+                        // events go to subagent_todos instead of overwriting main todos
+                        if tool_name == "Task" {
+                            self.active_task_tool_ids.insert(tool_use_id.clone());
+                        }
+                        // TodoWrite: route to subagent_todos if a Task is active,
+                        // otherwise update the main agent's current_todos
                         if tool_name == "TodoWrite" {
-                            self.current_todos = parse_todos_from_input(input);
+                            if self.active_task_tool_ids.is_empty() {
+                                self.current_todos = parse_todos_from_input(input);
+                            } else {
+                                self.subagent_todos = parse_todos_from_input(input);
+                            }
                         }
                         // AskUserQuestion: flag for special input handling
                         if tool_name == "AskUserQuestion" {
@@ -96,6 +106,10 @@ impl App {
                     }
                     DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
+                        // When a Task (subagent) completes, clear subagent todos
+                        if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
+                            self.subagent_todos.clear();
+                        }
                         let lower = content.to_lowercase();
                         if lower.contains("error:") || lower.contains("failed")
                             || lower.starts_with("error") || content.contains("ENOENT")

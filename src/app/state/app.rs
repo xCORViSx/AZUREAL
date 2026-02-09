@@ -293,8 +293,13 @@ pub struct App {
     pub sidebar_filter: String,
     /// Whether the sidebar filter input is active (typing goes to filter, not commands)
     pub sidebar_filter_active: bool,
-    /// Current todo list from latest TodoWrite tool call
+    /// Current todo list from latest TodoWrite tool call (main agent)
     pub current_todos: Vec<TodoItem>,
+    /// Subagent todo list — shown as indented subtasks when a Task tool is active
+    pub subagent_todos: Vec<TodoItem>,
+    /// Tool use IDs of currently active Task (subagent) calls.
+    /// While non-empty, any incoming TodoWrite goes to subagent_todos instead.
+    pub active_task_tool_ids: std::collections::HashSet<String>,
     /// Awaiting user response to AskUserQuestion tool call
     pub awaiting_ask_user_question: bool,
     /// Cached questions from last AskUserQuestion (for context prefix on response)
@@ -481,6 +486,8 @@ impl App {
             sidebar_filter: String::new(),
             sidebar_filter_active: false,
             current_todos: Vec::new(),
+            subagent_todos: Vec::new(),
+            active_task_tool_ids: std::collections::HashSet::new(),
             awaiting_ask_user_question: false,
             ask_user_questions_cache: None,
             stt_handle: None,

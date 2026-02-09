@@ -166,23 +166,29 @@ pub fn poll_render_result(app: &mut App) -> bool {
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     // Split area for sticky todo widget at bottom (visible whenever todos exist —
     // stays visible even when all completed, cleared on next user prompt or session switch)
-    let todo_height = if !app.current_todos.is_empty() {
+    let has_todos = !app.current_todos.is_empty() || !app.subagent_todos.is_empty();
+    let todo_height = if has_todos {
         // Account for text wrapping: each todo may span multiple visual lines.
         // Inner width = area width minus 2 for borders.
         let inner_w = area.width.saturating_sub(2) as usize;
-        let wrapped_lines: u16 = if inner_w == 0 { app.current_todos.len() as u16 } else {
-            app.current_todos.iter().map(|t| {
-                // 2 chars for icon ("✓ "), rest is text
+        // Helper closure: count wrapped visual lines for a todo list.
+        // prefix_extra = extra chars before text (e.g. 2 for "↳ " indent on subtasks)
+        let count_lines = |todos: &[crate::app::TodoItem], prefix_extra: usize| -> u16 {
+            if inner_w == 0 { return todos.len() as u16; }
+            todos.iter().map(|t| {
                 let text = if t.status == crate::app::TodoStatus::InProgress && !t.active_form.is_empty() {
                     &t.active_form
                 } else { &t.content };
-                let text_w: usize = text.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>() + 2;
-                // Ceiling division: how many visual rows this todo needs
+                // 2 chars for icon ("✓ ") + prefix_extra for indent
+                let text_w: usize = text.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>() + 2 + prefix_extra;
                 ((text_w + inner_w - 1) / inner_w).max(1) as u16
             }).sum()
         };
+        let main_lines = count_lines(&app.current_todos, 0);
+        // Subagent todos get "↳ " prefix (2 display-width chars)
+        let sub_lines = count_lines(&app.subagent_todos, 2);
         // +2 for border top/bottom, cap so convo still has at least 10 rows
-        (wrapped_lines + 2).min(area.height.saturating_sub(10))
+        (main_lines + sub_lines + 2).min(area.height.saturating_sub(10))
     } else { 0 };
     let [convo_area, todo_area] = Layout::vertical([
         Constraint::Min(1),
@@ -408,9 +414,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let output = Paragraph::new(content).block(block);
     f.render_widget(output, area);
 
-    // Render sticky todo widget at bottom of convo pane
+    // Render sticky todo widget at bottom of convo pane (main + subagent todos)
     if todo_height > 0 {
-        draw_todo_widget(f, &app.current_todos, todo_area, app.animation_tick);
+        draw_todo_widget(f, &app.current_todos, &app.subagent_todos, todo_area, app.animation_tick);
     }
 }
 
@@ -509,10 +515,11 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
 }
 
 /// Render the sticky todo widget — shows at the bottom of the convo pane.
-/// Checkboxes: ✓ (completed, green), ● (in_progress, yellow pulse), ○ (pending, dim)
+/// Main agent todos show as ✓/●/○, subagent todos show indented with "↳" prefix.
 fn draw_todo_widget(
     f: &mut Frame,
     todos: &[crate::app::TodoItem],
+    subagent_todos: &[crate::app::TodoItem],
     area: Rect,
     animation_tick: u64,
 ) {
@@ -521,27 +528,31 @@ fn draw_todo_widget(
     let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
     let pulse = pulse_colors[(animation_tick / 3) as usize % pulse_colors.len()];
 
-    let todo_lines: Vec<Line> = todos.iter().map(|t| {
-        let (icon, color) = match t.status {
-            TodoStatus::Completed => ("✓ ", Color::Green),
-            TodoStatus::InProgress => ("● ", pulse),
-            TodoStatus::Pending => ("○ ", Color::DarkGray),
-        };
-        // Show active_form for in-progress items, content otherwise
-        let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
-            &t.active_form
-        } else {
-            &t.content
-        };
-        Line::from(vec![
-            Span::styled(icon, Style::default().fg(color)),
-            Span::styled(text.clone(), Style::default().fg(if t.status == TodoStatus::Completed {
-                Color::DarkGray
-            } else {
-                Color::White
-            })),
-        ])
-    }).collect();
+    // Build lines from a todo list. If is_subtask, prefix each line with "↳ ".
+    let build_lines = |items: &[crate::app::TodoItem], is_subtask: bool| -> Vec<Line> {
+        items.iter().map(|t| {
+            let (icon, color) = match t.status {
+                TodoStatus::Completed => ("✓ ", Color::Green),
+                TodoStatus::InProgress => ("● ", pulse),
+                TodoStatus::Pending => ("○ ", Color::DarkGray),
+            };
+            let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
+                &t.active_form
+            } else { &t.content };
+            let text_color = if t.status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+            let mut spans = Vec::new();
+            if is_subtask {
+                spans.push(Span::styled("↳ ", Style::default().fg(Color::DarkGray)));
+            }
+            spans.push(Span::styled(icon, Style::default().fg(color)));
+            spans.push(Span::styled(text.clone(), Style::default().fg(text_color)));
+            Line::from(spans)
+        }).collect()
+    };
+
+    let mut todo_lines = build_lines(todos, false);
+    // Subagent todos shown indented below main todos
+    todo_lines.extend(build_lines(subagent_todos, true));
 
     let block = Block::default()
         .borders(Borders::ALL)
