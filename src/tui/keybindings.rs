@@ -423,7 +423,7 @@ pub fn lookup_action(
 /// Note: Wizard, Terminal, and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "Global", bindings: &GLOBAL },
+        // HelpSection { title: "Global", bindings: &GLOBAL },
         HelpSection { title: "Worktrees", bindings: &WORKTREES },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
@@ -454,12 +454,14 @@ pub fn prompt_command_title() -> String {
     let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
     let tab = find_key_for_action(&GLOBAL, Action::CycleFocusForward).unwrap_or("Tab".into());
+    let stab = find_key_for_action(&GLOBAL, Action::CycleFocusBackward).unwrap_or("⇧Tab".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
+    let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     format!(
-        " COMMAND ({}:type | {}:terminal | {}:help | {}:focus | {}:cancel response | {}:quit | {}:restart) ",
-        p, t, help, tab, cancel, quit, restart
+        " COMMAND ({}:type | {}:terminal | {}:help | {}/{}:focus | {}:cancel response | {}:quit | {}:restart | {}:debug) ",
+        p, t, help, tab, stab, cancel, quit, restart, debug
     )
 }
 
