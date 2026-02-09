@@ -312,10 +312,11 @@ pub static VIEWER: [Keybinding; 10] = [
 ];
 
 /// Edit mode bindings
-pub static EDIT_MODE: [Keybinding; 4] = [
+pub static EDIT_MODE: [Keybinding; 5] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo),
     Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
 ];
 
