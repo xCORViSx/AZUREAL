@@ -319,8 +319,8 @@ pub static EDIT_MODE: [Keybinding; 4] = [
 
 /// Convo/Output bindings
 pub static OUTPUT: [Keybinding; 14] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "Prev prompt", Action::JumpPrevBubble),
     Keybinding::new(KeyCombo::shift(KeyCode::Down), "Next message", Action::JumpNextMessage),
