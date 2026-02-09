@@ -103,7 +103,11 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
             app.open_run_command_picker();
         }
         // ⌥r: open dialog to add a new run command
+        // macOS ⌥+r produces '®' (unicode), not ALT modifier — match both
         KeyCode::Char('r') if key.modifiers == KeyModifiers::ALT => {
+            app.open_run_command_dialog();
+        }
+        KeyCode::Char('®') => {
             app.open_run_command_dialog();
         }
         // R (Shift+R): rebase current worktree onto main
