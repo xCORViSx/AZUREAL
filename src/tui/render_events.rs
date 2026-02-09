@@ -18,10 +18,14 @@ use super::render_markdown::render_assistant_text;
 use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview, tool_display_name};
 use super::render_wrap::wrap_text;
 
+/// Clickable path entry: (line_idx, start_col, end_col, file_path, old_string, new_string)
+pub type ClickablePath = (usize, usize, usize, String, String, String);
+
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
-/// Returns (lines, animation_indices, bubble_positions) where:
+/// Returns (lines, animation_indices, bubble_positions, clickable_paths) where:
 /// - animation_indices are (line_idx, span_idx) pairs for pending tool indicators
 /// - bubble_positions are (line_idx, is_user) pairs marking where message bubbles start
+/// - clickable_paths are file path link regions for mouse click handling
 pub fn render_display_events(
     events: &[DisplayEvent],
     width: u16,
@@ -29,12 +33,12 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &SyntaxHighlighter,
     pending_user_message: Option<&str>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
-    render_display_events_from(events, 0, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new())
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+    render_display_events_from(events, 0, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new())
 }
 
 /// Render only events starting from `start_idx`, appending to existing cache data.
-/// Existing lines/animation_indices/bubble_positions are carried forward.
+/// Existing lines/animation_indices/bubble_positions/clickable_paths are carried forward.
 pub fn render_display_events_incremental(
     events: &[DisplayEvent],
     start_idx: usize,
@@ -46,12 +50,13 @@ pub fn render_display_events_incremental(
     existing_lines: Vec<Line<'static>>,
     mut existing_anim: Vec<(usize, usize)>,
     existing_bubbles: Vec<(usize, bool)>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
+    existing_clickable: Vec<ClickablePath>,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     // Pending user message bubble is stripped from existing_lines by
     // submit_render_request() BEFORE sending — no duplicate trimming needed here.
     existing_anim.retain(|&(line_idx, _)| line_idx < existing_lines.len());
 
-    render_display_events_from(events, start_idx, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles)
+    render_display_events_from(events, start_idx, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles, existing_clickable)
 }
 
 /// Core renderer: iterates events from `start_idx`, appending to provided vectors.
@@ -66,7 +71,8 @@ fn render_display_events_from(
     mut lines: Vec<Line<'static>>,
     mut animation_indices: Vec<(usize, usize)>,
     mut bubble_positions: Vec<(usize, bool)>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>) {
+    mut clickable_paths: Vec<ClickablePath>,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -188,7 +194,7 @@ fn render_display_events_from(
                 }
                 // TodoWrite rendered as sticky widget, skip inline display
                 if tool_name == "TodoWrite" { continue; }
-                render_tool_call(&mut lines, &mut animation_indices, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
+                render_tool_call(&mut lines, &mut animation_indices, &mut clickable_paths, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
             DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
                 saw_content = true;
@@ -225,7 +231,7 @@ fn render_display_events_from(
         render_user_message(&mut lines, msg, bubble_width, w);
     }
 
-    (lines, animation_indices, bubble_positions)
+    (lines, animation_indices, bubble_positions, clickable_paths)
 }
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
@@ -318,6 +324,7 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
 fn render_tool_call(
     lines: &mut Vec<Line<'static>>,
     animation_indices: &mut Vec<(usize, usize)>,
+    clickable_paths: &mut Vec<ClickablePath>,
     tool_name: &str,
     file_path: &Option<String>,
     input: &serde_json::Value,
@@ -355,24 +362,45 @@ fn render_tool_call(
     let prefix_len = 3 + 2 + display_name.len() + 2;
     let param_max = tool_line_max.saturating_sub(prefix_len);
 
+    // Edit/Read/Write tools get underlined file paths that are clickable
+    let is_file_tool = matches!(tool_name, "Edit" | "Read" | "Write");
+    let path_style = if is_file_tool {
+        Style::default().fg(ORANGE).add_modifier(Modifier::UNDERLINED)
+    } else {
+        Style::default().fg(ORANGE)
+    };
+
     for (i, wrapped) in wrap_text(param_raw, param_max).into_iter().enumerate() {
         if i == 0 {
             // Track line index for animation patching (span index 1 is the indicator)
             if is_pending {
                 animation_indices.push((lines.len(), 1));
             }
+            // Record clickable region for file tools (first wrapped line only —
+            // the full path is needed for click detection, continuation lines are cosmetic)
+            if is_file_tool && !param_raw.is_empty() {
+                let start_col = prefix_len;
+                let end_col = start_col + wrapped.chars().count();
+                let (old_s, new_s) = if tool_name == "Edit" {
+                    (
+                        input.get("old_string").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        input.get("new_string").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    )
+                } else { (String::new(), String::new()) };
+                clickable_paths.push((lines.len(), start_col, end_col, param_raw.to_string(), old_s, new_s));
+            }
             lines.push(Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(tool_color)),
                 Span::styled(indicator, Style::default().fg(indicator_color)),
                 Span::styled(display_name.to_string(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
                 Span::styled("  ", Style::default()),
-                Span::styled(wrapped, Style::default().fg(ORANGE)),
+                Span::styled(wrapped, path_style),
             ]));
         } else {
             let indent = " ".repeat(prefix_len);
             lines.push(Line::from(vec![
                 Span::styled(indent, Style::default()),
-                Span::styled(wrapped, Style::default().fg(ORANGE)),
+                Span::styled(wrapped, path_style),
             ]));
         }
     }

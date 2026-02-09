@@ -569,9 +569,36 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         return true;
     }
 
-    // Convo pane — focus
+    // Convo pane — focus + clickable file path detection
     if app.pane_convo.contains(pos) {
         app.focus = Focus::Output;
+        // Check if the click landed on an underlined file path link
+        app.clamp_output_scroll();
+        if let Some((cache_line, cache_col)) = screen_to_cache_pos(col, row, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) {
+            // Search clickable_paths for a hit: line matches and col is within [start..end)
+            let hit = app.clickable_paths.iter().find(|(li, sc, ec, _, _, _)| {
+                *li == cache_line && cache_col >= *sc && cache_col < *ec
+            }).cloned();
+            if let Some((li, sc, ec, file_path, old_s, new_s)) = hit {
+                // Set inverted-color highlight on the clicked path
+                app.clicked_path_highlight = Some((li, sc, ec));
+                // Invalidate viewport cache so highlight is rendered on next draw
+                app.output_viewport_scroll = usize::MAX;
+                // Edit tool: open file with diff overlay in Viewer
+                // Read/Write tool: open file plain in Viewer
+                if !old_s.is_empty() || !new_s.is_empty() {
+                    app.load_file_with_edit_diff(&file_path, &old_s, &new_s);
+                } else {
+                    app.load_file_at_path(&file_path);
+                }
+            } else {
+                // Clicked somewhere else in convo — clear any previous highlight
+                if app.clicked_path_highlight.is_some() {
+                    app.clicked_path_highlight = None;
+                    app.output_viewport_scroll = usize::MAX;
+                }
+            }
+        }
         app.last_click = Some((std::time::Instant::now(), col, row));
         return true;
     }

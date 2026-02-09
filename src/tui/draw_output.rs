@@ -17,6 +17,7 @@ use ratatui::{
 use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
 use super::render_thread::RenderRequest;
+use super::colorize::ORANGE;
 use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
 
 /// On initial load of large conversations, only render this many events from the tail.
@@ -63,6 +64,7 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
         let mut existing_lines = app.rendered_lines_cache.clone();
         let mut existing_anim = app.animation_line_indices.clone();
         let mut existing_bubbles = app.message_bubble_positions.clone();
+        let existing_clickable = app.clickable_paths.clone();
         if trim < existing_lines.len() {
             existing_lines.truncate(trim);
             existing_anim.retain(|&(idx, _)| idx < trim);
@@ -81,6 +83,7 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             existing_lines,
             existing_anim,
             existing_bubbles,
+            existing_clickable,
             deferred_start: 0,
             seq: 0, // filled by send()
         }
@@ -104,6 +107,7 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             existing_lines: Vec::new(),
             existing_anim: Vec::new(),
             existing_bubbles: Vec::new(),
+            existing_clickable: Vec::new(),
             deferred_start,
             seq: 0,
         }
@@ -147,12 +151,15 @@ pub fn poll_render_result(app: &mut App) -> bool {
     app.rendered_lines_cache = result.lines;
     app.animation_line_indices = result.anim_indices;
     app.message_bubble_positions = result.bubble_positions;
+    app.clickable_paths = result.clickable_paths;
     app.rendered_lines_width = result.width;
     app.rendered_events_count = result.events_count;
     app.rendered_content_line_count = content_lines;
     app.rendered_events_start = result.events_start;
     app.render_seq_applied = result.seq;
     app.render_in_flight = false;
+    // Content shifted — stale highlight would point at wrong position
+    app.clicked_path_highlight = None;
 
     // Re-set follow-bottom sentinel so the next draw shows the new content
     if was_at_bottom { app.output_scroll = usize::MAX; }
@@ -263,6 +270,43 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         }
                     }
                     app.output_selection_cached = app.output_selection;
+
+                    // Apply inverted highlight on clicked file path (orange bg, black fg)
+                    if let Some((hl, hsc, hec)) = app.clicked_path_highlight {
+                        if hl >= scroll && hl < scroll + viewport_height {
+                            let vi = hl - scroll;
+                            if let Some(line) = lines.get_mut(vi) {
+                                // Walk spans to find the char range [hsc..hec) and apply inverted style
+                                let mut new_spans: Vec<Span<'static>> = Vec::new();
+                                let mut col = 0usize;
+                                for span in line.spans.iter() {
+                                    let span_len = span.content.chars().count();
+                                    let span_end = col + span_len;
+                                    if span_end <= hsc || col >= hec {
+                                        // Entirely outside highlight — keep as-is
+                                        new_spans.push(span.clone());
+                                    } else {
+                                        // Span overlaps highlight region — split into up to 3 parts
+                                        let chars: Vec<char> = span.content.chars().collect();
+                                        let hs = hsc.saturating_sub(col); // highlight start within span
+                                        let he = (hec - col).min(span_len); // highlight end within span
+                                        if hs > 0 {
+                                            let before: String = chars[..hs].iter().collect();
+                                            new_spans.push(Span::styled(before, span.style));
+                                        }
+                                        let mid: String = chars[hs..he].iter().collect();
+                                        new_spans.push(Span::styled(mid, Style::default().bg(ORANGE).fg(Color::Black)));
+                                        if he < span_len {
+                                            let after: String = chars[he..].iter().collect();
+                                            new_spans.push(Span::styled(after, span.style));
+                                        }
+                                    }
+                                    col = span_end;
+                                }
+                                *line = Line::from(new_spans);
+                            }
+                        }
+                    }
 
                     // Build title with message count
                     let title = if !app.message_bubble_positions.is_empty() {

@@ -80,6 +80,25 @@ impl App {
         self.focus = Focus::Viewer;
     }
 
+    /// Load a file into the viewer for Read/Write tool clicks (no diff overlay).
+    /// Opens the file with syntax highlighting at the top of the file.
+    pub fn load_file_at_path(&mut self, file_path: &str) {
+        use std::path::PathBuf;
+        let path = PathBuf::from(file_path);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            self.viewer_content = Some(content);
+            self.viewer_path = Some(path);
+            self.viewer_mode = crate::app::ViewerMode::File;
+            self.viewer_edit_diff = None;
+            self.viewer_edit_diff_line = None;
+            self.viewer_scroll = 0;
+            self.viewer_lines_dirty = true;
+            self.focus = Focus::Viewer;
+        } else {
+            self.set_status(&format!("Cannot read file: {}", file_path));
+        }
+    }
+
     /// Load a file into the viewer with inline Edit diff highlighting
     /// Shows the full file with syntax highlighting, scrolled to the edit location
     /// The edit region is highlighted with red/green diff backgrounds

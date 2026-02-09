@@ -616,7 +616,7 @@ impl App {
 
         // Full rendered output — every line obfuscated
         writeln!(file, "=== RENDERED OUTPUT (OBFUSCATED) ===")?;
-        let (rendered_lines, _, _) = crate::tui::util::render_display_events(
+        let (rendered_lines, _, _, _) = crate::tui::util::render_display_events(
             &self.display_events,
             120,
             &self.pending_tool_calls,

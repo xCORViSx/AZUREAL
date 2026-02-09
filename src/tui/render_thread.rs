@@ -19,6 +19,7 @@ use ratatui::text::Line;
 
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
+use super::render_events::ClickablePath;
 
 /// Everything the render thread needs to produce a frame.
 /// All fields are owned (cloned from App) so the thread works independently.
@@ -33,6 +34,7 @@ pub struct RenderRequest {
     pub existing_lines: Vec<Line<'static>>,
     pub existing_anim: Vec<(usize, usize)>,
     pub existing_bubbles: Vec<(usize, bool)>,
+    pub existing_clickable: Vec<ClickablePath>,
     /// Deferred render start offset (events before this were skipped)
     pub deferred_start: usize,
     /// Monotonic sequence number — main thread discards results older than latest applied
@@ -44,6 +46,7 @@ pub struct RenderResult {
     pub lines: Vec<Line<'static>>,
     pub anim_indices: Vec<(usize, usize)>,
     pub bubble_positions: Vec<(usize, bool)>,
+    pub clickable_paths: Vec<ClickablePath>,
     pub events_count: usize,
     pub events_start: usize,
     pub width: u16,
@@ -123,12 +126,13 @@ fn render_loop(
         let deferred_start = req.deferred_start;
 
         // Incremental if existing cache was provided, full otherwise
-        let (lines, anim, bubbles) = if !req.existing_lines.is_empty() && req.start_idx > 0 {
+        let (lines, anim, bubbles, clickable) = if !req.existing_lines.is_empty() && req.start_idx > 0 {
             super::render_events::render_display_events_incremental(
                 &req.events, req.start_idx, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
                 req.existing_lines, req.existing_anim, req.existing_bubbles,
+                req.existing_clickable,
             )
         } else {
             super::render_events::render_display_events(
@@ -140,6 +144,7 @@ fn render_loop(
 
         let _ = tx.send(RenderResult {
             lines, anim_indices: anim, bubble_positions: bubbles,
+            clickable_paths: clickable,
             events_count: event_count, events_start: deferred_start,
             width, seq,
         });

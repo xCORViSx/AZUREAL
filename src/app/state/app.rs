@@ -226,6 +226,9 @@ pub struct App {
     pub tool_diff_positions: Vec<(usize, String, String, String)>,
     /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string)
     pub clickable_paths: Vec<(usize, usize, usize, String, String, String)>,
+    /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col)
+    /// Rendered with inverted colors so the user sees which path they clicked
+    pub clicked_path_highlight: Option<(usize, usize, usize)>,
     /// Cached title bar session name (updated on session switch, avoids file I/O in render)
     pub title_session_name: String,
     /// Currently selected tool diff index (for e/E navigation in Output)
@@ -469,6 +472,7 @@ impl App {
             tool_diff_positions: Vec::new(),
             selected_tool_diff: None,
             clickable_paths: Vec::new(),
+            clicked_path_highlight: None,
             title_session_name: String::new(),
             viewer_edit_mode: false,
             viewer_edit_content: Vec::new(),
