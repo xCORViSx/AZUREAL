@@ -421,7 +421,6 @@ pub fn lookup_action(
 /// Note: Wizard, Terminal, and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "Global", bindings: &GLOBAL },
         HelpSection { title: "Worktrees", bindings: &WORKTREES },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
@@ -445,11 +444,20 @@ pub fn prompt_type_title() -> String {
     )
 }
 
-/// Generate title hints for prompt input (command mode)
+/// Generate title hints for command mode — shows ALL global keybindings (except copy
+/// selection which is self-explanatory) so the help panel can omit them.
 pub fn prompt_command_title() -> String {
-    let prompt = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
-    let terminal = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".into());
-    format!(" PROMPT ({}:type | {}:terminal) ", prompt, terminal)
+    let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
+    let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".into());
+    let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
+    let tab = find_key_for_action(&GLOBAL, Action::CycleFocusForward).unwrap_or("Tab".into());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
+    let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
+    let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
+    format!(
+        " COMMAND ({}:type | {}:terminal | {}:help | {}:focus | {}:cancel response | {}:quit | {}:restart) ",
+        p, t, help, tab, cancel, quit, restart
+    )
 }
 
 /// Generate title hints for terminal (type mode) — all keys forward to PTY except Esc

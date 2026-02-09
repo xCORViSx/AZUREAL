@@ -87,7 +87,7 @@ azureal
 
 **Input Modes:**
 
-- Red border = Command mode (keys are commands)
+- Red border = Command mode (keys are commands; title bar shows all global bindings)
 - Yellow border = Prompt mode (typing to Claude)
 - Magenta border = Voice recording/transcribing (`⌃s` to toggle)
 - Cyan border = Terminal mode (typing shell commands)

@@ -504,8 +504,8 @@ All keybindings are defined once in `src/tui/keybindings.rs` and used by both in
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, and action
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
-- Terminal and Input bindings shown in title bar only (not in help panel) via title functions
-- `prompt_type_title()`, `prompt_command_title()` for Input pane
+- Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
+- `prompt_type_title()` for Input pane type mode, `prompt_command_title()` for command mode (shows "COMMAND" + all global keys)
 - `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
 
 **Usage pattern:**
