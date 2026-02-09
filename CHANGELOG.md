@@ -59,6 +59,7 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Holding arrow keys now repeats cursor movement (was only moving once because `KeyEventKind::Repeat` events were dropped)
 - Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
+- Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
 
 ### Changed
 - Input box now wraps at word boundaries instead of character boundaries

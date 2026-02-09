@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -167,8 +167,22 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     // Split area for sticky todo widget at bottom (visible whenever todos exist —
     // stays visible even when all completed, cleared on next user prompt or session switch)
     let todo_height = if !app.current_todos.is_empty() {
-        // +2 for border top/bottom
-        (app.current_todos.len() as u16 + 2).min(area.height.saturating_sub(10))
+        // Account for text wrapping: each todo may span multiple visual lines.
+        // Inner width = area width minus 2 for borders.
+        let inner_w = area.width.saturating_sub(2) as usize;
+        let wrapped_lines: u16 = if inner_w == 0 { app.current_todos.len() as u16 } else {
+            app.current_todos.iter().map(|t| {
+                // 2 chars for icon ("✓ "), rest is text
+                let text = if t.status == crate::app::TodoStatus::InProgress && !t.active_form.is_empty() {
+                    &t.active_form
+                } else { &t.content };
+                let text_w: usize = text.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>() + 2;
+                // Ceiling division: how many visual rows this todo needs
+                ((text_w + inner_w - 1) / inner_w).max(1) as u16
+            }).sum()
+        };
+        // +2 for border top/bottom, cap so convo still has at least 10 rows
+        (wrapped_lines + 2).min(area.height.saturating_sub(10))
     } else { 0 };
     let [convo_area, todo_area] = Layout::vertical([
         Constraint::Min(1),
@@ -535,6 +549,6 @@ fn draw_todo_widget(
         .title(Span::styled(" Tasks ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
         .border_style(Style::default().fg(Color::DarkGray));
 
-    let widget = Paragraph::new(todo_lines).block(block);
+    let widget = Paragraph::new(todo_lines).block(block).wrap(Wrap { trim: false });
     f.render_widget(widget, area);
 }
