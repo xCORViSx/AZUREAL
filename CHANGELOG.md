@@ -139,6 +139,8 @@ All notable changes to Azureal will be documented in this file.
 - Uppercase keybindings (`D` debug dump, `R` rebase, `T` tab dialog) now work correctly
   - Without `REPORT_ALL_KEYS`, shifted letters arrive as `(NONE, Char('D'))` not `(SHIFT, Char('D'))`
   - All three handlers were matching on `SHIFT` modifier which never fires in our Kitty protocol config
+- `⌥r` (add run command) now works on macOS
+  - macOS ⌥+r produces unicode `®`, not ALT modifier — added `Char('®')` match arm
 - File tree entries now highlight when clicked
   - Missing `invalidate_file_tree()` call after setting selection from mouse click — cache was never rebuilt
 - Shift+Arrow selection highlight now visible in input pane
