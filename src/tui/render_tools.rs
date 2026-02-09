@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::syntax::SyntaxHighlighter;
 use super::render_wrap::wrap_spans;
+use super::util::AZURE;
 
 /// Map internal tool names to user-friendly display names
 pub fn tool_display_name(tool_name: &str) -> &str {
@@ -101,7 +102,7 @@ pub fn truncate_line(s: &str, max_len: usize) -> String {
 /// Shows summarized output constrained to max_width
 pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, is_failed: bool, max_width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let tool_color = if is_failed { Color::Red } else { Color::Cyan };
+    let tool_color = if is_failed { Color::Red } else { AZURE };
     let result_style = Style::default().fg(if is_failed { Color::Red } else { Color::Gray });
 
     // Filter out system-reminder blocks

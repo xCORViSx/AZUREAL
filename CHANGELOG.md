@@ -66,6 +66,9 @@ All notable changes to Azureal will be documented in this file.
   - CPU% sampled via `getrusage(RUSAGE_SELF)` delta every ~1s (zero overhead between samples)
 
 ### Changed
+- All accent colors changed from ANSI Cyan to Azure (#007FFF) to align with the "Azureal" name
+  - `AZURE` constant defined in `src/tui/util.rs`, imported across 14 source files
+  - Replaces every `Color::Cyan` usage: UI borders, titles, sidebar, dialogs, syntax highlighting, markdown, tool calls, user bubbles, file tree, status bar, and diff hunks
 - Input box title in command mode renamed from "PROMPT" to "COMMAND" and now shows all global keybindings (type, terminal, help, focus, cancel, quit, restart); removed Global section from help panel
 - Sending a prompt mid-conversation now cancels Claude and sends the new prompt in one Enter press (previously required Enter to cancel, then Enter again to send)
 - Input box now wraps at word boundaries instead of character boundaries

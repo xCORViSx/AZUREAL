@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus, ViewMode};
-use super::util::truncate;
+use super::util::{truncate, AZURE};
 
 /// Draw the status bar at the bottom
 pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
@@ -34,7 +34,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         status_spans.push(Span::raw(" "));
         status_spans.push(Span::styled(
             format!("({})", session.branch_name),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(AZURE),
         ));
     } else {
         status_spans.push(Span::styled(

@@ -1,4 +1,5 @@
 use ratatui::style::{Color, Modifier, Style};
+use crate::tui::util::AZURE;
 use ratatui::text::Span;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
@@ -61,7 +62,7 @@ impl DiffHighlighter {
             if line.starts_with("@@") {
                 result.push(vec![Span::styled(
                     line.to_string(),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
                 )]);
                 continue;
             }
@@ -300,7 +301,7 @@ fn scope_to_color(stack: &syntect::parsing::ScopeStack) -> Color {
     } else if scope_str.contains("constant.numeric") || scope_str.contains("number") {
         Color::Yellow
     } else if scope_str.contains("constant") {
-        Color::Cyan
+        AZURE
     } else if scope_str.contains("keyword") || scope_str.contains("storage") {
         Color::Magenta
     } else if scope_str.contains("entity.name.function") || scope_str.contains("support.function") {
@@ -314,11 +315,11 @@ fn scope_to_color(stack: &syntect::parsing::ScopeStack) -> Color {
     } else if scope_str.contains("punctuation") || scope_str.contains("operator") {
         Color::White
     } else if scope_str.contains("entity.name") {
-        Color::Cyan
+        AZURE
     } else if scope_str.contains("meta.attribute") || scope_str.contains("attribute") {
         Color::Rgb(180, 180, 255) // Light purple for attributes
     } else if scope_str.contains("markup.heading") {
-        Color::Cyan
+        AZURE
     } else if scope_str.contains("markup.bold") {
         Color::White
     } else if scope_str.contains("markup.italic") {

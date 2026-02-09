@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::app::{App, BranchDialog};
 use super::keybindings;
-use super::util::{calculate_cursor_position, truncate};
+use super::util::{calculate_cursor_position, truncate, AZURE};
 
 /// Draw help overlay with auto-sized columns from centralized keybindings
 pub fn draw_help_overlay(f: &mut Frame) {
@@ -70,7 +70,7 @@ pub fn draw_help_overlay(f: &mut Frame) {
         for (key, desc) in entries {
             let key_span = Span::styled(
                 format!("{:>width$}", key, width = key_width),
-                Style::default().fg(Color::Cyan)
+                Style::default().fg(AZURE)
             );
             let desc_str: String = if desc.len() > desc_available {
                 format!("{}…", desc.chars().take(desc_available.saturating_sub(1)).collect::<String>())
@@ -124,7 +124,7 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Help (? to close) ")
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(AZURE))
         .style(Style::default().bg(Color::Reset));
     f.render_widget(block, help_area);
 
@@ -160,7 +160,7 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
+                .border_style(Style::default().fg(AZURE))
                 .title(filter_title),
         );
     f.render_widget(filter, dialog_chunks[0]);
@@ -189,7 +189,7 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(AZURE))
             .title(title),
     );
 
@@ -210,13 +210,13 @@ pub fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
         let items: Vec<ListItem> = menu.actions.iter().enumerate().map(|(idx, action)| {
             let is_selected = idx == menu.selected;
             let style = if is_selected {
-                Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+                Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
 
             let key_style = if is_selected {
-                Style::default().bg(Color::Cyan).fg(Color::DarkGray)
+                Style::default().bg(AZURE).fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::Yellow)
             };
@@ -231,7 +231,7 @@ pub fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan))
+                    .border_style(Style::default().fg(AZURE))
                     .title(" Worktree Actions (↑↓ to navigate, Enter to select, Esc to close) ")
                     .style(Style::default().bg(Color::Reset)),
             );
@@ -262,7 +262,7 @@ pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
     // Title
     let title = Paragraph::new("Create New Worktree")
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT));
     f.render_widget(title, modal_chunks[0]);
 
@@ -321,12 +321,12 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = app.run_commands.iter().enumerate().map(|(idx, cmd)| {
         let is_selected = idx == picker.selected;
         let style = if is_selected {
-            Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+            Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
         let key_style = if is_selected {
-            Style::default().bg(Color::Cyan).fg(Color::DarkGray)
+            Style::default().bg(AZURE).fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::Yellow)
         };
@@ -344,7 +344,7 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(AZURE))
             .title(" Run Command (j/k:nav  1-9:quick  e:edit  x:del  a:add) ")
             .style(Style::default().bg(Color::Reset)),
     );
@@ -370,8 +370,8 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     let title_text = if dialog.editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
     let outer = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(title_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        .border_style(Style::default().fg(AZURE))
+        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
     let inner = outer.inner(dialog_area);
     f.render_widget(outer, dialog_area);
 

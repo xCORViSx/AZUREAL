@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus};
-use super::util::truncate;
+use super::util::{truncate, AZURE};
 
 /// Build file tree lines (extracted for caching)
 fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
@@ -64,7 +64,7 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
                 Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
             } else if entry.is_dir {
                 // Hidden dirs get dimmed cyan, normal dirs get bright cyan
-                let color = if entry.is_hidden { Color::Rgb(80, 120, 130) } else { Color::Cyan };
+                let color = if entry.is_hidden { Color::Rgb(80, 120, 130) } else { AZURE };
                 Style::default().fg(color).add_modifier(Modifier::BOLD)
             } else {
                 // Hidden files get dimmed gray, normal files get white
@@ -128,12 +128,12 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
             .borders(Borders::ALL)
             .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
             .title(if is_focused {
-                Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                Span::styled(title, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
             } else {
                 Span::styled(title, Style::default().fg(Color::White))
             })
             .border_style(if is_focused {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             }),

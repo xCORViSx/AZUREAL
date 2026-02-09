@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use super::colorize::ORANGE;
+use super::util::AZURE;
 use super::markdown::{parse_markdown_spans, is_table_separator};
 use super::render_wrap::wrap_text;
 
@@ -34,7 +35,7 @@ pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'stati
             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
             if in_code_block && !lang.is_empty() {
                 spans.push(Span::styled("┌─ ", Style::default().fg(Color::DarkGray)));
-                spans.push(Span::styled(lang.to_string(), Style::default().fg(Color::Cyan)));
+                spans.push(Span::styled(lang.to_string(), Style::default().fg(AZURE)));
                 spans.push(Span::styled(" ─", Style::default().fg(Color::DarkGray)));
             } else if !in_code_block {
                 spans.push(Span::styled("└──────", Style::default().fg(Color::DarkGray)));
@@ -180,7 +181,7 @@ fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, t
             let w = col_widths.get(j).copied().unwrap_or(cell.trim().len());
             let cell_text = format!(" {:width$} ", cell.trim(), width = w);
             if is_header {
-                spans.push(Span::styled(cell_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+                spans.push(Span::styled(cell_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
             } else {
                 spans.push(Span::styled(cell_text, Style::default().fg(Color::White)));
             }
@@ -208,8 +209,8 @@ fn render_header(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: us
     let header_level = trimmed.chars().take_while(|&c| c == '#').count();
     let header_text = trimmed.trim_start_matches('#').trim();
     let (prefix, style) = match header_level {
-        1 => ("█ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        2 => ("▓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        1 => ("█ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+        2 => ("▓ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
         3 => ("▒ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         _ => ("░ ", Style::default().fg(Color::Green)),
     };
@@ -237,7 +238,7 @@ fn render_bullet(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: us
     for (i, wrapped) in wrap_text(bullet_content, bullet_max).into_iter().enumerate() {
         let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         if i == 0 {
-            spans.push(Span::styled("  • ", Style::default().fg(Color::Cyan)));
+            spans.push(Span::styled("  • ", Style::default().fg(AZURE)));
         } else {
             spans.push(Span::styled("    ", Style::default()));
         }
@@ -255,7 +256,7 @@ fn render_numbered(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: 
     for (i, wrapped) in wrap_text(content, num_max).into_iter().enumerate() {
         let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         if i == 0 {
-            spans.push(Span::styled(num_prefix.clone(), Style::default().fg(Color::Cyan)));
+            spans.push(Span::styled(num_prefix.clone(), Style::default().fg(AZURE)));
         } else {
             spans.push(Span::styled(" ".repeat(num_prefix.len()), Style::default()));
         }

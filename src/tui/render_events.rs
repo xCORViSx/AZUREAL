@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
+use super::util::AZURE;
 use super::markdown::parse_markdown_spans;
 use super::render_markdown::render_assistant_text;
 use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview, tool_display_name};
@@ -234,7 +235,7 @@ fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
     ]).alignment(Alignment::Center));
     lines.push(Line::from(vec![
         Span::styled("Model: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(model.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(model.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
     ]).alignment(Alignment::Center));
     lines.push(Line::from(vec![
         Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
@@ -293,8 +294,8 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
 
     lines.push(Line::from(vec![
         Span::raw(offset_str.clone()),
-        Span::styled(header_pad, Style::default().bg(Color::Cyan)),
-        Span::styled(header, Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(header_pad, Style::default().bg(AZURE)),
+        Span::styled(header, Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
     ]));
 
     let content_width = bubble_width.saturating_sub(2);
@@ -304,13 +305,13 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
             Span::raw(offset_str.clone()),
             Span::styled(" ".repeat(pad), Style::default()),
             Span::styled(wrapped, Style::default().fg(Color::White)),
-            Span::styled(" │", Style::default().fg(Color::Cyan)),
+            Span::styled(" │", Style::default().fg(AZURE)),
         ]));
     }
 
     lines.push(Line::from(vec![
         Span::raw(offset_str),
-        Span::styled(format!("{}┘", "─".repeat(bubble_width - 1)), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("{}┘", "─".repeat(bubble_width - 1)), Style::default().fg(AZURE)),
     ]));
 }
 
@@ -326,7 +327,7 @@ fn render_tool_call(
     bubble_width: usize,
     highlighter: &SyntaxHighlighter,
 ) {
-    let tool_color = Color::Cyan;
+    let tool_color = AZURE;
     let is_pending = pending_tools.contains(tool_use_id);
     let is_failed = failed_tools.contains(tool_use_id);
 
@@ -511,7 +512,7 @@ fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::
                 let pad = box_width.saturating_sub(opt_text.chars().count() + 4);
                 lines.push(Line::from(vec![
                     Span::styled("│ ", Style::default().fg(color)),
-                    Span::styled(opt_text, Style::default().fg(Color::Cyan)),
+                    Span::styled(opt_text, Style::default().fg(AZURE)),
                     Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
                 ]).alignment(Alignment::Center));
                 // Option description (dimmer, indented)
@@ -600,7 +601,7 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             let (marker, char_len) = if in_code_block && !lang.is_empty() {
                 (vec![
                     Span::styled("┌─ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(lang.to_string(), Style::default().fg(Color::Cyan)),
+                    Span::styled(lang.to_string(), Style::default().fg(AZURE)),
                     Span::styled(" ─", Style::default().fg(Color::DarkGray)),
                 ], 5 + lang.chars().count())
             } else if !in_code_block {
@@ -629,8 +630,8 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             let level = trimmed.chars().take_while(|&c| c == '#').count();
             let text = trimmed.trim_start_matches('#').trim();
             let (prefix, style) = match level {
-                1 => ("█ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-                2 => ("▓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                1 => ("█ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+                2 => ("▓ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
                 3 => ("▒ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 _ => ("░ ", Style::default().fg(Color::Green)),
             };
@@ -650,7 +651,7 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             let bullet_content = trimmed.trim_start_matches("- ").trim_start_matches("* ").trim_start_matches("• ");
             for (i, wrapped) in wrap_text(bullet_content, content_width.saturating_sub(4)).into_iter().enumerate() {
                 let mut spans = if i == 0 {
-                    vec![Span::styled("  • ", Style::default().fg(Color::Cyan))]
+                    vec![Span::styled("  • ", Style::default().fg(AZURE))]
                 } else {
                     vec![Span::styled("    ", Style::default())]
                 };
@@ -669,7 +670,7 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
                 let prefix_len = prefix.chars().count();
                 for (i, wrapped) in wrap_text(content_text, content_width.saturating_sub(prefix_len)).into_iter().enumerate() {
                     let mut spans = if i == 0 {
-                        vec![Span::styled(prefix.clone(), Style::default().fg(Color::Cyan))]
+                        vec![Span::styled(prefix.clone(), Style::default().fg(AZURE))]
                     } else {
                         vec![Span::styled(" ".repeat(prefix_len), Style::default())]
                     };

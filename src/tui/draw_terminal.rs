@@ -11,12 +11,13 @@ use ratatui::{
 
 use crate::app::{App, Focus};
 use super::keybindings::{terminal_type_title, terminal_command_title, terminal_scroll_title};
+use super::util::AZURE;
 
 /// Draw the embedded PTY terminal pane
 pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.terminal_mode && app.focus == Focus::Input;
     let border_style = if is_focused {
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };

@@ -14,6 +14,7 @@ use crate::wizard::{
     SessionWizard, SessionField, SessionStep,
 };
 use super::keybindings::wizard_coming_soon_help;
+use super::util::AZURE;
 
 /// Draw the wizard modal overlay
 pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
@@ -34,7 +35,7 @@ pub fn draw_wizard_modal(f: &mut Frame, app: &App) {
     // Modal frame
     let modal_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(AZURE))
         .title(" New... ")
         .style(Style::default().bg(Color::Reset));
     f.render_widget(modal_block, modal_area);
@@ -154,7 +155,7 @@ fn draw_worktree_content(f: &mut Frame, app: &App, wizard: &WorktreeWizard, area
                 "No project loaded".to_string()
             };
             let info = Paragraph::new(project_info)
-                .style(Style::default().fg(Color::Cyan));
+                .style(Style::default().fg(AZURE));
             f.render_widget(info, content_area);
         }
         WorktreeStep::EnterDetails => draw_worktree_details_input(f, wizard, content_area),
@@ -222,18 +223,18 @@ fn draw_worktree_confirmation(f: &mut Frame, app: &App, wizard: &WorktreeWizard,
     if let Some(ref project) = app.project {
         lines.push(Line::from(vec![
             Span::styled("Project: ", Style::default().fg(Color::Gray)),
-            Span::styled(&project.name, Style::default().fg(Color::Cyan)),
+            Span::styled(&project.name, Style::default().fg(AZURE)),
         ]));
         lines.push(Line::from(""));
     }
 
     lines.push(Line::from(vec![
         Span::styled("Worktree name: ", Style::default().fg(Color::Gray)),
-        Span::styled(&wizard.worktree_name, Style::default().fg(Color::Cyan)),
+        Span::styled(&wizard.worktree_name, Style::default().fg(AZURE)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Branch: ", Style::default().fg(Color::Gray)),
-        Span::styled(format!("azureal/{}", wizard.final_worktree_name()), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("azureal/{}", wizard.final_worktree_name()), Style::default().fg(AZURE)),
     ]));
     lines.push(Line::from(""));
 
@@ -371,11 +372,11 @@ fn draw_session_confirmation(f: &mut Frame, app: &App, wizard: &SessionWizard, a
         Line::from(""),
         Line::from(vec![
             Span::styled("Worktree: ", Style::default().fg(Color::Gray)),
-            Span::styled(worktree_name, Style::default().fg(Color::Cyan)),
+            Span::styled(worktree_name, Style::default().fg(AZURE)),
         ]),
         Line::from(vec![
             Span::styled("Session name: ", Style::default().fg(Color::Gray)),
-            Span::styled(&wizard.session_name, Style::default().fg(Color::Cyan)),
+            Span::styled(&wizard.session_name, Style::default().fg(AZURE)),
         ]),
         Line::from(""),
         Line::from(vec![

@@ -72,7 +72,9 @@ A ratatui-based terminal interface with 4-pane layout:
 - **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
 - **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border shows title on the left and token usage + PID/exit code on the right (border characters fill the gap, not spaces). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%) representing context window consumption — helps predict when context compaction will occur. PID shown in green while Claude is running; switches to exit code on process exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
-- **Status Bar**: Context-sensitive help and session info
+- **Status Bar**: Context-sensitive help and session info; CPU% + PID badge right-aligned
+
+**Color Identity:** All accent colors use the `AZURE` constant (`#007FFF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers

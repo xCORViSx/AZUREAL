@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::tui::util::AZURE;
 use std::path::PathBuf;
 
 /// A project represents a git repository (derived from current working directory)
@@ -76,7 +77,7 @@ impl SessionStatus {
             SessionStatus::Running => Color::Green,
             SessionStatus::Waiting => Color::Yellow,
             SessionStatus::Stopped => Color::Gray,
-            SessionStatus::Completed => Color::Cyan,
+            SessionStatus::Completed => AZURE,
             SessionStatus::Failed => Color::Red,
         }
     }

@@ -1,10 +1,17 @@
 //! Small utility functions for TUI rendering
 //!
-//! Re-exports commonly used items from submodules:
-//! - `colorize`: Output colorization (colorize_output, MessageType, etc.)
-//! - `markdown`: Markdown parsing (parse_markdown_spans, etc.)
-//! - `render_events`: Display event rendering
-//! - `render_tools`: Tool result rendering
+//! The AZURE constant defines the app's signature color (#007FFF) used
+//! everywhere Cyan was previously used, aligning with the "Azureal" name.
+
+/// Azure blue (#007FFF) — the app's signature accent color, replacing all
+/// uses of ANSI Cyan for a cohesive visual identity matching the name "Azureal".
+pub const AZURE: ratatui::style::Color = ratatui::style::Color::Rgb(0, 127, 255);
+//
+// Re-exports commonly used items from submodules:
+// - `colorize`: Output colorization (colorize_output, MessageType, etc.)
+// - `markdown`: Markdown parsing (parse_markdown_spans, etc.)
+// - `render_events`: Display event rendering
+// - `render_tools`: Tool result rendering
 
 // Re-export commonly used items
 pub use super::colorize::{colorize_output, detect_message_type, MessageType};

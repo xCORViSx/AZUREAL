@@ -17,7 +17,7 @@ use ratatui::{
 use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
 use super::render_thread::RenderRequest;
-use super::util::{colorize_output, detect_message_type, MessageType};
+use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
 
 /// On initial load of large conversations, only render this many events from the tail.
 /// The user starts at the bottom so they see the most recent messages instantly.
@@ -356,7 +356,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let is_focused = app.focus == Focus::Output;
     let border_style = if is_focused {
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
@@ -445,7 +445,7 @@ fn draw_rebase_content(app: &App) -> Vec<Line<'static>> {
         if let Some(ref onto) = status.onto_branch {
             lines.push(Line::from(vec![
                 Span::styled("Onto: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(onto.clone(), Style::default().fg(Color::Cyan)),
+                Span::styled(onto.clone(), Style::default().fg(AZURE)),
             ]));
         }
 
@@ -546,7 +546,7 @@ fn draw_todo_widget(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Span::styled(" Tasks ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(" Tasks ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
         .border_style(Style::default().fg(Color::DarkGray));
 
     let widget = Paragraph::new(todo_lines).block(block).wrap(Wrap { trim: false });

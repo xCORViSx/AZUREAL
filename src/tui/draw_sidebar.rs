@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus, SidebarRowAction};
-use super::util::truncate;
+use super::util::{truncate, AZURE};
 
 /// Build sidebar items and row→action map for mouse click handling.
 /// Each ListItem pushed gets a corresponding SidebarRowAction pushed to row_map.
@@ -38,8 +38,8 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
 
     // Always show project header
     items.push(ListItem::new(Line::from(vec![
-        Span::styled("▸ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(project.name.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("▸ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+        Span::styled(project.name.clone(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
     ])));
     row_map.push(SidebarRowAction::ProjectHeader);
 
@@ -84,7 +84,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
 
         // Active worktree: cyan text like project name (no background)
         let style = if is_selected {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(AZURE)
         } else {
             Style::default()
         };
@@ -113,7 +113,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
                     }
                     let is_file_selected = j == selected_idx;
                     let file_style = if is_file_selected {
-                        Style::default().fg(Color::Cyan)
+                        Style::default().fg(AZURE)
                     } else {
                         Style::default().fg(Color::DarkGray)
                     };
@@ -206,12 +206,12 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
                 .title(if is_focused {
-                    Span::styled(" Worktrees ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                    Span::styled(" Worktrees ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
                 } else {
                     Span::styled(" Worktrees ", Style::default().fg(Color::White))
                 })
                 .border_style(if is_focused {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 }),

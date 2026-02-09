@@ -13,6 +13,7 @@ use ratatui::{
 use textwrap::{wrap, Options};
 
 use crate::app::{App, Focus, ViewerMode};
+use super::util::AZURE;
 
 /// Draw the viewer panel showing file content or diff detail
 pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
@@ -236,7 +237,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                         } else if line.starts_with('-') && !line.starts_with("---") {
                             Style::default().fg(Color::Rgb(100, 100, 100))
                         } else if line.starts_with("@@") {
-                            Style::default().fg(Color::Cyan)
+                            Style::default().fg(AZURE)
                         } else if line.starts_with("diff ") || line.starts_with("index ") {
                             Style::default().fg(Color::Yellow)
                         } else {
@@ -309,7 +310,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     let border_color = if in_edit_diff {
         Color::Green
     } else if is_focused {
-        Color::Cyan
+        AZURE
     } else {
         Color::White
     };
@@ -795,7 +796,7 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
 
         let is_active = idx == app.viewer_active_tab;
         let style = if is_active {
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray).bg(Color::DarkGray)
         };
@@ -834,8 +835,8 @@ fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .title(Span::styled(" Tabs ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
-        .border_style(Style::default().fg(Color::Cyan));
+        .title(Span::styled(" Tabs ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .border_style(Style::default().fg(AZURE));
 
     f.render_widget(block.clone(), dialog_area);
 
@@ -849,7 +850,7 @@ fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
 
         let prefix = if is_active { "▸ " } else { "  " };
         let style = if is_active {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };

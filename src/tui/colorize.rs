@@ -8,6 +8,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use super::util::AZURE;
+
 /// Orange color constant for Claude messages
 pub const ORANGE: Color = Color::Rgb(255, 140, 0);
 
@@ -60,7 +62,7 @@ pub fn colorize_output(line: &str) -> Line<'static> {
     // User prompts - cyan background header
     if trimmed.starts_with("You:") || trimmed.starts_with("> ") || trimmed.starts_with("❯") {
         return Line::from(vec![
-            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
             Span::styled(" ", Style::default()),
             Span::styled(trimmed.trim_start_matches("You:").trim_start_matches("> ").trim_start_matches("❯").trim().to_string(), Style::default().fg(Color::White)),
         ]).alignment(Alignment::Right);
@@ -69,7 +71,7 @@ pub fn colorize_output(line: &str) -> Line<'static> {
     // Human/user markers
     if trimmed.starts_with("Human:") || trimmed.starts_with("[H]") {
         return Line::from(vec![
-            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
             Span::styled(" ", Style::default()),
             Span::styled(trimmed.trim_start_matches("Human:").trim_start_matches("[H]").trim().to_string(), Style::default().fg(Color::White)),
         ]).alignment(Alignment::Right);
@@ -94,9 +96,9 @@ pub fn colorize_output(line: &str) -> Line<'static> {
                 (inner, None)
             };
             return Line::from(vec![
-                Span::styled(" ┣━", Style::default().fg(Color::Cyan)),
+                Span::styled(" ┣━", Style::default().fg(AZURE)),
                 Span::styled("● ", Style::default().fg(Color::Yellow)),
-                Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(tool_name.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
                 Span::styled(param.map(|p| format!("  {}", p)).unwrap_or_default(), Style::default().fg(Color::DarkGray)),
             ]);
         }
@@ -120,9 +122,9 @@ pub fn colorize_output(line: &str) -> Line<'static> {
             (inner, None)
         };
         return Line::from(vec![
-            Span::styled(" ┣━", Style::default().fg(Color::Cyan)),
+            Span::styled(" ┣━", Style::default().fg(AZURE)),
             Span::styled("● ", Style::default().fg(Color::Yellow)),
-            Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(tool_name.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
             Span::styled(param.map(|p| format!("  {}", p)).unwrap_or_default(), Style::default().fg(Color::DarkGray)),
         ]);
     }
@@ -135,7 +137,7 @@ pub fn colorize_output(line: &str) -> Line<'static> {
             .trim_start_matches("✔ ")
             .trim_end_matches(']');
         return Line::from(vec![
-            Span::styled(" ┃  └─ ", Style::default().fg(Color::Cyan)),
+            Span::styled(" ┃  └─ ", Style::default().fg(AZURE)),
             Span::styled("✓ ", Style::default().fg(Color::Green)),
             Span::styled(result_text.to_string(), Style::default().fg(Color::DarkGray)),
         ]);
@@ -153,7 +155,7 @@ pub fn colorize_output(line: &str) -> Line<'static> {
 
     // JSON/structured data
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        return Line::from(Span::styled(line_owned, Style::default().fg(Color::Cyan)));
+        return Line::from(Span::styled(line_owned, Style::default().fg(AZURE)));
     }
 
     // Bullet points and lists
@@ -166,10 +168,10 @@ pub fn colorize_output(line: &str) -> Line<'static> {
 
     // Headers (markdown style)
     if trimmed.starts_with("# ") {
-        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
     }
     if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
-        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(Color::Cyan)));
+        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(AZURE)));
     }
 
     // File paths
