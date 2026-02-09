@@ -374,10 +374,10 @@ All notable changes to Azureal will be documented in this file.
   - Removed `--out`/`-D` flag and `cargo rd` alias
 - Viewer tabs: `t` to tab current file, `T` for tab dialog, `[`/`]` to switch
 - Clickable file paths for Read, Write, and Edit tools in Convo pane
-- Clickable file paths for Read, Write, and Edit tools in Convo pane
-  - File paths are underlined and can be clicked to open in Viewer
+  - File paths are underlined in orange and can be clicked to open in Viewer
   - Edit tool clicks show file with diff overlay highlighting changes
-  - Read/Write tool clicks open file without diff overlay
+  - Read/Write tool clicks open file plain without diff overlay
+  - Clicked path shows inverted color highlight (orange bg, black fg) in Convo
 - 4-pane TUI layout: Sessions (40 cols), FileTree (40 cols), Viewer (50%), Convo (50%)
   - FileTree shows directory structure for selected session's worktree
   - Viewer displays file content with syntax highlighting and line numbers
