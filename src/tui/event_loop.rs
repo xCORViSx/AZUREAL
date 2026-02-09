@@ -1059,7 +1059,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
         return Ok(());
     }
     if app.run_command_dialog.is_some() {
-        handle_run_command_dialog_input(key, app)?;
+        handle_run_command_dialog_input(key, app, &claude_process)?;
         return Ok(());
     }
 

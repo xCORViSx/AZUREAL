@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::app::{App, BranchDialog};
+use crate::app::types::CommandFieldMode;
 use super::keybindings;
 use super::util::{calculate_cursor_position, truncate, AZURE};
 
@@ -399,13 +400,24 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
         ));
     }
 
-    // Command field — yellow border when active
+    // Command/Prompt field — yellow border when active, right-aligned mode cycle hint
     let cmd_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let cmd_widget = Paragraph::new(dialog.command.as_str())
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(cmd_color))
-            .title(Span::styled(" Command ", Style::default().fg(cmd_color))));
+    let (field_title, mode_hint) = match dialog.field_mode {
+        CommandFieldMode::Command => (" Command ", " Tab:Prompt "),
+        CommandFieldMode::Prompt => (" Prompt ", " Tab:Command "),
+    };
+    let mut cmd_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(cmd_color))
+        .title(Span::styled(field_title, Style::default().fg(cmd_color)));
+    // Right-aligned mode cycle hint (only when field is focused)
+    if !dialog.editing_name {
+        cmd_block = cmd_block.title(
+            Line::from(Span::styled(mode_hint, Style::default().fg(Color::DarkGray)))
+                .alignment(Alignment::Right),
+        );
+    }
+    let cmd_widget = Paragraph::new(dialog.command.as_str()).block(cmd_block);
     f.render_widget(cmd_widget, chunks[1]);
 
     // Cursor in command field
@@ -416,12 +428,23 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
         ));
     }
 
-    // Hint line at bottom
+    // Hint line — Enter action changes by context
+    let enter_hint = if dialog.editing_name {
+        ":next  "
+    } else {
+        match dialog.field_mode {
+            CommandFieldMode::Command => ":save  ",
+            CommandFieldMode::Prompt => ":generate  ",
+        }
+    };
+    let tab_hint = if dialog.editing_name { ":next  " } else { ":mode  " };
     let hints = Line::from(vec![
         Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":switch  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(tab_hint, Style::default().fg(Color::DarkGray)),
+        Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
         Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":next/save  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
         Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
     ]);

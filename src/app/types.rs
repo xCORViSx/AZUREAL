@@ -190,6 +190,15 @@ impl RunCommand {
     }
 }
 
+/// Whether the second field in RunCommandDialog is a raw shell command or an AI prompt
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandFieldMode {
+    /// User types a shell command directly
+    Command,
+    /// User types a natural-language prompt; Claude generates the command
+    Prompt,
+}
+
 /// Dialog for creating/editing run commands
 #[derive(Debug, Clone)]
 pub struct RunCommandDialog {
@@ -199,15 +208,17 @@ pub struct RunCommandDialog {
     pub command_cursor: usize,
     pub editing_name: bool,
     pub editing_idx: Option<usize>,
+    /// Whether the second field is "Command" (raw shell) or "Prompt" (AI-generated)
+    pub field_mode: CommandFieldMode,
 }
 
 impl RunCommandDialog {
     pub fn new() -> Self {
-        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None }
+        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None, field_mode: CommandFieldMode::Command }
     }
 
     pub fn edit(idx: usize, cmd: &RunCommand) -> Self {
-        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx) }
+        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx), field_mode: CommandFieldMode::Command }
     }
 }
 

@@ -6,7 +6,7 @@ use crossterm::event::{self, KeyCode};
 use crate::app::{App, Focus, RunCommand, SessionAction};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
-use crate::app::types::RunCommandDialog;
+use crate::app::types::{CommandFieldMode, RunCommandDialog};
 
 /// Handle keyboard input when context menu is open
 pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -180,17 +180,31 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
     Ok(())
 }
 
-/// Handle keyboard input when run command dialog (create/edit) is open
-pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+/// Handle keyboard input when run command dialog (create/edit) is open.
+/// In Command mode, Enter saves a raw shell command directly.
+/// In Prompt mode, Enter spawns a Claude session on the main branch to generate the command.
+pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     let Some(ref mut dialog) = app.run_command_dialog else { return Ok(()) };
 
     match key.code {
-        // Tab: toggle between name and command fields
-        KeyCode::Tab => { dialog.editing_name = !dialog.editing_name; }
-        // Enter: advance name→command, or save when in command field
+        // Tab: in Name field → advance to Command/Prompt; in Command/Prompt → cycle mode
+        KeyCode::Tab => {
+            if dialog.editing_name {
+                dialog.editing_name = false;
+            } else {
+                dialog.field_mode = match dialog.field_mode {
+                    CommandFieldMode::Command => CommandFieldMode::Prompt,
+                    CommandFieldMode::Prompt => CommandFieldMode::Command,
+                };
+            }
+        }
+        // Shift+Tab: go back to Name field from Command/Prompt
+        KeyCode::BackTab => {
+            if !dialog.editing_name { dialog.editing_name = true; }
+        }
+        // Enter: advance name→command, or save/generate when in command/prompt field
         KeyCode::Enter => {
             if dialog.editing_name {
-                // Advance to command field (like Tab)
                 if dialog.name.trim().is_empty() {
                     app.set_status("Name is required");
                     return Ok(());
@@ -198,25 +212,38 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App) -> R
                 dialog.editing_name = false;
                 return Ok(());
             }
-            // In command field — save
             let name = dialog.name.trim().to_string();
-            let command = dialog.command.trim().to_string();
-            if name.is_empty() || command.is_empty() {
-                app.set_status("Both name and command are required");
+            let content = dialog.command.trim().to_string();
+            if name.is_empty() || content.is_empty() {
+                let label = match dialog.field_mode {
+                    CommandFieldMode::Command => "command",
+                    CommandFieldMode::Prompt => "prompt",
+                };
+                app.set_status(format!("Both name and {} are required", label));
                 return Ok(());
             }
-            let editing_idx = dialog.editing_idx;
-            let cmd = RunCommand::new(name.clone(), command);
-            if let Some(idx) = editing_idx {
-                if idx < app.run_commands.len() {
-                    app.run_commands[idx] = cmd;
+            match dialog.field_mode {
+                CommandFieldMode::Command => {
+                    // Save the raw shell command directly
+                    let editing_idx = dialog.editing_idx;
+                    let cmd = RunCommand::new(name.clone(), content);
+                    if let Some(idx) = editing_idx {
+                        if idx < app.run_commands.len() { app.run_commands[idx] = cmd; }
+                    } else {
+                        app.run_commands.push(cmd);
+                    }
+                    app.run_command_dialog = None;
+                    let _ = app.save_run_commands();
+                    app.set_status(format!("Saved run command: {}", name));
                 }
-            } else {
-                app.run_commands.push(cmd);
+                CommandFieldMode::Prompt => {
+                    // Spawn Claude on main branch to generate the run command
+                    let prompt_text = content;
+                    let cmd_name = name;
+                    app.run_command_dialog = None;
+                    spawn_run_command_prompt(app, claude_process, &cmd_name, &prompt_text);
+                }
             }
-            app.run_command_dialog = None;
-            let _ = app.save_run_commands();
-            app.set_status(format!("Saved run command: {}", name));
         }
         KeyCode::Esc => { app.run_command_dialog = None; }
         // Text editing for the active field
@@ -257,4 +284,67 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App) -> R
         _ => {}
     }
     Ok(())
+}
+
+/// Spawn a Claude session on the main branch to generate a run command from a prompt.
+/// Claude reads/writes `.azureal/run_commands.json` and adds the new entry.
+fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_name: &str, user_prompt: &str) {
+    let Some(project) = app.project.as_ref() else {
+        app.set_status("No project loaded");
+        return;
+    };
+    let main_branch = project.main_branch.clone();
+
+    // Find the main worktree path (the repo root itself for the main branch)
+    let main_wt_path = app.sessions.iter()
+        .find(|s| s.branch_name == main_branch)
+        .and_then(|s| s.worktree_path.clone());
+    let Some(wt_path) = main_wt_path else {
+        app.set_status("Main branch worktree not found");
+        return;
+    };
+
+    // Build prompt with context about run_commands.json format and location
+    let prompt = format!(
+        "I need you to create a run command for my project.\n\n\
+         Command name: {}\n\
+         Description: {}\n\n\
+         Run commands are stored in `.azureal/run_commands.json` in the project root.\n\
+         Format: JSON array of objects with \"name\" and \"command\" fields, e.g.:\n\
+         ```json\n\
+         [\n\
+           {{\"name\": \"Build\", \"command\": \"cargo build --release\"}}\n\
+         ]\n\
+         ```\n\n\
+         Read the existing file if it exists. Determine the right shell command(s) based on my description, \
+         and add a new entry with the name \"{}\". If the file doesn't exist, create it with just this entry.\n\
+         Don't modify existing entries. Project directory: {}\n\
+         Keep the response brief.",
+        cmd_name, user_prompt, cmd_name, wt_path.display()
+    );
+
+    // Session name: [NewRunCmd] <name> — truncated to fit sidebar
+    let display_name = if cmd_name.chars().count() > 30 {
+        format!("[NewRunCmd] {}…", &cmd_name.chars().take(29).collect::<String>())
+    } else {
+        format!("[NewRunCmd] {}", cmd_name)
+    };
+    app.pending_session_name = Some((main_branch.clone(), display_name));
+
+    // Select the main branch in sidebar so user sees the output
+    if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == main_branch) {
+        app.selected_session = Some(idx);
+        app.load_session_output();
+    }
+
+    // Spawn Claude on main branch (resume existing session if any)
+    let resume_id = app.get_claude_session_id(&main_branch).cloned();
+    match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
+        Ok(rx) => {
+            app.register_claude(main_branch, rx);
+            app.focus = Focus::Output;
+            app.set_status(format!("Generating run command: {}...", cmd_name));
+        }
+        Err(e) => app.set_status(format!("Failed to start Claude: {}", e)),
+    }
 }
