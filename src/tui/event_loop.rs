@@ -889,8 +889,9 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             }
             return Ok(());
         }
-        // Global 'p' - enter Claude prompt mode from anywhere (except viewer edit mode or sidebar filter)
-        (KeyModifiers::NONE, KeyCode::Char('p')) if !app.prompt_mode && !app.viewer_edit_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
+        // Global 'p' - enter/refocus prompt mode from anywhere (except viewer edit mode or sidebar filter).
+        // Also fires when prompt_mode is already on but focus is elsewhere (re-focuses input).
+        (KeyModifiers::NONE, KeyCode::Char('p')) if (!app.prompt_mode || app.focus != Focus::Input) && !app.viewer_edit_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
             app.show_help = false;
             if app.terminal_mode {
                 app.close_terminal();

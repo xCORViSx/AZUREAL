@@ -57,6 +57,7 @@ All notable changes to Azureal will be documented in this file.
   - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
 ### Changed
+- `p` key now refocuses prompt input when prompt mode is already active but focus is on another pane (previously only worked to enter prompt mode from command mode)
 - Simplified scroll system — removed half-page (`⌃d`/`⌃u`) and full-page (`f`/`b`) scroll bindings. `J`/`K` now does full-page scroll across all panes.
 - Removed `g`/`G` keybindings for scroll-to-top/scroll-to-bottom. `⌥↑`/`⌥↓` is now the only way to jump to top/bottom across all panes (Convo, Viewer, Terminal, FileTree, Worktrees).
 - `input_output.rs` now uses centralized `lookup_action()` from `keybindings.rs` — all input handlers are now fully centralized.
