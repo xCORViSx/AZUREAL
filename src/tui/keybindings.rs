@@ -544,3 +544,21 @@ pub fn is_nav_left(modifiers: KeyModifiers, code: KeyCode) -> bool {
 pub fn is_nav_right(modifiers: KeyModifiers, code: KeyCode) -> bool {
     modifiers == KeyModifiers::NONE && (code == KeyCode::Char('l') || code == KeyCode::Right)
 }
+
+/// macOS ⌥+letter produces unicode chars instead of setting the ALT modifier.
+/// This maps those unicode chars back to the original letter so handlers can
+/// match `⌥+letter` portably. Returns None if the char isn't an ⌥ mapping.
+/// Based on macOS US keyboard layout.
+#[inline]
+pub fn macos_opt_key(ch: char) -> Option<char> {
+    match ch {
+        'å' => Some('a'), '∫' => Some('b'), 'ç' => Some('c'), '∂' => Some('d'),
+        '´' => Some('e'), 'ƒ' => Some('f'), '©' => Some('g'), '˙' => Some('h'),
+        'ˆ' => Some('i'), '∆' => Some('j'), '˚' => Some('k'), '¬' => Some('l'),
+        'µ' => Some('m'), '˜' => Some('n'), 'ø' => Some('o'), 'π' => Some('p'),
+        'œ' => Some('q'), '®' => Some('r'), 'ß' => Some('s'), '†' => Some('t'),
+        '¨' => Some('u'), '√' => Some('v'), '∑' => Some('w'), '≈' => Some('x'),
+        '¥' => Some('y'), 'Ω' => Some('z'),
+        _ => None,
+    }
+}
