@@ -52,6 +52,10 @@ All notable changes to Azureal will be documented in this file.
   - Ratatui's next full draw naturally reconciles (no buffer invalidation needed)
 
 ### Changed
+- Debug dump (`⌃⌥⌘D`) now obfuscates all sensitive content before writing to `.azureal/debug-output.txt`
+  - User/assistant messages, file paths, and rendered output replaced with deterministic fake words
+  - Tool names, event types, parsing stats, and structural markers preserved for diagnostics
+  - Users can safely attach the dump to GitHub issues without exposing project details
 - Convo pane now extends full height (down to status bar), no longer shares height with Input/Terminal
   - Input/Terminal pane now spans only the first 3 panes (Sessions, FileTree, Viewer)
   - Gives Convo pane more vertical space for reading conversation history
