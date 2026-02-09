@@ -556,7 +556,7 @@ Note: For auto-compaction, there's no visible "starting" event - we only see the
   - Detection: Multiple user messages sharing the same `parentUuid` - keep only the most recent by timestamp
 
 **Debug Output:**
-`⌃⌥⌘D` dumps diagnostic output to `.azureal/debug-output.txt`. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
+`⌃D` dumps diagnostic output to `.azureal/debug-output.txt`. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
 
 **Markdown Rendering:**
 Claude responses are parsed for markdown syntax and rendered with proper styling:
