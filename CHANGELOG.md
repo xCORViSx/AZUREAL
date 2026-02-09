@@ -9,6 +9,7 @@ All notable changes to Azureal will be documented in this file.
 - Edit cycling in Viewer rebound from `f`/`b` to `⌥←`/`⌥→` to avoid key conflicts
 - Edit cycling now only jumps through Edit tool entries (skips Read/Write paths)
 - Command box title now shows `p:prompt`, `⌃d:dump debug output`, and `Tab/⇧Tab:focus` (both directions); Global section commented out from help panel
+- Voice input (`⌃s`) now listed in Edit Mode section of help panel
 
 ### Added
 - Prompt mode for New Run Command dialog
