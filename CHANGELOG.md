@@ -4,6 +4,12 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- AZURE accent color lightened from #007FFF to #3399FF for better readability on dark backgrounds
+- Edit cycling in Viewer rebound from `f`/`b` to `⌥←`/`⌥→` to avoid key conflicts
+- Edit cycling now only jumps through Edit tool entries (skips Read/Write paths)
+- Command box title now shows `⌃d:debug` and `Tab/⇧Tab:focus` (both directions); Global section commented out from help panel
+
 ### Added
 - Projects panel: persistent project management via `~/.azureal/projects.txt`
   - Auto-registers git repos on startup; shown full-screen when launched outside a git repo
@@ -94,10 +100,10 @@ All notable changes to Azureal will be documented in this file.
   - Subagent todos auto-clear when the last Task tool completes
 
 ### Changed
-- All accent colors changed from ANSI Cyan to Azure (#007FFF) to align with the "Azureal" name
+- All accent colors changed from ANSI Cyan to Azure (#3399FF, lightened from original #007FFF) to align with the "Azureal" name
   - `AZURE` constant defined in `src/tui/util.rs`, imported across 14 source files
   - Replaces every `Color::Cyan` usage: UI borders, titles, sidebar, dialogs, syntax highlighting, markdown, tool calls, user bubbles, file tree, status bar, and diff hunks
-- Input box title in command mode renamed from "PROMPT" to "COMMAND" and now shows all global keybindings (type, terminal, help, focus, cancel, quit, restart); removed Global section from help panel
+- Input box title in command mode renamed from "PROMPT" to "COMMAND" and now shows global keybindings (type, terminal, help, Tab/⇧Tab focus, cancel, quit, restart, debug); Global section commented out from help panel
 - Sending a prompt mid-conversation now cancels Claude and sends the new prompt in one Enter press (previously required Enter to cancel, then Enter again to send)
 - Input box now wraps at word boundaries instead of character boundaries
   - Prefers breaking at last space before width limit; falls back to char break for long words

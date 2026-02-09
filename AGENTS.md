@@ -76,7 +76,7 @@ A ratatui-based terminal interface with 4-pane layout and status bar:
 - **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
-**Color Identity:** All accent colors use the `AZURE` constant (`#007FFF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
+**Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers
@@ -526,7 +526,7 @@ All keybindings are defined once in `src/tui/keybindings.rs` and used by both in
 - `Keybinding`: Primary key, alternatives (j/↓), description, and action
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
-- `prompt_type_title()` for Input pane type mode, `prompt_command_title()` for command mode (shows "COMMAND" + all global keys)
+- `prompt_type_title()` for Input pane type mode, `prompt_command_title()` for command mode (shows "COMMAND" + global keys: type, terminal, help, Tab/⇧Tab focus, cancel, quit, restart, debug)
 - `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
 
 **Usage pattern:**
@@ -1167,7 +1167,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear | ⌃s:voice)`
-**Command mode title shows:** `(p:type | t:terminal)`
+**Command mode title shows:** `(p:type | t:terminal | ?:help | Tab/⇧Tab:focus | ⌃c:cancel response | ⌃q:quit | ⌃r:restart | ⌃d:debug)`
 
 ### Terminal Mode
 
