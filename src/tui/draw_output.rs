@@ -403,8 +403,30 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-        .title(Span::styled(title, border_style))
+        .title(Span::styled(title.clone(), border_style))
         .border_style(border_style);
+
+    // Centered session name in [brackets] on top border
+    if !app.title_session_name.is_empty() {
+        // Available space: total border width minus left title, right title, and some padding
+        let right_len = right_title.as_ref().map(|rt| rt.spans.iter().map(|s| s.content.len()).sum::<usize>()).unwrap_or(0);
+        let avail = (area.width as usize).saturating_sub(title.len() + right_len + 4);
+        let name = &app.title_session_name;
+        let bracketed = if name.chars().count() + 2 <= avail {
+            format!("[{}]", name)
+        } else if avail > 5 {
+            let trunc: String = name.chars().take(avail - 3).collect();
+            format!("[{}…]", trunc)
+        } else {
+            String::new()
+        };
+        if !bracketed.is_empty() {
+            block = block.title(
+                Line::from(Span::styled(bracketed, Style::default().fg(Color::White)))
+                    .alignment(Alignment::Center)
+            );
+        }
+    }
 
     // Add right-aligned PID/exit title — ratatui fills gap with border chars
     if let Some(rt) = right_title {
