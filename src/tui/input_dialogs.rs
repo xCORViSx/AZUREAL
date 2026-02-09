@@ -187,8 +187,18 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App) -> R
     match key.code {
         // Tab: toggle between name and command fields
         KeyCode::Tab => { dialog.editing_name = !dialog.editing_name; }
-        // Enter: save the command
+        // Enter: advance name→command, or save when in command field
         KeyCode::Enter => {
+            if dialog.editing_name {
+                // Advance to command field (like Tab)
+                if dialog.name.trim().is_empty() {
+                    app.set_status("Name is required");
+                    return Ok(());
+                }
+                dialog.editing_name = false;
+                return Ok(());
+            }
+            // In command field — save
             let name = dialog.name.trim().to_string();
             let command = dialog.command.trim().to_string();
             if name.is_empty() || command.is_empty() {
@@ -198,12 +208,10 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App) -> R
             let editing_idx = dialog.editing_idx;
             let cmd = RunCommand::new(name.clone(), command);
             if let Some(idx) = editing_idx {
-                // Editing existing command
                 if idx < app.run_commands.len() {
                     app.run_commands[idx] = cmd;
                 }
             } else {
-                // Adding new command
                 app.run_commands.push(cmd);
             }
             app.run_command_dialog = None;

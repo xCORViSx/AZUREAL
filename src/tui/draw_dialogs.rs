@@ -356,67 +356,74 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     let Some(ref dialog) = app.run_command_dialog else { return };
     let area = f.area();
 
-    // Compact dialog: two text fields (name + command) stacked
+    // Two text fields (name + command) stacked inside an outer border
     let dialog_width = 60u16.min(area.width.saturating_sub(4));
-    let dialog_height = 9u16.min(area.height.saturating_sub(4)); // title(3) + name(3) + command(3)
+    // outer(1) + name(3) + command(3) + hints(1) + outer(1) = 9
+    let dialog_height = 9u16.min(area.height.saturating_sub(4));
     let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
     let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
     let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
 
     f.render_widget(Clear, dialog_area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Length(3)])
-        .split(dialog_area);
+    // Outer border with title
+    let title_text = if dialog.editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
+    let outer = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(Span::styled(title_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+    let inner = outer.inner(dialog_area);
+    f.render_widget(outer, dialog_area);
 
-    // Title bar
-    let title_text = if dialog.editing_idx.is_some() { "Edit Run Command" } else { "New Run Command" };
-    let title = Paragraph::new(title_text)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .block(
-            Block::default()
-                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-                .border_style(Style::default().fg(Color::Cyan)),
-        );
-    f.render_widget(title, chunks[0]);
+    // Split inner area: name(3) + command(3) + hints(1)
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(1),
+    ]).split(inner);
 
-    // Name field - highlighted when active
-    let name_border_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let name = Paragraph::new(dialog.name.as_str())
-        .block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-                .border_style(Style::default().fg(name_border_color))
-                .title(" Name "),
-        );
-    f.render_widget(name, chunks[1]);
+    // Name field — yellow border when active, gray when inactive
+    let name_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let name_widget = Paragraph::new(dialog.name.as_str())
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(name_color))
+            .title(Span::styled(" Name ", Style::default().fg(name_color))));
+    f.render_widget(name_widget, chunks[0]);
 
-    // Place cursor in name field when editing name
+    // Cursor in name field (content at y+1, x+1 inside ALL borders)
     if dialog.editing_name {
         f.set_cursor_position((
-            chunks[1].x + 1 + dialog.name_cursor as u16,
-            chunks[1].y,
+            chunks[0].x + 1 + dialog.name_cursor as u16,
+            chunks[0].y + 1,
         ));
     }
 
-    // Command field - highlighted when active
-    let cmd_border_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let command = Paragraph::new(dialog.command.as_str())
-        .block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-                .border_style(Style::default().fg(cmd_border_color))
-                .title(" Command (Tab:switch  Enter:save  Esc:cancel) "),
-        );
-    f.render_widget(command, chunks[2]);
+    // Command field — yellow border when active
+    let cmd_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let cmd_widget = Paragraph::new(dialog.command.as_str())
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(cmd_color))
+            .title(Span::styled(" Command ", Style::default().fg(cmd_color))));
+    f.render_widget(cmd_widget, chunks[1]);
 
-    // Place cursor in command field when editing command
+    // Cursor in command field
     if !dialog.editing_name {
         f.set_cursor_position((
-            chunks[2].x + 1 + dialog.command_cursor as u16,
-            chunks[2].y,
+            chunks[1].x + 1 + dialog.command_cursor as u16,
+            chunks[1].y + 1,
         ));
     }
+
+    // Hint line at bottom
+    let hints = Line::from(vec![
+        Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":switch  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":next/save  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
+    ]);
+    f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), chunks[2]);
 }
