@@ -60,6 +60,7 @@ All notable changes to Azureal will be documented in this file.
 - Holding arrow keys now repeats cursor movement (was only moving once because `KeyEventKind::Repeat` events were dropped)
 - Function name syntax highlighting changed from ANSI Blue to light blue (`rgb(100, 160, 255)`) — ANSI Blue was nearly invisible on dark terminal backgrounds
 - Tasks widget now wraps long item text instead of clipping at pane edge; height accounts for wrapped lines
+- Subtask todos now render directly beneath their parent item (tracked via `subagent_parent_idx`) instead of appended at the end of the todo list
 
 ### Added
 - Status bar badge (bottom-right): CPU usage % and PID for the current azureal instance
