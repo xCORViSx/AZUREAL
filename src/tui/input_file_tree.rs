@@ -3,13 +3,20 @@
 //! Handles keyboard input when the FileTree panel is focused.
 
 use anyhow::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, Focus};
 use super::keybindings::{Action, lookup_action};
 
 /// Handle keyboard input for the FileTree panel
 pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
+    // ⌥↑/⌥↓: jump to first/last sibling in current folder (before centralized lookup)
+    match (key.modifiers, key.code) {
+        (KeyModifiers::ALT, KeyCode::Up) => { app.file_tree_first_sibling(); return Ok(()); }
+        (KeyModifiers::ALT, KeyCode::Down) => { app.file_tree_last_sibling(); return Ok(()); }
+        _ => {}
+    }
+
     // Use centralized keybindings lookup
     let action = lookup_action(Focus::FileTree, key.modifiers, key.code, false, false, false);
 

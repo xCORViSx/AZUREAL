@@ -82,6 +82,13 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 app.select_prev_session();
             }
         }
+        // ⌥↑/⌥↓: jump to first/last within current context
+        _ if key.modifiers == KeyModifiers::ALT && key.code == KeyCode::Up => {
+            if is_expanded { app.session_file_first(); } else { app.select_first_session(); }
+        }
+        _ if key.modifiers == KeyModifiers::ALT && key.code == KeyCode::Down => {
+            if is_expanded { app.session_file_last(); } else { app.select_last_session(); }
+        }
         KeyCode::Tab => app.focus = Focus::Output,
         KeyCode::Char(' ') | KeyCode::Char('?') => app.open_context_menu(),
         KeyCode::Char('n') => app.start_wizard(),

@@ -239,6 +239,80 @@ impl App {
         }
     }
 
+    /// Jump to first session (respects sidebar filter)
+    pub fn select_first_session(&mut self) {
+        if self.sessions.is_empty() { return; }
+        if self.sidebar_filter.is_empty() {
+            if self.selected_session != Some(0) {
+                self.save_current_terminal();
+                self.selected_session = Some(0);
+                self.load_session_output();
+                self.invalidate_sidebar();
+            }
+        } else {
+            let filter = self.sidebar_filter.to_lowercase();
+            let names = self.load_all_session_names();
+            if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+                if self.selected_session != Some(first) {
+                    self.save_current_terminal();
+                    self.selected_session = Some(first);
+                    self.load_session_output();
+                    self.invalidate_sidebar();
+                }
+            }
+        }
+    }
+
+    /// Jump to last session (respects sidebar filter)
+    pub fn select_last_session(&mut self) {
+        if self.sessions.is_empty() { return; }
+        if self.sidebar_filter.is_empty() {
+            let last = self.sessions.len() - 1;
+            if self.selected_session != Some(last) {
+                self.save_current_terminal();
+                self.selected_session = Some(last);
+                self.load_session_output();
+                self.invalidate_sidebar();
+            }
+        } else {
+            let filter = self.sidebar_filter.to_lowercase();
+            let names = self.load_all_session_names();
+            if let Some(last) = (0..self.sessions.len()).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+                if self.selected_session != Some(last) {
+                    self.save_current_terminal();
+                    self.selected_session = Some(last);
+                    self.load_session_output();
+                    self.invalidate_sidebar();
+                }
+            }
+        }
+    }
+
+    /// Jump to first file in expanded session dropdown
+    pub fn session_file_first(&mut self) {
+        let Some(session) = self.current_session() else { return };
+        let branch = session.branch_name.clone();
+        if self.session_selected_file_idx.get(&branch) != Some(&0) {
+            self.session_selected_file_idx.insert(branch, 0);
+            self.load_session_output();
+            self.invalidate_sidebar();
+        }
+    }
+
+    /// Jump to last file in expanded session dropdown
+    pub fn session_file_last(&mut self) {
+        let Some(session) = self.current_session() else { return };
+        let branch = session.branch_name.clone();
+        let Some(files) = self.session_files.get(&branch) else { return };
+        if files.is_empty() { return; }
+        let last = files.len() - 1;
+        if self.session_selected_file_idx.get(&branch) != Some(&last) {
+            self.session_selected_file_idx.insert(branch, last);
+            self.load_session_output();
+            self.invalidate_sidebar();
+        }
+    }
+
     /// Check if current session is expanded
     pub fn is_current_session_expanded(&self) -> bool {
         self.current_session()

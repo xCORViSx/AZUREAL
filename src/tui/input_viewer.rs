@@ -120,8 +120,8 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 (KeyModifiers::NONE, KeyCode::PageUp) => {
                     app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
                 }
-                (KeyModifiers::NONE, KeyCode::Home) => app.viewer_scroll = 0,
-                (KeyModifiers::NONE, KeyCode::End) => app.scroll_viewer_to_bottom(),
+                (KeyModifiers::NONE, KeyCode::Home) | (KeyModifiers::ALT, KeyCode::Up) => app.viewer_scroll = 0,
+                (KeyModifiers::NONE, KeyCode::End) | (KeyModifiers::ALT, KeyCode::Down) => app.scroll_viewer_to_bottom(),
                 // t: tab current file (save to tab bar)
                 (KeyModifiers::NONE, KeyCode::Char('t')) => app.viewer_tab_current(),
                 // T: open tab dialog

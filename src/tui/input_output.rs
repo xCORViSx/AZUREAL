@@ -50,14 +50,16 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 app.jump_to_prev_bubble(true);
             }
         }
-        (KeyModifiers::NONE, KeyCode::Char('G')) => {
+        // Scroll to bottom: G or ⌥↓
+        (KeyModifiers::NONE, KeyCode::Char('G')) | (KeyModifiers::ALT, KeyCode::Down) => {
             match app.view_mode {
                 ViewMode::Output => app.scroll_output_to_bottom(),
                 ViewMode::Diff => app.scroll_diff_to_bottom(),
                 _ => {}
             }
         }
-        (KeyModifiers::NONE, KeyCode::Char('g')) => {
+        // Scroll to top: g or ⌥↑
+        (KeyModifiers::NONE, KeyCode::Char('g')) | (KeyModifiers::ALT, KeyCode::Up) => {
             match app.view_mode {
                 ViewMode::Output => app.output_scroll = 0,
                 ViewMode::Diff => app.diff_scroll = 0,
