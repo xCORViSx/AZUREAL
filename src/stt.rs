@@ -233,6 +233,10 @@ fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
         ));
     }
 
+    // Suppress all whisper.cpp + GGML debug output (model params, Metal info, system info).
+    // Without log_backend/tracing_backend features, logs are silently dropped.
+    whisper_rs::install_logging_hooks();
+
     let params = whisper_rs::WhisperContextParameters::default();
     whisper_rs::WhisperContext::new_with_params(
         model_path.to_str().unwrap_or(""),
