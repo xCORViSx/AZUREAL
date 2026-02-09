@@ -719,7 +719,7 @@ Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/
 
 ### Speech-to-Text Input
 
-Press `⌃s` in prompt mode to toggle voice recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position.
+Press `⌃s` in prompt mode or file edit mode to toggle voice recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field.
 
 **Architecture:**
 - Background thread (`stt_loop`) blocks on `mpsc::recv()` when idle (zero CPU)
@@ -751,7 +751,7 @@ mkdir -p ~/.azureal/models && curl -L -o ~/.azureal/models/ggml-base.en.bin \
 - Events collected into Vec first (avoids borrow conflict: `try_recv` borrows handle, processing borrows `&mut self`)
 - Short poll timeout (16ms) when `stt_recording || stt_transcribing`
 
-Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs`, polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs`
+Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs` and `src/tui/input_viewer.rs` (edit mode), polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs` and `src/tui/draw_viewer.rs` (edit mode magenta border + REC indicator)
 
 ### Conversation Persistence
 

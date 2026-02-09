@@ -89,6 +89,8 @@ All notable changes to Azureal will be documented in this file.
   - Magenta border + REC/... indicator during recording/transcription
   - Transcribed text inserted at cursor with smart space handling
   - Model: `~/.azureal/models/ggml-base.en.bin` (~142MB, user-downloaded)
+  - Also works in file edit mode (`⌃s` inserts at viewer edit cursor)
+  - Viewer pane shows magenta border + REC/... indicator during edit mode recording
 - TodoWrite sticky widget at bottom of Convo pane
   - Persistent checkbox list showing Claude's task progress during streaming and on session load
   - Status icons: ✓ (completed, green), ● (in_progress, yellow pulsing), ○ (pending, dim)
