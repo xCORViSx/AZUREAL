@@ -23,6 +23,9 @@ All notable changes to Azureal will be documented in this file.
   - Scrolling up breaks follow; `⌥↓` resumes it
   - Removed forced scroll-to-bottom from `handle_claude_output()`, `add_output()`, and `refresh_session_events()`
 - Convo pane bubbles too narrow — render width formula `(terminal - 80) / 2` was a leftover from the old 50/50 split layout; now passes the fixed 80-column pane width directly, giving bubbles proper ~52 char width instead of being crushed to minimum 40
+- Edit cycling (`⌥←`/`⌥→`) now works after clicking an edit tool file path in the Convo pane
+  - Clicking an edit path now sets `selected_tool_diff` so cycling knows the starting position (was `None`, always jumping to first edit)
+- `[Edit N/M]` viewer title now counts only Edit tool calls (was counting all clickable paths including Read/Write)
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files

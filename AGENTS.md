@@ -1174,7 +1174,7 @@ azureal
 | `R` | Rebase status |
 | `Esc` | Return to Worktrees |
 
-**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines). Clicking a Read or Write path opens the file plain in the Viewer. The clicked path is highlighted with inverted colors (orange background, black text) in the Convo pane. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Convo scroll). The last 20 Edit calls also show inline diff previews in the Convo pane.
+**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked path is highlighted with inverted colors (orange background, black text) in the Convo pane. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Convo scroll). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Convo pane.
 
 ### Prompt Mode (Input Focused)
 
