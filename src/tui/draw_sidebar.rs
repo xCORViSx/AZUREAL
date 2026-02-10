@@ -216,3 +216,9 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(sidebar, list_area);
 }
+
+/// Draw the file tree overlay in the Worktrees pane (replaces sidebar when 'f' is pressed).
+/// Delegates to draw_file_tree which handles its own caching and rendering.
+pub fn draw_file_tree_overlay(f: &mut Frame, app: &mut App, area: Rect) {
+    super::draw_file_tree::draw_file_tree(f, app, area);
+}

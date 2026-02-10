@@ -445,15 +445,18 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
     let pos = Position::new(col, row);
 
     if app.pane_sessions.contains(pos) {
-        let old = app.selected_session;
-        if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
-        else { for _ in 0..delta.abs() { app.select_prev_session(); } }
-        app.selected_session != old
-    } else if app.pane_file_tree.contains(pos) {
-        let old = app.file_tree_selected;
-        if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
-        else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
-        app.file_tree_selected != old
+        if app.show_file_tree {
+            // File tree overlay is showing — scroll file tree items
+            let old = app.file_tree_selected;
+            if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
+            else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
+            app.file_tree_selected != old
+        } else {
+            let old = app.selected_session;
+            if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
+            else { for _ in 0..delta.abs() { app.select_prev_session(); } }
+            app.selected_session != old
+        }
     } else if app.pane_viewer.contains(pos) {
         app.viewer_selection = None;
         if delta > 0 { app.scroll_viewer_down(delta as usize) }
@@ -463,6 +466,18 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
         else { app.scroll_terminal_up((-delta) as usize); }
         true
     } else if app.pane_convo.contains(pos) {
+        // Session list overlay: scroll selected item
+        if app.show_session_list {
+            let total: usize = app.sessions.iter().map(|s| {
+                app.session_files.get(&s.branch_name).map(|f| f.len().max(1)).unwrap_or(1)
+            }).sum();
+            if delta > 0 {
+                app.session_list_selected = (app.session_list_selected + delta as usize).min(total.saturating_sub(1));
+            } else {
+                app.session_list_selected = app.session_list_selected.saturating_sub((-delta) as usize);
+            }
+            return true;
+        }
         app.output_selection = None;
         if delta > 0 {
             match app.view_mode {
@@ -497,58 +512,55 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
     if app.creation_wizard.is_some() { app.creation_wizard = None; app.focus = Focus::Worktrees; return true; }
 
-    // Sessions pane — click to select session or session file
+    // Sessions/FileTree pane — when file tree overlay is active, click selects entries;
+    // otherwise click selects sessions or session files from the worktree list
     if app.pane_sessions.contains(pos) {
-        app.focus = Focus::Worktrees;
-        // Map screen row to sidebar item (1 for top border)
-        let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
-        if let Some(action) = app.sidebar_row_map.get(visual_row).cloned() {
-            match action {
-                SidebarRowAction::Session(idx) => {
-                    if app.selected_session != Some(idx) {
-                        app.save_current_terminal();
-                        app.selected_session = Some(idx);
-                        app.load_session_output();
-                        app.invalidate_sidebar();
-                    }
-                }
-                SidebarRowAction::SessionFile(sess_idx, file_idx) => {
-                    // First select the session if different
-                    if app.selected_session != Some(sess_idx) {
-                        app.save_current_terminal();
-                        app.selected_session = Some(sess_idx);
-                    }
-                    // Then select the session file
-                    if let Some(session) = app.sessions.get(sess_idx) {
-                        let branch = session.branch_name.clone();
-                        app.select_session_file(&branch, file_idx);
+        if app.show_file_tree {
+            // File tree overlay: click to select, double-click to open/expand
+            app.focus = Focus::FileTree;
+            let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
+            let entry_idx = visual_row + app.file_tree_scroll;
+            if entry_idx < app.file_tree_entries.len() {
+                app.file_tree_selected = Some(entry_idx);
+                app.invalidate_file_tree();
+                let now = std::time::Instant::now();
+                let is_double = app.last_click.map_or(false, |(t, c, r)| {
+                    c == col && r == row && now.duration_since(t).as_millis() < 500
+                });
+                if is_double {
+                    let entry = &app.file_tree_entries[entry_idx];
+                    if entry.is_dir {
+                        app.toggle_file_tree_dir();
+                    } else {
+                        app.load_file_into_viewer();
+                        app.focus = Focus::Viewer;
                     }
                 }
             }
-        }
-        return true;
-    }
-
-    // FileTree pane — click to select entry, double-click to open/expand
-    if app.pane_file_tree.contains(pos) {
-        app.focus = Focus::FileTree;
-        let visual_row = (row.saturating_sub(app.pane_file_tree.y + 1)) as usize;
-        let entry_idx = visual_row + app.file_tree_scroll;
-        if entry_idx < app.file_tree_entries.len() {
-            app.file_tree_selected = Some(entry_idx);
-            app.invalidate_file_tree();
-            // Double-click detection: same row within 500ms → open/toggle
-            let now = std::time::Instant::now();
-            let is_double = app.last_click.map_or(false, |(t, c, r)| {
-                c == col && r == row && now.duration_since(t).as_millis() < 500
-            });
-            if is_double {
-                let entry = &app.file_tree_entries[entry_idx];
-                if entry.is_dir {
-                    app.toggle_file_tree_dir();
-                } else {
-                    app.load_file_into_viewer();
-                    app.focus = Focus::Viewer;
+        } else {
+            // Worktree list: click to select session or session file
+            app.focus = Focus::Worktrees;
+            let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
+            if let Some(action) = app.sidebar_row_map.get(visual_row).cloned() {
+                match action {
+                    SidebarRowAction::Session(idx) => {
+                        if app.selected_session != Some(idx) {
+                            app.save_current_terminal();
+                            app.selected_session = Some(idx);
+                            app.load_session_output();
+                            app.invalidate_sidebar();
+                        }
+                    }
+                    SidebarRowAction::SessionFile(sess_idx, file_idx) => {
+                        if app.selected_session != Some(sess_idx) {
+                            app.save_current_terminal();
+                            app.selected_session = Some(sess_idx);
+                        }
+                        if let Some(session) = app.sessions.get(sess_idx) {
+                            let branch = session.branch_name.clone();
+                            app.select_session_file(&branch, file_idx);
+                        }
+                    }
                 }
             }
         }

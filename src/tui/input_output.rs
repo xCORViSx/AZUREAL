@@ -10,6 +10,11 @@ use super::keybindings::{Action, lookup_action};
 
 /// Handle keyboard input when Output pane is focused
 pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Session list overlay: j/k navigate, Enter selects, s/Esc closes
+    if app.show_session_list {
+        return handle_session_list_input(key, app);
+    }
+
     // Rebase mode has its own handler
     if app.view_mode == ViewMode::Rebase {
         return handle_rebase_input(key, app);
@@ -110,6 +115,111 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         Some(Action::CycleFocusForward) => app.focus = Focus::Input,
         // Esc: back to worktrees sidebar
         Some(Action::Escape) => app.focus = Focus::Worktrees,
+        // 's': toggle session list overlay (only in Output view, not Diff/Rebase)
+        _ if app.view_mode == ViewMode::Output
+            && key.modifiers == event::KeyModifiers::NONE
+            && key.code == event::KeyCode::Char('s') => {
+            open_session_list(app);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Open the session list overlay, computing message counts for all session files
+fn open_session_list(app: &mut App) {
+    app.show_session_list = true;
+    app.session_list_selected = 0;
+    app.session_list_scroll = 0;
+
+    // Ensure session files are loaded for all worktrees
+    for session in &app.sessions {
+        if !app.session_files.contains_key(&session.branch_name) {
+            if let Some(ref wt_path) = session.worktree_path {
+                let files = crate::config::list_claude_sessions(wt_path);
+                app.session_files.insert(session.branch_name.clone(), files);
+            }
+        }
+    }
+
+    // Compute message counts (lightweight JSONL line scan) for all session files not yet cached
+    for files in app.session_files.values() {
+        for (session_id, path, _) in files.iter() {
+            if !app.session_msg_counts.contains_key(session_id) {
+                let count = count_messages_in_jsonl(path);
+                app.session_msg_counts.insert(session_id.clone(), count);
+            }
+        }
+    }
+}
+
+/// Count human+assistant messages in a JSONL session file by scanning for "type" fields.
+/// Lightweight: reads file as text and counts lines containing message type markers.
+fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
+    let Ok(content) = std::fs::read_to_string(path) else { return 0; };
+    content.lines().filter(|line| {
+        line.contains("\"type\":\"human\"") || line.contains("\"type\":\"assistant\"")
+            || line.contains("\"type\": \"human\"") || line.contains("\"type\": \"assistant\"")
+    }).count()
+}
+
+/// Handle keyboard input for the session list overlay
+fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use event::{KeyCode, KeyModifiers};
+
+    // Build flat count of total rows (same structure as draw_session_list)
+    let total_rows: usize = app.sessions.iter().map(|s| {
+        app.session_files.get(&s.branch_name).map(|f| f.len().max(1)).unwrap_or(1)
+    }).sum();
+
+    match (key.modifiers, key.code) {
+        // j/↓: next row
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+            if app.session_list_selected + 1 < total_rows {
+                app.session_list_selected += 1;
+            }
+        }
+        // k/↑: prev row
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+            app.session_list_selected = app.session_list_selected.saturating_sub(1);
+        }
+        // J: page down
+        (KeyModifiers::NONE, KeyCode::Char('J')) => {
+            let page = app.output_viewport_height.saturating_sub(2);
+            app.session_list_selected = (app.session_list_selected + page).min(total_rows.saturating_sub(1));
+        }
+        // K: page up
+        (KeyModifiers::NONE, KeyCode::Char('K')) => {
+            let page = app.output_viewport_height.saturating_sub(2);
+            app.session_list_selected = app.session_list_selected.saturating_sub(page);
+        }
+        // Enter: load the selected session file
+        (KeyModifiers::NONE, KeyCode::Enter) => {
+            // Walk the flat list to find which (session_idx, file_idx) corresponds to selection
+            let mut row = 0;
+            for (sess_idx, session) in app.sessions.iter().enumerate() {
+                let files = app.session_files.get(&session.branch_name);
+                let file_count = files.map(|f| f.len()).unwrap_or(0).max(1);
+                if app.session_list_selected < row + file_count {
+                    let file_idx = app.session_list_selected - row;
+                    if files.map(|f| f.len()).unwrap_or(0) > 0 {
+                        // Select the session and file
+                        let branch = session.branch_name.clone();
+                        app.save_current_terminal();
+                        app.selected_session = Some(sess_idx);
+                        app.select_session_file(&branch, file_idx);
+                        app.show_session_list = false;
+                        app.invalidate_sidebar();
+                    }
+                    break;
+                }
+                row += file_count;
+            }
+        }
+        // s or Esc: close overlay
+        (KeyModifiers::NONE, KeyCode::Char('s')) | (_, KeyCode::Esc) => {
+            app.show_session_list = false;
+        }
         _ => {}
     }
     Ok(())

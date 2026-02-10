@@ -22,7 +22,7 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::{draw_dialogs, draw_file_tree, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
+use super::{draw_dialogs, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -82,15 +82,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Layout: Convo gets full height, Input/Terminal spans first 3 panes only
+    // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
     //
-    // ┌──────────┬──────────┬─────────────┬─────────────┐
-    // │ Sessions │ FileTree │   Viewer    │             │
-    // ├──────────┴──────────┴─────────────┤    Convo    │
-    // │     Input / Terminal              │             │
-    // ├───────────────────────────────────┴─────────────┤
-    // │                 Status Bar                      │
-    // └────────────────────────────────────────────────┘
+    // ┌──────────┬───────────────────────┬─────────────┐
+    // │Worktrees │       Viewer          │             │
+    // │  (40)    │       (rem)           │  Convo (80) │
+    // ├──────────┴───────────────────────┤             │
+    // │     Input / Terminal             │             │
+    // ├──────────────────────────────────┴─────────────┤
+    // │                 Status Bar                     │
+    // └───────────────────────────────────────────────┘
+    // Worktrees pane shows FileTree overlay when 'f' is pressed.
+    // Convo pane shows Session list overlay when 's' is pressed.
 
     // Step 1: Reserve status bar at bottom
     let outer = Layout::default()
@@ -100,17 +103,17 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let content_area = outer[0];
     let status_area = outer[1];
 
-    // Step 2: Split content horizontally — left side (3 panes + input) vs Convo (full height)
+    // Step 2: Split content horizontally — Worktrees (40) | Viewer (remaining) | Convo (80 fixed)
     let h_split = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(40 + 40), // Sessions + FileTree base width
-            Constraint::Percentage(50),  // Viewer (50% of remaining after 80 cols)
-            Constraint::Percentage(50),  // Convo (50% of remaining after 80 cols)
+            Constraint::Length(40),  // Worktrees (or FileTree overlay)
+            Constraint::Min(20),    // Viewer (remaining space)
+            Constraint::Length(80), // Convo (fixed 80 cols)
         ])
         .split(content_area);
 
-    // Merge first two chunks into "left side" for the vertical split
+    // Left side = Worktrees + Viewer widths for the input area span
     let left_width = h_split[0].width + h_split[1].width;
     let convo_area = h_split[2];
 
@@ -153,12 +156,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let top_panes_area = left_v[0];
     let input_area = left_v[1];
 
-    // Step 4: Split top 3 panes horizontally
+    // Step 4: Split top 2 panes horizontally (Worktrees + Viewer)
     let top_h = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(40),  // Sessions
-            Constraint::Length(40),  // FileTree
+            Constraint::Length(40),  // Worktrees (or FileTree overlay)
             Constraint::Min(10),    // Viewer (all remaining left-side width)
         ])
         .split(top_panes_area);
@@ -166,14 +168,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Cache all pane rects for mouse click hit-testing and fast-path rendering
     app.input_area = input_area;
     app.pane_sessions = top_h[0];
-    app.pane_file_tree = top_h[1];
-    app.pane_viewer = top_h[2];
+    app.pane_viewer = top_h[1];
     app.pane_convo = convo_area;
 
-    // Draw panes
-    draw_sidebar::draw_sidebar(f, app, top_h[0]);
-    draw_file_tree::draw_file_tree(f, app, top_h[1]);
-    draw_viewer::draw_viewer(f, app, top_h[2]);
+    // Draw panes — worktrees pane shows file tree overlay when toggled
+    if app.show_file_tree {
+        draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
+    } else {
+        draw_sidebar::draw_sidebar(f, app, top_h[0]);
+    }
+    draw_viewer::draw_viewer(f, app, top_h[1]);
     draw_output::draw_output(f, app, convo_area);
 
     if app.terminal_mode {

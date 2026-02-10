@@ -63,18 +63,18 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         match (app.focus, app.view_mode) {
             (Focus::Worktrees, _) => {
                 if app.is_current_session_running() {
-                    "?:help  Space:actions  n:new  b:branches  i:inprompt  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/Shift+Tab:switch"
+                    "?:help  Space:actions  f:filetree  n:new  b:branches  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/⇧Tab:switch"
                 } else {
-                    "?:help  Space:actions  n:new  b:branches  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/Shift+Tab:switch"
+                    "?:help  Space:actions  f:filetree  n:new  b:branches  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/⇧Tab:switch"
                 }
             }
             (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
             (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
-            (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  o:output  d:diff  R:rebase  Esc:back",
+            (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  o:output  d:diff  R:rebase  Esc:back",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
             (Focus::WorktreeCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
-            (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  Tab:switch",
+            (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back",
             (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  Esc:close  Tab:switch",
         }.to_string()
     };

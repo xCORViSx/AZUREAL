@@ -170,7 +170,6 @@ pub struct App {
     /// Cached pane rects from last full draw — used for mouse click hit-testing
     /// and scroll dispatch without recalculating layout
     pub pane_sessions: ratatui::layout::Rect,
-    pub pane_file_tree: ratatui::layout::Rect,
     pub pane_viewer: ratatui::layout::Rect,
     pub pane_convo: ratatui::layout::Rect,
     /// Maps sidebar visual rows (0-indexed) to clickable actions.
@@ -327,6 +326,16 @@ pub struct App {
     pub stt_recording: bool,
     /// Whether STT is currently transcribing recorded audio (between stop and result)
     pub stt_transcribing: bool,
+    /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
+    pub show_file_tree: bool,
+    /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
+    pub show_session_list: bool,
+    /// Selected index in session list overlay
+    pub session_list_selected: usize,
+    /// Scroll offset in session list overlay
+    pub session_list_scroll: usize,
+    /// Cached message counts per session_id (computed on session list open)
+    pub session_msg_counts: HashMap<String, usize>,
 }
 
 /// A single todo item from Claude's TodoWrite tool call
@@ -441,7 +450,6 @@ impl App {
             cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),
             input_area: ratatui::layout::Rect::default(),
             pane_sessions: ratatui::layout::Rect::default(),
-            pane_file_tree: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
             pane_convo: ratatui::layout::Rect::default(),
             sidebar_row_map: Vec::new(),
@@ -517,6 +525,11 @@ impl App {
             stt_handle: None,
             stt_recording: false,
             stt_transcribing: false,
+            show_file_tree: false,
+            show_session_list: false,
+            session_list_selected: 0,
+            session_list_scroll: 0,
+            session_msg_counts: HashMap::new(),
         }
     }
 

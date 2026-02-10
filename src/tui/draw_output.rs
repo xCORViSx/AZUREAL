@@ -169,8 +169,129 @@ pub fn poll_render_result(app: &mut App) -> bool {
     true
 }
 
+/// Draw the session list overlay — full-pane list of all session files across worktrees.
+/// Each row shows: status symbol, worktree name, session name/UUID, mtime, [N msgs].
+fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let is_focused = app.focus == Focus::Output;
+    let viewport_height = area.height.saturating_sub(2) as usize;
+    let session_names = app.load_all_session_names();
+
+    // Build flat list of all session files across all worktrees
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let inner_width = area.width.saturating_sub(2) as usize;
+
+    for session in app.sessions.iter() {
+        let status = session.status(&app.running_sessions);
+        let status_color = status.color();
+        let wt_name = session.name().to_string();
+        let files = app.session_files.get(&session.branch_name);
+
+        if let Some(files) = files {
+            for (session_id, _path, time_str) in files.iter() {
+                // Custom name or truncated UUID
+                let name_display = if let Some(name) = session_names.get(session_id.as_str()) {
+                    name.clone()
+                } else {
+                    session_id.clone()
+                };
+                // Message count from cache (computed on overlay open)
+                let msg_count = app.session_msg_counts.get(session_id).copied().unwrap_or(0);
+                let msg_badge = format!("[{} msgs]", msg_count);
+
+                // Build the row: " ● wt_name │ session_name    mtime [N msgs]"
+                let prefix = format!(" {} {} │ ", status.symbol(), wt_name);
+                let suffix = format!(" {} {} ", time_str, msg_badge);
+                // Fill remaining space with session name, truncated if needed
+                let name_space = inner_width.saturating_sub(prefix.chars().count() + suffix.chars().count());
+                let truncated_name = if name_display.chars().count() > name_space {
+                    let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
+                    format!("{}…", trunc)
+                } else {
+                    name_display
+                };
+                let pad = name_space.saturating_sub(truncated_name.chars().count());
+
+                let is_selected = rows.len() == app.session_list_selected;
+                let name_style = if is_selected {
+                    Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let bg_style = if is_selected {
+                    Style::default().bg(AZURE).fg(Color::Black)
+                } else {
+                    Style::default()
+                };
+
+                rows.push(Line::from(vec![
+                    Span::styled(format!(" {} ", status.symbol()), if is_selected { bg_style } else { Style::default().fg(status_color) }),
+                    Span::styled(format!("{} │ ", wt_name), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
+                    Span::styled(truncated_name, name_style),
+                    Span::styled(" ".repeat(pad), bg_style),
+                    Span::styled(format!(" {} ", time_str), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
+                    Span::styled(msg_badge, if is_selected { bg_style } else { Style::default().fg(AZURE) }),
+                ]));
+            }
+        } else {
+            // Worktree with no session files discovered
+            let is_selected = rows.len() == app.session_list_selected;
+            let style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Black)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            rows.push(Line::from(vec![
+                Span::styled(format!(" {} ", status.symbol()), if is_selected { style } else { Style::default().fg(status_color) }),
+                Span::styled(format!("{} │ ", wt_name), style),
+                Span::styled("(no sessions)", style),
+            ]));
+        }
+    }
+
+    // Clamp selection
+    let total = rows.len();
+    if app.session_list_selected >= total && total > 0 {
+        app.session_list_selected = total - 1;
+    }
+
+    // Auto-scroll to keep selection visible
+    let max_scroll = total.saturating_sub(viewport_height);
+    if app.session_list_selected < app.session_list_scroll {
+        app.session_list_scroll = app.session_list_selected;
+    } else if app.session_list_selected >= app.session_list_scroll + viewport_height {
+        app.session_list_scroll = app.session_list_selected.saturating_sub(viewport_height - 1);
+    }
+    app.session_list_scroll = app.session_list_scroll.min(max_scroll);
+
+    let display: Vec<Line> = rows.into_iter()
+        .skip(app.session_list_scroll)
+        .take(viewport_height)
+        .collect();
+
+    let title = format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1));
+    let border_style = if is_focused {
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .title(Span::styled(title, border_style))
+        .border_style(border_style);
+
+    let widget = Paragraph::new(display).block(block);
+    f.render_widget(widget, area);
+}
+
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
+    // Session list overlay takes over the entire convo pane when active
+    if app.show_session_list {
+        draw_session_list(f, app, area);
+        return;
+    }
+
     // Split area for sticky todo widget at bottom (visible whenever todos exist —
     // stays visible even when all completed, cleared on next user prompt or session switch)
     let has_todos = !app.current_todos.is_empty() || !app.subagent_todos.is_empty();

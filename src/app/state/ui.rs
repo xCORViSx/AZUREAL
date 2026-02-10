@@ -9,23 +9,29 @@ use super::App;
 
 impl App {
     pub fn focus_next(&mut self) {
+        // Close overlays when cycling focus (clean slate)
+        self.show_file_tree = false;
+        self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => Focus::FileTree,
-            Focus::FileTree => Focus::Viewer,
+            Focus::Worktrees => Focus::Viewer,
             Focus::Viewer => Focus::Output,
             Focus::Output => Focus::Input,
             Focus::Input => Focus::Worktrees,
+            // FileTree focus only active when overlay is open — cycle out to Worktrees
+            Focus::FileTree => Focus::Viewer,
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
 
     pub fn focus_prev(&mut self) {
+        self.show_file_tree = false;
+        self.show_session_list = false;
         self.focus = match self.focus {
             Focus::Worktrees => Focus::Input,
-            Focus::FileTree => Focus::Worktrees,
-            Focus::Viewer => Focus::FileTree,
+            Focus::Viewer => Focus::Worktrees,
             Focus::Output => Focus::Viewer,
             Focus::Input => Focus::Output,
+            Focus::FileTree => Focus::Worktrees,
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }

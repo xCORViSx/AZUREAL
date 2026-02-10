@@ -9,6 +9,20 @@ use crate::models::{RebaseResult, SessionStatus};
 
 /// Handle keyboard input when Worktrees pane is focused
 pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // File tree overlay is active — route to file tree input handler.
+    // 'f' toggles back to worktree list, everything else goes to file tree.
+    if app.show_file_tree {
+        if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Char('f') {
+            app.show_file_tree = false;
+            app.focus = Focus::Worktrees;
+            app.invalidate_sidebar();
+        } else {
+            app.focus = Focus::FileTree;
+            return super::input_file_tree::handle_file_tree_input(key, app);
+        }
+        return Ok(());
+    }
+
     // When sidebar filter is active, typing goes to filter input (not commands)
     if app.sidebar_filter_active {
         match key.code {
@@ -192,6 +206,17 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 app.set_status("Enter input to send to Claude:");
             } else {
                 app.set_status("No Claude running in this session");
+            }
+        }
+        // f: toggle file tree overlay for the selected worktree
+        (KeyModifiers::NONE, KeyCode::Char('f')) => {
+            if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_some() {
+                app.show_file_tree = true;
+                app.focus = Focus::FileTree;
+                app.load_file_tree();
+                app.invalidate_file_tree();
+            } else {
+                app.set_status("Session has no worktree");
             }
         }
         (_, KeyCode::Char('s')) => {

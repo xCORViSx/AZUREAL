@@ -84,8 +84,12 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // Escape: unfocus
-        Some(Action::Escape) => app.focus = Focus::Worktrees,
+        // Escape: close file tree overlay and return to worktrees list
+        Some(Action::Escape) => {
+            app.show_file_tree = false;
+            app.focus = Focus::Worktrees;
+            app.invalidate_sidebar();
+        }
 
         _ => {}
     }
