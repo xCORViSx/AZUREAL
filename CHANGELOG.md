@@ -14,6 +14,7 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Global `t` keybinding (terminal toggle) no longer fires in viewer edit mode — guard was missing `!viewer_edit_mode`, so typing `t` opened the terminal instead of inserting the character
 - Global `Tab`/`Shift+Tab` (focus cycling) no longer fires in viewer edit mode — Tab inserts 4 spaces in edit mode but the global handler ran first and cycled focus away
+- Global `⌘C` was swallowing copy in viewer edit mode — handler checked `viewer_selection` (read-only) but not `viewer_edit_selection`, then returned early; edit mode's `viewer_edit_copy()` never fired
 - Viewer edit mode now uses word-boundary wrapping (matching read-only mode) — both modes use `textwrap::wrap()` with `word_wrap_breaks()` for consistent text reflow
   - Cursor navigation (up/down), scroll-to-cursor, and mouse click-to-cursor all updated to use word-boundary break positions instead of fixed-width char-boundary math
   - `wrap_spans_word()` replaces both `wrap_spans()` and `wrap_spans_hard()` — one wrapping function for all viewer modes
