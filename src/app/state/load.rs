@@ -421,7 +421,7 @@ impl App {
         if let Err(e) = self.dump_debug_output_inner() {
             self.set_status(format!("Debug dump failed: {}", e));
         } else {
-            self.set_status("Debug output saved to .azureal/debug-output.txt (content obfuscated)");
+            self.set_status("Debug output saved to .azureal/debug-output.txt");
         }
     }
 
@@ -519,7 +519,7 @@ impl App {
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header — safe metadata (no content leaked)
-        writeln!(file, "=== AZUREAL DEBUG DUMP (OBFUSCATED) ===")?;
+        writeln!(file, "=== AZUREAL DEBUG DUMP ===")?;
         writeln!(file, "Dump time: {:?}", std::time::SystemTime::now())?;
         writeln!(file, "Session file: {:?}", self.session_file_path.as_ref().map(|p| ob.path(&p.display().to_string())))?;
 
@@ -529,7 +529,7 @@ impl App {
                 let file_size = content.len();
                 let ends_with_newline = content.ends_with('\n');
                 writeln!(file, "File size: {} bytes, ends with newline: {}", file_size, ends_with_newline)?;
-                writeln!(file, "Last 50 chars: [OBFUSCATED]")?;
+                writeln!(file, "Last 50 chars: [redacted]")?;
                 if let Some(last_line) = content.lines().last() {
                     let is_valid_json = serde_json::from_str::<serde_json::Value>(last_line).is_ok();
                     writeln!(file, "Last line valid JSON: {}", is_valid_json)?;
@@ -618,7 +618,7 @@ impl App {
         writeln!(file, "")?;
 
         // Full rendered output — every line obfuscated
-        writeln!(file, "=== RENDERED OUTPUT (OBFUSCATED) ===")?;
+        writeln!(file, "=== RENDERED OUTPUT ===")?;
         let (rendered_lines, _, _, _) = crate::tui::util::render_display_events(
             &self.display_events,
             120,
