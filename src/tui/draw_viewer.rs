@@ -211,8 +211,16 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
 
                 // Show "Edit" indicator if viewing an edit diff
                 let title = if app.viewer_edit_diff.is_some() {
-                    let edit_idx = app.selected_tool_diff.map(|i| i + 1).unwrap_or(1);
-                    let edit_total = app.clickable_paths.len();
+                    // Count only Edit tool entries (non-empty old/new strings)
+                    let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
+                        .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                        .map(|(i, _)| i).collect();
+                    let edit_total = edits.len();
+                    // Find which edit-only position we're at (1-indexed)
+                    let edit_idx = app.selected_tool_diff
+                        .and_then(|s| edits.iter().position(|&e| e == s))
+                        .map(|p| p + 1)
+                        .unwrap_or(1);
                     format!(" {} [Edit {}/{}] ", path_str, edit_idx, edit_total)
                 } else if app.viewer_lines_cache.len() > viewport_height {
                     format!(" {} [{}/{}] ", path_str, last_visible_line, total)

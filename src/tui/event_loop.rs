@@ -602,6 +602,9 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 // Edit tool: open file with diff overlay in Viewer
                 // Read/Write tool: open file plain in Viewer
                 if !old_s.is_empty() || !new_s.is_empty() {
+                    // Set selected_tool_diff so ⌥←/⌥→ cycling knows where we are
+                    let click_idx = app.clickable_paths.iter().position(|(l, s, e, _, _, _)| *l == li && *s == sc && *e == ec);
+                    app.selected_tool_diff = click_idx;
                     app.load_file_with_edit_diff(&file_path, &old_s, &new_s);
                 } else {
                     app.load_file_at_path(&file_path);
