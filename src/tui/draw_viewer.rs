@@ -6,7 +6,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
-    symbols::border,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
@@ -685,23 +684,43 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         Line::from(Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)))
     };
 
-    // Dashed double-line border when file is modified — visual cue for unsaved changes.
-    // Uses heavy double-dash Unicode chars (╍╏) with double-line corners (╔╗╚╝).
-    let mut block = Block::default()
+    let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(title_line)
         .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD));
-    if app.viewer_edit_dirty {
-        block = block.border_set(border::Set {
-            top_left: "╔", top_right: "╗", bottom_left: "╚", bottom_right: "╝",
-            horizontal_top: "╍", horizontal_bottom: "╍",
-            vertical_left: "╏", vertical_right: "╏",
-        });
-    }
 
     let widget = Paragraph::new(final_lines).block(block);
     f.render_widget(widget, area);
+
+    // Dashed double border when file is modified — punch gaps into every other
+    // border cell to create a "═ ═ ═" / "║ ║" pattern as an unsaved-changes cue.
+    if app.viewer_edit_dirty {
+        let buf = f.buffer_mut();
+        let style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
+        let x0 = area.x;
+        let x1 = area.x + area.width.saturating_sub(1);
+        let y0 = area.y;
+        let y1 = area.y + area.height.saturating_sub(1);
+        // Top and bottom edges: blank every other cell (skip corners and title)
+        let title_end = x0 + 1 + title.len() as u16;
+        for x in (x0 + 1)..x1 {
+            if x < title_end { continue; }
+            if (x - x0) % 2 == 0 {
+                buf[(x, y0)].set_symbol(" ").set_style(style);
+            }
+            if (x - x0) % 2 == 0 {
+                buf[(x, y1)].set_symbol(" ").set_style(style);
+            }
+        }
+        // Left and right edges: blank every other cell (skip corners)
+        for y in (y0 + 1)..y1 {
+            if (y - y0) % 2 == 0 {
+                buf[(x0, y)].set_symbol(" ").set_style(style);
+                buf[(x1, y)].set_symbol(" ").set_style(style);
+            }
+        }
+    }
 
     // Compute cursor visual position arithmetically — no all_lines walk needed.
     // Sum wrap counts for source lines 0..cursor_line, add cursor's wrap offset.
