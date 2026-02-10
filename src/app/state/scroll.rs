@@ -4,12 +4,12 @@ use super::App;
 
 impl App {
     /// Natural bottom position: last line at bottom of viewport
-    fn output_natural_bottom(&self) -> usize {
+    pub(crate) fn output_natural_bottom(&self) -> usize {
         self.rendered_lines_cache.len().saturating_sub(self.output_viewport_height)
     }
 
     /// Max scroll position: allows scrolling so last line can be at top (vim-style)
-    fn output_max_scroll(&self) -> usize {
+    pub(crate) fn output_max_scroll(&self) -> usize {
         self.rendered_lines_cache.len().saturating_sub(1)
     }
 

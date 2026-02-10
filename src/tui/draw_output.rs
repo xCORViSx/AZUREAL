@@ -331,9 +331,14 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             }
 
             if !app.rendered_lines_cache.is_empty() {
-                // Clamp scroll to valid range (resolves usize::MAX sentinel)
-                app.clamp_output_scroll();
-                let scroll = app.output_scroll;
+                // Resolve scroll for this frame WITHOUT destroying the usize::MAX sentinel.
+                // If user is following bottom (sentinel), compute concrete position but
+                // leave output_scroll as usize::MAX so it keeps following on next frame.
+                let scroll = if app.output_scroll == usize::MAX {
+                    app.output_natural_bottom()
+                } else {
+                    app.output_scroll.min(app.output_max_scroll())
+                };
 
                 // Check if viewport cache is still valid — skip the clone if so.
                 // Selection changes also invalidate (must re-apply highlight)
@@ -470,9 +475,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 let total = all_lines.len();
                 let max_scroll = total.saturating_sub(viewport_height);
+                // Resolve sentinel to concrete position for THIS frame only —
+                // don't write it back so usize::MAX survives and keeps
+                // following bottom as new content arrives.
                 let scroll = if app.output_scroll == usize::MAX { max_scroll }
                     else { app.output_scroll.min(max_scroll) };
-                app.output_scroll = scroll;
                 let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
                 let title = if total > viewport_height {
                     format!(" Convo [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
