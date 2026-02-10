@@ -695,29 +695,26 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
 
     // Dashed double border when file is modified — punch gaps into every other
     // border cell to create a "═ ═ ═" / "║ ║" pattern as an unsaved-changes cue.
+    // Only blanks cells that are actually border characters (═ or ║), so title
+    // text on the top edge is preserved automatically.
     if app.viewer_edit_dirty {
         let buf = f.buffer_mut();
-        let style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
         let x0 = area.x;
         let x1 = area.x + area.width.saturating_sub(1);
         let y0 = area.y;
         let y1 = area.y + area.height.saturating_sub(1);
-        // Top and bottom edges: blank every other cell (skip corners and title)
-        let title_end = x0 + 1 + title.len() as u16;
+        // Top and bottom edges: blank every other ═ cell (skip corners)
         for x in (x0 + 1)..x1 {
-            if x < title_end { continue; }
             if (x - x0) % 2 == 0 {
-                buf[(x, y0)].set_symbol(" ").set_style(style);
-            }
-            if (x - x0) % 2 == 0 {
-                buf[(x, y1)].set_symbol(" ").set_style(style);
+                if buf[(x, y0)].symbol() == "═" { buf[(x, y0)].set_symbol(" "); }
+                if buf[(x, y1)].symbol() == "═" { buf[(x, y1)].set_symbol(" "); }
             }
         }
-        // Left and right edges: blank every other cell (skip corners)
+        // Left and right edges: blank every other ║ cell (skip corners)
         for y in (y0 + 1)..y1 {
             if (y - y0) % 2 == 0 {
-                buf[(x0, y)].set_symbol(" ").set_style(style);
-                buf[(x1, y)].set_symbol(" ").set_style(style);
+                if buf[(x0, y)].symbol() == "║" { buf[(x0, y)].set_symbol(" "); }
+                if buf[(x1, y)].symbol() == "║" { buf[(x1, y)].set_symbol(" "); }
             }
         }
     }
