@@ -31,6 +31,13 @@ All notable changes to Azureal will be documented in this file.
   - `ClickablePath` tuple extended with `wrap_line_count` field
   - Clicking a continuation line of a wrapped path also triggers the file open
 - Debug dump output file no longer mentions "obfuscated" in headers or status bar message
+- File actions in FileTree pane: `a` (add file/dir), `d` (delete), `r` (rename), `c` (copy), `m` (move)
+  - Inline action bar at bottom of FileTree pane with text input (or y/N confirmation for delete)
+  - Add: trailing `/` creates directory; files created in selected dir or alongside selected file
+  - Rename/Copy/Move: pre-filled with current name (Copy adds `_copy` suffix); relative to parent dir
+  - `⌃u` clears input, `Esc` cancels, `Enter` confirms
+  - Recursive directory copy support
+- `⌃c` prompt title label changed from "cancel" to "cancel response" for clarity
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files

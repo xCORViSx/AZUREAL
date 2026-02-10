@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="azureal_icon.png" alt="Azureal" width="180" />
+  <img src="azureal_icon.png" alt="AZUREAL" width="180" />
 </p>
 
-<h1 align="center">azureal</h1>
+<h1 align="center">AZUREAL</h1>
 <p align="center">
   uh-zoo-ree-ull
 </p>
@@ -21,7 +21,7 @@
 
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
 - **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
-- **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer
+- **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; file actions: `a`dd, `d`elete, `r`ename, `c`opy, `m`ove with inline input bar
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
 - **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling

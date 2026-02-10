@@ -78,7 +78,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 **OS Terminal Title:** Set dynamically via crossterm `SetTitle`. Shows `AZUREAL` when no project loaded, `AZUREAL @ <project> : <branch>` when a session is selected. Updated on startup, session switch, and project switch (via `update_terminal_title()` in `src/app/state/ui.rs`, called from `load_session_output()`). Reset to empty on exit.
 
 **Overlays:**
-- **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list.
+- **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane with text input; `⌃u` clears, `Esc` cancels, `Enter` confirms. Add with trailing `/` creates directory. Rename/Copy/Move pre-fill with current name. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum with embedded string buffer per action type.
 - **Session list overlay** (`s` in Convo pane): Replaces conversation view with a full-pane session file browser across all worktrees. Each row shows status symbol (colored by session status), worktree display name, session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Message counts computed via lightweight JSONL line scan (cached in `session_msg_counts` HashMap). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. Focus cycling (Tab/Shift+Tab) closes any open overlay.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
@@ -960,7 +960,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, ProjectsPanel, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, FileTreeAction, ProjectsPanel, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
@@ -1148,6 +1148,11 @@ azureal
 | `Enter` | Open file in Viewer / Expand directory |
 | `h/l` | Collapse/Expand directory |
 | `Space` | Toggle directory expand |
+| `a` | Add file (trailing `/` creates directory) |
+| `d` | Delete selected file/directory (y/N confirm) |
+| `r` | Rename selected file/directory |
+| `c` | Copy selected file/directory |
+| `m` | Move selected file/directory |
 | `f/Esc` | Return to worktree list |
 
 ### Viewer Pane
@@ -1180,7 +1185,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter/⌃j:newline | ⌃c:cancel | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear | ⌃s:voice)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel response | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear | ⌃s:voice)`
 **Command mode title shows:** `(p:prompt | t:terminal | ?:help | Tab/⇧Tab:focus | ⌃c:cancel response | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
 
 ### Terminal Mode
