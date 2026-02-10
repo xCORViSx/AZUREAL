@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Help panel (`?`) now uses double border (`═║`) matching focused pane style
 - Dashed double-line border in Viewer edit mode when file has unsaved changes
   - Normal `═║` double border rendered first, then every other cell blanked by checking for `═`/`║` symbols — title text and corners preserved automatically
   - Creates `═ ═ ═` / `║ ║` gap pattern across all four edges
