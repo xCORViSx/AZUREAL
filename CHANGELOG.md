@@ -7,9 +7,11 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Icon not showing on GitHub — `azural_icon.png` renamed to `azureal_icon.png` to match README reference
 - `f` key now toggles FileTree overlay off (was only handled in worktrees input, not file tree input)
-- Convo pane no longer auto-scrolls to bottom when new events arrive while user has scrolled up
-  - Removed forced `output_scroll = usize::MAX` from `handle_claude_output()`, `add_output()`, `refresh_session_events()`, and `poll_render_result()`
-  - Scroll-to-bottom still happens on explicit actions: session load, prompt submit, `⌥↓`, `o`-key switch, project switch
+- Convo pane auto-scroll now properly follows bottom until user scrolls up, then stays put
+  - `usize::MAX` sentinel was being resolved to a concrete value during draw, destroying follow-bottom state
+  - Draw path now computes concrete scroll locally without writing it back — sentinel survives across frames
+  - Scrolling up breaks follow; `⌥↓` resumes it
+  - Removed forced scroll-to-bottom from `handle_claude_output()`, `add_output()`, and `refresh_session_events()`
 - Convo pane bubbles too narrow — render width formula `(terminal - 80) / 2` was a leftover from the old 50/50 split layout; now passes the fixed 80-column pane width directly, giving bubbles proper ~52 char width instead of being crushed to minimum 40
 
 ### Refactored
