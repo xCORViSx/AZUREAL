@@ -1,8 +1,6 @@
 //! Output processing and display event handling
 
 use crate::app::util::strip_ansi_escapes;
-use crate::events::DisplayEvent;
-
 use super::App;
 
 impl App {
@@ -11,9 +9,9 @@ impl App {
         for ch in cleaned.chars() {
             match ch {
                 '\n' => {
-                    let line = self.output_buffer.clone();
-                    self.output_lines.push_back(line);
-                    self.output_buffer.clear();
+                    // Move the buffer into the line vec instead of clone+clear —
+                    // take() reuses capacity for the next line (zero allocation).
+                    self.output_lines.push_back(std::mem::take(&mut self.output_buffer));
                     if self.output_lines.len() > self.max_output_lines { self.output_lines.pop_front(); }
                 }
                 '\r' => self.output_buffer.clear(),

@@ -35,14 +35,15 @@ pub fn render_display_events(
     syntax_highlighter: &SyntaxHighlighter,
     pending_user_message: Option<&str>,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
-    render_display_events_from(events, 0, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new())
+    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
 }
 
-/// Render only events starting from `start_idx`, appending to existing cache data.
-/// Existing lines/animation_indices/bubble_positions/clickable_paths are carried forward.
+/// Render only new events, appending to existing cache data.
+/// `events` contains ONLY the new events (from start_idx onwards in the original array).
+/// `pre_scan` contains pre-computed state flags from events before start_idx,
+/// so we don't need the old events at all (eliminates the mega-clone).
 pub fn render_display_events_incremental(
     events: &[DisplayEvent],
-    start_idx: usize,
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
@@ -52,18 +53,22 @@ pub fn render_display_events_incremental(
     mut existing_anim: Vec<(usize, usize)>,
     existing_bubbles: Vec<(usize, bool)>,
     existing_clickable: Vec<ClickablePath>,
+    pre_scan: super::render_thread::PreScanState,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     // Pending user message bubble is stripped from existing_lines by
     // submit_render_request() BEFORE sending — no duplicate trimming needed here.
     existing_anim.retain(|&(line_idx, _)| line_idx < existing_lines.len());
 
-    render_display_events_from(events, start_idx, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles, existing_clickable)
+    // Render new events (they ARE only the new events),
+    // with pre-computed state from older events injected into the renderer.
+    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles, existing_clickable, pre_scan)
 }
 
 /// Core renderer: iterates events from `start_idx`, appending to provided vectors.
-fn render_display_events_from(
+/// Pre-scan state from earlier events is passed in (not re-scanned), so callers
+/// can send only new events + pre-computed flags (eliminates mega-clone).
+fn render_display_events_with_state(
     events: &[DisplayEvent],
-    start_idx: usize,
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
@@ -73,50 +78,23 @@ fn render_display_events_from(
     mut animation_indices: Vec<(usize, usize)>,
     mut bubble_positions: Vec<(usize, bool)>,
     mut clickable_paths: Vec<ClickablePath>,
+    pre_scan: super::render_thread::PreScanState,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
-    // Scan earlier events (before start_idx) to establish state flags
-    let mut saw_init = false;
-    let mut saw_content = false;
-    let mut last_hook: Option<(String, String)> = None;
-    let mut saw_exit_plan_mode = false;
-    let mut saw_user_after_exit_plan = false;
-    let mut saw_ask_user_question = false;
-    let mut saw_user_after_ask = false;
-    let mut last_ask_input: Option<serde_json::Value> = None;
+    // Pre-computed state flags: for full renders these are all default (false/None),
+    // for incremental renders they come from pre_scan_events() on the main thread.
+    let mut saw_init = pre_scan.saw_init;
+    let mut saw_content = pre_scan.saw_content;
+    let mut last_hook = pre_scan.last_hook;
+    let mut saw_exit_plan_mode = pre_scan.saw_exit_plan_mode;
+    let mut saw_user_after_exit_plan = pre_scan.saw_user_after_exit_plan;
+    let mut saw_ask_user_question = pre_scan.saw_ask_user_question;
+    let mut saw_user_after_ask = pre_scan.saw_user_after_ask;
+    let mut last_ask_input = pre_scan.last_ask_input;
 
-    // Pre-scan events before start_idx to set state flags correctly
-    for event in events.iter().take(start_idx) {
-        match event {
-            DisplayEvent::Init { .. } => { saw_init = true; }
-            DisplayEvent::Hook { name, output } => { last_hook = Some((name.clone(), output.clone())); }
-            DisplayEvent::Plan { .. } | DisplayEvent::UserMessage { .. } | DisplayEvent::AssistantText { .. }
-            | DisplayEvent::ToolCall { .. } | DisplayEvent::ToolResult { .. } => {
-                saw_content = true;
-                last_hook = None;
-                if let DisplayEvent::ToolCall { tool_name, input, .. } = event {
-                    if tool_name == "ExitPlanMode" {
-                        saw_exit_plan_mode = true;
-                        saw_user_after_exit_plan = false;
-                    }
-                    if tool_name == "AskUserQuestion" {
-                        saw_ask_user_question = true;
-                        saw_user_after_ask = false;
-                        last_ask_input = Some(input.clone());
-                    }
-                }
-                if let DisplayEvent::UserMessage { .. } = event {
-                    if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
-                    if saw_ask_user_question { saw_user_after_ask = true; }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    for event in events.iter().skip(start_idx) {
+    for event in events.iter() {
         match event {
             DisplayEvent::Init { model, cwd, .. } => {
                 if saw_init || saw_content { continue; }

@@ -58,6 +58,16 @@ cpal = "0.17"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+## Dev builds: optimize hot-path dependencies so debug builds don't crawl.
+## serde_json does JSON parsing on every streaming event (~62/sec),
+## syntect does syntax highlighting on every render — both are 3-5x slower at opt-level 0.
+[profile.dev.package.serde_json]
+opt-level = 2
+[profile.dev.package.serde]
+opt-level = 2
+[profile.dev.package.syntect]
+opt-level = 2
+
 [profile.release]
 lto = true
 codegen-units = 1

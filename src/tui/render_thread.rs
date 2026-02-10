@@ -21,11 +21,27 @@ use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 use super::render_events::ClickablePath;
 
+/// Pre-computed state flags from events before start_idx.
+/// Computed on the main thread (zero-cost read) so the render thread
+/// doesn't need the old events — eliminates the mega-clone.
+#[derive(Default)]
+pub struct PreScanState {
+    pub saw_init: bool,
+    pub saw_content: bool,
+    pub last_hook: Option<(String, String)>,
+    pub saw_exit_plan_mode: bool,
+    pub saw_user_after_exit_plan: bool,
+    pub saw_ask_user_question: bool,
+    pub saw_user_after_ask: bool,
+    pub last_ask_input: Option<serde_json::Value>,
+}
+
 /// Everything the render thread needs to produce a frame.
 /// All fields are owned (cloned from App) so the thread works independently.
 pub struct RenderRequest {
+    /// For incremental renders: only new events (not the full history).
+    /// For full renders: all events (or all from deferred_start).
     pub events: Vec<DisplayEvent>,
-    pub start_idx: usize,
     pub width: u16,
     pub pending_tools: HashSet<String>,
     pub failed_tools: HashSet<String>,
@@ -35,6 +51,12 @@ pub struct RenderRequest {
     pub existing_anim: Vec<(usize, usize)>,
     pub existing_bubbles: Vec<(usize, bool)>,
     pub existing_clickable: Vec<ClickablePath>,
+    /// Pre-computed state from events before start_idx (for incremental renders)
+    pub pre_scan: PreScanState,
+    /// Total event count (old + new) for incremental renders. The `events` Vec
+    /// only contains new events, but the main thread needs the total to update
+    /// `rendered_events_count` correctly.
+    pub total_events: usize,
     /// Deferred render start offset (events before this were skipped)
     pub deferred_start: usize,
     /// Monotonic sequence number — main thread discards results older than latest applied
@@ -120,32 +142,37 @@ fn render_loop(
         // Drain queued requests — only render the latest one
         while let Ok(newer) = rx.try_recv() { req = newer; }
 
-        let event_count = req.events.len();
         let width = req.width;
         let seq = req.seq;
         let deferred_start = req.deferred_start;
 
-        // Incremental if existing cache was provided, full otherwise
-        let (lines, anim, bubbles, clickable) = if !req.existing_lines.is_empty() && req.start_idx > 0 {
-            super::render_events::render_display_events_incremental(
-                &req.events, req.start_idx, width,
+        // Incremental if existing cache was provided (events Vec has only NEW events,
+        // pre_scan has state from old events). Full render otherwise.
+        let (total_events, lines, anim, bubbles, clickable) = if !req.existing_lines.is_empty() {
+            let total = req.total_events;
+            let (l, a, b, c) = super::render_events::render_display_events_incremental(
+                &req.events, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
                 req.existing_lines, req.existing_anim, req.existing_bubbles,
                 req.existing_clickable,
-            )
+                req.pre_scan,
+            );
+            (total, l, a, b, c)
         } else {
-            super::render_events::render_display_events(
+            let total = req.events.len();
+            let (l, a, b, c) = super::render_events::render_display_events(
                 &req.events[deferred_start..], width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
-            )
+            );
+            (total, l, a, b, c)
         };
 
         let _ = tx.send(RenderResult {
             lines, anim_indices: anim, bubble_positions: bubbles,
             clickable_paths: clickable,
-            events_count: event_count, events_start: deferred_start,
+            events_count: total_events, events_start: deferred_start,
             width, seq,
         });
     }

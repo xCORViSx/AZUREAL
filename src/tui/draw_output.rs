@@ -16,7 +16,7 @@ use ratatui::{
 
 use crate::app::{App, Focus, ViewMode};
 use crate::models::RebaseState;
-use super::render_thread::RenderRequest;
+use super::render_thread::{PreScanState, RenderRequest};
 use super::colorize::ORANGE;
 use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
 
@@ -24,6 +24,45 @@ use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
 /// The user starts at the bottom so they see the most recent messages instantly.
 /// Full render happens lazily when they scroll to the top.
 const DEFERRED_RENDER_TAIL: usize = 200;
+
+/// Scan already-rendered events to extract state flags needed by the render thread.
+/// Runs on the main thread reading its own memory (zero allocation, no clone).
+/// This lets us send only NEW events to the render thread instead of ALL events.
+fn pre_scan_events(events: &[crate::events::DisplayEvent]) -> PreScanState {
+    use crate::events::DisplayEvent;
+    let mut s = PreScanState::default();
+    for event in events {
+        match event {
+            DisplayEvent::Init { .. } => { s.saw_init = true; }
+            DisplayEvent::Hook { name, output } => {
+                s.last_hook = Some((name.clone(), output.clone()));
+            }
+            DisplayEvent::Plan { .. } | DisplayEvent::UserMessage { .. }
+            | DisplayEvent::AssistantText { .. } | DisplayEvent::ToolCall { .. }
+            | DisplayEvent::ToolResult { .. } => {
+                s.saw_content = true;
+                s.last_hook = None;
+                if let DisplayEvent::ToolCall { tool_name, input, .. } = event {
+                    if tool_name == "ExitPlanMode" {
+                        s.saw_exit_plan_mode = true;
+                        s.saw_user_after_exit_plan = false;
+                    }
+                    if tool_name == "AskUserQuestion" {
+                        s.saw_ask_user_question = true;
+                        s.saw_user_after_ask = false;
+                        s.last_ask_input = Some(input.clone());
+                    }
+                }
+                if let DisplayEvent::UserMessage { .. } = event {
+                    if s.saw_exit_plan_mode { s.saw_user_after_exit_plan = true; }
+                    if s.saw_ask_user_question { s.saw_user_after_ask = true; }
+                }
+            }
+            _ => {}
+        }
+    }
+    s
+}
 
 /// Submit a render request to the background thread (NON-BLOCKING).
 /// The main event loop calls this when `rendered_lines_dirty` is true.
@@ -68,14 +107,22 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
         if trim < existing_lines.len() {
             existing_lines.truncate(trim);
             existing_anim.retain(|&(idx, _)| idx < trim);
-            // Remove the trailing pending bubble position
             if let Some(&(line_idx, _)) = existing_bubbles.last() {
                 if line_idx >= trim { existing_bubbles.pop(); }
             }
         }
+
+        // Pre-compute state flags by scanning existing events (zero-cost: just
+        // reads references in main thread's own memory). This eliminates the need
+        // to clone ALL display_events — render thread only gets new events.
+        let pre_scan = pre_scan_events(&app.display_events[..app.rendered_events_count]);
+
+        // Only clone NEW events (from rendered_events_count onwards).
+        // Previously cloned ALL events — the #1 cause of CPU spike during streaming.
+        let new_events = app.display_events[app.rendered_events_count..].to_vec();
+
         RenderRequest {
-            events: app.display_events.clone(),
-            start_idx: app.rendered_events_count,
+            events: new_events,
             width: inner_width,
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
@@ -84,8 +131,10 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             existing_anim,
             existing_bubbles,
             existing_clickable,
+            pre_scan,
+            total_events: event_count,
             deferred_start: 0,
-            seq: 0, // filled by send()
+            seq: 0,
         }
     } else {
         let deferred_start = if app.rendered_events_start == 0
@@ -99,7 +148,6 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
 
         RenderRequest {
             events: app.display_events.clone(),
-            start_idx: 0,
             width: inner_width,
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
@@ -108,6 +156,8 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             existing_anim: Vec::new(),
             existing_bubbles: Vec::new(),
             existing_clickable: Vec::new(),
+            pre_scan: PreScanState::default(),
+            total_events: event_count,
             deferred_start,
             seq: 0,
         }

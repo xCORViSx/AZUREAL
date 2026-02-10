@@ -364,11 +364,10 @@ impl ClaudeProcess {
                     continue;
                 }
 
-                // Parse JSON to extract session_id from init event
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if json.get("type").and_then(|v| v.as_str()) == Some("system")
-                        && json.get("subtype").and_then(|v| v.as_str()) == Some("init")
-                    {
+                // Extract session_id from init event using string search (avoids
+                // full JSON parse on EVERY line — init happens once per session).
+                if line.contains("\"subtype\":\"init\"") {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
                         if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
                             let _ = tx_stdout.send(ClaudeEvent::SessionId(session_id.to_string()));
                         }

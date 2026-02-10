@@ -20,16 +20,26 @@ impl EventParser {
         }
     }
 
-    /// Feed raw data and get parsed display events
+    /// Feed raw data and get parsed display events.
+    /// Collects complete line ranges first, then drains consumed bytes in one shot —
+    /// O(n) total instead of O(n²) re-allocation on every newline.
     pub fn parse(&mut self, data: &str) -> Vec<DisplayEvent> {
         self.buffer.push_str(data);
         let mut events = Vec::new();
 
-        while let Some(newline_pos) = self.buffer.find('\n') {
-            let line = self.buffer[..newline_pos].trim().to_string();
-            self.buffer = self.buffer[newline_pos + 1..].to_string();
-            if line.is_empty() { continue; }
-            events.extend(self.parse_line(&line));
+        // Find all complete lines (up to last newline)
+        let last_newline = match self.buffer.rfind('\n') {
+            Some(pos) => pos,
+            None => return events,
+        };
+
+        // Extract complete lines as one owned string, drain from buffer
+        let complete: String = self.buffer.drain(..=last_newline).collect();
+
+        for line in complete.split('\n') {
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            events.extend(self.parse_line(trimmed));
         }
 
         events
