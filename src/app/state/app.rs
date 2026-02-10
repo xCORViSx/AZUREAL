@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeEntry, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -117,6 +117,8 @@ pub struct App {
     pub file_tree_scroll: usize,
     /// Expanded directories in file tree
     pub file_tree_expanded: HashSet<PathBuf>,
+    /// Active file action (add/rename/copy/move/delete) — None when idle
+    pub file_tree_action: Option<FileTreeAction>,
     /// Viewer pane content (file or diff text)
     pub viewer_content: Option<String>,
     /// Path of file displayed in viewer (if ViewerMode::File)
@@ -426,6 +428,7 @@ impl App {
             file_tree_selected: None,
             file_tree_scroll: 0,
             file_tree_expanded: HashSet::new(),
+            file_tree_action: None,
             viewer_content: None,
             viewer_path: None,
             viewer_scroll: 0,

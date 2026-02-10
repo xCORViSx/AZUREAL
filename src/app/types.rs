@@ -24,6 +24,21 @@ pub struct FileTreeEntry {
     pub is_hidden: bool,
 }
 
+/// Active file tree action requiring text input or confirmation
+#[derive(Debug, Clone)]
+pub enum FileTreeAction {
+    /// Creating a new file (input = filename). Trailing '/' means create directory.
+    Add(String),
+    /// Renaming the selected entry (input = new name)
+    Rename(String),
+    /// Copying the selected entry (input = destination path relative to parent)
+    Copy(String),
+    /// Moving the selected entry (input = destination path relative to parent)
+    Move(String),
+    /// Deleting the selected entry (awaiting 'y' confirmation)
+    Delete,
+}
+
 /// State for the branch selection dialog
 pub struct BranchDialog {
     pub branches: Vec<String>,

@@ -1,9 +1,25 @@
 //! File tree navigation and viewer operations
 
+use std::path::Path;
 use crate::app::types::ViewerMode;
 
 use super::helpers::build_file_tree;
 use super::App;
+
+/// Recursively copy a directory and all contents
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
 
 impl App {
     /// Toggle expand/collapse of a directory in the file tree
@@ -134,6 +150,120 @@ impl App {
                 self.viewer_lines_dirty = true;
             }
         }
+    }
+
+    /// Execute a file add action. Name ending with '/' creates a directory.
+    /// Created in the selected entry's parent (if file) or inside it (if dir).
+    pub fn file_tree_exec_add(&mut self, name: &str) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        // Add inside directory if selected, or alongside file in its parent
+        let parent = if entry.is_dir { entry.path.clone() } else {
+            entry.path.parent().unwrap_or(&entry.path).to_path_buf()
+        };
+        let target = parent.join(name.trim_end_matches('/'));
+        if name.ends_with('/') {
+            if let Err(e) = std::fs::create_dir_all(&target) {
+                self.set_status(format!("mkdir failed: {}", e)); return;
+            }
+        } else {
+            // Create parent dirs if needed, then empty file
+            if let Some(p) = target.parent() { let _ = std::fs::create_dir_all(p); }
+            if let Err(e) = std::fs::File::create(&target) {
+                self.set_status(format!("create failed: {}", e)); return;
+            }
+        }
+        self.set_status(format!("Created {}", target.display()));
+        self.file_tree_refresh_after_action(&target);
+    }
+
+    /// Execute a file rename action
+    pub fn file_tree_exec_rename(&mut self, new_name: &str) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        let Some(parent) = entry.path.parent() else { return };
+        let target = parent.join(new_name);
+        if target.exists() {
+            self.set_status(format!("Already exists: {}", target.display())); return;
+        }
+        if let Err(e) = std::fs::rename(&entry.path, &target) {
+            self.set_status(format!("Rename failed: {}", e)); return;
+        }
+        self.set_status(format!("Renamed → {}", new_name));
+        self.file_tree_refresh_after_action(&target);
+    }
+
+    /// Execute a file delete action
+    pub fn file_tree_exec_delete(&mut self) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        let path = entry.path.clone();
+        let is_dir = entry.is_dir;
+        let result = if is_dir {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(e) = result {
+            self.set_status(format!("Delete failed: {}", e)); return;
+        }
+        self.set_status(format!("Deleted {}", path.file_name().unwrap_or_default().to_string_lossy()));
+        // Select previous entry after deletion
+        let select_path = if idx > 0 {
+            self.file_tree_entries.get(idx - 1).map(|e| e.path.clone())
+        } else { None };
+        self.file_tree_refresh_after_action(&select_path.unwrap_or(path));
+    }
+
+    /// Execute a file copy action (destination relative to selected entry's parent)
+    pub fn file_tree_exec_copy(&mut self, dest_name: &str) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        let src = entry.path.clone();
+        let Some(parent) = src.parent() else { return };
+        let target = parent.join(dest_name);
+        if target.exists() {
+            self.set_status(format!("Already exists: {}", target.display())); return;
+        }
+        let result = if entry.is_dir {
+            copy_dir_recursive(&src, &target)
+        } else {
+            std::fs::copy(&src, &target).map(|_| ())
+        };
+        if let Err(e) = result {
+            self.set_status(format!("Copy failed: {}", e)); return;
+        }
+        self.set_status(format!("Copied → {}", dest_name));
+        self.file_tree_refresh_after_action(&target);
+    }
+
+    /// Execute a file move action (destination relative to selected entry's parent)
+    pub fn file_tree_exec_move(&mut self, dest_name: &str) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        let src = entry.path.clone();
+        let Some(parent) = src.parent() else { return };
+        let target = parent.join(dest_name);
+        if target.exists() {
+            self.set_status(format!("Already exists: {}", target.display())); return;
+        }
+        if let Err(e) = std::fs::rename(&src, &target) {
+            self.set_status(format!("Move failed: {}", e)); return;
+        }
+        self.set_status(format!("Moved → {}", dest_name));
+        self.file_tree_refresh_after_action(&target);
+    }
+
+    /// Rebuild file tree after a file action, selecting the target path
+    fn file_tree_refresh_after_action(&mut self, select_path: &std::path::Path) {
+        let Some(session) = self.current_session() else { return };
+        let Some(ref worktree_path) = session.worktree_path else { return };
+        let select_target = select_path.to_path_buf();
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded);
+        self.file_tree_selected = self.file_tree_entries
+            .iter().position(|e| e.path == select_target)
+            .or_else(|| if self.file_tree_entries.is_empty() { None } else { Some(0) });
+        self.invalidate_file_tree();
     }
 
     /// Clear viewer content

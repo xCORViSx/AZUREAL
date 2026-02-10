@@ -121,6 +121,11 @@ pub enum Action {
     // FileTree
     ToggleDir,
     OpenFile,
+    AddFile,
+    DeleteFile,
+    RenameFile,
+    CopyFile,
+    MoveFile,
 
     // Viewer
     EnterEditMode,
@@ -285,7 +290,7 @@ pub static WORKTREES: [Keybinding; 19] = [
 ];
 
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 9] = [
+pub static FILE_TREE: [Keybinding; 14] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft),
@@ -294,6 +299,11 @@ pub static FILE_TREE: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Last in folder", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open/toggle", Action::OpenFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle dir", Action::ToggleDir),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add file/dir", Action::AddFile),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "Delete", Action::DeleteFile),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rename", Action::RenameFile),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Copy", Action::CopyFile),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Move", Action::MoveFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
 ];
 
@@ -443,7 +453,7 @@ pub fn prompt_type_title() -> String {
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear | {}:voice) ",
+        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel response | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear | {}:voice) ",
         esc, submit, cancel, hprev, hnext, dw, cl, stt
     )
 }

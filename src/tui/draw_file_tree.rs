@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus};
+use crate::app::types::FileTreeAction;
 use super::util::{truncate, AZURE};
 
 /// Build file tree lines (extracted for caching)
@@ -84,7 +85,9 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
 /// Draw the file tree panel showing the session's worktree files
 pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::FileTree;
-    let viewport_height = area.height.saturating_sub(2) as usize;
+    // Reserve 1 line at bottom for action bar when an action is active
+    let has_action = app.file_tree_action.is_some();
+    let viewport_height = area.height.saturating_sub(if has_action { 3 } else { 2 }) as usize;
 
     // Rebuild cache if dirty or selection changed (selection affects highlight)
     if app.file_tree_dirty {
@@ -111,7 +114,7 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     app.file_tree_scroll = scroll;
 
     // Build viewport slice directly (single clone operation)
-    let display_lines: Vec<Line> = app.file_tree_lines_cache.iter()
+    let mut display_lines: Vec<Line> = app.file_tree_lines_cache.iter()
         .skip(scroll)
         .take(viewport_height)
         .cloned()
@@ -122,6 +125,30 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         " Filetree ".to_string()
     };
+
+    // Build action bar line if an action is active
+    let action_line: Option<Line> = app.file_tree_action.as_ref().map(|a| {
+        let (label, buf) = match a {
+            FileTreeAction::Add(b) => ("Add (/ = dir): ", b.as_str()),
+            FileTreeAction::Rename(b) => ("Rename: ", b.as_str()),
+            FileTreeAction::Copy(b) => ("Copy to: ", b.as_str()),
+            FileTreeAction::Move(b) => ("Move to: ", b.as_str()),
+            FileTreeAction::Delete => ("Delete? (y/N) ", ""),
+        };
+        let max_input = area.width.saturating_sub(2 + label.len() as u16) as usize;
+        // Show tail of input if it's longer than available space
+        let visible = if buf.len() > max_input { &buf[buf.len() - max_input..] } else { buf };
+        Line::from(vec![
+            Span::styled(label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(visible.to_string(), Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::White)),
+        ])
+    });
+
+    // Append action bar as the last line if active
+    if let Some(action) = action_line {
+        display_lines.push(action);
+    }
 
     let widget = Paragraph::new(display_lines).block(
         Block::default()
