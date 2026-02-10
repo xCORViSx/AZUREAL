@@ -242,7 +242,10 @@ pub async fn run_app(
         // Submit render request to background thread if convo cache is dirty.
         // This is NON-BLOCKING — the render thread does the expensive work while
         // we keep processing events. No more frozen input during convo updates!
-        if app.rendered_lines_dirty {
+        // BACKPRESSURE: skip if a render is already in flight — avoids cloning
+        // the entire event array every 16ms while Claude streams, which was the
+        // root cause of 100%+ CPU on prompt submit.
+        if app.rendered_lines_dirty && !app.render_in_flight {
             // Convo pane is fixed at 80 columns (Constraint::Length(80) in run.rs).
             // We pass this directly — the old formula `(terminal - 80) / 2` was a
             // leftover from the 50/50 split layout and made bubbles way too narrow.
