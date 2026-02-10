@@ -161,18 +161,18 @@ pub async fn run_app(
             }
         }
 
-        // Process Claude events only if we have receivers (skip allocation when empty)
+        // Process Claude events — drain all available from each receiver.
+        // We must collect first (borrows claude_receivers) then process (borrows app mutably).
+        // Avoid nested Vec + flat_map — single drain loop per receiver is simpler.
         if !app.claude_receivers.is_empty() {
-            let claude_events: Vec<_> = app.claude_receivers.iter()
-                .flat_map(|(sid, rx)| {
-                    std::iter::from_fn(|| rx.try_recv().ok())
-                        .map(|e| (sid.clone(), e))
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-
-            for (session_id, claude_event) in claude_events {
-                handle_claude_event(&session_id, claude_event, app, &claude_process)?;
+            let mut claude_events: Vec<(String, ClaudeEvent)> = Vec::new();
+            for (sid, rx) in &app.claude_receivers {
+                while let Ok(event) = rx.try_recv() {
+                    claude_events.push((sid.clone(), event));
+                }
+            }
+            for (session_id, event) in claude_events {
+                handle_claude_event(&session_id, event, app, &claude_process)?;
                 needs_redraw = true;
             }
         }

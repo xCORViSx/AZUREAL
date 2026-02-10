@@ -160,9 +160,11 @@ fn render_loop(
             );
             (total, l, a, b, c)
         } else {
-            let total = req.events.len();
+            // Events are already sliced from deferred_start by submit_render_request —
+            // no need to skip here. total_events is the FULL count (for rendered_events_count).
+            let total = req.total_events;
             let (l, a, b, c) = super::render_events::render_display_events(
-                &req.events[deferred_start..], width,
+                &req.events, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
             );

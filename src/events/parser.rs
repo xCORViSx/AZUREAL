@@ -20,38 +20,44 @@ impl EventParser {
         }
     }
 
-    /// Feed raw data and get parsed display events.
+    /// Feed raw data and get parsed display events + the last parsed JSON value.
+    /// The JSON value is returned so callers can extract token usage without re-parsing.
     /// Collects complete line ranges first, then drains consumed bytes in one shot —
     /// O(n) total instead of O(n²) re-allocation on every newline.
-    pub fn parse(&mut self, data: &str) -> Vec<DisplayEvent> {
+    pub fn parse(&mut self, data: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
         self.buffer.push_str(data);
         let mut events = Vec::new();
 
         // Find all complete lines (up to last newline)
         let last_newline = match self.buffer.rfind('\n') {
             Some(pos) => pos,
-            None => return events,
+            None => return (events, None),
         };
 
         // Extract complete lines as one owned string, drain from buffer
         let complete: String = self.buffer.drain(..=last_newline).collect();
 
+        let mut last_json = None;
         for line in complete.split('\n') {
             let trimmed = line.trim();
             if trimmed.is_empty() { continue; }
-            events.extend(self.parse_line(trimmed));
+            let (line_events, json) = self.parse_line_with_json(trimmed);
+            events.extend(line_events);
+            if json.is_some() { last_json = json; }
         }
 
-        events
+        (events, last_json)
     }
 
-    fn parse_line(&mut self, line: &str) -> Vec<DisplayEvent> {
+    /// Parse a single line, returning events and the raw parsed JSON value (if any).
+    /// The JSON value is reused by callers for token extraction — avoids double parse.
+    fn parse_line_with_json(&mut self, line: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
         let trimmed = line.trim();
 
         if trimmed.starts_with('{') {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
                 if let Some(event_type) = json.get("type").and_then(|v| v.as_str()) {
-                    return match event_type {
+                    let events = match event_type {
                         "system" => self.parse_system_event(&json).into_iter().collect(),
                         "user" => self.parse_user_event(&json),
                         "assistant" => self.parse_assistant_event(&json),
@@ -66,12 +72,14 @@ impl EventParser {
                         }
                         _ => Vec::new(),
                     };
+                    return (events, Some(json));
                 }
+                return (Vec::new(), Some(json));
             }
-            return Vec::new();
+            return (Vec::new(), None);
         }
 
-        self.parse_text_hook(line).into_iter().collect()
+        (self.parse_text_hook(line).into_iter().collect(), None)
     }
 
     fn parse_system_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
@@ -289,7 +297,7 @@ mod tests {
     fn test_parse_init_event() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"system","subtype":"init","session_id":"abc123","cwd":"/test","model":"claude-3"}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::Init { session_id, cwd, model } => {
@@ -305,7 +313,7 @@ mod tests {
     fn test_parse_assistant_text() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"assistant","uuid":"u1","message":{"id":"msg1","model":"claude","role":"assistant","content":[{"type":"text","text":"Hello!"}]}}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "Hello!"),
@@ -317,7 +325,7 @@ mod tests {
     fn test_parse_tool_call() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"assistant","uuid":"u1","message":{"id":"msg1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tool1","name":"Read","input":{"file_path":"/test/file.rs"}}]}}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::ToolCall { tool_name, file_path, .. } => {
@@ -332,7 +340,7 @@ mod tests {
     fn test_parse_hook_response() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"system","subtype":"hook_response","hook_name":"SessionStart:startup","output":"Read CLAUDE.md before proceeding.\n","session_id":"abc123"}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::Hook { name, output } => {
@@ -347,7 +355,7 @@ mod tests {
     fn test_parse_hook_started_ignored() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup","session_id":"abc123"}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 0, "hook_started should not produce events");
     }
 
@@ -355,7 +363,7 @@ mod tests {
     fn test_extract_hooks_from_system_reminder() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"<system-reminder>\nUserPromptSubmit hook success: Follow CLAUDE.md guidelines.\n</system-reminder>\nHello Claude"}}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 2);
         match &events[0] {
             DisplayEvent::Hook { name, output } => {
@@ -370,7 +378,7 @@ mod tests {
     fn test_parse_hook_progress_event() {
         let mut parser = EventParser::new();
         let json = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"PreToolUse:Bash","command":"echo 'Ensure this action complies with CLAUDE.md and AGENTS.md.'"}}"#;
-        let events = parser.parse(&format!("{}\n", json));
+        let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::Hook { name, output } => {

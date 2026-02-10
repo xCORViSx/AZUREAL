@@ -146,8 +146,11 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
             0
         };
 
+        // Clone only the events we'll actually render (from deferred_start onwards).
+        // Previously cloned ALL events even though events before deferred_start are
+        // never touched — wasted cloning of potentially huge serde_json::Value fields.
         RenderRequest {
-            events: app.display_events.clone(),
+            events: app.display_events[deferred_start..].to_vec(),
             width: inner_width,
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),

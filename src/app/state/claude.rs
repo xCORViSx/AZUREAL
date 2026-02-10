@@ -84,7 +84,10 @@ impl App {
     pub fn handle_claude_output(&mut self, branch_name: &str, output_type: OutputType, data: String) {
         let is_viewing = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
         if is_viewing {
-            let events = self.event_parser.parse(&data);
+            // Single JSON parse: EventParser returns both events AND the raw parsed
+            // JSON value. We reuse that value for token/model extraction below instead
+            // of calling serde_json::from_str again (was the #1 remaining CPU cost).
+            let (events, parsed_json) = self.event_parser.parse(&data);
 
             for event in &events {
                 match event {
@@ -155,12 +158,8 @@ impl App {
                 }
             }
 
-            // Single JSON parse for both token extraction AND display text.
-            // Previously we parsed JSON 3 times per event: EventParser, here, and
-            // parse_stream_json_for_display(). Now this single parse serves #2 and #3.
-            let parsed_json = if output_type == OutputType::Stdout || output_type == OutputType::Json {
-                serde_json::from_str::<serde_json::Value>(&data).ok()
-            } else { None };
+            // Reuse the JSON value that EventParser already parsed — zero additional
+            // serde_json::from_str calls. EventParser returns it alongside events.
 
             // Extract token usage, model, and context window from live stream events.
             // assistant events give us token counts + model heuristic (available mid-turn).
@@ -210,17 +209,25 @@ impl App {
                 if tokens_changed { self.update_token_badge(); }
             }
 
-            self.display_events.extend(events);
-            self.invalidate_render_cache();
+            // Only extend + invalidate when we actually got events. Many stdout lines
+            // (progress, hook_started) produce 0 events — skip the work entirely.
+            if !events.is_empty() {
+                self.display_events.extend(events);
+                self.invalidate_render_cache();
+            }
 
-            // Reuse pre-parsed JSON for display text (avoids a third parse).
-            // For non-JSON output (stderr), pass raw data directly.
-            if let Some(json) = parsed_json {
-                if let Some(display_text) = display_text_from_json(&json) {
-                    self.process_output_chunk(&display_text);
+            // Feed the fallback output_lines only when the rendered cache is empty
+            // (before first render completes). Once we have rendered content, the convo
+            // pane draws from rendered_lines_cache and output_lines is never read —
+            // skip the display_text_from_json + process_output_chunk work entirely.
+            if self.rendered_lines_cache.is_empty() {
+                if let Some(json) = parsed_json {
+                    if let Some(display_text) = display_text_from_json(&json) {
+                        self.process_output_chunk(&display_text);
+                    }
+                } else if output_type != OutputType::Stdout && output_type != OutputType::Json {
+                    self.process_output_chunk(&data);
                 }
-            } else if output_type != OutputType::Stdout && output_type != OutputType::Json {
-                self.process_output_chunk(&data);
             }
 
         }
