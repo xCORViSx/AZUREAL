@@ -4,6 +4,11 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Dashed double-line border in Viewer edit mode when file has unsaved changes
+  - Solid double border (`═║`) when clean, dashed double (`╍╏`) when modified
+  - Combined with existing `[modified]` title indicator for clear visual cue
+
 ### Fixed
 - Icon not showing on GitHub — `azural_icon.png` renamed to `azureal_icon.png` to match README reference
 - `f` key now toggles FileTree overlay off (was only handled in worktrees input, not file tree input)
