@@ -505,7 +505,9 @@ The input box uses vim-style modal editing:
 
 Key mappings:
 - `p` (global, except edit mode): Enter prompt mode and focus input (closes terminal/help if open)
-- `t` (command mode): Open terminal pane
+- `t` (global, except edit mode): Open terminal pane
+
+**CRITICAL: Global keybinding guards for viewer edit mode.** All single-key global bindings (`p`, `t`, `?`, `Tab`, `Shift+Tab`) MUST include `!app.viewer_edit_mode` in their guard. Without this, typing those characters in the file editor triggers the global command instead of inserting text. The edit mode input handler (`handle_edit_mode_input`) runs AFTER global handlers in `handle_key_event`, so any unguarded global match steals the key.
 - `Escape` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
