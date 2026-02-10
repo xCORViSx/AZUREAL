@@ -34,7 +34,8 @@ All notable changes to Azureal will be documented in this file.
 - File actions in FileTree pane: `a` (add file/dir), `d` (delete), `r` (rename), `c` (copy), `m` (move)
   - Inline action bar at bottom of FileTree pane with text input (or y/N confirmation for delete)
   - Add: trailing `/` creates directory; files created in selected dir or alongside selected file
-  - Rename/Copy/Move: pre-filled with current name (Copy adds `_copy` suffix); relative to parent dir
+  - Rename: pre-filled with current name
+  - Copy/Move: clipboard-style paste workflow — press `c`/`m` to grab source file, navigate tree to target directory, press `Enter` to paste; source highlighted with `┃name┃` (copy, solid) or `╎name╎` (move, dashed) in magenta
   - `⌃u` clears input, `Esc` cancels, `Enter` confirms
   - Recursive directory copy support
 - `⌃c` prompt title label changed from "cancel" to "cancel response" for clarity
