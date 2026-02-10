@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Convo pane bubbles too narrow — render width formula `(terminal - 80) / 2` was a leftover from the old 50/50 split layout; now passes the fixed 80-column pane width directly, giving bubbles proper ~52 char width instead of being crushed to minimum 40
+
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files
   - Fields: `selected_session` → `selected_worktree`, `pane_sessions` → `pane_worktrees`, `sessions_expanded` → `worktrees_expanded`, `session_terminals` → `worktree_terminals`
