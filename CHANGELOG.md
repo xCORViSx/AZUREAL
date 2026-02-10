@@ -12,6 +12,7 @@ All notable changes to Azureal will be documented in this file.
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Fixed
+- Shift+Tab from Viewer now lands on FileTree when the overlay is open (was always closing the overlay and jumping to Worktrees)
 - Global `t` keybinding (terminal toggle) no longer fires in viewer edit mode — guard was missing `!viewer_edit_mode`, so typing `t` opened the terminal instead of inserting the character
 - Global `Tab`/`Shift+Tab` (focus cycling) no longer fires in viewer edit mode — Tab inserts 4 spaces in edit mode but the global handler ran first and cycled focus away
 - Global `⌘C` was swallowing copy in viewer edit mode — handler checked `viewer_selection` (read-only) but not `viewer_edit_selection`, then returned early; edit mode's `viewer_edit_copy()` never fired

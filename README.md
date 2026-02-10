@@ -77,7 +77,8 @@ azureal
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (viewport minus 2 overlap lines) |
 | `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
-| `Tab` | Cycle focus (Worktrees > Viewer > Convo > Input), closes overlays |
+| `Tab` | Cycle focus forward (Worktrees > Viewer > Convo > Input), closes overlays |
+| `⇧Tab` | Cycle focus backward; lands on FileTree if overlay is open |
 | `f` | Toggle FileTree overlay (in Worktrees pane) |
 | `s` | Toggle Session list overlay (in Convo pane) |
 | `n` | New worktree/session (creation wizard) |
