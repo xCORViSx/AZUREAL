@@ -44,6 +44,7 @@ All notable changes to Azureal will be documented in this file.
   - Now highlights from the path start column to end of actual path text only
 - FileTree copy/move paste now selects the pasted file and auto-expands the target directory
 - FileTree action bar text now wraps to multiple lines when wider than the pane (was clipping)
+  - Wraps at word boundaries so key hints like `Enter:paste` and `Esc:cancel` stay together
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files
