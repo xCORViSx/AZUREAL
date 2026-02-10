@@ -561,15 +561,17 @@ Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs
 
 The viewer edit mode cursor navigates wrapped visual lines, not just source lines. Long lines wrap at `content_width = viewport_width - line_num_width - 3` characters. The wrap width is cached in `app.viewer_edit_content_width` (set by `draw_edit_mode()`).
 
-**Up/Down navigation:** `viewer_edit_up()` / `viewer_edit_down()` use `col / cw` to determine which wrap row the cursor is on. Moving up from wrap_row > 0 stays on the same source line; from wrap_row 0 it jumps to the previous source line's last wrap row. Same logic in reverse for down. The visual column (`col % cw`) is preserved across wrap rows.
+**Word-boundary wrapping:** Both read-only and edit modes use `textwrap::wrap()` for word-boundary wrapping. The `word_wrap_breaks(text, max_width)` function returns `Vec<usize>` of char offsets where each visual row starts. All cursor math uses these break positions instead of fixed-width `col / cw` assumptions.
 
-**Scroll-to-cursor:** `viewer_edit_scroll_to_cursor()` sums wrap counts for all source lines before the cursor line, adds the cursor's wrap offset, and scrolls the viewport to keep that visual line visible.
+**Up/Down navigation:** `viewer_edit_up()` / `viewer_edit_down()` call `word_wrap_breaks()` to find which wrap row the cursor is on. Moving up from wrap_row > 0 stays on the same source line; from wrap_row 0 it jumps to the previous source line's last wrap row. Same logic in reverse for down. The visual column offset from the break position is preserved across wrap rows.
 
-**Mouse click/drag:** `screen_to_edit_pos()` maps screen coordinates to `(source_line, source_col)` by walking source lines and summing their wrap counts until the clicked visual row is found. Stored as drag anchor with pane_id=3 for edit-mode drag selection.
+**Scroll-to-cursor:** `viewer_edit_scroll_to_cursor()` sums `word_wrap_breaks().len()` for all source lines before the cursor line, adds the cursor's wrap offset, and scrolls the viewport to keep that visual line visible.
 
-**Hard char-boundary wrapping:** Edit mode uses `wrap_spans_hard()` instead of `wrap_spans()`. The regular `wrap_spans()` uses `textwrap::wrap()` which does word-boundary wrapping — lines break at spaces/hyphens. This causes wrap points to vary vs the fixed-width assumption (`col / cw`, `col % cw`) used by cursor math and `screen_to_edit_pos()`. `wrap_spans_hard()` splits spans at exact `content_width` char boundaries so visual layout perfectly matches cursor positioning.
+**Mouse click/drag:** `screen_to_edit_pos()` maps screen coordinates to `(source_line, source_col)` by walking source lines and summing their wrap counts (via `word_wrap_breaks()`) until the clicked visual row is found. Click column mapped through break positions to get correct char offset. Stored as drag anchor with pane_id=3 for edit-mode drag selection.
 
-Implementation: `src/app/state/viewer_edit.rs` (cursor movement, scroll), `src/tui/event_loop.rs` (`screen_to_edit_pos()`, pane_id=3 handling), `src/tui/draw_viewer.rs` (`wrap_spans_hard()`, caches `content_width`)
+**Display wrapping:** `wrap_spans_word()` wraps styled spans using word-boundary break positions from `word_wrap_breaks()`. Used by both read-only viewer and edit mode display. `word_wrap_breaks()` is `pub(crate)` in `draw_viewer.rs` and duplicated privately in `viewer_edit.rs` (app module can't import from tui).
+
+Implementation: `src/app/state/viewer_edit.rs` (cursor movement, scroll, local `word_wrap_breaks()`), `src/tui/event_loop.rs` (`screen_to_edit_pos()`, pane_id=3 handling), `src/tui/draw_viewer.rs` (`word_wrap_breaks()`, `wrap_spans_word()`, caches `content_width`)
 
 ### Stream-JSON Parsing
 

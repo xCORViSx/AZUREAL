@@ -12,7 +12,9 @@ All notable changes to Azureal will be documented in this file.
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Fixed
-- Viewer no longer reflows text when entering edit mode — read-only mode now uses char-boundary wrapping (matching edit mode) instead of word-boundary wrapping
+- Viewer edit mode now uses word-boundary wrapping (matching read-only mode) — both modes use `textwrap::wrap()` with `word_wrap_breaks()` for consistent text reflow
+  - Cursor navigation (up/down), scroll-to-cursor, and mouse click-to-cursor all updated to use word-boundary break positions instead of fixed-width char-boundary math
+  - `wrap_spans_word()` replaces both `wrap_spans()` and `wrap_spans_hard()` — one wrapping function for all viewer modes
 - Icon not showing on GitHub — `azural_icon.png` renamed to `azureal_icon.png` to match README reference
 - `f` key now toggles FileTree overlay off (was only handled in worktrees input, not file tree input)
 - Convo pane auto-scroll now properly follows bottom until user scrolls up, then stays put
@@ -191,7 +193,7 @@ All notable changes to Azureal will be documented in this file.
 ### Fixed
 - Backspace line-join in edit mode used `.len()` (byte count) instead of `.chars().count()` for cursor positioning — caused cursor to land at wrong position on lines containing multi-byte UTF-8 characters
 - Clicking a file in the file tree while another file was in edit mode left edit mode active on the new file — now exits edit mode cleanly before loading
-- Edit mode cursor/selection misalignment — cursor didn't match selection highlight end because `textwrap::wrap()` breaks at word boundaries while cursor math assumes fixed-width char boundaries. Edit mode now uses `wrap_spans_hard()` for exact char-boundary wrapping
+- Edit mode cursor/selection misalignment — cursor didn't match selection highlight end because `textwrap::wrap()` breaks at word boundaries while cursor math assumed fixed-width char boundaries. Now uses `word_wrap_breaks()` to compute actual break positions for all cursor math
 
 ### Added
 - Wrap-aware cursor navigation in file edit mode — Up/Down arrows now move through wrapped visual lines instead of jumping entire source lines
