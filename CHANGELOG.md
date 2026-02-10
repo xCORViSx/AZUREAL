@@ -42,6 +42,9 @@ All notable changes to Azureal will be documented in this file.
 - Wrapped file path highlight in Convo pane no longer extends past the path text
   - Continuation lines were highlighting from column 0 (including indent) to full line width
   - Now highlights from the path start column to end of actual path text only
+- 100%+ CPU spike on prompt submit — render requests now have backpressure
+  - During Claude streaming, every event triggered a new render request (cloning entire event array) even while the render thread was still processing the previous one (~62 full clones/sec)
+  - Fix: skip `submit_render_request()` when `render_in_flight` is true; dirty flag stays set and fires on next `poll_render_result()` completion
 - FileTree copy/move paste now selects the pasted file and auto-expands the target directory
 - FileTree action bar text now wraps to multiple lines when wider than the pane (was clipping)
   - Wraps at word boundaries so key hints like `Enter:paste` and `Esc:cancel` stay together
