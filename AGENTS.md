@@ -225,18 +225,17 @@ let highlighted = app.syntax_highlighter.highlight_file(&full_content, &path_str
 // Then iterates ALL source lines to build all_lines...
 
 // ✅ CORRECT - Cache highlighting, only re-run on content change; only process visible lines
-let undo_ver = app.viewer_edit_undo.len();
-if app.viewer_edit_highlight_ver != undo_ver {
-    // Only re-highlight when content actually changed (undo stack depth shifted)
+let edit_ver = app.viewer_edit_version;  // monotonic counter, bumped on every mutation
+if app.viewer_edit_highlight_ver != edit_ver {
     app.viewer_edit_highlight_cache = app.syntax_highlighter.highlight_file(...);
-    app.viewer_edit_highlight_ver = undo_ver;
+    app.viewer_edit_highlight_ver = edit_ver;
 }
 // Walk source lines to find visible range, only build Lines for viewport
 ```
 
 **Impact:** AGENTS.md (~1000+ lines) caused 90%+ CPU in edit mode — syntect was parsing the entire file every frame at 30fps. Now: highlight once on enter/edit (~50ms), then zero highlight cost per frame. Viewport-only line construction means O(viewport_height) not O(file_size) per frame.
 
-**Cache invalidation:** `viewer_edit_highlight_ver` tracks `viewer_edit_undo.len()`. Every edit calls `push_undo()` which changes undo stack depth → cache miss → re-highlight. Scrolling, cursor movement, and selection don't change undo depth → cache hit → zero cost. Cleared on `exit_viewer_edit_mode()`.
+**Cache invalidation:** `viewer_edit_highlight_ver` tracks `viewer_edit_version` — a monotonically increasing counter bumped in `push_undo()` and undo/redo. Cannot use `viewer_edit_undo.len()` because the undo stack caps at 100 entries; after 100 edits, push+trim keeps length at 100 so the cache key never changes. Scrolling, cursor movement, and selection don't bump version → cache hit → zero cost. Cleared on `exit_viewer_edit_mode()`.
 
 **Cursor position:** Computed arithmetically by summing wrap counts for source lines before cursor. No `all_lines` array needed.
 

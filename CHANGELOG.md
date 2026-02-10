@@ -42,6 +42,7 @@ All notable changes to Azureal will be documented in this file.
 - Wrapped file path highlight in Convo pane no longer extends past the path text
   - Continuation lines were highlighting from column 0 (including indent) to full line width
   - Now highlights from the path start column to end of actual path text only
+- Viewer edit mode display freeze after ~100 edits — highlight cache used undo stack length as invalidation key, but the stack caps at 100 entries; replaced with monotonically increasing `viewer_edit_version` counter
 - 100%+ CPU spike on prompt submit — render requests now have backpressure
   - During Claude streaming, every event triggered a new render request (cloning entire event array) even while the render thread was still processing the previous one (~62 full clones/sec)
   - Fix: skip `submit_render_request()` when `render_in_flight` is true; dirty flag stays set and fires on next `poll_render_result()` completion
