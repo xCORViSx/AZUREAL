@@ -18,6 +18,14 @@ All notable changes to Azureal will be documented in this file.
   - Creates `═ ═ ═` / `║ ║` gap pattern across all four edges
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
+### Refactored
+- Modularized `event_loop.rs` (1660→330 lines) into 5 focused submodules using file-based module root pattern:
+  - `event_loop/coords.rs` (174 lines) — screen-to-content coordinate mapping
+  - `event_loop/mouse.rs` (342 lines) — click, drag, scroll, and selection copy
+  - `event_loop/actions.rs` (732 lines) — key dispatch, navigation, and escape handling
+  - `event_loop/fast_draw.rs` (87 lines) — fast-path input rendering bypass
+  - `event_loop/claude_events.rs` (62 lines) — Claude process event handling
+
 ### Fixed
 - Shift+Tab from Viewer now lands on FileTree when the overlay is open (was always closing the overlay and jumping to Worktrees)
 - Global `t` keybinding (terminal toggle) no longer fires in viewer edit mode — guard was missing `!viewer_edit_mode`, so typing `t` opened the terminal instead of inserting the character

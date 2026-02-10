@@ -98,7 +98,7 @@ Other features:
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
 
-Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
+Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 **Mouse Click Architecture:**
 - All 3 pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `input_area`
@@ -584,7 +584,7 @@ Implementation:
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
-Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum, static arrays, lookup_action(), guard logic, help_sections(), title generators), `src/tui/event_loop.rs` (execute_action(), dispatch helpers), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`)
+Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum, static arrays, lookup_action(), guard logic, help_sections(), title generators), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`)
 
 ### Wrap-Aware Edit Cursor
 
@@ -600,7 +600,7 @@ The viewer edit mode cursor navigates wrapped visual lines, not just source line
 
 **Display wrapping:** `wrap_spans_word()` wraps styled spans using word-boundary break positions from `word_wrap_breaks()`. Used by both read-only viewer and edit mode display. `word_wrap_breaks()` is `pub(crate)` in `draw_viewer.rs` and duplicated privately in `viewer_edit.rs` (app module can't import from tui).
 
-Implementation: `src/app/state/viewer_edit.rs` (cursor movement, scroll, local `word_wrap_breaks()`), `src/tui/event_loop.rs` (`screen_to_edit_pos()`, pane_id=3 handling), `src/tui/draw_viewer.rs` (`word_wrap_breaks()`, `wrap_spans_word()`, caches `content_width`)
+Implementation: `src/app/state/viewer_edit.rs` (cursor movement, scroll, local `word_wrap_breaks()`), `src/tui/event_loop/coords.rs` (`screen_to_edit_pos()`), `src/tui/event_loop/mouse.rs` (pane_id=3 drag handling), `src/tui/draw_viewer.rs` (`word_wrap_breaks()`, `wrap_spans_word()`, caches `content_width`)
 
 ### Stream-JSON Parsing
 
@@ -814,7 +814,7 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 
 **Rendering:** `build_sidebar_items()` performs a two-pass filter: first determines which worktrees/files match at each level, then builds the item list showing only matching items with parent context. A 3-line filter bar (borders + text) is rendered above the session list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count (visible worktrees) shown as right-aligned title (e.g., ` 3/12 `).
 
-Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter_with_names()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/event_loop.rs`, eager session file loading in `src/app/state/load.rs`
+Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter_with_names()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/keybindings.rs` (`lookup_action()`), eager session file loading in `src/app/state/load.rs`
 
 ### Speech-to-Text Input
 
@@ -1025,7 +1025,13 @@ azureal/
 │   ├── tui.rs              # Module root (re-exports only)
 │   ├── tui/                # Terminal UI module
 │   │   ├── run.rs          # TUI entry point and 3-pane layout
-│   │   ├── event_loop.rs   # Event handling loop
+│   │   ├── event_loop.rs   # Event loop module root (run_app + submodule declarations)
+│   │   ├── event_loop/     # Event loop submodules
+│   │   │   ├── actions.rs  # Key dispatch, execute_action, nav/escape dispatch
+│   │   │   ├── claude_events.rs # Claude process event handling + staged prompt
+│   │   │   ├── coords.rs   # Screen-to-content coordinate mapping
+│   │   │   ├── fast_draw.rs # Fast-path input rendering (~0.1ms bypass)
+│   │   │   └── mouse.rs    # Click, drag, scroll, selection copy
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
