@@ -203,21 +203,25 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 - `poll_ms = 16ms` when busy (render in-flight / Claude streaming), `100ms` when idle
 - **Render submit throttle: 50ms** — `last_render_submit` in App state. Without this, every `poll_render_result()` completion immediately triggers another `submit_render_request()` (since `rendered_lines_dirty` is re-set by arriving events), cloning the full events array at ~60Hz. The 50ms floor batches streaming events into ~20 render cycles/sec.
 
-### 14. Single JSON Parse Per Claude Event
+### 14. True Single JSON Parse Per Claude Event
 
 ```rust
-// ❌ WRONG - Three separate JSON parses per streaming event (~60 events/sec)
-let events = self.event_parser.parse(&data);     // parse #1
-let json = serde_json::from_str(&data)?;          // parse #2 (token extraction)
-let text = parse_stream_json_for_display(&data);  // parse #3 (display text)
+// ❌ WRONG - EventParser parses JSON, then handle_claude_output parses AGAIN
+let events = self.event_parser.parse(&data);               // parse #1
+let json = serde_json::from_str::<Value>(&data).ok();      // parse #2 (duplicate!)
 
-// ✅ CORRECT - One parse for token extraction AND display text
-let parsed_json = serde_json::from_str::<Value>(&data).ok();
-if let Some(ref json) = parsed_json { /* extract tokens */ }
-if let Some(json) = parsed_json { display_text_from_json(&json); }
+// ✅ CORRECT - EventParser returns the parsed Value alongside events
+let (events, parsed_json) = self.event_parser.parse(&data); // single parse
+// parsed_json is reused for token extraction + display text
 ```
 
-EventParser (#1) is separate because it does its own stateful incremental parsing. But #2 and #3 now share the same `serde_json::Value` via `display_text_from_json()`.
+`EventParser::parse()` returns `(Vec<DisplayEvent>, Option<serde_json::Value>)` — the same JSON value used internally is also passed to the caller. `handle_claude_output` reuses it for token/model/context-window extraction with zero additional parsing.
+
+**output_lines skip:** Once `rendered_lines_cache` has content, `display_text_from_json()` + `process_output_chunk()` are skipped entirely. They only feed the fallback raw output view (used before first render completes).
+
+**Empty event batch skip:** Many stdout lines (progress, hook_started) produce 0 DisplayEvents. `display_events.extend()` + `invalidate_render_cache()` are skipped for these.
+
+**Full render clone reduction:** The full render path clones only `display_events[deferred_start..]` instead of the entire Vec — avoids cloning early events that are never rendered.
 
 **Reader thread optimization:** The stdout reader thread (`src/claude.rs`) only needs to extract `session_id` from the init event (happens once per session). Instead of full JSON parsing every line, it checks `line.contains("\"subtype\":\"init\"")` first — only parses JSON when the string matches.
 
@@ -225,7 +229,7 @@ EventParser (#1) is separate because it does its own stateful incremental parsin
 
 **Dev profile optimization:** `Cargo.toml` sets `opt-level = 2` for `serde_json`, `serde`, and `syntect` packages in dev builds. These hot-path dependencies run 3-5x slower at opt-level 0, amplifying all parsing and highlighting costs in debug mode.
 
-**Files:** `src/app/state/claude.rs::handle_claude_output()`, `src/app/util.rs` (`display_text_from_json`)
+**Files:** `src/events/parser.rs` (parse returns JSON), `src/app/state/claude.rs::handle_claude_output()`, `src/app/util.rs` (`display_text_from_json`)
 
 ### 9. NEVER Use `.wrap()` on Pre-Wrapped Content
 

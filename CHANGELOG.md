@@ -149,6 +149,10 @@ All notable changes to Azureal will be documented in this file.
   3. **Reader thread**: full JSON parse per line replaced with `contains("\"subtype\":\"init\"")` string search (init happens once per session)
   4. **Dev profile opt-level=2** for `serde_json`, `serde`, `syntect` — 3-5x faster than opt-level 0 in debug builds
   5. **process_output_chunk**: `clone()+clear()` replaced with `std::mem::take()` (zero allocation)
+  6. **True single JSON parse**: `EventParser::parse()` now returns `(Vec<DisplayEvent>, Option<Value>)` — `handle_claude_output` reuses the returned Value for token extraction instead of parsing a second time
+  7. **Skip fallback output_lines**: `display_text_from_json()` + `process_output_chunk()` skipped once rendered cache exists (fallback view never read during normal streaming)
+  8. **Full render clone reduction**: full render path clones only `display_events[deferred_start..]` instead of entire Vec
+  9. **Empty batch skip**: progress/hook_started lines producing 0 events skip `display_events.extend()` + `invalidate_render_cache()`
 - Background render thread for convo pane (`src/tui/render_thread.rs`)
   - Markdown parsing, syntax highlighting, and text wrapping run on a dedicated thread
   - RenderThread owns its own SyntaxHighlighter (no cross-thread sharing)
