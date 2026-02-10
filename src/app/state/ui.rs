@@ -24,14 +24,17 @@ impl App {
     }
 
     pub fn focus_prev(&mut self) {
-        self.show_file_tree = false;
+        // If file tree is open and we'd land on Worktrees, go to FileTree instead
+        // (keeps the overlay open so you can Shift+Tab back into it)
+        let file_tree_open = self.show_file_tree;
         self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => Focus::Input,
-            Focus::Viewer => Focus::Worktrees,
-            Focus::Output => Focus::Viewer,
-            Focus::Input => Focus::Output,
-            Focus::FileTree => Focus::Worktrees,
+            Focus::Worktrees => { self.show_file_tree = false; Focus::Input }
+            Focus::Viewer if file_tree_open => Focus::FileTree,
+            Focus::Viewer => { self.show_file_tree = false; Focus::Worktrees }
+            Focus::Output => { self.show_file_tree = false; Focus::Viewer }
+            Focus::Input => { self.show_file_tree = false; Focus::Output }
+            Focus::FileTree => { self.show_file_tree = false; Focus::Worktrees }
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
