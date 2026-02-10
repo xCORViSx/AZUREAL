@@ -76,10 +76,18 @@ fn extract_tool_param(tool_name: &str, input: Option<&serde_json::Value>) -> Str
     }
 }
 
-/// Parse stream-json output and extract human-readable content
-/// Returns None if the line should not be displayed
+/// Parse stream-json output and extract human-readable content.
+/// Returns None if the line should not be displayed.
+/// Convenience wrapper over `display_text_from_json` for callers with raw strings.
+#[allow(dead_code)]
 pub fn parse_stream_json_for_display(line: &str) -> Option<String> {
     let json: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    display_text_from_json(&json)
+}
+
+/// Extract human-readable display text from a pre-parsed JSON value.
+/// Avoids re-parsing the same line when the caller already has a Value.
+pub fn display_text_from_json(json: &serde_json::Value) -> Option<String> {
     let event_type = json.get("type")?.as_str()?;
 
     match event_type {

@@ -159,6 +159,10 @@ pub struct App {
     pub render_seq_applied: u64,
     /// True while a render request is in-flight (waiting for background thread to finish)
     pub render_in_flight: bool,
+    /// When the last render request was submitted — used to throttle submit frequency
+    /// during rapid Claude streaming. Without this, every poll_render_result completion
+    /// immediately triggers another submit (cloning the full events array at ~60Hz).
+    pub last_render_submit: std::time::Instant,
     /// True when state changed and a draw is needed. Draw is deferred if keys
     /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
     pub draw_pending: bool,
@@ -452,6 +456,7 @@ impl App {
             render_thread: RenderThread::spawn(),
             render_seq_applied: 0,
             render_in_flight: false,
+            last_render_submit: std::time::Instant::now(),
             draw_pending: false,
             cpu_usage_text: String::new(),
             cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),

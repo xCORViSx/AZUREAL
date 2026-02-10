@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::Receiver;
 
-use crate::app::util::parse_stream_json_for_display;
+use crate::app::util::display_text_from_json;
 use crate::claude::ClaudeEvent;
 use crate::events::DisplayEvent;
 use crate::models::OutputType;
@@ -155,10 +155,17 @@ impl App {
                 }
             }
 
+            // Single JSON parse for both token extraction AND display text.
+            // Previously we parsed JSON 3 times per event: EventParser, here, and
+            // parse_stream_json_for_display(). Now this single parse serves #2 and #3.
+            let parsed_json = if output_type == OutputType::Stdout || output_type == OutputType::Json {
+                serde_json::from_str::<serde_json::Value>(&data).ok()
+            } else { None };
+
             // Extract token usage, model, and context window from live stream events.
             // assistant events give us token counts + model heuristic (available mid-turn).
             // result events give us the authoritative contextWindow from the API (end of turn).
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+            if let Some(ref json) = parsed_json {
                 let mut tokens_changed = false;
                 match json.get("type").and_then(|t| t.as_str()) {
                     Some("assistant") => if let Some(msg) = json.get("message") {
@@ -206,11 +213,13 @@ impl App {
             self.display_events.extend(events);
             self.invalidate_render_cache();
 
-            if output_type == OutputType::Stdout || output_type == OutputType::Json {
-                if let Some(display_text) = parse_stream_json_for_display(&data) {
+            // Reuse pre-parsed JSON for display text (avoids a third parse).
+            // For non-JSON output (stderr), pass raw data directly.
+            if let Some(json) = parsed_json {
+                if let Some(display_text) = display_text_from_json(&json) {
                     self.process_output_chunk(&display_text);
                 }
-            } else {
+            } else if output_type != OutputType::Stdout && output_type != OutputType::Json {
                 self.process_output_chunk(&data);
             }
 

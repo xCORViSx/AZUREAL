@@ -245,11 +245,18 @@ pub async fn run_app(
         // BACKPRESSURE: skip if a render is already in flight — avoids cloning
         // the entire event array every 16ms while Claude streams, which was the
         // root cause of 100%+ CPU on prompt submit.
-        if app.rendered_lines_dirty && !app.render_in_flight {
+        // THROTTLE: also skip if less than 50ms since last submit — batches rapid
+        // streaming events into fewer render cycles (clones). During Claude streaming
+        // events arrive at ~60Hz; without this, every poll_render_result completion
+        // immediately triggers another clone+submit, keeping CPU high.
+        if app.rendered_lines_dirty && !app.render_in_flight
+            && app.last_render_submit.elapsed() >= Duration::from_millis(50)
+        {
             // Convo pane is fixed at 80 columns (Constraint::Length(80) in run.rs).
             // We pass this directly — the old formula `(terminal - 80) / 2` was a
             // leftover from the 50/50 split layout and made bubbles way too narrow.
             submit_render_request(app, 80);
+            app.last_render_submit = Instant::now();
         }
 
         // Poll for completed render results from the background thread (non-blocking).
