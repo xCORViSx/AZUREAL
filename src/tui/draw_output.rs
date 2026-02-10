@@ -169,8 +169,8 @@ pub fn poll_render_result(app: &mut App) -> bool {
     true
 }
 
-/// Draw the session list overlay — full-pane list of all session files across worktrees.
-/// Each row shows: status symbol, worktree name, session name/UUID, mtime, [N msgs].
+/// Draw the Claude session list overlay — full-pane list of all Claude session files across worktrees.
+/// Each row shows: status symbol, worktree name, Claude session name/UUID, mtime, [N msgs].
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::Output;
     let viewport_height = area.height.saturating_sub(2) as usize;

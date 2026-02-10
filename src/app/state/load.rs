@@ -92,7 +92,7 @@ impl App {
         }
 
         self.sessions = sessions;
-        self.selected_session = if self.sessions.is_empty() { None } else { Some(0) };
+        self.selected_worktree = if self.sessions.is_empty() { None } else { Some(0) };
 
         // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
         for session in &self.sessions {
@@ -238,7 +238,7 @@ impl App {
         if let Some(ref path) = self.session_file_path {
             watcher.send(crate::watcher::WatchCommand::WatchSessionFile(path.clone()));
         }
-        if let Some(idx) = self.selected_session {
+        if let Some(idx) = self.selected_worktree {
             if let Some(session) = self.sessions.get(idx) {
                 if let Some(ref wt_path) = session.worktree_path {
                     watcher.send(crate::watcher::WatchCommand::WatchWorktree(wt_path.to_path_buf()));
@@ -260,7 +260,7 @@ impl App {
         let session_id = self.session_selected_file_idx.get(&branch)
             .and_then(|idx| self.session_files.get(&branch).and_then(|f| f.get(*idx)))
             .map(|(id, _, _)| id.clone())
-            .or_else(|| self.sessions.get(self.selected_session?)
+            .or_else(|| self.sessions.get(self.selected_worktree?)
                 .and_then(|s| s.claude_session_id.clone()))
             .or_else(|| self.claude_session_ids.get(&branch).cloned());
         self.title_session_name = match session_id {

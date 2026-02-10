@@ -64,10 +64,10 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
         };
         if !show_worktree { continue; }
 
-        let is_selected = app.selected_session == Some(sess_idx);
+        let is_selected = app.selected_worktree == Some(sess_idx);
         // Auto-expand when filter matched at the session file level
         let is_expanded = matching_file_indices.is_some()
-            || app.sessions_expanded.contains(&session.branch_name);
+            || app.worktrees_expanded.contains(&session.branch_name);
         let status = session.status(&app.running_sessions);
         let status_color = status.color();
 
@@ -87,7 +87,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
             Span::raw(" "),
             Span::styled(truncate(session.name(), 34), style),
         ])));
-        row_map.push(SidebarRowAction::Session(sess_idx));
+        row_map.push(SidebarRowAction::Worktree(sess_idx));
 
         // Show session file dropdown when expanded (either manually or auto-expanded by filter)
         if is_expanded {
@@ -120,7 +120,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
                         Span::raw(" "),
                         Span::styled(time_str.clone(), Style::default().fg(Color::DarkGray)),
                     ])));
-                    row_map.push(SidebarRowAction::SessionFile(sess_idx, j));
+                    row_map.push(SidebarRowAction::WorktreeFile(sess_idx, j));
                 }
             } else if matching_file_indices.is_none() {
                 // Only show "(no sessions)" for manually expanded, not filter-expanded
@@ -128,7 +128,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
                     Span::raw("     "),
                     Span::styled("(no sessions)", Style::default().fg(Color::DarkGray)),
                 ])));
-                row_map.push(SidebarRowAction::Session(sess_idx));
+                row_map.push(SidebarRowAction::Worktree(sess_idx));
             }
         }
     }
@@ -165,7 +165,7 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     if let Some(fa) = filter_area {
         // Count visible worktrees (Session actions in row_map), not total rows
         let match_count = app.sidebar_row_map.iter()
-            .filter(|a| matches!(a, SidebarRowAction::Session(_)))
+            .filter(|a| matches!(a, SidebarRowAction::Worktree(_)))
             .count();
         let total = app.sessions.len();
         let title = format!(" {}/{} ", match_count, total);

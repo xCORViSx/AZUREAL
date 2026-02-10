@@ -333,7 +333,7 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
 
     // Select the main branch in sidebar so user sees the output
     if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == main_branch) {
-        app.selected_session = Some(idx);
+        app.selected_worktree = Some(idx);
         app.load_session_output();
     }
 

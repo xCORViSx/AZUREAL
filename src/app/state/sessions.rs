@@ -39,12 +39,12 @@ impl App {
     }
 
     pub fn select_next_session(&mut self) {
-        let start = self.selected_session.map(|i| i + 1).unwrap_or(0);
+        let start = self.selected_worktree.map(|i| i + 1).unwrap_or(0);
         if self.sidebar_filter.is_empty() {
             // No filter — simple index bump
             if start < self.sessions.len() {
                 self.save_current_terminal();
-                self.selected_session = Some(start);
+                self.selected_worktree = Some(start);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
@@ -52,9 +52,9 @@ impl App {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
             if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
-                if self.selected_session != Some(next) {
+                if self.selected_worktree != Some(next) {
                     self.save_current_terminal();
-                    self.selected_session = Some(next);
+                    self.selected_worktree = Some(next);
                     self.load_session_output();
                     self.invalidate_sidebar();
                 }
@@ -69,23 +69,23 @@ impl App {
         let filter = self.sidebar_filter.to_lowercase();
         let names = self.load_all_session_names();
         // Current selection already matches — keep it
-        if let Some(idx) = self.selected_session {
+        if let Some(idx) = self.selected_worktree {
             if self.session_matches_filter_with_names(idx, &filter, &names) { return; }
         }
         // Find first matching session
         if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
             self.save_current_terminal();
-            self.selected_session = Some(first);
+            self.selected_worktree = Some(first);
             self.load_session_output();
         }
     }
 
     pub fn select_prev_session(&mut self) {
-        let Some(current) = self.selected_session else { return };
+        let Some(current) = self.selected_worktree else { return };
         if current == 0 { return; }
         if self.sidebar_filter.is_empty() {
             self.save_current_terminal();
-            self.selected_session = Some(current - 1);
+            self.selected_worktree = Some(current - 1);
             self.load_session_output();
             self.invalidate_sidebar();
         } else {
@@ -93,7 +93,7 @@ impl App {
             let names = self.load_all_session_names();
             if let Some(prev) = (0..current).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
                 self.save_current_terminal();
-                self.selected_session = Some(prev);
+                self.selected_worktree = Some(prev);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
@@ -135,7 +135,7 @@ impl App {
         // Select the new worktree
         if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == branch_name) {
             self.save_current_terminal(); // Save before switching
-            self.selected_session = Some(idx);
+            self.selected_worktree = Some(idx);
             self.load_session_output();
         }
 
@@ -168,25 +168,25 @@ impl App {
         anyhow::bail!("No active session with worktree")
     }
 
-    /// Expand a session's file dropdown and load its session files
-    pub fn expand_session(&mut self, branch_name: &str) {
-        self.sessions_expanded.insert(branch_name.to_string());
+    /// Expand a worktree's file dropdown and load its Claude session files
+    pub fn expand_worktree(&mut self, branch_name: &str) {
+        self.worktrees_expanded.insert(branch_name.to_string());
         self.load_session_files(branch_name);
         self.invalidate_sidebar();
     }
 
-    /// Collapse a session's file dropdown
-    pub fn collapse_session(&mut self, branch_name: &str) {
-        self.sessions_expanded.remove(branch_name);
+    /// Collapse a worktree's file dropdown
+    pub fn collapse_worktree(&mut self, branch_name: &str) {
+        self.worktrees_expanded.remove(branch_name);
         self.invalidate_sidebar();
     }
 
-    /// Toggle session expansion state
-    pub fn toggle_session_expanded(&mut self, branch_name: &str) {
-        if self.sessions_expanded.contains(branch_name) {
-            self.collapse_session(branch_name);
+    /// Toggle worktree expansion state
+    pub fn toggle_worktree_expanded(&mut self, branch_name: &str) {
+        if self.worktrees_expanded.contains(branch_name) {
+            self.collapse_worktree(branch_name);
         } else {
-            self.expand_session(branch_name);
+            self.expand_worktree(branch_name);
         }
     }
 
@@ -243,9 +243,9 @@ impl App {
     pub fn select_first_session(&mut self) {
         if self.sessions.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
-            if self.selected_session != Some(0) {
+            if self.selected_worktree != Some(0) {
                 self.save_current_terminal();
-                self.selected_session = Some(0);
+                self.selected_worktree = Some(0);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
@@ -253,9 +253,9 @@ impl App {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
             if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
-                if self.selected_session != Some(first) {
+                if self.selected_worktree != Some(first) {
                     self.save_current_terminal();
-                    self.selected_session = Some(first);
+                    self.selected_worktree = Some(first);
                     self.load_session_output();
                     self.invalidate_sidebar();
                 }
@@ -268,9 +268,9 @@ impl App {
         if self.sessions.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
             let last = self.sessions.len() - 1;
-            if self.selected_session != Some(last) {
+            if self.selected_worktree != Some(last) {
                 self.save_current_terminal();
-                self.selected_session = Some(last);
+                self.selected_worktree = Some(last);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
@@ -278,9 +278,9 @@ impl App {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
             if let Some(last) = (0..self.sessions.len()).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
-                if self.selected_session != Some(last) {
+                if self.selected_worktree != Some(last) {
                     self.save_current_terminal();
-                    self.selected_session = Some(last);
+                    self.selected_worktree = Some(last);
                     self.load_session_output();
                     self.invalidate_sidebar();
                 }
@@ -313,10 +313,10 @@ impl App {
         }
     }
 
-    /// Check if current session is expanded
-    pub fn is_current_session_expanded(&self) -> bool {
+    /// Check if current worktree is expanded in sidebar
+    pub fn is_current_worktree_expanded(&self) -> bool {
         self.current_session()
-            .map(|s| self.sessions_expanded.contains(&s.branch_name))
+            .map(|s| self.worktrees_expanded.contains(&s.branch_name))
             .unwrap_or(false)
     }
 }

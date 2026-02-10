@@ -444,7 +444,7 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
     use ratatui::layout::Position;
     let pos = Position::new(col, row);
 
-    if app.pane_sessions.contains(pos) {
+    if app.pane_worktrees.contains(pos) {
         if app.show_file_tree {
             // File tree overlay is showing — scroll file tree items
             let old = app.file_tree_selected;
@@ -452,10 +452,10 @@ fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_widt
             else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
             app.file_tree_selected != old
         } else {
-            let old = app.selected_session;
+            let old = app.selected_worktree;
             if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
             else { for _ in 0..delta.abs() { app.select_prev_session(); } }
-            app.selected_session != old
+            app.selected_worktree != old
         }
     } else if app.pane_viewer.contains(pos) {
         app.viewer_selection = None;
@@ -512,13 +512,13 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
     if app.creation_wizard.is_some() { app.creation_wizard = None; app.focus = Focus::Worktrees; return true; }
 
-    // Sessions/FileTree pane — when file tree overlay is active, click selects entries;
-    // otherwise click selects sessions or session files from the worktree list
-    if app.pane_sessions.contains(pos) {
+    // Worktrees/FileTree pane — when file tree overlay is active, click selects entries;
+    // otherwise click selects worktrees or their Claude session files
+    if app.pane_worktrees.contains(pos) {
         if app.show_file_tree {
             // File tree overlay: click to select, double-click to open/expand
             app.focus = Focus::FileTree;
-            let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
+            let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
             let entry_idx = visual_row + app.file_tree_scroll;
             if entry_idx < app.file_tree_entries.len() {
                 app.file_tree_selected = Some(entry_idx);
@@ -538,23 +538,23 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 }
             }
         } else {
-            // Worktree list: click to select session or session file
+            // Worktree list: click to select worktree or Claude session file
             app.focus = Focus::Worktrees;
-            let visual_row = (row.saturating_sub(app.pane_sessions.y + 1)) as usize;
+            let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
             if let Some(action) = app.sidebar_row_map.get(visual_row).cloned() {
                 match action {
-                    SidebarRowAction::Session(idx) => {
-                        if app.selected_session != Some(idx) {
+                    SidebarRowAction::Worktree(idx) => {
+                        if app.selected_worktree != Some(idx) {
                             app.save_current_terminal();
-                            app.selected_session = Some(idx);
+                            app.selected_worktree = Some(idx);
                             app.load_session_output();
                             app.invalidate_sidebar();
                         }
                     }
-                    SidebarRowAction::SessionFile(sess_idx, file_idx) => {
-                        if app.selected_session != Some(sess_idx) {
+                    SidebarRowAction::WorktreeFile(sess_idx, file_idx) => {
+                        if app.selected_worktree != Some(sess_idx) {
                             app.save_current_terminal();
-                            app.selected_session = Some(sess_idx);
+                            app.selected_worktree = Some(sess_idx);
                         }
                         if let Some(session) = app.sessions.get(sess_idx) {
                             let branch = session.branch_name.clone();

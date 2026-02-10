@@ -68,7 +68,7 @@ fn handle_worktree_input(app: &mut App, key_code: KeyCode, claude_process: &Clau
                                         app.register_claude(branch_name.clone(), rx);
                                         // Find and select the new worktree
                                         if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == branch_name) {
-                                            app.selected_session = Some(idx);
+                                            app.selected_worktree = Some(idx);
                                             app.load_session_output();
                                         }
                                     }
@@ -138,7 +138,7 @@ fn handle_session_input(app: &mut App, key_code: KeyCode, claude_process: &Claud
                             match claude_process.spawn(wt_path, &prompt, None) {
                                 Ok(rx) => {
                                     app.register_claude(session.branch_name.clone(), rx);
-                                    app.selected_session = Some(worktree_idx);
+                                    app.selected_worktree = Some(worktree_idx);
                                     app.load_session_output();
                                     app.set_status(format!("Started session '{}' in {}", session_name, session.name()));
                                 }

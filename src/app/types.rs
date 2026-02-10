@@ -171,10 +171,10 @@ pub enum Focus {
 /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
 #[derive(Debug, Clone)]
 pub enum SidebarRowAction {
-    /// A session/worktree row — index into app.sessions
-    Session(usize),
-    /// An expanded session file row — (session_idx, file_idx)
-    SessionFile(usize, usize),
+    /// A worktree row — index into app.sessions
+    Worktree(usize),
+    /// A Claude session file row under a worktree — (worktree_idx, file_idx)
+    WorktreeFile(usize, usize),
 }
 
 /// A saved run command

@@ -31,7 +31,7 @@ impl App {
 
         // Check if this session has a saved terminal
         if let Some(session) = self.current_session() {
-            if self.session_terminals.contains_key(&session.branch_name) {
+            if self.worktree_terminals.contains_key(&session.branch_name) {
                 self.restore_session_terminal();
                 self.terminal_mode = true;
                 self.prompt_mode = true;
@@ -210,7 +210,7 @@ impl App {
         self.terminal_parser.screen_mut().set_scrollback(0);
     }
 
-    /// Save current terminal to session_terminals map (called before switching sessions)
+    /// Save current terminal to worktree_terminals map (called before switching sessions)
     pub fn save_current_terminal(&mut self) {
         // Get current session's branch name
         let branch_name = match self.current_session() {
@@ -241,14 +241,14 @@ impl App {
             rows: self.terminal_rows,
             cols: self.terminal_cols,
         };
-        self.session_terminals.insert(branch_name, terminal);
+        self.worktree_terminals.insert(branch_name, terminal);
 
         // Reset current terminal state
         self.terminal_scroll = 0;
         self.terminal_mode = false;
     }
 
-    /// Restore terminal for current session from session_terminals map
+    /// Restore terminal for current session from worktree_terminals map
     pub fn restore_session_terminal(&mut self) {
         let branch_name = match self.current_session() {
             Some(s) => s.branch_name.clone(),
@@ -256,7 +256,7 @@ impl App {
         };
 
         // Try to restore from map
-        if let Some(terminal) = self.session_terminals.remove(&branch_name) {
+        if let Some(terminal) = self.worktree_terminals.remove(&branch_name) {
             self.terminal_pty = Some(terminal.pty);
             self.terminal_writer = Some(terminal.writer);
             self.terminal_rx = Some(terminal.rx);
@@ -274,7 +274,7 @@ impl App {
             return true;
         }
         if let Some(session) = self.current_session() {
-            return self.session_terminals.contains_key(&session.branch_name);
+            return self.worktree_terminals.contains_key(&session.branch_name);
         }
         false
     }

@@ -23,7 +23,7 @@ use super::DisplayEvent;
 pub struct App {
     pub project: Option<Project>,
     pub sessions: Vec<Session>,
-    pub selected_session: Option<usize>,
+    pub selected_worktree: Option<usize>,
     pub output_lines: VecDeque<String>,
     pub max_output_lines: usize,
     pub output_buffer: String,
@@ -107,9 +107,9 @@ pub struct App {
     pub file_tree_refresh_pending: bool,
     /// Timestamp of last worktree change notification (for 500ms debounce)
     pub worktree_last_notify: std::time::Instant,
-    /// Per-session terminals (persist when switching sessions)
-    pub session_terminals: HashMap<String, SessionTerminal>,
-    /// FileTree entries for current session's worktree
+    /// Per-worktree terminals (persist when switching worktrees)
+    pub worktree_terminals: HashMap<String, SessionTerminal>,
+    /// FileTree entries for the current worktree
     pub file_tree_entries: Vec<FileTreeEntry>,
     /// Selected index in file tree
     pub file_tree_selected: Option<usize>,
@@ -169,7 +169,7 @@ pub struct App {
     pub input_area: ratatui::layout::Rect,
     /// Cached pane rects from last full draw — used for mouse click hit-testing
     /// and scroll dispatch without recalculating layout
-    pub pane_sessions: ratatui::layout::Rect,
+    pub pane_worktrees: ratatui::layout::Rect,
     pub pane_viewer: ratatui::layout::Rect,
     pub pane_convo: ratatui::layout::Rect,
     /// Maps sidebar visual rows (0-indexed) to clickable actions.
@@ -192,11 +192,11 @@ pub struct App {
     pub assistant_no_message: usize,
     pub assistant_no_content_arr: usize,
     pub assistant_text_blocks: usize,
-    /// Expanded sessions in sidebar (shows dropdown of session files)
-    pub sessions_expanded: HashSet<String>,
-    /// Cached session files per worktree branch (session_id, path, formatted_time)
+    /// Expanded worktrees in sidebar (shows dropdown of Claude session files)
+    pub worktrees_expanded: HashSet<String>,
+    /// Cached Claude session files per worktree branch (session_id, path, formatted_time)
     pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
-    /// Selected file index per session (0 = latest/newest)
+    /// Selected Claude session file index per worktree (0 = latest/newest)
     pub session_selected_file_idx: HashMap<String, usize>,
     /// Cached sidebar ListItems (avoid rebuilding every frame)
     pub sidebar_cache: Vec<ratatui::widgets::ListItem<'static>>,
@@ -228,7 +228,7 @@ pub struct App {
     /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col)
     /// Rendered with inverted colors so the user sees which path they clicked
     pub clicked_path_highlight: Option<(usize, usize, usize)>,
-    /// Cached title bar session name (updated on session switch, avoids file I/O in render)
+    /// Cached title bar Claude session name (updated on worktree switch, avoids file I/O in render)
     pub title_session_name: String,
     /// Currently selected tool diff index (for e/E navigation in Output)
     pub selected_tool_diff: Option<usize>,
@@ -359,7 +359,7 @@ impl App {
         Self {
             project: None,
             sessions: Vec::new(),
-            selected_session: None,
+            selected_worktree: None,
             output_lines: VecDeque::with_capacity(10000),
             max_output_lines: 10000,
             output_buffer: String::new(),
@@ -421,7 +421,7 @@ impl App {
             file_watcher: crate::watcher::FileWatcher::spawn(),
             file_tree_refresh_pending: false,
             worktree_last_notify: std::time::Instant::now(),
-            session_terminals: HashMap::new(),
+            worktree_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),
             file_tree_selected: None,
             file_tree_scroll: 0,
@@ -449,7 +449,7 @@ impl App {
             cpu_usage_text: String::new(),
             cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),
             input_area: ratatui::layout::Rect::default(),
-            pane_sessions: ratatui::layout::Rect::default(),
+            pane_worktrees: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
             pane_convo: ratatui::layout::Rect::default(),
             sidebar_row_map: Vec::new(),
@@ -463,7 +463,7 @@ impl App {
             assistant_no_message: 0,
             assistant_no_content_arr: 0,
             assistant_text_blocks: 0,
-            sessions_expanded: HashSet::new(),
+            worktrees_expanded: HashSet::new(),
             session_files: HashMap::new(),
             session_selected_file_idx: HashMap::new(),
             sidebar_cache: Vec::new(),
@@ -538,7 +538,7 @@ impl App {
         self.rendered_lines_dirty = true;
     }
 
-    /// Mark sidebar cache as dirty (call when sessions/selection/expansion changes)
+    /// Mark sidebar cache as dirty (call when worktrees/selection/expansion changes)
     pub fn invalidate_sidebar(&mut self) {
         self.sidebar_dirty = true;
     }
@@ -580,7 +580,7 @@ impl App {
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
-    pub fn current_session(&self) -> Option<&Session> { self.selected_session.and_then(|idx| self.sessions.get(idx)) }
+    pub fn current_session(&self) -> Option<&Session> { self.selected_worktree.and_then(|idx| self.sessions.get(idx)) }
 
     pub fn is_session_running(&self, branch_name: &str) -> bool {
         self.running_sessions.contains(branch_name)

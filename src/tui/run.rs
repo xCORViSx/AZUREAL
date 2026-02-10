@@ -172,7 +172,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // Cache all pane rects for mouse click hit-testing and fast-path rendering
     app.input_area = input_area;
-    app.pane_sessions = top_h[0];
+    app.pane_worktrees = top_h[0];
     app.pane_viewer = top_h[1];
     app.pane_convo = convo_area;
 

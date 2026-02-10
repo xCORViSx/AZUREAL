@@ -206,7 +206,7 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
                         // Select the session and file
                         let branch = session.branch_name.clone();
                         app.save_current_terminal();
-                        app.selected_session = Some(sess_idx);
+                        app.selected_worktree = Some(sess_idx);
                         app.select_session_file(&branch, file_idx);
                         app.show_session_list = false;
                         app.invalidate_sidebar();

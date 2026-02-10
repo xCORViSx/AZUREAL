@@ -455,7 +455,7 @@ impl App {
 
         // Clear all session and render state
         self.sessions.clear();
-        self.selected_session = None;
+        self.selected_worktree = None;
         self.display_events.clear();
         self.output_lines.clear();
         self.output_buffer.clear();
@@ -473,7 +473,7 @@ impl App {
         self.failed_tool_calls.clear();
         self.claude_session_ids.clear();
         self.claude_exit_codes.clear();
-        self.sessions_expanded.clear();
+        self.worktrees_expanded.clear();
         self.session_files.clear();
         self.session_selected_file_idx.clear();
         self.file_tree_entries.clear();

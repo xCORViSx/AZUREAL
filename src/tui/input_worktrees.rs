@@ -57,8 +57,8 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
         return Ok(());
     }
 
-    // Check if current session is expanded (dropdown mode)
-    let is_expanded = app.is_current_session_expanded();
+    // Check if current worktree is expanded (dropdown mode)
+    let is_expanded = app.is_current_worktree_expanded();
 
     match (key.modifiers, key.code) {
         // / activates sidebar search filter
@@ -78,14 +78,14 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
         (_, KeyCode::Right) | (_, KeyCode::Char('l')) if !is_expanded => {
             if let Some(session) = app.current_session() {
                 let branch = session.branch_name.clone();
-                app.expand_session(&branch);
+                app.expand_worktree(&branch);
             }
         }
         // Left: Collapse dropdown
         (_, KeyCode::Left) | (_, KeyCode::Char('h')) if is_expanded => {
             if let Some(session) = app.current_session() {
                 let branch = session.branch_name.clone();
-                app.collapse_session(&branch);
+                app.collapse_worktree(&branch);
             }
         }
         // j/k: Navigate within dropdown when expanded, otherwise navigate sessions
@@ -169,7 +169,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                         }
                     }
                 } else {
-                    app.set_status("Session has no worktree");
+                    app.set_status("No worktree path available");
                 }
             }
         }
@@ -185,7 +185,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                     let branch = session.branch_name.clone();
                     let idx = *app.session_selected_file_idx.get(&branch).unwrap_or(&0);
                     app.select_session_file(&branch, idx);
-                    app.collapse_session(&branch);
+                    app.collapse_worktree(&branch);
                     app.set_status("Loaded selected session file");
                 }
             } else if let Some(session) = app.current_session() {
@@ -216,7 +216,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
                 app.load_file_tree();
                 app.invalidate_file_tree();
             } else {
-                app.set_status("Session has no worktree");
+                app.set_status("No worktree path available");
             }
         }
         (_, KeyCode::Char('s')) => {
