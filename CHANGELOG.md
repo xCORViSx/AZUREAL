@@ -43,9 +43,10 @@ All notable changes to Azureal will be documented in this file.
   - Continuation lines were highlighting from column 0 (including indent) to full line width
   - Now highlights from the path start column to end of actual path text only
 - Viewer edit mode display freeze after ~100 edits — highlight cache used undo stack length as invalidation key, but the stack caps at 100 entries; replaced with monotonically increasing `viewer_edit_version` counter
-- 100%+ CPU spike on prompt submit — render requests now have backpressure
-  - During Claude streaming, every event triggered a new render request (cloning entire event array) even while the render thread was still processing the previous one (~62 full clones/sec)
-  - Fix: skip `submit_render_request()` when `render_in_flight` is true; dirty flag stays set and fires on next `poll_render_result()` completion
+- 100%+ CPU spike on prompt submit — three fixes applied:
+  1. **Backpressure**: skip `submit_render_request()` when `render_in_flight` is true; dirty flag stays set and fires on next `poll_render_result()` completion
+  2. **Single JSON parse**: `handle_claude_output()` was parsing each event 3x (EventParser, token extraction, display text); now token extraction and display text share one parse via `display_text_from_json()`
+  3. **Render throttle**: 50ms minimum interval between render submits prevents rapid clone+submit cycles after each render completes; batches ~60Hz streaming events into ~20 render cycles/sec
 - FileTree copy/move paste now selects the pasted file and auto-expands the target directory
 - FileTree action bar text now wraps to multiple lines when wider than the pane (was clipping)
   - Wraps at word boundaries so key hints like `Enter:paste` and `Esc:cancel` stay together

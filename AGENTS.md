@@ -201,6 +201,25 @@ for &(line_idx, span_idx) in &app.animation_line_indices {
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
 - `min_poll_interval = 500ms` (session file polling)
 - `poll_ms = 16ms` when busy (render in-flight / Claude streaming), `100ms` when idle
+- **Render submit throttle: 50ms** — `last_render_submit` in App state. Without this, every `poll_render_result()` completion immediately triggers another `submit_render_request()` (since `rendered_lines_dirty` is re-set by arriving events), cloning the full events array at ~60Hz. The 50ms floor batches streaming events into ~20 render cycles/sec.
+
+### 14. Single JSON Parse Per Claude Event
+
+```rust
+// ❌ WRONG - Three separate JSON parses per streaming event (~60 events/sec)
+let events = self.event_parser.parse(&data);     // parse #1
+let json = serde_json::from_str(&data)?;          // parse #2 (token extraction)
+let text = parse_stream_json_for_display(&data);  // parse #3 (display text)
+
+// ✅ CORRECT - One parse for token extraction AND display text
+let parsed_json = serde_json::from_str::<Value>(&data).ok();
+if let Some(ref json) = parsed_json { /* extract tokens */ }
+if let Some(json) = parsed_json { display_text_from_json(&json); }
+```
+
+EventParser (#1) is separate because it does its own stateful incremental parsing. But #2 and #3 now share the same `serde_json::Value` via `display_text_from_json()`.
+
+**Files:** `src/app/state/claude.rs::handle_claude_output()`, `src/app/util.rs` (`display_text_from_json`)
 
 ### 9. NEVER Use `.wrap()` on Pre-Wrapped Content
 
@@ -468,6 +487,7 @@ if let Some(result) = poll_render_result(&mut app) {
 - `render_thread: RenderThread` — handle to the background thread
 - `render_seq_applied: u64` — sequence number of the last applied render result
 - `render_in_flight: bool` — whether a render request is currently being processed
+- `last_render_submit: Instant` — throttle: min 50ms between submits to batch streaming events
 
 **Evolution:** Previous iterations moved rendering outside `terminal.draw()` (commit 8834050) and split render/draw into separate loop iterations (commit 5192228), but those were still synchronous. The background thread makes rendering fully asynchronous.
 

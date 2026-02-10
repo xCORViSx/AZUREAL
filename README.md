@@ -27,7 +27,7 @@
 - **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
 - **Clickable File Paths** — Edit/Read/Write tool file paths are underlined and clickable; Edit opens diff view, Read/Write opens plain file
-- **Async Rendering** — Convo pane renders on a background thread; input is never blocked by markdown/syntax processing
+- **Async Rendering** — Convo pane renders on a background thread with backpressure + 50ms throttle; single JSON parse per streaming event; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
