@@ -12,6 +12,7 @@ All notable changes to Azureal will be documented in this file.
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Fixed
+- Global `t` keybinding (terminal toggle) no longer fires in viewer edit mode — guard was missing `!viewer_edit_mode`, so typing `t` opened the terminal instead of inserting the character
 - Viewer edit mode now uses word-boundary wrapping (matching read-only mode) — both modes use `textwrap::wrap()` with `word_wrap_breaks()` for consistent text reflow
   - Cursor navigation (up/down), scroll-to-cursor, and mouse click-to-cursor all updated to use word-boundary break positions instead of fixed-width char-boundary math
   - `wrap_spans_word()` replaces both `wrap_spans()` and `wrap_spans_hard()` — one wrapping function for all viewer modes
