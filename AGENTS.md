@@ -69,7 +69,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 ```
 
 **Panes:**
-- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `f` again or `Esc` to return to worktree list.
+- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `w` or `Esc` to return to worktree list.
 - **Viewer** (remaining width): File content viewer or diff detail (dual-purpose)
 - **Convo** (80 cols, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
@@ -1152,7 +1152,7 @@ azureal
 | `r` | Rename selected file/directory |
 | `c` | Copy selected file/directory (clipboard-style: navigate to target dir, Enter to paste) |
 | `m` | Move selected file/directory (clipboard-style: navigate to target dir, Enter to paste) |
-| `f/Esc` | Return to worktree list |
+| `w/Esc` | Return to worktree list |
 
 ### Viewer Pane
 | Key | Action |

@@ -60,7 +60,7 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - Layout refactored from 4-pane to 3-pane: Worktrees (40) | Viewer (remaining) | Convo (80 fixed)
   - FileTree removed as permanent pane — now a toggle overlay (`f`) inside the Worktrees pane
-  - Press `f` on a selected worktree to browse its filesystem; `f` or `Esc` to return to worktree list
+  - Press `f` on a selected worktree to browse its filesystem; `w` or `Esc` to return to worktree list
   - Convo pane width changed from 50% remaining to fixed 80 columns for consistent readability
 - Session list overlay added to Convo pane (`s` to toggle)
   - Full-pane browser showing all session files across all worktrees

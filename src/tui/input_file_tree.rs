@@ -140,9 +140,8 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.invalidate_sidebar();
         }
 
-        // f toggles file tree off (same as Esc but not in keybinding table —
-        // lookup_action won't match it since 'f' is now not in FILE_TREE array)
-        None if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Char('f') => {
+        // w toggles back to worktrees list (same as Esc but mnemonic for "worktrees")
+        None if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Char('w') => {
             app.show_file_tree = false;
             app.focus = Focus::Worktrees;
             app.invalidate_sidebar();
