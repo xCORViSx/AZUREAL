@@ -3,9 +3,12 @@
 </p>
 
 <h1 align="center">azureal</h1>
+<p align="center">
+  uh-zoo-ree-ull
+</p>
 
 <p align="center">
-  <strong>Agent-Zoned Unified Runtime Environment for Autonomous LLMs</strong>
+  <strong>Asynchronous Zoned Unified Runtime Environment for Agentic LLMs</strong>
 </p>
 
 <p align="center">
