@@ -967,8 +967,10 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             app.cancel_current_claude();
             return Ok(());
         }
-        // ⌘C — copy from whichever pane has an active selection
-        (KeyModifiers::SUPER, KeyCode::Char('c')) => {
+        // ⌘C — copy from whichever pane has an active selection.
+        // In viewer edit mode, let the edit handler's ⌘C run instead (it copies
+        // from viewer_edit_selection, not viewer_selection).
+        (KeyModifiers::SUPER, KeyCode::Char('c')) if !app.viewer_edit_mode => {
             if app.prompt_mode && app.has_input_selection() {
                 app.input_copy();
             } else if app.viewer_selection.is_some() {
