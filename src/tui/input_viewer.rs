@@ -48,7 +48,7 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
         Some(Action::JumpNextEdit) => {
             // Only cycle through Edit entries (non-empty old/new strings)
             let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
-                .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
                 .map(|(i, _)| i).collect();
             if !edits.is_empty() {
                 let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
@@ -58,7 +58,10 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 };
                 let idx = edits[next];
                 app.selected_tool_diff = Some(idx);
-                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
+                if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
+                    // Highlight the file path in the convo pane
+                    app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
+                    app.output_viewport_scroll = usize::MAX;
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                     app.output_scroll = line_idx.saturating_sub(3);
                 }
@@ -66,7 +69,7 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
         }
         Some(Action::JumpPrevEdit) => {
             let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
-                .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
                 .map(|(i, _)| i).collect();
             if !edits.is_empty() {
                 let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
@@ -76,7 +79,10 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 };
                 let idx = edits[prev];
                 app.selected_tool_diff = Some(idx);
-                if let Some((line_idx, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
+                if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
+                    // Highlight the file path in the convo pane
+                    app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
+                    app.output_viewport_scroll = usize::MAX;
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                     app.output_scroll = line_idx.saturating_sub(3);
                 }
@@ -387,7 +393,7 @@ fn handle_save_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.exit_viewer_edit_mode();
             // Reload the file with the edit diff overlay
             if let Some(idx) = app.selected_tool_diff {
-                if let Some((_, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
+                if let Some((_, _, _, file_path, old_str, new_str, _)) = app.clickable_paths.get(idx).cloned() {
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                 }
             }
@@ -447,7 +453,7 @@ fn handle_discard_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
                         app.exit_viewer_edit_mode();
                         // Reload with edit diff overlay
                         if let Some(idx) = app.selected_tool_diff {
-                            if let Some((_, _, _, file_path, old_str, new_str)) = app.clickable_paths.get(idx).cloned() {
+                            if let Some((_, _, _, file_path, old_str, new_str, _)) = app.clickable_paths.get(idx).cloned() {
                                 app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                             }
                         }

@@ -387,39 +387,47 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     app.output_selection_cached = app.output_selection;
 
                     // Apply inverted highlight on clicked file path (orange bg, black fg)
-                    if let Some((hl, hsc, hec)) = app.clicked_path_highlight {
-                        if hl >= scroll && hl < scroll + viewport_height {
-                            let vi = hl - scroll;
-                            if let Some(line) = lines.get_mut(vi) {
-                                // Walk spans to find the char range [hsc..hec) and apply inverted style
-                                let mut new_spans: Vec<Span<'static>> = Vec::new();
-                                let mut col = 0usize;
-                                for span in line.spans.iter() {
-                                    let span_len = span.content.chars().count();
-                                    let span_end = col + span_len;
-                                    if span_end <= hsc || col >= hec {
-                                        // Entirely outside highlight — keep as-is
-                                        new_spans.push(span.clone());
-                                    } else {
-                                        // Span overlaps highlight region — split into up to 3 parts
-                                        let chars: Vec<char> = span.content.chars().collect();
-                                        let hs = hsc.saturating_sub(col); // highlight start within span
-                                        let he = (hec - col).min(span_len); // highlight end within span
-                                        if hs > 0 {
-                                            let before: String = chars[..hs].iter().collect();
-                                            new_spans.push(Span::styled(before, span.style));
-                                        }
-                                        let mid: String = chars[hs..he].iter().collect();
-                                        new_spans.push(Span::styled(mid, Style::default().bg(ORANGE).fg(Color::Black)));
-                                        if he < span_len {
-                                            let after: String = chars[he..].iter().collect();
-                                            new_spans.push(Span::styled(after, span.style));
-                                        }
+                    // Covers all wrapped lines of the path (first line uses column range,
+                    // continuation lines highlight all content)
+                    if let Some((hl, hsc, hec, wlc)) = app.clicked_path_highlight {
+                        let hl_style = Style::default().bg(ORANGE).fg(Color::Black);
+                        for row in 0..wlc {
+                            let cache_line = hl + row;
+                            if cache_line < scroll || cache_line >= scroll + viewport_height { continue; }
+                            let vi = cache_line - scroll;
+                            let Some(line) = lines.get_mut(vi) else { continue };
+                            // First line: highlight only the path portion [hsc..hec)
+                            // Continuation lines: highlight entire line content
+                            let (start, end) = if row == 0 {
+                                (hsc, hec)
+                            } else {
+                                (0, line.spans.iter().map(|s| s.content.chars().count()).sum())
+                            };
+                            let mut new_spans: Vec<Span<'static>> = Vec::new();
+                            let mut col = 0usize;
+                            for span in line.spans.iter() {
+                                let span_len = span.content.chars().count();
+                                let span_end = col + span_len;
+                                if span_end <= start || col >= end {
+                                    new_spans.push(span.clone());
+                                } else {
+                                    let chars: Vec<char> = span.content.chars().collect();
+                                    let hs = start.saturating_sub(col);
+                                    let he = (end - col).min(span_len);
+                                    if hs > 0 {
+                                        let before: String = chars[..hs].iter().collect();
+                                        new_spans.push(Span::styled(before, span.style));
                                     }
-                                    col = span_end;
+                                    let mid: String = chars[hs..he].iter().collect();
+                                    new_spans.push(Span::styled(mid, hl_style));
+                                    if he < span_len {
+                                        let after: String = chars[he..].iter().collect();
+                                        new_spans.push(Span::styled(after, span.style));
+                                    }
                                 }
-                                *line = Line::from(new_spans);
+                                col = span_end;
                             }
+                            *line = Line::from(new_spans);
                         }
                     }
 

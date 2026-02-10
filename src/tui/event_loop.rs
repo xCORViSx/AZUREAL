@@ -590,20 +590,22 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         // Check if the click landed on an underlined file path link
         app.clamp_output_scroll();
         if let Some((cache_line, cache_col)) = screen_to_cache_pos(col, row, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) {
-            // Search clickable_paths for a hit: line matches and col is within [start..end)
-            let hit = app.clickable_paths.iter().find(|(li, sc, ec, _, _, _)| {
-                *li == cache_line && cache_col >= *sc && cache_col < *ec
+            // Search clickable_paths for a hit: first line checks column range,
+            // continuation lines match anywhere within the wrapped path region
+            let hit = app.clickable_paths.iter().find(|(li, sc, ec, _, _, _, wlc)| {
+                if cache_line == *li { cache_col >= *sc && cache_col < *ec }
+                else { *wlc > 1 && cache_line > *li && cache_line < *li + *wlc }
             }).cloned();
-            if let Some((li, sc, ec, file_path, old_s, new_s)) = hit {
-                // Set inverted-color highlight on the clicked path
-                app.clicked_path_highlight = Some((li, sc, ec));
+            if let Some((li, sc, ec, file_path, old_s, new_s, wlc)) = hit {
+                // Set inverted-color highlight on the clicked path (including wrap count)
+                app.clicked_path_highlight = Some((li, sc, ec, wlc));
                 // Invalidate viewport cache so highlight is rendered on next draw
                 app.output_viewport_scroll = usize::MAX;
                 // Edit tool: open file with diff overlay in Viewer
                 // Read/Write tool: open file plain in Viewer
                 if !old_s.is_empty() || !new_s.is_empty() {
                     // Set selected_tool_diff so ⌥←/⌥→ cycling knows where we are
-                    let click_idx = app.clickable_paths.iter().position(|(l, s, e, _, _, _)| *l == li && *s == sc && *e == ec);
+                    let click_idx = app.clickable_paths.iter().position(|(l, s, e, _, _, _, _)| *l == li && *s == sc && *e == ec);
                     app.selected_tool_diff = click_idx;
                     app.load_file_with_edit_diff(&file_path, &old_s, &new_s);
                 } else {

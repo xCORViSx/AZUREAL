@@ -213,7 +213,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 let title = if app.viewer_edit_diff.is_some() {
                     // Count only Edit tool entries (non-empty old/new strings)
                     let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
-                        .filter(|(_, (_, _, _, _, o, n))| !o.is_empty() || !n.is_empty())
+                        .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
                         .map(|(i, _)| i).collect();
                     let edit_total = edits.len();
                     // Find which edit-only position we're at (1-indexed)

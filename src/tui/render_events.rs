@@ -19,7 +19,8 @@ use super::render_tools::{extract_tool_param, render_tool_result, render_edit_di
 use super::render_wrap::wrap_text;
 
 /// Clickable path entry: (line_idx, start_col, end_col, file_path, old_string, new_string)
-pub type ClickablePath = (usize, usize, usize, String, String, String);
+/// (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
+pub type ClickablePath = (usize, usize, usize, String, String, String, usize);
 
 /// Render DisplayEvents into Lines for the output panel with iMessage-style layout
 /// Returns (lines, animation_indices, bubble_positions, clickable_paths) where:
@@ -370,14 +371,16 @@ fn render_tool_call(
         Style::default().fg(ORANGE)
     };
 
-    for (i, wrapped) in wrap_text(param_raw, param_max).into_iter().enumerate() {
+    let wrapped_param_lines = wrap_text(param_raw, param_max);
+    let wrap_line_count = wrapped_param_lines.len();
+    for (i, wrapped) in wrapped_param_lines.into_iter().enumerate() {
         if i == 0 {
             // Track line index for animation patching (span index 1 is the indicator)
             if is_pending {
                 animation_indices.push((lines.len(), 1));
             }
-            // Record clickable region for file tools (first wrapped line only —
-            // the full path is needed for click detection, continuation lines are cosmetic)
+            // Record clickable region for file tools — wrap_line_count tells highlight
+            // how many cache lines the path spans (for multi-line highlight)
             if is_file_tool && !param_raw.is_empty() {
                 let start_col = prefix_len;
                 let end_col = start_col + wrapped.chars().count();
@@ -387,7 +390,7 @@ fn render_tool_call(
                         input.get("new_string").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     )
                 } else { (String::new(), String::new()) };
-                clickable_paths.push((lines.len(), start_col, end_col, param_raw.to_string(), old_s, new_s));
+                clickable_paths.push((lines.len(), start_col, end_col, param_raw.to_string(), old_s, new_s, wrap_line_count));
             }
             lines.push(Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(tool_color)),

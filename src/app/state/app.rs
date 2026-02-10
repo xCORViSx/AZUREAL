@@ -223,11 +223,11 @@ pub struct App {
     pub message_bubble_positions: Vec<(usize, bool)>,
     /// Edit/Write tool diffs for navigation: (line_idx, tool_name, file_path, diff_text)
     pub tool_diff_positions: Vec<(usize, String, String, String)>,
-    /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string)
-    pub clickable_paths: Vec<(usize, usize, usize, String, String, String)>,
-    /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col)
+    /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
+    pub clickable_paths: Vec<(usize, usize, usize, String, String, String, usize)>,
+    /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col, wrap_line_count)
     /// Rendered with inverted colors so the user sees which path they clicked
-    pub clicked_path_highlight: Option<(usize, usize, usize)>,
+    pub clicked_path_highlight: Option<(usize, usize, usize, usize)>,
     /// Cached title bar Claude session name (updated on worktree switch, avoids file I/O in render)
     pub title_session_name: String,
     /// Currently selected tool diff index (for e/E navigation in Output)
