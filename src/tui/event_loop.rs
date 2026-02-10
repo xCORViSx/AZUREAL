@@ -1024,7 +1024,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             }
             return Ok(());
         }
-        (KeyModifiers::NONE, KeyCode::Tab) => {
+        (KeyModifiers::NONE, KeyCode::Tab) if !app.viewer_edit_mode => {
             // Cycle focus (works in both prompt and command mode)
             // Skip when wizard is active (wizard uses Tab for field cycling)
             if !app.show_help && !app.is_wizard_active() {
@@ -1041,7 +1041,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
                 return Ok(());
             }
         }
-        (KeyModifiers::SHIFT, KeyCode::BackTab) => {
+        (KeyModifiers::SHIFT, KeyCode::BackTab) if !app.viewer_edit_mode => {
             // Cycle focus backwards (works in both prompt and command mode)
             // Skip when wizard is active
             if !app.show_help && !app.is_wizard_active() {
