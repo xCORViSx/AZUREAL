@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -124,6 +124,7 @@ pub fn draw_help_overlay(f: &mut Frame) {
     // Render border
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Double)
         .title(" Help (? to close) ")
         .border_style(Style::default().fg(AZURE))
         .style(Style::default().bg(Color::Reset));
