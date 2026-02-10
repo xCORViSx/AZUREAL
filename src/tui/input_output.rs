@@ -3,12 +3,13 @@
 use anyhow::Result;
 use crossterm::event;
 
-use crate::app::{App, Focus, ViewMode};
-use crate::git::Git;
+use crate::app::{App, ViewMode};
 use super::input_rebase::handle_rebase_input;
-use super::keybindings::{Action, lookup_action};
 
-/// Handle keyboard input when Output pane is focused
+/// Handle keyboard input when Output pane is focused.
+/// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
+/// is called. This handler only receives keys that weren't mapped — meaning only
+/// session list overlay and rebase mode input reach here.
 pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Session list overlay: j/k navigate, Enter selects, s/Esc closes
     if app.show_session_list {
@@ -20,147 +21,8 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         return handle_rebase_input(key, app);
     }
 
-    // Route through centralized keybinding lookup
-    let action = lookup_action(Focus::Output, key.modifiers, key.code, false, false, false);
-
-    match action {
-        // j/k/↓/↑ line-by-line scroll (NavDown/NavUp only fires for j/k since ↓/↑ are mapped to JumpNext/PrevBubble)
-        Some(Action::NavDown) => {
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(1); }
-                ViewMode::Diff => { app.scroll_diff_down(1); }
-                _ => {}
-            }
-        }
-        Some(Action::NavUp) => {
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(1); }
-                ViewMode::Diff => { app.scroll_diff_up(1); }
-                _ => {}
-            }
-        }
-        // ↓/↑ jump between user prompts (convo mode only)
-        Some(Action::JumpNextBubble) => {
-            if app.view_mode == ViewMode::Output { app.jump_to_next_bubble(false); }
-        }
-        Some(Action::JumpPrevBubble) => {
-            if app.view_mode == ViewMode::Output { app.jump_to_prev_bubble(false); }
-        }
-        // ⇧↓/⇧↑ jump between all messages including assistant
-        Some(Action::JumpNextMessage) => {
-            if app.view_mode == ViewMode::Output { app.jump_to_next_bubble(true); }
-        }
-        Some(Action::JumpPrevMessage) => {
-            if app.view_mode == ViewMode::Output { app.jump_to_prev_bubble(true); }
-        }
-        // J/K page scroll (full viewport minus 2 for overlap)
-        Some(Action::PageDown) => {
-            let page = app.output_viewport_height.saturating_sub(2);
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_down(page); }
-                ViewMode::Diff => { app.scroll_diff_down(page); }
-                _ => {}
-            }
-        }
-        Some(Action::PageUp) => {
-            let page = app.output_viewport_height.saturating_sub(2);
-            match app.view_mode {
-                ViewMode::Output => { app.scroll_output_up(page); }
-                ViewMode::Diff => { app.scroll_diff_up(page); }
-                _ => {}
-            }
-        }
-        // g/⌥↑ scroll to top
-        Some(Action::GoToTop) => {
-            match app.view_mode {
-                ViewMode::Output => app.output_scroll = 0,
-                ViewMode::Diff => app.diff_scroll = 0,
-                _ => {}
-            }
-        }
-        // G/⌥↓ scroll to bottom
-        Some(Action::GoToBottom) => {
-            match app.view_mode {
-                ViewMode::Output => app.scroll_output_to_bottom(),
-                ViewMode::Diff => app.scroll_diff_to_bottom(),
-                _ => {}
-            }
-        }
-        // o: switch to output view
-        Some(Action::SwitchToOutput) => {
-            app.view_mode = ViewMode::Output;
-            app.output_scroll = usize::MAX; // follow bottom
-        }
-        // d: view diff
-        Some(Action::ViewDiff) => {
-            if let Err(e) = app.load_diff() {
-                app.set_status(format!("Failed to get diff: {}", e));
-            } else {
-                app.diff_scroll = 0;
-            }
-        }
-        // R: show rebase status
-        Some(Action::RebaseStatus) => {
-            if let Some(session) = app.current_session() {
-                if let Some(ref wt_path) = session.worktree_path {
-                    if Git::is_rebase_in_progress(wt_path) {
-                        if let Ok(status) = Git::get_rebase_status(wt_path) {
-                            app.set_rebase_status(status);
-                        }
-                    }
-                }
-            }
-        }
-        // Tab: switch focus to input (handled by global, but catch if it leaks through)
-        Some(Action::CycleFocusForward) => app.focus = Focus::Input,
-        // Esc: back to worktrees sidebar
-        Some(Action::Escape) => app.focus = Focus::Worktrees,
-        // 's': toggle session list overlay (only in Output view, not Diff/Rebase)
-        _ if app.view_mode == ViewMode::Output
-            && key.modifiers == event::KeyModifiers::NONE
-            && key.code == event::KeyCode::Char('s') => {
-            open_session_list(app);
-        }
-        _ => {}
-    }
+    // All output keybindings resolved upstream — nothing to handle here
     Ok(())
-}
-
-/// Open the session list overlay, computing message counts for all session files
-fn open_session_list(app: &mut App) {
-    app.show_session_list = true;
-    app.session_list_selected = 0;
-    app.session_list_scroll = 0;
-
-    // Ensure session files are loaded for all worktrees
-    for session in &app.sessions {
-        if !app.session_files.contains_key(&session.branch_name) {
-            if let Some(ref wt_path) = session.worktree_path {
-                let files = crate::config::list_claude_sessions(wt_path);
-                app.session_files.insert(session.branch_name.clone(), files);
-            }
-        }
-    }
-
-    // Compute message counts (lightweight JSONL line scan) for all session files not yet cached
-    for files in app.session_files.values() {
-        for (session_id, path, _) in files.iter() {
-            if !app.session_msg_counts.contains_key(session_id) {
-                let count = count_messages_in_jsonl(path);
-                app.session_msg_counts.insert(session_id.clone(), count);
-            }
-        }
-    }
-}
-
-/// Count human+assistant messages in a JSONL session file by scanning for "type" fields.
-/// Lightweight: reads file as text and counts lines containing message type markers.
-fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
-    let Ok(content) = std::fs::read_to_string(path) else { return 0; };
-    content.lines().filter(|line| {
-        line.contains("\"type\":\"human\"") || line.contains("\"type\":\"assistant\"")
-            || line.contains("\"type\": \"human\"") || line.contains("\"type\": \"assistant\"")
-    }).count()
 }
 
 /// Handle keyboard input for the session list overlay

@@ -5,160 +5,35 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, Focus};
-use super::keybindings::{Action, lookup_action};
+use crate::app::App;
 
-/// Handle keyboard input for the Viewer panel
+/// Handle keyboard input for the Viewer panel.
+/// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
+/// is called. This handler only receives keys that weren't mapped to any action —
+/// meaning only dialog input and edit mode text editing reach here.
 pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
-    // Tab dialog takes priority
+    // Tab dialog takes priority — consumes j/k/Enter/Esc/number keys
     if app.viewer_tab_dialog {
         return handle_tab_dialog_input(key, app);
     }
 
-    // Save dialog takes priority (shown after saving from Edit diff view)
+    // Save dialog (shown after saving from Edit diff view) — d/f/Esc
     if app.viewer_edit_save_dialog {
         return handle_save_dialog_input(key, app);
     }
 
-    // Discard dialog takes priority over everything else
+    // Discard dialog — y/n/s/f/Esc
     if app.viewer_edit_discard_dialog {
         return handle_discard_dialog_input(key, app);
     }
 
-    // Edit mode has its own input handling
+    // Edit mode text editing: characters, arrows, backspace, etc.
+    // These are legitimate raw key matches — not configurable keybindings.
     if app.viewer_edit_mode {
         return handle_edit_mode_input(key, app);
     }
 
-    // Use centralized keybindings lookup
-    let action = lookup_action(Focus::Viewer, key.modifiers, key.code, false, false, false);
-
-    match action {
-        Some(Action::EnterEditMode) => {
-            if app.viewer_path.is_some() {
-                app.enter_viewer_edit_mode();
-            }
-        }
-        Some(Action::NavDown) => { app.scroll_viewer_down(1); }
-        Some(Action::NavUp) => { app.scroll_viewer_up(1); }
-        Some(Action::PageDown) => { app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2)); }
-        Some(Action::PageUp) => { app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2)); }
-        Some(Action::GoToTop) => app.viewer_scroll = 0,
-        Some(Action::GoToBottom) => { app.scroll_viewer_to_bottom(); }
-        Some(Action::JumpNextEdit) => {
-            // Only cycle through Edit entries (non-empty old/new strings)
-            let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
-                .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
-                .map(|(i, _)| i).collect();
-            if !edits.is_empty() {
-                let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
-                let next = match cur {
-                    Some(pos) => (pos + 1) % edits.len(),
-                    None => 0,
-                };
-                let idx = edits[next];
-                app.selected_tool_diff = Some(idx);
-                if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
-                    // Highlight the file path in the convo pane
-                    app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
-                    app.output_viewport_scroll = usize::MAX;
-                    app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
-                    app.output_scroll = line_idx.saturating_sub(3);
-                }
-            }
-        }
-        Some(Action::JumpPrevEdit) => {
-            let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
-                .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
-                .map(|(i, _)| i).collect();
-            if !edits.is_empty() {
-                let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
-                let prev = match cur {
-                    Some(0) | None => edits.len() - 1,
-                    Some(pos) => pos - 1,
-                };
-                let idx = edits[prev];
-                app.selected_tool_diff = Some(idx);
-                if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
-                    // Highlight the file path in the convo pane
-                    app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
-                    app.output_viewport_scroll = usize::MAX;
-                    app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
-                    app.output_scroll = line_idx.saturating_sub(3);
-                }
-            }
-        }
-        Some(Action::Escape) => {
-            if app.viewer_edit_diff.is_some() {
-                // Restore previous viewer state
-                if let Some((prev_content, prev_path, prev_scroll)) = app.viewer_prev_state.take() {
-                    app.viewer_content = prev_content;
-                    app.viewer_path = prev_path;
-                    app.viewer_scroll = prev_scroll;
-                    app.viewer_mode = if app.viewer_content.is_some() {
-                        crate::app::ViewerMode::File
-                    } else {
-                        crate::app::ViewerMode::Empty
-                    };
-                } else {
-                    app.clear_viewer();
-                }
-                app.viewer_edit_diff = None;
-                app.viewer_edit_diff_line = None;
-                app.selected_tool_diff = None;
-                app.viewer_lines_dirty = true;
-                app.focus = Focus::FileTree;
-            } else {
-                app.clear_viewer();
-                app.focus = Focus::FileTree;
-            }
-        }
-        _ => {
-            // Viewer-specific keys not in centralized bindings yet
-            match (key.modifiers, key.code) {
-                // Select All: selects entire viewer cache so ⌘C can copy it
-                (KeyModifiers::SUPER, KeyCode::Char('a')) => {
-                    let last = app.viewer_lines_cache.len().saturating_sub(1);
-                    let last_col = app.viewer_lines_cache.last()
-                        .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
-                        .unwrap_or(0);
-                    app.viewer_selection = Some((0, 0, last, last_col));
-                }
-                // Full-page scroll (Cmd+Shift+J/K)
-                (m, KeyCode::Char('J')) if m == KeyModifiers::SHIFT | KeyModifiers::SUPER => {
-                    app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
-                }
-                (m, KeyCode::Char('K')) if m == KeyModifiers::SHIFT | KeyModifiers::SUPER => {
-                    app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
-                }
-                (KeyModifiers::NONE, KeyCode::PageDown) => {
-                    app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
-                }
-                (KeyModifiers::NONE, KeyCode::PageUp) => {
-                    app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
-                }
-                // ⌥↑/⌥↓ handled by lookup_action (GoToTop/GoToBottom in VIEWER array)
-                (KeyModifiers::NONE, KeyCode::Home) => app.viewer_scroll = 0,
-                (KeyModifiers::NONE, KeyCode::End) => app.scroll_viewer_to_bottom(),
-                // t: tab current file (save to tab bar)
-                (KeyModifiers::NONE, KeyCode::Char('t')) => app.viewer_tab_current(),
-                // T: open tab dialog
-                // Shift+T: without REPORT_ALL_KEYS, arrives as (NONE, 'T')
-                (KeyModifiers::NONE, KeyCode::Char('T')) => {
-                    if !app.viewer_tabs.is_empty() {
-                        app.toggle_viewer_tab_dialog();
-                    }
-                }
-                // Tab switching: ] = next tab, [ = prev tab
-                (KeyModifiers::NONE, KeyCode::Char(']')) => app.viewer_next_tab(),
-                (KeyModifiers::NONE, KeyCode::Char('[')) => app.viewer_prev_tab(),
-                // x: close current tab
-                (KeyModifiers::NONE, KeyCode::Char('x')) => app.viewer_close_current_tab(),
-                _ => {}
-            }
-        }
-    }
-
+    // Read-only mode: nothing to handle here — all bindings resolved upstream
     Ok(())
 }
 

@@ -104,6 +104,8 @@ pub enum Action {
     GoToBottom,
 
     // Worktrees
+    ToggleFileTree,
+    EnterInputMode,
     SearchFilter,
     SelectNextProject,
     SelectPrevProject,
@@ -119,6 +121,7 @@ pub enum Action {
     OpenProjects,
 
     // FileTree
+    ReturnToWorktrees,
     ToggleDir,
     OpenFile,
     AddFile,
@@ -131,7 +134,12 @@ pub enum Action {
     EnterEditMode,
     JumpNextEdit,
     JumpPrevEdit,
-    CloseViewer,
+    SelectAll,
+    ViewerTabCurrent,
+    ViewerOpenTabDialog,
+    ViewerNextTab,
+    ViewerPrevTab,
+    ViewerCloseTab,
 
     // Viewer Edit Mode
     Save,
@@ -139,6 +147,7 @@ pub enum Action {
     Redo,
 
     // Output/Convo
+    ToggleSessionList,
     JumpNextBubble,
     JumpPrevBubble,
     JumpNextMessage,
@@ -241,11 +250,13 @@ static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, cod
 // ⌃← alternative for ⌥← (word nav in prompt input)
 static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
 static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
-
-// Ctrl+Alt+Cmd modifier combo (for quit/restart/debug)
-const CTRL_ALT_CMD: KeyModifiers = KeyModifiers::from_bits_truncate(
-    KeyModifiers::CONTROL.bits() | KeyModifiers::ALT.bits() | KeyModifiers::SUPER.bits()
-);
+// PageUp/PageDown/Home/End alternatives for viewer scroll
+static ALT_PGDN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::PageDown }];
+static ALT_PGUP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::PageUp }];
+static ALT_HOME: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Home }];
+static ALT_END: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::End }];
+// macOS ⌥r produces '®' (unicode) instead of ALT+r — add as alternative
+static ALT_MACOS_R: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
 
 // Cmd+Shift modifier combo
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -267,7 +278,9 @@ pub static GLOBAL: [Keybinding; 10] = [
 ];
 
 /// Worktrees context bindings
-pub static WORKTREES: [Keybinding; 19] = [
+pub static WORKTREES: [Keybinding; 21] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
@@ -283,14 +296,15 @@ pub static WORKTREES: [Keybinding; 19] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
-    Keybinding::new(KeyCombo::alt(KeyCode::Char('r')), "Add run command", Action::AddRunCommand),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Rebase onto main", Action::RebaseOntoMain),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 14] = [
+pub static FILE_TREE: [Keybinding; 15] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Back to worktrees", Action::ReturnToWorktrees),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft),
@@ -308,17 +322,28 @@ pub static FILE_TREE: [Keybinding; 14] = [
 ];
 
 /// Viewer bindings (read-only mode)
-pub static VIEWER: [Keybinding; 10] = [
+pub static VIEWER: [Keybinding; 20] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Page down", Action::PageDown),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop),
-    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('K')), &ALT_PGUP, "Page up", Action::PageUp),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Up), &ALT_HOME, "Top", Action::GoToTop),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Down), &ALT_END, "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::alt(KeyCode::Right), "Next Edit", Action::JumpNextEdit),
     Keybinding::new(KeyCombo::alt(KeyCode::Left), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('T')), "Tab dialog", Action::ViewerOpenTabDialog),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
+    // Cmd+Shift+J/K full-page scroll
+    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('J')), "Full page down", Action::PageDown),
+    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('K')), "Full page up", Action::PageUp),
+    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('j')), "Full page down", Action::PageDown),
+    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('k')), "Full page up", Action::PageUp),
 ];
 
 /// Edit mode bindings
@@ -331,7 +356,8 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 ];
 
 /// Convo/Output bindings
-pub static OUTPUT: [Keybinding; 14] = [
+pub static OUTPUT: [Keybinding; 15] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble),
@@ -387,21 +413,60 @@ pub static WIZARD: [Keybinding; 3] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Next field", Action::WizardNextField),
 ];
 
-/// Find matching action for current context
-pub fn lookup_action(
-    focus: Focus,
-    modifiers: KeyModifiers,
-    code: KeyCode,
-    is_prompt_mode: bool,
-    is_edit_mode: bool,
-    is_terminal_mode: bool,
-) -> Option<Action> {
-    // Global bindings checked first (some are context-sensitive)
+/// All state needed to resolve a key press into an action.
+/// Built from &App so guards are defined ONCE here, not scattered across input handlers.
+pub struct KeyContext {
+    pub focus: Focus,
+    pub prompt_mode: bool,
+    pub edit_mode: bool,
+    pub terminal_mode: bool,
+    pub filter_active: bool,
+    pub has_context_menu: bool,
+    pub wizard_active: bool,
+    pub help_open: bool,
+}
+
+impl KeyContext {
+    /// Build context from current app state — captures all guard-relevant fields
+    pub fn from_app(app: &crate::app::App) -> Self {
+        Self {
+            focus: app.focus,
+            prompt_mode: app.prompt_mode,
+            edit_mode: app.viewer_edit_mode,
+            terminal_mode: app.terminal_mode,
+            filter_active: app.sidebar_filter_active,
+            has_context_menu: app.context_menu.is_some(),
+            wizard_active: app.is_wizard_active(),
+            help_open: app.show_help,
+        }
+    }
+}
+
+/// Find matching action for current context.
+/// This is the SINGLE SOURCE OF TRUTH for key → action resolution.
+/// All guard logic lives here — callers never need to duplicate guards.
+pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    // Global bindings checked first — with context-sensitive skips.
+    // Each skip condition prevents the binding from firing in contexts where
+    // it would conflict with text input or modal overlays.
     for binding in &GLOBAL {
         let skip = match binding.action {
+            // Single-letter globals must not fire during text input, edit mode,
+            // sidebar filter, context menu, or wizard — they'd steal keystrokes
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
-                if is_prompt_mode || is_edit_mode => true,
-            Action::CancelClaude if is_prompt_mode => true,
+                if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
+                   || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
+            // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
+            Action::CopySelection if ctx.edit_mode => true,
+            // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
+            Action::CycleFocusForward | Action::CycleFocusBackward
+                if ctx.edit_mode || ctx.help_open || ctx.wizard_active => true,
+            // 'p' also fires when already in prompt mode to re-focus input from another
+            // pane — but NOT when focus is already on Input (would be a no-op that eats 'p')
+            Action::EnterPromptMode
+                if ctx.prompt_mode && ctx.focus == Focus::Input => true,
+            // 't' toggle: already in terminal means terminal handler owns 't' (for type mode)
+            Action::ToggleTerminal if ctx.terminal_mode => true,
             _ => false,
         };
         if !skip && binding.matches(modifiers, code) {
@@ -409,15 +474,24 @@ pub fn lookup_action(
         }
     }
 
-    // Context-specific bindings
-    let context_bindings: &[Keybinding] = match focus {
+    // Wizard bindings checked before focus-specific (wizard is a modal overlay)
+    if ctx.wizard_active {
+        for binding in &WIZARD {
+            if binding.matches(modifiers, code) {
+                return Some(binding.action);
+            }
+        }
+    }
+
+    // Context-specific bindings based on focus + mode
+    let context_bindings: &[Keybinding] = match ctx.focus {
         Focus::Worktrees => &WORKTREES,
         Focus::FileTree => &FILE_TREE,
-        Focus::Viewer if is_edit_mode => &EDIT_MODE,
+        Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
         Focus::Viewer => &VIEWER,
         Focus::Output => &OUTPUT,
-        Focus::Input if is_terminal_mode => &TERMINAL,
-        Focus::Input if is_prompt_mode => &INPUT,
+        Focus::Input if ctx.terminal_mode && !ctx.prompt_mode => &TERMINAL,
+        Focus::Input if ctx.prompt_mode => &INPUT,
         _ => &[],
     };
 
@@ -555,32 +629,12 @@ fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db: &s
     )
 }
 
-/// Quick matcher for common navigation (hot path optimization)
-#[inline]
-pub fn is_nav_down(modifiers: KeyModifiers, code: KeyCode) -> bool {
-    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('j') || code == KeyCode::Down)
-}
-
-#[inline]
-pub fn is_nav_up(modifiers: KeyModifiers, code: KeyCode) -> bool {
-    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('k') || code == KeyCode::Up)
-}
-
-#[inline]
-pub fn is_nav_left(modifiers: KeyModifiers, code: KeyCode) -> bool {
-    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('h') || code == KeyCode::Left)
-}
-
-#[inline]
-pub fn is_nav_right(modifiers: KeyModifiers, code: KeyCode) -> bool {
-    modifiers == KeyModifiers::NONE && (code == KeyCode::Char('l') || code == KeyCode::Right)
-}
-
 /// macOS ⌥+letter produces unicode chars instead of setting the ALT modifier.
 /// This maps those unicode chars back to the original letter so handlers can
 /// match `⌥+letter` portably. Returns None if the char isn't an ⌥ mapping.
 /// Based on macOS US keyboard layout.
 #[inline]
+#[allow(dead_code)]
 pub fn macos_opt_key(ch: char) -> Option<char> {
     match ch {
         'å' => Some('a'), '∫' => Some('b'), 'ç' => Some('c'), '∂' => Some('d'),
