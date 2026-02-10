@@ -26,6 +26,10 @@ All notable changes to Azureal will be documented in this file.
 - Edit cycling (`⌥←`/`⌥→`) now works after clicking an edit tool file path in the Convo pane
   - Clicking an edit path now sets `selected_tool_diff` so cycling knows the starting position (was `None`, always jumping to first edit)
 - `[Edit N/M]` viewer title now counts only Edit tool calls (was counting all clickable paths including Read/Write)
+- Edit cycling (`⌥←`/`⌥→`) now highlights the file path in the Convo pane with inverted orange colors (was only set on mouse click, not keyboard cycling)
+- Clicked/cycled file path highlight now covers all wrapped continuation lines, not just the first line
+  - `ClickablePath` tuple extended with `wrap_line_count` field
+  - Clicking a continuation line of a wrapped path also triggers the file open
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files
