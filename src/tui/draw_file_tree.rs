@@ -155,36 +155,64 @@ fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, St
     }
 }
 
-/// Wrap styled parts into multiple Lines at `max_width` character boundary.
-/// Walks each part's chars and starts a new Line when the running column hits max_width.
+/// Wrap styled parts into multiple Lines, breaking at space boundaries so
+/// tokens like "Enter:paste" or "Esc:cancel" stay together on one line.
+/// Falls back to hard char-break only when a single token exceeds max_width.
 fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'static>> {
+    // Flatten all parts into (word, style) tokens split on spaces.
+    // Leading/trailing spaces become empty "" tokens to preserve spacing.
+    let mut tokens: Vec<(&str, Style)> = Vec::new();
+    for (text, style) in parts {
+        let mut first = true;
+        for word in text.split(' ') {
+            if !first { tokens.push((" ", *style)); }
+            if !word.is_empty() { tokens.push((word, *style)); }
+            first = false;
+        }
+    }
+
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut col = 0usize;
 
-    for (text, style) in parts {
-        let mut chunk = String::new();
-        for ch in text.chars() {
-            if col >= max_width {
-                // Flush current chunk as a span and start a new line
-                if !chunk.is_empty() {
-                    current_spans.push(Span::styled(chunk.clone(), *style));
-                    chunk.clear();
+    for (token, style) in tokens {
+        let len = token.chars().count();
+        // Space token — only emit if it fits, otherwise skip (line break absorbs it)
+        if token == " " {
+            if col + 1 <= max_width { current_spans.push(Span::styled(" ", style)); col += 1; }
+            continue;
+        }
+        // Word fits on current line
+        if col + len <= max_width {
+            current_spans.push(Span::styled(token.to_string(), style));
+            col += len;
+            continue;
+        }
+        // Word doesn't fit — wrap to next line (flush current)
+        if !current_spans.is_empty() {
+            lines.push(Line::from(std::mem::take(&mut current_spans)));
+            col = 0;
+        }
+        // If the word itself fits on a fresh line, emit it whole
+        if len <= max_width {
+            current_spans.push(Span::styled(token.to_string(), style));
+            col = len;
+        } else {
+            // Single word wider than max_width — hard-break it char by char
+            let mut chunk = String::new();
+            for ch in token.chars() {
+                if col >= max_width {
+                    if !chunk.is_empty() { current_spans.push(Span::styled(chunk.clone(), style)); chunk.clear(); }
+                    lines.push(Line::from(std::mem::take(&mut current_spans)));
+                    col = 0;
                 }
-                lines.push(Line::from(std::mem::take(&mut current_spans)));
-                col = 0;
+                chunk.push(ch);
+                col += 1;
             }
-            chunk.push(ch);
-            col += 1;
-        }
-        if !chunk.is_empty() {
-            current_spans.push(Span::styled(chunk, *style));
+            if !chunk.is_empty() { current_spans.push(Span::styled(chunk, style)); }
         }
     }
-    // Flush remaining spans
-    if !current_spans.is_empty() {
-        lines.push(Line::from(current_spans));
-    }
+    if !current_spans.is_empty() { lines.push(Line::from(current_spans)); }
     lines
 }
 
