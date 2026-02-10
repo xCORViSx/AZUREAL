@@ -242,8 +242,10 @@ pub async fn run_app(
         // This is NON-BLOCKING — the render thread does the expensive work while
         // we keep processing events. No more frozen input during convo updates!
         if app.rendered_lines_dirty {
-            let convo_width = cached_width.saturating_sub(80) / 2;
-            submit_render_request(app, convo_width);
+            // Convo pane is fixed at 80 columns (Constraint::Length(80) in run.rs).
+            // We pass this directly — the old formula `(terminal - 80) / 2` was a
+            // leftover from the 50/50 split layout and made bubbles way too narrow.
+            submit_render_request(app, 80);
         }
 
         // Poll for completed render results from the background thread (non-blocking).
