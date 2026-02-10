@@ -78,8 +78,10 @@ impl App {
     /// Push current state to undo stack before making changes
     fn push_undo(&mut self) {
         self.viewer_edit_undo.push(self.viewer_edit_content.clone());
-        self.viewer_edit_redo.clear(); // Clear redo on new edit
-        // Limit undo stack size
+        self.viewer_edit_redo.clear();
+        // Bump monotonic edit counter so highlight cache knows content changed.
+        // Can't use undo.len() because the 100-entry cap makes it stall.
+        self.viewer_edit_version = self.viewer_edit_version.wrapping_add(1);
         if self.viewer_edit_undo.len() > 100 {
             self.viewer_edit_undo.remove(0);
         }
@@ -90,7 +92,7 @@ impl App {
         if let Some(prev) = self.viewer_edit_undo.pop() {
             self.viewer_edit_redo.push(self.viewer_edit_content.clone());
             self.viewer_edit_content = prev;
-            // Clamp cursor to valid position
+            self.viewer_edit_version = self.viewer_edit_version.wrapping_add(1);
             self.clamp_edit_cursor();
         }
     }
@@ -100,6 +102,7 @@ impl App {
         if let Some(next) = self.viewer_edit_redo.pop() {
             self.viewer_edit_undo.push(self.viewer_edit_content.clone());
             self.viewer_edit_content = next;
+            self.viewer_edit_version = self.viewer_edit_version.wrapping_add(1);
             self.clamp_edit_cursor();
         }
     }

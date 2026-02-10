@@ -561,13 +561,13 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     app.viewer_edit_content_width = content_width;
 
     // Cache syntax highlighting — only re-run when content actually changes.
-    // Track via undo stack len: every edit pushes undo, so len changes = content changed.
+    // Track via monotonic edit counter (not undo stack len, which caps at 100).
     // Also invalidate when cache is empty (first render) or entering edit mode (ver = MAX).
-    let undo_ver = app.viewer_edit_undo.len();
-    if app.viewer_edit_highlight_ver != undo_ver || app.viewer_edit_highlight_cache.is_empty() {
+    let edit_ver = app.viewer_edit_version;
+    if app.viewer_edit_highlight_ver != edit_ver || app.viewer_edit_highlight_cache.is_empty() {
         let full_content = app.viewer_edit_content.join("\n");
         app.viewer_edit_highlight_cache = app.syntax_highlighter.highlight_file(&full_content, &path_str);
-        app.viewer_edit_highlight_ver = undo_ver;
+        app.viewer_edit_highlight_ver = edit_ver;
     }
 
     let scroll = app.viewer_scroll;

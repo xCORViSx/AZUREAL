@@ -255,10 +255,14 @@ pub struct App {
     /// Wrap width for edit mode (viewport chars available per visual line).
     /// Cached from draw_edit_mode so cursor movement can navigate wrapped visual lines.
     pub viewer_edit_content_width: usize,
+    /// Monotonically increasing counter — bumped on every content mutation.
+    /// Used as cache key for syntax highlight invalidation (undo stack length
+    /// can't be used because it caps at 100, causing the cache key to stall).
+    pub viewer_edit_version: usize,
     /// Cached syntax-highlighted spans per source line. Only recomputed when
-    /// `viewer_edit_highlight_ver` doesn't match `viewer_edit_undo.len()` (content changed).
+    /// `viewer_edit_highlight_ver` doesn't match `viewer_edit_version`.
     pub viewer_edit_highlight_cache: Vec<Vec<ratatui::text::Span<'static>>>,
-    /// Version counter for highlight cache invalidation (tracks undo stack depth at last highlight)
+    /// Version counter for highlight cache invalidation (tracks edit version at last highlight)
     pub viewer_edit_highlight_ver: usize,
     /// Clipboard for copy/cut/paste operations
     pub clipboard: String,
@@ -495,6 +499,7 @@ impl App {
             viewer_edit_save_dialog: false,
             viewer_edit_selection: None,
             viewer_edit_content_width: 80,
+            viewer_edit_version: 0,
             viewer_edit_highlight_cache: Vec::new(),
             viewer_edit_highlight_ver: usize::MAX,
             clipboard: String::new(),
