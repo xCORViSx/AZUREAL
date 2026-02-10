@@ -30,6 +30,7 @@ All notable changes to Azureal will be documented in this file.
 - Clicked/cycled file path highlight now covers all wrapped continuation lines, not just the first line
   - `ClickablePath` tuple extended with `wrap_line_count` field
   - Clicking a continuation line of a wrapped path also triggers the file open
+- Debug dump output file no longer mentions "obfuscated" in headers or status bar message
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files
