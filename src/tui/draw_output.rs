@@ -397,11 +397,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                             let vi = cache_line - scroll;
                             let Some(line) = lines.get_mut(vi) else { continue };
                             // First line: highlight only the path portion [hsc..hec)
-                            // Continuation lines: highlight entire line content
+                            // Continuation lines: highlight from same start col to end of text
+                            // (skip the indent spaces, stop at end of path text — don't highlight padding)
                             let (start, end) = if row == 0 {
                                 (hsc, hec)
                             } else {
-                                (0, line.spans.iter().map(|s| s.content.chars().count()).sum())
+                                (hsc, line.spans.iter().map(|s| s.content.chars().count()).sum())
                             };
                             let mut new_spans: Vec<Span<'static>> = Vec::new();
                             let mut col = 0usize;
