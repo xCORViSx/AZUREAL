@@ -229,6 +229,8 @@ impl App {
             self.set_status(format!("Copy failed: {}", e)); return;
         }
         self.set_status(format!("Copied → {}", target_dir.display()));
+        // Expand target dir so the pasted file is visible in the tree
+        self.file_tree_expanded.insert(target_dir.to_path_buf());
         self.file_tree_refresh_after_action(&target);
     }
 
@@ -243,6 +245,8 @@ impl App {
             self.set_status(format!("Move failed: {}", e)); return;
         }
         self.set_status(format!("Moved → {}", target_dir.display()));
+        // Expand target dir so the moved file is visible in the tree
+        self.file_tree_expanded.insert(target_dir.to_path_buf());
         self.file_tree_refresh_after_action(&target);
     }
 

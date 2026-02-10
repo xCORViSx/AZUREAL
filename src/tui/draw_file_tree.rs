@@ -101,12 +101,110 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Build action bar text for the current file tree action.
+/// Returns a flat string and its styled spans for wrapping.
+fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, Style)>) {
+    match action {
+        FileTreeAction::Copy(src) => {
+            let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let parts = vec![
+                ("Copy ".to_string(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                (name, Style::default().fg(Color::White)),
+                (" → Enter:paste Esc:cancel".to_string(), Style::default().fg(Color::DarkGray)),
+            ];
+            let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            (plain, parts)
+        }
+        FileTreeAction::Move(src) => {
+            let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let parts = vec![
+                ("Move ".to_string(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                (name, Style::default().fg(Color::White)),
+                (" → Enter:paste Esc:cancel".to_string(), Style::default().fg(Color::DarkGray)),
+            ];
+            let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            (plain, parts)
+        }
+        FileTreeAction::Add(buf) => {
+            let label = "Add (/ = dir): ";
+            let parts = vec![
+                (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                (buf.clone(), Style::default().fg(Color::White)),
+                ("█".to_string(), Style::default().fg(Color::White)),
+            ];
+            let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            (plain, parts)
+        }
+        FileTreeAction::Rename(buf) => {
+            let label = "Rename: ";
+            let parts = vec![
+                (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                (buf.clone(), Style::default().fg(Color::White)),
+                ("█".to_string(), Style::default().fg(Color::White)),
+            ];
+            let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            (plain, parts)
+        }
+        FileTreeAction::Delete => {
+            let parts = vec![
+                ("Delete? (y/N) ".to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ];
+            let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            (plain, parts)
+        }
+    }
+}
+
+/// Wrap styled parts into multiple Lines at `max_width` character boundary.
+/// Walks each part's chars and starts a new Line when the running column hits max_width.
+fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut col = 0usize;
+
+    for (text, style) in parts {
+        let mut chunk = String::new();
+        for ch in text.chars() {
+            if col >= max_width {
+                // Flush current chunk as a span and start a new line
+                if !chunk.is_empty() {
+                    current_spans.push(Span::styled(chunk.clone(), *style));
+                    chunk.clear();
+                }
+                lines.push(Line::from(std::mem::take(&mut current_spans)));
+                col = 0;
+            }
+            chunk.push(ch);
+            col += 1;
+        }
+        if !chunk.is_empty() {
+            current_spans.push(Span::styled(chunk, *style));
+        }
+    }
+    // Flush remaining spans
+    if !current_spans.is_empty() {
+        lines.push(Line::from(current_spans));
+    }
+    lines
+}
+
 /// Draw the file tree panel showing the session's worktree files
 pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::FileTree;
-    // Reserve 1 line at bottom for action bar when an action is active
-    let has_action = app.file_tree_action.is_some();
-    let viewport_height = area.height.saturating_sub(if has_action { 3 } else { 2 }) as usize;
+    // Inner width = area minus 2 border chars
+    let inner_width = area.width.saturating_sub(2) as usize;
+
+    // Compute how many lines the action bar needs (0 if no action)
+    let action_lines: Vec<Line<'static>> = if let Some(ref action) = app.file_tree_action {
+        let (_plain, parts) = build_action_bar_content(action);
+        wrap_action_bar(&parts, inner_width.max(1))
+    } else {
+        Vec::new()
+    };
+    let action_line_count = action_lines.len();
+
+    // Reserve action_line_count lines at bottom (+ 2 for top/bottom borders)
+    let viewport_height = area.height.saturating_sub(2 + action_line_count as u16) as usize;
 
     // Rebuild cache if dirty or selection changed (selection affects highlight)
     if app.file_tree_dirty {
@@ -145,48 +243,9 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         " Filetree ".to_string()
     };
 
-    // Build action bar line if an action is active
-    let action_line: Option<Line> = app.file_tree_action.as_ref().map(|a| {
-        match a {
-            // Clipboard modes: show instruction text, no text input
-            FileTreeAction::Copy(src) => {
-                let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                Line::from(vec![
-                    Span::styled("Copy ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                    Span::styled(truncate(&name, 16), Style::default().fg(Color::White)),
-                    Span::styled(" → Enter:paste Esc:cancel", Style::default().fg(Color::DarkGray)),
-                ])
-            }
-            FileTreeAction::Move(src) => {
-                let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                Line::from(vec![
-                    Span::styled("Move ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                    Span::styled(truncate(&name, 16), Style::default().fg(Color::White)),
-                    Span::styled(" → Enter:paste Esc:cancel", Style::default().fg(Color::DarkGray)),
-                ])
-            }
-            // Text-input and confirmation modes
-            _ => {
-                let (label, buf) = match a {
-                    FileTreeAction::Add(b) => ("Add (/ = dir): ", b.as_str()),
-                    FileTreeAction::Rename(b) => ("Rename: ", b.as_str()),
-                    FileTreeAction::Delete => ("Delete? (y/N) ", ""),
-                    _ => unreachable!(),
-                };
-                let max_input = area.width.saturating_sub(2 + label.len() as u16) as usize;
-                let visible = if buf.len() > max_input { &buf[buf.len() - max_input..] } else { buf };
-                Line::from(vec![
-                    Span::styled(label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                    Span::styled(visible.to_string(), Style::default().fg(Color::White)),
-                    Span::styled("█", Style::default().fg(Color::White)),
-                ])
-            }
-        }
-    });
-
-    // Append action bar as the last line if active
-    if let Some(action) = action_line {
-        display_lines.push(action);
+    // Append wrapped action bar lines at the bottom
+    for line in action_lines {
+        display_lines.push(line);
     }
 
     let widget = Paragraph::new(display_lines).block(
