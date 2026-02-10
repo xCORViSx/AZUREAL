@@ -31,10 +31,10 @@ pub enum FileTreeAction {
     Add(String),
     /// Renaming the selected entry (input = new name)
     Rename(String),
-    /// Copying the selected entry (input = destination path relative to parent)
-    Copy(String),
-    /// Moving the selected entry (input = destination path relative to parent)
-    Move(String),
+    /// Clipboard copy — source path stored, navigate to target dir and press Enter
+    Copy(PathBuf),
+    /// Clipboard move — source path stored, navigate to target dir and press Enter (dashed border)
+    Move(PathBuf),
     /// Deleting the selected entry (awaiting 'y' confirmation)
     Delete,
 }

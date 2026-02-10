@@ -215,42 +215,34 @@ impl App {
         self.file_tree_refresh_after_action(&select_path.unwrap_or(path));
     }
 
-    /// Execute a file copy action (destination relative to selected entry's parent)
-    pub fn file_tree_exec_copy(&mut self, dest_name: &str) {
-        let Some(idx) = self.file_tree_selected else { return };
-        let Some(entry) = self.file_tree_entries.get(idx) else { return };
-        let src = entry.path.clone();
-        let Some(parent) = src.parent() else { return };
-        let target = parent.join(dest_name);
+    /// Execute a clipboard-style copy: copy source into target directory
+    pub fn file_tree_exec_copy_to(&mut self, src: &std::path::Path, target_dir: &std::path::Path) {
+        let Some(name) = src.file_name() else { return };
+        let target = target_dir.join(name);
         if target.exists() {
             self.set_status(format!("Already exists: {}", target.display())); return;
         }
-        let result = if entry.is_dir {
-            copy_dir_recursive(&src, &target)
-        } else {
-            std::fs::copy(&src, &target).map(|_| ())
-        };
+        let is_dir = src.is_dir();
+        let result = if is_dir { copy_dir_recursive(src, &target) }
+            else { std::fs::copy(src, &target).map(|_| ()) };
         if let Err(e) = result {
             self.set_status(format!("Copy failed: {}", e)); return;
         }
-        self.set_status(format!("Copied → {}", dest_name));
+        self.set_status(format!("Copied → {}", target_dir.display()));
         self.file_tree_refresh_after_action(&target);
     }
 
-    /// Execute a file move action (destination relative to selected entry's parent)
-    pub fn file_tree_exec_move(&mut self, dest_name: &str) {
-        let Some(idx) = self.file_tree_selected else { return };
-        let Some(entry) = self.file_tree_entries.get(idx) else { return };
-        let src = entry.path.clone();
-        let Some(parent) = src.parent() else { return };
-        let target = parent.join(dest_name);
+    /// Execute a clipboard-style move: move source into target directory
+    pub fn file_tree_exec_move_to(&mut self, src: &std::path::Path, target_dir: &std::path::Path) {
+        let Some(name) = src.file_name() else { return };
+        let target = target_dir.join(name);
         if target.exists() {
             self.set_status(format!("Already exists: {}", target.display())); return;
         }
-        if let Err(e) = std::fs::rename(&src, &target) {
+        if let Err(e) = std::fs::rename(src, &target) {
             self.set_status(format!("Move failed: {}", e)); return;
         }
-        self.set_status(format!("Moved → {}", dest_name));
+        self.set_status(format!("Moved → {}", target_dir.display()));
         self.file_tree_refresh_after_action(&target);
     }
 

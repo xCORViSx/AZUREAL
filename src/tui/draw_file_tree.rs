@@ -19,6 +19,13 @@ use super::util::{truncate, AZURE};
 fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
 
+    // Determine clipboard source path for highlighting (Copy/Move mode)
+    let clipboard_src: Option<&std::path::PathBuf> = match &app.file_tree_action {
+        Some(FileTreeAction::Copy(p)) | Some(FileTreeAction::Move(p)) => Some(p),
+        _ => None,
+    };
+    let clipboard_is_move = matches!(&app.file_tree_action, Some(FileTreeAction::Move(_)));
+
     if app.file_tree_entries.is_empty() {
         if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_none() {
             lines.push(Line::from(Span::styled(
@@ -73,8 +80,20 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
                 Style::default().fg(color)
             };
 
+            // Check if this entry is the clipboard source (Copy/Move target)
+            let is_clipboard_src = clipboard_src.map_or(false, |p| *p == entry.path);
+
             let max_name_len = 38usize.saturating_sub(entry.depth * 2 + 2);
-            spans.push(Span::styled(truncate(&entry.name, max_name_len), name_style));
+            if is_clipboard_src {
+                // Wrap name in box chars: ┃name┃ for copy, ╎name╎ for move (dashed)
+                let (l, r) = if clipboard_is_move { ("╎", "╎") } else { ("┃", "┃") };
+                let border_style = Style::default().fg(Color::Magenta);
+                spans.push(Span::styled(l, border_style));
+                spans.push(Span::styled(truncate(&entry.name, max_name_len.saturating_sub(2)), name_style));
+                spans.push(Span::styled(r, border_style));
+            } else {
+                spans.push(Span::styled(truncate(&entry.name, max_name_len), name_style));
+            }
             lines.push(Line::from(spans));
         }
     }
@@ -128,21 +147,41 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build action bar line if an action is active
     let action_line: Option<Line> = app.file_tree_action.as_ref().map(|a| {
-        let (label, buf) = match a {
-            FileTreeAction::Add(b) => ("Add (/ = dir): ", b.as_str()),
-            FileTreeAction::Rename(b) => ("Rename: ", b.as_str()),
-            FileTreeAction::Copy(b) => ("Copy to: ", b.as_str()),
-            FileTreeAction::Move(b) => ("Move to: ", b.as_str()),
-            FileTreeAction::Delete => ("Delete? (y/N) ", ""),
-        };
-        let max_input = area.width.saturating_sub(2 + label.len() as u16) as usize;
-        // Show tail of input if it's longer than available space
-        let visible = if buf.len() > max_input { &buf[buf.len() - max_input..] } else { buf };
-        Line::from(vec![
-            Span::styled(label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(visible.to_string(), Style::default().fg(Color::White)),
-            Span::styled("█", Style::default().fg(Color::White)),
-        ])
+        match a {
+            // Clipboard modes: show instruction text, no text input
+            FileTreeAction::Copy(src) => {
+                let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                Line::from(vec![
+                    Span::styled("Copy ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Span::styled(truncate(&name, 16), Style::default().fg(Color::White)),
+                    Span::styled(" → Enter:paste Esc:cancel", Style::default().fg(Color::DarkGray)),
+                ])
+            }
+            FileTreeAction::Move(src) => {
+                let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                Line::from(vec![
+                    Span::styled("Move ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    Span::styled(truncate(&name, 16), Style::default().fg(Color::White)),
+                    Span::styled(" → Enter:paste Esc:cancel", Style::default().fg(Color::DarkGray)),
+                ])
+            }
+            // Text-input and confirmation modes
+            _ => {
+                let (label, buf) = match a {
+                    FileTreeAction::Add(b) => ("Add (/ = dir): ", b.as_str()),
+                    FileTreeAction::Rename(b) => ("Rename: ", b.as_str()),
+                    FileTreeAction::Delete => ("Delete? (y/N) ", ""),
+                    _ => unreachable!(),
+                };
+                let max_input = area.width.saturating_sub(2 + label.len() as u16) as usize;
+                let visible = if buf.len() > max_input { &buf[buf.len() - max_input..] } else { buf };
+                Line::from(vec![
+                    Span::styled(label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(visible.to_string(), Style::default().fg(Color::White)),
+                    Span::styled("█", Style::default().fg(Color::White)),
+                ])
+            }
+        }
     });
 
     // Append action bar as the last line if active

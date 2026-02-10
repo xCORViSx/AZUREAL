@@ -12,7 +12,11 @@ use super::keybindings::{Action, lookup_action};
 
 /// Handle keyboard input for the FileTree panel
 pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
-    // If a file action is in progress, route all input there
+    // Copy/Move clipboard mode: allow normal navigation, but intercept Enter to paste
+    if matches!(app.file_tree_action, Some(FileTreeAction::Copy(_) | FileTreeAction::Move(_))) {
+        return handle_clipboard_input(key, app);
+    }
+    // Text-input actions (Add, Rename) and Delete confirmation
     if app.file_tree_action.is_some() {
         return handle_action_input(key, app);
     }
@@ -104,24 +108,22 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
         Some(Action::CopyFile) => {
-            // Pre-fill with current name + "_copy" suffix
+            // Enter clipboard copy mode — store source path, user navigates to target dir
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    let name = &entry.name;
-                    let default = if let Some(dot) = name.rfind('.') {
-                        format!("{}_copy{}", &name[..dot], &name[dot..])
-                    } else {
-                        format!("{}_copy", name)
-                    };
-                    app.file_tree_action = Some(FileTreeAction::Copy(default));
+                    app.file_tree_action = Some(FileTreeAction::Copy(entry.path.clone()));
+                    app.set_status(format!("Copy: select target dir, Enter to paste"));
+                    app.invalidate_file_tree();
                 }
             }
         }
         Some(Action::MoveFile) => {
-            // Pre-fill with current name
+            // Enter clipboard move mode — store source path, user navigates to target dir
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    app.file_tree_action = Some(FileTreeAction::Move(entry.name.clone()));
+                    app.file_tree_action = Some(FileTreeAction::Move(entry.path.clone()));
+                    app.set_status(format!("Move: select target dir, Enter to paste"));
+                    app.invalidate_file_tree();
                 }
             }
         }
@@ -152,11 +154,11 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
     Ok(())
 }
 
-/// Handle input while a file action is in progress (inline text input or confirmation)
+/// Handle input while a text-input action (Add, Rename) or Delete confirmation is active
 fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
     let action = app.file_tree_action.take().unwrap();
 
-    // Delete confirmation is a special case — 'y' confirms, anything else cancels
+    // Delete confirmation — 'y' confirms, anything else cancels
     if matches!(action, FileTreeAction::Delete) {
         if key.code == KeyCode::Char('y') || key.code == KeyCode::Char('Y') {
             app.file_tree_exec_delete();
@@ -167,19 +169,14 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
         return Ok(());
     }
 
-    // Extract variant tag and mutable buffer from text-input actions
+    // Extract variant tag and mutable buffer from text-input actions (Add=0, Rename=1)
     let (tag, mut buf) = match action {
         FileTreeAction::Add(b) => (0u8, b),
         FileTreeAction::Rename(b) => (1, b),
-        FileTreeAction::Copy(b) => (2, b),
-        FileTreeAction::Move(b) => (3, b),
-        FileTreeAction::Delete => unreachable!(),
+        _ => unreachable!(),
     };
-
-    // Reconstruct the enum variant from tag + buffer
     let rebuild = |t: u8, b: String| -> FileTreeAction {
-        match t { 0 => FileTreeAction::Add(b), 1 => FileTreeAction::Rename(b),
-                   2 => FileTreeAction::Copy(b), _ => FileTreeAction::Move(b) }
+        if t == 0 { FileTreeAction::Add(b) } else { FileTreeAction::Rename(b) }
     };
 
     match key.code {
@@ -188,13 +185,10 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
             let input = buf.trim().to_string();
             if input.is_empty() {
                 app.set_status("Cancelled (empty input)");
+            } else if tag == 0 {
+                app.file_tree_exec_add(&input);
             } else {
-                match tag {
-                    0 => app.file_tree_exec_add(&input),
-                    1 => app.file_tree_exec_rename(&input),
-                    2 => app.file_tree_exec_copy(&input),
-                    _ => app.file_tree_exec_move(&input),
-                }
+                app.file_tree_exec_rename(&input);
             }
         }
         KeyCode::Backspace => { buf.pop(); app.file_tree_action = Some(rebuild(tag, buf)); }
@@ -207,6 +201,81 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
         _ => { app.file_tree_action = Some(rebuild(tag, buf)); }
     }
 
+    app.invalidate_file_tree();
+    Ok(())
+}
+
+/// Handle input in clipboard Copy/Move mode — normal navigation plus Enter to paste
+fn handle_clipboard_input(key: KeyEvent, app: &mut App) -> Result<()> {
+    // Esc cancels the clipboard operation
+    if key.code == KeyCode::Esc {
+        app.file_tree_action = None;
+        app.set_status("Cancelled");
+        app.invalidate_file_tree();
+        return Ok(());
+    }
+
+    // Enter pastes into the selected dir (or selected file's parent dir)
+    if key.code == KeyCode::Enter {
+        let action = app.file_tree_action.take().unwrap();
+        let Some(idx) = app.file_tree_selected else {
+            app.set_status("No target selected");
+            return Ok(());
+        };
+        let Some(entry) = app.file_tree_entries.get(idx) else {
+            app.set_status("No target selected");
+            return Ok(());
+        };
+        // Target directory: if selected entry is a dir use it, otherwise use its parent
+        let target_dir = if entry.is_dir {
+            entry.path.clone()
+        } else {
+            entry.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| entry.path.clone())
+        };
+        match action {
+            FileTreeAction::Copy(src) => app.file_tree_exec_copy_to(&src, &target_dir),
+            FileTreeAction::Move(src) => app.file_tree_exec_move_to(&src, &target_dir),
+            _ => unreachable!(),
+        }
+        app.invalidate_file_tree();
+        return Ok(());
+    }
+
+    // All other keys: normal file tree navigation (keep the clipboard action active)
+    let action = lookup_action(Focus::FileTree, key.modifiers, key.code, false, false, false);
+    match action {
+        Some(Action::NavDown) => app.file_tree_next(),
+        Some(Action::NavUp) => app.file_tree_prev(),
+        Some(Action::GoToTop) => app.file_tree_first_sibling(),
+        Some(Action::GoToBottom) => app.file_tree_last_sibling(),
+        Some(Action::NavRight) | Some(Action::OpenFile) | Some(Action::ToggleDir) => {
+            if let Some(idx) = app.file_tree_selected {
+                if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
+                    if entry.is_dir && !app.file_tree_expanded.contains(&entry.path) {
+                        app.toggle_file_tree_dir();
+                    }
+                }
+            }
+        }
+        Some(Action::NavLeft) => {
+            if let Some(idx) = app.file_tree_selected {
+                if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
+                    if entry.is_dir && app.file_tree_expanded.contains(&entry.path) {
+                        app.toggle_file_tree_dir();
+                    } else if let Some(parent) = entry.path.parent() {
+                        let parent_path = parent.to_path_buf();
+                        if let Some(pi) = app.file_tree_entries.iter().position(|e| e.path == parent_path && e.is_dir) {
+                            if app.file_tree_expanded.contains(&parent_path) {
+                                app.file_tree_selected = Some(pi);
+                                app.toggle_file_tree_dir();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
     app.invalidate_file_tree();
     Ok(())
 }
