@@ -3,7 +3,7 @@
 //! Handles keyboard input when the FileTree panel is focused.
 
 use anyhow::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, Focus};
 use super::keybindings::{Action, lookup_action};
@@ -84,8 +84,16 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // Escape: close file tree overlay and return to worktrees list
+        // Escape or f: close file tree overlay and return to worktrees list
         Some(Action::Escape) => {
+            app.show_file_tree = false;
+            app.focus = Focus::Worktrees;
+            app.invalidate_sidebar();
+        }
+
+        // f toggles file tree off (same as Esc but not in keybinding table —
+        // lookup_action won't match it since it's not in FILE_TREE array)
+        None if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Char('f') => {
             app.show_file_tree = false;
             app.focus = Focus::Worktrees;
             app.invalidate_sidebar();
