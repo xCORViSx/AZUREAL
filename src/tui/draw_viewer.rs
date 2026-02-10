@@ -127,7 +127,9 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                             false
                         };
 
-                        let wrapped = wrap_spans(spans, content_width);
+                        // Hard char-boundary wrapping — matches edit mode so toggling
+                        // into edit doesn't reflow the view
+                        let wrapped = wrap_spans_hard(spans, content_width);
                         for (wrap_idx, mut wrapped_spans) in wrapped.into_iter().enumerate() {
                             let line_num = if wrap_idx == 0 {
                                 format!("{:>width$} │ ", line_idx + 1, width = line_num_width)
@@ -342,57 +344,6 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
 }
 
-fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
-    if max_width == 0 { return vec![spans]; }
-
-    let mut full_text = String::new();
-    let mut style_ranges: Vec<(usize, usize, Style)> = Vec::new();
-
-    for span in &spans {
-        let start = full_text.len();
-        full_text.push_str(&span.content);
-        let end = full_text.len();
-        style_ranges.push((start, end, span.style));
-    }
-
-    if full_text.is_empty() { return vec![vec![]]; }
-
-    let opts = Options::new(max_width).break_words(true);
-    let wrapped_lines: Vec<String> = wrap(&full_text, opts)
-        .into_iter()
-        .map(|cow| cow.into_owned())
-        .collect();
-
-    let mut result: Vec<Vec<Span<'static>>> = Vec::new();
-    let mut char_offset = 0;
-
-    for wrapped in wrapped_lines {
-        let line_start = char_offset;
-        let line_end = char_offset + wrapped.len();
-        let mut line_spans: Vec<Span<'static>> = Vec::new();
-
-        for &(range_start, range_end, style) in &style_ranges {
-            if range_end <= line_start || range_start >= line_end { continue; }
-            let overlap_start = range_start.max(line_start);
-            let overlap_end = range_end.min(line_end);
-            if overlap_start < overlap_end {
-                let local_start = overlap_start - line_start;
-                let local_end = overlap_end - line_start;
-                let text: String = wrapped.chars().skip(local_start).take(local_end - local_start).collect();
-                if !text.is_empty() {
-                    line_spans.push(Span::styled(text, style));
-                }
-            }
-        }
-
-        result.push(line_spans);
-        char_offset = line_end;
-        if char_offset < full_text.len() { char_offset += 1; }
-    }
-
-    if result.is_empty() { result.push(vec![]); }
-    result
-}
 
 /// Hard char-boundary wrapping for edit mode. Splits spans at exact
 /// `max_width` character positions (no word-boundary logic). This
