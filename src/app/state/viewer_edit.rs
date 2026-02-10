@@ -4,8 +4,26 @@
 //! undo/redo, and saving files.
 
 use std::fs;
+use textwrap::{wrap, Options};
 
 use super::App;
+
+/// Compute word-boundary wrap break positions for a single line. Returns a
+/// Vec of char offsets where each visual row starts (first is always 0).
+fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
+    if max_width == 0 || text.is_empty() { return vec![0]; }
+    if text.chars().count() <= max_width { return vec![0]; }
+    let opts = Options::new(max_width).break_words(true);
+    let wrapped = wrap(text, opts);
+    let mut breaks = Vec::with_capacity(wrapped.len());
+    let mut offset = 0usize;
+    for segment in &wrapped {
+        breaks.push(offset);
+        offset += segment.chars().count();
+        if text.chars().nth(offset) == Some(' ') { offset += 1; }
+    }
+    breaks
+}
 
 impl App {
     /// Enter edit mode for current viewer file
@@ -192,51 +210,59 @@ impl App {
         }
     }
 
-    /// Move cursor up through wrapped visual lines.
-    /// If the cursor is on a wrapped continuation line (wrap_row > 0),
-    /// it moves up one visual row within the same source line.
-    /// Otherwise it jumps to the previous source line's last wrap row.
+    /// Move cursor up through word-wrapped visual lines.
+    /// If the cursor is on a wrapped continuation row, moves up within
+    /// the same source line. Otherwise jumps to previous source line's
+    /// last wrap row, preserving visual column position.
     pub fn viewer_edit_up(&mut self) {
         let (line, col) = self.viewer_edit_cursor;
         let cw = self.viewer_edit_content_width.max(1);
-        // Which visual column within the current wrap segment
-        let visual_col = col % cw;
-        // Which wrap row we're on (0 = first visual row of this source line)
-        let wrap_row = col / cw;
+        let breaks = word_wrap_breaks(&self.viewer_edit_content[line], cw);
+        // Find which wrap row the cursor is on
+        let mut wrap_row = 0;
+        for (j, &brk) in breaks.iter().enumerate() {
+            if col >= brk { wrap_row = j; }
+        }
+        let visual_col = col - breaks[wrap_row];
 
         if wrap_row > 0 {
             // Move up one visual row within the same source line
-            let new_col = (wrap_row - 1) * cw + visual_col;
-            let line_len = self.viewer_edit_content[line].chars().count();
-            self.viewer_edit_cursor.1 = new_col.min(line_len);
+            let prev_start = breaks[wrap_row - 1];
+            let seg_len = breaks[wrap_row] - prev_start;
+            self.viewer_edit_cursor.1 = prev_start + visual_col.min(seg_len.saturating_sub(1));
         } else if line > 0 {
-            // Jump to previous source line's last wrap row at same visual_col
-            let prev_len = self.viewer_edit_content[line - 1].chars().count();
-            let prev_wraps = ((prev_len.max(1) - 1) / cw) + 1;
-            let new_col = (prev_wraps - 1) * cw + visual_col;
-            self.viewer_edit_cursor = (line - 1, new_col.min(prev_len));
+            // Jump to previous source line's last wrap row
+            let prev_line = &self.viewer_edit_content[line - 1];
+            let prev_breaks = word_wrap_breaks(prev_line, cw);
+            let last_start = *prev_breaks.last().unwrap_or(&0);
+            let prev_len = prev_line.chars().count();
+            let seg_len = prev_len - last_start;
+            self.viewer_edit_cursor = (line - 1, last_start + visual_col.min(seg_len));
         }
     }
 
-    /// Move cursor down through wrapped visual lines.
-    /// If the cursor isn't on the last wrap row of its source line,
-    /// it moves down one visual row within the same source line.
-    /// Otherwise it jumps to the next source line's first wrap row.
+    /// Move cursor down through word-wrapped visual lines.
+    /// If not on the last wrap row, moves down within the same source
+    /// line. Otherwise jumps to next source line's first wrap row.
     pub fn viewer_edit_down(&mut self) {
         let (line, col) = self.viewer_edit_cursor;
         let cw = self.viewer_edit_content_width.max(1);
-        let visual_col = col % cw;
-        let wrap_row = col / cw;
-        let line_len = self.viewer_edit_content[line].chars().count();
-        // Total visual rows this source line occupies
-        let total_wraps = if line_len == 0 { 1 } else { ((line_len - 1) / cw) + 1 };
+        let line_str = &self.viewer_edit_content[line];
+        let breaks = word_wrap_breaks(line_str, cw);
+        let mut wrap_row = 0;
+        for (j, &brk) in breaks.iter().enumerate() {
+            if col >= brk { wrap_row = j; }
+        }
+        let visual_col = col - breaks[wrap_row];
 
-        if wrap_row + 1 < total_wraps {
+        if wrap_row + 1 < breaks.len() {
             // Move down one visual row within the same source line
-            let new_col = (wrap_row + 1) * cw + visual_col;
-            self.viewer_edit_cursor.1 = new_col.min(line_len);
+            let next_start = breaks[wrap_row + 1];
+            let seg_end = if wrap_row + 2 < breaks.len() { breaks[wrap_row + 2] } else { line_str.chars().count() };
+            let seg_len = seg_end - next_start;
+            self.viewer_edit_cursor.1 = next_start + visual_col.min(seg_len);
         } else if line + 1 < self.viewer_edit_content.len() {
-            // Jump to next source line's first wrap row at same visual_col
+            // Jump to next source line's first wrap row
             let next_len = self.viewer_edit_content[line + 1].chars().count();
             self.viewer_edit_cursor = (line + 1, visual_col.min(next_len));
         }
@@ -255,9 +281,9 @@ impl App {
         }
     }
 
-    /// Ensure cursor is visible in viewport, accounting for line wrapping.
+    /// Ensure cursor is visible in viewport, accounting for word wrapping.
     /// Computes the visual line index by summing wrap counts for all source
-    /// lines before the cursor, plus the cursor's own wrap offset.
+    /// lines before the cursor, plus the cursor's own wrap row.
     pub fn viewer_edit_scroll_to_cursor(&mut self) {
         let (cursor_line, cursor_col) = self.viewer_edit_cursor;
         let cw = self.viewer_edit_content_width.max(1);
@@ -266,11 +292,17 @@ impl App {
         // Sum visual lines for all source lines before cursor_line
         let mut visual_line: usize = 0;
         for i in 0..cursor_line.min(self.viewer_edit_content.len()) {
-            let len = self.viewer_edit_content[i].chars().count();
-            visual_line += if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+            visual_line += word_wrap_breaks(&self.viewer_edit_content[i], cw).len();
         }
-        // Add cursor's wrap offset within its source line
-        visual_line += cursor_col / cw;
+        // Add cursor's wrap row within its source line
+        let cursor_breaks = word_wrap_breaks(
+            self.viewer_edit_content.get(cursor_line).map(|s| s.as_str()).unwrap_or(""), cw
+        );
+        let mut wrap_row = 0;
+        for (j, &brk) in cursor_breaks.iter().enumerate() {
+            if cursor_col >= brk { wrap_row = j; }
+        }
+        visual_line += wrap_row;
 
         if visual_line < self.viewer_scroll {
             self.viewer_scroll = visual_line;

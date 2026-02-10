@@ -127,9 +127,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                             false
                         };
 
-                        // Hard char-boundary wrapping — matches edit mode so toggling
-                        // into edit doesn't reflow the view
-                        let wrapped = wrap_spans_hard(spans, content_width);
+                        let wrapped = wrap_spans_word(spans, content_width);
                         for (wrap_idx, mut wrapped_spans) in wrapped.into_iter().enumerate() {
                             let line_num = if wrap_idx == 0 {
                                 format!("{:>width$} │ ", line_idx + 1, width = line_num_width)
@@ -344,42 +342,76 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
 }
 
+/// Compute word-boundary wrap break positions for a single line. Returns a
+/// Vec of char offsets where each visual row starts (first is always 0).
+/// Uses textwrap for word boundaries, falls back to hard breaks for long words.
+/// Used by both display wrapping and cursor/scroll math.
+pub(crate) fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
+    if max_width == 0 || text.is_empty() { return vec![0]; }
+    let char_count = text.chars().count();
+    if char_count <= max_width { return vec![0]; }
+    let opts = Options::new(max_width).break_words(true);
+    let wrapped = wrap(text, opts);
+    let mut breaks = Vec::with_capacity(wrapped.len());
+    let mut offset = 0usize;
+    for segment in &wrapped {
+        breaks.push(offset);
+        offset += segment.chars().count();
+        // textwrap eats the space at the break point — account for it
+        // by checking if the next char in the original text is a space
+        let next_char = text.chars().nth(offset);
+        if next_char == Some(' ') { offset += 1; }
+    }
+    breaks
+}
 
-/// Hard char-boundary wrapping for edit mode. Splits spans at exact
-/// `max_width` character positions (no word-boundary logic). This
-/// ensures cursor math (`col / cw`, `col % cw`) perfectly matches
-/// the visual layout — textwrap's word-wrapping breaks at word
-/// boundaries which shifts characters vs the fixed-width assumption.
-fn wrap_spans_hard(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
+/// Word-boundary wrapping for styled spans. Uses textwrap to find break
+/// positions, then slices the styled spans at those positions. Preserves
+/// syntax highlighting across wrap boundaries.
+fn wrap_spans_word(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
     if max_width == 0 { return vec![spans]; }
-
-    // Flatten all spans into a list of (char, style) pairs
+    // Flatten to (char, style) pairs and plain text for textwrap
     let mut chars_styled: Vec<(char, Style)> = Vec::new();
+    let mut plain = String::new();
     for span in &spans {
-        let style = span.style;
         for c in span.content.chars() {
-            chars_styled.push((c, style));
+            chars_styled.push((c, span.style));
+            plain.push(c);
         }
     }
     if chars_styled.is_empty() { return vec![vec![]]; }
-
-    // Split into chunks of exactly max_width chars
-    let mut result: Vec<Vec<Span<'static>>> = Vec::new();
-    for chunk in chars_styled.chunks(max_width) {
+    // Get break positions via textwrap
+    let breaks = word_wrap_breaks(&plain, max_width);
+    let total = chars_styled.len();
+    let mut result: Vec<Vec<Span<'static>>> = Vec::with_capacity(breaks.len());
+    for (i, &start) in breaks.iter().enumerate() {
+        let end = if i + 1 < breaks.len() {
+            // End at next break, but trim trailing space at the break boundary
+            let next = breaks[i + 1];
+            if next > 0 && start < next && chars_styled.get(next - 1).map(|c| c.0) == Some(' ') {
+                next - 1
+            } else {
+                next
+            }
+        } else {
+            total
+        };
         // Merge consecutive chars with same style into spans
         let mut line_spans: Vec<Span<'static>> = Vec::new();
-        let mut buf = String::new();
-        let mut cur_style = chunk[0].1;
-        for &(c, style) in chunk {
-            if style == cur_style {
-                buf.push(c);
-            } else {
-                if !buf.is_empty() { line_spans.push(Span::styled(std::mem::take(&mut buf), cur_style)); }
-                buf.push(c);
-                cur_style = style;
+        if start < end {
+            let mut buf = String::new();
+            let mut cur_style = chars_styled[start].1;
+            for &(c, style) in &chars_styled[start..end] {
+                if style == cur_style {
+                    buf.push(c);
+                } else {
+                    if !buf.is_empty() { line_spans.push(Span::styled(std::mem::take(&mut buf), cur_style)); }
+                    buf.push(c);
+                    cur_style = style;
+                }
             }
+            if !buf.is_empty() { line_spans.push(Span::styled(buf, cur_style)); }
         }
-        if !buf.is_empty() { line_spans.push(Span::styled(buf, cur_style)); }
         result.push(line_spans);
     }
     if result.is_empty() { result.push(vec![]); }
@@ -553,8 +585,7 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     let mut last_src = app.viewer_edit_content.len(); // exclusive
 
     for (i, line_str) in app.viewer_edit_content.iter().enumerate() {
-        let len = line_str.chars().count();
-        let wraps = if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+        let wraps = word_wrap_breaks(line_str, cw).len();
 
         if !found_first {
             if visual_row + wraps > scroll {
@@ -574,7 +605,7 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
     // Build only the visible display lines
     let mut final_lines: Vec<Line> = Vec::with_capacity(viewport_height);
     // Track which source lines are in the viewport (for cursor positioning)
-    let mut viewport_visual_base = scroll; // visual index of first display line
+    let viewport_visual_base = scroll; // visual index of first display line
     let _ = viewport_visual_base; // used implicitly via scroll
 
     for idx in first_src..last_src.min(app.viewer_edit_content.len()) {
@@ -598,7 +629,7 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
             spans
         };
 
-        let wrapped = wrap_spans_hard(spans, content_width);
+        let wrapped = wrap_spans_word(spans, content_width);
 
         for (wrap_idx, wrapped_spans) in wrapped.into_iter().enumerate() {
             // Skip wrap rows before scroll start (only applies to first_src)
@@ -667,15 +698,22 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         }
     }
 
-    // Compute cursor visual position arithmetically — no all_lines walk needed.
-    // Sum wrap counts for source lines 0..cursor_line, add cursor's wrap offset.
+    // Compute cursor visual position using word-wrap break positions.
+    // Sum wrap row counts for source lines 0..cursor_line, then find which
+    // wrap segment the cursor column falls in for the cursor's own line.
     let mut cursor_visual_line = 0usize;
     for i in 0..cursor_line.min(app.viewer_edit_content.len()) {
-        let len = app.viewer_edit_content[i].chars().count();
-        cursor_visual_line += if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+        cursor_visual_line += word_wrap_breaks(&app.viewer_edit_content[i], cw).len();
     }
-    cursor_visual_line += cursor_col / cw;
-    let cursor_visual_col = cursor_col % cw;
+    let cursor_line_str = app.viewer_edit_content.get(cursor_line).map(|s| s.as_str()).unwrap_or("");
+    let cursor_breaks = word_wrap_breaks(cursor_line_str, cw);
+    // Find which wrap row the cursor falls on
+    let mut cursor_wrap_row = 0;
+    for (j, &brk) in cursor_breaks.iter().enumerate() {
+        if cursor_col >= brk { cursor_wrap_row = j; }
+    }
+    cursor_visual_line += cursor_wrap_row;
+    let cursor_visual_col = cursor_col - cursor_breaks[cursor_wrap_row];
 
     // Position cursor if visible in viewport
     if cursor_visual_line >= scroll && cursor_visual_line < scroll + viewport_height {

@@ -22,6 +22,7 @@ use super::input_projects::handle_projects_input;
 use super::input_wizard::handle_wizard_input;
 use super::draw_output::{submit_render_request, poll_render_result};
 use super::draw_input::{word_wrap_break_points, display_width};
+use super::draw_viewer::word_wrap_breaks;
 use super::run::ui;
 
 /// Main TUI event loop
@@ -725,11 +726,15 @@ fn screen_to_edit_pos(app: &App, screen_col: u16, screen_row: u16) -> Option<(us
     let mut running = 0usize;
     for (i, line_str) in app.viewer_edit_content.iter().enumerate() {
         let len = line_str.chars().count();
-        let wraps = if len == 0 { 1 } else { ((len - 1) / cw) + 1 };
+        let breaks = word_wrap_breaks(line_str, cw);
+        let wraps = breaks.len();
         if visual_row < running + wraps {
             // Found it — wrap_seg tells us which visual row within this source line
             let wrap_seg = visual_row - running;
-            let src_col = (wrap_seg * cw + click_x).min(len);
+            // Convert click_x to a char offset within the source line using break positions
+            let row_start = breaks[wrap_seg];
+            let row_end = if wrap_seg + 1 < breaks.len() { breaks[wrap_seg + 1] } else { len };
+            let src_col = (row_start + click_x).min(row_end);
             return Some((i, src_col));
         }
         running += wraps;
