@@ -506,6 +506,21 @@ impl App {
         self.focus = Focus::Worktrees;
     }
 
+    /// Set the OS terminal window title to reflect the current state.
+    /// "AZUREAL" when no project, "AZUREAL @ project : branch" when loaded.
+    pub fn update_terminal_title(&self) {
+        let title = match (&self.project, self.current_session()) {
+            (Some(project), Some(session)) => {
+                let branch = session.branch_name.strip_prefix("azureal/")
+                    .unwrap_or(&session.branch_name);
+                format!("AZUREAL @ {} : {}", project.name, branch)
+            }
+            (Some(project), None) => format!("AZUREAL @ {}", project.name),
+            _ => "AZUREAL".to_string(),
+        };
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
+    }
+
     /// Kill all running Claude processes across all sessions
     pub fn cancel_all_claude(&mut self) {
         let pids: Vec<(String, u32)> = self.claude_pids.drain().collect();

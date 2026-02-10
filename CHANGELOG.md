@@ -23,6 +23,9 @@ All notable changes to Azureal will be documented in this file.
 - Voice input (`⌃s`) now listed in Edit Mode section of help panel
 
 ### Added
+- OS terminal title: shows `AZUREAL` on startup, `AZUREAL @ <project> : <branch>` when session selected
+  - Updates dynamically on session switch and project switch
+  - Reset to empty on exit
 - Prompt mode for New Run Command dialog
   - Tab cycles between Command and Prompt modes when the second field is focused
   - In Prompt mode, Enter spawns a Claude session on the main branch that generates the shell command

@@ -225,6 +225,9 @@ impl App {
 
         // Register file watches for the new session file and worktree
         self.sync_file_watches();
+
+        // Update the OS terminal title to reflect current project and branch
+        self.update_terminal_title();
     }
 
     /// Tell the file watcher thread to watch the current session file and

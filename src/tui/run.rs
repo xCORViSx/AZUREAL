@@ -48,14 +48,19 @@ pub async fn run() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
+    // Set bare title before loading (shown during projects panel if no git repo)
+    app.update_terminal_title();
     app.load()?;
     app.load_run_commands();
 
-    // Load output for the initially selected session
+    // Load output for the initially selected session (also updates title with project/branch)
     app.load_session_output();
 
     let config = Config::load().unwrap_or_default();
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;
+
+    // Restore default terminal title on exit
+    let _ = execute!(terminal.backend_mut(), crossterm::terminal::SetTitle(""));
 
     // Pop keyboard enhancement before leaving (only if we pushed it)
     if kbd_enhanced {
