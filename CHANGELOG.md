@@ -11,6 +11,7 @@ All notable changes to Azureal will be documented in this file.
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Fixed
+- Viewer no longer reflows text when entering edit mode — read-only mode now uses char-boundary wrapping (matching edit mode) instead of word-boundary wrapping
 - Icon not showing on GitHub — `azural_icon.png` renamed to `azureal_icon.png` to match README reference
 - `f` key now toggles FileTree overlay off (was only handled in worktrees input, not file tree input)
 - Convo pane auto-scroll now properly follows bottom until user scrolls up, then stays put
