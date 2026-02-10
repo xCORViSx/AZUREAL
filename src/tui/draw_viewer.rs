@@ -672,23 +672,20 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         final_lines.push(Line::from(Span::styled(line_num, Style::default().fg(Color::DarkGray))));
     }
 
-    // Build title line with indicator on right
-    let title_line = if app.viewer_edit_dirty {
-        let padding = area.width.saturating_sub(title.len() as u16 + 13) as usize;
-        Line::from(vec![
-            Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" ".repeat(padding)),
-            Span::styled("[modified]", Style::default().fg(border_color)),
-        ])
-    } else {
-        Line::from(Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)))
-    };
+    let border_style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
+    let title_line = Line::from(Span::styled(&title, border_style));
 
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(title_line)
-        .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD));
+        .border_style(border_style);
+    // Right-aligned [modified] indicator — ratatui fills the gap with border chars
+    if app.viewer_edit_dirty {
+        block = block.title(Line::from(
+            Span::styled("[modified] ", Style::default().fg(border_color))
+        ).alignment(Alignment::Right));
+    }
 
     let widget = Paragraph::new(final_lines).block(block);
     f.render_widget(widget, area);
