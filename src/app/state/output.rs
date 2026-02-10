@@ -27,7 +27,6 @@ impl App {
         self.display_events.extend(events);
         self.invalidate_render_cache();
         self.process_output_chunk(&chunk);
-        self.output_scroll = usize::MAX;
     }
 
     pub fn add_user_message(&mut self, content: String) {

@@ -214,7 +214,6 @@ impl App {
                 self.process_output_chunk(&data);
             }
 
-            self.output_scroll = usize::MAX;
         }
     }
 
@@ -272,7 +271,6 @@ impl App {
 
         self.display_events.extend(events);
         self.invalidate_render_cache();
-        self.output_scroll = usize::MAX;
         true
     }
 
