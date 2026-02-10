@@ -6,6 +6,7 @@
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols::border,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
@@ -684,11 +685,20 @@ fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usi
         Line::from(Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)))
     };
 
-    let block = Block::default()
+    // Dashed double-line border when file is modified — visual cue for unsaved changes.
+    // Uses heavy double-dash Unicode chars (╍╏) with double-line corners (╔╗╚╝).
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(title_line)
         .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD));
+    if app.viewer_edit_dirty {
+        block = block.border_set(border::Set {
+            top_left: "╔", top_right: "╗", bottom_left: "╚", bottom_right: "╝",
+            horizontal_top: "╍", horizontal_bottom: "╍",
+            vertical_left: "╏", vertical_right: "╏",
+        });
+    }
 
     let widget = Paragraph::new(final_lines).block(block);
     f.render_widget(widget, area);
