@@ -875,6 +875,35 @@ Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19
 
 **Status:** Fixed in Claude Code 2.1.22. All resume + tools combinations now work correctly.
 
+### God File System
+
+Scans the project for "god files" — source files exceeding 1000 lines — and spawns sequential Claude modularization sessions to split them into focused modules. Triggered by `g` in the Worktrees pane.
+
+**Scanning:**
+- Recursive directory walk using `std::fs::read_dir`, skipping hidden dirs, `.git`, `target`, `node_modules`, `.build`, `dist`, `build`, `__pycache__`, `.next`, `.nuxt`, `vendor`, `Pods`
+- Source extensions: `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.java`, `.cpp`, `.c`, `.h`, `.hpp`, `.swift`, `.kt`, `.rb`, `.cs`, `.vue`, `.svelte`, `.zig`, `.lua`, `.ex`, `.exs`
+- Threshold: >1000 LOC (line count via `BufReader::lines().count()`)
+- Results sorted by line count descending (worst offenders first)
+- Synchronous scan — fast enough for typical projects (~50k files in <100ms)
+
+**Panel UI:**
+Full-screen centered modal overlay (65% × 75%, min 50×12). Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
+
+**Keybindings (panel active):**
+- `j/↓` — navigate down, `k/↑` — navigate up
+- `⌥↑` — jump to top, `⌥↓` — jump to bottom
+- `Space` — toggle check on selected entry
+- `a` — toggle all checks (if any unchecked → check all; if all checked → uncheck all)
+- `Enter` / `m` — modularize checked files
+- `Esc` — close panel
+
+**Modularization Queue:**
+Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GodFileModularize] <filename>` via `pending_session_name`.
+
+**Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
+
+Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, queue advance), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
+
 ### Rebase Support
 
 Sessions can be rebased onto main with conflict detection:
@@ -986,6 +1015,7 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
+│   │   │   ├── god_files.rs # God File System: scan, modularize, queue
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
@@ -1009,12 +1039,14 @@ azureal/
 │   │   ├── draw_file_tree.rs # FileTree overlay rendering (called from draw_sidebar when overlay active)
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
+│   │   ├── draw_god_files.rs # God File panel modal (full-screen god file scanner/modularizer)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: session list overlay + rebase mode only (commands resolved upstream)
+│   │   ├── input_god_files.rs # God File panel input (navigate, check, modularize)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1078,6 +1110,7 @@ azureal/
 - [x] Speech-to-text voice input (`⌃s` in prompt mode)
 
 ## Phase 3: Advanced Features
+- [x] God File System (scan >1000 LOC files, batch-modularize via sequential Claude sessions)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)
@@ -1166,6 +1199,7 @@ azureal
 | `⌥r` | Add new run command |
 | `R` | Rebase onto main |
 | `a` | Archive worktree |
+| `g` | God files (scan and modularize >1000 LOC files) |
 | `/` | Search/filter sessions |
 | `⌥↑/⌥↓` | Jump to first/last session (or session file when dropdown expanded) |
 

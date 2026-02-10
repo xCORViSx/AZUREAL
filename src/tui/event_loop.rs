@@ -15,6 +15,7 @@ use crate::config::Config;
 use super::keybindings::{Action, KeyContext, lookup_action};
 use super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input};
 use super::input_file_tree::handle_file_tree_input;
+use super::input_god_files::handle_god_files_input;
 use super::input_output::handle_output_input;
 use super::input_worktrees::handle_worktrees_input;
 use super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
@@ -936,6 +937,16 @@ fn handle_claude_event(session_id: &str, event: ClaudeEvent, app: &mut App, clau
                 }
             }
         }
+        // God file modularization queue: when main branch session exits,
+        // auto-start the next queued file if any remain
+        if !app.god_file_queue.is_empty() {
+            let is_main = app.project.as_ref()
+                .map(|p| p.main_branch == session_id)
+                .unwrap_or(false);
+            if is_main {
+                app.god_file_advance_queue(claude_process);
+            }
+        }
     }
     Ok(())
 }
@@ -964,6 +975,7 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
     if app.context_menu.is_some() { return handle_context_menu_input(key, app, claude_process); }
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
+    if app.god_file_panel.is_some() { return handle_god_files_input(key, app, claude_process); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
 
@@ -1200,6 +1212,9 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::OpenProjects => {
             app.open_projects_panel();
+        }
+        Action::OpenGodFiles => {
+            app.open_god_file_panel();
         }
 
         // --- FileTree ---

@@ -17,6 +17,7 @@
 mod app;
 mod claude;
 mod file_browser;
+mod god_files;
 mod helpers;
 mod load;
 mod output;

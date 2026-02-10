@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GodFilePanel, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -338,6 +338,13 @@ pub struct App {
     pub stt_transcribing: bool,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
+    /// God File System panel — scans project for oversized source files (>1k LOC)
+    /// and lets user batch-spawn modularization sessions. None when closed.
+    pub god_file_panel: Option<GodFilePanel>,
+    /// Queue of god file modularization prompts waiting to be spawned on main worktree.
+    /// Each entry is (rel_path, full_prompt). When the current session completes, the
+    /// next item is popped and spawned automatically.
+    pub god_file_queue: VecDeque<(String, String)>,
     /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
     pub show_session_list: bool,
     /// Selected index in session list overlay
@@ -539,6 +546,8 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             show_file_tree: false,
+            god_file_panel: None,
+            god_file_queue: VecDeque::new(),
             show_session_list: false,
             session_list_selected: 0,
             session_list_scroll: 0,

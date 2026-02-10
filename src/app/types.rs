@@ -363,3 +363,28 @@ impl ViewerTab {
         &self.title
     }
 }
+
+/// A source file detected as a "god file" (>1k LOC) — candidate for modularization
+#[derive(Debug, Clone)]
+pub struct GodFileEntry {
+    /// Absolute path to the file
+    pub path: PathBuf,
+    /// Path relative to project root (for display)
+    pub rel_path: String,
+    /// Total line count in the file
+    pub line_count: usize,
+    /// Whether the user checked this file for modularization
+    pub checked: bool,
+}
+
+/// State for the God File System panel — overlay that scans project for oversized
+/// source files and lets the user batch-spawn modularization sessions
+#[derive(Debug)]
+pub struct GodFilePanel {
+    /// All source files exceeding the LOC threshold
+    pub entries: Vec<GodFileEntry>,
+    /// Navigation cursor index
+    pub selected: usize,
+    /// Scroll offset for rendering
+    pub scroll: usize,
+}

@@ -13,6 +13,7 @@
 
 mod draw_dialogs;
 mod draw_file_tree;
+mod draw_god_files;
 mod draw_input;
 mod draw_output;
 mod draw_projects;
@@ -25,6 +26,7 @@ mod event_loop;
 pub mod render_thread;
 mod input_dialogs;
 mod input_file_tree;
+mod input_god_files;
 mod input_output;
 mod input_projects;
 mod input_rebase;
