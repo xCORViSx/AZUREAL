@@ -4,6 +4,13 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Refactored
+- Fixed session/worktree naming inconsistencies across 14 source files
+  - Fields: `selected_session` → `selected_worktree`, `pane_sessions` → `pane_worktrees`, `sessions_expanded` → `worktrees_expanded`, `session_terminals` → `worktree_terminals`
+  - Methods: `expand_session()` → `expand_worktree()`, `collapse_session()` → `collapse_worktree()`, `toggle_session_expanded()` → `toggle_worktree_expanded()`, `is_current_session_expanded()` → `is_current_worktree_expanded()`
+  - Enum variants: `SidebarRowAction::Session` → `Worktree`, `SidebarRowAction::SessionFile` → `WorktreeFile`
+  - "Session" now exclusively refers to Claude conversation files; "worktree" refers to git worktree directories
+
 ### Changed
 - Layout refactored from 4-pane to 3-pane: Worktrees (40) | Viewer (remaining) | Convo (80 fixed)
   - FileTree removed as permanent pane — now a toggle overlay (`f`) inside the Worktrees pane

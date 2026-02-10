@@ -101,10 +101,10 @@ Other features:
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 **Mouse Click Architecture:**
-- All 4 pane `Rect`s cached on App struct during `ui()` draw: `pane_sessions`, `pane_viewer`, `pane_convo`, `input_area`
+- All 3 pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `input_area`
 - Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
-- Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader`, `Session(idx)`, or `SessionFile(sess_idx, file_idx)`
-- FileTree overlay (when `show_file_tree` is active) uses the `pane_sessions` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
+- Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader`, `Worktree(idx)`, or `WorktreeFile(worktree_idx, file_idx)`
+- FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — uses `word_wrap_break_points()` to map screen coords to char index with word-boundary wrapping
 - Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
