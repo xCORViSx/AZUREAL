@@ -42,6 +42,8 @@ All notable changes to Azureal will be documented in this file.
 - Wrapped file path highlight in Convo pane no longer extends past the path text
   - Continuation lines were highlighting from column 0 (including indent) to full line width
   - Now highlights from the path start column to end of actual path text only
+- FileTree copy/move paste now selects the pasted file and auto-expands the target directory
+- FileTree action bar text now wraps to multiple lines when wider than the pane (was clipping)
 
 ### Refactored
 - Fixed session/worktree naming inconsistencies across 14 source files
