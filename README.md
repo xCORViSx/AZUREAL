@@ -27,7 +27,7 @@
 - **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling
 - **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
 - **Clickable File Paths** — Edit/Read/Write tool file paths are underlined and clickable; Edit opens diff view, Read/Write opens plain file
-- **Async Rendering** — Convo pane renders on a background thread with backpressure + 50ms throttle; single JSON parse per streaming event; input is never blocked by markdown/syntax processing
+- **Async Rendering** — Convo pane renders on a background thread with backpressure + 50ms throttle; incremental renders send only new events (pre-scanned state from already-rendered events avoids mega-clones); single JSON parse per streaming event; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
@@ -111,6 +111,8 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 No database. Minimal config: `~/.azureal/projects.txt` stores registered project paths; optional `.azureal/sessions.toml` stores custom session name mappings.
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
+
+**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver. Guard logic (which keys are suppressed in edit mode, prompt mode, etc.) lives inside `lookup_action()` — never duplicated across input handlers. Input handlers only process unresolved keys (text editing, dialog navigation). Press `?` for the help overlay.
 
 ## License
 

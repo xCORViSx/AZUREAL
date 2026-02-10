@@ -219,6 +219,12 @@ if let Some(json) = parsed_json { display_text_from_json(&json); }
 
 EventParser (#1) is separate because it does its own stateful incremental parsing. But #2 and #3 now share the same `serde_json::Value` via `display_text_from_json()`.
 
+**Reader thread optimization:** The stdout reader thread (`src/claude.rs`) only needs to extract `session_id` from the init event (happens once per session). Instead of full JSON parsing every line, it checks `line.contains("\"subtype\":\"init\"")` first — only parses JSON when the string matches.
+
+**EventParser buffer optimization:** The parser collects all complete lines in one `drain()` call instead of re-allocating `self.buffer` on every newline (O(n) total instead of O(n²) per chunk).
+
+**Dev profile optimization:** `Cargo.toml` sets `opt-level = 2` for `serde_json`, `serde`, and `syntect` packages in dev builds. These hot-path dependencies run 3-5x slower at opt-level 0, amplifying all parsing and highlighting costs in debug mode.
+
 **Files:** `src/app/state/claude.rs::handle_claude_output()`, `src/app/util.rs` (`display_text_from_json`)
 
 ### 9. NEVER Use `.wrap()` on Pre-Wrapped Content
@@ -312,8 +318,8 @@ During active Claude streaming, events are added to `display_events` by the live
 - `src/app/session_parser.rs` - `parse_session_file_incremental()`, `IncrementalParserState`
 - `src/app/state/load.rs` - `check_session_file()`, `poll_session_file()`, `refresh_session_events()`, `sync_file_watches()`
 - `src/app/state/claude.rs` - `handle_claude_output()` (live events), `handle_claude_exited()` (full re-parse trigger)
-- `src/tui/render_events.rs` - `render_display_events_incremental()`, `render_display_events_from()`
-- `src/tui/draw_output.rs` - incremental render path selection
+- `src/tui/render_events.rs` - `render_display_events_incremental()`, `render_display_events_with_state()`
+- `src/tui/draw_output.rs` - incremental render path selection, `pre_scan_events()`
 - `src/tui/event_loop.rs` - watcher event drain, fallback polling, debounced file tree refresh
 
 **App state for incremental tracking:**
@@ -463,7 +469,7 @@ The convo pane's expensive rendering pipeline (markdown parsing, syntax highligh
 
 **Architecture:**
 - `RenderThread` owns its own `SyntaxHighlighter` (no cross-thread sharing needed)
-- Requests carry cloned data (`Vec<DisplayEvent>`, `HashSet<String>`, etc.) so threads work independently
+- **Incremental renders clone only NEW events** — `pre_scan_events()` scans already-rendered events on the main thread (zero-cost reads, no allocation), then only `display_events[rendered_events_count..]` is cloned for the render thread. `PreScanState` carries the pre-computed flags. Full renders (width change, initial load) still clone all events but happen rarely.
 - Communication via `mpsc` channels: `submit_tx` (main → render), `result_rx` (render → main)
 - Sequence numbers (`u64`) ensure stale results are discarded — only the latest result is applied
 - Render thread drains to the latest request when multiple are queued (skips intermediate states)
@@ -507,7 +513,7 @@ Key mappings:
 - `p` (global, except edit mode): Enter prompt mode and focus input (closes terminal/help if open)
 - `t` (global, except edit mode): Open terminal pane
 
-**CRITICAL: Global keybinding guards for viewer edit mode.** All single-key global bindings (`p`, `t`, `?`, `Tab`, `Shift+Tab`) AND modifier combos that edit mode handles (`⌘C`) MUST include `!app.viewer_edit_mode` in their guard. Without this, the global handler steals the keystroke before `handle_edit_mode_input` runs. This applies to any global match with `return Ok(())` — even if no branch matches, the early return prevents the focus-specific handler from firing.
+**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `t`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
 - `Escape` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
@@ -544,39 +550,37 @@ Implementation:
 
 ### Centralized Keybindings
 
-All keybindings are defined once in `src/tui/keybindings.rs` and used by both input handlers and the help dialog:
+**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.).
 
 **Architecture:**
-- `Action` enum: All possible keybinding actions (NavDown, NavUp, EnterEditMode, Save, etc.)
+- `Action` enum: All possible keybinding actions (~50 variants: navigation, editing, viewer tabs, file tree operations, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, and action
-- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`
+- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`
+- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
+- `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
 - `prompt_type_title()` for Input pane type mode, `prompt_command_title()` for command mode (shows "COMMAND" + global keys: prompt, terminal, help, Tab/⇧Tab focus, cancel, quit, restart, dump debug output)
 - `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
 
-**Usage pattern:**
-```rust
-// Input handlers use lookup_action() for centralized matching
-let action = lookup_action(Focus::FileTree, key.modifiers, key.code, false, false, false);
-match action {
-    Some(Action::NavDown) => app.file_tree_next(),
-    Some(Action::NavUp) => app.file_tree_prev(),
-    // ...
-}
-```
+**Resolution flow in `handle_key_event()` (event_loop.rs):**
+1. Modal overlays (help, context menu, wizard, projects, run command) intercept ALL input first
+2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action
+3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline which fall through to handle_input_mode)
+4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
 
-**Benefits:**
-- Single source of truth for all keybindings
-- Help dialog automatically reflects actual keybindings via `help_sections()`
-- Adding/changing keybindings only requires one code change
-- Dual-key bindings (j/↓) handled via `alternatives` field
+**Input handlers only handle unresolved keys:**
+- `input_viewer.rs` — tab dialog, save dialog, discard dialog, edit mode text editing
+- `input_output.rs` — session list overlay input, rebase mode input
+- `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
+- `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
 
-**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For non-input keybindings that use `⌥+letter`, use `macos_opt_key()` from `src/tui/keybindings.rs` to map the unicode char back to the original letter (covers all 26 a-z). Pattern: match `KeyCode::Char(c) if macos_opt_key(c) == Some('r')` alongside the `ALT + 'r'` arm for cross-platform support. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes.
+**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes.
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
-Implementation: `src/tui/keybindings.rs` (definitions), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `src/tui/input_file_tree.rs`, `src/tui/input_viewer.rs`, and `src/tui/input_output.rs` (all use `lookup_action()`)
+Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum, static arrays, lookup_action(), guard logic, help_sections(), title generators), `src/tui/event_loop.rs` (execute_action(), dispatch helpers), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`)
 
 ### Wrap-Aware Edit Cursor
 
@@ -993,7 +997,7 @@ azureal/
 │   │   ├── markdown.rs     # Markdown parsing
 │   │   ├── render_markdown.rs # Markdown rendering (tables, headers, lists, quotes, code blocks)
 │   │   ├── render_events.rs # DisplayEvent rendering (full + incremental)
-│   │   ├── render_thread.rs # Background render thread for async convo rendering
+│   │   ├── render_thread.rs # Background render thread (PreScanState, RenderRequest/Result, sequence numbers)
 │   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── render_wrap.rs  # Text/span wrapping utilities
 │   │   ├── draw_projects.rs # Projects panel modal (full-screen project selection/management)
@@ -1002,11 +1006,11 @@ azureal/
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_*.rs       # Other rendering functions
-│   │   ├── keybindings.rs  # Centralized keybinding definitions (Action enum, lookup_action(), help_sections())
+│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
-│   │   ├── input_file_tree.rs # FileTree overlay navigation (uses lookup_action())
-│   │   ├── input_viewer.rs # Viewer scroll handling (uses lookup_action())
-│   │   ├── input_output.rs # Convo/Output input + Session list overlay input (uses lookup_action())
+│   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
+│   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
+│   │   ├── input_output.rs # Convo: session list overlay + rebase mode only (commands resolved upstream)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module

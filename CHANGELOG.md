@@ -55,6 +55,17 @@ All notable changes to Azureal will be documented in this file.
   - Wraps at word boundaries so key hints like `Enter:paste` and `Esc:cancel` stay together
 
 ### Refactored
+- **Consolidated ALL keybindings into `keybindings.rs` as single source of truth**
+  - Added `KeyContext` struct capturing all guard state (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open) — replaces 6 scattered boolean parameters
+  - Rewrote `lookup_action()` with all guard/skip logic centralized inside — guards defined ONCE next to bindings, never duplicated in event_loop.rs or input handlers
+  - Added `execute_action()` dispatcher in `event_loop.rs` — central dispatch for all action side effects
+  - Added 10 new `Action` variants: `ToggleFileTree`, `EnterInputMode`, `ReturnToWorktrees`, `ToggleSessionList`, `SelectAll`, `ViewerTabCurrent`, `ViewerOpenTabDialog`, `ViewerNextTab`, `ViewerPrevTab`, `ViewerCloseTab`
+  - Gutted `input_viewer.rs` — removed all 43 lines of hardcoded read-only bindings (tabs, PageUp/Down, Home/End, SelectAll, Cmd+Shift+J/K); only tab/save/discard dialogs + edit mode text editing remain
+  - Gutted `input_output.rs` — removed all navigation dispatch (~100 lines); only session list overlay + rebase mode remain
+  - Gutted `input_file_tree.rs` — removed all command bindings; only clipboard mode + text-input actions remain
+  - Gutted `input_worktrees.rs` — removed all 170+ lines of hardcoded commands; only sidebar filter text input + stop-tracking remain
+  - Removed `lookup_action_legacy()` wrapper, `is_nav_*` helper functions, `CTRL_ALT_CMD` constant, `CloseViewer` action (Escape handles it)
+  - **Root cause of repeated keybinding bugs fixed**: guards for viewer_edit_mode, prompt_mode, etc. were scattered across event_loop.rs's hardcoded global handlers; each new binding required manually adding guards in multiple places
 - Fixed session/worktree naming inconsistencies across 14 source files
   - Fields: `selected_session` → `selected_worktree`, `pane_sessions` → `pane_worktrees`, `sessions_expanded` → `worktrees_expanded`, `session_terminals` → `worktree_terminals`
   - Methods: `expand_session()` → `expand_worktree()`, `collapse_session()` → `collapse_worktree()`, `toggle_session_expanded()` → `toggle_worktree_expanded()`, `is_current_session_expanded()` → `is_current_worktree_expanded()`
@@ -131,6 +142,12 @@ All notable changes to Azureal will be documented in this file.
 - Removed redundant `.wrap(Wrap { trim: false })` from Convo Paragraph
   - Content is pre-wrapped by `wrap_text()`/`wrap_spans()` — ratatui was re-wrapping every viewport line char-by-char per frame
 - Animation patching loop now skipped when no tools are pending (avoids pulse computation on every scroll frame)
+- Eliminated CPU spike on prompt send with 5 targeted fixes:
+  1. **Mega-clone elimination**: incremental renders now clone only NEW events (from `rendered_events_count` onwards) instead of the entire `display_events` array. `pre_scan_events()` computes state flags on the main thread (zero-cost reads), sent to render thread via `PreScanState`.
+  2. **EventParser O(n²) → O(n)**: buffer reallocation per newline replaced with single `drain()` of all complete lines
+  3. **Reader thread**: full JSON parse per line replaced with `contains("\"subtype\":\"init\"")` string search (init happens once per session)
+  4. **Dev profile opt-level=2** for `serde_json`, `serde`, `syntect` — 3-5x faster than opt-level 0 in debug builds
+  5. **process_output_chunk**: `clone()+clear()` replaced with `std::mem::take()` (zero allocation)
 - Background render thread for convo pane (`src/tui/render_thread.rs`)
   - Markdown parsing, syntax highlighting, and text wrapping run on a dedicated thread
   - RenderThread owns its own SyntaxHighlighter (no cross-thread sharing)
