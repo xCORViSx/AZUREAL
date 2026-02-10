@@ -989,8 +989,8 @@ fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Claude
             app.prompt_mode = true;
             return Ok(());
         }
-        // Global 't' - toggle terminal (only when not in terminal, otherwise handled by terminal input)
-        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.prompt_mode && !app.terminal_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
+        // Global 't' - toggle terminal (only when not in text-input mode)
+        (KeyModifiers::NONE, KeyCode::Char('t')) if !app.prompt_mode && !app.terminal_mode && !app.viewer_edit_mode && !app.sidebar_filter_active && app.context_menu.is_none() && !app.is_wizard_active() => {
             app.show_help = false;
             app.toggle_terminal();
             app.focus = Focus::Input;
