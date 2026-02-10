@@ -6,7 +6,8 @@ All notable changes to Azureal will be documented in this file.
 
 ### Added
 - Dashed double-line border in Viewer edit mode when file has unsaved changes
-  - Solid double border (`═║`) when clean, dashed double (`╍╏`) when modified
+  - Normal `═║` double border rendered first, then every other border cell blanked to create `═ ═ ═` / `║ ║` gap pattern
+  - Corners (`╔╗╚╝`) and title text preserved intact
   - Combined with existing `[modified]` title indicator for clear visual cue
 
 ### Fixed
