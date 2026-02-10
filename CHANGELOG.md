@@ -8,7 +8,7 @@ All notable changes to Azureal will be documented in this file.
 - Dashed double-line border in Viewer edit mode when file has unsaved changes
   - Normal `═║` double border rendered first, then every other cell blanked by checking for `═`/`║` symbols — title text and corners preserved automatically
   - Creates `═ ═ ═` / `║ ║` gap pattern across all four edges
-  - Combined with existing `[modified]` title indicator for clear visual cue
+  - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Fixed
 - Icon not showing on GitHub — `azural_icon.png` renamed to `azureal_icon.png` to match README reference
