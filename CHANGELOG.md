@@ -5,6 +5,17 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Layout refactored from 4-pane to 3-pane: Worktrees (40) | Viewer (remaining) | Convo (80 fixed)
+  - FileTree removed as permanent pane — now a toggle overlay (`f`) inside the Worktrees pane
+  - Press `f` on a selected worktree to browse its filesystem; `f` or `Esc` to return to worktree list
+  - Convo pane width changed from 50% remaining to fixed 80 columns for consistent readability
+- Session list overlay added to Convo pane (`s` to toggle)
+  - Full-pane browser showing all session files across all worktrees
+  - Each row shows: status symbol (colored), worktree name, session name/UUID, last modified time, `[N msgs]` count
+  - Message counts computed via lightweight JSONL line scan, cached per session_id
+  - `j/k` navigate, `J/K` page, `Enter` loads session, `s`/`Esc` closes
+- Focus cycling (Tab/Shift+Tab) simplified: Worktrees → Viewer → Convo → Input (FileTree removed from cycle)
+  - Tab/Shift+Tab now closes any open overlay (FileTree or Session list) before cycling
 - AZURE accent color lightened from #007FFF to #3399FF for better readability on dark backgrounds
 - Edit cycling in Viewer rebound from `f`/`b` to `⌥←`/`⌥→` to avoid key conflicts
 - Edit cycling now only jumps through Edit tool entries (skips Read/Write paths)

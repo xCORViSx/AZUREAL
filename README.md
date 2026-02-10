@@ -20,8 +20,8 @@
 ## Features
 
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
-- **4-Pane TUI** — Worktrees, FileTree, Viewer, and Convo panes with Tab cycling; Convo border shows centered `[session name]`
-- **File Browser** — Navigate worktree files with expand/collapse, open in syntax-highlighted Viewer
+- **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
+- **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
 - **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling
@@ -76,7 +76,9 @@ azureal
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (viewport minus 2 overlap lines) |
 | `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
-| `Tab` | Cycle focus (Worktrees > FileTree > Viewer > Convo > Input) |
+| `Tab` | Cycle focus (Worktrees > Viewer > Convo > Input), closes overlays |
+| `f` | Toggle FileTree overlay (in Worktrees pane) |
+| `s` | Toggle Session list overlay (in Convo pane) |
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |

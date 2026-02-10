@@ -55,26 +55,29 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 
 ### TUI Interface
 
-A ratatui-based terminal interface with 4-pane layout and status bar:
+A ratatui-based terminal interface with 3-pane layout, toggle overlays, and status bar:
 
 ```
-┌───────────┬──────────┬─────────────┬─ Convo [session] ─┐
-│ Worktrees │ FileTree │   Viewer    │                    │
-│   (40)    │   (40)   │ (50% rem)   │      Convo         │
-├───────────┴──────────┴─────────────┤  (50% rem,         │
-│     Input / Terminal               │   full height)     │
-├────────────────────────────────────┴───────────────────┤
-│                    Status Bar                           │
-└────────────────────────────────────────────────────────┘
+┌──────────┬───────────────────────┬─ Convo [session] ──┐
+│Worktrees │       Viewer          │                     │
+│  (40)    │       (rem)           │  Convo (80 fixed)   │
+├──────────┴───────────────────────┤                     │
+│     Input / Terminal             │                     │
+├──────────────────────────────────┴────────────────────┤
+│                    Status Bar                          │
+└───────────────────────────────────────────────────────┘
 ```
 
 **Panes:**
-- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees
-- **FileTree** (40 cols): Directory tree for selected worktree (supports expand/collapse)
-- **Viewer** (50% remaining): File content viewer or diff detail (dual-purpose)
-- **Convo** (50% remaining, full height): Claude conversation output with tool results — extends past input pane down to status bar. Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
-- **Input/Terminal**: Prompt input or embedded terminal (spans first 3 panes width only)
+- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `f` again or `Esc` to return to worktree list.
+- **Viewer** (remaining width): File content viewer or diff detail (dual-purpose)
+- **Convo** (80 cols, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
+- **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
+
+**Overlays:**
+- **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list.
+- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a full-pane session file browser across all worktrees. Each row shows status symbol (colored by session status), worktree display name, session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Message counts computed via lightweight JSONL line scan (cached in `session_msg_counts` HashMap). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. Focus cycling (Tab/Shift+Tab) closes any open overlay.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
@@ -96,10 +99,10 @@ Other features:
 Implementation: `src/tui/event_loop.rs` for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 **Mouse Click Architecture:**
-- All 5 pane `Rect`s cached on App struct during `ui()` draw: `pane_sessions`, `pane_file_tree`, `pane_viewer`, `pane_convo`, `input_area`
+- All 4 pane `Rect`s cached on App struct during `ui()` draw: `pane_sessions`, `pane_viewer`, `pane_convo`, `input_area`
 - Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
 - Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader`, `Session(idx)`, or `SessionFile(sess_idx, file_idx)`
-- FileTree uses entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
+- FileTree overlay (when `show_file_tree` is active) uses the `pane_sessions` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — uses `word_wrap_break_points()` to map screen coords to char index with word-boundary wrapping
 - Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
@@ -958,7 +961,7 @@ azureal/
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
 │   ├── tui/                # Terminal UI module
-│   │   ├── run.rs          # TUI entry point and 4-pane layout
+│   │   ├── run.rs          # TUI entry point and 3-pane layout
 │   │   ├── event_loop.rs   # Event handling loop
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
@@ -969,16 +972,16 @@ azureal/
 │   │   ├── render_tools.rs # Tool result rendering
 │   │   ├── render_wrap.rs  # Text/span wrapping utilities
 │   │   ├── draw_projects.rs # Projects panel modal (full-screen project selection/management)
-│   │   ├── draw_sidebar.rs # Worktrees pane rendering (project name in border title)
-│   │   ├── draw_file_tree.rs # FileTree pane rendering
+│   │   ├── draw_sidebar.rs # Worktrees pane rendering (project name in border title) + FileTree overlay delegate
+│   │   ├── draw_file_tree.rs # FileTree overlay rendering (called from draw_sidebar when overlay active)
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # Centralized keybinding definitions (Action enum, lookup_action(), help_sections())
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
-│   │   ├── input_file_tree.rs # FileTree navigation (uses lookup_action())
+│   │   ├── input_file_tree.rs # FileTree overlay navigation (uses lookup_action())
 │   │   ├── input_viewer.rs # Viewer scroll handling (uses lookup_action())
-│   │   ├── input_output.rs # Convo/Output input handling (uses lookup_action())
+│   │   ├── input_output.rs # Convo/Output input + Session list overlay input (uses lookup_action())
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1028,7 +1031,8 @@ azureal/
 - [x] Embedded terminal pane for shell commands
 
 ## Phase 2: Enhanced UX
-- [x] File viewer pane (4-pane layout: Sessions, FileTree, Viewer, Convo)
+- [x] File viewer pane (3-pane layout: Worktrees, Viewer, Convo; FileTree as overlay)
+- [x] Session list overlay in Convo pane (`s` toggle — browse all session files with message counts)
 - [x] Token usage percentage on Convo pane title
 - [x] TodoWrite sticky widget (persistent checkbox list at bottom of Convo pane)
 - [x] AskUserQuestion options box (numbered options with context-aware response handling)
@@ -1105,7 +1109,7 @@ azureal
 | `t` | Toggle terminal pane |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
-| `Tab` | Cycle focus (Worktrees → FileTree → Viewer → Convo → Input) |
+| `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
 | `⌃c` | Cancel running Claude response |
@@ -1119,6 +1123,7 @@ azureal
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `l/→` | Expand session files dropdown |
 | `h/←` | Collapse session files dropdown |
+| `f` | Toggle FileTree overlay (browse worktree files) |
 | `Enter` | Start/resume Claude session |
 | `Space` | Context menu |
 | `n` | New worktree/session wizard |
@@ -1131,7 +1136,7 @@ azureal
 | `/` | Search/filter sessions |
 | `⌥↑/⌥↓` | Jump to first/last session (or session file when dropdown expanded) |
 
-### FileTree Pane
+### FileTree Overlay (`f` in Worktrees)
 | Key | Action |
 |-----|--------|
 | `j/k` | Navigate up/down |
@@ -1139,6 +1144,7 @@ azureal
 | `Enter` | Open file in Viewer / Expand directory |
 | `h/l` | Collapse/Expand directory |
 | `Space` | Toggle directory expand |
+| `f/Esc` | Return to worktree list |
 
 ### Viewer Pane
 | Key | Action |
@@ -1158,6 +1164,7 @@ azureal
 | `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` | Jump to top/bottom |
+| `s` | Toggle Session list overlay (browse all session files) |
 | `o` | Switch to output view |
 | `d` | Git worktree diff |
 | `R` | Rebase status |
