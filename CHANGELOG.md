@@ -27,6 +27,8 @@ All notable changes to Azureal will be documented in this file.
   - `event_loop/claude_events.rs` (62 lines) — Claude process event handling
 
 ### Fixed
+- Session list overlay (`s` key) now toggles off with `s` or `Esc` — `ToggleSessionList` action was always calling `open_session_list()` without checking if already open, and `dispatch_escape()` for Output focus went straight to Worktrees without closing the overlay first
+- Session list overlay now responds to Up/Down arrow keys — keybinding system was intercepting them as JumpNextBubble/JumpPrevBubble before the session list handler could process them; session list now bypasses keybinding system as a modal overlay
 - Shift+Tab from Viewer now lands on FileTree when the overlay is open (was always closing the overlay and jumping to Worktrees)
 - Global `t` keybinding (terminal toggle) no longer fires in viewer edit mode — guard was missing `!viewer_edit_mode`, so typing `t` opened the terminal instead of inserting the character
 - Global `Tab`/`Shift+Tab` (focus cycling) no longer fires in viewer edit mode — Tab inserts 4 spaces in edit mode but the global handler ran first and cycled focus away
