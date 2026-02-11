@@ -18,71 +18,118 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let area = f.area();
     let sections = keybindings::help_sections();
 
-    // Convert keybindings to display entries (key_display, description)
-    let section_entries: Vec<(&str, Vec<(String, &str)>)> = sections.iter()
-        .map(|s| (s.title, s.bindings.iter().map(|b| (b.display_keys(), b.description)).collect()))
-        .collect();
+    // Each display row is either a single binding or two paired bindings merged.
+    // Paired: "j/↓ down · k/↑ up" — both key+desc on one line separated by dim ·
+    enum HelpRow {
+        Single { keys: String, desc: &'static str },
+        Paired { keys1: String, desc1: &'static str, keys2: String, desc2: &'static str },
+    }
 
-    // Calculate max key width across all sections
-    let key_width = section_entries.iter()
-        .flat_map(|(_, entries)| entries.iter())
-        .map(|(k, _)| k.len())
+    // Build display rows per section, merging pair_with_next bindings
+    let mut section_rows: Vec<(&str, Vec<HelpRow>)> = Vec::new();
+    for section in &sections {
+        let mut rows = Vec::new();
+        let bindings = section.bindings;
+        let mut i = 0;
+        while i < bindings.len() {
+            if bindings[i].pair_with_next && i + 1 < bindings.len() {
+                rows.push(HelpRow::Paired {
+                    keys1: bindings[i].display_keys(),
+                    desc1: bindings[i].description,
+                    keys2: bindings[i + 1].display_keys(),
+                    desc2: bindings[i + 1].description,
+                });
+                i += 2;
+            } else {
+                rows.push(HelpRow::Single {
+                    keys: bindings[i].display_keys(),
+                    desc: bindings[i].description,
+                });
+                i += 1;
+            }
+        }
+        section_rows.push((section.title, rows));
+    }
+
+    // Max key width across all single + paired entries (for the first key column)
+    let key_width = section_rows.iter()
+        .flat_map(|(_, rows)| rows.iter())
+        .map(|row| match row {
+            HelpRow::Single { keys, .. } => keys.len(),
+            HelpRow::Paired { keys1, keys2, .. } => keys1.len().max(keys2.len()),
+        })
         .max()
-        .unwrap_or(10) + 2; // +2 for padding
+        .unwrap_or(10) + 2;
 
-    // Calculate max description width
-    let desc_width = section_entries.iter()
-        .flat_map(|(_, entries)| entries.iter())
-        .map(|(_, d)| d.len())
+    // Max single-entry desc width (used for column sizing)
+    let desc_width = section_rows.iter()
+        .flat_map(|(_, rows)| rows.iter())
+        .map(|row| match row {
+            HelpRow::Single { desc, .. } => desc.len(),
+            // Paired rows: key1+desc1 + separator + key2+desc2 — we size off single rows
+            HelpRow::Paired { desc1, desc2, .. } => desc1.len().max(desc2.len()),
+        })
         .max()
         .unwrap_or(20);
 
-    // Column width = key + separator + desc + padding
-    let col_width = key_width + 1 + desc_width + 2;
+    // Paired rows need extra space: key + desc + " · " + key + desc
+    // Column width = max(single_width, paired_width)
+    let single_width = key_width + 1 + desc_width + 2;
+    let paired_width = key_width + 1 + desc_width + 3 + key_width + 1 + desc_width + 2;
+    let col_width = single_width.max(paired_width);
 
     // Calculate how many columns fit (min 1, max 3)
-    let available_width = area.width.saturating_sub(4) as usize; // -4 for border
+    let available_width = area.width.saturating_sub(4) as usize;
     let num_cols = (available_width / col_width).clamp(1, 3);
     let actual_col_width = available_width / num_cols;
 
     // Distribute sections across columns (roughly equal height)
-    let total_lines: usize = section_entries.iter().map(|(_, e)| e.len() + 2).sum(); // +2 for title + blank
+    let total_lines: usize = section_rows.iter().map(|(_, rows)| rows.len() + 2).sum();
     let target_per_col = (total_lines + num_cols - 1) / num_cols;
 
     let mut columns: Vec<Vec<Line>> = vec![Vec::new(); num_cols];
     let mut current_col = 0;
     let mut current_height = 0;
 
-    for (title, entries) in &section_entries {
-        let section_height = entries.len() + 2;
-        // Move to next column if this section would overflow (unless on last column)
+    let dim_style = Style::default().fg(Color::DarkGray);
+
+    for (title, rows) in &section_rows {
+        let section_height = rows.len() + 2;
         if current_height + section_height > target_per_col && current_col < num_cols - 1 && current_height > 0 {
             current_col += 1;
             current_height = 0;
         }
 
-        // Add section title
         columns[current_col].push(Line::from(vec![
             Span::styled(*title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         ]));
 
-        // Add entries with proper key/desc separation
-        let desc_available = actual_col_width.saturating_sub(key_width + 1);
-        for (key, desc) in entries {
-            let key_span = Span::styled(
-                format!("{:>width$}", key, width = key_width),
-                Style::default().fg(AZURE)
-            );
-            let desc_str: String = if desc.len() > desc_available {
-                format!("{}…", desc.chars().take(desc_available.saturating_sub(1)).collect::<String>())
-            } else {
-                (*desc).to_string()
+        for row in rows {
+            let line = match row {
+                HelpRow::Single { keys, desc } => {
+                    let key_span = Span::styled(
+                        format!("{:>width$}", keys, width = key_width),
+                        Style::default().fg(AZURE),
+                    );
+                    let desc_span = Span::raw(format!(" {}", desc));
+                    Line::from(vec![key_span, desc_span])
+                }
+                HelpRow::Paired { keys1, desc1, keys2, desc2 } => {
+                    // "  keys1 desc1 · keys2 desc2"
+                    let k1 = Span::styled(
+                        format!("{:>width$}", keys1, width = key_width),
+                        Style::default().fg(AZURE),
+                    );
+                    let d1 = Span::raw(format!(" {} ", desc1));
+                    let sep = Span::styled("· ", dim_style);
+                    let k2 = Span::styled(keys2.clone(), Style::default().fg(AZURE));
+                    let d2 = Span::raw(format!(" {}", desc2));
+                    Line::from(vec![k1, d1, sep, k2, d2])
+                }
             };
-            let desc_span = Span::raw(format!(" {}", desc_str));
-            columns[current_col].push(Line::from(vec![key_span, desc_span]));
+            columns[current_col].push(line);
         }
 
-        // Add blank line after section
         columns[current_col].push(Line::from(""));
         current_height += section_height;
     }

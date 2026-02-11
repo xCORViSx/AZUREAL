@@ -199,11 +199,14 @@ pub struct Keybinding {
     pub description: &'static str,
     /// Action identifier
     pub action: Action,
+    /// When true, help panel merges this binding with the NEXT one onto a single line.
+    /// Use for counterpart pairs like up/down, next/prev, expand/collapse.
+    pub pair_with_next: bool,
 }
 
 impl Keybinding {
     pub const fn new(primary: KeyCombo, description: &'static str, action: Action) -> Self {
-        Self { primary, alternatives: &[], description, action }
+        Self { primary, alternatives: &[], description, action, pair_with_next: false }
     }
 
     pub const fn with_alt(
@@ -212,7 +215,13 @@ impl Keybinding {
         description: &'static str,
         action: Action,
     ) -> Self {
-        Self { primary, alternatives, description, action }
+        Self { primary, alternatives, description, action, pair_with_next: false }
+    }
+
+    /// Mark this binding to merge with the next one on a single help line
+    pub const fn paired(mut self) -> Self {
+        self.pair_with_next = true;
+        self
     }
 
     /// Check if any key combo matches
@@ -283,13 +292,13 @@ pub static WORKTREES: [Keybinding; 22] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse files", Action::NavLeft),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject).paired(),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Select project", Action::SelectPrevProject),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Context menu", Action::OpenContextMenu),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
@@ -307,11 +316,11 @@ pub static WORKTREES: [Keybinding; 22] = [
 /// FileTree bindings
 pub static FILE_TREE: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Back to worktrees", Action::ReturnToWorktrees),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand", Action::NavRight),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "First in folder", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "First in folder", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Last in folder", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open/toggle", Action::OpenFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle dir", Action::ToggleDir),
@@ -325,20 +334,20 @@ pub static FILE_TREE: [Keybinding; 15] = [
 
 /// Viewer bindings (read-only mode)
 pub static VIEWER: [Keybinding; 20] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown).paired(),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('K')), &ALT_PGUP, "Page up", Action::PageUp),
-    Keybinding::with_alt(KeyCombo::alt(KeyCode::Up), &ALT_HOME, "Top", Action::GoToTop),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Up), &ALT_HOME, "Top", Action::GoToTop).paired(),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Down), &ALT_END, "Bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::alt(KeyCode::Right), "Next Edit", Action::JumpNextEdit),
+    Keybinding::new(KeyCombo::alt(KeyCode::Right), "Next Edit", Action::JumpNextEdit).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Left), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('T')), "Tab dialog", Action::ViewerOpenTabDialog),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
     // Cmd+Shift+J/K full-page scroll
@@ -351,7 +360,7 @@ pub static VIEWER: [Keybinding; 20] = [
 /// Edit mode bindings
 pub static EDIT_MODE: [Keybinding; 5] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo).paired(),
     Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
@@ -360,15 +369,15 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 /// Convo/Output bindings
 pub static OUTPUT: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Scroll line", Action::NavUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble),
+    Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "Prev prompt", Action::JumpPrevBubble),
-    Keybinding::new(KeyCombo::shift(KeyCode::Down), "Next message", Action::JumpNextMessage),
+    Keybinding::new(KeyCombo::shift(KeyCode::Down), "Next message", Action::JumpNextMessage).paired(),
     Keybinding::new(KeyCombo::shift(KeyCode::Up), "Prev message", Action::JumpPrevMessage),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Page down", Action::PageDown),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Page down", Action::PageDown).paired(),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Switch to output", Action::SwitchToOutput),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
@@ -383,11 +392,11 @@ pub static INPUT: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
     Keybinding::new(KeyCombo::shift(KeyCode::Enter), "Insert newline", Action::InsertNewline),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
-    Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft).paired(),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('w')), "Delete word", Action::DeleteWord),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('u')), "Clear input", Action::ClearInput),
-    Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev),
+    Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
 ];
@@ -398,13 +407,13 @@ pub static TERMINAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Enter type mode", Action::EnterTerminalType),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Close & prompt", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close terminal", Action::Escape),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::PageDown),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Scroll page", Action::PageDown).paired(),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Scroll page", Action::PageUp),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Scroll to top", Action::GoToTop),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Scroll to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Scroll to bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
 ];
 
