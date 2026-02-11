@@ -51,6 +51,10 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
 
+    // Session list overlay: bypass keybinding system so Up/Down/j/k navigate the list
+    // instead of being intercepted as JumpNextBubble/JumpPrevBubble
+    if app.show_session_list { return handle_output_input(key, app); }
+
     // --- Centralized keybinding resolution ---
     // Build context from app state, resolve key once, dispatch action.
     // Input/terminal handlers and dialog handlers own their own key execution —
