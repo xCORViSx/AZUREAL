@@ -12,6 +12,7 @@ All notable changes to Azureal will be documented in this file.
   - Spawns sequential Claude sessions on main worktree — one file at a time, auto-advances when each completes
   - Sessions named `[GodFileModularize] <filename>` in `.azureal/sessions.toml`
   - Scans 22 source extensions, skips build/dependency directories
+- Help panel: counterpart keybindings (up/down, next/prev, expand/collapse) merged onto single lines with `·` separator — halves the row count for navigation bindings
 - Help panel (`?`) now uses double border (`═║`) matching focused pane style
 - Dashed double-line border in Viewer edit mode when file has unsaved changes
   - Normal `═║` double border rendered first, then every other cell blanked by checking for `═`/`║` symbols — title text and corners preserved automatically

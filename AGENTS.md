@@ -559,7 +559,7 @@ Implementation:
 **Architecture:**
 - `Action` enum: All possible keybinding actions (~50 variants: navigation, editing, viewer tabs, file tree operations, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
-- `Keybinding`: Primary key, alternatives (j/↓), description, and action
+- `Keybinding`: Primary key, alternatives (j/↓), description, action, and `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
 - `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
@@ -569,7 +569,7 @@ Implementation:
 - `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, context menu, wizard, projects, run command) intercept ALL input first
+1. Modal overlays (help, context menu, wizard, projects, run command, session list) intercept ALL input first
 2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action
 3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline which fall through to handle_input_mode)
 4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
@@ -1111,7 +1111,7 @@ azureal/
 - [ ] Session templates
 - [ ] Per-project configuration
 - [ ] Theme customization
-- [ ] Input history persistence
+- [x] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
 - [x] Speech-to-text voice input (`⌃s` in prompt mode)
 
