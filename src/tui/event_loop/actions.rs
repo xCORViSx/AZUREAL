@@ -184,7 +184,8 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.invalidate_sidebar();
         }
         Action::ToggleSessionList => {
-            open_session_list(app);
+            if app.show_session_list { app.show_session_list = false; }
+            else { open_session_list(app); }
         }
 
         // --- Viewer tab management ---
@@ -611,7 +612,10 @@ fn dispatch_escape(app: &mut App) {
             app.focus = Focus::Worktrees;
             app.invalidate_sidebar();
         }
-        Focus::Output => app.focus = Focus::Worktrees,
+        Focus::Output => {
+            if app.show_session_list { app.show_session_list = false; }
+            else { app.focus = Focus::Worktrees; }
+        }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.close_terminal();
         }
