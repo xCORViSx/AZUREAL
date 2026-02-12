@@ -11,11 +11,13 @@ pub struct Project {
 }
 
 impl Project {
-    /// Create a project from a git repo path
+    /// Create a project from a git repo path.
+    /// Uses display_name if provided, otherwise falls back to folder name.
     pub fn from_path(path: PathBuf, main_branch: String) -> Self {
-        let name = path.file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unnamed".to_string());
+        let name = crate::config::project_display_name(&path)
+            .unwrap_or_else(|| path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unnamed".to_string()));
         Self { name, path, main_branch }
     }
 

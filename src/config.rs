@@ -234,6 +234,15 @@ pub fn load_projects() -> Vec<ProjectEntry> {
     }).collect()
 }
 
+/// Look up the display name for a repo path from projects.txt.
+/// Returns None if the path isn't registered.
+pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
+    let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
+    load_projects().into_iter()
+        .find(|e| e.path == canonical)
+        .map(|e| e.display_name)
+}
+
 /// Save the project list back to ~/.azureal/projects.txt
 pub fn save_projects(entries: &[ProjectEntry]) {
     let path = projects_file_path();
@@ -252,14 +261,34 @@ pub fn save_projects(entries: &[ProjectEntry]) {
 
 /// Auto-register a project path if it isn't already in projects.txt.
 /// Called on startup when azureal detects a git repo.
+/// Display name: git remote repo name (from origin URL) → folder name fallback.
 pub fn register_project(repo_path: &std::path::Path) {
     let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     let mut entries = load_projects();
-    // Check if already registered (compare canonical paths)
     if entries.iter().any(|e| e.path == canonical) { return; }
-    let display_name = canonical.file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| canonical.display().to_string());
+    // Try extracting repo name from git remote origin URL first
+    let display_name = repo_name_from_origin(&canonical)
+        .unwrap_or_else(|| canonical.file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| canonical.display().to_string()));
     entries.push(ProjectEntry { path: canonical, display_name });
     save_projects(&entries);
+}
+
+/// Extract repository name from `git remote get-url origin`.
+/// Handles SSH (`git@github.com:user/repo.git`) and HTTPS (`https://github.com/user/repo.git`).
+/// Returns just the repo name portion (e.g., "repo"), stripping `.git` suffix.
+fn repo_name_from_origin(repo_path: &std::path::Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(repo_path)
+        .output()
+        .ok()?;
+    if !output.status.success() { return None; }
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Take everything after the last '/' or ':', strip .git suffix
+    let name = url.rsplit_once('/').map(|(_, n)| n)
+        .or_else(|| url.rsplit_once(':').map(|(_, n)| n))?;
+    let name = name.strip_suffix(".git").unwrap_or(name);
+    if name.is_empty() { None } else { Some(name.to_string()) }
 }
