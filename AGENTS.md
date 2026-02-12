@@ -955,7 +955,7 @@ Persistent project management across azureal sessions. Projects are stored in `~
 - `a`: add a new project by path (validates it's a git repo)
 - `d`: delete selected project from list (does NOT delete the repo)
 - `n`: rename the selected project's display name
-- `i`: initialize a new git repo at a specified path (or cwd if blank)
+- `i`: initialize a new git repo at a specified path (or cwd if blank); rejects paths that are already git repos
 - `Esc`: close panel (only if a project is already loaded)
 - `⌃Q`: quit azureal
 
