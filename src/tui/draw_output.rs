@@ -608,14 +608,23 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     }
 
                     // Build title with message count
-                    let title = if !app.message_bubble_positions.is_empty() {
-                        let total_msgs = app.message_bubble_positions.len();
+                    // Total counts ALL display events (not just rendered tail from deferred render)
+                    // so the denominator is accurate even before the user scrolls to top
+                    let total_msgs = app.display_events.iter().filter(|e| matches!(e,
+                        crate::events::DisplayEvent::UserMessage { .. } |
+                        crate::events::DisplayEvent::AssistantText { .. }
+                    )).count();
+                    let title = if total_msgs > 0 {
                         let current_line = scroll.saturating_add(3);
+                        // Current position from rendered bubble positions (only covers rendered tail)
+                        // Add the unrendered bubble count as offset so numbering is correct
+                        let rendered_bubbles = app.message_bubble_positions.len();
+                        let unrendered_offset = total_msgs.saturating_sub(rendered_bubbles);
                         let current_msg = app.message_bubble_positions.iter()
                             .enumerate()
                             .rev()
                             .find(|(_, (line_idx, _))| *line_idx <= current_line)
-                            .map(|(idx, _)| idx + 1)
+                            .map(|(idx, _)| idx + 1 + unrendered_offset)
                             .unwrap_or(1);
                         format!(" Convo [{}/{}] ", current_msg, total_msgs)
                     } else {
