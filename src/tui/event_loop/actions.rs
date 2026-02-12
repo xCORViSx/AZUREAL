@@ -662,24 +662,26 @@ fn jump_edit(app: &mut App, forward: bool) {
     }
 }
 
-/// Open session list overlay
+/// Open session list overlay — scoped to the currently selected worktree only
 fn open_session_list(app: &mut App) {
     app.show_session_list = true;
     app.session_list_selected = 0;
     app.session_list_scroll = 0;
-    for session in &app.sessions {
-        if !app.session_files.contains_key(&session.branch_name) {
-            if let Some(ref wt_path) = session.worktree_path {
+    // Only load files for the current worktree
+    if let Some(session) = app.current_session() {
+        let branch = session.branch_name.clone();
+        if !app.session_files.contains_key(&branch) {
+            if let Some(ref wt_path) = app.sessions[app.selected_worktree.unwrap()].worktree_path {
                 let files = crate::config::list_claude_sessions(wt_path);
-                app.session_files.insert(session.branch_name.clone(), files);
+                app.session_files.insert(branch.clone(), files);
             }
         }
-    }
-    for files in app.session_files.values() {
-        for (session_id, path, _) in files.iter() {
-            if !app.session_msg_counts.contains_key(session_id) {
-                let count = count_messages_in_jsonl(path);
-                app.session_msg_counts.insert(session_id.clone(), count);
+        if let Some(files) = app.session_files.get(&branch) {
+            for (session_id, path, _) in files.iter() {
+                if !app.session_msg_counts.contains_key(session_id) {
+                    let count = count_messages_in_jsonl(path);
+                    app.session_msg_counts.insert(session_id.clone(), count);
+                }
             }
         }
     }

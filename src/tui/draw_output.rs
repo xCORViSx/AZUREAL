@@ -308,82 +308,61 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    // Normal session list (with optional name filtering)
+    // Session list scoped to current worktree only — no wt_name column needed
     let session_names = app.load_all_session_names();
     let filter_lower = app.session_filter.to_lowercase();
     let filtering = !filter_lower.is_empty();
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut total_unfiltered = 0usize;
 
-    for session in app.sessions.iter() {
-        let status = session.status(&app.running_sessions);
-        let status_color = status.color();
-        let wt_name = session.name().to_string();
-        let files = app.session_files.get(&session.branch_name);
+    let branch = app.current_session().map(|s| s.branch_name.clone());
+    let files = branch.as_deref().and_then(|b| app.session_files.get(b));
 
-        if let Some(files) = files {
-            for (session_id, _path, time_str) in files.iter() {
-                total_unfiltered += 1;
-                let name_display = session_names.get(session_id.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| session_id.clone());
-
-                // Name filter: skip rows that don't match worktree name, session name, or session id
-                if filtering {
-                    let matches = wt_name.to_lowercase().contains(&filter_lower)
-                        || name_display.to_lowercase().contains(&filter_lower)
-                        || session_id.to_lowercase().contains(&filter_lower);
-                    if !matches { continue; }
-                }
-
-                let msg_count = app.session_msg_counts.get(session_id).copied().unwrap_or(0);
-                let msg_badge = format!("[{} msgs]", msg_count);
-                let prefix = format!(" {} {} │ ", status.symbol(), wt_name);
-                let suffix = format!(" {} {} ", time_str, msg_badge);
-                let name_space = inner_width.saturating_sub(prefix.chars().count() + suffix.chars().count());
-                let truncated_name = if name_display.chars().count() > name_space {
-                    let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
-                    format!("{}…", trunc)
-                } else {
-                    name_display
-                };
-                let pad = name_space.saturating_sub(truncated_name.chars().count());
-
-                let is_selected = rows.len() == app.session_list_selected;
-                let name_style = if is_selected {
-                    Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                let bg_style = if is_selected {
-                    Style::default().bg(AZURE).fg(Color::Black)
-                } else {
-                    Style::default()
-                };
-
-                rows.push(Line::from(vec![
-                    Span::styled(format!(" {} ", status.symbol()), if is_selected { bg_style } else { Style::default().fg(status_color) }),
-                    Span::styled(format!("{} │ ", wt_name), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
-                    Span::styled(truncated_name, name_style),
-                    Span::styled(" ".repeat(pad), bg_style),
-                    Span::styled(format!(" {} ", time_str), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
-                    Span::styled(msg_badge, if is_selected { bg_style } else { Style::default().fg(AZURE) }),
-                ]));
-            }
-        } else {
+    if let Some(files) = files {
+        for (session_id, _path, time_str) in files.iter() {
             total_unfiltered += 1;
-            // Worktree with no session files — skip if filtering and name doesn't match
-            if filtering && !wt_name.to_lowercase().contains(&filter_lower) { continue; }
+            let name_display = session_names.get(session_id.as_str())
+                .cloned()
+                .unwrap_or_else(|| session_id.clone());
+
+            // Name filter: skip rows that don't match session name or session id
+            if filtering {
+                let matches = name_display.to_lowercase().contains(&filter_lower)
+                    || session_id.to_lowercase().contains(&filter_lower);
+                if !matches { continue; }
+            }
+
+            let msg_count = app.session_msg_counts.get(session_id).copied().unwrap_or(0);
+            let msg_badge = format!("[{} msgs]", msg_count);
+            let suffix = format!(" {} {} ", time_str, msg_badge);
+            // Row: " session_name    mtime [N msgs]"
+            let name_space = inner_width.saturating_sub(1 + suffix.chars().count());
+            let truncated_name = if name_display.chars().count() > name_space {
+                let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
+                format!("{}…", trunc)
+            } else {
+                name_display
+            };
+            let pad = name_space.saturating_sub(truncated_name.chars().count());
+
             let is_selected = rows.len() == app.session_list_selected;
-            let style = if is_selected {
+            let name_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let bg_style = if is_selected {
                 Style::default().bg(AZURE).fg(Color::Black)
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default()
             };
+
             rows.push(Line::from(vec![
-                Span::styled(format!(" {} ", status.symbol()), if is_selected { style } else { Style::default().fg(status_color) }),
-                Span::styled(format!("{} │ ", wt_name), style),
-                Span::styled("(no sessions)", style),
+                Span::styled(" ", bg_style),
+                Span::styled(truncated_name, name_style),
+                Span::styled(" ".repeat(pad), bg_style),
+                Span::styled(format!(" {} ", time_str), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
+                Span::styled(msg_badge, if is_selected { bg_style } else { Style::default().fg(AZURE) }),
             ]));
         }
     }
@@ -408,10 +387,12 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .take(viewport_height)
         .collect();
 
+    // Title includes worktree name since list is scoped to current worktree
+    let wt_label = app.current_session().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if filtering {
-        format!(" Sessions [{}/{} of {}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
+        format!(" {} [{}/{} of {}] ", wt_label, app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
     } else {
-        format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1))
+        format!(" {} [{}/{}] ", wt_label, app.session_list_selected + 1, total.max(1))
     };
     let border_style = if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)

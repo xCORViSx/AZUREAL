@@ -178,10 +178,11 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         return handle_session_filter_input(key, app);
     }
 
-    // Build flat count of total rows (same structure as draw_session_list)
-    let total_rows: usize = app.sessions.iter().map(|s| {
-        app.session_files.get(&s.branch_name).map(|f| f.len().max(1)).unwrap_or(1)
-    }).sum();
+    // Count session files for current worktree only (matches draw_session_list scope)
+    let total_rows: usize = app.current_session()
+        .and_then(|s| app.session_files.get(&s.branch_name))
+        .map(|f| f.len())
+        .unwrap_or(0);
 
     match (key.modifiers, key.code) {
         // /: activate session filter (name search); // activates content search
@@ -296,89 +297,77 @@ fn handle_session_filter_input(key: event::KeyEvent, app: &mut App) -> Result<()
     Ok(())
 }
 
-/// Walk the flat session list to find and load the session at session_list_selected
+/// Load the session file at session_list_selected (scoped to current worktree)
 fn select_session_at_row(app: &mut App) {
-    let mut row = 0;
-    for (sess_idx, session) in app.sessions.iter().enumerate() {
-        let files = app.session_files.get(&session.branch_name);
-        let file_count = files.map(|f| f.len()).unwrap_or(0).max(1);
-        if app.session_list_selected < row + file_count {
-            let file_idx = app.session_list_selected - row;
-            if files.map(|f| f.len()).unwrap_or(0) > 0 {
-                let branch = session.branch_name.clone();
-                app.save_current_terminal();
-                app.selected_worktree = Some(sess_idx);
-                app.select_session_file(&branch, file_idx);
-                app.show_session_list = false;
-                app.session_filter.clear();
-                app.session_filter_active = false;
-                app.session_content_search = false;
-                app.session_search_results.clear();
-                app.invalidate_sidebar();
-            }
-            break;
-        }
-        row += file_count;
+    let Some(session) = app.current_session() else { return };
+    let branch = session.branch_name.clone();
+    let file_count = app.session_files.get(&branch).map(|f| f.len()).unwrap_or(0);
+    if app.session_list_selected < file_count {
+        app.save_current_terminal();
+        app.select_session_file(&branch, app.session_list_selected);
+        app.show_session_list = false;
+        app.session_filter.clear();
+        app.session_filter_active = false;
+        app.session_content_search = false;
+        app.session_search_results.clear();
+        app.invalidate_sidebar();
     }
 }
 
-/// Load the session from the selected content search result
+/// Load the session from the selected content search result (current worktree only)
 fn select_content_search_result(app: &mut App) {
     let sel = app.session_list_selected;
     if sel >= app.session_search_results.len() { return; }
     let (_row_idx, ref session_id, _) = app.session_search_results[sel];
 
-    // Find which worktree + file index matches this session_id
-    for (sess_idx, session) in app.sessions.iter().enumerate() {
-        if let Some(files) = app.session_files.get(&session.branch_name) {
-            for (file_idx, (sid, _, _)) in files.iter().enumerate() {
-                if sid == session_id {
-                    let branch = session.branch_name.clone();
-                    app.save_current_terminal();
-                    app.selected_worktree = Some(sess_idx);
-                    app.select_session_file(&branch, file_idx);
-                    app.show_session_list = false;
-                    app.session_filter.clear();
-                    app.session_filter_active = false;
-                    app.session_content_search = false;
-                    app.session_search_results.clear();
-                    app.invalidate_sidebar();
-                    return;
-                }
-            }
+    let Some(session) = app.current_session() else { return };
+    let branch = session.branch_name.clone();
+    if let Some(files) = app.session_files.get(&branch) {
+        if let Some(file_idx) = files.iter().position(|(sid, _, _)| sid == session_id) {
+            app.save_current_terminal();
+            app.select_session_file(&branch, file_idx);
+            app.show_session_list = false;
+            app.session_filter.clear();
+            app.session_filter_active = false;
+            app.session_content_search = false;
+            app.session_search_results.clear();
+            app.invalidate_sidebar();
         }
     }
 }
 
-/// Search across all session JSONL files for the query text.
+/// Search current worktree's session JSONL files for the query text.
 /// Inline (not background thread) — JSONL files are small. Caps at 100 results.
 fn run_cross_session_search(app: &mut App) {
     app.session_search_results.clear();
     let query = app.session_filter.to_lowercase();
     if query.len() < 3 { return; }
 
+    let branch = match app.current_session() {
+        Some(s) => s.branch_name.clone(),
+        None => return,
+    };
+    let files = match app.session_files.get(&branch) {
+        Some(f) => f,
+        None => return,
+    };
     let mut result_idx = 0usize;
-    for session in app.sessions.iter() {
-        if let Some(files) = app.session_files.get(&session.branch_name) {
-            for (session_id, path, _) in files.iter() {
-                // Skip files > 5MB for safety
-                if let Ok(meta) = std::fs::metadata(path) {
-                    if meta.len() > 5_000_000 { continue; }
-                }
-                // Read file and search line-by-line
-                if let Ok(contents) = std::fs::read_to_string(path) {
-                    for line in contents.lines() {
-                        let lower = line.to_lowercase();
-                        if lower.contains(&query) {
-                            // Extract a short preview from the matching line (strip JSON wrapper)
-                            let preview = extract_search_preview(line, &query);
-                            app.session_search_results.push((result_idx, session_id.clone(), preview));
-                            result_idx += 1;
-                            if app.session_search_results.len() >= 100 { return; }
-                            // One match per session file is enough for listing
-                            break;
-                        }
-                    }
+    for (session_id, path, _) in files.iter() {
+        // Skip files > 5MB for safety
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() > 5_000_000 { continue; }
+        }
+        // Read file and search line-by-line
+        if let Ok(contents) = std::fs::read_to_string(path) {
+            for line in contents.lines() {
+                let lower = line.to_lowercase();
+                if lower.contains(&query) {
+                    let preview = extract_search_preview(line, &query);
+                    app.session_search_results.push((result_idx, session_id.clone(), preview));
+                    result_idx += 1;
+                    if app.session_search_results.len() >= 100 { return; }
+                    // One match per session file is enough for listing
+                    break;
                 }
             }
         }
