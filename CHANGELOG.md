@@ -53,6 +53,7 @@ All notable changes to Azureal will be documented in this file.
   - `event_loop/claude_events.rs` (62 lines) — Claude process event handling
 
 ### Fixed
+- Session list `[N msgs]` count now matches convo title `[x/y]` — was inflated because it counted every JSONL line with `"type":"assistant"` (streaming produces many per turn) and used wrong type string `"human"` instead of `"user"`. Now counts user prompts (no tool_result) + assistant text blocks only.
 - Clicking out of prompt input or Tab-cycling away now exits back to command mode (was staying in prompt mode with yellow border)
 - Projects panel init (`i`) now rejects paths that are already git repos — shows "Already a git repo — use 'a' to add it" instead of re-initializing
 - Projects panel now validates git repo before switching — selecting a non-git directory shows an error ("Not a git repository" or "Directory does not exist") instead of blindly opening it as a broken project
