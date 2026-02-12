@@ -85,19 +85,19 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     // Claude prompt mode - handle text editing
     // Clipboard operations (Cmd/Ctrl+C/X/V/A) - handle BEFORE character input
     match (key.modifiers, key.code) {
-        (KeyModifiers::SUPER, KeyCode::Char('c')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+        (KeyModifiers::SUPER, KeyCode::Char('c')) => {
             app.input_copy();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('x')) | (KeyModifiers::CONTROL, KeyCode::Char('x')) => {
+        (KeyModifiers::SUPER, KeyCode::Char('x')) => {
             app.input_cut();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('v')) | (KeyModifiers::CONTROL, KeyCode::Char('v')) => {
+        (KeyModifiers::SUPER, KeyCode::Char('v')) => {
             app.input_paste();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('a')) | (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
+        (KeyModifiers::SUPER, KeyCode::Char('a')) => {
             app.input_select_all();
             return Ok(());
         }
@@ -107,10 +107,8 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     // Regular text editing
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => app.prompt_mode = false,
-        // ⌃v — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
-        (KeyModifiers::CONTROL, KeyCode::Char('v')) => { app.toggle_stt(); }
-        // ⌃u — clear entire input (standard Unix kill-line; ⌥+letter won't work on macOS)
-        (KeyModifiers::CONTROL, KeyCode::Char('u')) => { app.clear_input(); }
+        // ⌃s — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
+        (KeyModifiers::CONTROL, KeyCode::Char('s')) => { app.toggle_stt(); }
         // ↑/↓ — browse prompt history (pulled from display_events UserMessage entries)
         (KeyModifiers::NONE, KeyCode::Up) => app.prompt_history_prev(),
         (KeyModifiers::NONE, KeyCode::Down) => app.prompt_history_next(),

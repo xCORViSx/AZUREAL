@@ -69,7 +69,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         let is_input_action = matches!(action,
             Action::Submit | Action::InsertNewline | Action::ExitPromptMode
             | Action::WordLeft | Action::WordRight | Action::DeleteWord
-            | Action::ClearInput | Action::HistoryPrev | Action::HistoryNext
+            | Action::HistoryPrev | Action::HistoryNext
             | Action::ToggleStt | Action::EnterTerminalType
         ) && matches!(app.focus, Focus::Input);
         if !is_input_action {
@@ -382,7 +382,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         // handle_input_mode(). Listed here for exhaustive match.
         Action::Submit | Action::InsertNewline | Action::ExitPromptMode
         | Action::WordLeft | Action::WordRight | Action::DeleteWord
-        | Action::ClearInput | Action::HistoryPrev | Action::HistoryNext
+        | Action::HistoryPrev | Action::HistoryNext
         | Action::ToggleStt | Action::EnterTerminalType => {}
 
         // --- Generic escape: context-dependent close/back ---

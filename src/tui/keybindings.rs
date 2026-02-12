@@ -163,7 +163,6 @@ pub enum Action {
     WordLeft,
     WordRight,
     DeleteWord,
-    ClearInput,
     HistoryPrev,
     HistoryNext,
     ToggleStt,
@@ -278,7 +277,7 @@ pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel Claude response", Action::CancelClaude),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
@@ -362,7 +361,7 @@ pub static EDIT_MODE: [Keybinding; 5] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo).paired(),
     Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('v')), "Voice input", Action::ToggleStt),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Speech input", Action::ToggleStt),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
 ];
 
@@ -388,17 +387,16 @@ pub static OUTPUT: [Keybinding; 15] = [
 /// Input mode bindings — keys that work in Claude prompt type mode
 /// Word nav uses standard macOS shortcuts (⌥← / ⌥→), not ⌃z/⌃x which conflict with clipboard
 /// Newline: ⇧Enter (Kitty keyboard protocol makes this distinguishable from bare Enter)
-pub static INPUT: [Keybinding; 10] = [
+pub static INPUT: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
     Keybinding::new(KeyCombo::shift(KeyCode::Enter), "Insert newline", Action::InsertNewline),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft).paired(),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('w')), "Delete word", Action::DeleteWord),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('u')), "Clear input", Action::ClearInput),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('v')), "Voice input", Action::ToggleStt),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Speech input", Action::ToggleStt),
 ];
 
 /// Terminal bindings (command mode) — ALL terminal keybindings live here
@@ -535,11 +533,10 @@ pub fn prompt_type_title() -> String {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
-    let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
-    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃v".into());
+    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel response | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear | {}:voice) ",
-        esc, submit, cancel, hprev, hnext, dw, cl, stt
+        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech) ",
+        esc, submit, cancel, hprev, hnext, dw, stt
     )
 }
 
@@ -556,7 +553,7 @@ pub fn prompt_command_title() -> String {
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     format!(
-        " COMMAND ({}:prompt | {}:terminal | {}:help | {}/{}:focus | {}:cancel response | {}:quit | {}:restart | {}:dump debug output) ",
+        " COMMAND ({}:prompt | {}:terminal | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output) ",
         p, t, help, tab, stab, cancel, quit, restart, debug
     )
 }
