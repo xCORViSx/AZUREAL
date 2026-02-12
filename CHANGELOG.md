@@ -36,6 +36,7 @@ All notable changes to Azureal will be documented in this file.
   - `event_loop/claude_events.rs` (62 lines) — Claude process event handling
 
 ### Fixed
+- Clicking out of prompt input or Tab-cycling away now exits back to command mode (was staying in prompt mode with yellow border)
 - Projects panel init (`i`) now rejects paths that are already git repos — shows "Already a git repo — use 'a' to add it" instead of re-initializing
 - Projects panel now validates git repo before switching — selecting a non-git directory shows an error ("Not a git repository" or "Directory does not exist") instead of blindly opening it as a broken project
 - Session list overlay (`s` key) now toggles off with `s` or `Esc` — `ToggleSessionList` action was always calling `open_session_list()` without checking if already open, and `dispatch_escape()` for Output focus went straight to Worktrees without closing the overlay first
