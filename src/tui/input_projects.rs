@@ -233,6 +233,14 @@ fn confirm_init(app: &mut App) {
         resolve_input_path(&input)
     };
 
+    // Guard: don't re-init an existing git repo — user should use 'a' (add) instead
+    if path.exists() && Git::is_git_repo(&path) {
+        if let Some(ref mut panel) = app.projects_panel {
+            panel.error = Some("Already a git repo — use 'a' to add it".to_string());
+        }
+        return;
+    }
+
     // Create directory if it doesn't exist
     if !path.exists() {
         if let Err(e) = std::fs::create_dir_all(&path) {
