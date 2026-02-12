@@ -26,6 +26,7 @@ All notable changes to Azureal will be documented in this file.
 - `⌃C` renamed from "Cancel Claude response" to "Cancel agent"
 - Removed `ClearInput` action (`⌃U`/`⌃C`) — use `⌘A` + `Delete` instead
 - Prompt clipboard operations now use `⌘` only (removed redundant `⌃C/X/V/A` variants that conflicted with cancel/speech)
+- Command mode title bar: PROMPT and TERMINAL labels now uppercase for visibility
 
 ### Refactored
 - Modularized `event_loop.rs` (1660→330 lines) into 5 focused submodules using file-based module root pattern:
