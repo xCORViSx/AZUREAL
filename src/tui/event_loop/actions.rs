@@ -667,38 +667,42 @@ fn open_session_list(app: &mut App) {
     app.show_session_list = true;
     app.session_list_selected = 0;
     app.session_list_scroll = 0;
-    // Only load files for the current worktree
+    // Refresh session files and recompute message counts for current worktree
     if let Some(session) = app.current_session() {
         let branch = session.branch_name.clone();
-        if !app.session_files.contains_key(&branch) {
-            if let Some(ref wt_path) = app.sessions[app.selected_worktree.unwrap()].worktree_path {
-                let files = crate::config::list_claude_sessions(wt_path);
-                app.session_files.insert(branch.clone(), files);
-            }
+        // Always refresh file list on open (picks up new sessions)
+        if let Some(ref wt_path) = app.sessions[app.selected_worktree.unwrap()].worktree_path {
+            let files = crate::config::list_claude_sessions(wt_path);
+            app.session_files.insert(branch.clone(), files);
         }
+        // Recompute message counts (always — cheap enough, ensures accuracy)
         if let Some(files) = app.session_files.get(&branch) {
             for (session_id, path, _) in files.iter() {
-                if !app.session_msg_counts.contains_key(session_id) {
-                    let count = count_messages_in_jsonl(path);
-                    app.session_msg_counts.insert(session_id.clone(), count);
-                }
+                let count = count_messages_in_jsonl(path);
+                app.session_msg_counts.insert(session_id.clone(), count);
             }
         }
     }
 }
 
-/// Count conversation turns in a JSONL session file.
-/// Counts user prompts ("type":"human") + completed assistant responses
-/// ("type":"assistant" with "stop_reason") to match the convo title [x/y] counter.
-/// Raw JSONL has many assistant lines per turn (streaming chunks); only the final
-/// one with stop_reason represents a complete response.
+/// Count message bubbles in a JSONL session file to match the convo title [x/y].
+/// The renderer creates one bubble per UserMessage and one per AssistantText block.
+/// JSONL format: outer "type":"user" for user msgs, "type":"assistant" for assistant.
+/// Each assistant API response emits multiple lines (one per content block: thinking,
+/// text, tool_use) sharing the same message.id. Only "text" blocks become bubbles.
+/// User lines with "tool_result" are tool returns (not user prompts) — skip those.
 fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     let Ok(content) = std::fs::read_to_string(path) else { return 0; };
     content.lines().filter(|line| {
-        let is_human = line.contains("\"type\":\"human\"") || line.contains("\"type\": \"human\"");
-        let is_assistant_final = (line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\""))
-            && line.contains("\"stop_reason\"");
-        is_human || is_assistant_final
+        // User prompt: type=user WITHOUT tool_result (tool returns aren't bubbles)
+        let is_user_prompt = (line.contains("\"type\":\"user\"") || line.contains("\"type\": \"user\""))
+            && !line.contains("\"tool_result\"")
+            && !line.contains("\"tool_use_id\"");
+        // Assistant text block: type=assistant with a "type":"text" content block
+        // (thinking and tool_use blocks don't produce separate bubbles)
+        let is_assistant_text = (line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\""))
+            && line.contains("\"type\":\"text\"");
+        is_user_prompt || is_assistant_text
     }).count()
 }
 
