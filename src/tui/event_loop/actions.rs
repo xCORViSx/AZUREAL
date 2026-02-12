@@ -687,23 +687,56 @@ fn open_session_list(app: &mut App) {
 
 /// Count message bubbles in a JSONL session file to match the convo title [x/y].
 /// The renderer creates one bubble per UserMessage and one per AssistantText block.
-/// JSONL format: outer "type":"user" for user msgs, "type":"assistant" for assistant.
-/// Each assistant API response emits multiple lines (one per content block: thinking,
-/// text, tool_use) sharing the same message.id. Only "text" blocks become bubbles.
-/// User lines with "tool_result" are tool returns (not user prompts) — skip those.
+/// User messages are deduplicated by parentUuid (parser keeps latest, replaces older
+/// with Filtered). Uses lightweight JSON parsing for accuracy.
 fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     let Ok(content) = std::fs::read_to_string(path) else { return 0; };
-    content.lines().filter(|line| {
-        // User prompt: type=user WITHOUT tool_result (tool returns aren't bubbles)
-        let is_user_prompt = (line.contains("\"type\":\"user\"") || line.contains("\"type\": \"user\""))
-            && !line.contains("\"tool_result\"")
-            && !line.contains("\"tool_use_id\"");
-        // Assistant text block: type=assistant with a "type":"text" content block
-        // (thinking and tool_use blocks don't produce separate bubbles)
-        let is_assistant_text = (line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\""))
-            && line.contains("\"type\":\"text\"");
-        is_user_prompt || is_assistant_text
-    }).count()
+    let mut count = 0usize;
+    // Track parentUuid → latest timestamp for user message deduplication
+    // (same logic as session_parser: if two user msgs share parentUuid, only newest counts)
+    let mut user_by_parent: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut user_no_parent = 0usize;
+
+    for line in content.lines() {
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let line_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match line_type {
+            "user" => {
+                // Skip isMeta lines (system-generated, not user prompts)
+                if json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false) { continue; }
+                let msg = json.get("message").and_then(|m| m.get("content"));
+                // Only count plain-string content (user typed text) — arrays are tool_results
+                let Some(text) = msg.and_then(|c| c.as_str()) else { continue };
+                // Skip special non-bubble user lines (parser skips these too)
+                if text.contains("<local-command-caveat>") { continue; }
+                if text.contains("<local-command-stdout>") { continue; }
+                if text.starts_with("<command-name>") { continue; }
+                if text.starts_with("This session is being continued from a previous conversation") { continue; }
+                // Deduplicate by parentUuid (keep latest timestamp)
+                let parent = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("");
+                let ts = json.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
+                if parent.is_empty() {
+                    user_no_parent += 1;
+                } else if let Some(old_ts) = user_by_parent.get(parent) {
+                    if ts > *old_ts { user_by_parent.insert(parent.to_string(), ts); }
+                } else {
+                    user_by_parent.insert(parent.to_string(), ts);
+                }
+            }
+            "assistant" => {
+                // Only count lines with a "text" content block (those become AssistantText bubbles)
+                let has_text_block = json.get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                    .map(|arr| arr.iter().any(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")))
+                    .unwrap_or(false);
+                if has_text_block { count += 1; }
+            }
+            _ => {}
+        }
+    }
+    count + user_by_parent.len() + user_no_parent
 }
 
 /// Rebase current worktree onto main
