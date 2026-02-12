@@ -553,7 +553,7 @@ pub fn prompt_command_title() -> String {
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     format!(
-        " COMMAND ({}:prompt | {}:terminal | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output) ",
+        " COMMAND ({}:PROMPT | {}:TERMINAL | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output) ",
         p, t, help, tab, stab, cancel, quit, restart, debug
     )
 }
