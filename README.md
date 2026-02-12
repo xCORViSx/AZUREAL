@@ -38,6 +38,7 @@
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude’s task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
+- **Convo Search** — Press `/` in Convo pane to find text in current session with yellow match highlighting and `[N/M]` counter; `n`/`N` to cycle matches. In Session list: `/` filters by name, `//` searches across all session file contents
 - **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
 - **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
 - **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via sequential Claude sessions on the main worktree
@@ -89,7 +90,7 @@ azureal
 | `P` | Projects panel |
 | `R` | Rebase onto main |
 | `d` | View diff |
-| `/` | Search/filter sessions (in Worktrees) |
+| `/` | Search/filter sessions (Worktrees); Search text (Convo); Filter/search sessions (Session list) |
 | `Space` | Context menu / Toggle expand |
 | `?` | Help |
 | `⌃c` | Cancel agent |

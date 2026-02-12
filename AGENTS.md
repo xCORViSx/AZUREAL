@@ -79,7 +79,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 
 **Overlays:**
 - **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
-- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a full-pane session file browser across all worktrees. Each row shows status symbol (colored by session status), worktree display name, session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Message counts computed via lightweight JSONL line scan (cached in `session_msg_counts` HashMap). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
+- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a full-pane session file browser across all worktrees. Each row shows status symbol (colored by session status), worktree display name, session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Message counts computed via lightweight JSONL line scan (cached in `session_msg_counts` HashMap). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against worktree name, session name, or UUID); `//` (slash while filter is empty) switches to cross-session content search mode (searches all JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
@@ -1113,6 +1113,8 @@ azureal/
 - [ ] Theme customization
 - [x] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
+- [x] Convo search (`/` in Convo pane — find text in current session, `n/N` to cycle matches)
+- [x] Session list search (`/` name filter, `//` cross-session content search)
 - [x] Speech-to-text input (`⌃s` in prompt mode)
 
 ## Phase 3: Advanced Features
@@ -1243,6 +1245,8 @@ azureal
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` | Jump to top/bottom |
 | `s` | Toggle Session list overlay (browse all session files) |
+| `/` | Search text in current session (yellow highlights, `[N/M]` counter) |
+| `n/N` | Next/prev search match (after `/` search confirmed with Enter) |
 | `o` | Switch to output view |
 | `d` | Git worktree diff |
 | `R` | Rebase status |
