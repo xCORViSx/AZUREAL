@@ -38,7 +38,7 @@
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude’s task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
-- **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
+- **Speech-to-Text** — Press `⌃v` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
 - **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
 - **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via sequential Claude sessions on the main worktree
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
@@ -50,7 +50,7 @@
 - **Rust** (latest stable)
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
-- **Whisper model** (optional, for voice input): `mkdir -p ~/.azureal/models && curl -L -o ~/.azureal/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
+- **Whisper model** (optional, for voice input): `mkdir -p ~/.azureal/voice && curl -L -o ~/.azureal/voice/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
 
 ## Installation
 
@@ -100,7 +100,7 @@ azureal
 
 - Red border = Command mode (keys are commands; title bar shows all global bindings)
 - Yellow border = Prompt mode (typing to Claude)
-- Magenta border = Voice recording/transcribing (`⌃s` to toggle)
+- Magenta border = Voice recording/transcribing (`⌃v` to toggle)
 - Azure border = Terminal mode (typing shell commands)
 
 ## Architecture

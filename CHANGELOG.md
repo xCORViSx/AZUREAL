@@ -20,6 +20,10 @@ All notable changes to Azureal will be documented in this file.
   - Creates `═ ═ ═` / `║ ║` gap pattern across all four edges
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
+### Changed
+- Voice input keybinding changed from `⌃S` to `⌃V` across all contexts (prompt, edit mode, terminal)
+- Whisper model directory renamed from `~/.azureal/models/` to `~/.azureal/voice/`
+
 ### Refactored
 - Modularized `event_loop.rs` (1660→330 lines) into 5 focused submodules using file-based module root pattern:
   - `event_loop/coords.rs` (174 lines) — screen-to-content coordinate mapping
