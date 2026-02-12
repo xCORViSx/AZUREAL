@@ -37,13 +37,23 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
             if let Some(ref mut panel) = app.projects_panel { panel.select_prev(); }
         }
 
-        // Open selected project
+        // Open selected project — only if it's a valid git repo
         (_, KeyCode::Enter) => {
             let path = app.projects_panel.as_ref()
                 .and_then(|p| p.entries.get(p.selected))
                 .map(|e| e.path.clone());
             if let Some(path) = path {
-                app.switch_project(path);
+                if !path.exists() {
+                    if let Some(ref mut panel) = app.projects_panel {
+                        panel.error = Some("Directory does not exist".to_string());
+                    }
+                } else if !Git::is_git_repo(&path) {
+                    if let Some(ref mut panel) = app.projects_panel {
+                        panel.error = Some("Not a git repository".to_string());
+                    }
+                } else {
+                    app.switch_project(path);
+                }
             }
         }
 
