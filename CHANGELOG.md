@@ -21,8 +21,11 @@ All notable changes to Azureal will be documented in this file.
   - `[modified]` indicator displayed as right-aligned title (ratatui fills gap with border chars automatically)
 
 ### Changed
-- Voice input keybinding changed from `⌃S` to `⌃V` across all contexts (prompt, edit mode, terminal)
-- Whisper model directory renamed from `~/.azureal/models/` to `~/.azureal/voice/`
+- Speech input keybinding: `⌃S` (renamed from "Voice input", was `⌃V` which conflicted with terminal paste)
+- Whisper model directory: `~/.azureal/speech/` (renamed from `voice/`)
+- `⌃C` renamed from "Cancel Claude response" to "Cancel agent"
+- Removed `ClearInput` action (`⌃U`/`⌃C`) — use `⌘A` + `Delete` instead
+- Prompt clipboard operations now use `⌘` only (removed redundant `⌃C/X/V/A` variants that conflicted with cancel/speech)
 
 ### Refactored
 - Modularized `event_loop.rs` (1660→330 lines) into 5 focused submodules using file-based module root pattern:

@@ -818,12 +818,12 @@ Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/
 
 ### Speech-to-Text Input
 
-Press `⌃v` in prompt mode or file edit mode to toggle voice recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field.
+Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field.
 
 **Architecture:**
 - Background thread (`stt_loop`) blocks on `mpsc::recv()` when idle (zero CPU)
 - Same pattern as RenderThread and Terminal PTY: mpsc channels, `try_recv()` polling in event loop
-- `SttHandle` lazy-initialized on first `⌃v` press (no resources allocated until needed)
+- `SttHandle` lazy-initialized on first `⌃s` press (no resources allocated until needed)
 - `WhisperContext` lazy-loaded on first transcription and cached for reuse
 
 **Audio pipeline:**
@@ -839,9 +839,9 @@ Press `⌃v` in prompt mode or file edit mode to toggle voice recording. Audio i
 - Transcribing: magenta border + `...` prefix in input title
 - Status bar shows progress messages (Recording..., Transcribing Xs of audio..., Loading Whisper model...)
 
-**Model:** `~/.azureal/voice/ggml-base.en.bin` (~142MB). If missing, status bar shows download instructions:
+**Model:** `~/.azureal/speech/ggml-base.en.bin` (~142MB). If missing, status bar shows download instructions:
 ```bash
-mkdir -p ~/.azureal/voice && curl -L -o ~/.azureal/voice/ggml-base.en.bin \
+mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 ```
 
@@ -850,7 +850,7 @@ mkdir -p ~/.azureal/voice && curl -L -o ~/.azureal/voice/ggml-base.en.bin \
 - Events collected into Vec first (avoids borrow conflict: `try_recv` borrows handle, processing borrows `&mut self`)
 - Short poll timeout (16ms) when `stt_recording || stt_transcribing`
 
-Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃v` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs` and `src/tui/input_viewer.rs` (edit mode), polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs` and `src/tui/draw_viewer.rs` (edit mode magenta border + REC indicator)
+Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs` and `src/tui/input_viewer.rs` (edit mode), polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs` and `src/tui/draw_viewer.rs` (edit mode magenta border + REC indicator)
 
 ### Conversation Persistence
 
@@ -1113,7 +1113,7 @@ azureal/
 - [ ] Theme customization
 - [x] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
-- [x] Speech-to-text voice input (`⌃v` in prompt mode)
+- [x] Speech-to-text input (`⌃s` in prompt mode)
 
 ## Phase 3: Advanced Features
 - [x] God File System (scan >1000 LOC files, batch-modularize via sequential Claude sessions)
@@ -1184,7 +1184,7 @@ azureal
 | `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
-| `⌃c` | Cancel running Claude response |
+| `⌃c` | Cancel agent |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
 
@@ -1254,8 +1254,8 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel response | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃u:clear | ⌃v:voice)`
-**Command mode title shows:** `(p:prompt | t:terminal | ?:help | Tab/⇧Tab:focus | ⌃c:cancel response | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech)`
+**Command mode title shows:** `(p:prompt | t:terminal | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
 
 ### Terminal Mode
 
