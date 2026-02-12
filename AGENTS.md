@@ -946,7 +946,7 @@ Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCo
 Persistent project management across azureal sessions. Projects are stored in `~/.azureal/projects.txt` (one path per line, optional `|display_name` suffix). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
 
 **Behavior:**
-- When launched inside a git repo, auto-registers the repo in `projects.txt` and loads normally
+- When launched inside a git repo, auto-registers the repo in `projects.txt` and loads normally. Display name derived from `git remote get-url origin` (repo name from SSH/HTTPS URL, `.git` stripped); folder name fallback if no remote. `Project::from_path()` reads display name via `project_display_name()` so title bar, sidebar, and terminal title all use it.
 - When launched outside a git repo, shows the Projects panel full-screen so user can pick a project
 - The sidebar no longer shows a project header row — project name appears in the Worktrees pane border title instead
 
@@ -962,7 +962,7 @@ Persistent project management across azureal sessions. Projects are stored in `~
 **Project Switching:**
 When switching projects, azureal kills all running Claude processes, clears all session/render state (sessions, display events, caches, file watcher), sets the new project via `Project::from_path()`, and reloads sessions, output, and run commands.
 
-Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
+Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
 
 ### Creation Wizard
 

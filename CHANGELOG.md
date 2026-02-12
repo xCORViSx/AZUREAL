@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Auto-registered projects now derive display name from git remote origin URL (repo name) instead of folder name; falls back to folder name if no remote exists
 - God File System: scan project for source files >1000 LOC and batch-modularize them
   - Press `g` in Worktrees pane to open full-screen scanner panel
   - Shows all oversized source files sorted by line count (worst offenders first)
