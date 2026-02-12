@@ -149,6 +149,7 @@ pub enum Action {
 
     // Output/Convo
     ToggleSessionList,
+    SearchConvo,
     JumpNextBubble,
     JumpPrevBubble,
     JumpNextMessage,
@@ -366,8 +367,9 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 ];
 
 /// Convo/Output bindings
-pub static OUTPUT: [Keybinding; 15] = [
+pub static OUTPUT: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchConvo),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next prompt", Action::JumpNextBubble).paired(),

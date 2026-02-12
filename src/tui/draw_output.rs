@@ -215,12 +215,105 @@ pub fn poll_render_result(app: &mut App) -> bool {
 /// Each row shows: status symbol, worktree name, Claude session name/UUID, mtime, [N msgs].
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::Output;
-    let viewport_height = area.height.saturating_sub(2) as usize;
-    let session_names = app.load_all_session_names();
 
-    // Build flat list of all session files across all worktrees
+    // Split area: filter bar at top when filter is active or has text
+    let has_filter = app.session_filter_active || !app.session_filter.is_empty();
+    let (filter_area, list_area) = if has_filter {
+        let chunks = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ]).split(area);
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, area)
+    };
+
+    // Draw filter input bar when active
+    if let Some(fa) = filter_area {
+        let mode_prefix = if app.session_content_search { "//" } else { "/" };
+        let border_color = if app.session_filter_active { Color::Yellow } else { Color::DarkGray };
+        let right_info = if app.session_content_search {
+            format!(" {} results ", app.session_search_results.len())
+        } else {
+            String::new()
+        };
+        let filter_widget = Paragraph::new(app.session_filter.clone())
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(Span::styled(mode_prefix, Style::default().fg(Color::Yellow)))
+                .title(Line::from(Span::styled(right_info, Style::default().fg(Color::DarkGray))).alignment(Alignment::Right)),
+            );
+        f.render_widget(filter_widget, fa);
+        if app.session_filter_active {
+            let cursor_x = fa.x + 1 + app.session_filter.len() as u16;
+            let cursor_y = fa.y + 1;
+            if cursor_x < fa.right() {
+                f.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+    }
+
+    let viewport_height = list_area.height.saturating_sub(2) as usize;
+    let inner_width = list_area.width.saturating_sub(2) as usize;
+
+    // Content search mode: show search results instead of normal session list
+    if app.session_content_search {
+        let session_names = app.load_all_session_names();
+        let mut rows: Vec<Line<'static>> = Vec::new();
+        for (idx, (_row, session_id, preview)) in app.session_search_results.iter().enumerate() {
+            let is_selected = idx == app.session_list_selected;
+            let name_display = session_names.get(session_id.as_str())
+                .cloned()
+                .unwrap_or_else(|| session_id.chars().take(12).collect::<String>());
+            let bg = if is_selected { Style::default().bg(AZURE).fg(Color::Black) } else { Style::default() };
+            let name_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            // Truncate preview to fit
+            let prefix_len = name_display.chars().count() + 4; // " name │ "
+            let preview_space = inner_width.saturating_sub(prefix_len);
+            let trunc_preview: String = preview.chars().take(preview_space).collect();
+
+            rows.push(Line::from(vec![
+                Span::styled(format!(" {} ", name_display), name_style),
+                Span::styled("│ ", if is_selected { bg } else { Style::default().fg(Color::DarkGray) }),
+                Span::styled(trunc_preview, if is_selected { bg } else { Style::default().fg(Color::DarkGray) }),
+            ]));
+        }
+        let total = rows.len();
+        if app.session_list_selected >= total && total > 0 {
+            app.session_list_selected = total - 1;
+        }
+        let max_scroll = total.saturating_sub(viewport_height);
+        if app.session_list_selected < app.session_list_scroll {
+            app.session_list_scroll = app.session_list_selected;
+        } else if app.session_list_selected >= app.session_list_scroll + viewport_height {
+            app.session_list_scroll = app.session_list_selected.saturating_sub(viewport_height - 1);
+        }
+        app.session_list_scroll = app.session_list_scroll.min(max_scroll);
+        let display: Vec<Line> = rows.into_iter().skip(app.session_list_scroll).take(viewport_height).collect();
+        let title = format!(" Search [{}/{}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total.max(1));
+        let border_style = if is_focused {
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+        } else { Style::default().fg(Color::White) };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+            .title(Span::styled(title, border_style))
+            .border_style(border_style);
+        f.render_widget(Paragraph::new(display).block(block), list_area);
+        return;
+    }
+
+    // Normal session list (with optional name filtering)
+    let session_names = app.load_all_session_names();
+    let filter_lower = app.session_filter.to_lowercase();
+    let filtering = !filter_lower.is_empty();
     let mut rows: Vec<Line<'static>> = Vec::new();
-    let inner_width = area.width.saturating_sub(2) as usize;
+    let mut total_unfiltered = 0usize;
 
     for session in app.sessions.iter() {
         let status = session.status(&app.running_sessions);
@@ -230,20 +323,23 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
 
         if let Some(files) = files {
             for (session_id, _path, time_str) in files.iter() {
-                // Custom name or truncated UUID
-                let name_display = if let Some(name) = session_names.get(session_id.as_str()) {
-                    name.clone()
-                } else {
-                    session_id.clone()
-                };
-                // Message count from cache (computed on overlay open)
+                total_unfiltered += 1;
+                let name_display = session_names.get(session_id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| session_id.clone());
+
+                // Name filter: skip rows that don't match worktree name, session name, or session id
+                if filtering {
+                    let matches = wt_name.to_lowercase().contains(&filter_lower)
+                        || name_display.to_lowercase().contains(&filter_lower)
+                        || session_id.to_lowercase().contains(&filter_lower);
+                    if !matches { continue; }
+                }
+
                 let msg_count = app.session_msg_counts.get(session_id).copied().unwrap_or(0);
                 let msg_badge = format!("[{} msgs]", msg_count);
-
-                // Build the row: " ● wt_name │ session_name    mtime [N msgs]"
                 let prefix = format!(" {} {} │ ", status.symbol(), wt_name);
                 let suffix = format!(" {} {} ", time_str, msg_badge);
-                // Fill remaining space with session name, truncated if needed
                 let name_space = inner_width.saturating_sub(prefix.chars().count() + suffix.chars().count());
                 let truncated_name = if name_display.chars().count() > name_space {
                     let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
@@ -275,7 +371,9 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
                 ]));
             }
         } else {
-            // Worktree with no session files discovered
+            total_unfiltered += 1;
+            // Worktree with no session files — skip if filtering and name doesn't match
+            if filtering && !wt_name.to_lowercase().contains(&filter_lower) { continue; }
             let is_selected = rows.len() == app.session_list_selected;
             let style = if is_selected {
                 Style::default().bg(AZURE).fg(Color::Black)
@@ -310,7 +408,11 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .take(viewport_height)
         .collect();
 
-    let title = format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1));
+    let title = if filtering {
+        format!(" Sessions [{}/{} of {}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
+    } else {
+        format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1))
+    };
     let border_style = if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
@@ -323,7 +425,7 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         .border_style(border_style);
 
     let widget = Paragraph::new(display).block(block);
-    f.render_widget(widget, area);
+    f.render_widget(widget, list_area);
 }
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
@@ -360,8 +462,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         // +2 for border top/bottom, cap so convo still has at least 10 rows
         (main_lines + sub_lines + 2).min(area.height.saturating_sub(10))
     } else { 0 };
-    let [convo_area, todo_area] = Layout::vertical([
+    // Search bar at bottom of convo: visible when search is active or has residual matches
+    let has_search = app.convo_search_active || !app.convo_search_matches.is_empty();
+    let search_height: u16 = if has_search { 3 } else { 0 };
+    let [convo_area, search_area, todo_area] = Layout::vertical([
         Constraint::Min(1),
+        Constraint::Length(search_height),
         Constraint::Length(todo_height),
     ]).areas(area);
     let area = convo_area;
@@ -477,6 +583,41 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                                     if he < span_len {
                                         let after: String = chars[he..].iter().collect();
                                         new_spans.push(Span::styled(after, span.style));
+                                    }
+                                }
+                                col = span_end;
+                            }
+                            *line = Line::from(new_spans);
+                        }
+                    }
+
+                    // Apply convo search match highlighting (yellow bg for matches,
+                    // bright yellow for current match — same span-splitting technique)
+                    if !app.convo_search_matches.is_empty() {
+                        let match_style = Style::default().bg(Color::DarkGray).fg(Color::Yellow);
+                        let current_style = Style::default().bg(Color::Yellow).fg(Color::Black);
+                        for (mi, &(line_idx, sc, ec)) in app.convo_search_matches.iter().enumerate() {
+                            if line_idx < scroll || line_idx >= scroll + viewport_height { continue; }
+                            let vi = line_idx - scroll;
+                            let Some(line) = lines.get_mut(vi) else { continue };
+                            let style = if mi == app.convo_search_current { current_style } else { match_style };
+                            let mut new_spans: Vec<Span<'static>> = Vec::new();
+                            let mut col = 0usize;
+                            for span in line.spans.iter() {
+                                let span_len = span.content.chars().count();
+                                let span_end = col + span_len;
+                                if span_end <= sc || col >= ec {
+                                    new_spans.push(span.clone());
+                                } else {
+                                    let chars: Vec<char> = span.content.chars().collect();
+                                    let hs = sc.saturating_sub(col);
+                                    let he = (ec - col).min(span_len);
+                                    if hs > 0 {
+                                        new_spans.push(Span::styled(chars[..hs].iter().collect::<String>(), span.style));
+                                    }
+                                    new_spans.push(Span::styled(chars[hs..he].iter().collect::<String>(), style));
+                                    if he < span_len {
+                                        new_spans.push(Span::styled(chars[he..].iter().collect::<String>(), span.style));
                                     }
                                 }
                                 col = span_end;
@@ -658,6 +799,32 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
     let output = Paragraph::new(content).block(block);
     f.render_widget(output, area);
+
+    // Render convo search bar at bottom of convo content area
+    if has_search {
+        let match_info = if app.convo_search_matches.is_empty() {
+            if app.convo_search.is_empty() { String::new() } else { " 0/0 ".to_string() }
+        } else {
+            format!(" {}/{} ", app.convo_search_current + 1, app.convo_search_matches.len())
+        };
+        let border_color = if app.convo_search_active { Color::Yellow } else { Color::DarkGray };
+        let search_widget = Paragraph::new(app.convo_search.clone())
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(Span::styled("/", Style::default().fg(Color::Yellow)))
+                .title(Line::from(Span::styled(match_info, Style::default().fg(Color::DarkGray))).alignment(Alignment::Right)),
+            );
+        f.render_widget(search_widget, search_area);
+        // Show cursor in search bar when actively typing
+        if app.convo_search_active {
+            let cursor_x = search_area.x + 1 + app.convo_search.len() as u16;
+            let cursor_y = search_area.y + 1;
+            if cursor_x < search_area.right() {
+                f.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+    }
 
     // Render sticky todo widget at bottom of convo pane (main + subagent todos)
     if todo_height > 0 {

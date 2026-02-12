@@ -353,6 +353,28 @@ pub struct App {
     pub session_list_scroll: usize,
     /// Cached message counts per session_id (computed on session list open)
     pub session_msg_counts: HashMap<String, usize>,
+
+    // ── Convo search (find text in current session's rendered output) ──
+    /// Whether the search bar is active (accepting keystrokes)
+    pub convo_search_active: bool,
+    /// Current search query text
+    pub convo_search: String,
+    /// All matches: (cache_line_idx, start_col, end_col). Recomputed on each keystroke.
+    pub convo_search_matches: Vec<(usize, usize, usize)>,
+    /// Index into convo_search_matches for the "current" highlighted match
+    pub convo_search_current: usize,
+
+    // ── Session list filter (name-based, single `/`) ──
+    /// Whether the filter bar is active in session list overlay
+    pub session_filter_active: bool,
+    /// Filter text for session list name search
+    pub session_filter: String,
+
+    // ── Cross-session content search (double `//`) ──
+    /// True when in "//" content search mode vs "/" name filter mode
+    pub session_content_search: bool,
+    /// Results: (flat_row_idx, session_id, matched_line_preview)
+    pub session_search_results: Vec<(usize, String, String)>,
 }
 
 /// A single todo item from Claude's TodoWrite tool call
@@ -552,6 +574,14 @@ impl App {
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),
+            convo_search_active: false,
+            convo_search: String::new(),
+            convo_search_matches: Vec::new(),
+            convo_search_current: 0,
+            session_filter_active: false,
+            session_filter: String::new(),
+            session_content_search: false,
+            session_search_results: Vec::new(),
         }
     }
 
