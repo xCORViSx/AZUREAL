@@ -107,8 +107,8 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     // Regular text editing
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => app.prompt_mode = false,
-        // ⌃s — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
-        (KeyModifiers::CONTROL, KeyCode::Char('s')) => { app.toggle_stt(); }
+        // ⌃v — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
+        (KeyModifiers::CONTROL, KeyCode::Char('v')) => { app.toggle_stt(); }
         // ⌃u — clear entire input (standard Unix kill-line; ⌥+letter won't work on macOS)
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => { app.clear_input(); }
         // ↑/↓ — browse prompt history (pulled from display_events UserMessage entries)

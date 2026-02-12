@@ -362,7 +362,7 @@ pub static EDIT_MODE: [Keybinding; 5] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo).paired(),
     Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('v')), "Voice input", Action::ToggleStt),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
 ];
 
@@ -398,7 +398,7 @@ pub static INPUT: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('u')), "Clear input", Action::ClearInput),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Voice input", Action::ToggleStt),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('v')), "Voice input", Action::ToggleStt),
 ];
 
 /// Terminal bindings (command mode) — ALL terminal keybindings live here
@@ -536,7 +536,7 @@ pub fn prompt_type_title() -> String {
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let cl = find_key_for_action(&INPUT, Action::ClearInput).unwrap_or("⌃u".into());
-    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
+    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃v".into());
     format!(
         " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel response | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:clear | {}:voice) ",
         esc, submit, cancel, hprev, hnext, dw, cl, stt

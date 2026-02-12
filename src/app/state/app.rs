@@ -330,7 +330,7 @@ pub struct App {
     pub awaiting_ask_user_question: bool,
     /// Cached questions from last AskUserQuestion (for context prefix on response)
     pub ask_user_questions_cache: Option<serde_json::Value>,
-    /// Speech-to-text engine handle (lazy-initialized on first ⌃s press)
+    /// Speech-to-text engine handle (lazy-initialized on first ⌃v press)
     pub stt_handle: Option<crate::stt::SttHandle>,
     /// Whether STT is currently recording audio from the microphone
     pub stt_recording: bool,
