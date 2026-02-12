@@ -951,7 +951,7 @@ Persistent project management across azureal sessions. Projects are stored in `~
 - The sidebar no longer shows a project header row — project name appears in the Worktrees pane border title instead
 
 **Panel Actions:**
-- `Enter`: switch to selected project (kills all Claude processes, reloads sessions/files)
+- `Enter`: switch to selected project (validates git repo first — shows error if path doesn't exist or isn't a git repo; kills all Claude processes, reloads sessions/files)
 - `a`: add a new project by path (validates it's a git repo)
 - `d`: delete selected project from list (does NOT delete the repo)
 - `n`: rename the selected project's display name
