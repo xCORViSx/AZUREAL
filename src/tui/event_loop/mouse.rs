@@ -80,6 +80,9 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
     if app.creation_wizard.is_some() { app.creation_wizard = None; app.focus = Focus::Worktrees; return true; }
 
+    // Clicking any pane exits prompt mode (input pane re-enables it below)
+    app.prompt_mode = false;
+
     // Worktrees/FileTree pane — when file tree overlay is active, click selects entries;
     // otherwise click selects worktrees or their Claude session files
     if app.pane_worktrees.contains(pos) {
