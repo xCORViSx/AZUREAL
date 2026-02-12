@@ -102,16 +102,24 @@ fn recompute_convo_matches(app: &mut App) {
     if app.convo_search.is_empty() { return; }
 
     let query = app.convo_search.to_lowercase();
+    let query_chars: Vec<char> = query.chars().collect();
+    let qlen = query_chars.len();
     for (line_idx, line) in app.rendered_lines_cache.iter().enumerate() {
-        // Extract plain text from spans (same technique as extract_text_from_cache)
+        // Extract plain text from spans, then lowercase each char individually.
+        // This preserves 1:1 char-index mapping with the original text (the highlight
+        // code in draw_output splits spans by char index, NOT byte offset).
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        let lower = text.to_lowercase();
-        // Find all occurrences in this line
-        let mut start = 0;
-        while let Some(pos) = lower[start..].find(&query) {
-            let abs_pos = start + pos;
-            app.convo_search_matches.push((line_idx, abs_pos, abs_pos + query.len()));
-            start = abs_pos + 1;
+        let lower: Vec<char> = text.chars().map(|c| {
+            // Single-char lowercase only (avoids ß→ss expanding char count)
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            s.to_lowercase().chars().next().unwrap_or(c)
+        }).collect();
+        if lower.len() < qlen { continue; }
+        for i in 0..=lower.len() - qlen {
+            if lower[i..i + qlen] == query_chars[..] {
+                app.convo_search_matches.push((line_idx, i, i + qlen));
+            }
         }
     }
 }
