@@ -687,12 +687,18 @@ fn open_session_list(app: &mut App) {
     }
 }
 
-/// Count human+assistant messages in a JSONL session file
+/// Count conversation turns in a JSONL session file.
+/// Counts user prompts ("type":"human") + completed assistant responses
+/// ("type":"assistant" with "stop_reason") to match the convo title [x/y] counter.
+/// Raw JSONL has many assistant lines per turn (streaming chunks); only the final
+/// one with stop_reason represents a complete response.
 fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     let Ok(content) = std::fs::read_to_string(path) else { return 0; };
     content.lines().filter(|line| {
-        line.contains("\"type\":\"human\"") || line.contains("\"type\":\"assistant\"")
-            || line.contains("\"type\": \"human\"") || line.contains("\"type\": \"assistant\"")
+        let is_human = line.contains("\"type\":\"human\"") || line.contains("\"type\": \"human\"");
+        let is_assistant_final = (line.contains("\"type\":\"assistant\"") || line.contains("\"type\": \"assistant\""))
+            && line.contains("\"stop_reason\"");
+        is_human || is_assistant_final
     }).count()
 }
 
