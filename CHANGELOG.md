@@ -12,10 +12,15 @@ All notable changes to Azureal will be documented in this file.
 - Session list name filter (`/` in session list): filter sessions by worktree name, session name, or UUID
   - Case-insensitive matching with live-updating filtered list
   - Title shows `[x/y of total]` match count
-- Cross-session content search (`//` in session list): full-text search across all session JSONL files
+- Cross-session content search (`//` in session list): full-text search across current worktree's JSONL files
   - Activates with double-slash (second `/` while filter is empty)
   - Searches begin at 3+ characters, capped at 100 results, skips files >5MB
   - Shows session name + matched line preview; Enter loads that session
+
+### Changed
+- Session list overlay now scoped to current worktree only (was all worktrees)
+  - Removed redundant worktree name column from each row
+  - Border title shows worktree name + position counter
 - Auto-registered projects now derive display name from git remote origin URL (repo name) instead of folder name; falls back to folder name if no remote exists
 - God File System: scan project for source files >1000 LOC and batch-modularize them
   - Press `g` in Worktrees pane to open full-screen scanner panel
