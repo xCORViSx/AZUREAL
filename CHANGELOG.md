@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Startup splash screen: block-character "AZUREAL" logo in AZURE blue with "Loading project..." subtitle, shown immediately while git/session I/O runs (replaces black screen)
 - Convo pane search (`/`): find text in current session's rendered output
   - Yellow match highlighting with bright current match, `[N/M]` counter in search bar
   - `n`/`N` to cycle through matches after confirming with Enter
@@ -18,6 +19,7 @@ All notable changes to Azureal will be documented in this file.
   - Shows session name + matched line preview; Enter loads that session
 
 ### Changed
+- Session list overlay shows "Loading sessions…" dialog while message counts compute — two-phase open ensures UI never appears frozen on large session files
 - Session list overlay now scoped to current worktree only (was all worktrees)
   - Removed redundant worktree name column from each row
   - Border title shows worktree name + position counter
@@ -52,8 +54,12 @@ All notable changes to Azureal will be documented in this file.
   - `event_loop/fast_draw.rs` (87 lines) — fast-path input rendering bypass
   - `event_loop/claude_events.rs` (62 lines) — Claude process event handling
 
+### Optimized
+- Session list overlay (`s`) opens instantly — message count scanning replaced serde_json parsing with fast `contains()` string checks (zero false positives in Claude's compact JSON). Counts cached by file size so unchanged files skip I/O entirely on subsequent opens.
+
 ### Fixed
-- Session list `[N msgs]` count now matches convo title `[x/y]` — was inflated because it counted every JSONL line with `"type":"assistant"` (streaming produces many per turn) and used wrong type string `"human"` instead of `"user"`. Now counts user prompts (no tool_result) + assistant text blocks only.
+- Convo title `[x/y]` denominator now shows true total message count for large sessions — was showing ~40-50 instead of hundreds because deferred rendering (last 200 events on initial load) meant `message_bubble_positions` only covered the rendered tail. Denominator now counts `UserMessage` + `AssistantText` from the full `display_events` array; numerator uses offset arithmetic so positioning stays correct before full render triggers on scroll-to-top.
+- Session list `[N msgs]` count now matches convo title `[x/y]` — was inflated due to three issues: (1) used wrong type string `"human"` instead of `"user"`, (2) counted every assistant JSONL line with `"stop_reason"` (95.5% are null), (3) didn't skip non-bubble user events (isMeta, `<local-command-caveat>`, `<local-command-stdout>`, `<command-name>`, compaction summaries) or deduplicate by parentUuid. Now uses fast string scanning matching the session parser's filtering logic.
 - Clicking out of prompt input or Tab-cycling away now exits back to command mode (was staying in prompt mode with yellow border)
 - Projects panel init (`i`) now rejects paths that are already git repos — shows "Already a git repo — use 'a' to add it" instead of re-initializing
 - Projects panel now validates git repo before switching — selecting a non-git directory shows an error ("Not a git repository" or "Directory does not exist") instead of blindly opening it as a broken project

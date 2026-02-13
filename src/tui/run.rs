@@ -13,7 +13,10 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
     Frame, Terminal,
 };
 use std::io;
@@ -46,6 +49,9 @@ pub async fn run() -> Result<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    // Show splash screen immediately — visible while project/session loading runs
+    terminal.draw(draw_splash)?;
 
     let mut app = App::new();
     // Set bare title before loading (shown during projects panel if no git repo)
@@ -217,4 +223,45 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     } else if app.run_command_dialog.is_some() {
         draw_dialogs::draw_run_command_dialog(f, app);
     }
+}
+
+/// Block-pixel ASCII art splash screen shown during app initialization.
+/// Renders "AZUREAL" in chunky block characters centered on screen with
+/// a "Loading project..." subtitle. Visible while git/session I/O runs.
+fn draw_splash(f: &mut Frame) {
+    // AZURE brand color (#3399FF)
+    let az = Color::Rgb(51, 153, 255);
+    let dim = Color::Rgb(25, 76, 128);
+    let logo_style = Style::default().fg(az);
+    let dim_style = Style::default().fg(dim);
+
+    // Each letter is 7 rows tall, built from █ (full block) characters.
+    // Letters spaced with 2-char gaps for readability.
+    let logo: Vec<&str> = vec![
+        " █████╗  ████████╗ ██╗   ██╗ ██████╗  ██████╗  █████╗  ██╗     ",
+        "██╔══██╗ ╚══███╔═╝ ██║   ██║ ██╔══██╗ ██╔═══╝ ██╔══██╗ ██║     ",
+        "███████║    ███╔╝  ██║   ██║ ██████╔╝ █████╗  ███████║ ██║     ",
+        "██╔══██║   ███╔╝   ██║   ██║ ██╔══██╗ ██╔══╝  ██╔══██║ ██║     ",
+        "██║  ██║  ████████╗ ╚██████╔╝ ██║  ██║ ██████╗ ██║  ██║ ███████╗",
+        "╚═╝  ╚═╝  ╚═══════╝  ╚═════╝  ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚══════╝",
+    ];
+
+    let area = f.area();
+    let logo_height = logo.len() as u16;
+    // 2 extra lines: 1 blank spacer + 1 subtitle
+    let total_height = logo_height + 2;
+    let start_y = area.y + area.height.saturating_sub(total_height) / 2;
+
+    // Build lines: logo rows + spacer + subtitle
+    let mut lines: Vec<Line<'static>> = logo.iter()
+        .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
+        .collect();
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("Loading project...", dim_style)));
+
+    let splash = Paragraph::new(lines).alignment(Alignment::Center);
+    let splash_area = ratatui::layout::Rect::new(
+        area.x, start_y, area.width, total_height,
+    );
+    f.render_widget(splash, splash_area);
 }

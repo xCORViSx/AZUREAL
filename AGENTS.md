@@ -75,11 +75,13 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
+**Splash Screen:** On startup, a block-character "AZUREAL" logo in AZURE (#3399FF) is rendered centered on screen with a "Loading project..." subtitle in dim blue. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Replaced automatically by the first `ui()` draw when the event loop starts.
+
 **OS Terminal Title:** Set dynamically via crossterm `SetTitle`. Shows `AZUREAL` when no project loaded, `AZUREAL @ <project> : <branch>` when a session is selected. Updated on startup, session switch, and project switch (via `update_terminal_title()` in `src/app/state/ui.rs`, called from `load_session_output()`). Reset to empty on exit.
 
 **Overlays:**
 - **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
-- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via JSONL line scan — counts user prompt lines (type=user, no tool_result) + assistant text blocks (type=assistant with type=text content), matching the convo title `[x/y]` bubble counter. Recomputed on each overlay open. `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
+- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
@@ -364,7 +366,9 @@ if app.rendered_events_start > 0 && app.output_scroll == 0 {
 }
 ```
 
-**Files:** `src/tui/draw_output.rs` (DEFERRED_RENDER_TAIL const, deferred render logic)
+**Message count denominator:** The convo title `[x/y]` denominator counts `UserMessage` + `AssistantText` from the **full** `display_events` array — not from `message_bubble_positions` which only covers rendered events. This ensures the denominator shows the true total even when deferred rendering has skipped early events. The numerator uses `unrendered_offset = total - rendered_bubbles` so position numbering is correct before full render triggers.
+
+**Files:** `src/tui/draw_output.rs` (DEFERRED_RENDER_TAIL const, deferred render logic, title denominator count)
 
 ### 11. NEVER Do File I/O in the DRAW Path (Render Thread Is Fine)
 
@@ -503,7 +507,7 @@ if let Some(result) = poll_render_result(&mut app) {
 
 **Files:** `src/tui/render_thread.rs` (RenderThread struct, request/result types), `src/tui/draw_output.rs` (`submit_render_request()`, `poll_render_result()`), `src/tui/event_loop.rs` (submit/poll integration), `src/app/state/app.rs` (render_thread fields)
 
-**Startup sequence** (`src/tui/run.rs::run`): `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The `load_session_output()` call ensures the output pane shows conversation history immediately on startup.
+**Startup sequence** (`src/tui/run.rs::run`): `draw_splash()` → `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The splash screen renders immediately after terminal init (before any App state exists) so the user sees "AZUREAL / Loading project..." while git discovery and session parsing run. The first `ui()` draw in `run_app()` replaces the splash with the full layout.
 
 ### Vim-Style Input Mode
 
@@ -1024,7 +1028,7 @@ azureal/
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
 │   ├── tui/                # Terminal UI module
-│   │   ├── run.rs          # TUI entry point and 3-pane layout
+│   │   ├── run.rs          # TUI entry point, splash screen, and 3-pane layout
 │   │   ├── event_loop.rs   # Event loop module root (run_app + submodule declarations)
 │   │   ├── event_loop/     # Event loop submodules
 │   │   │   ├── actions.rs  # Key dispatch, execute_action, nav/escape dispatch
@@ -1051,7 +1055,7 @@ azureal/
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
-│   │   ├── input_output.rs # Convo: session list overlay + rebase mode only (commands resolved upstream)
+│   │   ├── input_output.rs # Convo: convo search + session list overlay + rebase mode only (commands resolved upstream)
 │   │   ├── input_god_files.rs # God File panel input (navigate, check, modularize)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
