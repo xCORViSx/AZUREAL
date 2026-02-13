@@ -19,9 +19,12 @@ All notable changes to Azureal will be documented in this file.
   - Shows session name + matched line preview; Enter loads that session
 - macOS completion notifications: system notification fires when any Claude instance exits
   - Title shows `worktree:session_name`; body shows completion status; branded Azureal icon
-  - Custom `.app` bundle (`resources/Azureal.app`) registered with Launch Services for icon
+  - `.app` bundle auto-created at `~/.azureal/AZUREAL.app` with embedded `.icns` (via `include_bytes!()`)
+  - Process re-execs through bundle copy + `TransformProcessType` so Activity Monitor shows AZUREAL icon
+  - Notification permissions auto-enabled on first launch (no System Settings visit needed)
   - Uses `notify-rust` crate with `set_application()` in background thread, non-blocking
   - Works per-instance: multiple Claude sessions each trigger their own notification
+  - Zero manual setup: `cargo install --path .` then `azureal` — bundle auto-creates on first launch
 
 ### Changed
 - Convo pane auto-follow: scrolling down to the bottom now re-engages follow-bottom auto-scroll (previously only ⌥↓ did this)

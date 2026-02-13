@@ -1000,19 +1000,29 @@ Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (render
 macOS notification sent when any Claude instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
 
 **Notification format:**
-- Title: `AZUREAL — worktree:session_name`
+- Title: `worktree:session_name`
 - Body: "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
 - Session name uses custom name from `sessions.toml` if set, otherwise first 8 chars of UUID
+- Branded Azureal icon (not Finder/Terminal)
 
 **Implementation details:**
-- Uses `notify-rust` crate with custom `.app` bundle (`resources/Azureal.app`) for branded icon
-- `set_application("com.xcorvisx.azureal")` called at startup (`src/main.rs`) to attribute notifications to the Azureal bundle
-- Bundle auto-registered with macOS Launch Services via `lsregister` on each launch
-- Runs in a fire-and-forget background thread (never blocks event loop)
+- Uses `notify-rust` crate with `set_application("com.xcorvisx.azureal")` for branded icon
+- `.app` bundle auto-created at `~/.azureal/AZUREAL.app` on first launch — zero manual setup
+- `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on first run
+- Binary copied into bundle (`Contents/MacOS/azureal`) — NOT symlinked, because `proc_pidpath()` resolves symlinks and Activity Monitor needs the real path inside the `.app` to show the custom icon
+- On startup, process re-execs through the bundle copy via `Command::exec()` so `proc_pidpath()` returns the bundle path
+- `TransformProcessType(psn, kProcessTransformToUIElementAppType)` registers the process with the macOS window server — without this, `NSRunningApplication` returns nil and Activity Monitor shows a generic icon despite correct `proc_pidpath()`
+- `AZUREAL_REEXEC` env var prevents infinite re-exec loop; `already_in_bundle` check provides secondary guard
+- Bundle ad-hoc codesigned after binary copy (source has linker ad-hoc signature that fails validation inside a `.app` bundle)
+- Bundle registered with macOS Launch Services via `lsregister` on creation/update
+- Activity Monitor shows "AZUREAL" as process name with branded icon
+- Notification permissions auto-enabled on first launch by writing `ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS` flags to `~/Library/Preferences/com.apple.ncprefs.plist` via Python's `plistlib` (the only reliable way to edit macOS binary plists). Marker file `~/.azureal/.notif_enabled` prevents overriding user's preference on subsequent launches
+- Binary mtime comparison detects when source binary changed (e.g., after `cargo install`) and re-copies
+- Notification runs in a fire-and-forget background thread (never blocks event loop)
 - Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
 - For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `session_names` TOML
 
-Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `src/main.rs` (bundle registration), `resources/Azureal.app` (notification bundle with icon)
+Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `src/main.rs` (bundle creation + re-exec)
 
 # MANIFEST
 
