@@ -1,7 +1,7 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
 use crate::app::types::{BranchDialog, ContextMenu, Focus, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
-use crate::config::{ensure_project_data_dir, load_projects, project_data_dir};
+use crate::config::{config_dir, ensure_config_dir, ensure_project_data_dir, load_projects, project_data_dir};
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
 
@@ -387,27 +387,55 @@ impl App {
         self.set_status(format!("Loaded preset: {}", preset.name));
     }
 
-    /// Save preset prompts to project data directory (.azureal/preset_prompts.json)
+    /// Save preset prompts — globals to ~/.azureal/, project-locals to .azureal/
+    /// Each file stores only its own scope; both are always overwritten on save.
     pub fn save_preset_prompts(&self) -> anyhow::Result<()> {
-        let Some(dir) = ensure_project_data_dir()? else { return Ok(()); };
-        let path = dir.join("preset_prompts.json");
-        let json: Vec<_> = self.preset_prompts.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
-        std::fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+        // Split presets by scope
+        let (globals, locals): (Vec<_>, Vec<_>) = self.preset_prompts.iter()
+            .partition(|p| p.global);
+
+        // Write global presets to ~/.azureal/preset_prompts.json
+        let _ = ensure_config_dir();
+        let global_path = config_dir().join("preset_prompts.json");
+        let global_json: Vec<_> = globals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
+        std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
+
+        // Write project presets to .azureal/preset_prompts.json
+        if let Some(dir) = ensure_project_data_dir()? {
+            let project_path = dir.join("preset_prompts.json");
+            let project_json: Vec<_> = locals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
+            std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
+        }
         Ok(())
     }
 
-    /// Load preset prompts from project data directory
+    /// Load preset prompts — merges globals (~/.azureal/) then project-locals (.azureal/)
     pub fn load_preset_prompts(&mut self) {
-        let Some(dir) = project_data_dir() else { return; };
-        let path = dir.join("preset_prompts.json");
-        if !path.exists() { return; }
-        if let Ok(content) = std::fs::read_to_string(&path) {
+        self.preset_prompts.clear();
+
+        // Load global presets from ~/.azureal/preset_prompts.json
+        let global_path = config_dir().join("preset_prompts.json");
+        if let Ok(content) = std::fs::read_to_string(&global_path) {
             if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                self.preset_prompts = arr.iter().filter_map(|v| {
+                self.preset_prompts.extend(arr.iter().filter_map(|v| {
                     let name = v.get("name")?.as_str()?.to_string();
                     let prompt = v.get("prompt")?.as_str()?.to_string();
-                    Some(PresetPrompt::new(name, prompt))
-                }).collect();
+                    Some(PresetPrompt::new(name, prompt, true))
+                }));
+            }
+        }
+
+        // Load project-local presets from .azureal/preset_prompts.json
+        if let Some(dir) = project_data_dir() {
+            let project_path = dir.join("preset_prompts.json");
+            if let Ok(content) = std::fs::read_to_string(&project_path) {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    self.preset_prompts.extend(arr.iter().filter_map(|v| {
+                        let name = v.get("name")?.as_str()?.to_string();
+                        let prompt = v.get("prompt")?.as_str()?.to_string();
+                        Some(PresetPrompt::new(name, prompt, false))
+                    }));
+                }
             }
         }
     }

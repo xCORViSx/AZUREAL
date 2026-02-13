@@ -523,7 +523,7 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::White)
         };
         let key_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::DarkGray)
+            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
         } else {
             Style::default().fg(Color::Yellow)
         };
@@ -537,17 +537,28 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
             "     ".to_string()
         };
 
-        // Show name + truncated prompt preview in DarkGray
-        let max_name = 20.min((dialog_width as usize).saturating_sub(num_hint.len() + 6));
-        let preview_max = (dialog_width as usize).saturating_sub(num_hint.len() + max_name + 6);
+        // Scope badge: G=global, P=project — shown after the name
+        let scope_badge = if preset.global { " G " } else { " P " };
+        let scope_style = if is_selected {
+            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+        } else if preset.global {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        // Show name + scope badge + truncated prompt preview
+        let max_name = 20.min((dialog_width as usize).saturating_sub(num_hint.len() + 10));
+        let preview_max = (dialog_width as usize).saturating_sub(num_hint.len() + max_name + 10);
         let preview = if preview_max > 3 {
             let p = truncate(&preset.prompt, preview_max);
             format!(" {}", p)
         } else {
             String::new()
         };
+        // Selected: use a muted dark tone that's readable on AZURE bg
         let preview_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::DarkGray)
+            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -555,15 +566,24 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
         ListItem::new(Line::from(vec![
             Span::styled(num_hint, key_style),
             Span::styled(truncate(&preset.name, max_name), style),
+            Span::styled(scope_badge, scope_style),
             Span::styled(preview, preview_style),
         ]))
     }).collect();
+
+    // Show delete confirmation in title if pending, otherwise normal hints
+    let title = if let Some(del_idx) = picker.confirm_delete {
+        let name = app.preset_prompts.get(del_idx).map(|p| p.name.as_str()).unwrap_or("?");
+        format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
+    } else {
+        " Preset Prompts (1-9,0:select  a:add  e:edit  d:del) ".to_string()
+    };
 
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(AZURE))
-            .title(" Preset Prompts (1-9,0:select  a:add  e:edit  x:del) ")
+            .title(title)
             .style(Style::default().bg(Color::Reset)),
     );
     f.render_widget(list, dialog_area);
@@ -584,12 +604,14 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, dialog_area);
 
-    // Outer border with title
+    // Outer border with title — left shows mode, right shows scope badge
     let title_text = if dialog.editing_idx.is_some() { " Edit Preset " } else { " New Preset " };
+    let scope_label = if dialog.global { " [GLOBAL] " } else { " [PROJECT] " };
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Line::from(Span::styled(scope_label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))).alignment(Alignment::Right));
     let inner = outer.inner(dialog_area);
     f.render_widget(outer, dialog_area);
 
@@ -637,13 +659,15 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
         ));
     }
 
-    // Hint line
+    // Hint line — includes ⌃g to toggle global/project scope
     let enter_hint = if dialog.editing_name { ":next  " } else { ":save  " };
     let hints = Line::from(vec![
         Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":next  ", Style::default().fg(Color::DarkGray)),
         Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("⌃g", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":scope  ", Style::default().fg(Color::DarkGray)),
         Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
         Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),

@@ -46,7 +46,7 @@
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
-- **Preset Prompts** — Press `⌥P` to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` (keyboard layout order); add, edit, or delete presets from the picker; selected prompt populates the input box and enters prompt mode; persisted per-project in `.azureal/preset_prompts.json`
+- **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` (keyboard layout order); add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (`~/.azureal/`, shared across all projects) or **project-local** (`.azureal/`); toggle scope with `⌃g` in the add/edit dialog
 - **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements

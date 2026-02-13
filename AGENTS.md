@@ -99,7 +99,7 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
-- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0; add/edit/delete from picker; persisted per-project in `.azureal/preset_prompts.json`
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
@@ -1216,7 +1216,6 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
-| `⌥p` | Preset prompts picker (1-9,0 to select, a/e/x to add/edit/delete) |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
@@ -1292,7 +1291,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
 **Command mode title shows:** `(p:PROMPT | t:TERMINAL | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
 
 ### Terminal Mode

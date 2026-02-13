@@ -252,11 +252,13 @@ pub struct PresetPrompt {
     pub name: String,
     /// Full prompt text that populates the input box on selection
     pub prompt: String,
+    /// true = saved globally (~/.azureal/), false = project-local (.azureal/)
+    pub global: bool,
 }
 
 impl PresetPrompt {
-    pub fn new(name: impl Into<String>, prompt: impl Into<String>) -> Self {
-        Self { name: name.into(), prompt: prompt.into() }
+    pub fn new(name: impl Into<String>, prompt: impl Into<String>, global: bool) -> Self {
+        Self { name: name.into(), prompt: prompt.into(), global }
     }
 }
 
@@ -264,10 +266,12 @@ impl PresetPrompt {
 #[derive(Debug, Clone)]
 pub struct PresetPromptPicker {
     pub selected: usize,
+    /// When Some(idx), a delete confirmation is pending for this preset index
+    pub confirm_delete: Option<usize>,
 }
 
 impl PresetPromptPicker {
-    pub fn new() -> Self { Self { selected: 0 } }
+    pub fn new() -> Self { Self { selected: 0, confirm_delete: None } }
 }
 
 /// Dialog for creating/editing a preset prompt (two fields: name + prompt text)
@@ -281,15 +285,17 @@ pub struct PresetPromptDialog {
     pub editing_name: bool,
     /// Some(i) = editing existing preset at index i, None = adding new
     pub editing_idx: Option<usize>,
+    /// true = save globally (~/.azureal/), false = project-local (.azureal/)
+    pub global: bool,
 }
 
 impl PresetPromptDialog {
     pub fn new() -> Self {
-        Self { name: String::new(), prompt: String::new(), name_cursor: 0, prompt_cursor: 0, editing_name: true, editing_idx: None }
+        Self { name: String::new(), prompt: String::new(), name_cursor: 0, prompt_cursor: 0, editing_name: true, editing_idx: None, global: false }
     }
 
     pub fn edit(idx: usize, preset: &PresetPrompt) -> Self {
-        Self { name: preset.name.clone(), prompt: preset.prompt.clone(), name_cursor: preset.name.chars().count(), prompt_cursor: preset.prompt.chars().count(), editing_name: true, editing_idx: Some(idx) }
+        Self { name: preset.name.clone(), prompt: preset.prompt.clone(), name_cursor: preset.name.chars().count(), prompt_cursor: preset.prompt.chars().count(), editing_name: true, editing_idx: Some(idx), global: preset.global }
     }
 }
 

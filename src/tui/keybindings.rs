@@ -281,7 +281,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 11] = [
+pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
@@ -290,7 +290,6 @@ pub static GLOBAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Toggle terminal", Action::ToggleTerminal),
-    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('p')), &ALT_MACOS_P, "Preset prompts", Action::PresetPrompts),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
 ];
@@ -395,7 +394,7 @@ pub static OUTPUT: [Keybinding; 16] = [
 /// Input mode bindings — keys that work in Claude prompt type mode
 /// Word nav uses standard macOS shortcuts (⌥← / ⌥→), not ⌃z/⌃x which conflict with clipboard
 /// Newline: ⇧Enter (Kitty keyboard protocol makes this distinguishable from bare Enter)
-pub static INPUT: [Keybinding; 9] = [
+pub static INPUT: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Submit prompt", Action::Submit),
     Keybinding::new(KeyCombo::shift(KeyCode::Enter), "Insert newline", Action::InsertNewline),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
@@ -405,6 +404,7 @@ pub static INPUT: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Speech input", Action::ToggleStt),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('p')), &ALT_MACOS_P, "Preset prompts", Action::PresetPrompts),
 ];
 
 /// Terminal bindings (command mode) — ALL terminal keybindings live here
@@ -473,10 +473,6 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
                    || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
-            // ⌥P preset prompts: skip in edit mode (⌥ combos used for editing)
-            // but allow in prompt mode (user can quick-insert a preset while typing)
-            Action::PresetPrompts
-                if ctx.edit_mode || ctx.terminal_mode || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
@@ -546,9 +542,10 @@ pub fn prompt_type_title() -> String {
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
+    let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or("⌥p".into());
     format!(
-        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech) ",
-        esc, submit, cancel, hprev, hnext, dw, stt
+        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech | {}:presets) ",
+        esc, submit, cancel, hprev, hnext, dw, stt, presets
     )
 }
 

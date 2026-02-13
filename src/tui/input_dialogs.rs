@@ -288,8 +288,38 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
 
 /// Handle keyboard input when preset prompt picker overlay is open.
 /// 1-9 selects presets 1-9 directly, 0 selects the 10th preset.
-/// j/k navigate, Enter selects, a/e/x add/edit/delete, Esc closes.
+/// j/k navigate, Enter selects, a/e/d add/edit/delete, Esc closes.
+/// Delete requires confirmation: d shows "Delete? y/n", y confirms, any other cancels.
 pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Check if a delete confirmation is pending — only y confirms, anything else cancels
+    if let Some(del_idx) = app.preset_prompt_picker.as_ref().and_then(|p| p.confirm_delete) {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if del_idx < app.preset_prompts.len() {
+                    let name = app.preset_prompts[del_idx].name.clone();
+                    app.preset_prompts.remove(del_idx);
+                    let _ = app.save_preset_prompts();
+                    app.set_status(format!("Deleted preset: {}", name));
+                    if app.preset_prompts.is_empty() {
+                        app.preset_prompt_picker = None;
+                    } else if let Some(ref mut picker) = app.preset_prompt_picker {
+                        picker.confirm_delete = None;
+                        if picker.selected >= app.preset_prompts.len() {
+                            picker.selected = app.preset_prompts.len() - 1;
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Cancel confirmation
+                if let Some(ref mut picker) = app.preset_prompt_picker {
+                    picker.confirm_delete = None;
+                }
+            }
+        }
+        return Ok(());
+    }
+
     let count = app.preset_prompts.len();
     match key.code {
         // Navigate selection
@@ -326,20 +356,12 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
             }
             app.preset_prompt_picker = None;
         }
-        // Delete selected preset
-        KeyCode::Char('x') => {
+        // Delete selected preset — enter confirmation mode
+        KeyCode::Char('d') => {
             let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if idx < count {
-                let name = app.preset_prompts[idx].name.clone();
-                app.preset_prompts.remove(idx);
-                let _ = app.save_preset_prompts();
-                app.set_status(format!("Deleted preset: {}", name));
-                if app.preset_prompts.is_empty() {
-                    app.preset_prompt_picker = None;
-                } else if let Some(ref mut picker) = app.preset_prompt_picker {
-                    if picker.selected >= app.preset_prompts.len() {
-                        picker.selected = app.preset_prompts.len() - 1;
-                    }
+                if let Some(ref mut picker) = app.preset_prompt_picker {
+                    picker.confirm_delete = Some(idx);
                 }
             }
         }
@@ -355,9 +377,15 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
 }
 
 /// Handle keyboard input when preset prompt dialog (create/edit) is open.
-/// Tab toggles between name and prompt fields, Enter saves, Esc cancels.
+/// Tab toggles between name and prompt fields, ⌃g toggles global scope, Enter saves, Esc cancels.
 pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     let Some(ref mut dialog) = app.preset_prompt_dialog else { return Ok(()) };
+
+    // ⌃g toggles global/project scope (works from any field)
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
+        dialog.global = !dialog.global;
+        return Ok(());
+    }
 
     match key.code {
         // Tab: advance from name to prompt field
@@ -385,7 +413,8 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
                 return Ok(());
             }
             let editing_idx = dialog.editing_idx;
-            let preset = PresetPrompt::new(name.clone(), prompt);
+            let is_global = dialog.global;
+            let preset = PresetPrompt::new(name.clone(), prompt, is_global);
             if let Some(idx) = editing_idx {
                 if idx < app.preset_prompts.len() { app.preset_prompts[idx] = preset; }
             } else {
