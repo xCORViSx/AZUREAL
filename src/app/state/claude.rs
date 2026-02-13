@@ -63,11 +63,9 @@ impl App {
         }
     }
 
-    /// Send a macOS notification when Claude finishes. Runs terminal-notifier
-    /// in a background thread so it never blocks the event loop. The notification
-    /// shows worktree:session_name so the user knows which instance completed.
-    /// terminal-notifier runs as its own .app bundle so notifications are NOT
-    /// suppressed when Kitty is the frontmost app (unlike osascript/notify-rust).
+    /// Send a macOS notification when Claude finishes. Uses notify-rust with a
+    /// custom Azureal .app bundle (resources/Azureal.app) so the notification
+    /// shows the Azureal icon. Runs in a background thread so it never blocks.
     fn send_completion_notification(&self, branch_name: &str, code: Option<i32>) {
         // Worktree name = branch name without "azureal/" prefix
         let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
@@ -109,7 +107,7 @@ impl App {
         // Fire-and-forget: spawn detached thread so the event loop never blocks.
         // notify-rust uses the native macOS NSUserNotification API. Notifications
         // appear attributed to Finder (no custom icon support on macOS).
-        let title = format!("AZUREAL - {}", label);
+        let title = label;
         let body = body.to_string();
         std::thread::spawn(move || {
             let _ = notify_rust::Notification::new()

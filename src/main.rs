@@ -33,6 +33,29 @@ async fn main() -> Result<()> {
 
     config::ensure_config_dir()?;
 
+    // Register the Azureal .app bundle with macOS Launch Services so
+    // notifications show the Azureal icon instead of Finder's. The bundle
+    // lives in resources/ next to the binary. set_application() is a
+    // one-time call (guarded by Once internally) — safe to call early.
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe().unwrap_or_default();
+        let candidates = [
+            exe.parent().unwrap_or(std::path::Path::new(".")).join("resources/Azureal.app"),
+            exe.parent().unwrap_or(std::path::Path::new(".")).join("../resources/Azureal.app"),
+            std::path::PathBuf::from("resources/Azureal.app"),
+        ];
+        for bundle in &candidates {
+            if bundle.exists() {
+                let _ = std::process::Command::new(
+                    "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+                ).args(["-R", "-f", &bundle.to_string_lossy()]).output();
+                break;
+            }
+        }
+        let _ = notify_rust::set_application("com.xcorvisx.azureal");
+    }
+
     let output_format = cli.output;
 
     match cli.command {

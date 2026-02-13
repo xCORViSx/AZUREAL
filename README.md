@@ -45,7 +45,7 @@
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
-- **Completion Notifications** — macOS notification when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app
+- **Completion Notifications** — macOS notification with Azureal icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app
 - **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements
