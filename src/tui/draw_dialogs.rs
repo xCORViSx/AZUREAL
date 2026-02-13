@@ -666,7 +666,7 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
         Span::styled(":next  ", Style::default().fg(Color::DarkGray)),
         Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("⌃g", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled("⌃s", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":scope  ", Style::default().fg(Color::DarkGray)),
         Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),

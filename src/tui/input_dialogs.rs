@@ -381,8 +381,8 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
 pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     let Some(ref mut dialog) = app.preset_prompt_dialog else { return Ok(()) };
 
-    // ⌃g toggles global/project scope (works from any field)
-    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
+    // ⌃s toggles global/project scope (works from any field)
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
         dialog.global = !dialog.global;
         return Ok(());
     }
