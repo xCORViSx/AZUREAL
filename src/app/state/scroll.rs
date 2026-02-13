@@ -24,13 +24,19 @@ impl App {
         }
     }
 
-    /// Scroll output down, returns true if position changed
+    /// Scroll output down, returns true if position changed.
+    /// If scrolling reaches the natural bottom, re-engage follow-bottom sentinel
+    /// so new content auto-scrolls without needing ⌥↓.
     pub fn scroll_output_down(&mut self, lines: usize) -> bool {
         if self.output_scroll == usize::MAX {
             self.output_scroll = self.output_natural_bottom();
         }
         let old = self.output_scroll;
         self.output_scroll = self.output_scroll.saturating_add(lines).min(self.output_max_scroll());
+        // Re-engage auto-follow when user scrolls to (or past) the natural bottom
+        if self.output_scroll >= self.output_natural_bottom() {
+            self.output_scroll = usize::MAX;
+        }
         self.output_scroll != old
     }
 
