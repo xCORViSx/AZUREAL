@@ -6,7 +6,7 @@ use crossterm::event::{self, KeyCode};
 use crate::app::{App, Focus, RunCommand, SessionAction};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
-use crate::app::types::{CommandFieldMode, RunCommandDialog};
+use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog};
 
 /// Handle keyboard input when context menu is open
 pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -279,6 +279,174 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
             } else {
                 dialog.command.insert(dialog.command_cursor, c);
                 dialog.command_cursor += 1;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle keyboard input when preset prompt picker overlay is open.
+/// 1-9 selects presets 1-9 directly, 0 selects the 10th preset.
+/// j/k navigate, Enter selects, a/e/x add/edit/delete, Esc closes.
+pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    let count = app.preset_prompts.len();
+    match key.code {
+        // Navigate selection
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(ref mut picker) = app.preset_prompt_picker {
+                if picker.selected + 1 < count { picker.selected += 1; }
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(ref mut picker) = app.preset_prompt_picker {
+                if picker.selected > 0 { picker.selected -= 1; }
+            }
+        }
+        // Quick-select by number: 1-9 for indices 0-8, 0 for index 9
+        KeyCode::Char(c @ '1'..='9') => {
+            let idx = (c as usize) - ('1' as usize);
+            if idx < count {
+                app.select_preset_prompt(idx);
+            }
+        }
+        KeyCode::Char('0') => {
+            if count > 9 { app.select_preset_prompt(9); }
+        }
+        // Select current item
+        KeyCode::Enter => {
+            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            app.select_preset_prompt(idx);
+        }
+        // Edit selected preset
+        KeyCode::Char('e') => {
+            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            if let Some(preset) = app.preset_prompts.get(idx) {
+                app.preset_prompt_dialog = Some(PresetPromptDialog::edit(idx, preset));
+            }
+            app.preset_prompt_picker = None;
+        }
+        // Delete selected preset
+        KeyCode::Char('x') => {
+            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            if idx < count {
+                let name = app.preset_prompts[idx].name.clone();
+                app.preset_prompts.remove(idx);
+                let _ = app.save_preset_prompts();
+                app.set_status(format!("Deleted preset: {}", name));
+                if app.preset_prompts.is_empty() {
+                    app.preset_prompt_picker = None;
+                } else if let Some(ref mut picker) = app.preset_prompt_picker {
+                    if picker.selected >= app.preset_prompts.len() {
+                        picker.selected = app.preset_prompts.len() - 1;
+                    }
+                }
+            }
+        }
+        // Add new preset from picker
+        KeyCode::Char('a') => {
+            app.preset_prompt_picker = None;
+            app.preset_prompt_dialog = Some(PresetPromptDialog::new());
+        }
+        KeyCode::Esc => { app.preset_prompt_picker = None; }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle keyboard input when preset prompt dialog (create/edit) is open.
+/// Tab toggles between name and prompt fields, Enter saves, Esc cancels.
+pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    let Some(ref mut dialog) = app.preset_prompt_dialog else { return Ok(()) };
+
+    match key.code {
+        // Tab: advance from name to prompt field
+        KeyCode::Tab => {
+            if dialog.editing_name { dialog.editing_name = false; }
+        }
+        // Shift+Tab: go back to name field
+        KeyCode::BackTab => {
+            if !dialog.editing_name { dialog.editing_name = true; }
+        }
+        // Enter: advance name→prompt, or save when in prompt field
+        KeyCode::Enter => {
+            if dialog.editing_name {
+                if dialog.name.trim().is_empty() {
+                    app.set_status("Name is required");
+                    return Ok(());
+                }
+                dialog.editing_name = false;
+                return Ok(());
+            }
+            let name = dialog.name.trim().to_string();
+            let prompt = dialog.prompt.trim().to_string();
+            if name.is_empty() || prompt.is_empty() {
+                app.set_status("Both name and prompt are required");
+                return Ok(());
+            }
+            let editing_idx = dialog.editing_idx;
+            let preset = PresetPrompt::new(name.clone(), prompt);
+            if let Some(idx) = editing_idx {
+                if idx < app.preset_prompts.len() { app.preset_prompts[idx] = preset; }
+            } else {
+                if app.preset_prompts.len() >= 10 {
+                    app.set_status("Maximum 10 preset prompts reached");
+                    return Ok(());
+                }
+                app.preset_prompts.push(preset);
+            }
+            app.preset_prompt_dialog = None;
+            let _ = app.save_preset_prompts();
+            app.set_status(format!("Saved preset: {}", name));
+            // Reopen picker if we have presets now
+            if !app.preset_prompts.is_empty() {
+                app.preset_prompt_picker = Some(crate::app::types::PresetPromptPicker::new());
+            }
+        }
+        KeyCode::Esc => {
+            app.preset_prompt_dialog = None;
+            // Reopen picker if presets exist (user cancelled add/edit but picker was open)
+            if !app.preset_prompts.is_empty() {
+                app.preset_prompt_picker = Some(crate::app::types::PresetPromptPicker::new());
+            }
+        }
+        // Text editing for the active field
+        KeyCode::Backspace => {
+            if dialog.editing_name {
+                if dialog.name_cursor > 0 {
+                    let byte_pos = dialog.name.char_indices().nth(dialog.name_cursor - 1).map(|(i, _)| i).unwrap_or(0);
+                    dialog.name.remove(byte_pos);
+                    dialog.name_cursor -= 1;
+                }
+            } else if dialog.prompt_cursor > 0 {
+                let byte_pos = dialog.prompt.char_indices().nth(dialog.prompt_cursor - 1).map(|(i, _)| i).unwrap_or(0);
+                dialog.prompt.remove(byte_pos);
+                dialog.prompt_cursor -= 1;
+            }
+        }
+        KeyCode::Left => {
+            if dialog.editing_name {
+                dialog.name_cursor = dialog.name_cursor.saturating_sub(1);
+            } else {
+                dialog.prompt_cursor = dialog.prompt_cursor.saturating_sub(1);
+            }
+        }
+        KeyCode::Right => {
+            if dialog.editing_name {
+                if dialog.name_cursor < dialog.name.chars().count() { dialog.name_cursor += 1; }
+            } else if dialog.prompt_cursor < dialog.prompt.chars().count() {
+                dialog.prompt_cursor += 1;
+            }
+        }
+        KeyCode::Char(c) => {
+            if dialog.editing_name {
+                let byte_pos = dialog.name.char_indices().nth(dialog.name_cursor).map(|(i, _)| i).unwrap_or(dialog.name.len());
+                dialog.name.insert(byte_pos, c);
+                dialog.name_cursor += 1;
+            } else {
+                let byte_pos = dialog.prompt.char_indices().nth(dialog.prompt_cursor).map(|(i, _)| i).unwrap_or(dialog.prompt.len());
+                dialog.prompt.insert(byte_pos, c);
+                dialog.prompt_cursor += 1;
             }
         }
         _ => {}

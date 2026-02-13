@@ -109,29 +109,17 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 }
             }
         } else {
-            // Worktree list: click to select worktree or Claude session file
+            // Worktree list: click to select worktree
             app.focus = Focus::Worktrees;
             let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
-            if let Some(action) = app.sidebar_row_map.get(visual_row).cloned() {
-                match action {
-                    SidebarRowAction::Worktree(idx) => {
-                        if app.selected_worktree != Some(idx) {
-                            app.save_current_terminal();
-                            app.selected_worktree = Some(idx);
-                            app.load_session_output();
-                            app.invalidate_sidebar();
-                        }
-                    }
-                    SidebarRowAction::WorktreeFile(sess_idx, file_idx) => {
-                        if app.selected_worktree != Some(sess_idx) {
-                            app.save_current_terminal();
-                            app.selected_worktree = Some(sess_idx);
-                        }
-                        if let Some(session) = app.sessions.get(sess_idx) {
-                            let branch = session.branch_name.clone();
-                            app.select_session_file(&branch, file_idx);
-                        }
-                    }
+            let clicked_idx = app.sidebar_row_map.get(visual_row)
+                .and_then(|a| if let SidebarRowAction::Worktree(i) = a { Some(*i) } else { None });
+            if let Some(idx) = clicked_idx {
+                if app.selected_worktree != Some(idx) {
+                    app.save_current_terminal();
+                    app.selected_worktree = Some(idx);
+                    app.load_session_output();
+                    app.invalidate_sidebar();
                 }
             }
         }

@@ -25,8 +25,10 @@ All notable changes to Azureal will be documented in this file.
   - Uses `notify-rust` crate with `set_application()` in background thread, non-blocking
   - Works per-instance: multiple Claude sessions each trigger their own notification
   - Zero manual setup: `cargo install --path .` then `azureal` — bundle auto-creates on first launch
+- Preset prompts feature (`⌥P`): save up to 10 prompt templates per project, quick-select with `1-9,0`, add/edit/delete from picker; selected preset populates input box and enters prompt mode. Persisted in `.azureal/preset_prompts.json`.
 
 ### Changed
+- Worktree sidebar simplified to flat list: removed session file dropdowns (chevrons) and expand/collapse keybindings (`l/h`, `Left/Right`); navigation is now `j/k` to move between worktrees, `Enter` to switch. Session switching moved to Convo pane's session list (`s` key). Removed `worktrees_expanded` state, `session_file_next/prev/first/last`, `expand/collapse/toggle_worktree`, `is_current_worktree_expanded` methods, and `SidebarRowAction::WorktreeFile` variant.
 - Convo pane auto-follow: scrolling down to the bottom now re-engages follow-bottom auto-scroll (previously only ⌥↓ did this)
 - Projects panel: launching app in a non-git directory shows "Project not initialized. Press i to initialize or choose another project." in red; clears on first keypress
 - Session list overlay shows "Loading sessions…" dialog while message counts compute — two-phase open ensures UI never appears frozen on large session files
@@ -39,7 +41,8 @@ All notable changes to Azureal will be documented in this file.
   - Shows all oversized source files sorted by line count (worst offenders first)
   - Checkable list: `Space` to check, `a` to toggle all, `Enter`/`m` to modularize
   - Spawns sequential Claude sessions on main worktree — one file at a time, auto-advances when each completes
-  - Sessions named `[GodFileModularize] <filename>` in `.azureal/sessions.toml`
+  - Sessions named `[GFM] <filename>` (GFM = God File Modularize) in `.azureal/sessions.toml`
+  - Panel shows explanation line before file list: "Sessions will be prefixed [GFM] (God File Modularize)"
   - Scans 22 source extensions, skips build/dependency directories
 - Help panel: counterpart keybindings (up/down, next/prev, expand/collapse) merged onto single lines with `·` separator — halves the row count for navigation bindings
 - Help panel (`?`) now uses double border (`═║`) matching focused pane style
@@ -55,6 +58,7 @@ All notable changes to Azureal will be documented in this file.
 - Removed `ClearInput` action (`⌃U`/`⌃C`) — use `⌘A` + `Delete` instead
 - Prompt clipboard operations now use `⌘` only (removed redundant `⌃C/X/V/A` variants that conflicted with cancel/speech)
 - Command mode title bar: PROMPT and TERMINAL labels now uppercase for visibility
+- Delete word keybinding: `⌃W` primary, `⌃Backspace` alternative (was `⌥Backspace` which Alacritty strips to plain Backspace due to Kitty protocol bugs; `⌃W` is standard Unix delete-word and works universally)
 
 ### Refactored
 - Modularized `event_loop.rs` (1660→330 lines) into 5 focused submodules using file-based module root pattern:
@@ -119,6 +123,7 @@ All notable changes to Azureal will be documented in this file.
 - FileTree copy/move paste now selects the pasted file and auto-expands the target directory
 - FileTree action bar text now wraps to multiple lines when wider than the pane (was clipping)
   - Wraps at word boundaries so key hints like `Enter:paste` and `Esc:cancel` stay together
+- Edit diff preview showed line 1 during live streaming — `render_edit_diff()` searched for `new_string` in the file to find the actual line number, but during live streaming the edit hasn't been applied yet so `old_string` is still in the file. Now tries `new_string` first (post-edit), falls back to `old_string` (live preview mid-edit).
 
 ### Refactored
 - **Consolidated ALL keybindings into `keybindings.rs` as single source of truth**
@@ -327,7 +332,7 @@ All notable changes to Azureal will be documented in this file.
   - Convo pane: scroll to top/bottom of conversation
   - Viewer pane: scroll to top/bottom of file
   - FileTree pane: jump to first/last sibling within the current folder
-  - Worktrees pane: jump to first/last session; when dropdown is expanded, first/last session file
+  - Worktrees pane: jump to first/last worktree
   - Terminal pane: scroll to top/bottom
 - Speech-to-text voice input in prompt mode (`⌃s` to toggle)
   - Microphone capture via cpal (CoreAudio on macOS)
@@ -420,8 +425,8 @@ All notable changes to Azureal will be documented in this file.
   - Anchor position computed once on MouseDown; only the end position is re-converted on each Drag event
   - Auto-scroll no longer shifts the anchor because it's stored in cache space, not screen space
 - Edit diff inline previews now show actual file line numbers instead of always starting at 1
-  - Reads file on background render thread to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file)
-  - Falls back to line 1 if file can't be read or new_string is empty (pure deletion)
+  - Reads file on background render thread; tries `new_string` first (post-edit), falls back to `old_string` (live preview mid-edit)
+  - Falls back to line 1 if file can't be read or both strings are empty (pure deletion)
 - Edit diff removed (red) lines no longer have syntax highlighting
   - Removed lines now show dark grey text (`Rgb(100,100,100)`) on dim red background — darker than comment grey in syntax-highlighted green lines
   - Only added (green) lines get syntax highlighting on dim green background

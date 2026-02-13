@@ -168,28 +168,6 @@ impl App {
         anyhow::bail!("No active session with worktree")
     }
 
-    /// Expand a worktree's file dropdown and load its Claude session files
-    pub fn expand_worktree(&mut self, branch_name: &str) {
-        self.worktrees_expanded.insert(branch_name.to_string());
-        self.load_session_files(branch_name);
-        self.invalidate_sidebar();
-    }
-
-    /// Collapse a worktree's file dropdown
-    pub fn collapse_worktree(&mut self, branch_name: &str) {
-        self.worktrees_expanded.remove(branch_name);
-        self.invalidate_sidebar();
-    }
-
-    /// Toggle worktree expansion state
-    pub fn toggle_worktree_expanded(&mut self, branch_name: &str) {
-        if self.worktrees_expanded.contains(branch_name) {
-            self.collapse_worktree(branch_name);
-        } else {
-            self.expand_worktree(branch_name);
-        }
-    }
-
     /// Load and cache session files for a branch from Claude's project directory
     pub fn load_session_files(&mut self, branch_name: &str) {
         let Some(session) = self.sessions.iter().find(|s| s.branch_name == branch_name) else { return };
@@ -210,32 +188,6 @@ impl App {
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
-        }
-    }
-
-    /// Navigate to next file in expanded dropdown (loads immediately)
-    pub fn session_file_next(&mut self) {
-        let Some(session) = self.current_session() else { return };
-        let branch = session.branch_name.clone();
-        let Some(files) = self.session_files.get(&branch) else { return };
-        if files.is_empty() { return; }
-        let current = *self.session_selected_file_idx.get(&branch).unwrap_or(&0);
-        if current + 1 < files.len() {
-            self.session_selected_file_idx.insert(branch, current + 1);
-            self.load_session_output();
-            self.invalidate_sidebar();
-        }
-    }
-
-    /// Navigate to previous file in expanded dropdown (loads immediately)
-    pub fn session_file_prev(&mut self) {
-        let Some(session) = self.current_session() else { return };
-        let branch = session.branch_name.clone();
-        let current = *self.session_selected_file_idx.get(&branch).unwrap_or(&0);
-        if current > 0 {
-            self.session_selected_file_idx.insert(branch, current - 1);
-            self.load_session_output();
-            self.invalidate_sidebar();
         }
     }
 
@@ -288,35 +240,4 @@ impl App {
         }
     }
 
-    /// Jump to first file in expanded session dropdown
-    pub fn session_file_first(&mut self) {
-        let Some(session) = self.current_session() else { return };
-        let branch = session.branch_name.clone();
-        if self.session_selected_file_idx.get(&branch) != Some(&0) {
-            self.session_selected_file_idx.insert(branch, 0);
-            self.load_session_output();
-            self.invalidate_sidebar();
-        }
-    }
-
-    /// Jump to last file in expanded session dropdown
-    pub fn session_file_last(&mut self) {
-        let Some(session) = self.current_session() else { return };
-        let branch = session.branch_name.clone();
-        let Some(files) = self.session_files.get(&branch) else { return };
-        if files.is_empty() { return; }
-        let last = files.len() - 1;
-        if self.session_selected_file_idx.get(&branch) != Some(&last) {
-            self.session_selected_file_idx.insert(branch, last);
-            self.load_session_output();
-            self.invalidate_sidebar();
-        }
-    }
-
-    /// Check if current worktree is expanded in sidebar
-    pub fn is_current_worktree_expanded(&self) -> bool {
-        self.current_session()
-            .map(|s| self.worktrees_expanded.contains(&s.branch_name))
-            .unwrap_or(false)
-    }
 }

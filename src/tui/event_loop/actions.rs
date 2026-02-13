@@ -11,7 +11,7 @@ use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
 
 use super::super::keybindings::{Action, KeyContext, lookup_action};
-use super::super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input};
+use super::super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_god_files::handle_god_files_input;
 use super::super::input_output::handle_output_input;
@@ -50,6 +50,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.god_file_panel.is_some() { return handle_god_files_input(key, app, claude_process); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
+    if app.preset_prompt_picker.is_some() { return handle_preset_prompt_picker_input(key, app); }
+    if app.preset_prompt_dialog.is_some() { return handle_preset_prompt_dialog_input(key, app); }
 
     // Convo search modal: typing search text bypasses keybinding system
     if app.convo_search_active { return handle_output_input(key, app); }
@@ -400,6 +402,9 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             dispatch_escape(app);
         }
 
+        // --- Preset prompts ---
+        Action::PresetPrompts => { app.open_preset_prompt_picker(); }
+
         // --- Dialog actions (not reached here — modals intercept above) ---
         Action::Confirm | Action::Cancel | Action::DeleteSelected | Action::EditSelected => {}
     }
@@ -418,10 +423,7 @@ fn dispatch_nav_down(app: &mut App) {
                 _ => {}
             }
         }
-        Focus::Worktrees => {
-            if app.is_current_worktree_expanded() { app.session_file_next(); }
-            else { app.select_next_session(); }
-        }
+        Focus::Worktrees => app.select_next_session(),
         Focus::FileTree => app.file_tree_next(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_down(1);
@@ -440,10 +442,7 @@ fn dispatch_nav_up(app: &mut App) {
                 _ => {}
             }
         }
-        Focus::Worktrees => {
-            if app.is_current_worktree_expanded() { app.session_file_prev(); }
-            else { app.select_prev_session(); }
-        }
+        Focus::Worktrees => app.select_prev_session(),
         Focus::FileTree => app.file_tree_prev(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_up(1);
@@ -454,14 +453,6 @@ fn dispatch_nav_up(app: &mut App) {
 
 fn dispatch_nav_left(app: &mut App) {
     match app.focus {
-        Focus::Worktrees => {
-            if app.is_current_worktree_expanded() {
-                if let Some(session) = app.current_session() {
-                    let branch = session.branch_name.clone();
-                    app.collapse_worktree(&branch);
-                }
-            }
-        }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -485,14 +476,6 @@ fn dispatch_nav_left(app: &mut App) {
 
 fn dispatch_nav_right(app: &mut App) {
     match app.focus {
-        Focus::Worktrees => {
-            if !app.is_current_worktree_expanded() {
-                if let Some(session) = app.current_session() {
-                    let branch = session.branch_name.clone();
-                    app.expand_worktree(&branch);
-                }
-            }
-        }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -552,10 +535,7 @@ fn dispatch_go_to_top(app: &mut App) {
                 _ => {}
             }
         }
-        Focus::Worktrees => {
-            if app.is_current_worktree_expanded() { app.session_file_first(); }
-            else { app.select_first_session(); }
-        }
+        Focus::Worktrees => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.terminal_scroll = 0;
@@ -574,10 +554,7 @@ fn dispatch_go_to_bottom(app: &mut App) {
                 _ => {}
             }
         }
-        Focus::Worktrees => {
-            if app.is_current_worktree_expanded() { app.session_file_last(); }
-            else { app.select_last_session(); }
-        }
+        Focus::Worktrees => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_to_bottom();
@@ -761,18 +738,10 @@ fn rebase_current(app: &mut App) {
 }
 
 /// Start or resume a Claude session from worktrees Enter key
+/// Enter prompt mode for the selected worktree (Enter key in worktree list)
 fn start_or_resume(app: &mut App) {
     use crate::models::SessionStatus;
-    let is_expanded = app.is_current_worktree_expanded();
-    if is_expanded {
-        if let Some(session) = app.current_session() {
-            let branch = session.branch_name.clone();
-            let idx = *app.session_selected_file_idx.get(&branch).unwrap_or(&0);
-            app.select_session_file(&branch, idx);
-            app.collapse_worktree(&branch);
-            app.set_status("Loaded selected session file");
-        }
-    } else if let Some(session) = app.current_session() {
+    if let Some(session) = app.current_session() {
         let status = session.status(&app.running_sessions);
         if matches!(status, SessionStatus::Pending | SessionStatus::Stopped
             | SessionStatus::Completed | SessionStatus::Failed | SessionStatus::Waiting)

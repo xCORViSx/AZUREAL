@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GodFilePanel, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GodFilePanel, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -198,8 +198,6 @@ pub struct App {
     pub assistant_no_message: usize,
     pub assistant_no_content_arr: usize,
     pub assistant_text_blocks: usize,
-    /// Expanded worktrees in sidebar (shows dropdown of Claude session files)
-    pub worktrees_expanded: HashSet<String>,
     /// Cached Claude session files per worktree branch (session_id, path, formatted_time)
     pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
     /// Selected Claude session file index per worktree (0 = latest/newest)
@@ -305,6 +303,12 @@ pub struct App {
     pub run_command_dialog: Option<RunCommandDialog>,
     /// Run command picker dialog (shown when multiple commands exist)
     pub run_command_picker: Option<RunCommandPicker>,
+    /// Saved preset prompts (quick-insert templates for the input box, ⌥P)
+    pub preset_prompts: Vec<PresetPrompt>,
+    /// Preset prompt picker overlay (select from saved presets)
+    pub preset_prompt_picker: Option<PresetPromptPicker>,
+    /// Preset prompt add/edit dialog
+    pub preset_prompt_dialog: Option<PresetPromptDialog>,
     /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
     /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
     pub session_tokens: Option<(u64, u64)>,
@@ -506,7 +510,6 @@ impl App {
             assistant_no_message: 0,
             assistant_no_content_arr: 0,
             assistant_text_blocks: 0,
-            worktrees_expanded: HashSet::new(),
             session_files: HashMap::new(),
             session_selected_file_idx: HashMap::new(),
             sidebar_cache: Vec::new(),
@@ -555,6 +558,9 @@ impl App {
             run_commands: Vec::new(),
             run_command_dialog: None,
             run_command_picker: None,
+            preset_prompts: Vec::new(),
+            preset_prompt_picker: None,
+            preset_prompt_dialog: None,
             session_tokens: None,
             model_context_window: None,
             token_badge_cache: None,

@@ -59,6 +59,7 @@ pub async fn run() -> Result<()> {
     app.update_terminal_title();
     app.load()?;
     app.load_run_commands();
+    app.load_preset_prompts();
     app.load_session_output();
     let config = Config::load().unwrap_or_default();
 
@@ -228,6 +229,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_run_command_picker(f, app, f.area());
     } else if app.run_command_dialog.is_some() {
         draw_dialogs::draw_run_command_dialog(f, app);
+    }
+    // Preset prompt overlays (picker takes priority over dialog)
+    if app.preset_prompt_picker.is_some() {
+        draw_dialogs::draw_preset_prompt_picker(f, app, f.area());
+    } else if app.preset_prompt_dialog.is_some() {
+        draw_dialogs::draw_preset_prompt_dialog(f, app);
     }
 }
 

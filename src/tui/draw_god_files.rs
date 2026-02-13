@@ -46,6 +46,13 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
             Style::default().fg(Color::Green),
         )));
     } else {
+        // Explain session naming convention: [GFM] = God File Modularize
+        lines.push(Line::from(Span::styled(
+            "  Sessions will be prefixed [GFM] (God File Modularize)",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+
         // Column header
         let checked_count = panel.entries.iter().filter(|e| e.checked).count();
         let header_text = format!(
@@ -56,8 +63,8 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
         lines.push(Line::from(""));
 
         // Calculate scroll window — how many items visible in the modal
-        // (subtract 5 for: title border, header, blank, footer hint, bottom border)
-        let visible_items = (modal_h as usize).saturating_sub(6);
+        // (subtract 8 for: title border, GFM explanation, blank, header, blank, footer hint, bottom border)
+        let visible_items = (modal_h as usize).saturating_sub(8);
 
         // Adjust scroll to keep selected item visible
         let scroll = if panel.selected < panel.scroll {

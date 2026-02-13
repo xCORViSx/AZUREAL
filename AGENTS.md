@@ -99,13 +99,14 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0; add/edit/delete from picker; persisted per-project in `.azureal/preset_prompts.json`
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
 **Mouse Click Architecture:**
 - All 3 pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `input_area`
 - Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
-- Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader`, `Worktree(idx)`, or `WorktreeFile(worktree_idx, file_idx)`
+- Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader` or `Worktree(idx)`
 - FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — uses `word_wrap_break_points()` to map screen coords to char index with word-boundary wrapping
 - Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
@@ -374,7 +375,7 @@ if app.rendered_events_start > 0 && app.output_scroll == 0 {
 
 File I/O in `terminal.draw()` or any function called during frame rendering blocks the event loop. However, `render_edit_diff()` runs on the **background render thread** — file I/O there is safe because it doesn't block input or drawing.
 
-`render_edit_diff()` reads the file once per Edit event to find where `new_string` occurs (not `old_string` — by render time Claude has already applied the edit, so only `new_string` exists in the file). Falls back to line 1 if the file can't be read or `new_string` is empty (pure deletion).
+`render_edit_diff()` reads the file once per Edit event to find the actual line number of the edit. It tries `new_string` first (post-edit state), then falls back to `old_string` (pre-edit state, for live preview mid-streaming when the edit hasn't been applied yet). Both give the correct position since they occupy the same location in the file at their respective points in time. Falls back to line 1 if the file can't be read or both strings are empty (pure deletion).
 
 **Edit diff styling:** Removed lines (red) use dark grey text (`Rgb(100,100,100)`) on dim red bg — no syntax highlighting, deliberately darker than comment grey in syntax-highlighted green lines. Only added lines (green) get syntax highlighting. This keeps removed lines visually receded and reduces highlight calls to 1 per Edit event.
 
@@ -797,12 +798,11 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Session Search/Filter
 
-Press `/` in the Worktrees pane to activate a search filter. Type to narrow the sidebar (case-insensitive substring match). The filter searches **hierarchically** across all three levels simultaneously: project name, worktree display names (branch name without `azureal/` prefix), session file UUIDs, and custom session names from `sessions.toml`. Matching items are shown with their parent hierarchy preserved — e.g. a matching session UUID appears under its worktree and project header even if those parents don't match the filter. Session files are eagerly loaded at startup so UUIDs are searchable without manual expansion.
+Press `/` in the Worktrees pane to activate a search filter. Type to narrow the sidebar (case-insensitive substring match). The filter searches across project names and worktree display names (branch name without `azureal/` prefix). Matching items are shown with their parent hierarchy preserved — e.g. a matching worktree appears under its project header even if the project name doesn't match the filter.
 
 **Hierarchy rules:**
-- **Project name matches** → all worktrees and sessions shown (no filtering below)
-- **Worktree name matches** → that worktree shown normally (all files if expanded)
-- **Session file matches** → parent worktree auto-expanded, only matching session files shown
+- **Project name matches** → all worktrees shown (no filtering below)
+- **Worktree name matches** → that worktree shown
 - **No match** → worktree hidden entirely
 
 **Keybindings (while filter is active):**
@@ -812,13 +812,13 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 - `Enter` — accept filter (keep text visible, exit filter input mode)
 - `↑/↓` — navigate filtered results while typing
 
-**Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching session. `j/k` navigation skips filtered-out sessions via `session_matches_filter_with_names()` (pre-loads session names once per operation to avoid repeated disk reads).
+**Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching worktree. `j/k` navigation skips filtered-out worktrees via `snap_selection_to_filter()`.
 
 **Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `t`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
 
-**Rendering:** `build_sidebar_items()` performs a two-pass filter: first determines which worktrees/files match at each level, then builds the item list showing only matching items with parent context. A 3-line filter bar (borders + text) is rendered above the session list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count (visible worktrees) shown as right-aligned title (e.g., ` 3/12 `).
+**Rendering:** `build_sidebar_items()` filters worktrees by match, then builds the item list showing only matching items with parent project context. A 3-line filter bar (borders + text) is rendered above the worktree list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count (visible worktrees) shown as right-aligned title (e.g., ` 3/12 `).
 
-Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `session_matches_filter_with_names()` and `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/keybindings.rs` (`lookup_action()`), eager session file loading in `src/app/state/load.rs`
+Implementation: `sidebar_filter: String`, `sidebar_filter_active: bool` in `src/app/state/app.rs`, `snap_selection_to_filter()` in `src/app/state/sessions.rs`, hierarchical filter logic in `src/tui/draw_sidebar.rs`, input handling in `src/tui/input_worktrees.rs`, global key guards in `src/tui/keybindings.rs` (`lookup_action()`)
 
 ### Speech-to-Text Input
 
@@ -891,7 +891,7 @@ Scans the project for "god files" — source files exceeding 1000 lines — and 
 - Synchronous scan — fast enough for typical projects (~50k files in <100ms)
 
 **Panel UI:**
-Full-screen centered modal overlay (65% × 75%, min 50×12). Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
+Full-screen centered modal overlay (65% × 75%, min 50×12). Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
 
 **Keybindings (panel active):**
 - `j/↓` — navigate down, `k/↑` — navigate up
@@ -902,7 +902,7 @@ Full-screen centered modal overlay (65% × 75%, min 50×12). Each entry shows `[
 - `Esc` — close panel
 
 **Modularization Queue:**
-Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GodFileModularize] <filename>` via `pending_session_name`.
+Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_name`.
 
 **Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
 
@@ -1216,6 +1216,7 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `t` | Toggle terminal pane |
+| `⌥p` | Preset prompts picker (1-9,0 to select, a/e/x to add/edit/delete) |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
@@ -1230,10 +1231,8 @@ azureal
 |-----|--------|
 | `j/k` | Navigate worktrees |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
-| `l/→` | Expand session files dropdown |
-| `h/←` | Collapse session files dropdown |
 | `f` | Toggle FileTree overlay (browse worktree files) |
-| `Enter` | Start/resume Claude session |
+| `Enter` | Switch to selected worktree |
 | `Space` | Context menu |
 | `n` | New worktree/session wizard |
 | `b` | Browse branches |
@@ -1244,7 +1243,7 @@ azureal
 | `a` | Archive worktree |
 | `g` | God files (scan and modularize >1000 LOC files) |
 | `/` | Search/filter sessions |
-| `⌥↑/⌥↓` | Jump to first/last session (or session file when dropdown expanded) |
+| `⌥↑/⌥↓` | Jump to first/last worktree |
 
 ### FileTree Overlay (`f` in Worktrees)
 | Key | Action |
@@ -1293,7 +1292,7 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌥⌫:del wrd | ⌃s:speech)`
+**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech)`
 **Command mode title shows:** `(p:PROMPT | t:TERMINAL | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
 
 ### Terminal Mode

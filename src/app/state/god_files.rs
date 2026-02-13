@@ -110,7 +110,7 @@ impl App {
         let filename = Path::new(&first_rel).file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| first_rel.clone());
-        let session_name = format!("[GodFileModularize] {}", filename);
+        let session_name = format!("[GFM] {}", filename);
 
         // Set pending name so it gets saved to sessions.toml when Claude returns session_id
         self.pending_session_name = Some((main_branch.clone(), session_name));
@@ -148,7 +148,7 @@ impl App {
         let filename = Path::new(&rel_path).file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| rel_path.clone());
-        let session_name = format!("[GodFileModularize] {}", filename);
+        let session_name = format!("[GFM] {}", filename);
         self.pending_session_name = Some((main_branch.clone(), session_name));
 
         match claude_process.spawn(&main_path, &prompt, None) {

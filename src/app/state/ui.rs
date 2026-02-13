@@ -1,6 +1,6 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::app::types::{BranchDialog, ContextMenu, Focus, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
 use crate::config::{ensure_project_data_dir, load_projects, project_data_dir};
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
@@ -365,6 +365,53 @@ impl App {
         }
     }
 
+    // ── Preset prompts ──
+
+    /// Open preset prompt picker — if no presets exist, open add dialog directly
+    pub fn open_preset_prompt_picker(&mut self) {
+        if self.preset_prompts.is_empty() {
+            self.preset_prompt_dialog = Some(PresetPromptDialog::new());
+        } else {
+            self.preset_prompt_picker = Some(PresetPromptPicker::new());
+        }
+    }
+
+    /// Apply a preset prompt: populate input box, enter prompt mode, close picker
+    pub fn select_preset_prompt(&mut self, idx: usize) {
+        let Some(preset) = self.preset_prompts.get(idx) else { return };
+        self.input = preset.prompt.clone();
+        self.input_cursor = self.input.chars().count();
+        self.prompt_mode = true;
+        self.focus = Focus::Input;
+        self.preset_prompt_picker = None;
+        self.set_status(format!("Loaded preset: {}", preset.name));
+    }
+
+    /// Save preset prompts to project data directory (.azureal/preset_prompts.json)
+    pub fn save_preset_prompts(&self) -> anyhow::Result<()> {
+        let Some(dir) = ensure_project_data_dir()? else { return Ok(()); };
+        let path = dir.join("preset_prompts.json");
+        let json: Vec<_> = self.preset_prompts.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
+        std::fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+        Ok(())
+    }
+
+    /// Load preset prompts from project data directory
+    pub fn load_preset_prompts(&mut self) {
+        let Some(dir) = project_data_dir() else { return; };
+        let path = dir.join("preset_prompts.json");
+        if !path.exists() { return; }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                self.preset_prompts = arr.iter().filter_map(|v| {
+                    let name = v.get("name")?.as_str()?.to_string();
+                    let prompt = v.get("prompt")?.as_str()?.to_string();
+                    Some(PresetPrompt::new(name, prompt))
+                }).collect();
+            }
+        }
+    }
+
     // Viewer tabs
     pub fn viewer_tab_current(&mut self) {
         // Save current viewer state to a new tab (if we have content)
@@ -476,7 +523,6 @@ impl App {
         self.failed_tool_calls.clear();
         self.claude_session_ids.clear();
         self.claude_exit_codes.clear();
-        self.worktrees_expanded.clear();
         self.session_files.clear();
         self.session_selected_file_idx.clear();
         self.file_tree_entries.clear();
@@ -503,6 +549,7 @@ impl App {
         let _ = self.load_sessions();
         self.load_session_output();
         self.load_run_commands();
+        self.load_preset_prompts();
 
         // Close the panel and return focus
         self.projects_panel = None;

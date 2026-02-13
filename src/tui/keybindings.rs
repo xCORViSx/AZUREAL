@@ -183,6 +183,7 @@ pub enum Action {
     Cancel,
     DeleteSelected,
     EditSelected,
+    PresetPrompts,
 
     // Generic
     Escape,
@@ -260,6 +261,10 @@ static ALT_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, cod
 // ⌃← alternative for ⌥← (word nav in prompt input)
 static ALT_CTRL_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Left }];
 static ALT_CTRL_RIGHT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Right }];
+// ⌃Backspace alternative for ⌃w delete word (non-macOS)
+static ALT_DELETE_WORD: [KeyCombo; 1] = [
+    KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Backspace },
+];
 // PageUp/PageDown/Home/End alternatives for viewer scroll
 static ALT_PGDN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::PageDown }];
 static ALT_PGUP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::PageUp }];
@@ -267,6 +272,8 @@ static ALT_HOME: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code
 static ALT_END: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::End }];
 // macOS ⌥r produces '®' (unicode) instead of ALT+r — add as alternative
 static ALT_MACOS_R: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
+// macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
+static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('π') }];
 
 // Cmd+Shift modifier combo
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -274,7 +281,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 10] = [
+pub static GLOBAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
@@ -283,19 +290,18 @@ pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Toggle terminal", Action::ToggleTerminal),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('p')), &ALT_MACOS_P, "Preset prompts", Action::PresetPrompts),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
 ];
 
-/// Worktrees context bindings
-pub static WORKTREES: [Keybinding; 22] = [
+/// Worktrees context bindings — flat list, no expand/collapse
+pub static WORKTREES: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand files", Action::NavRight).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse files", Action::NavLeft),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject).paired(),
@@ -395,7 +401,7 @@ pub static INPUT: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit to COMMAND", Action::ExitPromptMode),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_CTRL_LEFT, "Word left", Action::WordLeft).paired(),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_CTRL_RIGHT, "Word right", Action::WordRight),
-    Keybinding::new(KeyCombo::alt(KeyCode::Backspace), "Delete word", Action::DeleteWord),
+    Keybinding::with_alt(KeyCombo::ctrl(KeyCode::Char('w')), &ALT_DELETE_WORD, "Delete word", Action::DeleteWord),
     Keybinding::new(KeyCombo::plain(KeyCode::Up), "History prev", Action::HistoryPrev).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "History next", Action::HistoryNext),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Speech input", Action::ToggleStt),
@@ -467,6 +473,10 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
                    || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
+            // ⌥P preset prompts: skip in edit mode (⌥ combos used for editing)
+            // but allow in prompt mode (user can quick-insert a preset while typing)
+            Action::PresetPrompts
+                if ctx.edit_mode || ctx.terminal_mode || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard

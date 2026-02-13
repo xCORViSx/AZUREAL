@@ -1,4 +1,4 @@
-Underline all file paths in edit, read, and write tool call lines to be clicked and opened in viewer pane. With the edit tool calls, showing the diff in full view in viewer when clicked. When a file is clicked it should show a highlight box with inverted colors 
+
 
 
 filter view options to only show files that the current session agent has edited or is editing. regardless of the view option selected, files CURRENTLY being edited become highlighted in green. the filetree opens files individually in read-mode only but allows user to do 'i' to start editing it. files being edited (green highlighted) cant go into edit mode but update as the agent works on it for realtime feedback. files opened create tabs atop the filetree pane like [ file  x] with the x being clickable to close them. only up to 10 tabs can be open so user can hit 0-9 to select any one. 
@@ -9,22 +9,18 @@ have rebasing hooks that immediately inject into all session agents whenever mai
 
 
 
-On the new run command dialog, let's add a feature where we can ask the agent to create the run command or run script for us with the name that's entered in the Name box. On the command box, let's add another title on the right top corner of the box that can be cycled to using tab. So tab cycles between command and prompt when that box is in focus. Command is when we already have a command that we can just type in. Prompt is when we want to type in a prompt that will send to a new session created within the main branch of the selected project that passes into it an initial prompt with the name that we put in the Name field above, our prompt we entered in Prompt field describing what type of run command we want, and the details about how to setup/edit the .azureal/run_commands.json file in the cwd (and whatever else it needs to know). And the session that is created after submitting that new run command prompt can have a standard name like '[NewRunCmd] <summarized words>' logged in the .azureal/sessions.toml
 
 
 Preset prompts
 
 
-Some globals didnt get transferred to the command box title before u deleted them from the help panel, and u probably dont even know which ones or can recover them
 
 
-Do a God file dialog called by 'g' that spans the width of the worktree and filetree panes and shows all source files over 1k LOC and allows them to be checked , with a check all option, and modularized with a Modularize option that creates sessions in main worktree for each selected file named with naming convention '[GodFileModularize] <file>' (logged at sessions.toml too) with initial prompts instructing to do so, recommending gathering context of file or project beforehand too
+Do a God file system called by 'g' that turns the worktree pane into a list of all source files over 1k LOC and allows them to be checked , with a check all option, and modularized with a Modularize option that creates sessions in main worktree for each selected file named with naming convention '[GodFileModularize] <file>' (logged at sessions.toml too) with initial prompts instructing to do so, recommending gathering context of file and i project beforehand too
 
 Do a Git actions panel (shift+g) that replaces the work trees and filetrees panes with one big pane of their combined spans and lists the current project and worktree at the top, and under: rebase [r], merge [m], and whatever other useful commands, then under those: a list of diffed files all underlined to be clicked to show their diffs in the viewer pane like how we do the files listed in the edit diff tool calls of the convo pane. Do any other git actions u think fit here too. And make the pane border the orange/brown colors of the Git brand.
 
 
 
-Is there a way to have files that are updated outside app update in app without continuously polling for them?
 
-Tables in convo pane dont wrap
 

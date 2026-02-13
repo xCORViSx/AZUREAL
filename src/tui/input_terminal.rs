@@ -134,7 +134,8 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         (KeyModifiers::NONE, KeyCode::End) => { app.input_clear_selection(); app.input_end(); }
         (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => { app.input_clear_selection(); app.input_word_left(); }
         (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
-        (KeyModifiers::CONTROL, KeyCode::Backspace) | (KeyModifiers::ALT, KeyCode::Backspace) => app.input_delete_word(),
+        // ⌃w (universal Unix delete-word), ⌃Backspace (Linux/Windows)
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) | (KeyModifiers::CONTROL, KeyCode::Backspace) => app.input_delete_word(),
         // Shift+Enter — insert newline (Enter alone submits)
         // With DISAMBIGUATE_ESCAPE_CODES, Shift+Enter sends CSI 13;2u → (SHIFT, Enter).
         // ALT+Enter arm kept as safety net for Kitty-macOS edge cases.

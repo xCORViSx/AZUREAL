@@ -498,3 +498,156 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     ]);
     f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), chunks[2]);
 }
+
+/// Draw preset prompt picker overlay — numbered list of saved prompts.
+/// 1-9 for first 9 presets, 0 for the 10th (keyboard-order layout).
+pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
+    let Some(ref picker) = app.preset_prompt_picker else { return };
+    let count = app.preset_prompts.len();
+
+    // Size: fit all presets + borders
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = (count as u16 + 4).min(area.height.saturating_sub(4));
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    f.render_widget(Clear, dialog_area);
+
+    // Build list items with number shortcuts and selection highlight
+    let items: Vec<ListItem> = app.preset_prompts.iter().enumerate().map(|(idx, preset)| {
+        let is_selected = idx == picker.selected;
+        let style = if is_selected {
+            Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let key_style = if is_selected {
+            Style::default().bg(AZURE).fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+
+        // 1-9 for first 9, 0 for the 10th — keyboard order
+        let num_hint = if idx < 9 {
+            format!(" [{}] ", idx + 1)
+        } else if idx == 9 {
+            " [0] ".to_string()
+        } else {
+            "     ".to_string()
+        };
+
+        // Show name + truncated prompt preview in DarkGray
+        let max_name = 20.min((dialog_width as usize).saturating_sub(num_hint.len() + 6));
+        let preview_max = (dialog_width as usize).saturating_sub(num_hint.len() + max_name + 6);
+        let preview = if preview_max > 3 {
+            let p = truncate(&preset.prompt, preview_max);
+            format!(" {}", p)
+        } else {
+            String::new()
+        };
+        let preview_style = if is_selected {
+            Style::default().bg(AZURE).fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        ListItem::new(Line::from(vec![
+            Span::styled(num_hint, key_style),
+            Span::styled(truncate(&preset.name, max_name), style),
+            Span::styled(preview, preview_style),
+        ]))
+    }).collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(AZURE))
+            .title(" Preset Prompts (1-9,0:select  a:add  e:edit  x:del) ")
+            .style(Style::default().bg(Color::Reset)),
+    );
+    f.render_widget(list, dialog_area);
+}
+
+/// Draw preset prompt dialog overlay (create/edit a preset prompt).
+/// Two text fields: Name and Prompt, stacked vertically.
+pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
+    let Some(ref dialog) = app.preset_prompt_dialog else { return };
+    let area = f.area();
+
+    // Two text fields stacked: name(3) + prompt(3) + hints(1) + borders(2) = 9
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = 9u16.min(area.height.saturating_sub(4));
+    let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    f.render_widget(Clear, dialog_area);
+
+    // Outer border with title
+    let title_text = if dialog.editing_idx.is_some() { " Edit Preset " } else { " New Preset " };
+    let outer = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(AZURE))
+        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+    let inner = outer.inner(dialog_area);
+    f.render_widget(outer, dialog_area);
+
+    // Split inner area: name(3) + prompt(3) + hints(1)
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(1),
+    ]).split(inner);
+
+    // Name field — yellow border when active, gray when inactive
+    let name_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let name_widget = Paragraph::new(dialog.name.as_str())
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(name_color))
+            .title(Span::styled(" Name ", Style::default().fg(name_color))));
+    f.render_widget(name_widget, chunks[0]);
+
+    // Cursor in name field
+    if dialog.editing_name {
+        // Convert char cursor to display position (byte-based for ASCII, char-based for unicode)
+        let display_pos = dialog.name.chars().take(dialog.name_cursor).count();
+        f.set_cursor_position((
+            chunks[0].x + 1 + display_pos as u16,
+            chunks[0].y + 1,
+        ));
+    }
+
+    // Prompt field — yellow border when active
+    let prompt_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let prompt_widget = Paragraph::new(dialog.prompt.as_str())
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(prompt_color))
+            .title(Span::styled(" Prompt ", Style::default().fg(prompt_color))));
+    f.render_widget(prompt_widget, chunks[1]);
+
+    // Cursor in prompt field
+    if !dialog.editing_name {
+        let display_pos = dialog.prompt.chars().take(dialog.prompt_cursor).count();
+        f.set_cursor_position((
+            chunks[1].x + 1 + display_pos as u16,
+            chunks[1].y + 1,
+        ));
+    }
+
+    // Hint line
+    let enter_hint = if dialog.editing_name { ":next  " } else { ":save  " };
+    let hints = Line::from(vec![
+        Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":next  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
+    ]);
+    f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), chunks[2]);
+}

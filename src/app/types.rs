@@ -188,8 +188,6 @@ pub enum Focus {
 pub enum SidebarRowAction {
     /// A worktree row — index into app.sessions
     Worktree(usize),
-    /// A Claude session file row under a worktree — (worktree_idx, file_idx)
-    WorktreeFile(usize, usize),
 }
 
 /// A saved run command
@@ -245,6 +243,54 @@ pub struct RunCommandPicker {
 
 impl RunCommandPicker {
     pub fn new() -> Self { Self { selected: 0 } }
+}
+
+/// A saved prompt template the user can quickly insert into the input box
+#[derive(Debug, Clone)]
+pub struct PresetPrompt {
+    /// Short label shown in the picker list
+    pub name: String,
+    /// Full prompt text that populates the input box on selection
+    pub prompt: String,
+}
+
+impl PresetPrompt {
+    pub fn new(name: impl Into<String>, prompt: impl Into<String>) -> Self {
+        Self { name: name.into(), prompt: prompt.into() }
+    }
+}
+
+/// Picker overlay for selecting from saved preset prompts (⌥P)
+#[derive(Debug, Clone)]
+pub struct PresetPromptPicker {
+    pub selected: usize,
+}
+
+impl PresetPromptPicker {
+    pub fn new() -> Self { Self { selected: 0 } }
+}
+
+/// Dialog for creating/editing a preset prompt (two fields: name + prompt text)
+#[derive(Debug, Clone)]
+pub struct PresetPromptDialog {
+    pub name: String,
+    pub prompt: String,
+    pub name_cursor: usize,
+    pub prompt_cursor: usize,
+    /// true = name field focused, false = prompt field focused
+    pub editing_name: bool,
+    /// Some(i) = editing existing preset at index i, None = adding new
+    pub editing_idx: Option<usize>,
+}
+
+impl PresetPromptDialog {
+    pub fn new() -> Self {
+        Self { name: String::new(), prompt: String::new(), name_cursor: 0, prompt_cursor: 0, editing_name: true, editing_idx: None }
+    }
+
+    pub fn edit(idx: usize, preset: &PresetPrompt) -> Self {
+        Self { name: preset.name.clone(), prompt: preset.prompt.clone(), name_cursor: preset.name.chars().count(), prompt_cursor: preset.prompt.chars().count(), editing_name: true, editing_idx: Some(idx) }
+    }
 }
 
 /// Which mode the Projects panel is in

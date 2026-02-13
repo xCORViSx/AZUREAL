@@ -259,21 +259,24 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file.txt".to_string());
 
-    // Find actual line number by reading the current file and locating new_string.
-    // By the time the render thread runs, Claude has already applied the edit,
-    // so old_string is GONE from the file — only new_string exists there now.
-    // For pure deletions (new_str empty), fall back to line 1.
-    let start_line = if !new_str.is_empty() {
-        file_path.as_ref().and_then(|p| {
-            std::fs::read_to_string(p).ok().and_then(|content| {
-                content.find(new_str).map(|byte_pos| {
-                    content[..byte_pos].lines().count() + 1
-                })
-            })
-        }).unwrap_or(1)
-    } else {
-        1
-    };
+    // Find actual line number by reading the file and locating the edit position.
+    // Two cases: (1) edit already applied → new_string is in the file,
+    // (2) live preview during streaming → old_string is still in the file.
+    // Try new_string first (post-edit), fall back to old_string (mid-edit).
+    let start_line = file_path.as_ref().and_then(|p| {
+        std::fs::read_to_string(p).ok().and_then(|content| {
+            let needle = if !new_str.is_empty() && content.contains(new_str) {
+                Some(new_str)
+            } else if !old_str.is_empty() && content.contains(old_str) {
+                Some(old_str)
+            } else {
+                None
+            };
+            needle.and_then(|s| content.find(s).map(|byte_pos| {
+                content[..byte_pos].lines().count() + 1
+            }))
+        })
+    }).unwrap_or(1);
 
     // Syntax highlight only new (added) lines — removed lines use plain grey
     let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
