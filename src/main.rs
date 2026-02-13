@@ -33,25 +33,48 @@ async fn main() -> Result<()> {
 
     config::ensure_config_dir()?;
 
-    // Register the Azureal .app bundle with macOS Launch Services so
-    // notifications show the Azureal icon instead of Finder's. The bundle
-    // lives in resources/ next to the binary. set_application() is a
-    // one-time call (guarded by Once internally) — safe to call early.
+    // Create and register a minimal .app bundle in ~/.azureal/ so macOS
+    // notifications show the Azureal icon. The .icns is compiled into the
+    // binary via include_bytes!() — zero external files needed after install.
+    // Only writes files if the bundle doesn't exist yet (first launch).
     #[cfg(target_os = "macos")]
     {
-        let exe = std::env::current_exe().unwrap_or_default();
-        let candidates = [
-            exe.parent().unwrap_or(std::path::Path::new(".")).join("resources/Azureal.app"),
-            exe.parent().unwrap_or(std::path::Path::new(".")).join("../resources/Azureal.app"),
-            std::path::PathBuf::from("resources/Azureal.app"),
-        ];
-        for bundle in &candidates {
-            if bundle.exists() {
-                let _ = std::process::Command::new(
-                    "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-                ).args(["-R", "-f", &bundle.to_string_lossy()]).output();
-                break;
+        let bundle_dir = config::config_dir().join("Azureal.app");
+        if !bundle_dir.join("Contents/Info.plist").exists() {
+            let contents = bundle_dir.join("Contents");
+            let _ = std::fs::create_dir_all(contents.join("MacOS"));
+            let _ = std::fs::create_dir_all(contents.join("Resources"));
+            // Stub executable — macOS requires a valid executable in the bundle
+            let _ = std::fs::write(contents.join("MacOS/Azureal"), "#!/bin/sh\nexit 0\n");
+            #[cfg(unix)] {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(
+                    contents.join("MacOS/Azureal"),
+                    std::fs::Permissions::from_mode(0o755),
+                );
             }
+            // Icon embedded at compile time (~629KB)
+            let _ = std::fs::write(
+                contents.join("Resources/Azureal.icns"),
+                include_bytes!("../resources/Azureal.icns"),
+            );
+            // Info.plist with our bundle identifier
+            let _ = std::fs::write(contents.join("Info.plist"), concat!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+                "<plist version=\"1.0\">\n<dict>\n",
+                "\t<key>CFBundleIdentifier</key>\n\t<string>com.xcorvisx.azureal</string>\n",
+                "\t<key>CFBundleName</key>\n\t<string>Azureal</string>\n",
+                "\t<key>CFBundleExecutable</key>\n\t<string>Azureal</string>\n",
+                "\t<key>CFBundleIconFile</key>\n\t<string>Azureal</string>\n",
+                "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n",
+                "\t<key>LSUIElement</key>\n\t<true/>\n",
+                "</dict>\n</plist>\n",
+            ));
+            // Register with Launch Services so macOS knows about the bundle
+            let _ = std::process::Command::new(
+                "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+            ).args(["-R", "-f", &bundle_dir.to_string_lossy()]).output();
         }
         let _ = notify_rust::set_application("com.xcorvisx.azureal");
     }
