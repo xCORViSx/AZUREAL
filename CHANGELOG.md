@@ -19,6 +19,7 @@ All notable changes to Azureal will be documented in this file.
   - Shows session name + matched line preview; Enter loads that session
 
 ### Changed
+- Convo pane auto-follow: scrolling down to the bottom now re-engages follow-bottom auto-scroll (previously only ⌥↓ did this)
 - Projects panel: launching app in a non-git directory shows "Project not initialized. Press i to initialize or choose another project." in red; clears on first keypress
 - Session list overlay shows "Loading sessions…" dialog while message counts compute — two-phase open ensures UI never appears frozen on large session files
 - Session list overlay now scoped to current worktree only (was all worktrees)
