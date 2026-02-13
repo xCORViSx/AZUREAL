@@ -248,48 +248,54 @@ fn draw_splash(f: &mut Frame) {
     // ── Spring azure butterfly (background layer) ──
     // Celastrina ladon: rounded wings, no tails. Four distinct wings visible.
     // Outlined wing shapes with ░ fill, narrow body (║) down center, antennae (╲╱).
+    // Must be taller than text content (26 rows) so wings extend above/below.
     // Rendered first so text overwrites it where they overlap.
     let butterfly: Vec<&str> = vec![
         "                                        ╱·              ·╲",
         "                                       ╱                  ╲",
         "                                      ╱                    ╲",
-        "                    ┌─────────────────╮ │                  │ ╭─────────────────┐",
-        "                ┌───┘░░░░░░░░░░░░░░░░░╰─╮                ╭─╯░░░░░░░░░░░░░░░░░└───┐",
-        "             ┌──┘░░░░░░░░░░░░░░░░░░░░░░░│                │░░░░░░░░░░░░░░░░░░░░░░░└──┐",
-        "           ┌─┘░░░░░░░░░░░░░░░░░░░░░░░░░░│                │░░░░░░░░░░░░░░░░░░░░░░░░░░└─┐",
-        "          ┌┘░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│              │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░└┐",
-        "         ┌┘░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░└┐",
-        "         │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
-        "         │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
-        "         └┐░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
-        "          └┐░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
-        "           └─┐░░░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░┌─┘",
-        "             └──┐░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░┌──┘",
-        "                └───┐░░░░░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░░░░░┌───┘",
-        "                    └─────────────────╯║                  ║╰─────────────────┘",
-        "                    ┌──────────────╮║                      ║╭──────────────┐",
-        "                 ┌──┘░░░░░░░░░░░░░░╰║                    ║╯░░░░░░░░░░░░░░└──┐",
-        "               ┌─┘░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░└─┐",
-        "              ┌┘░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░└┐",
-        "              │░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░│",
-        "              │░░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░░│",
-        "              └┐░░░░░░░░░░░░░░░░░░░░░░║              ║░░░░░░░░░░░░░░░░░░░░░░┌┘",
-        "               └─┐░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░┌─┘",
-        "                  └──┐░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░┌──┘",
-        "                     └───┐░░░░░░░░║                      ║░░░░░░░░┌───┘",
-        "                         └──────╯                          ╰──────┘",
+        "                    ┌─────────────────╮│                    │╭─────────────────┐",
+        "                ┌───┘░░░░░░░░░░░░░░░░░╰╮                  ╭╯░░░░░░░░░░░░░░░░░└───┐",
+        "             ┌──┘░░░░░░░░░░░░░░░░░░░░░░│                  │░░░░░░░░░░░░░░░░░░░░░░└──┐",
+        "           ┌─┘░░░░░░░░░░░░░░░░░░░░░░░░░│                  │░░░░░░░░░░░░░░░░░░░░░░░░░└─┐",
+        "          ┌┘░░░░░░░░░░░░░░░░░░░░░░░░░░░░│                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░└┐",
+        "         ┌┘░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░└┐",
+        "        ┌┘░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░└┐",
+        "        │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "        │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "        │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "        │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "        └┐░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
+        "         └┐░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║                ║░░░░░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
+        "          └┐░░░░░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
+        "           └─┐░░░░░░░░░░░░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░░░░░░░░░░░░┌─┘",
+        "             └──┐░░░░░░░░░░░░░░░░░░░░║                      ║░░░░░░░░░░░░░░░░░░░░┌──┘",
+        "                └───┐░░░░░░░░░░░░░░░║                        ║░░░░░░░░░░░░░░░┌───┘",
+        "                    └───────────────╯║                        ║╰───────────────┘",
+        "                    ┌────────────╮  ║                          ║  ╭────────────┐",
+        "                 ┌──┘░░░░░░░░░░░░╰─╮║                        ║╭─╯░░░░░░░░░░░░└──┐",
+        "               ┌─┘░░░░░░░░░░░░░░░░░╰║                      ║╯░░░░░░░░░░░░░░░░░└─┐",
+        "              ┌┘░░░░░░░░░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░░░░░░░░░░░└┐",
+        "             ┌┘░░░░░░░░░░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░░░░░░░░░░░░└┐",
+        "             │░░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "             │░░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "             │░░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░░│",
+        "             └┐░░░░░░░░░░░░░░░░░░░░░░░║                  ║░░░░░░░░░░░░░░░░░░░░░░░░░┌┘",
+        "              └┐░░░░░░░░░░░░░░░░░░░░░║                    ║░░░░░░░░░░░░░░░░░░░░░░░┌┘",
+        "               └─┐░░░░░░░░░░░░░░░░░║                      ║░░░░░░░░░░░░░░░░░░░┌─┘",
+        "                  └──┐░░░░░░░░░░░░║                          ║░░░░░░░░░░░░░┌──┘",
+        "                     └───┐░░░░░░║                              ║░░░░░░░┌───┘",
+        "                         └────╯                                  ╰────┘",
     ];
 
-    // Center the butterfly on screen
+    // Center butterfly on the SAME vertical origin as the text content
+    // so wings extend equally above and below. Text is 26 rows, butterfly
+    // is taller — offset by the difference so they share the same center.
     let bf_h = butterfly.len() as u16;
-    let bf_start_y = area.y + area.height.saturating_sub(bf_h) / 2;
     let bf_lines: Vec<Line<'static>> = butterfly.iter()
         .map(|row| Line::from(Span::styled(row.to_string(), bf_style)))
         .collect();
     let bf_widget = Paragraph::new(bf_lines).alignment(Alignment::Center);
-    f.render_widget(bf_widget, ratatui::layout::Rect::new(
-        area.x, bf_start_y, area.width, bf_h,
-    ));
 
     // ── Text content (foreground layer — overwrites butterfly where they overlap) ──
     let logo: Vec<&str> = vec![
@@ -322,8 +328,17 @@ fn draw_splash(f: &mut Frame) {
     let logo_height = logo.len() as u16;
     let acronym_height = acronym.len() as u16;
     let total_height = logo_height + 1 + acronym_height + 2 + 1;
-    let start_y = area.y + area.height.saturating_sub(total_height) / 2;
+    // Center point for all content — both butterfly and text share this
+    let center_y = area.y + area.height / 2;
+    let text_start_y = center_y.saturating_sub(total_height / 2);
 
+    // Render butterfly first (background), centered on same point as text
+    let bf_start_y = center_y.saturating_sub(bf_h / 2);
+    f.render_widget(bf_widget, ratatui::layout::Rect::new(
+        area.x, bf_start_y, area.width, bf_h.min(area.height.saturating_sub(bf_start_y.saturating_sub(area.y))),
+    ));
+
+    // Then render text on top (foreground overwrites butterfly cells)
     let mut lines: Vec<Line<'static>> = logo.iter()
         .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
         .collect();
@@ -337,7 +352,7 @@ fn draw_splash(f: &mut Frame) {
 
     let splash = Paragraph::new(lines).alignment(Alignment::Center);
     let splash_area = ratatui::layout::Rect::new(
-        area.x, start_y, area.width, total_height,
+        area.x, text_start_y, area.width, total_height,
     );
     f.render_widget(splash, splash_area);
 }
