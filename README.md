@@ -43,6 +43,7 @@
 - **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
 - **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via sequential Claude sessions on the main worktree
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
+- **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
 - **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 

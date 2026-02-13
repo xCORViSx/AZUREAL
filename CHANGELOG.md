@@ -5,7 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Startup splash screen: block-character "AZUREAL" logo in AZURE blue with "Loading project..." subtitle, shown for minimum 3 seconds while git/session I/O runs (replaces black screen)
+- Startup splash screen: 2x-scale block-character "AZUREAL" logo in AZURE blue with half-block acronym subtitle, dim spring azure butterfly outline as background mascot, and "Loading project..." subtitle, shown for minimum 3 seconds while git/session I/O runs (replaces black screen)
 - Convo pane search (`/`): find text in current session's rendered output
   - Yellow match highlighting with bright current match, `[N/M]` counter in search bar
   - `n`/`N` to cycle through matches after confirming with Enter
@@ -58,6 +58,8 @@ All notable changes to Azureal will be documented in this file.
 - Session list overlay (`s`) opens instantly — message count scanning replaced serde_json parsing with fast `contains()` string checks (zero false positives in Claude's compact JSON). Counts cached by file size so unchanged files skip I/O entirely on subsequent opens.
 
 ### Fixed
+- `Ctrl+Q` now quits from the Projects panel — was being swallowed because the panel intercepted all keys before the global keybinding system could process the quit shortcut
+- Projects panel no longer shows stale entries — `load_projects()` now validates each entry on load and prunes directories that don't exist or lost their `.git` (writes cleaned list back to `projects.txt` automatically)
 - Convo title `[x/y]` denominator now shows true total message count for large sessions — was showing ~40-50 instead of hundreds because deferred rendering (last 200 events on initial load) meant `message_bubble_positions` only covered the rendered tail. Denominator now counts `UserMessage` + `AssistantText` from the full `display_events` array; numerator uses offset arithmetic so positioning stays correct before full render triggers on scroll-to-top.
 - Session list `[N msgs]` count now matches convo title `[x/y]` — was inflated due to three issues: (1) used wrong type string `"human"` instead of `"user"`, (2) counted every assistant JSONL line with `"stop_reason"` (95.5% are null), (3) didn't skip non-bubble user events (isMeta, `<local-command-caveat>`, `<local-command-stdout>`, `<command-name>`, compaction summaries) or deduplicate by parentUuid. Now uses fast string scanning matching the session parser's filtering logic.
 - Clicking out of prompt input or Tab-cycling away now exits back to command mode (was staying in prompt mode with yellow border)

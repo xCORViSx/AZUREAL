@@ -75,7 +75,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
-**Splash Screen:** On startup, a block-character "AZUREAL" logo in AZURE (#3399FF) is rendered centered on screen with a "Loading project..." subtitle in dim blue. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Enforces a 3-second minimum display time (loading time counts toward it) so the branding registers even on fast machines. Replaced by the first `ui()` draw when the event loop starts.
+**Splash Screen:** On startup, a 2x-scale block-character "AZUREAL" logo (10 rows × 110 chars, pure `█` blocks) in AZURE (#3399FF) is rendered centered on screen with the full acronym ("Asynchronous Zoned Unified Runtime Environment for Agentic LLMs") rendered in half-block characters (▀▄█ for 2x vertical density, 12 rows across 4 word-groups) in dim blue, followed by a "Loading project..." subtitle. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Enforces a 3-second minimum display time (loading time counts toward it) so the branding registers even on fast machines. Replaced by the first `ui()` draw when the event loop starts.
 
 **OS Terminal Title:** Set dynamically via crossterm `SetTitle`. Shows `AZUREAL` when no project loaded, `AZUREAL @ <project> : <branch>` when a session is selected. Updated on startup, session switch, and project switch (via `update_terminal_title()` in `src/app/state/ui.rs`, called from `load_session_output()`). Reset to empty on exit.
 
@@ -507,7 +507,7 @@ if let Some(result) = poll_render_result(&mut app) {
 
 **Files:** `src/tui/render_thread.rs` (RenderThread struct, request/result types), `src/tui/draw_output.rs` (`submit_render_request()`, `poll_render_result()`), `src/tui/event_loop.rs` (submit/poll integration), `src/app/state/app.rs` (render_thread fields)
 
-**Startup sequence** (`src/tui/run.rs::run`): `draw_splash()` → `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The splash screen renders immediately after terminal init (before any App state exists) so the user sees "AZUREAL / Loading project..." while git discovery and session parsing run. The first `ui()` draw in `run_app()` replaces the splash with the full layout.
+**Startup sequence** (`src/tui/run.rs::run`): `draw_splash()` → `App::new()` → `app.load()` → `app.load_session_output()` → `event_loop::run_app()`. The splash screen renders immediately after terminal init (before any App state exists) so the user sees the AZUREAL logo with a dim spring azure butterfly outline (the app mascot) in the background while git discovery and session parsing run. Two-layer rendering: butterfly background at `Color::Rgb(15, 45, 80)` (barely visible), then logo + half-block acronym + "Loading project..." on top overwriting butterfly cells where they overlap. Displayed for minimum 3 seconds. The first `ui()` draw in `run_app()` replaces the splash with the full layout.
 
 ### Vim-Style Input Mode
 
@@ -965,6 +965,8 @@ Persistent project management across azureal sessions. Projects are stored in `~
 
 **Project Switching:**
 When switching projects, azureal kills all running Claude processes, clears all session/render state (sessions, display events, caches, file watcher), sets the new project via `Project::from_path()`, and reloads sessions, output, and run commands.
+
+**Auto-pruning:** `load_projects()` validates every entry on load — directories that don't exist or aren't git repos are silently removed from `projects.txt`. This prevents ghost entries after a repo's `.git` directory is deleted.
 
 Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
 
