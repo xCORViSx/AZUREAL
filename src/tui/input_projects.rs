@@ -5,7 +5,7 @@
 //! Input modes: text input for path/name entry with Enter to confirm, Esc to cancel.
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::App;
 use crate::app::types::ProjectsPanelMode;
@@ -15,6 +15,12 @@ use crate::git::Git;
 /// Handle all keyboard input when the Projects panel is active.
 /// Returns Ok(()) — all keys are consumed (no fall-through to other handlers).
 pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Ctrl+Q always quits, even from projects panel
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q') {
+        app.should_quit = true;
+        return Ok(());
+    }
+
     let Some(ref panel) = app.projects_panel else { return Ok(()) };
     let mode = panel.mode;
 
