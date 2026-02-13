@@ -120,6 +120,7 @@ pub enum Action {
     StartResume,
     OpenProjects,
     OpenGodFiles,
+    OpenGitActions,
 
     // FileTree
     ReturnToWorktrees,
@@ -295,7 +296,7 @@ pub static GLOBAL: [Keybinding; 10] = [
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 20] = [
+pub static WORKTREES: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
@@ -316,6 +317,7 @@ pub static WORKTREES: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "God files", Action::OpenGodFiles),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
 ];
 
 /// FileTree bindings

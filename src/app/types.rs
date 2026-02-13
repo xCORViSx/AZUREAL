@@ -416,6 +416,43 @@ impl ViewerTab {
     }
 }
 
+/// A changed file entry in the Git Actions panel (from `git diff --stat main...HEAD`)
+#[derive(Debug, Clone)]
+pub struct GitChangedFile {
+    /// Relative file path
+    pub path: String,
+    /// Git status indicator: M=Modified, A=Added, D=Deleted, R=Renamed
+    pub status: char,
+    /// Lines added in this file
+    pub additions: usize,
+    /// Lines deleted in this file
+    pub deletions: usize,
+}
+
+/// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
+/// Shows git operations (rebase, merge, fetch, etc.) and changed files list.
+#[derive(Debug)]
+pub struct GitActionsPanel {
+    /// Current worktree name (branch) shown in the title
+    pub worktree_name: String,
+    /// Worktree path on disk (for running git commands without reborrowing App)
+    pub worktree_path: std::path::PathBuf,
+    /// Main branch name (for rebase/merge/diff base)
+    pub main_branch: String,
+    /// Changed files from git diff --stat against main
+    pub changed_files: Vec<GitChangedFile>,
+    /// Selected file index in the file list
+    pub selected_file: usize,
+    /// Scroll offset for the file list
+    pub file_scroll: usize,
+    /// true = action list focused, false = file list focused. Tab toggles.
+    pub actions_focused: bool,
+    /// Selected action index when actions_focused is true
+    pub selected_action: usize,
+    /// Transient status/result message from last git operation: (message, is_error)
+    pub result_message: Option<(String, bool)>,
+}
+
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization
 #[derive(Debug, Clone)]
 pub struct GodFileEntry {

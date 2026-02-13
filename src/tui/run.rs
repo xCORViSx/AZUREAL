@@ -25,7 +25,7 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::{draw_dialogs, draw_god_files, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
+use super::{draw_dialogs, draw_git_actions, draw_god_files, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -235,6 +235,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_preset_prompt_picker(f, app, f.area());
     } else if app.preset_prompt_dialog.is_some() {
         draw_dialogs::draw_preset_prompt_dialog(f, app);
+    }
+    // Git Actions panel overlay (Shift+G from worktrees)
+    if app.git_actions_panel.is_some() {
+        draw_git_actions::draw_git_actions_panel(f, app);
     }
 }
 

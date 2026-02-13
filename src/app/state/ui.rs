@@ -1,6 +1,6 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::app::types::{BranchDialog, ContextMenu, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
 use crate::config::{config_dir, ensure_config_dir, ensure_project_data_dir, load_projects, project_data_dir};
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
@@ -87,6 +87,48 @@ impl App {
         self.viewer_scroll = 0;
         self.viewer_lines_dirty = true;
         self.focus = Focus::Viewer;
+    }
+
+    /// Open the Git Actions panel for the currently selected worktree.
+    /// Gathers branch info and changed files via `git diff --name-status` + `--numstat`.
+    pub fn open_git_actions_panel(&mut self) {
+        let session = match self.current_session() {
+            Some(s) => s,
+            None => { self.set_status("No worktree selected"); return; }
+        };
+        let wt_path = match session.worktree_path.as_ref() {
+            Some(p) => p.clone(),
+            None => { self.set_status("No worktree path"); return; }
+        };
+        let worktree_name = session.branch_name.clone();
+        let main_branch = self.project.as_ref()
+            .map(|p| p.main_branch.clone())
+            .unwrap_or_else(|| "main".to_string());
+
+        // Load changed files — typically <100ms, fine for modal open
+        let changed_files = match Git::get_diff_files(&wt_path, &main_branch) {
+            Ok(files) => files.into_iter().map(|(path, status, add, del)| {
+                GitChangedFile { path, status, additions: add, deletions: del }
+            }).collect(),
+            Err(_) => Vec::new(),
+        };
+
+        self.git_actions_panel = Some(GitActionsPanel {
+            worktree_name,
+            worktree_path: wt_path,
+            main_branch,
+            changed_files,
+            selected_file: 0,
+            file_scroll: 0,
+            actions_focused: true,
+            selected_action: 0,
+            result_message: None,
+        });
+    }
+
+    /// Close the Git Actions panel
+    pub fn close_git_actions_panel(&mut self) {
+        self.git_actions_panel = None;
     }
 
     /// Load a file into the viewer for Read/Write tool clicks (no diff overlay).

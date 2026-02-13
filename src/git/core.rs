@@ -177,4 +177,134 @@ impl Git {
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
+
+    /// Get per-file diff stats against main branch.
+    /// Returns Vec<(path, status_char, additions, deletions)> by combining
+    /// `git diff --name-status` (M/A/D/R) with `git diff --numstat` (+/-).
+    pub fn get_diff_files(worktree_path: &Path, main_branch: &str) -> Result<Vec<(String, char, usize, usize)>> {
+        let range = format!("{}...HEAD", main_branch);
+
+        // M\tpath or A\tpath — tells us what kind of change
+        let status_out = Command::new("git")
+            .args(["diff", "--name-status", &range])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get diff name-status")?;
+        let status_text = String::from_utf8_lossy(&status_out.stdout);
+
+        // add\tdel\tpath — tells us line counts per file
+        let numstat_out = Command::new("git")
+            .args(["diff", "--numstat", &range])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get diff numstat")?;
+        let numstat_text = String::from_utf8_lossy(&numstat_out.stdout);
+
+        // Build path → (additions, deletions) lookup from numstat
+        let mut stats: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+        for line in numstat_text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let add = parts[0].parse().unwrap_or(0);
+                let del = parts[1].parse().unwrap_or(0);
+                stats.insert(parts[2].to_string(), (add, del));
+            }
+        }
+
+        // Combine status chars with numstat counts
+        let mut result = Vec::new();
+        for line in status_text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                let status = parts[0].chars().next().unwrap_or('M');
+                let path = parts.last().unwrap().to_string();
+                let (add, del) = stats.get(&path).copied().unwrap_or((0, 0));
+                result.push((path, status, add, del));
+            }
+        }
+        Ok(result)
+    }
+
+    /// Get the diff for a single file against main branch (for viewer display)
+    pub fn get_file_diff(worktree_path: &Path, main_branch: &str, file_path: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args(["diff", &format!("{}...HEAD", main_branch), "--", file_path])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get file diff")?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Fetch from all remotes, pruning stale tracking branches
+    pub fn fetch(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["fetch", "--all", "--prune"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to fetch")?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        } else {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
+        }
+    }
+
+    /// Pull from remote (current branch's upstream)
+    pub fn pull(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["pull"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to pull")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if output.status.success() { Ok(combined.trim().to_string()) }
+        else { anyhow::bail!("{}", combined.trim()) }
+    }
+
+    /// Push current branch to remote
+    pub fn push(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["push"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to push")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if output.status.success() { Ok(combined.trim().to_string()) }
+        else { anyhow::bail!("{}", combined.trim()) }
+    }
+
+    /// Merge main branch into current branch
+    pub fn merge_from_main(worktree_path: &Path, main_branch: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args(["merge", main_branch])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to merge")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if output.status.success() { Ok(combined.trim().to_string()) }
+        else { anyhow::bail!("{}", combined.trim()) }
+    }
+
+    /// Stash current working directory changes
+    pub fn stash(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["stash"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to stash")?;
+        if output.status.success() { Ok(String::from_utf8_lossy(&output.stdout).trim().to_string()) }
+        else { anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim()) }
+    }
+
+    /// Pop the most recent stash entry
+    pub fn stash_pop(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to pop stash")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if output.status.success() { Ok(combined.trim().to_string()) }
+        else { anyhow::bail!("{}", combined.trim()) }
+    }
 }

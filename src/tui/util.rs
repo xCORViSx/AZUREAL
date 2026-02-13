@@ -6,6 +6,9 @@
 /// Azure blue (#3399FF) — the app's signature accent color, replacing all
 /// uses of ANSI Cyan for a cohesive visual identity matching the name "Azureal".
 pub const AZURE: ratatui::style::Color = ratatui::style::Color::Rgb(51, 153, 255);
+
+/// Git brand orange (#F05032) — used for Git Actions panel border and accents
+pub const GIT_ORANGE: ratatui::style::Color = ratatui::style::Color::Rgb(240, 80, 50);
 //
 // Re-exports commonly used items from submodules:
 // - `colorize`: Output colorization (colorize_output, MessageType, etc.)

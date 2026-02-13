@@ -908,6 +908,41 @@ Only one Claude session per branch at a time. First checked file spawns immediat
 
 Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, queue advance), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
 
+### Git Actions Panel
+
+Centered modal overlay (`Shift+G` from Worktrees pane) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling, matching the git identity.
+
+**Panel Layout:**
+- Title bar: `" Git Actions: <branch_name> "` centered in orange border
+- Actions section: 7 git operations with single-key shortcuts, navigable with j/k
+- Changed files section: per-file diff stats from `git diff main...HEAD`, underlined paths
+- Result message area: green (success) or red (error) after each operation
+- Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
+
+**Actions (when actions section focused):**
+- `r` / Enter on index 0 — Rebase from main (`Git::rebase_onto_main()`)
+- `m` / Enter on index 1 — Merge from main (`Git::merge_from_main()`)
+- `f` / Enter on index 2 — Fetch all remotes (`Git::fetch()`)
+- `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
+- `P` / Enter on index 4 — Push (`Git::push()`)
+- `s` / Enter on index 5 — Stash (`Git::stash()`)
+- `S` / Enter on index 6 — Stash pop (`Git::stash_pop()`)
+
+**File list (when file list focused):**
+- Each file shows status char (M=yellow, A=green, D=red, R=cyan), underlined path, right-aligned `+N/-N` stats
+- `j/k` — navigate files; `Enter`/`d` — view selected file's diff in Viewer pane (closes panel)
+- Scroll indicator shown when list overflows
+
+**Global within panel:**
+- `Tab` — toggle focus between actions and file list
+- `R` — refresh changed file list
+- `Esc` — close panel
+- Click outside — dismiss (mouse.rs)
+
+**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff --name-status` + `git diff --numstat`. Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+
+Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (8 new methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`, `stash`, `stash_pop`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in WORKTREES)
+
 ### Rebase Support
 
 Sessions can be rebased onto main with conflict detection:
@@ -1081,6 +1116,7 @@ azureal/
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
 │   │   ├── draw_output.rs  # Convo pane rendering
 │   │   ├── draw_god_files.rs # God File panel modal (full-screen god file scanner/modularizer)
+│   │   ├── draw_git_actions.rs # Git Actions panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
@@ -1088,6 +1124,7 @@ azureal/
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: convo search + session list overlay + rebase mode only (commands resolved upstream)
 │   │   ├── input_god_files.rs # God File panel input (navigate, check, modularize)
+│   │   ├── input_git_actions.rs # Git Actions panel input (actions, file nav, git operations)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module

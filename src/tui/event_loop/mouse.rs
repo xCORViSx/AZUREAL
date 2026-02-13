@@ -75,6 +75,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     // Overlays first — clicking anywhere dismisses them
     if app.show_help { app.show_help = false; return true; }
     if app.context_menu.is_some() { app.context_menu = None; return true; }
+    if app.git_actions_panel.is_some() { app.git_actions_panel = None; return true; }
     if app.run_command_picker.is_some() { app.run_command_picker = None; return true; }
     if app.run_command_dialog.is_some() { app.run_command_dialog = None; return true; }
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
