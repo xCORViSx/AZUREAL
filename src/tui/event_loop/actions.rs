@@ -32,6 +32,12 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     // Bare modifier presses (Shift, Ctrl, Alt) arrive via Kitty protocol — ignore globally
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
+    // ⌃q quits from ANYWHERE — no modal should block this
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
+        app.should_quit = true;
+        return Ok(());
+    }
+
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
 
     // Help overlay: only ? and Esc close it, everything else ignored
