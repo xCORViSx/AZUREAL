@@ -241,28 +241,34 @@ fn draw_splash(f: &mut Frame) {
     let logo_style = Style::default().fg(az);
     let dim_style = Style::default().fg(dim);
 
-    // Each letter is 5 rows tall, pure █ blocks (no box-drawing).
-    // Fixed-width columns per letter for proper alignment.
+    // 2x scale: each pixel is 2 chars wide, each row repeated twice for height.
+    // 10 rows tall (5 logical rows × 2), ~112 chars wide.
     let logo: Vec<&str> = vec![
-        " ████   ██████  ██   ██  █████   ██████   ████   ██     ",
-        "██  ██     ██   ██   ██  ██  ██  ██      ██  ██  ██     ",
-        "██████    ██    ██   ██  █████   ████    ██████  ██     ",
-        "██  ██   ██     ██   ██  ██  ██  ██      ██  ██  ██     ",
-        "██  ██  ██████   █████   ██  ██  ██████  ██  ██  ██████ ",
+        "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
+        "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
+        "████    ████        ████        ████    ████    ████    ████    ████            ████    ████    ████          ",
+        "████    ████        ████        ████    ████    ████    ████    ████            ████    ████    ████          ",
+        "████████████      ████          ████    ████    ██████████      ████████        ████████████    ████          ",
+        "████████████      ████          ████    ████    ██████████      ████████        ████████████    ████          ",
+        "████    ████    ████            ████    ████    ████    ████    ████            ████    ████    ████          ",
+        "████    ████    ████            ████    ████    ████    ████    ████            ████    ████    ████          ",
+        "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
+        "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
     ];
 
     let area = f.area();
     let logo_height = logo.len() as u16;
-    // 2 extra lines: 1 blank spacer + 1 subtitle
-    let total_height = logo_height + 2;
+    // 3 extra lines: 2 blank spacers + 1 spaced-out subtitle
+    let total_height = logo_height + 3;
     let start_y = area.y + area.height.saturating_sub(total_height) / 2;
 
-    // Build lines: logo rows + spacer + subtitle
+    // Build lines: logo rows + spacers + subtitle with letter-spacing
     let mut lines: Vec<Line<'static>> = logo.iter()
         .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
         .collect();
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("Loading project...", dim_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("L o a d i n g   p r o j e c t . . .", dim_style)));
 
     let splash = Paragraph::new(lines).alignment(Alignment::Center);
     let splash_area = ratatui::layout::Rect::new(
