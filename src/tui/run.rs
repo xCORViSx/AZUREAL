@@ -250,10 +250,10 @@ fn draw_splash(f: &mut Frame) {
     // narrow body gap (2 spaces) down the center, antennae at top.
     // 37 rows tall so it extends well above/below the 26-row text block.
     let butterfly: Vec<&str> = vec![
-        "                         ░                                      ░",
-        "                          ░░                                  ░░",
-        "                            ░░                              ░░",
-        "                              ░░                          ░░",
+        "                         ░                          ░",
+        "                          ░░                      ░░",
+        "                            ░░                  ░░",
+        "                              ░░              ░░",
         "                      ░░░░░░░░░░░░░░░░░░░                    ░░░░░░░░░░░░░░░░░░░",
         "                  ░░░░░░░░░░░░░░░░░░░░░░░░                    ░░░░░░░░░░░░░░░░░░░░░░░░",
         "               ░░░░░░░░░░░░░░░░░░░░░░░░░░░░                  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
