@@ -50,19 +50,25 @@ pub async fn run() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Show splash screen immediately — visible while project/session loading runs
+    // Show splash screen immediately — visible while project/session loading runs.
+    // Minimum 3s display so the branding registers even on fast machines.
     terminal.draw(draw_splash)?;
+    let splash_start = std::time::Instant::now();
 
     let mut app = App::new();
-    // Set bare title before loading (shown during projects panel if no git repo)
     app.update_terminal_title();
     app.load()?;
     app.load_run_commands();
-
-    // Load output for the initially selected session (also updates title with project/branch)
     app.load_session_output();
-
     let config = Config::load().unwrap_or_default();
+
+    // Hold splash for remainder of 3s minimum (loading time counts toward it)
+    let elapsed = splash_start.elapsed();
+    let min_splash = std::time::Duration::from_secs(3);
+    if elapsed < min_splash {
+        std::thread::sleep(min_splash - elapsed);
+    }
+
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;
 
     // Restore default terminal title on exit

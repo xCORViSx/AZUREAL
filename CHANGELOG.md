@@ -5,7 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Startup splash screen: block-character "AZUREAL" logo in AZURE blue with "Loading project..." subtitle, shown immediately while git/session I/O runs (replaces black screen)
+- Startup splash screen: block-character "AZUREAL" logo in AZURE blue with "Loading project..." subtitle, shown for minimum 3 seconds while git/session I/O runs (replaces black screen)
 - Convo pane search (`/`): find text in current session's rendered output
   - Yellow match highlighting with bright current match, `[N/M]` counter in search bar
   - `n`/`N` to cycle through matches after confirming with Enter

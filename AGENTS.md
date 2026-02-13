@@ -75,7 +75,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
-**Splash Screen:** On startup, a block-character "AZUREAL" logo in AZURE (#3399FF) is rendered centered on screen with a "Loading project..." subtitle in dim blue. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Replaced automatically by the first `ui()` draw when the event loop starts.
+**Splash Screen:** On startup, a block-character "AZUREAL" logo in AZURE (#3399FF) is rendered centered on screen with a "Loading project..." subtitle in dim blue. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Enforces a 3-second minimum display time (loading time counts toward it) so the branding registers even on fast machines. Replaced by the first `ui()` draw when the event loop starts.
 
 **OS Terminal Title:** Set dynamically via crossterm `SetTitle`. Shows `AZUREAL` when no project loaded, `AZUREAL @ <project> : <branch>` when a session is selected. Updated on startup, session switch, and project switch (via `update_terminal_title()` in `src/app/state/ui.rs`, called from `load_session_output()`). Reset to empty on exit.
 
