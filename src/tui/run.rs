@@ -232,17 +232,68 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 }
 
 /// Block-pixel ASCII art splash screen shown during app initialization.
-/// Renders "AZUREAL" in chunky block characters centered on screen with
-/// a "Loading project..." subtitle. Visible while git/session I/O runs.
+/// Renders "AZUREAL" logo centered on screen with acronym subtitle and
+/// a dim spring azure butterfly outline in the background as the app mascot.
 fn draw_splash(f: &mut Frame) {
-    // AZURE brand color (#3399FF)
     let az = Color::Rgb(51, 153, 255);
     let dim = Color::Rgb(25, 76, 128);
+    // Very dim butterfly color — just barely visible behind text
+    let butterfly_color = Color::Rgb(15, 45, 80);
     let logo_style = Style::default().fg(az);
     let dim_style = Style::default().fg(dim);
+    let bf_style = Style::default().fg(butterfly_color);
 
-    // 2x scale: each pixel is 2 chars wide, each row repeated twice for height.
-    // 10 rows tall (5 logical rows × 2), ~112 chars wide.
+    let area = f.area();
+
+    // ── Spring azure butterfly outline (background layer) ──
+    // Rendered first so text overwrites it where they overlap.
+    // 31 rows × ~135 cols, centered on screen.
+    let butterfly: Vec<&str> = vec![
+        "                                                         ·                             ·",
+        "                                                          ·                           ·",
+        "                                                           ·                         ·",
+        "                                                            ·                       ·",
+        "                                                             ·                     ·",
+        "                  ·········································   ·       ·       ·   ·········································",
+        "             ····                                           ·· · · · · · · · ·· ·                                           ····",
+        "          ···                                                  ·             ·                                                  ···",
+        "        ··                                                     ·             ·                                                     ··",
+        "       ·                                                       ·             ·                                                       ·",
+        "      ·                                                        ·             ·                                                        ·",
+        "      ·                                                        ·             ·                                                        ·",
+        "      ·                                                        ·             ·                                                        ·",
+        "      ·                                                        ·             ·                                                        ·",
+        "      ·                                                        ·             ·                                                        ·",
+        "       ·                                                       ·             ·                                                       ·",
+        "        ·                                                      ·             ·                                                      ·",
+        "         ··                                                    ·             ·                                                    ··",
+        "           ···                                                 ·             ·                                                 ···",
+        "              ·····                                            ·             ·                                            ·····",
+        "                   ····                                        ·             ·                                        ····",
+        "                       ···                                     ·             ·                                     ···",
+        "                      ····                                     ·             ·                                     ····",
+        "                    ··                                         ·             ·                                         ··",
+        "                   ·                                           ·             ·                                           ·",
+        "                   ·                                           ·             ·                                           ·",
+        "                    ·                                          ·             ·                                          ·",
+        "                     ··                                        ·             ·                                        ··",
+        "                       ···                                     ·             ·                                     ···",
+        "                          ·····                                ·             ·                                ·····",
+        "                               ································             ································",
+    ];
+
+    // Center the butterfly on screen
+    let bf_h = butterfly.len() as u16;
+    let bf_start_y = area.y + area.height.saturating_sub(bf_h) / 2;
+    let bf_lines: Vec<Line<'static>> = butterfly.iter()
+        .map(|row| Line::from(Span::styled(row.to_string(), bf_style)))
+        .collect();
+    let bf_widget = Paragraph::new(bf_lines).alignment(Alignment::Center);
+    f.render_widget(bf_widget, ratatui::layout::Rect::new(
+        area.x, bf_start_y, area.width, bf_h,
+    ));
+
+    // ── Text content (foreground layer — overwrites butterfly where they overlap) ──
     let logo: Vec<&str> = vec![
         "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
         "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
@@ -255,11 +306,6 @@ fn draw_splash(f: &mut Frame) {
         "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
         "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
     ];
-
-    let area = f.area();
-    let logo_height = logo.len() as u16;
-    // Half-block acronym: "Asynchronous Zoned Unified Runtime Environment for Agentic LLMs"
-    // 4 word-groups × 3 terminal rows each = 12 rows, using ▀▄█ for 2x vertical density
     let acronym: Vec<&str> = vec![
         "▄▀▀▄ ▄▀▀▀ ▀▄ ▄▀ █▄  █ ▄▀▀▀ █  █ █▀▀▄ ▄▀▀▄ █▄  █ ▄▀▀▄ █  █ ▄▀▀▀   ▀▀▀█▀ ▄▀▀▄ █▄  █ █▀▀▀ █▀▀▄",
         "█▄▄█  ▀▀▄   █   █ ▀▄█ █    █▀▀█ █▄▄▀ █  █ █ ▀▄█ █  █ █  █  ▀▀▄    ▄▀   █  █ █ ▀▄█ █▀▀  █  █",
@@ -275,8 +321,8 @@ fn draw_splash(f: &mut Frame) {
         "█    ▀▄▄▀ █ ▀▄   █  █ ▀▄▄█ █▄▄▄ █   █   █   ▄█▄ ▀▄▄▄   █▄▄▄ █▄▄▄ █   █ ▄▄▄▀",
     ];
 
+    let logo_height = logo.len() as u16;
     let acronym_height = acronym.len() as u16;
-    // Layout: logo + gap + acronym + 2 gaps + loading subtitle
     let total_height = logo_height + 1 + acronym_height + 2 + 1;
     let start_y = area.y + area.height.saturating_sub(total_height) / 2;
 
