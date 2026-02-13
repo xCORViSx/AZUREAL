@@ -320,6 +320,14 @@ pub async fn run_app(
                 terminal.draw(|f| ui(f, app))?;
                 last_draw = Instant::now();
                 app.draw_pending = false;
+
+                // Deferred session list loading: the loading dialog just rendered,
+                // so now we can do the expensive message count I/O. The user sees
+                // "Loading sessions..." while this runs, then the list appears.
+                if app.session_list_loading {
+                    actions::finish_session_list_load(app);
+                    app.draw_pending = true;
+                }
             }
         }
 

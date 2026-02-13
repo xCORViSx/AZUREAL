@@ -662,20 +662,30 @@ fn jump_edit(app: &mut App, forward: bool) {
     }
 }
 
-/// Open session list overlay — scoped to the currently selected worktree only
+/// Open session list overlay — scoped to the currently selected worktree only.
+/// Phase 1: show the overlay + loading indicator, refresh file list (fast).
+/// Phase 2 (finish_session_list_load) runs on the next event loop iteration
+/// so the loading dialog renders before the expensive message count I/O starts.
 fn open_session_list(app: &mut App) {
     app.show_session_list = true;
+    app.session_list_loading = true;
     app.session_list_selected = 0;
     app.session_list_scroll = 0;
-    // Refresh session files and recompute message counts for current worktree
+    // Refresh file list immediately (cheap directory listing)
     if let Some(session) = app.current_session() {
         let branch = session.branch_name.clone();
-        // Always refresh file list on open (picks up new sessions)
         if let Some(ref wt_path) = app.sessions[app.selected_worktree.unwrap()].worktree_path {
             let files = crate::config::list_claude_sessions(wt_path);
-            app.session_files.insert(branch.clone(), files);
+            app.session_files.insert(branch, files);
         }
-        // Recompute message counts only for files whose size changed since last count
+    }
+}
+
+/// Phase 2 of session list loading — compute message counts (expensive I/O).
+/// Called from event loop after the loading dialog has had a chance to render.
+pub fn finish_session_list_load(app: &mut App) {
+    if let Some(session) = app.current_session() {
+        let branch = session.branch_name.clone();
         if let Some(files) = app.session_files.get(&branch) {
             for (session_id, path, _) in files.iter() {
                 let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
@@ -687,6 +697,7 @@ fn open_session_list(app: &mut App) {
             }
         }
     }
+    app.session_list_loading = false;
 }
 
 /// Count message bubbles in a JSONL session file for the session list [N msgs] badge.

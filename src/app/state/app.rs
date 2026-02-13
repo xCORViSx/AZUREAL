@@ -347,6 +347,8 @@ pub struct App {
     pub god_file_queue: VecDeque<(String, String)>,
     /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
     pub show_session_list: bool,
+    /// True while session list message counts are being computed (shows loading dialog)
+    pub session_list_loading: bool,
     /// Selected index in session list overlay
     pub session_list_selected: usize,
     /// Scroll offset in session list overlay
@@ -571,6 +573,7 @@ impl App {
             god_file_panel: None,
             god_file_queue: VecDeque::new(),
             show_session_list: false,
+            session_list_loading: false,
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),

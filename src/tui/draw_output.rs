@@ -214,6 +214,24 @@ pub fn poll_render_result(app: &mut App) -> bool {
 /// Draw the Claude session list overlay — full-pane list of all Claude session files across worktrees.
 /// Each row shows: status symbol, worktree name, Claude session name/UUID, mtime, [N msgs].
 fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
+    // Show a small centered "Loading..." dialog while message counts are computing.
+    // This renders on the first frame after 's' is pressed, before the I/O starts.
+    if app.session_list_loading {
+        let msg = " Loading sessions… ";
+        let w = (msg.len() as u16 + 4).min(area.width);
+        let h = 3u16;
+        let x = area.x + (area.width.saturating_sub(w)) / 2;
+        let y = area.y + (area.height.saturating_sub(h)) / 2;
+        let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
+            .alignment(Alignment::Center)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(AZURE))
+                .title(Span::styled(" Sessions ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))));
+        f.render_widget(dialog, Rect::new(x, y, w, h));
+        return;
+    }
+
     let is_focused = app.focus == Focus::Output;
 
     // Split area: filter bar at top when filter is active or has text
