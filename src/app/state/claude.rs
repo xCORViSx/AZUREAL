@@ -20,6 +20,9 @@ impl App {
     }
 
     pub fn handle_claude_exited(&mut self, branch_name: &str, code: Option<i32>) {
+        // Send macOS notification before cleaning up state (need session info still available)
+        self.send_completion_notification(branch_name, code);
+
         self.running_sessions.remove(branch_name);
         self.claude_pids.remove(branch_name);
         self.claude_receivers.remove(branch_name);
@@ -58,6 +61,63 @@ impl App {
             };
             self.set_status(format!("{} {}", branch_name, exit_str));
         }
+    }
+
+    /// Send a macOS notification when Claude finishes. Runs osascript in a
+    /// background thread so it never blocks the event loop. The notification
+    /// shows worktree:session_name so the user knows which instance completed.
+    fn send_completion_notification(&self, branch_name: &str, code: Option<i32>) {
+        // Worktree name = branch name without "azureal/" prefix
+        let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
+
+        // Resolve session display name: use cached title if this is the current
+        // session, otherwise look up from session_files + session_names TOML.
+        let is_current = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
+        let session_name = if is_current && !self.title_session_name.is_empty() {
+            self.title_session_name.clone()
+        } else {
+            // Look up the active claude session ID for this branch, then resolve its name
+            let session_id = self.session_selected_file_idx.get(branch_name)
+                .and_then(|idx| self.session_files.get(branch_name).and_then(|f| f.get(*idx)))
+                .map(|(id, _, _)| id.clone())
+                .or_else(|| self.claude_session_ids.get(branch_name).cloned());
+            match session_id {
+                Some(id) => {
+                    let names = self.load_all_session_names();
+                    names.get(&id).cloned().unwrap_or_else(|| {
+                        // Truncate UUID to first 8 chars
+                        if id.len() > 8 { id[..8].to_string() } else { id }
+                    })
+                }
+                None => String::new(),
+            }
+        };
+
+        // Build the notification label: "worktree:session" or just "worktree"
+        let label = if session_name.is_empty() {
+            worktree.to_string()
+        } else {
+            format!("{}:{}", worktree, session_name)
+        };
+
+        let status = match code {
+            Some(0) => "Response complete",
+            Some(_) => "Exited with error",
+            None => "Process terminated",
+        };
+
+        // Fire-and-forget: spawn detached thread for osascript so the event
+        // loop never blocks. osascript takes ~50ms which is too slow for inline.
+        let title = format!("AZUREAL — {}", label);
+        let body = status.to_string();
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("osascript")
+                .args(["-e", &format!(
+                    "display notification \"{}\" with title \"{}\"",
+                    body, title
+                )])
+                .output();
+        });
     }
 
     /// Cancel the currently running Claude process for the current session

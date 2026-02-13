@@ -17,6 +17,10 @@ All notable changes to Azureal will be documented in this file.
   - Activates with double-slash (second `/` while filter is empty)
   - Searches begin at 3+ characters, capped at 100 results, skips files >5MB
   - Shows session name + matched line preview; Enter loads that session
+- macOS completion notifications: system notification fires when any Claude instance exits
+  - Title shows `AZUREAL — worktree:session_name`; body shows completion status
+  - Runs via `osascript` in background thread (zero dependencies, non-blocking)
+  - Works per-instance: multiple Claude sessions each trigger their own notification
 
 ### Changed
 - Convo pane auto-follow: scrolling down to the bottom now re-engages follow-bottom auto-scroll (previously only ⌥↓ did this)

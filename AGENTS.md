@@ -995,6 +995,23 @@ Custom session names map to Claude-generated UUIDs in `.azureal/sessions.toml`:
 
 Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (rendering), `src/tui/input_wizard.rs` (input handling), `src/app/state/session_names.rs` (name storage)
 
+### Completion Notifications
+
+macOS notification sent when any Claude instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
+
+**Notification format:**
+- Title: `AZUREAL — worktree:session_name`
+- Body: "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+- Session name uses custom name from `sessions.toml` if set, otherwise first 8 chars of UUID
+
+**Implementation details:**
+- Uses `osascript -e 'display notification'` — zero external dependencies
+- Runs in a fire-and-forget background thread (~50ms osascript latency never blocks event loop)
+- Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
+- For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `session_names` TOML
+
+Implementation: `src/app/state/claude.rs` (`send_completion_notification()`)
+
 # MANIFEST
 
 ```
