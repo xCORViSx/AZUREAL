@@ -58,7 +58,7 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
                     }
                 } else if !Git::is_git_repo(&path) {
                     if let Some(ref mut panel) = app.projects_panel {
-                        panel.error = Some("Project not initialized. Press i to initialize or choose another project.".to_string());
+                        panel.error = Some("Not a git repository".to_string());
                     }
                 } else {
                     app.switch_project(path);

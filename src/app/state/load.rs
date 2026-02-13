@@ -16,8 +16,11 @@ impl App {
         let cwd = std::env::current_dir()?;
 
         if !Git::is_git_repo(&cwd) {
-            // Not in a git repo — show the Projects panel so user can pick one
+            // Not in a git repo — show Projects panel with a helpful message
             self.open_projects_panel();
+            if let Some(ref mut panel) = self.projects_panel {
+                panel.error = Some("Project not initialized. Press i to initialize or choose another project.".to_string());
+            }
             return Ok(());
         }
 
