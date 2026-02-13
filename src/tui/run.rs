@@ -337,7 +337,7 @@ fn draw_splash(f: &mut Frame) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("L o a d i n g   p r o j e c t . . .", dim_style)));
+    lines.push(Line::from(Span::styled("L o a d i n g   p r o j e c t . . .", logo_style)));
 
     let splash = Paragraph::new(lines).alignment(Alignment::Center);
     let splash_area = ratatui::layout::Rect::new(
