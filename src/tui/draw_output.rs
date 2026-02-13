@@ -332,7 +332,7 @@ fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
                 if !matches { continue; }
             }
 
-            let msg_count = app.session_msg_counts.get(session_id).copied().unwrap_or(0);
+            let msg_count = app.session_msg_counts.get(session_id).map(|&(c, _)| c).unwrap_or(0);
             let msg_badge = format!("[{} msgs]", msg_count);
             let suffix = format!(" {} {} ", time_str, msg_badge);
             // Row: " session_name    mtime [N msgs]"

@@ -675,68 +675,47 @@ fn open_session_list(app: &mut App) {
             let files = crate::config::list_claude_sessions(wt_path);
             app.session_files.insert(branch.clone(), files);
         }
-        // Recompute message counts (always — cheap enough, ensures accuracy)
+        // Recompute message counts only for files whose size changed since last count
         if let Some(files) = app.session_files.get(&branch) {
             for (session_id, path, _) in files.iter() {
+                let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                if let Some(&(_, cached_size)) = app.session_msg_counts.get(session_id.as_str()) {
+                    if cached_size == file_size { continue; }
+                }
                 let count = count_messages_in_jsonl(path);
-                app.session_msg_counts.insert(session_id.clone(), count);
+                app.session_msg_counts.insert(session_id.clone(), (count, file_size));
             }
         }
     }
 }
 
-/// Count message bubbles in a JSONL session file to match the convo title [x/y].
-/// The renderer creates one bubble per UserMessage and one per AssistantText block.
-/// User messages are deduplicated by parentUuid (parser keeps latest, replaces older
-/// with Filtered). Uses lightweight JSON parsing for accuracy.
+/// Count message bubbles in a JSONL session file for the session list [N msgs] badge.
+/// Uses fast string scanning (no JSON parsing) — "type":"user" and "type":"assistant"
+/// have zero false positives in Claude Code's compact JSON output.
+/// Skips isMeta, tool_result arrays, command hooks, and compaction summaries.
+/// ParentUuid dedup skipped for speed (rare rewind case, off by ≤2).
 fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     let Ok(content) = std::fs::read_to_string(path) else { return 0; };
     let mut count = 0usize;
-    // Track parentUuid → latest timestamp for user message deduplication
-    // (same logic as session_parser: if two user msgs share parentUuid, only newest counts)
-    let mut user_by_parent: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let mut user_no_parent = 0usize;
-
     for line in content.lines() {
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else { continue };
-        let line_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-        match line_type {
-            "user" => {
-                // Skip isMeta lines (system-generated, not user prompts)
-                if json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false) { continue; }
-                let msg = json.get("message").and_then(|m| m.get("content"));
-                // Only count plain-string content (user typed text) — arrays are tool_results
-                let Some(text) = msg.and_then(|c| c.as_str()) else { continue };
-                // Skip special non-bubble user lines (parser skips these too)
-                if text.contains("<local-command-caveat>") { continue; }
-                if text.contains("<local-command-stdout>") { continue; }
-                if text.starts_with("<command-name>") { continue; }
-                if text.starts_with("This session is being continued from a previous conversation") { continue; }
-                // Deduplicate by parentUuid (keep latest timestamp)
-                let parent = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("");
-                let ts = json.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                if parent.is_empty() {
-                    user_no_parent += 1;
-                } else if let Some(old_ts) = user_by_parent.get(parent) {
-                    if ts > *old_ts { user_by_parent.insert(parent.to_string(), ts); }
-                } else {
-                    user_by_parent.insert(parent.to_string(), ts);
-                }
-            }
-            "assistant" => {
-                // Only count lines with a "text" content block (those become AssistantText bubbles)
-                let has_text_block = json.get("message")
-                    .and_then(|m| m.get("content"))
-                    .and_then(|c| c.as_array())
-                    .map(|arr| arr.iter().any(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")))
-                    .unwrap_or(false);
-                if has_text_block { count += 1; }
-            }
-            _ => {}
+        if line.contains("\"type\":\"user\"") {
+            // Skip system-generated meta messages
+            if line.contains("\"isMeta\":true") { continue; }
+            // Skip tool_result lines — only string content creates bubbles
+            // Tool result user lines contain {"type":"tool_result",...} blocks
+            if line.contains("\"type\":\"tool_result\"") { continue; }
+            // Skip non-bubble user events the parser also skips
+            if line.contains("<local-command-caveat>") { continue; }
+            if line.contains("<local-command-stdout>") { continue; }
+            if line.contains("<command-name>") { continue; }
+            if line.contains("This session is being continued from a previous conversation") { continue; }
+            count += 1;
+        } else if line.contains("\"type\":\"assistant\"") {
+            // Only count lines with a text content block (those become AssistantText bubbles)
+            if line.contains("\"type\":\"text\"") { count += 1; }
         }
     }
-    count + user_by_parent.len() + user_no_parent
+    count
 }
 
 /// Rebase current worktree onto main

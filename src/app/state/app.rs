@@ -351,8 +351,8 @@ pub struct App {
     pub session_list_selected: usize,
     /// Scroll offset in session list overlay
     pub session_list_scroll: usize,
-    /// Cached message counts per session_id (computed on session list open)
-    pub session_msg_counts: HashMap<String, usize>,
+    /// Cached message counts per session_id → (count, file_size) — only recomputed when size changes
+    pub session_msg_counts: HashMap<String, (usize, u64)>,
 
     // ── Convo search (find text in current session's rendered output) ──
     /// Whether the search bar is active (accepting keystrokes)
