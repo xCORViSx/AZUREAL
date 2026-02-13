@@ -258,14 +258,18 @@ fn draw_splash(f: &mut Frame) {
 
     let area = f.area();
     let logo_height = logo.len() as u16;
-    // 3 extra lines: 2 blank spacers + 1 spaced-out subtitle
-    let total_height = logo_height + 3;
+    // 5 extra lines: spacer + acronym + 2 spacers + loading subtitle
+    let total_height = logo_height + 5;
     let start_y = area.y + area.height.saturating_sub(total_height) / 2;
 
-    // Build lines: logo rows + spacers + subtitle with letter-spacing
     let mut lines: Vec<Line<'static>> = logo.iter()
         .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
         .collect();
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "A s y n c h r o n o u s   Z o n e d   U n i f i e d   R u n t i m e   E n v i r o n m e n t   f o r   A g e n t i c   L L M s",
+        dim_style,
+    )));
     lines.push(Line::from(""));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled("L o a d i n g   p r o j e c t . . .", dim_style)));
