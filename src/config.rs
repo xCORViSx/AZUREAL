@@ -214,24 +214,35 @@ pub fn display_path(path: &std::path::Path) -> String {
 /// Load all registered projects from ~/.azureal/projects.txt
 /// Format per line: `/path/to/repo` or `/path/to/repo|Display Name`
 /// Lines starting with # are comments. Empty lines skipped.
+/// Validates each entry: directories that don't exist or aren't git repos
+/// are pruned from the file automatically.
 pub fn load_projects() -> Vec<ProjectEntry> {
     let path = projects_file_path();
     let Ok(content) = std::fs::read_to_string(&path) else { return Vec::new() };
-    content.lines().filter_map(|line| {
+    let mut entries = Vec::new();
+    let mut pruned = false;
+    for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { return None; }
+        if line.is_empty() || line.starts_with('#') { continue; }
         let (raw_path, name) = if let Some((p, n)) = line.split_once('|') {
             (p.trim(), Some(n.trim().to_string()))
         } else {
             (line, None)
         };
         let resolved = resolve_path(raw_path);
-        // Derive display name from last path component if not specified
+        // Skip entries whose directory is gone or is no longer a git repo
+        if !resolved.exists() || !crate::git::Git::is_git_repo(&resolved) {
+            pruned = true;
+            continue;
+        }
         let display_name = name.unwrap_or_else(|| {
             resolved.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| raw_path.to_string())
         });
-        Some(ProjectEntry { path: resolved, display_name })
-    }).collect()
+        entries.push(ProjectEntry { path: resolved, display_name });
+    }
+    // Write back cleaned list so stale entries don't persist
+    if pruned { save_projects(&entries); }
+    entries
 }
 
 /// Look up the display name for a repo path from projects.txt.
