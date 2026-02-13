@@ -1005,10 +1005,11 @@ macOS notification sent when any Claude instance finishes its response. Fires fo
 - Session name uses custom name from `sessions.toml` if set, otherwise first 8 chars of UUID
 
 **Implementation details:**
-- Uses `osascript -e 'display notification'` — zero external dependencies
-- Runs in a fire-and-forget background thread (~50ms osascript latency never blocks event loop)
+- Uses `notify-rust` crate (native macOS `NSUserNotification` API) — `osascript` was suppressed by frontmost-app rule
+- Runs in a fire-and-forget background thread (never blocks event loop)
 - Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
 - For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `session_names` TOML
+- Notifications appear attributed to Finder (macOS limitation — no custom icon support via `notify-rust`)
 
 Implementation: `src/app/state/claude.rs` (`send_completion_notification()`)
 

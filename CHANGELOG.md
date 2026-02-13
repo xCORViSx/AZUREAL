@@ -18,8 +18,8 @@ All notable changes to Azureal will be documented in this file.
   - Searches begin at 3+ characters, capped at 100 results, skips files >5MB
   - Shows session name + matched line preview; Enter loads that session
 - macOS completion notifications: system notification fires when any Claude instance exits
-  - Title shows `AZUREAL — worktree:session_name`; body shows completion status
-  - Runs via `osascript` in background thread (zero dependencies, non-blocking)
+  - Title shows `AZUREAL - worktree:session_name`; body shows completion status
+  - Uses `notify-rust` crate (native macOS API) in background thread, non-blocking
   - Works per-instance: multiple Claude sessions each trigger their own notification
 
 ### Changed

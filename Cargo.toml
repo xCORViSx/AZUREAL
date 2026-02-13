@@ -50,6 +50,9 @@ notify = "8.2"
 # Clipboard
 arboard = "3"
 
+# macOS notifications (uses native NSUserNotification API)
+notify-rust = "4.12"
+
 # Speech-to-text
 whisper-rs = { version = "0.15", features = ["metal"] }
 cpal = "0.17"

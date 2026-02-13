@@ -63,9 +63,11 @@ impl App {
         }
     }
 
-    /// Send a macOS notification when Claude finishes. Runs osascript in a
-    /// background thread so it never blocks the event loop. The notification
+    /// Send a macOS notification when Claude finishes. Runs terminal-notifier
+    /// in a background thread so it never blocks the event loop. The notification
     /// shows worktree:session_name so the user knows which instance completed.
+    /// terminal-notifier runs as its own .app bundle so notifications are NOT
+    /// suppressed when Kitty is the frontmost app (unlike osascript/notify-rust).
     fn send_completion_notification(&self, branch_name: &str, code: Option<i32>) {
         // Worktree name = branch name without "azureal/" prefix
         let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
@@ -76,7 +78,6 @@ impl App {
         let session_name = if is_current && !self.title_session_name.is_empty() {
             self.title_session_name.clone()
         } else {
-            // Look up the active claude session ID for this branch, then resolve its name
             let session_id = self.session_selected_file_idx.get(branch_name)
                 .and_then(|idx| self.session_files.get(branch_name).and_then(|f| f.get(*idx)))
                 .map(|(id, _, _)| id.clone())
@@ -85,7 +86,6 @@ impl App {
                 Some(id) => {
                     let names = self.load_all_session_names();
                     names.get(&id).cloned().unwrap_or_else(|| {
-                        // Truncate UUID to first 8 chars
                         if id.len() > 8 { id[..8].to_string() } else { id }
                     })
                 }
@@ -100,23 +100,23 @@ impl App {
             format!("{}:{}", worktree, session_name)
         };
 
-        let status = match code {
+        let body = match code {
             Some(0) => "Response complete",
             Some(_) => "Exited with error",
             None => "Process terminated",
         };
 
-        // Fire-and-forget: spawn detached thread for osascript so the event
-        // loop never blocks. osascript takes ~50ms which is too slow for inline.
-        let title = format!("AZUREAL — {}", label);
-        let body = status.to_string();
+        // Fire-and-forget: spawn detached thread so the event loop never blocks.
+        // notify-rust uses the native macOS NSUserNotification API. Notifications
+        // appear attributed to Finder (no custom icon support on macOS).
+        let title = format!("AZUREAL - {}", label);
+        let body = body.to_string();
         std::thread::spawn(move || {
-            let _ = std::process::Command::new("osascript")
-                .args(["-e", &format!(
-                    "display notification \"{}\" with title \"{}\"",
-                    body, title
-                )])
-                .output();
+            let _ = notify_rust::Notification::new()
+                .summary(&title)
+                .body(&body)
+                .sound_name("Glass")
+                .show();
         });
     }
 
