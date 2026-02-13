@@ -127,12 +127,13 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
         ],
     };
 
-    // Split modal: list area + input/hint area at bottom
+    // Split modal: list area + error + input field + key hints
     let input_height = if panel.mode != ProjectsPanelMode::Browse { 3 } else { 0 };
     let error_height: u16 = if panel.error.is_some() { 1 } else { 0 };
     let chunks = Layout::vertical([
         Constraint::Min(3),                                  // project list
-        Constraint::Length(input_height + error_height),     // input field + error
+        Constraint::Length(error_height),                    // error (visible in ANY mode)
+        Constraint::Length(input_height),                    // input field (only in input modes)
         Constraint::Length(1),                               // key hints
     ]).split(modal);
 
@@ -150,6 +151,15 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
         );
     f.render_widget(list_widget, chunks[0]);
 
+    // Error message — shown in ALL modes (Browse, AddPath, Rename, Init)
+    if let Some(ref err) = panel.error {
+        let err_line = Line::from(Span::styled(
+            format!("  {}", err),
+            Style::default().fg(Color::Red),
+        ));
+        f.render_widget(Paragraph::new(err_line), chunks[1]);
+    }
+
     // Render input field when in AddPath/Rename/Init mode
     if panel.mode != ProjectsPanelMode::Browse {
         let prompt = match panel.mode {
@@ -159,22 +169,6 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
             _ => "",
         };
 
-        // Input area with error above it
-        let input_chunks = Layout::vertical([
-            Constraint::Length(error_height),
-            Constraint::Length(input_height),
-        ]).split(chunks[1]);
-
-        // Error message (if any)
-        if let Some(ref err) = panel.error {
-            let err_line = Line::from(Span::styled(
-                format!("  {}", err),
-                Style::default().fg(Color::Red),
-            ));
-            f.render_widget(Paragraph::new(err_line), input_chunks[0]);
-        }
-
-        // Input field
         let input_line = Line::from(vec![
             Span::styled(prompt, Style::default().fg(AZURE)),
             Span::raw(&panel.input),
@@ -184,16 +178,16 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow))
             );
-        f.render_widget(input_widget, input_chunks[1]);
+        f.render_widget(input_widget, chunks[2]);
 
         // Cursor position in input field
-        let cursor_x = input_chunks[1].x + 1 + prompt.len() as u16 + panel.input_cursor as u16;
-        let cursor_y = input_chunks[1].y + 1;
-        if cursor_x < input_chunks[1].right() {
+        let cursor_x = chunks[2].x + 1 + prompt.len() as u16 + panel.input_cursor as u16;
+        let cursor_y = chunks[2].y + 1;
+        if cursor_x < chunks[2].right() {
             f.set_cursor_position((cursor_x, cursor_y));
         }
     }
 
     // Render key hints bar
-    f.render_widget(Paragraph::new(Line::from(hints)), chunks[2]);
+    f.render_widget(Paragraph::new(Line::from(hints)), chunks[3]);
 }

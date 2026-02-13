@@ -34,6 +34,9 @@ pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
 
 /// Browse mode: navigate project list, trigger actions
 fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Clear any previous error on next keypress so it doesn't persist
+    if let Some(ref mut panel) = app.projects_panel { panel.error = None; }
+
     match (key.modifiers, key.code) {
         // Navigate project list
         (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
@@ -55,7 +58,7 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
                     }
                 } else if !Git::is_git_repo(&path) {
                     if let Some(ref mut panel) = app.projects_panel {
-                        panel.error = Some("Not a git repository".to_string());
+                        panel.error = Some("Project not initialized. Press i to initialize or choose another project.".to_string());
                     }
                 } else {
                     app.switch_project(path);
