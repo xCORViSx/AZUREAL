@@ -19,6 +19,7 @@ All notable changes to Azureal will be documented in this file.
   - Shows session name + matched line preview; Enter loads that session
 
 ### Changed
+- Projects panel: opening a non-initialized project now shows "Project not initialized. Press i to initialize or choose another project." in red; error clears on next keypress
 - Session list overlay shows "Loading sessions…" dialog while message counts compute — two-phase open ensures UI never appears frozen on large session files
 - Session list overlay now scoped to current worktree only (was all worktrees)
   - Removed redundant worktree name column from each row
