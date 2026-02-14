@@ -265,10 +265,11 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         .cloned()
         .collect();
 
+    let wt_name = app.current_session().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if total > viewport_height {
-        format!(" Filetree [{}/{}] ", scroll + display_lines.len().min(total - scroll), total)
+        format!(" Filetree ({}) [{}/{}] ", wt_name, scroll + display_lines.len().min(total - scroll), total)
     } else {
-        " Filetree ".to_string()
+        format!(" Filetree ({}) ", wt_name)
     };
 
     // Append wrapped action bar lines at the bottom

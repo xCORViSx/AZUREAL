@@ -10,6 +10,7 @@ All notable changes to Azureal will be documented in this file.
 - **Session list status dots** — Each session in the session list overlay (`s`) now shows a status dot: green `●` when a Claude process is actively running that session, dim gray `○` when idle. Mirrors the worktree sidebar dots but per-session instead of per-worktree.
 
 ### Changed
+- FileTree overlay title now shows **worktree name**: `Filetree (worktree_name)` instead of plain `Filetree`
 - `G` (Git Actions) is now a **global keybinding** — opens from any pane, not just Worktrees (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard)
 - `G` now **toggles** Git Actions panel (close if open, open if closed) instead of only opening
 - Git Actions panel secondary text (headers, key hints, separators, footer, stat slashes) changed from gray to **Git brown** (`#A0522D` sienna, `GIT_BROWN` constant) for a warmer Git-themed color scheme
