@@ -294,6 +294,7 @@ static ALT_END: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code:
 static ALT_MACOS_R: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
 static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('π') }];
+static ALT_MACOS_T: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('†') }];
 
 // Cmd+Shift modifier combo
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -372,7 +373,7 @@ pub static VIEWER: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('t')), "Tab dialog", Action::ViewerOpenTabDialog),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('t')), &ALT_MACOS_T, "Tab dialog", Action::ViewerOpenTabDialog),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),

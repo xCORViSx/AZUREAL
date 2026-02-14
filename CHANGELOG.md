@@ -14,7 +14,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Changed
 - **Terminal toggle changed from `t` to `T` (Shift+T)** — frees lowercase `t` for viewer tab operations without needing guard logic. Command pane title now shows `T:TERMINAL | G:GIT` alongside other global hints.
-- **Viewer tab dialog changed from `T` to `⌃t`** — avoids conflict with the new global `T` terminal toggle. `⌃t` also closes the dialog (toggle).
+- **Viewer tab dialog changed from `T` to `⌥t`** — avoids conflict with the new global `T` terminal toggle. `⌥t` also closes the dialog (toggle).
 - FileTree overlay title now shows **worktree name**: `Filetree (worktree_name)` instead of plain `Filetree`
 - `G` (Git Actions) is now a **global keybinding** — opens from any pane, not just Worktrees (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard)
 - `G` now **toggles** Git Actions panel (close if open, open if closed) instead of only opening

@@ -6,6 +6,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::App;
+use super::keybindings::macos_opt_key;
 
 /// Handle keyboard input for the Viewer panel.
 /// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
@@ -209,7 +210,14 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
 fn handle_tab_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match (key.modifiers, key.code) {
         // Close dialog
-        (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::CONTROL, KeyCode::Char('t')) => {
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            app.viewer_tab_dialog = false;
+        }
+        // ⌥t toggle (macOS: ⌥t arrives as '†')
+        (KeyModifiers::NONE, KeyCode::Char(c)) if macos_opt_key(c) == Some('t') => {
+            app.viewer_tab_dialog = false;
+        }
+        (KeyModifiers::ALT, KeyCode::Char('t')) => {
             app.viewer_tab_dialog = false;
         }
 

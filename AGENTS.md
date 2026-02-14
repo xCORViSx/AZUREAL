@@ -1318,7 +1318,7 @@ azureal
 | `⌥←/⌥→` | Prev/next Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
 | `t` | Tab current file (save to tab list) |
-| `⌃t` | Open tab dialog (browse/switch tabs) |
+| `⌥t` | Open tab dialog (browse/switch tabs) |
 | `]/[` | Next/prev tab |
 | `x` | Close current tab |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
