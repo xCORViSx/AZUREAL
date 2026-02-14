@@ -7,6 +7,7 @@ All notable changes to Azureal will be documented in this file.
 ### Added
 - **Concurrent Claude sessions per worktree** — Multiple Claude processes can now run simultaneously on the same branch. Session state maps (`claude_receivers`, `running_sessions`, `claude_exit_codes`, `claude_session_ids`) are now keyed by **PID string** instead of branch name. New `branch_slots` and `active_slot` maps track which PIDs belong to each branch and which one's output is displayed. Sending a prompt while Claude is running spawns a second process instead of cancelling the first. `⌃c` cancels only the active slot. When the active slot exits, auto-switches to the next remaining slot.
 - **Parallel GFM spawning** — God File Modularization now spawns ALL checked files simultaneously as concurrent Claude sessions, replacing the sequential queue (`god_file_queue` removed). Each file gets its own PID slot; the newest spawn becomes the active slot.
+- **Session list status dots** — Each session in the session list overlay (`s`) now shows a status dot: green `●` when a Claude process is actively running that session, dim gray `○` when idle. Mirrors the worktree sidebar dots but per-session instead of per-worktree.
 
 ### Changed
 - `G` (Git Actions) is now a **global keybinding** — opens from any pane, not just Worktrees (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard)
