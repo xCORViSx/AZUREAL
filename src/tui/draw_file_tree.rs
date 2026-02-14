@@ -32,9 +32,18 @@ fn is_in_god_file_scope(app: &App, path: &std::path::Path, is_dir: bool) -> bool
     false
 }
 
-/// Check if a directory is directly in the god file filter set (not just a child of one)
+/// Check if a directory is in the god file filter set OR is a subdirectory of one.
+/// Subdirs of accepted dirs automatically inherit accepted status (bright green).
 fn is_god_file_filter_dir(app: &App, path: &std::path::Path) -> bool {
-    app.god_file_filter_mode && app.god_file_filter_dirs.contains(path)
+    if !app.god_file_filter_mode { return false; }
+    if app.god_file_filter_dirs.contains(path) { return true; }
+    // Walk ancestors — if any parent is accepted, this subdir is too
+    let mut p = path.parent();
+    while let Some(ancestor) = p {
+        if app.god_file_filter_dirs.contains(ancestor) { return true; }
+        p = ancestor.parent();
+    }
+    false
 }
 
 /// Build file tree lines (extracted for caching)
