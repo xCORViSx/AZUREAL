@@ -402,12 +402,12 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
         ]))
     }).collect();
 
-    // Title changes when delete confirmation is pending
+    // Title changes when delete confirmation is pending — normal title from keybindings.rs
     let title = if let Some(del_idx) = picker.confirm_delete {
         let name = app.run_commands.get(del_idx).map(|c| c.name.as_str()).unwrap_or("?");
         format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
     } else {
-        " Run Command (1-9:select  a:add  e:edit  d:del) ".to_string()
+        keybindings::picker_title("Run Command")
     };
 
     let list = List::new(items).block(
@@ -498,29 +498,23 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
         ));
     }
 
-    // Hint line — Enter action changes by context
-    let enter_hint = if dialog.editing_name {
-        ":next  "
-    } else {
+    // Hint line — structural keys from keybindings.rs, Enter label changes by context
+    let enter_label = if dialog.editing_name { "next" } else {
         match dialog.field_mode {
-            CommandFieldMode::Command => ":save  ",
-            CommandFieldMode::Prompt => ":generate  ",
+            CommandFieldMode::Command => "save",
+            CommandFieldMode::Prompt => "generate",
         }
     };
-    let tab_hint = if dialog.editing_name { ":next  " } else { ":mode  " };
-    let hints = Line::from(vec![
-        Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(tab_hint, Style::default().fg(Color::DarkGray)),
-        Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("⌃s", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":scope  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
-        Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
-    ]);
-    f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), chunks[2]);
+    let pairs = keybindings::dialog_footer_hint_pairs();
+    let hint_spans: Vec<Span> = pairs.iter().map(|(key, label)| {
+        // Override "save" label with context-specific Enter label
+        let display_label = if key == "Enter" { enter_label } else if key == "Tab" && dialog.editing_name { "next" } else { label };
+        vec![
+            Span::styled(key.as_str(), Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(":{}  ", display_label), Style::default().fg(Color::DarkGray)),
+        ]
+    }).flatten().collect();
+    f.render_widget(Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center), chunks[2]);
 }
 
 /// Draw preset prompt picker overlay — numbered list of saved prompts.
@@ -595,12 +589,12 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
         ]))
     }).collect();
 
-    // Show delete confirmation in title if pending, otherwise normal hints
+    // Show delete confirmation in title if pending, otherwise from keybindings.rs
     let title = if let Some(del_idx) = picker.confirm_delete {
         let name = app.preset_prompts.get(del_idx).map(|p| p.name.as_str()).unwrap_or("?");
         format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
     } else {
-        " Preset Prompts (1-9,0:select  a:add  e:edit  d:del) ".to_string()
+        keybindings::picker_title("Preset Prompts")
     };
 
     let list = List::new(items).block(
@@ -695,19 +689,15 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
         ));
     }
 
-    // Hint line — includes ⌃g to toggle global/project scope
-    let enter_hint = if dialog.editing_name { ":next  " } else { ":save  " };
-    let hints = Line::from(vec![
-        Span::styled("Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":next  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("⌃s", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":scope  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
-        Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
-    ]);
-    f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), chunks[2]);
+    // Hint line — structural keys from keybindings.rs, Enter label varies by context
+    let enter_label = if dialog.editing_name { "next" } else { "save" };
+    let pairs = keybindings::dialog_footer_hint_pairs();
+    let hint_spans: Vec<Span> = pairs.iter().map(|(key, label)| {
+        let display_label = if key == "Enter" { enter_label } else { label };
+        vec![
+            Span::styled(key.as_str(), Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(":{}  ", display_label), Style::default().fg(Color::DarkGray)),
+        ]
+    }).flatten().collect();
+    f.render_widget(Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center), chunks[2]);
 }

@@ -1,4 +1,9 @@
-//! Context menu and branch dialog input handling
+//! Context menu, branch dialog, picker, and dialog input handling.
+//!
+//! Structural keys (nav, enter, esc, edit, delete, add) resolved via keybindings.rs
+//! lookup functions. Text input keys (Char, Backspace, Left, Right) stay raw in dialogs.
+//! Number quick-select (1-9/0) stays raw in pickers — not rebindable.
+//! Confirm-delete (y/n) stays raw — transient sub-state, not an action.
 
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
@@ -7,19 +12,25 @@ use crate::app::{App, Focus, RunCommand, SessionAction};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
 use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog};
+use super::keybindings::{lookup_context_menu_action, lookup_branch_dialog_action, lookup_picker_action, Action};
 
-/// Handle keyboard input when context menu is open
+/// Handle keyboard input when context menu is open.
+/// All structural keys resolved through keybindings.rs.
 pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => app.context_menu_next(),
-        KeyCode::Char('k') | KeyCode::Up => app.context_menu_prev(),
-        KeyCode::Enter => {
-            if let Some(action) = app.selected_action() {
-                execute_action(app, claude_process, action)?;
+    let Some(action) = lookup_context_menu_action(key.modifiers, key.code) else {
+        return Ok(());
+    };
+
+    match action {
+        Action::NavDown => app.context_menu_next(),
+        Action::NavUp => app.context_menu_prev(),
+        Action::Confirm => {
+            if let Some(session_action) = app.selected_action() {
+                execute_action(app, claude_process, session_action)?;
             }
             app.close_context_menu();
         }
-        KeyCode::Esc => app.close_context_menu(),
+        Action::Escape => app.close_context_menu(),
         _ => {}
     }
     Ok(())
@@ -79,32 +90,41 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
     Ok(())
 }
 
-/// Handle keyboard input when Branch dialog is focused
+/// Handle keyboard input when Branch dialog is focused.
+/// Nav/Enter/Esc through keybindings; filter chars (Backspace, Char) stay raw.
 pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     if let Some(ref mut dialog) = app.branch_dialog {
-        match key.code {
-            KeyCode::Down | KeyCode::Char('j') => dialog.select_next(),
-            KeyCode::Up | KeyCode::Char('k') => dialog.select_prev(),
-            KeyCode::Backspace => dialog.filter_backspace(),
-            KeyCode::Enter => {
-                if let Some(branch) = dialog.selected_branch().cloned() {
-                    if let Some(project) = app.current_project().cloned() {
-                        // Create worktree from existing branch
-                        let worktree_name = branch.strip_prefix("azureal/").unwrap_or(&branch);
-                        let worktree_path = project.worktrees_dir().join(worktree_name);
+        // Try centralized bindings first for structural keys
+        if let Some(action) = lookup_branch_dialog_action(key.modifiers, key.code) {
+            match action {
+                Action::NavDown => dialog.select_next(),
+                Action::NavUp => dialog.select_prev(),
+                Action::Confirm => {
+                    if let Some(branch) = dialog.selected_branch().cloned() {
+                        if let Some(project) = app.current_project().cloned() {
+                            let worktree_name = branch.strip_prefix("azureal/").unwrap_or(&branch);
+                            let worktree_path = project.worktrees_dir().join(worktree_name);
 
-                        match Git::create_worktree(&project.path, &worktree_path, &branch) {
-                            Ok(()) => {
-                                app.set_status(format!("Created worktree: {}", worktree_name));
-                                let _ = app.refresh_sessions();
+                            match Git::create_worktree(&project.path, &worktree_path, &branch) {
+                                Ok(()) => {
+                                    app.set_status(format!("Created worktree: {}", worktree_name));
+                                    let _ = app.refresh_sessions();
+                                }
+                                Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                             }
-                            Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                         }
+                        app.close_branch_dialog();
                     }
-                    app.close_branch_dialog();
                 }
+                Action::Escape => app.close_branch_dialog(),
+                _ => {}
             }
-            KeyCode::Esc => app.close_branch_dialog(),
+            return Ok(());
+        }
+
+        // Raw text input for filter (not rebindable)
+        match key.code {
+            KeyCode::Backspace => dialog.filter_backspace(),
             KeyCode::Char(c) => dialog.filter_char(c),
             _ => {}
         }
@@ -114,7 +134,9 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
     Ok(())
 }
 
-/// Handle keyboard input when run command picker overlay is open
+/// Handle keyboard input when run command picker overlay is open.
+/// Structural keys (nav/enter/esc/edit/delete/add) via keybindings.
+/// Number quick-select (1-9) and confirm-delete (y/n) stay raw.
 pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Check if a delete confirmation is pending — only y confirms, anything else cancels
     if let Some(del_idx) = app.run_command_picker.as_ref().and_then(|p| p.confirm_delete) {
@@ -136,7 +158,6 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
                 }
             }
             _ => {
-                // Cancel confirmation
                 if let Some(ref mut picker) = app.run_command_picker {
                     picker.confirm_delete = None;
                 }
@@ -145,43 +166,46 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
         return Ok(());
     }
 
+    // Number quick-select (1-9) stays raw — mapping digits to indices isn't rebindable
+    if let KeyCode::Char(c @ '1'..='9') = key.code {
+        let idx = (c as usize) - ('1' as usize);
+        if idx < app.run_commands.len() {
+            app.run_command_picker = None;
+            app.execute_run_command(idx);
+        }
+        return Ok(());
+    }
+
+    // Structural keys via centralized lookup
+    let Some(action) = lookup_picker_action(key.modifiers, key.code) else {
+        return Ok(());
+    };
+
     let cmd_count = app.run_commands.len();
-    match key.code {
-        // Navigate selection
-        KeyCode::Char('j') | KeyCode::Down => {
+    match action {
+        Action::NavDown => {
             if let Some(ref mut picker) = app.run_command_picker {
                 if picker.selected + 1 < cmd_count { picker.selected += 1; }
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        Action::NavUp => {
             if let Some(ref mut picker) = app.run_command_picker {
                 if picker.selected > 0 { picker.selected -= 1; }
             }
         }
-        // Quick-select by number (1-9)
-        KeyCode::Char(c @ '1'..='9') => {
-            let idx = (c as usize) - ('1' as usize);
-            if idx < cmd_count {
-                app.run_command_picker = None;
-                app.execute_run_command(idx);
-            }
-        }
-        // Execute selected command
-        KeyCode::Enter => {
+        Action::Confirm => {
             let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             app.run_command_picker = None;
             app.execute_run_command(idx);
         }
-        // Edit selected command
-        KeyCode::Char('e') => {
+        Action::EditSelected => {
             let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if let Some(cmd) = app.run_commands.get(idx) {
                 app.run_command_dialog = Some(RunCommandDialog::edit(idx, cmd));
             }
             app.run_command_picker = None;
         }
-        // Delete selected command — enter confirmation mode
-        KeyCode::Char('d') => {
+        Action::DeleteSelected => {
             let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if idx < cmd_count {
                 if let Some(ref mut picker) = app.run_command_picker {
@@ -189,12 +213,11 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
                 }
             }
         }
-        // Add new command from picker
-        KeyCode::Char('a') => {
+        Action::ProjectsAdd => {
             app.run_command_picker = None;
             app.open_run_command_dialog();
         }
-        KeyCode::Esc => { app.run_command_picker = None; }
+        Action::Escape => { app.run_command_picker = None; }
         _ => {}
     }
     Ok(())
@@ -204,6 +227,7 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
 /// In Command mode, Enter saves a raw shell command directly.
 /// In Prompt mode, Enter spawns a Claude session on the main branch to generate the command.
 /// ⌃s toggles global/project scope (works from any field).
+/// Text input keys stay raw — not rebindable.
 pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     let Some(ref mut dialog) = app.run_command_dialog else { return Ok(()) };
 
@@ -251,7 +275,6 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
             }
             match dialog.field_mode {
                 CommandFieldMode::Command => {
-                    // Save the raw shell command directly
                     let editing_idx = dialog.editing_idx;
                     let is_global = dialog.global;
                     let cmd = RunCommand::new(name.clone(), content, is_global);
@@ -265,7 +288,6 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
                     app.set_status(format!("Saved run command: {}", name));
                 }
                 CommandFieldMode::Prompt => {
-                    // Spawn Claude on main branch to generate the run command
                     let prompt_text = content;
                     let cmd_name = name;
                     app.run_command_dialog = None;
@@ -315,9 +337,8 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
 }
 
 /// Handle keyboard input when preset prompt picker overlay is open.
-/// 1-9 selects presets 1-9 directly, 0 selects the 10th preset.
-/// j/k navigate, Enter selects, a/e/d add/edit/delete, Esc closes.
-/// Delete requires confirmation: d shows "Delete? y/n", y confirms, any other cancels.
+/// Structural keys via keybindings. Number quick-select (1-9, 0) and
+/// confirm-delete (y/n) stay raw.
 pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Check if a delete confirmation is pending — only y confirms, anything else cancels
     if let Some(del_idx) = app.preset_prompt_picker.as_ref().and_then(|p| p.confirm_delete) {
@@ -339,7 +360,6 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
                 }
             }
             _ => {
-                // Cancel confirmation
                 if let Some(ref mut picker) = app.preset_prompt_picker {
                     picker.confirm_delete = None;
                 }
@@ -348,44 +368,49 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
         return Ok(());
     }
 
+    // Number quick-select: 1-9 for indices 0-8, 0 for index 9 — stays raw
     let count = app.preset_prompts.len();
     match key.code {
-        // Navigate selection
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Char(c @ '1'..='9') => {
+            let idx = (c as usize) - ('1' as usize);
+            if idx < count { app.select_preset_prompt(idx); }
+            return Ok(());
+        }
+        KeyCode::Char('0') => {
+            if count > 9 { app.select_preset_prompt(9); }
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // Structural keys via centralized lookup
+    let Some(action) = lookup_picker_action(key.modifiers, key.code) else {
+        return Ok(());
+    };
+
+    match action {
+        Action::NavDown => {
             if let Some(ref mut picker) = app.preset_prompt_picker {
                 if picker.selected + 1 < count { picker.selected += 1; }
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        Action::NavUp => {
             if let Some(ref mut picker) = app.preset_prompt_picker {
                 if picker.selected > 0 { picker.selected -= 1; }
             }
         }
-        // Quick-select by number: 1-9 for indices 0-8, 0 for index 9
-        KeyCode::Char(c @ '1'..='9') => {
-            let idx = (c as usize) - ('1' as usize);
-            if idx < count {
-                app.select_preset_prompt(idx);
-            }
-        }
-        KeyCode::Char('0') => {
-            if count > 9 { app.select_preset_prompt(9); }
-        }
-        // Select current item
-        KeyCode::Enter => {
+        Action::Confirm => {
             let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             app.select_preset_prompt(idx);
         }
-        // Edit selected preset
-        KeyCode::Char('e') => {
+        Action::EditSelected => {
             let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if let Some(preset) = app.preset_prompts.get(idx) {
                 app.preset_prompt_dialog = Some(PresetPromptDialog::edit(idx, preset));
             }
             app.preset_prompt_picker = None;
         }
-        // Delete selected preset — enter confirmation mode
-        KeyCode::Char('d') => {
+        Action::DeleteSelected => {
             let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if idx < count {
                 if let Some(ref mut picker) = app.preset_prompt_picker {
@@ -393,19 +418,19 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
                 }
             }
         }
-        // Add new preset from picker
-        KeyCode::Char('a') => {
+        Action::ProjectsAdd => {
             app.preset_prompt_picker = None;
             app.preset_prompt_dialog = Some(PresetPromptDialog::new());
         }
-        KeyCode::Esc => { app.preset_prompt_picker = None; }
+        Action::Escape => { app.preset_prompt_picker = None; }
         _ => {}
     }
     Ok(())
 }
 
 /// Handle keyboard input when preset prompt dialog (create/edit) is open.
-/// Tab toggles between name and prompt fields, ⌃g toggles global scope, Enter saves, Esc cancels.
+/// Tab toggles between name and prompt fields, ⌃s toggles global scope,
+/// Enter saves, Esc cancels. Text input keys stay raw.
 pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     let Some(ref mut dialog) = app.preset_prompt_dialog else { return Ok(()) };
 

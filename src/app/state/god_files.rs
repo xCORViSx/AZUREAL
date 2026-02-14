@@ -8,7 +8,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use crate::app::types::{GodFileEntry, GodFilePanel};
+use crate::app::types::{DocEntry, GodFileEntry, HealthPanel, HealthTab};
 use crate::claude::ClaudeProcess;
 
 use super::App;
@@ -103,11 +103,11 @@ const SOURCE_ROOTS: &[&str] = &[
 ];
 
 impl App {
-    /// Open the God File panel — scans the project and shows results.
+    /// Open the Worktree Health panel — scans both god files and documentation.
     /// Uses persisted scope from .azureal/godfilescope if it exists;
     /// otherwise falls back to auto-detected source roots.
-    pub fn open_god_file_panel(&mut self) {
-        let entries = if let Some(ref project) = self.project {
+    pub fn open_health_panel(&mut self) {
+        let god_files = if let Some(ref project) = self.project {
             if let Some(dirs) = load_god_file_scope(&project.path) {
                 self.scan_god_files_with_dirs(&dirs)
             } else {
@@ -116,16 +116,22 @@ impl App {
         } else {
             self.scan_god_files()
         };
-        self.god_file_panel = Some(GodFilePanel {
-            entries,
-            selected: 0,
-            scroll: 0,
+        let (doc_entries, doc_score) = self.scan_documentation();
+        self.health_panel = Some(HealthPanel {
+            tab: HealthTab::GodFiles,
+            god_files,
+            god_selected: 0,
+            god_scroll: 0,
+            doc_entries,
+            doc_selected: 0,
+            doc_scroll: 0,
+            doc_score,
         });
     }
 
-    /// Close the God File panel without taking action
-    pub fn close_god_file_panel(&mut self) {
-        self.god_file_panel = None;
+    /// Close the health panel without taking action
+    pub fn close_health_panel(&mut self) {
+        self.health_panel = None;
         self.god_file_filter_mode = false;
         self.god_file_filter_dirs.clear();
     }
@@ -177,25 +183,31 @@ impl App {
     }
 
     /// Exit god file scope mode — persist the scope to .azureal/godfilescope,
-    /// rescan with the user's custom directory scope, then reopen the god file
-    /// panel with updated results.
+    /// rescan with the user's custom directory scope, then reopen the health
+    /// panel with updated results on both tabs.
     pub fn exit_god_file_scope_mode(&mut self) {
         // Persist scope so it survives panel close / app restart
         if let Some(ref project) = self.project {
             save_god_file_scope(&project.path, &self.god_file_filter_dirs);
         }
-        // Rescan using the custom scope dirs
-        let entries = self.scan_god_files_with_dirs(&self.god_file_filter_dirs.clone());
+        // Rescan both god files and documentation using the custom scope
+        let god_files = self.scan_god_files_with_dirs(&self.god_file_filter_dirs.clone());
+        let (doc_entries, doc_score) = self.scan_documentation();
         self.god_file_filter_mode = false;
         self.god_file_filter_dirs.clear();
 
-        // Close file tree and reopen god file panel with new results
+        // Close file tree and reopen health panel with new results
         self.show_file_tree = false;
         self.focus = crate::app::Focus::Worktrees;
-        self.god_file_panel = Some(GodFilePanel {
-            entries,
-            selected: 0,
-            scroll: 0,
+        self.health_panel = Some(HealthPanel {
+            tab: HealthTab::GodFiles,
+            god_files,
+            god_selected: 0,
+            god_scroll: 0,
+            doc_entries,
+            doc_selected: 0,
+            doc_scroll: 0,
+            doc_score,
         });
     }
 
@@ -205,8 +217,8 @@ impl App {
     pub fn god_file_view_checked(&mut self) {
         const MAX_TABS: usize = 12;
         // Collect absolute paths of checked entries
-        let paths: Vec<std::path::PathBuf> = match self.god_file_panel {
-            Some(ref panel) => panel.entries.iter()
+        let paths: Vec<std::path::PathBuf> = match self.health_panel {
+            Some(ref panel) => panel.god_files.iter()
                 .filter(|e| e.checked)
                 .map(|e| e.path.clone())
                 .collect(),
@@ -249,7 +261,7 @@ impl App {
         }
 
         // Close panel, load last tab into viewer, focus viewer
-        self.god_file_panel = None;
+        self.health_panel = None;
         if opened > 0 {
             self.viewer_active_tab = self.viewer_tabs.len() - 1;
             self.load_tab_to_viewer();
@@ -265,8 +277,8 @@ impl App {
 
     /// Toggle the check on the currently selected god file entry
     pub fn god_file_toggle_check(&mut self) {
-        if let Some(ref mut panel) = self.god_file_panel {
-            if let Some(entry) = panel.entries.get_mut(panel.selected) {
+        if let Some(ref mut panel) = self.health_panel {
+            if let Some(entry) = panel.god_files.get_mut(panel.god_selected) {
                 entry.checked = !entry.checked;
             }
         }
@@ -274,10 +286,10 @@ impl App {
 
     /// Toggle all checks: if any are unchecked, check all; if all checked, uncheck all
     pub fn god_file_toggle_all(&mut self) {
-        if let Some(ref mut panel) = self.god_file_panel {
-            let all_checked = panel.entries.iter().all(|e| e.checked);
+        if let Some(ref mut panel) = self.health_panel {
+            let all_checked = panel.god_files.iter().all(|e| e.checked);
             let new_state = !all_checked;
-            for entry in &mut panel.entries {
+            for entry in &mut panel.god_files {
                 entry.checked = new_state;
             }
         }
@@ -288,8 +300,8 @@ impl App {
     /// The newest spawn becomes the active slot (its output is displayed).
     pub fn god_file_modularize(&mut self, claude_process: &ClaudeProcess) {
         // Collect checked files and build prompts
-        let checked: Vec<(String, usize)> = match self.god_file_panel {
-            Some(ref panel) => panel.entries.iter()
+        let checked: Vec<(String, usize)> = match self.health_panel {
+            Some(ref panel) => panel.god_files.iter()
                 .filter(|e| e.checked)
                 .map(|e| (e.rel_path.clone(), e.line_count))
                 .collect(),
@@ -306,7 +318,7 @@ impl App {
             None => { self.set_status("No main worktree found"); return; }
         };
 
-        self.god_file_panel = None;
+        self.health_panel = None;
 
         // Spawn ALL checked files concurrently — each gets its own PID slot
         let mut spawned = 0usize;
@@ -410,6 +422,71 @@ impl App {
 
         entries.sort_by(|a, b| b.line_count.cmp(&a.line_count));
         entries
+    }
+
+    /// Scan project source files for documentation coverage — counts documentable
+    /// items (fn, struct, enum, trait, const, static, type, impl) and checks
+    /// whether each has a preceding `///` or `//!` doc comment.
+    /// Returns (entries sorted by coverage ascending, overall score 0.0–100.0).
+    fn scan_documentation(&self) -> (Vec<DocEntry>, f32) {
+        let Some(ref project) = self.project else { return (Vec::new(), 0.0) };
+        let root = &project.path;
+
+        // Determine which directories to scan (same logic as god files)
+        let dirs = load_god_file_scope(root).unwrap_or_else(|| {
+            let found: HashSet<PathBuf> = SOURCE_ROOTS.iter()
+                .map(|name| root.join(name))
+                .filter(|p| p.is_dir())
+                .collect();
+            if found.is_empty() {
+                let mut s = HashSet::new();
+                s.insert(root.clone());
+                s
+            } else {
+                found
+            }
+        });
+
+        let mut entries = Vec::new();
+        let mut total_all = 0usize;
+        let mut documented_all = 0usize;
+
+        // Collect all source files to scan
+        let mut files = Vec::new();
+        let scanning_root = dirs.contains(root) && dirs.len() == 1;
+        if scanning_root {
+            collect_source_files(root, &mut files);
+        } else {
+            for dir in &dirs {
+                if dir.is_dir() { collect_source_files(dir, &mut files); }
+            }
+            // Top-level source files
+            if let Ok(rd) = fs::read_dir(root) {
+                for entry in rd.filter_map(|e| e.ok()) {
+                    let p = entry.path();
+                    if p.is_file() {
+                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if SOURCE_EXTENSIONS.contains(&ext) { files.push(p); }
+                    }
+                }
+            }
+        }
+
+        // Scan each file for documentable items and doc comments
+        for path in &files {
+            let (total, documented) = scan_file_doc_coverage(path);
+            if total == 0 { continue; }
+            let coverage_pct = documented as f32 / total as f32 * 100.0;
+            let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
+            total_all += total;
+            documented_all += documented;
+            entries.push(DocEntry { path: path.clone(), rel_path, total_items: total, documented_items: documented, coverage_pct });
+        }
+
+        // Sort worst-documented first so user sees problem files at top
+        entries.sort_by(|a, b| a.coverage_pct.partial_cmp(&b.coverage_pct).unwrap_or(std::cmp::Ordering::Equal));
+        let doc_score = if total_all > 0 { documented_all as f32 / total_all as f32 * 100.0 } else { 100.0 };
+        (entries, doc_score)
     }
 }
 
@@ -519,6 +596,70 @@ fn save_god_file_scope(project_root: &Path, dirs: &HashSet<PathBuf>) {
         .collect::<Vec<_>>()
         .join("\n");
     let _ = fs::write(azureal_dir.join("godfilescope"), content);
+}
+
+/// Collect all source files recursively from a directory (for doc scanner).
+/// Same skip logic as scan_dir_recursive but collects ALL source files, not just god files.
+fn collect_source_files(dir: &Path, results: &mut Vec<PathBuf>) {
+    let rd = match fs::read_dir(dir) { Ok(r) => r, Err(_) => return };
+    let mut dir_entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+    dir_entries.sort_by_key(|e| e.file_name());
+    for entry in dir_entries {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') { continue; }
+        if path.is_dir() {
+            let name_lower = name.to_ascii_lowercase();
+            if SKIP_DIRS.iter().any(|&s| s == name_lower) { continue; }
+            collect_source_files(&path, results);
+        } else if path.is_file() {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if SOURCE_EXTENSIONS.contains(&ext) { results.push(path); }
+        }
+    }
+}
+
+/// Scan a single file for documentable items and count how many have doc comments.
+/// Uses line-based heuristics — no AST parsing, just pattern matching on trimmed lines.
+/// Returns (total_items, documented_items).
+fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
+    let file = match File::open(path) { Ok(f) => f, Err(_) => return (0, 0) };
+    let lines: Vec<String> = BufReader::new(file).lines().filter_map(|l| l.ok()).collect();
+
+    let mut total = 0usize;
+    let mut documented = 0usize;
+
+    /// Patterns that indicate a documentable item (checked against trimmed line starts)
+    const ITEM_PREFIXES: &[&str] = &[
+        "pub fn ", "fn ", "pub struct ", "struct ", "pub enum ", "enum ",
+        "pub trait ", "trait ", "pub const ", "const ", "pub static ", "static ",
+        "pub type ", "type ", "pub async fn ", "async fn ", "pub unsafe fn ", "unsafe fn ",
+        "impl ", "pub mod ", "mod ",
+    ];
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        // Skip blank lines, comments, attributes, use/extern/cfg
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#')
+            || trimmed.starts_with("use ") || trimmed.starts_with("extern ")
+            || trimmed.starts_with('}') { continue; }
+
+        // Check if this line starts a documentable item
+        let is_item = ITEM_PREFIXES.iter().any(|p| trimmed.starts_with(p));
+        if !is_item { continue; }
+
+        total += 1;
+        // Walk backwards from this line to find a doc comment (skip blanks + attributes)
+        let mut j = i;
+        while j > 0 {
+            j -= 1;
+            let prev = lines[j].trim();
+            if prev.is_empty() || prev.starts_with("#[") || prev.starts_with("#![") { continue; }
+            if prev.starts_with("///") || prev.starts_with("//!") { documented += 1; }
+            break;
+        }
+    }
+    (total, documented)
 }
 
 /// Build the modularization prompt for a specific god file.

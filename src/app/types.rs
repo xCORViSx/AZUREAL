@@ -473,14 +473,51 @@ pub struct GodFileEntry {
     pub checked: bool,
 }
 
-/// State for the God File System panel — overlay that scans project for oversized
-/// source files and lets the user batch-spawn modularization sessions
+/// Which tab is active in the Worktree Health panel
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HealthTab {
+    /// God Files — source files exceeding 1000 LOC
+    GodFiles,
+    /// Documentation — measures doc-comment coverage across source files
+    Documentation,
+}
+
+/// State for the Worktree Health panel — tabbed modal overlay housing
+/// multiple health-check systems (god files, documentation coverage, etc.)
 #[derive(Debug)]
-pub struct GodFilePanel {
+pub struct HealthPanel {
+    /// Which tab is currently active/visible
+    pub tab: HealthTab,
+    // ── God Files tab ──
     /// All source files exceeding the LOC threshold
-    pub entries: Vec<GodFileEntry>,
-    /// Navigation cursor index
-    pub selected: usize,
-    /// Scroll offset for rendering
-    pub scroll: usize,
+    pub god_files: Vec<GodFileEntry>,
+    /// Navigation cursor in god files list
+    pub god_selected: usize,
+    /// Scroll offset for god files list
+    pub god_scroll: usize,
+    // ── Documentation tab ──
+    /// All source files with documentation coverage metrics
+    pub doc_entries: Vec<DocEntry>,
+    /// Navigation cursor in doc entries list
+    pub doc_selected: usize,
+    /// Scroll offset for doc entries list
+    pub doc_scroll: usize,
+    /// Overall documentation score 0.0–100.0 across all scanned files
+    pub doc_score: f32,
+}
+
+/// A source file with documentation coverage metrics — how many documentable
+/// items (fns, structs, enums, traits, consts, etc.) have doc comments
+#[derive(Debug, Clone)]
+pub struct DocEntry {
+    /// Absolute path to the file
+    pub path: PathBuf,
+    /// Path relative to project root (for display)
+    pub rel_path: String,
+    /// Total documentable items found (fns, structs, enums, traits, consts, types, impls)
+    pub total_items: usize,
+    /// How many of those items have a preceding /// or //! doc comment
+    pub documented_items: usize,
+    /// Per-file coverage percentage 0.0–100.0
+    pub coverage_pct: f32,
 }

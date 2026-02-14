@@ -14,7 +14,7 @@ use super::super::keybindings::{Action, KeyContext, lookup_action};
 use super::super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
-use super::super::input_god_files::handle_god_files_input;
+use super::super::input_health::handle_health_input;
 use super::super::input_output::handle_output_input;
 use super::super::input_worktrees::handle_worktrees_input;
 use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
@@ -54,7 +54,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.context_menu.is_some() { return handle_context_menu_input(key, app, claude_process); }
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
-    if app.god_file_panel.is_some() && !app.god_file_filter_mode { return handle_god_files_input(key, app, claude_process); }
+    if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
@@ -278,8 +278,9 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         Action::StartResume => {
             start_or_resume(app);
         }
-        Action::OpenGodFiles => {
-            app.open_god_file_panel();
+        Action::OpenHealth => {
+            if app.health_panel.is_some() { app.close_health_panel(); }
+            else { app.open_health_panel(); }
         }
         Action::OpenGitActions => {
             // Toggle: close if already open, open otherwise

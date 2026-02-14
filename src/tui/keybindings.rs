@@ -138,7 +138,7 @@ pub enum Action {
     AddRunCommand,
     ArchiveWorktree,
     StartResume,
-    OpenGodFiles,
+    OpenHealth,
     OpenGitActions,
     OpenProjects,
 
@@ -203,6 +203,34 @@ pub enum Action {
     DeleteSelected,
     EditSelected,
     PresetPrompts,
+
+    // Health Panel (modal)
+    HealthSwitchTab,
+    HealthToggleCheck,
+    HealthToggleAll,
+    HealthViewChecked,
+    HealthScopeMode,
+    HealthModularize,
+
+    // Git Actions Panel (modal)
+    GitToggleFocus,
+    GitRebase,
+    GitMerge,
+    GitFetch,
+    GitPull,
+    GitPush,
+    GitViewDiff,
+    GitRefresh,
+    GitToggleDotGit,
+
+    // Projects Panel (modal, browse mode)
+    ProjectsAdd,
+    ProjectsDelete,
+    ProjectsRename,
+    ProjectsInit,
+
+    // Dialog structural
+    DialogToggleScope,
 
     // Generic
     Escape,
@@ -278,6 +306,10 @@ pub struct HelpSection {
 }
 
 // Static alternative key arrays for dual-key bindings
+// Enter/m alternative for health panel modularize action
+static ALT_CHAR_M: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('m') }];
+// Enter/d alternative for git panel view-diff action
+static ALT_CHAR_D: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('d') }];
 static ALT_DOWN: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
 static ALT_UP: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Up }];
 static ALT_LEFT: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Left }];
@@ -306,7 +338,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 11] = [
+pub static GLOBAL: [Keybinding; 12] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
@@ -316,12 +348,13 @@ pub static GLOBAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('T')), "Toggle terminal", Action::ToggleTerminal),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('H')), "Worktree health", Action::OpenHealth),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 14] = [
+pub static WORKTREES: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
@@ -334,7 +367,6 @@ pub static WORKTREES: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "God files", Action::OpenGodFiles),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
@@ -442,6 +474,97 @@ pub static WIZARD: [Keybinding; 3] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Next field", Action::WizardNextField),
 ];
 
+// ─── Modal panel binding arrays ───────────────────────────────────────────────
+// These are NOT resolved via lookup_action() — modals intercept all input before
+// the non-modal system runs. Each modal has its own lookup_*_action() function below.
+
+/// Health Panel — bindings shared across both tabs (Tab, nav, Esc)
+pub static HEALTH_SHARED: [Keybinding; 6] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch tab", Action::HealthSwitchTab),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+];
+
+/// Health Panel — God Files tab actions (Space/a/v/s/Enter/m)
+pub static HEALTH_GOD_FILES: [Keybinding; 5] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle check", Action::HealthToggleCheck),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Toggle all", Action::HealthToggleAll),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View checked", Action::HealthViewChecked),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Scope mode", Action::HealthScopeMode),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_M, "Modularize", Action::HealthModularize),
+];
+
+/// Health Panel — Documentation tab actions (Enter opens file)
+pub static HEALTH_DOCS: [Keybinding; 1] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open file", Action::Confirm),
+];
+
+/// Git Actions Panel — all keys for the git modal overlay.
+/// Guard note: git ops (r/m/f/l/P) only fire when actions_focused=true,
+/// diff view (d) only fires when actions_focused=false. Guards live in
+/// lookup_git_actions_action(), not here.
+pub static GIT_ACTIONS: [Keybinding; 15] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
+    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase from main", Action::GitRebase),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Merge from main", Action::GitMerge),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Fetch", Action::GitFetch),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('P')), "Push", Action::GitPush),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('H')), "Toggle .git", Action::GitToggleDotGit),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
+];
+
+/// Projects Panel — browse mode bindings (text input modes stay raw)
+pub static PROJECTS_BROWSE: [Keybinding; 9] = [
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit", Action::Quit),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open project", Action::Confirm),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add project", Action::ProjectsAdd),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "Delete", Action::ProjectsDelete),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "Rename", Action::ProjectsRename),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Init git repo", Action::ProjectsInit),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+];
+
+/// Picker — shared bindings for run command + preset prompt pickers.
+/// Number quick-select (1-9/0) stays raw in handlers — not rebindable.
+pub static PICKER: [Keybinding; 7] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit", Action::EditSelected),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "Delete", Action::DeleteSelected),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add new", Action::ProjectsAdd),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+];
+
+/// Context Menu — simple nav + select
+pub static CONTEXT_MENU: [Keybinding; 4] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+];
+
+/// Branch Dialog — nav + select (filter chars stay raw)
+pub static BRANCH_DIALOG: [Keybinding; 4] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+];
+
 /// All state needed to resolve a key press into an action.
 /// Built from &App so guards are defined ONCE here, not scattered across input handlers.
 pub struct KeyContext {
@@ -482,7 +605,8 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
             // sidebar filter, context menu, or wizard — they'd steal keystrokes
-            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp | Action::OpenGitActions
+            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
+            | Action::OpenGitActions | Action::OpenHealth
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
                    || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
@@ -541,6 +665,11 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
         HelpSection { title: "Convo", bindings: &OUTPUT },
+        HelpSection { title: "Health (H)", bindings: &HEALTH_SHARED },
+        HelpSection { title: "  God Files", bindings: &HEALTH_GOD_FILES },
+        HelpSection { title: "  Documentation", bindings: &HEALTH_DOCS },
+        HelpSection { title: "Git (G)", bindings: &GIT_ACTIONS },
+        HelpSection { title: "Projects (P)", bindings: &PROJECTS_BROWSE },
     ]
 }
 
@@ -570,6 +699,7 @@ pub fn prompt_command_title() -> (String, String, String) {
     let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
     let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("T".into());
     let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
+    let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
     let tab = find_key_for_action(&GLOBAL, Action::CycleFocusForward).unwrap_or("Tab".into());
     let stab = find_key_for_action(&GLOBAL, Action::CycleFocusBackward).unwrap_or("⇧Tab".into());
@@ -578,8 +708,8 @@ pub fn prompt_command_title() -> (String, String, String) {
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug",
-        p, t, g, help, tab, stab, cancel, quit, restart, debug
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug",
+        p, t, g, h, help, tab, stab, cancel, quit, restart, debug
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
@@ -658,15 +788,163 @@ pub fn wizard_confirm_help() -> String {
     format!("{}/{}:tabs  Enter:create  Esc:back", prev, next)
 }
 
+// ─── Modal panel lookup functions ─────────────────────────────────────────────
+// Each modal consumes ALL input. These resolve key → Action within that modal's
+// context, applying any section-specific guards (e.g., git ops only when focused).
+
+/// Resolve key → Action for the Health panel.
+/// Checks shared bindings (Tab/nav/Esc) first, then tab-specific bindings.
+pub fn lookup_health_action(
+    tab: crate::app::types::HealthTab,
+    modifiers: KeyModifiers,
+    code: KeyCode,
+) -> Option<Action> {
+    for b in &HEALTH_SHARED { if b.matches(modifiers, code) { return Some(b.action); } }
+    let tab_bindings: &[Keybinding] = match tab {
+        crate::app::types::HealthTab::GodFiles => &HEALTH_GOD_FILES,
+        crate::app::types::HealthTab::Documentation => &HEALTH_DOCS,
+    };
+    for b in tab_bindings { if b.matches(modifiers, code) { return Some(b.action); } }
+    None
+}
+
+/// Resolve key → Action for the Git Actions panel.
+/// Git operations (r/m/f/l/P) only fire when actions section is focused.
+/// View diff (d) only fires from the file list section.
+pub fn lookup_git_actions_action(
+    actions_focused: bool,
+    modifiers: KeyModifiers,
+    code: KeyCode,
+) -> Option<Action> {
+    for b in &GIT_ACTIONS {
+        let skip = match b.action {
+            Action::GitRebase | Action::GitMerge | Action::GitFetch
+            | Action::GitPull | Action::GitPush if !actions_focused => true,
+            Action::GitViewDiff if actions_focused => true,
+            _ => false,
+        };
+        if !skip && b.matches(modifiers, code) { return Some(b.action); }
+    }
+    None
+}
+
+/// Resolve key → Action for the Projects panel (browse mode only).
+/// Text input modes (Add/Rename/Init) handle keys raw — don't call this for them.
+pub fn lookup_projects_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &PROJECTS_BROWSE { if b.matches(modifiers, code) { return Some(b.action); } }
+    None
+}
+
+/// Resolve key → Action for picker overlays (run commands, preset prompts).
+/// Number quick-select and confirm-delete y/n stay raw in handlers.
+pub fn lookup_picker_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &PICKER { if b.matches(modifiers, code) { return Some(b.action); } }
+    None
+}
+
+/// Resolve key → Action for the context menu overlay.
+pub fn lookup_context_menu_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &CONTEXT_MENU { if b.matches(modifiers, code) { return Some(b.action); } }
+    None
+}
+
+/// Resolve key → Action for the branch dialog overlay.
+/// Filter chars (typing to search) stay raw in the handler.
+pub fn lookup_branch_dialog_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &BRANCH_DIALOG { if b.matches(modifiers, code) { return Some(b.action); } }
+    None
+}
+
+// ─── Modal hint generators ───────────────────────────────────────────────────
+// Draw functions call these instead of hardcoding hint strings. Each function
+// sources key labels from the binding arrays above via find_key_for_action().
+
+/// Health panel footer for God Files tab
+pub fn health_god_files_hints() -> String {
+    let check = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleCheck).unwrap_or("Space".into());
+    let all = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleAll).unwrap_or("a".into());
+    let view = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthViewChecked).unwrap_or("v".into());
+    let scope = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthScopeMode).unwrap_or("s".into());
+    let modularize = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthModularize).unwrap_or("Enter".into());
+    let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
+    let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
+    format!(" {}:check  {}:all  {}:view  {}:scope  {}/m:modularize  {}:switch  {}:close ",
+        check, all, view, scope, modularize, tab, esc)
+}
+
+/// Health panel footer for Documentation tab
+pub fn health_docs_hints() -> String {
+    let enter = find_key_for_action(&HEALTH_DOCS, Action::Confirm).unwrap_or("Enter".into());
+    let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
+    let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
+    format!(" {}:view  {}:switch  {}:close ", enter, tab, esc)
+}
+
+/// Git Actions panel — action key+description pairs for the action list labels.
+/// Returns (display_key, description) for each git action in display order.
+pub fn git_actions_labels() -> Vec<(String, &'static str)> {
+    [Action::GitRebase, Action::GitMerge, Action::GitFetch, Action::GitPull, Action::GitPush]
+        .iter()
+        .filter_map(|&a| {
+            GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))
+        })
+        .collect()
+}
+
+/// Git Actions panel footer hints
+pub fn git_actions_footer() -> String {
+    let tab = find_key_for_action(&GIT_ACTIONS, Action::GitToggleFocus).unwrap_or("Tab".into());
+    let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
+    let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
+    let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
+    format!(" {}:switch  {}:exec/view  {}:refresh  {} ", tab, enter, refresh, esc)
+}
+
+/// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.
+/// Caller gets `has_project` to conditionally include Esc:close.
+pub fn projects_browse_hint_pairs(has_project: bool) -> Vec<(String, &'static str)> {
+    let mut v = vec![
+        (find_key_for_action(&PROJECTS_BROWSE, Action::Confirm).unwrap_or("Enter".into()), "open"),
+        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsAdd).unwrap_or("a".into()), "add"),
+        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsDelete).unwrap_or("d".into()), "delete"),
+        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsRename).unwrap_or("n".into()), "name"),
+        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsInit).unwrap_or("i".into()), "init"),
+    ];
+    if has_project { v.push(("Esc".into(), "close")); }
+    v.push((find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or("⌃Q".into()), "quit"));
+    v
+}
+
+/// Picker title with keybinding hints for run command / preset prompt pickers.
+/// `label` is the picker name (e.g., "Run Command" or "Preset Prompts").
+pub fn picker_title(label: &str) -> String {
+    let edit = find_key_for_action(&PICKER, Action::EditSelected).unwrap_or("e".into());
+    let del = find_key_for_action(&PICKER, Action::DeleteSelected).unwrap_or("d".into());
+    let add = find_key_for_action(&PICKER, Action::ProjectsAdd).unwrap_or("a".into());
+    format!(" {} (1-9:select  {}:add  {}:edit  {}:del) ", label, add, edit, del)
+}
+
+/// Dialog footer hint pairs for run command / preset prompt dialogs.
+/// Returns (key_display, label) for Tab/BackTab/CtrlS structural keys.
+pub fn dialog_footer_hint_pairs() -> Vec<(String, &'static str)> {
+    vec![
+        ("Tab".into(), "next"),
+        ("⇧Tab".into(), "back"),
+        ("⌃s".into(), "scope"),
+        ("Enter".into(), "save"),
+        ("Esc".into(), "cancel"),
+    ]
+}
+
 /// Find the display key for a given action in a binding list
-fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<String> {
+pub fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<String> {
     bindings.iter()
         .find(|b| b.action == action)
         .map(|b| b.primary.display())
 }
 
 /// Find a pair of keys for two related actions (e.g., NavDown/NavUp → "j"/"k")
-fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db: &str) -> (String, String) {
+pub fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db: &str) -> (String, String) {
     (
         find_key_for_action(bindings, a).unwrap_or_else(|| da.into()),
         find_key_for_action(bindings, b).unwrap_or_else(|| db.into()),

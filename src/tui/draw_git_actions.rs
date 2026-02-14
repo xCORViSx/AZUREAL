@@ -11,16 +11,8 @@ use ratatui::{
 };
 
 use crate::app::App;
+use super::keybindings;
 use super::util::{GIT_BROWN, GIT_ORANGE};
-
-/// Action labels displayed in the panel — index must match ACTION_COUNT in input handler
-const ACTIONS: &[(&str, &str)] = &[
-    ("r", "Rebase from main"),
-    ("m", "Merge from main"),
-    ("f", "Fetch"),
-    ("l", "Pull"),
-    ("P", "Push"),
-];
 
 /// Render the Git Actions panel as a centered modal overlay.
 /// Called from ui() in run.rs when app.git_actions_panel.is_some().
@@ -52,8 +44,10 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD),
     )));
 
-    // Each action row: "  > [r] Rebase from main" or "    [r] Rebase from main"
-    for (i, (key, label)) in ACTIONS.iter().enumerate() {
+    // Each action row: "  ▸ [r] Rebase from main" or "    [r] Rebase from main"
+    // Labels sourced from keybindings.rs so they stay in sync with actual key bindings
+    let action_labels = keybindings::git_actions_labels();
+    for (i, (key, label)) in action_labels.iter().enumerate() {
         let selected = panel.actions_focused && i == panel.selected_action;
         let prefix = if selected { "  \u{25b8} " } else { "    " };
         let style = if selected {
@@ -213,7 +207,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     }
 
     // ── Footer hints rendered on top of the bottom border ──
-    let footer = " Tab:switch  Enter:exec/view  R:refresh  Esc ";
+    let footer = keybindings::git_actions_footer();
     let footer_y = modal.y + modal.height.saturating_sub(1);
     let footer_x = modal.x + (modal.width.saturating_sub(footer.len() as u16)) / 2;
     if footer_y < area.height && footer_x + (footer.len() as u16) <= area.x + area.width {

@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, GodFilePanel, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -356,9 +356,9 @@ pub struct App {
     pub hide_dot_git: bool,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
-    /// God File System panel — scans project for oversized source files (>1k LOC)
-    /// and lets user batch-spawn modularization sessions. None when closed.
-    pub god_file_panel: Option<GodFilePanel>,
+    /// Worktree Health panel — tabbed modal overlay with god file scanner,
+    /// documentation coverage, and future health checks. None when closed.
+    pub health_panel: Option<HealthPanel>,
     /// When true, the FileTree is in "god file filter mode" — directories included
     /// in the god file scan are highlighted green, and the user can press Enter to
     /// toggle directories in/out of the scan scope.
@@ -601,7 +601,7 @@ impl App {
             nerd_fonts: true,
             hide_dot_git: true,
             show_file_tree: false,
-            god_file_panel: None,
+            health_panel: None,
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,

@@ -43,7 +43,7 @@
 - **Convo Search** — Press `/` in Convo pane to find text in current session with yellow match highlighting and `[N/M]` counter; `n`/`N` to cycle matches. In Session list: `/` filters by name, `//` searches across all session file contents
 - **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
 - **Projects Panel** — Persistent project registry (`~/.azureal/projects`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
-- **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC across ~60 language extensions; smart source-root detection limits scanning to actual code directories. Press `s` to enter scope mode — FileTree opens with green highlights on scanned directories (subdirs automatically inherit accepted status), letting you toggle dirs in/out of scope with Enter; scope persists to `.azureal/godfilescope` so it's remembered across sessions. Check files and modularize them via simultaneous Claude sessions on the main worktree, or press `v` to open checked files as Viewer tabs for review
+- **Worktree Health Panel** — Press `Shift+H` from any pane to open a tabbed health-check modal. **God Files tab**: scans for source files >1000 LOC across ~60 language extensions with smart source-root detection; check files and modularize via simultaneous Claude sessions, or press `v` to open as Viewer tabs; `s` enters scope mode (FileTree with green highlights, subdirs inherit accepted status, scope persists to `.azureal/godfilescope`). **Documentation tab**: scans all source files for doc-comment coverage (`///` and `//!`), showing per-file coverage percentage with visual bars sorted worst-first; overall score color-coded (green/yellow/red); Enter opens file in Viewer. Tab key switches between tabs.
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
@@ -93,8 +93,8 @@ azureal
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
-| `g` | God files (scan/modularize large files) |
 | `G` | Git panel — global (rebase, merge, fetch, pull, push) |
+| `H` | Worktree Health panel (God Files + Documentation tabs) |
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Convo); Filter/search sessions (Session list) |
 | `?` | Help |
@@ -121,7 +121,7 @@ No database. Minimal config: `~/.azureal/projects` stores registered project pat
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 
-**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver. Guard logic (which keys are suppressed in edit mode, prompt mode, etc.) lives inside `lookup_action()` — never duplicated across input handlers. Input handlers only process unresolved keys (text editing, dialog navigation). Press `?` for the help overlay.
+**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver for main views and 6 per-modal lookup functions (`lookup_health_action()`, `lookup_git_action()`, `lookup_projects_action()`, `lookup_picker_action()`, `lookup_context_menu_action()`, `lookup_branch_dialog_action()`) for modal panels. Guard logic lives inside lookup functions — never duplicated across input handlers. Draw functions source footer hints and labels from keybinding hint generators, not hardcoded strings. Press `?` for the help overlay.
 
 ## License
 

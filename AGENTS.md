@@ -571,22 +571,24 @@ Implementation:
 
 ### Centralized Keybindings
 
-**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.).
+**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, context menu, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
 
 **Architecture:**
-- `Action` enum: All possible keybinding actions (~40 variants: navigation, editing, viewer tabs, file tree operations, etc.)
+- `Action` enum: All possible keybinding actions (~60 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitRebase`, `ProjectsAdd`, `PickerQuickDelete`, `BranchDialogOpen`, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
 - `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
-- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED`, `HEALTH_GOD_FILES`, `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `CONTEXT_MENU`, `BRANCH_DIALOG`
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
+- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_context_menu_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
+- **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
 - Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, context menu, wizard, projects, run command, session list) intercept ALL input first
-2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action
+1. Modal overlays (help, context menu, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
+2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
 3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline which fall through to handle_input_mode)
 4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
 
@@ -595,12 +597,18 @@ Implementation:
 - `input_output.rs` — session list overlay input, rebase mode input
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
+- `input_health.rs` — `lookup_health_action()` → Action match (tab switching, per-tab keys)
+- `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav)
+- `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
+- `input_dialogs.rs` — `lookup_context_menu_action()`, `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
 
 **macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes. **Help panel display:** `display_keys()` filters out non-ASCII bare-char alternatives (®, π, †) so the help panel shows clean `⌥r` instead of `⌥r/®` — the unicode chars are internal matching details, not user-facing.
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
-Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum, static arrays, lookup_action(), guard logic, help_sections(), title generators), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`)
+**Enforcement hooks:** `.claude/scripts/enforce-keybindings.sh` runs as a PreToolUse hook on every Edit/Write. Catches 3 violations: (1) raw `KeyCode::`/`KeyModifiers::` in `input_*.rs` (must use `lookup_*_action()`), (2) hardcoded key label strings in `draw_*.rs` without `keybindings::` import (must use hint generators), (3) new static binding arrays in `keybindings.rs` without companion lookup/hint functions. Configured in `.claude/settings.json`.
+
+Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum, ~17 static arrays, lookup_action() + 6 per-modal lookup fns, guard logic, help_sections(), title generators, hint generators), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `.claude/scripts/enforce-keybindings.sh` (PreToolUse enforcement hook)
 
 ### Wrap-Aware Edit Cursor
 
@@ -890,42 +898,54 @@ Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19
 
 **Status:** Fixed in Claude Code 2.1.22. All resume + tools combinations now work correctly.
 
-### God File System
+### Worktree Health Panel
 
-Scans the project for "god files" — source files exceeding 1000 lines — and spawns sequential Claude modularization sessions to split them into focused modules. Triggered by `g` in the Worktrees pane.
+Tabbed modal overlay (`Shift+H` toggles open/close, global keybinding) housing multiple health-check systems. Green accent color (`Rgb(80,200,80)`, `GF_GREEN` constant) with QuadrantOutside border. Centered modal (55% × 70%, min 50×16). Bold title: `" Worktree Health "`.
 
-**Scanning:**
-- **Source-root detection:** If well-known source directories exist under the project root (`src/`, `lib/`, `crates/`, `cmd/`, `pkg/`, `internal/`, `app/`, `core/`, `common/`, `modules/`, `services/`, `packages/`, `components/`, `Sources/`, `include/`, `source/`), ONLY those directories are scanned (plus top-level files like `main.rs`, `build.rs`). If none are found, falls back to scanning the entire project root.
-- **Skip directories:** Hidden dirs, build artifacts (`target`, `dist`, `build`, `out`, `bin`, `obj`), dependency caches (`node_modules`, `__pycache__`, `vendor`, `Pods`, `venv`), IDE dirs (`.idea`, `.vscode`), non-source content (`refs`, `assets`, `resources`, `data`, `examples`, `docs`, `migrations`, `generated`, `third_party`, `archive`, `tmp`, `cache`, `logs`, `coverage`, `snapshots`), and ~50 more common non-source directories. Case-insensitive matching.
-- Source extensions (~60): Systems (`.rs`, `.go`, `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.cxx`, `.hxx`, `.c++`, `.h++`, `.m`, `.mm`, `.swift`, `.zig`, `.nim`, `.cr`, `.v`, `.d`), JVM (`.java`, `.kt`, `.kts`, `.scala`, `.groovy`, `.gradle`), .NET (`.cs`, `.fs`, `.fsi`, `.vb`), Web (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.vue`, `.svelte`, `.astro`), Scripting (`.py`, `.pyw`, `.rb`, `.pl`, `.pm`, `.php`, `.lua`, `.r`, `.jl`, `.dart`), Functional (`.hs`, `.lhs`, `.ml`, `.mli`, `.clj`, `.cljs`, `.cljc`, `.edn`, `.ex`, `.exs`, `.erl`, `.hrl`, `.elm`, `.gleam`, `.rkt`), Shell (`.sh`, `.bash`, `.zsh`, `.fish`), Infra/Query (`.sql`, `.tf`, `.hcl`), Schema (`.proto`, `.thrift`, `.graphql`, `.gql`)
-- Threshold: >1000 LOC (line count via `BufReader::lines().count()`)
-- Results sorted by line count descending (worst offenders first)
-- Synchronous scan — fast enough for typical projects (~50k files in <100ms)
+**Tab Bar:**
+Row 0 inside border: `[ God Files ]  [ Documentation ]` — active tab bright green + bold, inactive dim gray. Tab key switches between tabs.
 
-**Panel UI:**
-Centered modal overlay (55% × 70%, min 50×16) — same size as the Git panel (normal panes visible behind). Bold green title and QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) green border (`Rgb(80,200,80)` — same `GF_GREEN` used in scope mode overlay). Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Green highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  v:view  s:scope  Enter/m:modularize  Esc:close`. Empty state message when no god files found. On open, loads persisted scope from `.azureal/godfilescope` if it exists; otherwise uses auto-detected SOURCE_ROOTS.
+**God Files Tab:**
+Scans the project for "god files" — source files exceeding 1000 lines. Same checkbox list as the old standalone panel.
 
-**Keybindings (panel active):**
-- `j/↓` — navigate down, `k/↑` — navigate up
-- `⌥↑` — jump to top, `⌥↓` — jump to bottom
-- `Space` — toggle check on selected entry
-- `a` — toggle all checks (if any unchecked → check all; if all checked → uncheck all)
-- `v` — view checked files in Viewer as tabs (fills available slots up to 12-tab max; skips duplicates; closes panel and focuses Viewer)
+*Scanning:*
+- **Source-root detection:** If well-known source directories exist under the project root (`src/`, `lib/`, `crates/`, `cmd/`, `pkg/`, `internal/`, `app/`, `core/`, `common/`, `modules/`, `services/`, `packages/`, `components/`, `Sources/`, `include/`, `source/`), ONLY those directories are scanned (plus top-level files). Falls back to full project root if none found.
+- **Skip directories:** Hidden dirs, build artifacts, dependency caches, IDE dirs, non-source content (~55 common non-source directories). Case-insensitive matching.
+- Source extensions (~60): Systems, JVM, .NET, Web, Scripting, Functional, Shell, Infra/Query, Schema.
+- Threshold: >1000 LOC. Results sorted by line count descending.
+- Synchronous scan — fast enough for typical projects.
+
+*Keybindings (God Files tab):*
+- `j/↓`, `k/↑` — navigate; `⌥↑/⌥↓` — jump top/bottom
+- `Space` — toggle check; `a` — toggle all
+- `v` — view checked files as Viewer tabs (up to 12)
 - `s` — enter scope mode (see below)
-- `Enter` / `m` — modularize checked files
+- `Enter`/`m` — modularize checked files
+- `Tab` — switch to Documentation tab
 - `Esc` — close panel
 
-**Scope Mode (`s`):**
-Opens the FileTree overlay in a special "god file scope mode" that lets the user see and modify which directories are included in the scan scope. Directories currently in the scan scope are highlighted in bright green (`Rgb(80,200,80)`) with green icons; **subdirectories of accepted dirs automatically inherit accepted status** (also bright green) — acceptance propagates down the tree via ancestor walk. Files inside scoped directories are dim green (`Rgb(60,140,60)`); everything else is dimmed gray. The FileTree border turns green (double-line) with a `" God File Scope (N dirs) "` title and `" Enter:toggle  Esc:save & rescan "` bottom hint. File actions (add, delete, rename, copy, move) are disabled in this mode.
+*Scope Mode (`s`):*
+Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" God File Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to `.azureal/godfilescope` (one absolute path per line), rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
 
-The initial scope is loaded from `.azureal/godfilescope` if it exists; otherwise computed from SOURCE_ROOTS auto-detection. Pressing `Enter` on a directory toggles it in/out of the scope set. Pressing `Esc` **persists the scope** to `.azureal/godfilescope` (one absolute path per line), rescans the project using the custom scope, and reopens the god file panel with updated results. On next panel open, the persisted scope is loaded automatically — no need to re-enter scope mode unless the user wants to change it. State: `god_file_filter_mode: bool` and `god_file_filter_dirs: HashSet<PathBuf>` on App. Both `is_god_file_filter_dir()` and `is_in_god_file_scope()` walk ancestors to propagate acceptance — a directory or file is "in scope" if it or any ancestor is in the filter set.
+*Parallel Modularization:*
+All checked files spawned simultaneously as concurrent Claude processes on the main worktree. Each session named `[GFM] <filename>`. Convo pane auto-switches to main worktree.
 
-**Parallel Modularization:**
-All checked files are spawned **simultaneously** as concurrent Claude processes on the main worktree — each gets its own PID slot via the multi-session architecture. The sequential queue (`god_file_queue`) was removed. Each session is named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_names`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible. The newest spawn becomes the active slot (its output is displayed).
+**Documentation Tab:**
+Scans all source files for documentation coverage — counts documentable items (`fn`, `struct`, `enum`, `trait`, `const`, `static`, `type`, `impl`, `mod`) and checks whether each has a preceding `///` or `//!` doc comment. Line-based heuristic, no AST parsing.
 
-**Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
+*Display:*
+- Overall score header: `Overall Documentation Score: XX.X%` color-coded (green ≥80%, yellow ≥50%, red <50%) with file count
+- Per-file list sorted by coverage ascending (worst-documented first)
+- Each row: file path, coverage percentage, visual bar (`█░` blocks), documented/total ratio
+- Selected row highlighted in green
 
-Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked, scope persistence via `load_god_file_scope`/`save_god_file_scope`), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
+*Keybindings (Documentation tab):*
+- `j/↓`, `k/↑` — navigate; `⌥↑/⌥↓` — jump top/bottom
+- `Enter` — open selected file in Viewer
+- `Tab` — switch to God Files tab
+- `Esc` — close panel
+
+Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked, scope persistence, doc scanner), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match), `src/tui/draw_health.rs` (panel rendering with tab bar, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED + HEALTH_GOD_FILES + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
 
 ### Git Panel
 
@@ -960,7 +980,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 
 **Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in GLOBAL)
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array, `lookup_git_action()`, hint generators, `G` in GLOBAL)
 
 ### Rebase Support
 
@@ -1085,6 +1105,10 @@ Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `s
 azureal/
 ├── .azureal/                # Project-level azureal data (gitignored)
 │   └── config.toml         # Optional project config
+├── .claude/                 # Project-level Claude Code config
+│   ├── settings.json        # Hook configuration (PreToolUse keybinding enforcement)
+│   └── scripts/
+│       └── enforce-keybindings.sh  # Catches raw KeyCode in input_*.rs, hardcoded labels in draw_*.rs, new arrays without companions in keybindings.rs
 ├── .project/               # Project management files
 │   ├── edits/              # Edit history
 │   │   └── edits.md        # Current edit log
@@ -1105,7 +1129,7 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
-│   │   │   ├── god_files.rs # God File System: scan, parallel modularize
+│   │   │   ├── god_files.rs # God File System + Doc scanner: scan, parallel modularize, doc coverage
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
@@ -1141,15 +1165,15 @@ azureal/
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
 │   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane
 │   │   │   └── rebase_view.rs    # Git rebase status display
-│   │   ├── draw_god_files.rs # God File panel modal (overlay god file scanner/modularizer)
+│   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
 │   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions
-│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()
+│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~60 variants), KeyContext, lookup_action() + 6 per-modal lookups, ~17 static arrays, hint generators, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: convo search + session list overlay + rebase mode only (commands resolved upstream)
-│   │   ├── input_god_files.rs # God File panel input (navigate, check, modularize)
+│   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
 │   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
@@ -1216,7 +1240,8 @@ azureal/
 - [x] Speech-to-text input (`⌃s` in prompt mode)
 
 ## Phase 3: Advanced Features
-- [x] God File System (scan >1000 LOC files, batch-modularize via sequential Claude sessions)
+- [x] God File System (scan >1000 LOC files, batch-modularize via concurrent Claude sessions)
+- [x] Worktree Health Panel (tabbed modal: God Files tab + Documentation coverage tab, Shift+H global)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)

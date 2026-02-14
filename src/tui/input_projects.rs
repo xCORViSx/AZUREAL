@@ -1,26 +1,22 @@
 //! Projects panel input handling
 //!
 //! Handles keyboard events when the Projects panel modal is active.
-//! Browse mode: navigate list, open/add/delete/rename/init projects.
+//! Browse mode: dispatch via keybindings.rs lookup_projects_action().
 //! Input modes: text input for path/name entry with Enter to confirm, Esc to cancel.
+//! Text input keys (Char/Backspace/Left/Right/Home/End) stay raw — not rebindable.
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode, KeyModifiers};
+use crossterm::event::{self, KeyCode};
 
 use crate::app::App;
 use crate::app::types::ProjectsPanelMode;
 use crate::config;
 use crate::git::Git;
+use super::keybindings::{lookup_projects_action, Action};
 
 /// Handle all keyboard input when the Projects panel is active.
 /// Returns Ok(()) — all keys are consumed (no fall-through to other handlers).
 pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    // Ctrl+Q always quits, even from projects panel
-    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('q') {
-        app.should_quit = true;
-        return Ok(());
-    }
-
     let Some(ref panel) = app.projects_panel else { return Ok(()) };
     let mode = panel.mode;
 
@@ -32,22 +28,27 @@ pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
     }
 }
 
-/// Browse mode: navigate project list, trigger actions
+/// Browse mode: resolve key via centralized bindings, then dispatch on Action
 fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Clear any previous error on next keypress so it doesn't persist
     if let Some(ref mut panel) = app.projects_panel { panel.error = None; }
 
-    match (key.modifiers, key.code) {
-        // Navigate project list
-        (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
+    let Some(action) = lookup_projects_action(key.modifiers, key.code) else {
+        return Ok(());
+    };
+
+    match action {
+        Action::Quit => { app.should_quit = true; }
+
+        Action::NavDown => {
             if let Some(ref mut panel) = app.projects_panel { panel.select_next(); }
         }
-        (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
+        Action::NavUp => {
             if let Some(ref mut panel) = app.projects_panel { panel.select_prev(); }
         }
 
         // Open selected project — only if it's a valid git repo
-        (_, KeyCode::Enter) => {
+        Action::Confirm => {
             let path = app.projects_panel.as_ref()
                 .and_then(|p| p.entries.get(p.selected))
                 .map(|e| e.path.clone());
@@ -66,13 +67,11 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // 'a' — add a new project by path
-        (_, KeyCode::Char('a')) => {
+        Action::ProjectsAdd => {
             if let Some(ref mut panel) = app.projects_panel { panel.start_add(); }
         }
 
-        // 'd' — delete selected project from list (NOT the repo itself)
-        (_, KeyCode::Char('d')) => {
+        Action::ProjectsDelete => {
             let should_save = if let Some(ref mut panel) = app.projects_panel {
                 if !panel.entries.is_empty() {
                     panel.entries.remove(panel.selected);
@@ -89,21 +88,17 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // 'n' — rename the selected project's display name
-        (_, KeyCode::Char('n')) => {
+        Action::ProjectsRename => {
             if let Some(ref mut panel) = app.projects_panel { panel.start_rename(); }
         }
 
-        // 'i' — init a new git repo
-        (_, KeyCode::Char('i')) => {
+        Action::ProjectsInit => {
             if let Some(ref mut panel) = app.projects_panel { panel.start_init(); }
         }
 
-        // Esc — close panel (only if a project is already loaded)
-        (_, KeyCode::Esc) => {
-            if app.project.is_some() {
-                app.close_projects_panel();
-            }
+        // Close panel (only if a project is already loaded)
+        Action::Escape => {
+            if app.project.is_some() { app.close_projects_panel(); }
         }
 
         _ => {}

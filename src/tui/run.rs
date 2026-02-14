@@ -25,7 +25,7 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::{draw_dialogs, draw_git_actions, draw_god_files, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
+use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -238,9 +238,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.preset_prompt_dialog.is_some() {
         draw_dialogs::draw_preset_prompt_dialog(f, app);
     }
-    // God File panel overlay (g from Worktrees) — hidden during filter mode (file tree is the UI)
-    if app.god_file_panel.is_some() && !app.god_file_filter_mode {
-        draw_god_files::draw_god_files_panel(f, app);
+    // Worktree Health panel overlay (Shift+H global) — hidden during scope mode (file tree is the UI)
+    if app.health_panel.is_some() && !app.god_file_filter_mode {
+        draw_health::draw_health_panel(f, app);
     }
     // Git panel overlay (Shift+G global)
     if app.git_actions_panel.is_some() {

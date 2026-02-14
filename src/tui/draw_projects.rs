@@ -15,6 +15,7 @@ use ratatui::{
 use crate::app::App;
 use crate::app::types::ProjectsPanelMode;
 use crate::config::display_path;
+use super::keybindings;
 use super::util::AZURE;
 
 /// Draw the full-screen Projects panel modal.
@@ -83,28 +84,15 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
         ]));
     }
 
-    // Build key hints for the bottom of the modal
-    let hints = match panel.mode {
+    // Build key hints for the bottom of the modal — browse mode from keybindings.rs
+    let hints: Vec<Span> = match panel.mode {
         ProjectsPanelMode::Browse => {
-            // Only show Esc if a project is loaded (can dismiss panel)
-            let mut h = vec![
-                Span::styled(" Enter", Style::default().fg(AZURE)),
-                Span::styled(":open ", Style::default().fg(Color::DarkGray)),
-                Span::styled("a", Style::default().fg(AZURE)),
-                Span::styled(":add ", Style::default().fg(Color::DarkGray)),
-                Span::styled("d", Style::default().fg(AZURE)),
-                Span::styled(":delete ", Style::default().fg(Color::DarkGray)),
-                Span::styled("n", Style::default().fg(AZURE)),
-                Span::styled(":name ", Style::default().fg(Color::DarkGray)),
-                Span::styled("i", Style::default().fg(AZURE)),
-                Span::styled(":init ", Style::default().fg(Color::DarkGray)),
-            ];
-            if app.project.is_some() {
-                h.push(Span::styled("Esc", Style::default().fg(AZURE)));
-                h.push(Span::styled(":close ", Style::default().fg(Color::DarkGray)));
+            let pairs = keybindings::projects_browse_hint_pairs(app.project.is_some());
+            let mut h = vec![Span::raw(" ")];
+            for (key, label) in pairs {
+                h.push(Span::styled(key, Style::default().fg(AZURE)));
+                h.push(Span::styled(format!(":{} ", label), Style::default().fg(Color::DarkGray)));
             }
-            h.push(Span::styled("⌃Q", Style::default().fg(AZURE)));
-            h.push(Span::styled(":quit", Style::default().fg(Color::DarkGray)));
             h
         }
         ProjectsPanelMode::AddPath => vec![
