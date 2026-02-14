@@ -62,10 +62,10 @@ pub async fn run() -> Result<()> {
     app.load_preset_prompts();
     app.load_session_output();
     let config = Config::load().unwrap_or_default();
-    // Apply config → App fields
-    app.nerd_fonts = config.nerd_fonts;
-    if !config.nerd_fonts {
-        app.set_status("Tip: Enable Nerd Font icons in ~/.azureal/config → nerd_fonts = true");
+    // Auto-detect Nerd Font support by probing a PUA glyph during splash
+    app.nerd_fonts = super::file_icons::detect_nerd_font();
+    if !app.nerd_fonts {
+        app.set_status("Nerd Font not detected — using emoji icons. Install a Nerd Font for richer file tree icons");
     }
 
     // Hold splash for remainder of 3s minimum (loading time counts toward it)

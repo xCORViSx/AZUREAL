@@ -15,13 +15,7 @@ pub struct Config {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
-    /// Use Nerd Font icons in file tree (default: true). Set to false for emoji fallback.
-    #[serde(default = "default_true")]
-    pub nerd_fonts: bool,
 }
-
-/// Helper for serde default = true
-fn default_true() -> bool { true }
 
 impl Default for Config {
     fn default() -> Self {
@@ -30,7 +24,6 @@ impl Default for Config {
             claude_executable: None,
             default_permission_mode: PermissionMode::default(),
             verbose: false,
-            nerd_fonts: true,
         }
     }
 }

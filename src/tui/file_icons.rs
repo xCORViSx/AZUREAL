@@ -3,9 +3,56 @@
 //! Returns (icon_str, color) for any file path. Checks filename first (for
 //! extensionless files like Dockerfile, Makefile, LICENSE), then extension.
 //! The `nerd` flag switches between the two icon sets at runtime.
+//!
+//! `detect_nerd_font()` probes whether the terminal font renders Nerd Font
+//! glyphs by printing a PUA codepoint and measuring cursor advance via DSR.
 
 use ratatui::style::Color;
 use std::path::Path;
+use std::io::Write;
+
+/// Probe whether the terminal font renders Nerd Font glyphs.
+///
+/// Prints a known Nerd Font glyph (nf-custom-folder, U+E5FF) at a hidden
+/// position, queries cursor column via DSR (Device Status Report), and checks
+/// if the glyph advanced the cursor. A proper Nerd Font renders it as 1 column
+/// wide. If the font lacks the glyph entirely, some terminals render it as a
+/// 2-wide replacement box or a zero-width nothing — either way the column
+/// won't be exactly start+1.
+///
+/// Must be called AFTER entering alternate screen + raw mode (so DSR works).
+/// Safe to call during splash — the probe overwrites a cell that gets
+/// repainted on the next full draw.
+pub fn detect_nerd_font() -> bool {
+    let mut stdout = std::io::stdout();
+    // Move to bottom-right corner (least visible spot during splash)
+    // Row 0 col 0 works too — splash will repaint it
+    let _ = crossterm::execute!(
+        stdout,
+        crossterm::cursor::MoveTo(0, 0),
+        crossterm::cursor::SavePosition,
+    );
+
+    // Print a Nerd Font glyph (nf-custom-folder U+E5FF) — single-width in patched fonts
+    let _ = write!(stdout, "\u{e5ff}");
+    let _ = stdout.flush();
+
+    // Query cursor position — crossterm sends DSR and parses response
+    // Timeout: crossterm::cursor::position() blocks up to ~1s waiting for terminal response
+    let col_after = crossterm::cursor::position().map(|(c, _)| c).unwrap_or(0);
+
+    // Restore cursor and clear the probe glyph
+    let _ = crossterm::execute!(
+        stdout,
+        crossterm::cursor::RestorePosition,
+        crossterm::style::Print(" "), // overwrite the probe glyph
+        crossterm::cursor::RestorePosition,
+    );
+
+    // Nerd Font glyph is 1-wide → cursor should be at column 1 (started at 0)
+    // Non-nerd font: typically 0 (zero-width/missing) or 2 (wide replacement box)
+    col_after == 1
+}
 
 /// Icon result: the glyph string (with trailing space for alignment) and its color.
 /// Nerd Font glyphs are single-width in patched fonts, so "X " gives icon+space.
