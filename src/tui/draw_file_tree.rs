@@ -13,6 +13,7 @@ use ratatui::{
 
 use crate::app::{App, Focus};
 use crate::app::types::FileTreeAction;
+use super::file_icons::file_icon;
 use super::util::{truncate, AZURE};
 
 /// Build file tree lines (extracted for caching)
@@ -43,25 +44,13 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             let is_selected = app.file_tree_selected == Some(idx);
             let indent = "  ".repeat(entry.depth);
 
-            let (icon, icon_color) = if entry.is_dir {
-                let expanded = app.file_tree_expanded.contains(&entry.path);
-                // Hidden dirs get dimmed yellow icon
-                let color = if entry.is_hidden { Color::Rgb(120, 100, 60) } else { Color::Yellow };
-                if expanded { ("▼ ", color) } else { ("▶ ", color) }
-            } else {
-                let icon = match entry.path.extension().and_then(|e| e.to_str()) {
-                    Some("rs") => "🦀",
-                    Some("toml") => "⚙ ",
-                    Some("md") => "📝",
-                    Some("json") => "{}",
-                    Some("yaml") | Some("yml") => "📋",
-                    Some("lock") => "🔒",
-                    _ => "  ",
-                };
-                // Hidden files get dimmed icon color
-                let color = if entry.is_hidden { Color::Rgb(100, 100, 100) } else { Color::White };
-                (icon, color)
-            };
+            // Get icon glyph + color from file_icons module (Nerd Font or emoji fallback)
+            let expanded = entry.is_dir && app.file_tree_expanded.contains(&entry.path);
+            let (icon, mut icon_color) = file_icon(&entry.path, entry.is_dir, expanded, app.nerd_fonts);
+            // Hidden entries get dimmed icon color
+            if entry.is_hidden {
+                icon_color = if entry.is_dir { Color::Rgb(120, 100, 60) } else { Color::Rgb(100, 100, 100) };
+            }
 
             let mut spans = vec![
                 Span::raw(indent),

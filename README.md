@@ -22,7 +22,7 @@
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots
 - **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
 - **Viewer Tabs** — Up to 12 tabs across 2 fixed-width rows (6 per row); `t` to tab current file, `⌥t` for tab dialog, `[`/`]` to navigate, `x` to close
-- **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste)
+- **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; **Nerd Font icons** with language-brand colors for ~60 file types (emoji fallback available via config); file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste)
 - **Image Viewer** — Opening PNG, JPG, GIF, BMP, WebP, or ICO files from FileTree renders them inline in the Viewer pane using terminal graphics (Kitty on Ghostty/Kitty, Sixel on iTerm2, halfblock fallback everywhere else)
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
@@ -57,6 +57,7 @@
 - **Rust** (latest stable)
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
+- **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons with language-brand colors. Set `nerd_fonts = false` in `~/.azureal/config` to use emoji fallback instead
 - **Whisper model** (optional, for speech input): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
 
 ## Installation

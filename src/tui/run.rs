@@ -62,6 +62,11 @@ pub async fn run() -> Result<()> {
     app.load_preset_prompts();
     app.load_session_output();
     let config = Config::load().unwrap_or_default();
+    // Apply config → App fields
+    app.nerd_fonts = config.nerd_fonts;
+    if !config.nerd_fonts {
+        app.set_status("Tip: Enable Nerd Font icons in ~/.azureal/config → nerd_fonts = true");
+    }
 
     // Hold splash for remainder of 3s minimum (loading time counts toward it)
     let elapsed = splash_start.elapsed();

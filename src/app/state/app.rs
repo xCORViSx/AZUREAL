@@ -350,6 +350,8 @@ pub struct App {
     pub stt_recording: bool,
     /// Whether STT is currently transcribing recorded audio (between stop and result)
     pub stt_transcribing: bool,
+    /// Use Nerd Font icons in file tree (set from Config on startup)
+    pub nerd_fonts: bool,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
     /// God File System panel — scans project for oversized source files (>1k LOC)
@@ -586,6 +588,7 @@ impl App {
             stt_handle: None,
             stt_recording: false,
             stt_transcribing: false,
+            nerd_fonts: true,
             show_file_tree: false,
             god_file_panel: None,
             git_actions_panel: None,

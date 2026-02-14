@@ -12,6 +12,7 @@
 //! - `util`: Small utility functions
 
 mod draw_dialogs;
+mod file_icons;
 mod draw_file_tree;
 mod draw_git_actions;
 mod draw_god_files;

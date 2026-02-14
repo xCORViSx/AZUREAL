@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
 pub struct Config {
     /// Anthropic API key (optional, Claude Code may have its own)
     pub anthropic_api_key: Option<String>,
@@ -16,6 +15,24 @@ pub struct Config {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
+    /// Use Nerd Font icons in file tree (default: true). Set to false for emoji fallback.
+    #[serde(default = "default_true")]
+    pub nerd_fonts: bool,
+}
+
+/// Helper for serde default = true
+fn default_true() -> bool { true }
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            anthropic_api_key: None,
+            claude_executable: None,
+            default_permission_mode: PermissionMode::default(),
+            verbose: false,
+            nerd_fonts: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
