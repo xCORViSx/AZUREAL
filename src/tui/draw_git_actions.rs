@@ -199,6 +199,19 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, modal);
 
+    // ── Top-right toggle: "h: hide .git ✓" / "h: hide .git ✗" ──
+    let toggle_label = if app.hide_dot_git { " h:hide .git \u{2713} " } else { " h:hide .git \u{2717} " };
+    let toggle_color = if app.hide_dot_git { Color::Green } else { Color::Red };
+    let toggle_x = modal.x + modal.width.saturating_sub(toggle_label.len() as u16 + 1);
+    let toggle_y = modal.y;
+    if toggle_x > modal.x && toggle_y < area.height {
+        let toggle_rect = Rect::new(toggle_x, toggle_y, toggle_label.len() as u16, 1);
+        f.render_widget(Paragraph::new(Line::from(Span::styled(
+            toggle_label,
+            Style::default().fg(toggle_color),
+        ))), toggle_rect);
+    }
+
     // ── Footer hints rendered on top of the bottom border ──
     let footer = " Tab:switch  Enter:exec/view  R:refresh  Esc ";
     let footer_y = modal.y + modal.height.saturating_sub(1);

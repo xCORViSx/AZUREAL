@@ -41,7 +41,7 @@ impl App {
         let Some(session) = self.current_session() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
 
-        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded);
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, self.hide_dot_git);
         self.file_tree_selected = self.file_tree_entries
             .iter()
             .position(|e| e.path == selected_path)
@@ -311,7 +311,7 @@ impl App {
         let Some(session) = self.current_session() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
         let select_target = select_path.to_path_buf();
-        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded);
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, self.hide_dot_git);
         self.file_tree_selected = self.file_tree_entries
             .iter().position(|e| e.path == select_target)
             .or_else(|| if self.file_tree_entries.is_empty() { None } else { Some(0) });

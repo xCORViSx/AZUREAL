@@ -184,6 +184,12 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
             panel.result_message = Some(("Refreshed".into(), false));
         }
 
+        // ── h: toggle .git directory visibility in file tree ──
+        (KeyModifiers::NONE, KeyCode::Char('h')) => {
+            app.hide_dot_git = !app.hide_dot_git;
+            app.refresh_file_tree();
+        }
+
         // Everything else consumed (modal eats all input)
         _ => {}
     }

@@ -352,6 +352,8 @@ pub struct App {
     pub stt_transcribing: bool,
     /// Use Nerd Font icons in file tree (set from Config on startup)
     pub nerd_fonts: bool,
+    /// Hide .git directory from file tree (toggled via Git panel 'h' key)
+    pub hide_dot_git: bool,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
     /// God File System panel — scans project for oversized source files (>1k LOC)
@@ -589,6 +591,7 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             nerd_fonts: true,
+            hide_dot_git: true,
             show_file_tree: false,
             god_file_panel: None,
             git_actions_panel: None,
@@ -621,6 +624,18 @@ impl App {
     /// Mark file tree cache as dirty
     pub fn invalidate_file_tree(&mut self) {
         self.file_tree_dirty = true;
+    }
+
+    /// Rebuild file tree entries from disk (preserves expanded set, resets selection)
+    pub fn refresh_file_tree(&mut self) {
+        let Some(session) = self.current_session() else { return };
+        let Some(ref worktree_path) = session.worktree_path else { return };
+        let wt = worktree_path.clone();
+        self.file_tree_entries = super::helpers::build_file_tree(&wt, &self.file_tree_expanded, self.hide_dot_git);
+        if self.file_tree_selected.map_or(true, |i| i >= self.file_tree_entries.len()) {
+            self.file_tree_selected = if self.file_tree_entries.is_empty() { None } else { Some(0) };
+        }
+        self.invalidate_file_tree();
     }
 
     /// Recompute the cached token usage badge from current session_tokens + model_context_window.
