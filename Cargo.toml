@@ -47,6 +47,10 @@ unicode-width = "0.2"
 # File watching (kqueue on macOS, inotify on Linux, ReadDirectoryChangesW on Windows)
 notify = "8.2"
 
+# Image rendering in viewer (terminal graphics: Kitty/Sixel/iTerm2/halfblock)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico"] }
+ratatui-image = { version = "10.0", default-features = false, features = ["crossterm", "image-defaults"] }
+
 # Clipboard
 arboard = "3"
 

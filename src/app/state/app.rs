@@ -143,6 +143,10 @@ pub struct App {
     pub viewer_lines_width: usize,
     /// Flag indicating viewer cache needs refresh
     pub viewer_lines_dirty: bool,
+    /// ratatui-image protocol state for the currently loaded image (adapts to terminal size)
+    pub viewer_image_state: Option<ratatui_image::protocol::StatefulProtocol>,
+    /// Terminal graphics protocol picker — detects capabilities once, reused for all images
+    pub image_picker: Option<ratatui_image::picker::Picker>,
     /// Cached rendered lines for convo pane (expensive to compute)
     pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Width used for cached render (invalidate on resize)
@@ -486,6 +490,8 @@ impl App {
             viewer_original_line_count: 0,
             viewer_lines_width: 0,
             viewer_lines_dirty: true,
+            viewer_image_state: None,
+            image_picker: None,
             rendered_lines_cache: Vec::new(),
             rendered_lines_width: 0,
             rendered_lines_dirty: true,

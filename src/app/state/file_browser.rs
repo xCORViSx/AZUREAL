@@ -121,6 +121,14 @@ impl App {
         }
     }
 
+    /// Check if a file extension indicates an image format
+    fn is_image_extension(path: &std::path::Path) -> bool {
+        matches!(
+            path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(),
+            Some("png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "ico")
+        )
+    }
+
     /// Load selected file into viewer
     pub fn load_file_into_viewer(&mut self) {
         let Some(idx) = self.file_tree_selected else { return };
@@ -134,6 +142,52 @@ impl App {
             self.exit_viewer_edit_mode();
         }
 
+        // Image files get decoded and rendered via terminal graphics protocol
+        if Self::is_image_extension(&path) {
+            match std::fs::read(&path) {
+                Ok(bytes) => match image::load_from_memory(&bytes) {
+                    Ok(dyn_img) => {
+                        // Lazy-init the picker (detects terminal graphics capabilities once)
+                        if self.image_picker.is_none() {
+                            self.image_picker = ratatui_image::picker::Picker::from_query_stdio().ok();
+                        }
+                        if let Some(ref picker) = self.image_picker {
+                            self.viewer_image_state = Some(picker.new_resize_protocol(dyn_img));
+                            self.viewer_content = None;
+                            self.viewer_path = Some(path);
+                            self.viewer_mode = ViewerMode::Image;
+                            self.viewer_scroll = 0;
+                            self.viewer_lines_cache.clear();
+                            self.viewer_lines_dirty = false;
+                            return;
+                        }
+                        // Picker failed — fall through to show error
+                        self.viewer_content = Some("Error: terminal does not support image rendering".into());
+                        self.viewer_path = Some(path);
+                        self.viewer_mode = ViewerMode::File;
+                        self.viewer_scroll = 0;
+                        self.viewer_lines_dirty = true;
+                    }
+                    Err(e) => {
+                        self.viewer_content = Some(format!("Error decoding image: {}", e));
+                        self.viewer_path = Some(path);
+                        self.viewer_mode = ViewerMode::File;
+                        self.viewer_scroll = 0;
+                        self.viewer_lines_dirty = true;
+                    }
+                },
+                Err(e) => {
+                    self.viewer_content = Some(format!("Error reading file: {}", e));
+                    self.viewer_path = Some(path);
+                    self.viewer_mode = ViewerMode::File;
+                    self.viewer_scroll = 0;
+                    self.viewer_lines_dirty = true;
+                }
+            }
+            return;
+        }
+
+        // Text files — read as string and syntax-highlight
         match std::fs::read_to_string(&path) {
             Ok(content) => {
                 self.viewer_content = Some(content);
@@ -141,6 +195,7 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
+                self.viewer_image_state = None;
             }
             Err(e) => {
                 self.viewer_content = Some(format!("Error reading file: {}", e));
@@ -148,6 +203,7 @@ impl App {
                 self.viewer_mode = ViewerMode::File;
                 self.viewer_scroll = 0;
                 self.viewer_lines_dirty = true;
+                self.viewer_image_state = None;
             }
         }
     }

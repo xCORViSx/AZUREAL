@@ -7,9 +7,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget},
     Frame,
 };
+use ratatui_image::StatefulImage;
 use textwrap::{wrap, Options};
 
 use crate::app::{App, Focus, ViewerMode};
@@ -36,6 +37,37 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
             draw_discard_dialog(f, area, app.viewer_edit_diff.is_some());
         }
         return;
+    }
+
+    // Image mode — render via terminal graphics protocol (Kitty/Sixel/halfblock)
+    if app.viewer_mode == ViewerMode::Image {
+        if let Some(ref mut proto) = app.viewer_image_state {
+            let path_str = app.viewer_path.as_ref()
+                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+                .unwrap_or_else(|| "Image".to_string());
+            let border_color = if is_focused { AZURE } else { Color::White };
+            let border_mod = if is_focused { Modifier::BOLD } else { Modifier::empty() };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+                .title(Span::styled(format!(" {} ", path_str), Style::default().fg(border_color).add_modifier(border_mod)))
+                .border_style(Style::default().fg(border_color).add_modifier(border_mod));
+            // Compute inner area for the image (inside border, below tab bar)
+            let inner = block.inner(area);
+            f.render_widget(block, area);
+            let img_area = Rect {
+                y: inner.y + tb_rows as u16,
+                height: inner.height.saturating_sub(tb_rows as u16),
+                ..inner
+            };
+            if img_area.width > 0 && img_area.height > 0 {
+                StatefulImage::new().render(img_area, f.buffer_mut(), proto);
+            }
+            // Tab bar still draws on top
+            if !app.viewer_tabs.is_empty() { draw_tab_bar(f, app, area); }
+            if app.viewer_tab_dialog { draw_tab_dialog(f, app, area); }
+            return;
+        }
     }
 
     let (title, lines) = match app.viewer_mode {
@@ -313,6 +345,8 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 (" Diff ".to_string(), vec![Line::from("Press 'd' on a worktree to view diff")])
             }
         }
+        // Image mode is handled by the early return above — this arm is unreachable
+        ViewerMode::Image => (" Image ".to_string(), vec![]),
     };
 
     // Use green border/title when in Edit diff view, cyan when focused normally, white otherwise

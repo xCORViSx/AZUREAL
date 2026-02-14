@@ -92,6 +92,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers
+- When image selected in FileTree → renders image via terminal graphics protocol (Kitty/Sixel/halfblock fallback) using `ratatui-image` crate. Image auto-fits viewport; no scroll/selection/edit mode. `Picker::from_query_stdio()` lazy-inits once to detect terminal capabilities. `StatefulProtocol` adapts to render area each frame.
 - When diff selected in Convo → shows diff detail (future)
 
 **Viewer Tabs:** Up to 12 tabs across 2 rows (6 per row, fixed-width). `t` saves current file to a tab, `⌥t` opens tab dialog, `[`/`]` navigate, `x` closes. Tab bar renders inside the border at rows 1-2, overlaying empty padding lines so content shifts down. `tab_bar_rows()` returns 0/1/2 based on count; `viewport_height` reduced by tab rows for correct scroll clamping. 12-tab max enforced in `viewer_tab_current()` with status message on overflow.

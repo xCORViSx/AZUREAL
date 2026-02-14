@@ -12,6 +12,7 @@ pub enum ViewerMode {
     Empty, // Nothing selected
     File, // Showing file from FileTree
     Diff, // Showing diff from Output
+    Image, // Showing image from FileTree (rendered via terminal graphics protocol)
 }
 
 /// Entry in the file tree (file or directory)
