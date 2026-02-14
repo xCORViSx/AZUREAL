@@ -11,6 +11,8 @@ All notable changes to Azureal will be documented in this file.
 
 ### Changed
 - `G` (Git Actions) is now a **global keybinding** — opens from any pane, not just Worktrees (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard)
+- `G` now **toggles** Git Actions panel (close if open, open if closed) instead of only opening
+- Git Actions panel secondary text (headers, key hints, separators, footer, stat slashes) changed from gray to **Git brown** (`#A0522D` sienna, `GIT_BROWN` constant) for a warmer Git-themed color scheme
 - Git Actions panel diff counts (`+N/-N`) now **color-coded**: green for additions, red for deletions (orange override when row is selected); header totals also green/red
 - Git Actions panel changed files now shows **working tree changes** (staged + unstaged vs HEAD) instead of committed divergence from main branch — shows what you're actively working on, including untracked files (`?` in magenta)
 - Git Actions panel border changed from Rounded to QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) for a distinct chunky look

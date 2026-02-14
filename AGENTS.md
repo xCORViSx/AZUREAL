@@ -915,7 +915,7 @@ Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize), `
 
 ### Git Actions Panel
 
-Centered modal overlay (`Shift+G`, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type for a distinct chunky look. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
+Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
 
 **Panel Layout:**
 - Title bar: `" Git Actions: <branch_name> "` centered in orange QuadrantOutside border
