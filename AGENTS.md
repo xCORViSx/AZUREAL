@@ -20,16 +20,21 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 
 ### Multi-Worktree Claude Management
 
-The core feature enabling multiple concurrent Claude Code CLI instances. Each worktree has its own:
-- Git worktree for isolated file changes
-- Claude session ID captured from init event for `--resume`
-- Output stream parsed from `stream-json` format for clean display
+The core feature enabling multiple concurrent Claude Code CLI instances. Each worktree supports **multiple simultaneous Claude processes** via PID-keyed session slots.
 
 **Architecture:**
 - Each prompt spawns a new process: `claude -p "prompt" --verbose --output-format stream-json`
+- `spawn()` returns `(Receiver<ClaudeEvent>, u32)` — the event channel and the OS PID
 - First prompt: captures `session_id` from init event in stream-json output
 - Follow-up prompts: add `--resume <session_id>` for conversation context
 - Process exits after each response; new process for next prompt
+
+**PID-Keyed Session Slots:**
+All session state maps (`claude_receivers`, `running_sessions`, `claude_exit_codes`, `claude_session_ids`) are keyed by **PID string** (not branch name). This enables multiple concurrent Claude processes per worktree. Two additional maps track the relationship:
+- `branch_slots: HashMap<String, Vec<String>>` — branch → list of active PID strings (spawn order)
+- `active_slot: HashMap<String, String>` — branch → which PID's output is displayed in the convo pane
+
+Only the **active slot's** output feeds `display_events`; other slots' output is silently drained from their receivers. When the active slot exits, the app auto-switches to the last remaining slot on that branch (or clears if none remain). New spawns always become the active slot. `cancel_current_claude()` kills only the active slot's process.
 
 **Critical: NO `--fork-session`**
 Earlier we used `--fork-session` with `--resume`, but this creates a NEW session each time (losing conversation context and causing tool_use ID collisions). Removed in favor of simple `--resume` only.
@@ -42,7 +47,7 @@ Claude Code's interactive mode uses a full TUI that cannot be driven by simple s
 
 Current approach (`-p --resume`) works reliably with ~100-200ms process spawn overhead per prompt.
 
-Implementation: `src/claude.rs` spawns processes, `src/app/state.rs` tracks `claude_session_ids` HashMap for --resume.
+Implementation: `src/claude.rs` spawns processes (returns `(Receiver, PID)`), `src/app/state/claude.rs` manages PID-keyed slots, `src/app/state/app.rs` tracks `branch_slots`/`active_slot` maps.
 
 ### Git Worktree Isolation
 
@@ -901,12 +906,12 @@ Full-screen centered modal overlay (65% × 75%, min 50×12). Shows an explanatio
 - `Enter` / `m` — modularize checked files
 - `Esc` — close panel
 
-**Modularization Queue:**
-Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_name`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible (both initial spawn and queue advancement).
+**Parallel Modularization:**
+All checked files are spawned **simultaneously** as concurrent Claude processes on the main worktree — each gets its own PID slot via the multi-session architecture. The sequential queue (`god_file_queue`) was removed. Each session is named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_names`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible. The newest spawn becomes the active slot (its output is displayed).
 
 **Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
 
-Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, queue advance), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
+Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
 
 ### Git Actions Panel
 
@@ -1085,7 +1090,7 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
-│   │   │   ├── god_files.rs # God File System: scan, modularize, queue
+│   │   │   ├── god_files.rs # God File System: scan, parallel modularize
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management

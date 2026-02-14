@@ -19,7 +19,7 @@
 
 ## Features
 
-- **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree
+- **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots
 - **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
 - **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste)
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
@@ -41,7 +41,7 @@
 - **Convo Search** — Press `/` in Convo pane to find text in current session with yellow match highlighting and `[N/M]` counter; `n`/`N` to cycle matches. In Session list: `/` filters by name, `//` searches across all session file contents
 - **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
 - **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
-- **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via sequential Claude sessions on the main worktree
+- **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via simultaneous Claude sessions on the main worktree
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
