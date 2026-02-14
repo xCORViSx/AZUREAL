@@ -34,6 +34,7 @@ All notable changes to Azureal will be documented in this file.
 - **Lowercase `t` no longer triggers terminal toggle** — `KeyCombo::matches()` was matching `(NONE, 't')` against `shift('T')` because `'t'.to_ascii_uppercase() == 'T'`. Now rejects plain lowercase: only `(NONE, 'T')` or `(SHIFT, *)` match uppercase bindings.
 - **Preset prompt dialogs stuck in Esc loop** — When both the preset picker and add/edit dialog were open simultaneously, pressing Esc on the picker revealed the dialog underneath, and pressing Esc on the dialog reopened the picker (infinite cycle). Fixed by: (1) removing the "reopen picker on Esc" behavior from the dialog, (2) checking dialog input before picker input (dialog is on top), (3) drawing dialog on top of picker instead of exclusively.
 - **Bottom border title styling** — Overflow hints on the bottom border of Input/Terminal panes were hardcoded dim gray and lacked parentheses. Now matches the top title: same border color, bold when focused, wrapped in parentheses.
+- **Input text forced white** — Prompt input text now renders as explicit white (`Color::White`) regardless of terminal color scheme. Applied to both `draw_input.rs` (ratatui `normal_style`) and `fast_draw_input()` (crossterm `SetForegroundColor`), ensuring consistent visibility on light and dark terminal backgrounds.
 
 ### Refactored
 - Modularized `draw_output.rs` (1002→443 lines) into file-based module root with 4 submodules:

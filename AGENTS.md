@@ -541,6 +541,8 @@ Multi-line input is supported via Shift+Enter. The Kitty keyboard protocol is en
 
 **Pre-wrapped input rendering:** The input Paragraph does NOT use ratatui's `.wrap()`. Instead, `build_wrapped_content()` pre-wraps text at word boundaries (one `Line` per visual row) and computes cursor position in the same pass. Word-wrap break points are computed by `word_wrap_break_points()` which prefers breaking at the last space before the width limit, falling back to hard char-boundary break when a single word exceeds the width. This guarantees cursor math and text layout always agree. All 6 locations that interact with input wrapping share `word_wrap_break_points()` from `draw_input.rs`: `build_wrapped_content()` (rendering + cursor), `fast_draw_input()` (fast-path rendering), `compute_cursor_row_fast()` (scroll offset), `click_to_input_cursor()` (mouse click), `screen_to_input_char()` (mouse drag), and `row_col_to_char_index()` (shared visual→char mapping). The `display_width()` helper computes unicode display width of char slices for accurate cursor column positioning.
 
+**Theme-independent text color:** Input text is forced to `Color::White` regardless of terminal color scheme — applied in both `build_wrapped_content()` (`normal_style`) and `fast_draw_input()` (`SetForegroundColor(White)`). This ensures consistent visibility on light and dark terminal backgrounds.
+
 Implementation: `prompt_mode: bool` in `App` struct, border color logic in `draw_input()` in `src/tui/draw_input.rs`.
 
 ### Terminal Pane

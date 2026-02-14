@@ -66,10 +66,13 @@ pub fn fast_draw_input(app: &App) {
             .sum();
         let pad = inner_width.saturating_sub(text_width);
         let padded = format!("{}{}", text, " ".repeat(pad));
+        // Force white text so input is theme-independent (matches draw_input.rs normal_style)
         let _ = execute!(
             stdout,
             cursor::MoveTo(area.x + 1, area.y + 1 + row_idx as u16),
-            style::Print(&padded)
+            style::SetForegroundColor(style::Color::White),
+            style::Print(&padded),
+            style::ResetColor
         );
     }
 

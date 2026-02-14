@@ -149,7 +149,7 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
         if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) }
     });
 
-    let normal_style = Style::default();
+    let normal_style = Style::default().fg(Color::White);
     let selection_style = Style::default().bg(Color::Blue).fg(Color::White);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
