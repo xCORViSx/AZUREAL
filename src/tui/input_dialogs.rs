@@ -512,7 +512,7 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
 }
 
 /// Spawn a Claude session on the main branch to generate a run command from a prompt.
-/// Claude reads/writes `.azureal/run_commands.json` and adds the new entry.
+/// Claude reads/writes `.azureal/runcmds` and adds the new entry.
 fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_name: &str, user_prompt: &str) {
     let Some(project) = app.project.as_ref() else {
         app.set_status("No project loaded");
@@ -529,12 +529,12 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
         return;
     };
 
-    // Build prompt with context about run_commands.json format and location
+    // Build prompt with context about runcmds format and location
     let prompt = format!(
         "I need you to create a run command for my project.\n\n\
          Command name: {}\n\
          Description: {}\n\n\
-         Run commands are stored in `.azureal/run_commands.json` in the project root.\n\
+         Run commands are stored in `.azureal/runcmds` in the project root.\n\
          Format: JSON array of objects with \"name\" and \"command\" fields, e.g.:\n\
          ```json\n\
          [\n\

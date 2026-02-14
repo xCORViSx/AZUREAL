@@ -73,7 +73,7 @@ impl App {
             self.session_file_dirty = true;
         }
 
-        // If this was a [NewRunCmd] session, auto-reload run_commands.json
+        // If this was a [NewRunCmd] session, auto-reload runcmds
         if is_current && self.title_session_name.starts_with("[NewRunCmd]") {
             self.load_run_commands();
         }

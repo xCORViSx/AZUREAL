@@ -13,8 +13,8 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 
 **Persistent State:**
-- `~/.azureal/projects.txt` stores registered project paths (auto-created on first launch in a git repo)
-- `.azureal/sessions.toml` stores custom session name → UUID mappings (only created when user provides custom names)
+- `~/.azureal/projects` stores registered project paths (auto-created on first launch in a git repo)
+- `.azureal/sessions` stores custom session name → UUID mappings (only created when user provides custom names)
 
 # FEATURES
 
@@ -76,7 +76,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 **Panes:**
 - **Worktrees** (40 cols): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `w` or `Esc` to return to worktree list.
 - **Viewer** (remaining width): File content viewer or diff detail (dual-purpose)
-- **Convo** (80 cols, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions.toml` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
+- **Convo** (80 cols, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
@@ -86,7 +86,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 
 **Overlays:**
 - **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Border title shows `Filetree (worktree_name)` with optional `[pos/total]` scroll indicator when content overflows. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
-- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows a **status dot** (green `●` if a Claude process is actively running that session, dim gray `○` if idle — mirrors the worktree sidebar dots), session name (from `.azureal/sessions.toml`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
+- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows a **status dot** (green `●` if a Claude process is actively running that session, dim gray `○` if idle — mirrors the worktree sidebar dots), session name (from `.azureal/sessions`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
@@ -106,7 +106,7 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
-- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/presetprompts`, shared across all projects) or project-local (`.azureal/presetprompts`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
@@ -536,7 +536,7 @@ Key mappings:
 
 Multi-line input is supported via Shift+Enter. The Kitty keyboard protocol is enabled on startup via `PushKeyboardEnhancementFlags` (DISAMBIGUATE + REPORT_EVENT_TYPES). We intentionally omit `REPORT_ALL_KEYS_AS_ESCAPE_CODES` because it causes Shift+letter to arrive as `(SHIFT, Char('1'))` instead of `(NONE, Char('!'))`, breaking secondary character input. With DISAMBIGUATE alone, Shift+Enter sends `CSI 13;2u` → `(SHIFT, Enter)`, which is sufficient. An `(ALT, Enter)` arm is kept as a safety net for Kitty-macOS edge cases. Release events are dropped; both Press and Repeat are processed (Repeat fires when a key is held down, enabling fast cursor movement with held arrow keys). The input field dynamically grows in height (up to 3/4 of terminal height) with proper cursor positioning for newlines and character-level wrapping. When content exceeds the visible area, the view scrolls to keep the cursor visible.
 
-**CRITICAL: Uppercase letter keybinding matching.** Without `REPORT_ALL_KEYS`, shifted letters arrive as `(NONE, Char('D'))` — NOT `(SHIFT, Char('D'))`. NEVER match `(KeyModifiers::SHIFT, KeyCode::Char('X'))` for uppercase letter bindings; use `(KeyModifiers::NONE, KeyCode::Char('X'))` instead. The SHIFT modifier is only meaningful for non-letter keys (Enter, Tab, arrows).
+**CRITICAL: Uppercase letter keybinding matching.** Without `REPORT_ALL_KEYS`, shifted letters arrive inconsistently: `(NONE, Char('G'))`, `(SHIFT, Char('G'))`, or `(SHIFT, Char('g'))` depending on terminal. `KeyCombo::matches()` handles all three by accepting: `(SHIFT, any_case)` → uppercase match, or `(NONE, uppercase_only)` → match. Plain lowercase `(NONE, Char('g'))` is explicitly rejected to avoid `g` triggering a `Shift+G` binding. Always use `KeyCombo::shift(KeyCode::Char('T'))` for uppercase bindings — the match logic is centralized.
 
 **Pre-wrapped input rendering:** The input Paragraph does NOT use ratatui's `.wrap()`. Instead, `build_wrapped_content()` pre-wraps text at word boundaries (one `Line` per visual row) and computes cursor position in the same pass. Word-wrap break points are computed by `word_wrap_break_points()` which prefers breaking at the last space before the width limit, falling back to hard char-boundary break when a single word exceeds the width. This guarantees cursor math and text layout always agree. All 6 locations that interact with input wrapping share `word_wrap_break_points()` from `draw_input.rs`: `build_wrapped_content()` (rendering + cursor), `fast_draw_input()` (fast-path rendering), `compute_cursor_row_fast()` (scroll offset), `click_to_input_cursor()` (mouse click), `screen_to_input_char()` (mouse drag), and `row_col_to_char_index()` (shared visual→char mapping). The `display_width()` helper computes unicode display width of char slices for accurate cursor column positioning.
 
@@ -578,8 +578,7 @@ Implementation:
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
-- `prompt_type_title()` for Input pane type mode, `prompt_command_title()` for command mode (shows "COMMAND" + global keys: prompt, terminal, help, Tab/⇧Tab focus, cancel, quit, restart, dump debug output)
-- `terminal_command_title()`, `terminal_type_title()`, `terminal_scroll_title()` for Terminal pane
+- Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border in dim gray via ratatui's `.title_bottom()`. No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
 1. Modal overlays (help, context menu, wizard, projects, run command, session list) intercept ALL input first
@@ -668,7 +667,7 @@ Note: For auto-compaction, there's no visible "starting" event - we only see the
   - Detection: Multiple user messages sharing the same `parentUuid` - keep only the most recent by timestamp
 
 **Debug Output:**
-`⌃D` dumps diagnostic output to `.azureal/debug-output.txt`. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
+`⌃D` dumps diagnostic output to `.azureal/debug_output`. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
 
 **Markdown Rendering:**
 Claude responses are parsed for markdown syntax and rendered with proper styling:
@@ -962,7 +961,7 @@ Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
 
 ### Run Commands
 
-User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/run_commands.json`, shared across all projects) or **project-local** (`.azureal/run_commands.json`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
+User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/runcmds`, shared across all projects) or **project-local** (`.azureal/runcmds`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
 
 **Keybindings (from Worktrees pane):**
 - `r` — Open picker (if multiple saved commands) or execute directly (if only 1)
@@ -983,18 +982,18 @@ User-defined shell commands that can be saved and executed from the Worktrees pa
 - `Enter` — In Name field: advance. In Command mode: save. In Prompt mode: generate (spawns Claude session).
 - `Esc` — Cancel
 
-**Command vs Prompt mode:** The second field has a right-aligned title showing the current mode and Tab hint. In **Command** mode, user types a raw shell command directly. In **Prompt** mode, user types a natural-language description and Enter spawns a new Claude session on the main branch that reads the description, determines the right shell command, and writes it to `.azureal/run_commands.json`. The session is named `[NewRunCmd] <name>` in `.azureal/sessions.toml`. Run commands auto-reload when the `[NewRunCmd]` session exits (via `handle_claude_exited()` check on `title_session_name`).
+**Command vs Prompt mode:** The second field has a right-aligned title showing the current mode and Tab hint. In **Command** mode, user types a raw shell command directly. In **Prompt** mode, user types a natural-language description and Enter spawns a new Claude session on the main branch that reads the description, determines the right shell command, and writes it to `.azureal/runcmds`. The session is named `[NewRunCmd] <name>` in `.azureal/sessions`. Run commands auto-reload when the `[NewRunCmd]` session exits (via `handle_claude_exited()` check on `title_session_name`).
 
-**Storage:** Global commands in `~/.azureal/run_commands.json`, project-local in `.azureal/run_commands.json` — JSON arrays of `{name, command}` objects, merged on load (globals first, then locals). Loaded on startup.
+**Storage:** Global commands in `~/.azureal/runcmds`, project-local in `.azureal/runcmds` — JSON arrays of `{name, command}` objects, merged on load (globals first, then locals). Loaded on startup.
 
 Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker, CommandFieldMode), state methods in `src/app/state/ui.rs`, input handling + `spawn_run_command_prompt()` in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`, auto-reload in `src/app/state/claude.rs`
 
 ### Projects Panel
 
-Persistent project management across azureal sessions. Projects are stored in `~/.azureal/projects.txt` (one path per line, optional `|display_name` suffix). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
+Persistent project management across azureal sessions. Projects are stored in `~/.azureal/projects` (one path per line, optional `|display_name` suffix). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
 
 **Behavior:**
-- When launched inside a git repo, auto-registers the repo in `projects.txt` and loads normally. Display name derived from `git remote get-url origin` (repo name from SSH/HTTPS URL, `.git` stripped); folder name fallback if no remote. `Project::from_path()` reads display name via `project_display_name()` so title bar, sidebar, and terminal title all use it.
+- When launched inside a git repo, auto-registers the repo in `projects` and loads normally. Display name derived from `git remote get-url origin` (repo name from SSH/HTTPS URL, `.git` stripped); folder name fallback if no remote. `Project::from_path()` reads display name via `project_display_name()` so title bar, sidebar, and terminal title all use it.
 - When launched outside a git repo, shows the Projects panel full-screen with "Project not initialized. Press i to initialize or choose another project." message; clears on first keypress
 - The sidebar no longer shows a project header row — project name appears in the Worktrees pane border title instead
 
@@ -1010,7 +1009,7 @@ Persistent project management across azureal sessions. Projects are stored in `~
 **Project Switching:**
 When switching projects, azureal kills all running Claude processes, clears all session/render state (sessions, display events, caches, file watcher), sets the new project via `Project::from_path()`, and reloads sessions, output, and run commands.
 
-**Auto-pruning:** `load_projects()` validates every entry on load — directories that don't exist or aren't git repos are silently removed from `projects.txt`. This prevents ghost entries after a repo's `.git` directory is deleted.
+**Auto-pruning:** `load_projects()` validates every entry on load — directories that don't exist or aren't git repos are silently removed from `projects`. This prevents ghost entries after a repo's `.git` directory is deleted.
 
 Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
 
@@ -1025,12 +1024,12 @@ Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
    - Name: becomes `azureal/{name}` branch
    - Prompt: initial message to Claude
 4. **Session** - create new Claude session in existing worktree
-   - Name (optional): custom name stored in `.azureal/sessions.toml`
+   - Name (optional): custom name stored in `.azureal/sessions`
    - Prompt: initial message to Claude
    - Worktree: select target from list
 
 **Session Name Storage:**
-Custom session names map to Claude-generated UUIDs in `.azureal/sessions.toml`:
+Custom session names map to Claude-generated UUIDs in `.azureal/sessions`:
 ```toml
 [sessions]
 "9d409dfb-422b-4f4b-9f32-755277e3e527" = "hook-visibility-fix"
@@ -1046,7 +1045,7 @@ macOS notification sent when any Claude instance finishes its response. Fires fo
 **Notification format:**
 - Title: `worktree:session_name`
 - Body: "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
-- Session name uses custom name from `sessions.toml` if set, otherwise first 8 chars of UUID
+- Session name uses custom name from `sessions` if set, otherwise first 8 chars of UUID
 - Branded Azureal icon (not Finder/Terminal)
 
 **Implementation details:**
@@ -1345,10 +1344,10 @@ azureal
 
 ### Prompt Mode (Input Focused)
 
-Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
+Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in dim gray via `.title_bottom()`.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | t:TERMINAL | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:debug)`
 
 ### Terminal Mode
 

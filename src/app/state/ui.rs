@@ -387,15 +387,15 @@ impl App {
         // Split by scope
         let (globals, locals): (Vec<_>, Vec<_>) = self.run_commands.iter().partition(|c| c.global);
 
-        // Write global run commands to ~/.azureal/run_commands.json
+        // Write global run commands to ~/.azureal/runcmds
         let _ = ensure_config_dir();
-        let global_path = config_dir().join("run_commands.json");
+        let global_path = config_dir().join("runcmds");
         let global_json: Vec<_> = globals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
         std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
 
-        // Write project-local run commands to .azureal/run_commands.json
+        // Write project-local run commands to .azureal/runcmds
         if let Some(dir) = ensure_project_data_dir()? {
-            let project_path = dir.join("run_commands.json");
+            let project_path = dir.join("runcmds");
             let project_json: Vec<_> = locals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
             std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
         }
@@ -406,8 +406,8 @@ impl App {
     pub fn load_run_commands(&mut self) {
         self.run_commands.clear();
 
-        // Load global run commands from ~/.azureal/run_commands.json
-        let global_path = config_dir().join("run_commands.json");
+        // Load global run commands from ~/.azureal/runcmds
+        let global_path = config_dir().join("runcmds");
         if let Ok(content) = std::fs::read_to_string(&global_path) {
             if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
                 self.run_commands.extend(arr.iter().filter_map(|v| {
@@ -418,9 +418,9 @@ impl App {
             }
         }
 
-        // Load project-local run commands from .azureal/run_commands.json
+        // Load project-local run commands from .azureal/runcmds
         if let Some(dir) = project_data_dir() {
-            let project_path = dir.join("run_commands.json");
+            let project_path = dir.join("runcmds");
             if let Ok(content) = std::fs::read_to_string(&project_path) {
                 if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
                     self.run_commands.extend(arr.iter().filter_map(|v| {
@@ -462,15 +462,15 @@ impl App {
         let (globals, locals): (Vec<_>, Vec<_>) = self.preset_prompts.iter()
             .partition(|p| p.global);
 
-        // Write global presets to ~/.azureal/preset_prompts.json
+        // Write global presets to ~/.azureal/presetprompts
         let _ = ensure_config_dir();
-        let global_path = config_dir().join("preset_prompts.json");
+        let global_path = config_dir().join("presetprompts");
         let global_json: Vec<_> = globals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
         std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
 
-        // Write project presets to .azureal/preset_prompts.json
+        // Write project presets to .azureal/presetprompts
         if let Some(dir) = ensure_project_data_dir()? {
-            let project_path = dir.join("preset_prompts.json");
+            let project_path = dir.join("presetprompts");
             let project_json: Vec<_> = locals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
             std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
         }
@@ -481,8 +481,8 @@ impl App {
     pub fn load_preset_prompts(&mut self) {
         self.preset_prompts.clear();
 
-        // Load global presets from ~/.azureal/preset_prompts.json
-        let global_path = config_dir().join("preset_prompts.json");
+        // Load global presets from ~/.azureal/presetprompts
+        let global_path = config_dir().join("presetprompts");
         if let Ok(content) = std::fs::read_to_string(&global_path) {
             if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
                 self.preset_prompts.extend(arr.iter().filter_map(|v| {
@@ -493,9 +493,9 @@ impl App {
             }
         }
 
-        // Load project-local presets from .azureal/preset_prompts.json
+        // Load project-local presets from .azureal/presetprompts
         if let Some(dir) = project_data_dir() {
-            let project_path = dir.join("preset_prompts.json");
+            let project_path = dir.join("presetprompts");
             if let Ok(content) = std::fs::read_to_string(&project_path) {
                 if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
                     self.preset_prompts.extend(arr.iter().filter_map(|v| {

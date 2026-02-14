@@ -9,8 +9,9 @@ All notable changes to Azureal will be documented in this file.
 - **Parallel GFM spawning** — God File Modularization now spawns ALL checked files simultaneously as concurrent Claude sessions, replacing the sequential queue (`god_file_queue` removed). Each file gets its own PID slot; the newest spawn becomes the active slot.
 - **Session list status dots** — Each session in the session list overlay (`s`) now shows a status dot: green `●` when a Claude process is actively running that session, dim gray `○` when idle. Mirrors the worktree sidebar dots but per-session instead of per-worktree.
 - **Preset prompt quick-select from prompt mode** — `⌥1`-`⌥9` and `⌥0` directly load preset prompts without opening the picker first. Same number mapping as the picker (1-9 for presets 0-8, 0 for preset 9). Picker footer shows hint about this shortcut.
-- **Run command dual-scope persistence** — Run commands can now be **global** (`~/.azureal/run_commands.json`, shared across all projects) or **project-local** (`.azureal/run_commands.json`). Toggle scope with `⌃s` in add/edit dialog. Picker shows G/P badge per command.
+- **Run command dual-scope persistence** — Run commands can now be **global** (`~/.azureal/runcmds`, shared across all projects) or **project-local** (`.azureal/runcmds`). Toggle scope with `⌃s` in add/edit dialog. Picker shows G/P badge per command.
 - **Run command delete with confirmation** — Delete key changed from `x` to `d` with y/n confirmation prompt in the title bar (matches preset prompts UX).
+- **Title hint overflow to bottom border** — When the Input or Terminal pane is too narrow for all keybinding hints, `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border in dim gray via ratatui's `.title_bottom()`. No content shifting or padding needed.
 
 ### Changed
 - **Viewer tab bar: 2-row fixed-width layout** — Tab bar now supports up to 12 tabs across 2 rows (6 per row). Each tab has a fixed width (`inner_width / 6`) for uniform appearance. Viewport height automatically adjusts for tab bar rows; content padding prevents tab bar from overlaying real content. Max 12 tabs enforced with status message on overflow.
@@ -24,10 +25,12 @@ All notable changes to Azureal will be documented in this file.
 - Git Actions panel diff counts (`+N/-N`) now **color-coded**: green for additions, red for deletions (orange override when row is selected); header totals also green/red
 - Git Actions panel changed files now shows **working tree changes** (staged + unstaged vs HEAD) instead of committed divergence from main branch — shows what you're actively working on, including untracked files (`?` in magenta)
 - Git Actions panel border changed from Rounded to QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) for a distinct chunky look
+- **Extensionless config files** — All app-created files are now extensionless plain documents: `sessions` (was `.toml`), `runcmds` (was `.json`), `presetprompts` (was `.json`), `projects` (was `.txt`), `debug_output` (was `.txt`), `config` (was `.toml`). Internal format unchanged — just no file extensions.
 
 ### Fixed
 - God File Modularization (`g` → modularize) now **auto-switches the convo pane** to the main worktree session — previously the convo title and output stayed on whatever session was open before, requiring manual session list navigation to see GFM output. Also applies to queue advancement (next file auto-switches too).
 - `Shift+G` (Git Actions panel) now works — `KeyCombo::matches()` fixed systemically to handle the Kitty protocol quirk where uppercase chars arrive as `(NONE, Char('G'))` not `(SHIFT, Char('G'))`. All future `KeyCombo::shift(Char('X'))` bindings are now immune to this bug.
+- **Lowercase `t` no longer triggers terminal toggle** — `KeyCombo::matches()` was matching `(NONE, 't')` against `shift('T')` because `'t'.to_ascii_uppercase() == 'T'`. Now rejects plain lowercase: only `(NONE, 'T')` or `(SHIFT, *)` match uppercase bindings.
 
 ### Refactored
 - Modularized `draw_output.rs` (1002→443 lines) into file-based module root with 4 submodules:
@@ -58,7 +61,7 @@ All notable changes to Azureal will be documented in this file.
   - Uses `notify-rust` crate with `set_application()` in background thread, non-blocking
   - Works per-instance: multiple Claude sessions each trigger their own notification
   - Zero manual setup: `cargo install --path .` then `azureal` — bundle auto-creates on first launch
-- Preset prompts feature (`⌥P`): save up to 10 prompt templates, quick-select with `1-9,0`, add/edit/delete (`d` with y/n confirmation) from picker; selected preset populates input box and enters prompt mode. Available only from prompt mode (shown in title bar). Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across projects) or project-local (`.azureal/preset_prompts.json`); toggle with `⌃g` in add/edit dialog; picker shows G/P scope badge.
+- Preset prompts feature (`⌥P`): save up to 10 prompt templates, quick-select with `1-9,0`, add/edit/delete (`d` with y/n confirmation) from picker; selected preset populates input box and enters prompt mode. Available only from prompt mode (shown in title bar). Dual-scope persistence: presets can be global (`~/.azureal/presetprompts`, shared across projects) or project-local (`.azureal/presetprompts`); toggle with `⌃g` in add/edit dialog; picker shows G/P scope badge.
 - Git Actions panel (`Shift+G`): centered modal overlay with Git brand orange (#F05032) borders, showing 7 git operations (rebase, merge, fetch, pull, push, stash, stash pop) with single-key shortcuts and changed files list with per-file `+N/-N` stats. Tab toggles between actions and file sections; Enter on a file opens its diff in the Viewer pane. 8 new git methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`, `stash`, `stash_pop`.
 
 ### Changed
@@ -75,7 +78,7 @@ All notable changes to Azureal will be documented in this file.
   - Shows all oversized source files sorted by line count (worst offenders first)
   - Checkable list: `Space` to check, `a` to toggle all, `Enter`/`m` to modularize
   - Spawns sequential Claude sessions on main worktree — one file at a time, auto-advances when each completes
-  - Sessions named `[GFM] <filename>` (GFM = God File Modularize) in `.azureal/sessions.toml`
+  - Sessions named `[GFM] <filename>` (GFM = God File Modularize) in `.azureal/sessions`
   - Panel shows explanation line before file list: "Sessions will be prefixed [GFM] (God File Modularize)"
   - Scans 22 source extensions, skips build/dependency directories
 - Help panel: counterpart keybindings (up/down, next/prev, expand/collapse) merged onto single lines with `·` separator — halves the row count for navigation bindings
@@ -107,7 +110,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Fixed
 - `Ctrl+Q` now quits from the Projects panel — was being swallowed because the panel intercepted all keys before the global keybinding system could process the quit shortcut
-- Projects panel no longer shows stale entries — `load_projects()` now validates each entry on load and prunes directories that don't exist or lost their `.git` (writes cleaned list back to `projects.txt` automatically)
+- Projects panel no longer shows stale entries — `load_projects()` now validates each entry on load and prunes directories that don't exist or lost their `.git` (writes cleaned list back to `projects` automatically)
 - Convo title `[x/y]` denominator now shows true total message count for large sessions — was showing ~40-50 instead of hundreds because deferred rendering (last 200 events on initial load) meant `message_bubble_positions` only covered the rendered tail. Denominator now counts `UserMessage` + `AssistantText` from the full `display_events` array; numerator uses offset arithmetic so positioning stays correct before full render triggers on scroll-to-top.
 - Session list `[N msgs]` count now matches convo title `[x/y]` — was inflated due to three issues: (1) used wrong type string `"human"` instead of `"user"`, (2) counted every assistant JSONL line with `"stop_reason"` (95.5% are null), (3) didn't skip non-bubble user events (isMeta, `<local-command-caveat>`, `<local-command-stdout>`, `<command-name>`, compaction summaries) or deduplicate by parentUuid. Now uses fast string scanning matching the session parser's filtering logic.
 - Clicking out of prompt input or Tab-cycling away now exits back to command mode (was staying in prompt mode with yellow border)
@@ -202,16 +205,16 @@ All notable changes to Azureal will be documented in this file.
 - Prompt mode for New Run Command dialog
   - Tab cycles between Command and Prompt modes when the second field is focused
   - In Prompt mode, Enter spawns a Claude session on the main branch that generates the shell command
-  - Claude reads/writes `.azureal/run_commands.json` based on the user's natural-language description
-  - Session named `[NewRunCmd] <name>` in `.azureal/sessions.toml`
+  - Claude reads/writes `.azureal/runcmds` based on the user's natural-language description
+  - Session named `[NewRunCmd] <name>` in `.azureal/sessions`
   - Run commands auto-reload when the `[NewRunCmd]` session exits
-- Projects panel: persistent project management via `~/.azureal/projects.txt`
+- Projects panel: persistent project management via `~/.azureal/projects`
   - Auto-registers git repos on startup; shown full-screen when launched outside a git repo
   - `P` from Worktrees pane opens panel; supports add, delete, rename, and git init
   - Project switching kills all Claude processes and reloads all session state
   - Sidebar project header replaced with project name in Worktrees pane border title
 - Session title on Convo pane border: centered `[session name]` between left title and right badges
-  - Custom session names from `.azureal/sessions.toml` shown when available
+  - Custom session names from `.azureal/sessions` shown when available
   - Raw UUIDs truncated as `[xxxxxxxx-…]` (first 8 chars)
   - Ellipsis when name would overlap adjacent titles
   - Title cached on session switch (zero file I/O in render path)
@@ -319,7 +322,7 @@ All notable changes to Azureal will be documented in this file.
 - Removed `g`/`G` keybindings for scroll-to-top/scroll-to-bottom. `⌥↑`/`⌥↓` is now the only way to jump to top/bottom across all panes (Convo, Viewer, Terminal, FileTree, Worktrees).
 - `input_output.rs` now uses centralized `lookup_action()` from `keybindings.rs` — all input handlers are now fully centralized.
 - Added `SwitchToOutput`, `ViewDiff`, `RebaseStatus`, `PageDown`, `PageUp` actions to keybindings enum for complete output pane coverage.
-- Debug dump keybinding changed from `D` to `⌃D` and now obfuscates all sensitive content before writing to `.azureal/debug-output.txt`
+- Debug dump keybinding changed from `D` to `⌃D` and now obfuscates all sensitive content before writing to `.azureal/debug_output`
   - User/assistant messages, file paths, and rendered output replaced with deterministic fake words
   - Tool names, event types, parsing stats, and structural markers preserved for diagnostics
   - Users can safely attach the dump to GitHub issues without exposing project details
@@ -502,7 +505,7 @@ All notable changes to Azureal will be documented in this file.
 - User prompts no longer appear twice in the Convo pane
   - `pending_user_message` dedup was limited to last 5 events; Claude's rapid output (hooks, tools, text) pushed the matching `UserMessage` beyond that window
   - Now scans backward to the most recent `UserMessage` regardless of distance from tail
-- Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions.toml` instead of truncated UUIDs
+- Session dropdown in Worktrees pane now shows custom names from `.azureal/sessions` instead of truncated UUIDs
 - `KeyCombo::display()` now preserves character case — previously uppercased all chars (e.g., `r` showed as `R`)
 - `KeyCombo::display()` no longer shows `⇧` prefix for uppercase char keys (J, K, G, R show as-is)
 - Quit simplified to `⌃q` (was `⌃⌥⌘c`), Restart to `⌃r` (was `⌃⌥⌘r`)
@@ -519,14 +522,14 @@ All notable changes to Azureal will be documented in this file.
   - `⌥r` opens dialog to add a new run command
   - `R` now performs rebase onto main (moved from `r`)
   - Picker: `j/k` navigate, `1-9` quick-select, `e` edit, `x` delete, `a` add
-  - Commands persisted in `.azureal/run_commands.json`, loaded on startup
+  - Commands persisted in `.azureal/runcmds`, loaded on startup
 - Unified "New..." dialog with tabs for creating different resources
   - `n` from Worktrees pane opens tabbed dialog
   - Tab 1: Project (placeholder)
   - Tab 2: Branch (placeholder)
   - Tab 3: Worktree - existing worktree creation functionality
   - Tab 4: Session - create new Claude session with optional custom name
-    - Custom names stored in `.azureal/sessions.toml`
+    - Custom names stored in `.azureal/sessions`
     - Leave name blank to use Claude's auto-generated UUID
     - Select target worktree for the session
   - `←`/`→` to switch tabs (except during text input)
@@ -578,9 +581,9 @@ All notable changes to Azureal will be documented in this file.
   - `r` - Execute run command (picker if multiple, direct if one)
   - `⌥r` - Add new run command (name + command fields)
   - Picker dialog supports `j/k` nav, `1-9` quick select, `e` edit, `x` delete
-  - Commands persisted to `.azureal/run_commands.json`
+  - Commands persisted to `.azureal/runcmds`
 - Debug output now triggered manually via `⌃⌥⌘D` (Ctrl+Opt+Cmd+D)
-  - Saves session parsing diagnostics to `.azureal/debug-output.txt`
+  - Saves session parsing diagnostics to `.azureal/debug_output`
   - Removed `--out`/`-D` flag and `cargo rd` alias
 - Viewer tabs: `t` to tab current file, `T` for tab dialog, `[`/`]` to switch
 - Clickable file paths for Read, Write, and Edit tools in Convo pane
@@ -654,7 +657,7 @@ All notable changes to Azureal will be documented in this file.
 - Filtered out internal Claude messages: `<local-command-caveat>`, `<local-command-stdout>`, meta messages
 - Rewound message deduplication: When user rewinds to edit a message, only the corrected version is shown
   - Detects by `parentUuid` - multiple user messages sharing the same parent, keeps only the most recent
-- Debug dump (debug builds only): Auto-writes `.azureal/debug-output.txt` on session load
+- Debug dump (debug builds only): Auto-writes `.azureal/debug_output` on session load
   - Shows rendered output exactly as it appears in the TUI (with styling annotations)
   - Only enabled in debug builds (`cargo run`), not release builds
 - Markdown rendering in Claude response output:

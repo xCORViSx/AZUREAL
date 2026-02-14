@@ -1,4 +1,4 @@
-//! Session name storage in .azureal/sessions.toml
+//! Session name storage in .azureal/sessions
 //!
 //! Allows users to assign custom names to sessions that are stored
 //! locally and displayed in the UI instead of the cryptic session IDs.
@@ -16,7 +16,7 @@ impl App {
         let azureal_dir = project.path.join(".azureal");
         let _ = fs::create_dir_all(&azureal_dir);
 
-        let sessions_path = azureal_dir.join("sessions.toml");
+        let sessions_path = azureal_dir.join("sessions");
         let mut names = load_session_names(&sessions_path);
         names.insert(session_id.to_string(), custom_name.to_string());
 
@@ -28,7 +28,7 @@ impl App {
     /// Get the custom name for a session ID (if one exists)
     pub fn get_session_name(&self, session_id: &str) -> Option<String> {
         let project = self.project.as_ref()?;
-        let sessions_path = project.path.join(".azureal").join("sessions.toml");
+        let sessions_path = project.path.join(".azureal").join("sessions");
         let names = load_session_names(&sessions_path);
         names.get(session_id).cloned()
     }
@@ -36,7 +36,7 @@ impl App {
     /// Load all custom session name mappings (session_id → custom_name)
     pub fn load_all_session_names(&self) -> HashMap<String, String> {
         let Some(ref project) = self.project else { return HashMap::new() };
-        let sessions_path = project.path.join(".azureal").join("sessions.toml");
+        let sessions_path = project.path.join(".azureal").join("sessions");
         load_session_names(&sessions_path)
     }
 

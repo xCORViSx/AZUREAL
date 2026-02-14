@@ -49,12 +49,19 @@ impl KeyCombo {
         //   - (SHIFT, Char('G')) — some Kitty implementations
         //   - (SHIFT, Char('g')) — DISAMBIGUATE without REPORT_ALL_KEYS
         // Match all three against a SHIFT + uppercase char binding.
+        // Shift+letter bindings: crossterm delivers uppercase as either
+        //   (NONE, Char('G')) or (SHIFT, Char('G')) or (SHIFT, Char('g'))
+        // but NEVER (NONE, Char('g')) for a shifted press. So only match
+        // when the pressed char is already uppercase (NONE modifier) or
+        // SHIFT is held — reject plain lowercase to avoid t matching T.
         if self.modifiers == KeyModifiers::SHIFT {
             if let KeyCode::Char(c) = self.code {
                 if c.is_ascii_uppercase() {
                     if let KeyCode::Char(pressed) = code {
-                        let upper = pressed.to_ascii_uppercase();
-                        if upper == c && (modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT) {
+                        if modifiers == KeyModifiers::SHIFT && pressed.to_ascii_uppercase() == c {
+                            return true;
+                        }
+                        if modifiers == KeyModifiers::NONE && pressed == c {
                             return true;
                         }
                     }
@@ -554,8 +561,10 @@ pub fn help_sections() -> Vec<HelpSection> {
     ]
 }
 
-/// Generate title hints for prompt input (type mode) — shows ALL input keybindings
-pub fn prompt_type_title() -> String {
+/// Title + hints for prompt input (type mode).
+/// Returns (short_label, full_title_with_hints, just_the_hints).
+/// Callers use full title if it fits, otherwise short label in border + hints as inner row.
+pub fn prompt_type_title() -> (String, String, String) {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
@@ -563,15 +572,18 @@ pub fn prompt_type_title() -> String {
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
     let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or("⌥p".into());
-    format!(
-        " PROMPT ({}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech | {}:presets) ",
+    let hints = format!(
+        "{}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech | {}:presets",
         esc, submit, cancel, hprev, hnext, dw, stt, presets
-    )
+    );
+    let label = " PROMPT ".to_string();
+    let full = format!(" PROMPT ({}) ", hints);
+    (label, full, hints)
 }
 
-/// Generate title hints for command mode — shows ALL global keybindings (except copy
-/// selection which is self-explanatory) so the help panel can omit them.
-pub fn prompt_command_title() -> String {
+/// Title + hints for command mode — shows ALL global keybindings.
+/// Returns (short_label, full_title_with_hints, just_the_hints).
+pub fn prompt_command_title() -> (String, String, String) {
     let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
     let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("T".into());
     let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
@@ -582,20 +594,26 @@ pub fn prompt_command_title() -> String {
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
-    format!(
-        " COMMAND ({}:PROMPT | {}:TERMINAL | {}:Git | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug) ",
+    let hints = format!(
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug",
         p, t, g, help, tab, stab, cancel, quit, restart, debug
-    )
+    );
+    let label = " COMMAND ".to_string();
+    let full = format!(" COMMAND ({}) ", hints);
+    (label, full, hints)
 }
 
-/// Generate title hints for terminal (type mode) — all keys forward to PTY except Esc
-pub fn terminal_type_title() -> String {
+/// Title + hints for terminal type mode.
+/// Returns (short_label, full_title, hints).
+pub fn terminal_type_title() -> (String, String, String) {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
-    format!(" TERMINAL ({}:exit) ", esc)
+    let hints = format!("{}:exit", esc);
+    (" TERMINAL ".to_string(), format!(" TERMINAL ({}) ", hints), hints)
 }
 
-/// Generate title hints for terminal (command mode) — shows ALL keybindings so help panel can omit them
-pub fn terminal_command_title() -> String {
+/// Title + hints for terminal command mode.
+/// Returns (short_label, full_title, hints).
+pub fn terminal_command_title() -> (String, String, String) {
     let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
     let p = find_key_for_action(&TERMINAL, Action::EnterPromptMode).unwrap_or("p".into());
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
@@ -603,24 +621,29 @@ pub fn terminal_command_title() -> String {
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
     let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "⌥↑", "⌥↓");
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
-    format!(
-        " TERMINAL ({}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize) ",
+    let hints = format!(
+        "{}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize",
         t, p, esc, down, up, pdn, pup, top, bot, rup, rdn
-    )
+    );
+    (" TERMINAL ".to_string(), format!(" TERMINAL ({}) ", hints), hints)
 }
 
-/// Generate title hints for terminal (scrolled) — shows scroll position + relevant keys
-pub fn terminal_scroll_title(scroll: usize) -> String {
+/// Title + hints for terminal scrolled mode.
+/// Returns (short_label, full_title, hints).
+pub fn terminal_scroll_title(scroll: usize) -> (String, String, String) {
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
     let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or("⌥↑".into());
     let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or("⌥↓".into());
     let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
-    format!(
-        " TERMINAL [{}↑] ({}/{}:scroll | {}/{}:page | {}:top | {}:bottom | {}:type | {}:close) ",
-        scroll, down, up, pdn, pup, top, bot, t, esc
-    )
+    let hints = format!(
+        "{}/{}:scroll | {}/{}:page | {}:top | {}:bottom | {}:type | {}:close",
+        down, up, pdn, pup, top, bot, t, esc
+    );
+    let label = format!(" TERMINAL [{}↑] ", scroll);
+    let full = format!(" TERMINAL [{}↑] ({}) ", scroll, hints);
+    (label, full, hints)
 }
 
 /// Generate wizard help text for "coming soon" tabs

@@ -58,7 +58,7 @@ impl Config {
 }
 
 /// Get the global Azureal config directory (~/.azureal/)
-/// Used for global config like config.toml
+/// Used for global config like config
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()
         .expect("Could not find home directory")
@@ -66,7 +66,7 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// Get project-specific Azureal data directory (.azureal/ in git root)
-/// Used for run_commands.json, debug-output.txt, etc.
+/// Used for runcmds, debug_output, etc.
 /// Returns None if not in a git repository
 pub fn project_data_dir() -> Option<PathBuf> {
     let output = std::process::Command::new("git")
@@ -81,9 +81,9 @@ pub fn project_data_dir() -> Option<PathBuf> {
     }
 }
 
-/// Get the config file path (~/.azureal/config.toml)
+/// Get the config file path (~/.azureal/config)
 pub fn config_file_path() -> PathBuf {
-    config_dir().join("config.toml")
+    config_dir().join("config")
 }
 
 /// Ensure the global config directory exists
@@ -175,7 +175,7 @@ pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<Str
     list_claude_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
 }
 
-// ── Projects persistence (~/.azureal/projects.txt) ──
+// ── Projects persistence (~/.azureal/projects) ──
 
 /// A registered project entry: absolute path + optional display name
 #[derive(Debug, Clone)]
@@ -186,7 +186,7 @@ pub struct ProjectEntry {
 
 /// Path to the projects registry file
 fn projects_file_path() -> PathBuf {
-    config_dir().join("projects.txt")
+    config_dir().join("projects")
 }
 
 /// Expand ~ to home dir and canonicalize if the path exists on disk
@@ -211,7 +211,7 @@ pub fn display_path(path: &std::path::Path) -> String {
     path.display().to_string()
 }
 
-/// Load all registered projects from ~/.azureal/projects.txt
+/// Load all registered projects from ~/.azureal/projects
 /// Format per line: `/path/to/repo` or `/path/to/repo|Display Name`
 /// Lines starting with # are comments. Empty lines skipped.
 /// Validates each entry: directories that don't exist or aren't git repos
@@ -245,7 +245,7 @@ pub fn load_projects() -> Vec<ProjectEntry> {
     entries
 }
 
-/// Look up the display name for a repo path from projects.txt.
+/// Look up the display name for a repo path from projects.
 /// Returns None if the path isn't registered.
 pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
     let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
@@ -254,7 +254,7 @@ pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
         .map(|e| e.display_name)
 }
 
-/// Save the project list back to ~/.azureal/projects.txt
+/// Save the project list back to ~/.azureal/projects
 pub fn save_projects(entries: &[ProjectEntry]) {
     let path = projects_file_path();
     let content: String = entries.iter().map(|e| {
@@ -270,7 +270,7 @@ pub fn save_projects(entries: &[ProjectEntry]) {
     let _ = std::fs::write(&path, if content.is_empty() { content } else { content + "\n" });
 }
 
-/// Auto-register a project path if it isn't already in projects.txt.
+/// Auto-register a project path if it isn't already in projects.
 /// Called on startup when azureal detects a git repo.
 /// Display name: git remote repo name (from origin URL) → folder name fallback.
 pub fn register_project(repo_path: &std::path::Path) {

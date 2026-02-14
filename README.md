@@ -41,7 +41,7 @@
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
 - **Convo Search** — Press `/` in Convo pane to find text in current session with yellow match highlighting and `[N/M]` counter; `n`/`N` to cycle matches. In Session list: `/` filters by name, `//` searches across all session file contents
 - **Speech-to-Text** — Press `⌃s` in prompt mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated)
-- **Projects Panel** — Persistent project registry (`~/.azureal/projects.txt`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
+- **Projects Panel** — Persistent project registry (`~/.azureal/projects`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
 - **God File System** — Press `g` in Worktrees to scan for source files >1000 LOC; check files and modularize them via simultaneous Claude sessions on the main worktree
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
@@ -49,7 +49,7 @@
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
 - **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); picker footer shows the ⌥+number shortcut hint; add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (`~/.azureal/`, shared across all projects) or **project-local** (`.azureal/`); toggle scope with `⌃g` in the add/edit dialog
 - **Git Actions Panel** — `Shift+G` toggles a centered overlay with Git brand orange borders and brown secondary text; provides 7 git operations (rebase, merge, fetch, pull, push, stash, stash pop) with single-key shortcuts; shows changed files with per-file color-coded `+N/-N` stats (green additions, red deletions); navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections
-- **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
+- **Minimal Footprint** — Optional `~/.azureal/projects` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements
 
@@ -118,7 +118,7 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 - Git branches via `git branch | grep azureal/`
 - Claude's session files at `~/.claude/projects/<encoded-path>/*.jsonl`
 
-No database. Minimal config: `~/.azureal/projects.txt` stores registered project paths; optional `.azureal/sessions.toml` stores custom session name mappings.
+No database. Minimal config: `~/.azureal/projects` stores registered project paths; optional `.azureal/sessions` stores custom session name mappings.
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 

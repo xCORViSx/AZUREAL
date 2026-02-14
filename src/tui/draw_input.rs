@@ -16,27 +16,75 @@ use ratatui::{
 use crate::app::{App, Focus};
 use super::keybindings::{prompt_type_title, prompt_command_title};
 
-/// Draw the Claude prompt input field with pre-wrapped text and cursor positioning
+/// Split hint segments across top and bottom borders.
+/// Returns (top_title, bottom_title_or_none).
+/// `label` is the mode name (e.g. " COMMAND "), `hints` is the `|`-delimited hint string.
+/// Packs as many segments onto the top border (after label) as fit, then the rest go bottom.
+pub fn split_title_hints(label: &str, hints: &str, max_w: usize) -> (String, Option<String>) {
+    let full = format!("{} ({}) ", label.trim_end(), hints);
+    if full.chars().count() <= max_w { return (format!(" {} ", full.trim()), None); }
+
+    let segments: Vec<&str> = hints.split(" | ").collect();
+    // Budget for top: " LABEL (seg | seg | ...) " — label + parens + spaces
+    let overhead = label.chars().count() + 3; // "(" + ") " after segments
+    let top_budget = max_w.saturating_sub(overhead);
+
+    let mut top_parts: Vec<&str> = Vec::new();
+    let mut top_len = 0usize;
+    let mut split_at = 0;
+    for (i, seg) in segments.iter().enumerate() {
+        let sep = if top_parts.is_empty() { 0 } else { 3 };
+        if top_len + sep + seg.chars().count() > top_budget { break; }
+        top_len += sep + seg.chars().count();
+        top_parts.push(seg);
+        split_at = i + 1;
+    }
+
+    let top = if top_parts.is_empty() {
+        format!("{}", label)
+    } else {
+        format!("{}({}) ", label, top_parts.join(" | "))
+    };
+
+    let bottom = if split_at < segments.len() {
+        let rest = segments[split_at..].join(" | ");
+        // Truncate to fit bottom border width
+        let trimmed: String = rest.chars().take(max_w.saturating_sub(2)).collect();
+        Some(format!(" {} ", trimmed))
+    } else {
+        None
+    };
+
+    (top, bottom)
+}
+
+/// Draw the Claude prompt input field with pre-wrapped text and cursor positioning.
+/// When hints overflow the top border, remaining hints go on the bottom border.
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     // Border color reflects current input state:
     // magenta = STT recording/transcribing, yellow = prompt mode, red = command mode
-    let (border_color, title) = if app.stt_recording {
-        (Color::Magenta, format!(" REC {}", prompt_type_title().trim_start()))
+    let (border_color, label, _full_title, hints) = if app.stt_recording {
+        let (l, ft, h) = prompt_type_title();
+        (Color::Magenta, format!(" REC{}", l.trim_end()), ft, h)
     } else if app.stt_transcribing {
-        (Color::Magenta, format!(" ... {}", prompt_type_title().trim_start()))
+        let (l, ft, h) = prompt_type_title();
+        (Color::Magenta, format!(" ...{}", l.trim_end()), ft, h)
     } else if app.prompt_mode {
-        (Color::Yellow, prompt_type_title())
+        let (l, ft, h) = prompt_type_title();
+        (Color::Yellow, l, ft, h)
     } else {
-        (Color::Red, prompt_command_title())
+        let (l, ft, h) = prompt_command_title();
+        (Color::Red, l, ft, h)
     };
 
     let is_focused = app.focus == Focus::Input;
     let inner_width = area.width.saturating_sub(2) as usize;
-    // Visible rows inside the border (total height minus top+bottom border)
     let visible_rows = area.height.saturating_sub(2) as usize;
 
+    // Split hints across top and bottom borders
+    let (top_title, bottom_title) = split_title_hints(&label, &hints, inner_width);
+
     // Pre-wrap content at character boundaries and compute cursor position
-    // in a single pass — both use identical wrapping logic so they always agree
     let (content, cursor_row, cursor_col) =
         build_wrapped_content(app, inner_width);
 
@@ -47,24 +95,26 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         0
     };
 
-    // No .wrap() — content is already pre-wrapped, one Line per visual row
+    let title_style = if is_focused {
+        Style::default().fg(border_color).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .title(Span::styled(top_title, title_style))
+        .border_style(title_style);
+
+    // Overflow hints on bottom border in dim gray
+    if let Some(ref bot) = bottom_title {
+        block = block.title_bottom(Span::styled(bot.as_str(), Style::default().fg(Color::DarkGray)));
+    }
+
     let input = Paragraph::new(content)
         .scroll((scroll_offset, 0))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-                .title(if is_focused {
-                    Span::styled(title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))
-                } else {
-                    Span::styled(title, Style::default().fg(Color::White))
-                })
-                .border_style(if is_focused {
-                    Style::default().fg(border_color).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                }),
-        );
+        .block(block);
 
     f.render_widget(input, area);
 

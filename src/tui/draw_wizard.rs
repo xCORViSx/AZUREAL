@@ -355,7 +355,7 @@ fn draw_session_details_input(f: &mut Frame, wizard: &SessionWizard, area: Rect)
 
     // Hint text
     let hint_area = Rect { x: area.x, y: area.y + 11, width: area.width, height: 1 };
-    let hint = Paragraph::new("Tab to switch fields • Name will be stored in .azureal/sessions.toml")
+    let hint = Paragraph::new("Tab to switch fields • Name will be stored in .azureal/sessions")
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(hint, hint_area);
 }

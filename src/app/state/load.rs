@@ -418,7 +418,7 @@ impl App {
         if !found_ask { self.ask_user_questions_cache = None; }
     }
 
-    /// Dump debug output to .azureal/debug-output.txt (triggered by Ctrl+Opt+Cmd+D)
+    /// Dump debug output to .azureal/debug_output (triggered by Ctrl+Opt+Cmd+D)
     /// All user/assistant content is obfuscated so the file can be shared in bug reports
     /// without exposing sensitive project details. Tool names, event types, and structural
     /// markers are preserved for diagnostic value.
@@ -426,7 +426,7 @@ impl App {
         if let Err(e) = self.dump_debug_output_inner() {
             self.set_status(format!("Debug dump failed: {}", e));
         } else {
-            self.set_status("Debug output saved to .azureal/debug-output.txt");
+            self.set_status("Debug output saved to .azureal/debug_output");
         }
     }
 
@@ -520,7 +520,7 @@ impl App {
 
         let debug_dir = crate::config::ensure_project_data_dir()?
             .ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
-        let debug_path = debug_dir.join("debug-output.txt");
+        let debug_path = debug_dir.join("debug_output");
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header — safe metadata (no content leaked)
