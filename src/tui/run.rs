@@ -238,8 +238,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.preset_prompt_dialog.is_some() {
         draw_dialogs::draw_preset_prompt_dialog(f, app);
     }
-    // God File panel overlay (g from Worktrees)
-    if app.god_file_panel.is_some() {
+    // God File panel overlay (g from Worktrees) — hidden during filter mode (file tree is the UI)
+    if app.god_file_panel.is_some() && !app.god_file_filter_mode {
         draw_god_files::draw_god_files_panel(f, app);
     }
     // Git panel overlay (Shift+G global)

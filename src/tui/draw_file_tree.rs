@@ -16,6 +16,27 @@ use crate::app::types::FileTreeAction;
 use super::file_icons::file_icon;
 use super::util::{truncate, AZURE};
 
+/// Check whether a file tree entry is "inside" one of the god file filter directories.
+/// A directory itself counts as inside if it's in the set. Files and subdirectories
+/// are inside if any ancestor path is in the set.
+fn is_in_god_file_scope(app: &App, path: &std::path::Path, is_dir: bool) -> bool {
+    if !app.god_file_filter_mode { return false; }
+    // Direct membership — the dir itself is in the filter set
+    if is_dir && app.god_file_filter_dirs.contains(path) { return true; }
+    // Walk ancestors to see if any parent is in the filter set
+    let mut p = path.parent();
+    while let Some(ancestor) = p {
+        if app.god_file_filter_dirs.contains(ancestor) { return true; }
+        p = ancestor.parent();
+    }
+    false
+}
+
+/// Check if a directory is directly in the god file filter set (not just a child of one)
+fn is_god_file_filter_dir(app: &App, path: &std::path::Path) -> bool {
+    app.god_file_filter_mode && app.god_file_filter_dirs.contains(path)
+}
+
 /// Build file tree lines (extracted for caching)
 fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
@@ -26,6 +47,11 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
         _ => None,
     };
     let clipboard_is_move = matches!(&app.file_tree_action, Some(FileTreeAction::Move(_)));
+
+    /// Green color for directories/files that are in the god file scan scope
+    const GF_GREEN: Color = Color::Rgb(80, 200, 80);
+    /// Dim green for files inside a scanned directory (less prominent than dir itself)
+    const GF_GREEN_DIM: Color = Color::Rgb(60, 140, 60);
 
     if app.file_tree_entries.is_empty() {
         if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_none() {
@@ -44,11 +70,19 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             let is_selected = app.file_tree_selected == Some(idx);
             let indent = "  ".repeat(entry.depth);
 
+            // Whether this entry is part of the god file scan scope
+            let in_gf_scope = is_in_god_file_scope(app, &entry.path, entry.is_dir);
+            let is_gf_dir = entry.is_dir && is_god_file_filter_dir(app, &entry.path);
+
             // Get icon glyph + color from file_icons module (Nerd Font or emoji fallback)
             let expanded = entry.is_dir && app.file_tree_expanded.contains(&entry.path);
             let (icon, mut icon_color) = file_icon(&entry.path, entry.is_dir, expanded, app.nerd_fonts);
-            // Hidden entries get dimmed icon color
-            if entry.is_hidden {
+            // In filter mode, scoped entries get green icons; hidden entries get dimmed
+            if app.god_file_filter_mode && is_gf_dir {
+                icon_color = GF_GREEN;
+            } else if app.god_file_filter_mode && in_gf_scope {
+                icon_color = GF_GREEN_DIM;
+            } else if entry.is_hidden {
                 icon_color = if entry.is_dir { Color::Rgb(120, 100, 60) } else { Color::Rgb(100, 100, 100) };
             }
 
@@ -58,14 +92,32 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             ];
 
             let name_style = if is_selected {
-                Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+                // In filter mode, selected row background changes from blue to green for scoped dirs
+                let bg = if app.god_file_filter_mode && is_gf_dir {
+                    Color::Rgb(30, 100, 30)
+                } else {
+                    Color::Blue
+                };
+                Style::default().bg(bg).fg(Color::White).add_modifier(Modifier::BOLD)
             } else if entry.is_dir {
-                // Hidden dirs get dimmed cyan, normal dirs get bright cyan
-                let color = if entry.is_hidden { Color::Rgb(80, 120, 130) } else { AZURE };
+                // Filter mode: scoped dirs are green, others dim; normal mode: cyan/dimmed
+                let color = if app.god_file_filter_mode {
+                    if is_gf_dir { GF_GREEN } else if entry.is_hidden { Color::Rgb(80, 120, 130) } else { Color::DarkGray }
+                } else if entry.is_hidden {
+                    Color::Rgb(80, 120, 130)
+                } else {
+                    AZURE
+                };
                 Style::default().fg(color).add_modifier(Modifier::BOLD)
             } else {
-                // Hidden files get dimmed gray, normal files get white
-                let color = if entry.is_hidden { Color::Rgb(100, 100, 100) } else { Color::White };
+                // Filter mode: files in scope get dim green, others dim gray
+                let color = if app.god_file_filter_mode {
+                    if in_gf_scope { GF_GREEN_DIM } else if entry.is_hidden { Color::Rgb(70, 70, 70) } else { Color::Rgb(100, 100, 100) }
+                } else if entry.is_hidden {
+                    Color::Rgb(100, 100, 100)
+                } else {
+                    Color::White
+                };
                 Style::default().fg(color)
             };
 
@@ -254,8 +306,16 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         .cloned()
         .collect();
 
+    let in_filter_mode = app.god_file_filter_mode;
+    /// Green color matching the scoped directory highlights
+    const GF_BORDER_GREEN: Color = Color::Rgb(80, 200, 80);
+
     let wt_name = app.current_session().map(|s| s.name().to_string()).unwrap_or_default();
-    let title = if total > viewport_height {
+    let title = if in_filter_mode {
+        // Filter mode title shows scope count and Enter/Esc hints
+        let scope_count = app.god_file_filter_dirs.len();
+        format!(" God File Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
+    } else if total > viewport_height {
         format!(" Filetree ({}) [{}/{}] ", wt_name, scroll + display_lines.len().min(total - scroll), total)
     } else {
         format!(" Filetree ({}) ", wt_name)
@@ -266,21 +326,30 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         display_lines.push(line);
     }
 
-    let widget = Paragraph::new(display_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-            .title(if is_focused {
-                Span::styled(title, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
-            } else {
-                Span::styled(title, Style::default().fg(Color::White))
-            })
-            .border_style(if is_focused {
-                Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            }),
-    );
+    // In filter mode: green border + bottom hint; normal mode: azure/white
+    let (border_color, title_style) = if in_filter_mode {
+        (GF_BORDER_GREEN, Style::default().fg(GF_BORDER_GREEN).add_modifier(Modifier::BOLD))
+    } else if is_focused {
+        (AZURE, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
+    } else {
+        (Color::White, Style::default().fg(Color::White))
+    };
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if is_focused || in_filter_mode { BorderType::Double } else { BorderType::Plain })
+        .title(Span::styled(title, title_style))
+        .border_style(Style::default().fg(border_color));
+
+    // Bottom border hint in filter mode: "Enter:toggle  Esc:rescan"
+    if in_filter_mode {
+        block = block.title_bottom(Line::from(Span::styled(
+            " Enter:toggle  Esc:rescan ",
+            Style::default().fg(GF_BORDER_GREEN),
+        )));
+    }
+
+    let widget = Paragraph::new(display_lines).block(block);
 
     f.render_widget(widget, area);
 }

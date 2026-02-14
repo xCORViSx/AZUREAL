@@ -359,6 +359,14 @@ pub struct App {
     /// God File System panel — scans project for oversized source files (>1k LOC)
     /// and lets user batch-spawn modularization sessions. None when closed.
     pub god_file_panel: Option<GodFilePanel>,
+    /// When true, the FileTree is in "god file filter mode" — directories included
+    /// in the god file scan are highlighted green, and the user can press Enter to
+    /// toggle directories in/out of the scan scope.
+    pub god_file_filter_mode: bool,
+    /// The set of directories currently included in the god file scan scope.
+    /// Populated when entering filter mode from the auto-detected SOURCE_ROOTS.
+    /// User can add/remove dirs via Enter in filter mode.
+    pub god_file_filter_dirs: std::collections::HashSet<std::path::PathBuf>,
     /// Git Actions panel state (Shift+G overlay for git operations + changed files)
     pub git_actions_panel: Option<GitActionsPanel>,
     /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
@@ -594,6 +602,8 @@ impl App {
             hide_dot_git: true,
             show_file_tree: false,
             god_file_panel: None,
+            god_file_filter_mode: false,
+            god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,
             show_session_list: false,
             session_list_loading: false,

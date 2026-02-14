@@ -78,7 +78,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 - **Viewer** (50%): File content viewer or diff detail (dual-purpose)
 - **Convo** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
-- **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
+- **Status Bar** (1 row, bottom): Left shows worktree status dot + display name + branch (branch parenthetical hidden when identical to name, e.g. `main` not `main (main)`). Center shows context-sensitive help hints that update per focus/mode. Right shows CPU% + PID badge. No ViewMode indicator — help hints already change per mode.
 
 **Splash Screen:** On startup, a 2x-scale block-character "AZUREAL" logo (10 rows × 110 chars, pure `█` blocks) in AZURE (#3399FF) is rendered centered on screen with the full acronym ("Asynchronous Zoned Unified Runtime Environment for Agentic LLMs") rendered in half-block characters (▀▄█ for 2x vertical density, 12 rows across 4 word-groups) in dim blue, followed by a "Loading project..." subtitle. Drawn immediately after terminal initialization (before `App::new()`) so the user sees branded feedback instead of a black screen while git discovery, session parsing, and file I/O run. Enforces a 3-second minimum display time (loading time counts toward it) so the branding registers even on fast machines. Replaced by the first `ui()` draw when the event loop starts.
 
@@ -573,9 +573,9 @@ Implementation:
 **ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.).
 
 **Architecture:**
-- `Action` enum: All possible keybinding actions (~50 variants: navigation, editing, viewer tabs, file tree operations, etc.)
+- `Action` enum: All possible keybinding actions (~40 variants: navigation, editing, viewer tabs, file tree operations, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
-- `Keybinding`: Primary key, alternatives (j/↓), description, action, and `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
+- `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
 - `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
 - Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
@@ -894,29 +894,37 @@ Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19
 Scans the project for "god files" — source files exceeding 1000 lines — and spawns sequential Claude modularization sessions to split them into focused modules. Triggered by `g` in the Worktrees pane.
 
 **Scanning:**
-- Recursive directory walk using `std::fs::read_dir`, skipping hidden dirs, `.git`, `target`, `node_modules`, `.build`, `dist`, `build`, `__pycache__`, `.next`, `.nuxt`, `vendor`, `Pods`
-- Source extensions: `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.java`, `.cpp`, `.c`, `.h`, `.hpp`, `.swift`, `.kt`, `.rb`, `.cs`, `.vue`, `.svelte`, `.zig`, `.lua`, `.ex`, `.exs`
+- **Source-root detection:** If well-known source directories exist under the project root (`src/`, `lib/`, `crates/`, `cmd/`, `pkg/`, `internal/`, `app/`, `core/`, `common/`, `modules/`, `services/`, `packages/`, `components/`, `Sources/`, `include/`, `source/`), ONLY those directories are scanned (plus top-level files like `main.rs`, `build.rs`). If none are found, falls back to scanning the entire project root.
+- **Skip directories:** Hidden dirs, build artifacts (`target`, `dist`, `build`, `out`, `bin`, `obj`), dependency caches (`node_modules`, `__pycache__`, `vendor`, `Pods`, `venv`), IDE dirs (`.idea`, `.vscode`), non-source content (`refs`, `assets`, `resources`, `data`, `examples`, `docs`, `migrations`, `generated`, `third_party`, `archive`, `tmp`, `cache`, `logs`, `coverage`, `snapshots`), and ~50 more common non-source directories. Case-insensitive matching.
+- Source extensions (~60): Systems (`.rs`, `.go`, `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.cxx`, `.hxx`, `.c++`, `.h++`, `.m`, `.mm`, `.swift`, `.zig`, `.nim`, `.cr`, `.v`, `.d`), JVM (`.java`, `.kt`, `.kts`, `.scala`, `.groovy`, `.gradle`), .NET (`.cs`, `.fs`, `.fsi`, `.vb`), Web (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.vue`, `.svelte`, `.astro`), Scripting (`.py`, `.pyw`, `.rb`, `.pl`, `.pm`, `.php`, `.lua`, `.r`, `.jl`, `.dart`), Functional (`.hs`, `.lhs`, `.ml`, `.mli`, `.clj`, `.cljs`, `.cljc`, `.edn`, `.ex`, `.exs`, `.erl`, `.hrl`, `.elm`, `.gleam`, `.rkt`), Shell (`.sh`, `.bash`, `.zsh`, `.fish`), Infra/Query (`.sql`, `.tf`, `.hcl`), Schema (`.proto`, `.thrift`, `.graphql`, `.gql`)
 - Threshold: >1000 LOC (line count via `BufReader::lines().count()`)
 - Results sorted by line count descending (worst offenders first)
 - Synchronous scan — fast enough for typical projects (~50k files in <100ms)
 
 **Panel UI:**
-Centered modal overlay (55% × 70%, min 50×12) — same size and overlay pattern as the Git panel (normal panes visible behind). Bold azure title, QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) azure border. Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
+Centered modal overlay (55% × 70%, min 50×16) — same size as the Git panel (normal panes visible behind). Bold azure title, QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) azure border. Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  v:view  f:filter  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
 
 **Keybindings (panel active):**
 - `j/↓` — navigate down, `k/↑` — navigate up
 - `⌥↑` — jump to top, `⌥↓` — jump to bottom
 - `Space` — toggle check on selected entry
 - `a` — toggle all checks (if any unchecked → check all; if all checked → uncheck all)
+- `v` — view checked files in Viewer as tabs (fills available slots up to 12-tab max; skips duplicates; closes panel and focuses Viewer)
+- `f` — enter filter mode (see below)
 - `Enter` / `m` — modularize checked files
 - `Esc` — close panel
+
+**Filter Mode (`f`):**
+Opens the FileTree overlay in a special "god file filter mode" that lets the user see and modify which directories are included in the scan scope. Directories currently in the scan scope are highlighted in bright green (`Rgb(80,200,80)`) with green icons; files inside scoped directories are dim green (`Rgb(60,140,60)`); everything else is dimmed gray. The FileTree border turns green (double-line) with a `" God File Scope (N dirs) "` title and `" Enter:toggle  Esc:rescan "` bottom hint. File actions (add, delete, rename, copy, move) are disabled in this mode.
+
+The initial scope is computed from the same SOURCE_ROOTS auto-detection used by the scanner. Pressing `Enter` on a directory toggles it in/out of the scope set. Pressing `Esc` exits filter mode, rescans the project using the user's custom scope, and reopens the god file panel with the updated results. State: `god_file_filter_mode: bool` and `god_file_filter_dirs: HashSet<PathBuf>` on App.
 
 **Parallel Modularization:**
 All checked files are spawned **simultaneously** as concurrent Claude processes on the main worktree — each gets its own PID slot via the multi-session architecture. The sequential queue (`god_file_queue`) was removed. Each session is named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_names`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible. The newest spawn becomes the active slot (its output is displayed).
 
 **Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
 
-Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
+Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
 
 ### Git Panel
 

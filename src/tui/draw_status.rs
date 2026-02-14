@@ -11,13 +11,14 @@ use ratatui::{
 use crate::app::{App, Focus, ViewMode};
 use super::util::{truncate, AZURE};
 
-/// Draw the status bar at the bottom
+/// Draw the status bar at the bottom — shows worktree info, contextual help hints, and CPU/PID badge
 pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     // Sample CPU usage (~1s interval, cheap getrusage delta)
     app.update_cpu_usage();
     let mut status_spans = Vec::new();
 
-    // Session info (left side)
+    // Worktree + branch info (left side)
+    // Shows: ● name (branch) — but skips the (branch) when it matches name to avoid "main (main)"
     if let Some(session) = app.current_session() {
         let status = session.status(app.is_session_running(&session.branch_name));
         let status_color = status.color();
@@ -26,16 +27,20 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(status_color),
         ));
 
+        let display_name = session.name();
         status_spans.push(Span::styled(
-            truncate(session.name(), 25),
+            truncate(display_name, 25),
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         ));
 
-        status_spans.push(Span::raw(" "));
-        status_spans.push(Span::styled(
-            format!("({})", session.branch_name),
-            Style::default().fg(AZURE),
-        ));
+        // Only show (branch) when it differs from the display name — avoids "main (main)"
+        if display_name != session.branch_name {
+            status_spans.push(Span::raw(" "));
+            status_spans.push(Span::styled(
+                format!("({})", session.branch_name),
+                Style::default().fg(AZURE),
+            ));
+        }
     } else {
         status_spans.push(Span::styled(
             "No session selected",
@@ -45,37 +50,26 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
 
     status_spans.push(Span::raw(" │ "));
 
-    // View mode indicator
-    let view_text = match app.view_mode {
-        ViewMode::Output => "Output",
-        ViewMode::Diff => "Diff",
-        ViewMode::Messages => "Messages",
-        ViewMode::Rebase => "Rebase",
-    };
-    status_spans.push(Span::styled(view_text, Style::default().fg(Color::Yellow)));
-
-    status_spans.push(Span::raw(" │ "));
-
-    // Help text or status message
+    // Contextual help hints — shows relevant keybindings for current focus/mode
     let help_text = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
         match (app.focus, app.view_mode) {
             (Focus::Worktrees, _) => {
                 if app.is_current_session_running() {
-                    "?:help  Space:actions  f:filetree  n:new  b:branches  s:stop  d:diff  r:rebase  R:status  a:archive  Tab/⇧Tab:switch"
+                    "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  ⌃c:cancel  Tab:switch"
                 } else {
-                    "?:help  Space:actions  f:filetree  n:new  b:branches  d:diff  r:rebase  R:status  a:archive  Enter:start  Tab/⇧Tab:switch"
+                    "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
                 }
             }
-            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  s:save  o:output  Esc:back",
+            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  Esc:back",
             (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
-            (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  o:output  d:diff  R:rebase  Esc:back",
-            (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/Shift+Tab:switch",
-            (Focus::WorktreeCreation, _) => "Ctrl+Enter:submit  Esc:cancel  Enter:newline",
+            (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
+            (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
+            (Focus::WorktreeCreation, _) => "⌃Enter:submit  Esc:cancel  Enter:newline",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
             (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back",
-            (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  Esc:close  Tab:switch",
+            (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  e:edit  Esc:close  Tab:switch",
         }.to_string()
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));

@@ -54,7 +54,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.context_menu.is_some() { return handle_context_menu_input(key, app, claude_process); }
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
-    if app.god_file_panel.is_some() { return handle_god_files_input(key, app, claude_process); }
+    if app.god_file_panel.is_some() && !app.god_file_filter_mode { return handle_god_files_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
@@ -178,7 +178,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
 
         // --- All other actions are focus-specific; dispatch inline ---
         // Worktrees
-        Action::ToggleFileTree => {
+        Action::ToggleFileTree if !app.god_file_filter_mode => {
             if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_some() {
                 app.show_file_tree = true;
                 app.focus = Focus::FileTree;
@@ -188,15 +188,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 app.set_status("No worktree path available");
             }
         }
-        Action::EnterInputMode => {
-            if app.is_current_session_running() {
-                app.focus = Focus::Input;
-                app.set_status("Enter input to send to Claude:");
-            } else {
-                app.set_status("No Claude running in this session");
-            }
-        }
-        Action::ReturnToWorktrees => {
+        Action::ReturnToWorktrees if !app.god_file_filter_mode => {
             app.show_file_tree = false;
             app.focus = Focus::Worktrees;
             app.invalidate_sidebar();
@@ -265,11 +257,6 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.sidebar_filter.clear();
             app.invalidate_sidebar();
         }
-        // Project jumping — currently single-project mode, no-op until multi-project navigation exists
-        Action::SelectNextProject | Action::SelectPrevProject => {}
-        Action::OpenContextMenu => {
-            app.open_context_menu();
-        }
         Action::NewWorktree => {
             app.start_wizard();
         }
@@ -281,18 +268,8 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 }
             }
         }
-        Action::ViewDiff => {
-            if let Err(e) = app.load_diff() {
-                app.set_status(format!("Failed to get diff: {}", e));
-            } else if app.focus == Focus::Output {
-                app.diff_scroll = 0;
-            }
-        }
         Action::RunCommand => { app.open_run_command_picker(); }
         Action::AddRunCommand => { app.open_run_command_dialog(); }
-        Action::RebaseOntoMain => {
-            rebase_current(app);
-        }
         Action::ArchiveWorktree => {
             if let Err(e) = app.archive_current_session() {
                 app.set_status(format!("Failed to archive: {}", e));
@@ -300,9 +277,6 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::StartResume => {
             start_or_resume(app);
-        }
-        Action::OpenProjects => {
-            app.open_projects_panel();
         }
         Action::OpenGodFiles => {
             app.open_god_file_panel();
@@ -315,6 +289,9 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 app.open_git_actions_panel();
             }
         }
+        Action::OpenProjects => {
+            app.open_projects_panel();
+        }
 
         // --- FileTree ---
         Action::ToggleDir => {
@@ -326,8 +303,11 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::OpenFile => {
             if let Some(idx) = app.file_tree_selected {
-                if let Some(entry) = app.file_tree_entries.get(idx) {
-                    if entry.is_dir {
+                if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
+                    if app.god_file_filter_mode && entry.is_dir {
+                        // In filter mode, Enter on a dir toggles it in/out of scan scope
+                        app.god_file_filter_toggle_dir(entry.path);
+                    } else if entry.is_dir {
                         app.toggle_file_tree_dir();
                     } else {
                         app.load_file_into_viewer();
@@ -336,22 +316,23 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 }
             }
         }
-        Action::AddFile => {
+        // File actions disabled in god file filter mode (file tree is read-only scope picker)
+        Action::AddFile if !app.god_file_filter_mode => {
             app.file_tree_action = Some(crate::app::types::FileTreeAction::Add(String::new()));
         }
-        Action::DeleteFile => {
+        Action::DeleteFile if !app.god_file_filter_mode => {
             if app.file_tree_selected.is_some() {
                 app.file_tree_action = Some(crate::app::types::FileTreeAction::Delete);
             }
         }
-        Action::RenameFile => {
+        Action::RenameFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Rename(entry.name.clone()));
                 }
             }
         }
-        Action::CopyFile => {
+        Action::CopyFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Copy(entry.path.clone()));
@@ -360,7 +341,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 }
             }
         }
-        Action::MoveFile => {
+        Action::MoveFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Move(entry.path.clone()));
@@ -390,21 +371,6 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.convo_search_matches.clear();
             app.convo_search_current = 0;
         }
-        Action::SwitchToOutput => {
-            app.view_mode = crate::app::ViewMode::Output;
-            app.output_scroll = usize::MAX;
-        }
-        Action::RebaseStatus => {
-            if let Some(session) = app.current_session() {
-                if let Some(ref wt_path) = session.worktree_path {
-                    if crate::git::Git::is_rebase_in_progress(wt_path) {
-                        if let Ok(status) = crate::git::Git::get_rebase_status(wt_path) {
-                            app.set_rebase_status(status);
-                        }
-                    }
-                }
-            }
-        }
 
         // --- Input/Terminal actions: handled by their own handlers (skip here) ---
         // These are filtered out in handle_key_event() and fall through to
@@ -424,6 +390,9 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
 
         // --- Dialog actions (not reached here — modals intercept above) ---
         Action::Confirm | Action::Cancel | Action::DeleteSelected | Action::EditSelected => {}
+
+        // Guarded arms that didn't match (e.g. file actions suppressed in god file filter mode)
+        _ => {}
     }
 
     Ok(())
@@ -616,9 +585,14 @@ fn dispatch_escape(app: &mut App) {
             }
         }
         Focus::FileTree => {
-            app.show_file_tree = false;
-            app.focus = Focus::Worktrees;
-            app.invalidate_sidebar();
+            if app.god_file_filter_mode {
+                // Exit filter mode — rescan with user's custom scope and reopen god file panel
+                app.exit_god_file_filter_mode();
+            } else {
+                app.show_file_tree = false;
+                app.focus = Focus::Worktrees;
+                app.invalidate_sidebar();
+            }
         }
         Focus::Output => {
             if app.show_session_list { app.show_session_list = false; }
@@ -721,37 +695,6 @@ fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
         }
     }
     count
-}
-
-/// Rebase current worktree onto main
-fn rebase_current(app: &mut App) {
-    use crate::models::RebaseResult;
-    if let Some(session) = app.current_session() {
-        if let (Some(ref wt_path), Some(project)) = (&session.worktree_path, app.current_project()) {
-            let wt = wt_path.clone();
-            let main_branch = project.main_branch.clone();
-            match crate::git::Git::rebase_onto_main(&wt, &main_branch) {
-                Ok(RebaseResult::Success) => {
-                    app.set_status("Rebase completed successfully");
-                    app.clear_rebase_status();
-                }
-                Ok(RebaseResult::UpToDate) => app.set_status("Already up to date"),
-                Ok(RebaseResult::Conflicts(status)) => {
-                    let n = status.conflicted_files.len();
-                    app.set_rebase_status(status);
-                    app.set_status(format!("Rebase conflicts: {} file(s)", n));
-                }
-                Ok(RebaseResult::Aborted) => {
-                    app.set_status("Rebase was aborted");
-                    app.clear_rebase_status();
-                }
-                Ok(RebaseResult::Failed(e)) => app.set_status(format!("Rebase failed: {}", e)),
-                Err(e) => app.set_status(format!("Rebase error: {}", e)),
-            }
-        } else {
-            app.set_status("No worktree path available");
-        }
-    }
 }
 
 /// Start or resume a Claude session from worktrees Enter key

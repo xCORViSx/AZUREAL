@@ -131,22 +131,16 @@ pub enum Action {
 
     // Worktrees
     ToggleFileTree,
-    EnterInputMode,
     SearchFilter,
-    SelectNextProject,
-    SelectPrevProject,
-    OpenContextMenu,
     NewWorktree,
     BrowseBranches,
-    ViewDiff,
     RunCommand,
     AddRunCommand,
-    RebaseOntoMain,
     ArchiveWorktree,
     StartResume,
-    OpenProjects,
     OpenGodFiles,
     OpenGitActions,
+    OpenProjects,
 
     // FileTree
     ReturnToWorktrees,
@@ -181,8 +175,6 @@ pub enum Action {
     JumpPrevBubble,
     JumpNextMessage,
     JumpPrevMessage,
-    SwitchToOutput,
-    RebaseStatus,
 
     // Input
     Submit,
@@ -329,27 +321,21 @@ pub static GLOBAL: [Keybinding; 11] = [
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 20] = [
+pub static WORKTREES: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('J')), "Select project", Action::SelectNextProject).paired(),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Select project", Action::SelectPrevProject),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Context menu", Action::OpenContextMenu),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "New...", Action::NewWorktree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Rebase onto main", Action::RebaseOntoMain),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "God files", Action::OpenGodFiles),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
 /// FileTree bindings
@@ -372,7 +358,7 @@ pub static FILE_TREE: [Keybinding; 15] = [
 ];
 
 /// Viewer bindings (read-only mode)
-pub static VIEWER: [Keybinding; 20] = [
+pub static VIEWER: [Keybinding; 16] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown).paired(),
@@ -389,11 +375,6 @@ pub static VIEWER: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
-    // Cmd+Shift+J/K full-page scroll
-    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('J')), "Full page down", Action::PageDown),
-    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('K')), "Full page up", Action::PageUp),
-    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('j')), "Full page down", Action::PageDown),
-    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('k')), "Full page up", Action::PageUp),
 ];
 
 /// Edit mode bindings
@@ -406,7 +387,7 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 ];
 
 /// Convo/Output bindings
-pub static OUTPUT: [Keybinding; 16] = [
+pub static OUTPUT: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchConvo),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),
@@ -419,9 +400,6 @@ pub static OUTPUT: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('K')), "Page up", Action::PageUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Switch to output", Action::SwitchToOutput),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::ViewDiff),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('R')), "Rebase status", Action::RebaseStatus),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
 ];
 
