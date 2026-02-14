@@ -1,7 +1,7 @@
 //! Input handler for the Git Actions panel (Shift+G).
 //!
 //! Full-screen modal overlay — consumes ALL input when active.
-//! Actions section (Tab to switch): r=rebase, m=merge, f=fetch, l=pull, P=push, s=stash, S=stash pop.
+//! Actions section (Tab to switch): r=rebase, m=merge, f=fetch, l=pull, P=push.
 //! File list section: j/k navigate, Enter/d opens file diff in viewer.
 
 use anyhow::Result;
@@ -13,7 +13,7 @@ use crate::git::Git;
 use crate::models::RebaseResult;
 
 /// Total number of action items displayed in the actions section
-const ACTION_COUNT: usize = 7;
+const ACTION_COUNT: usize = 5;
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
@@ -110,23 +110,6 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
                 Err(e) => panel.result_message = Some((format!("{}", e), true)),
             }
         }
-        // [s] Stash
-        (KeyModifiers::NONE, KeyCode::Char('s')) if panel.actions_focused => {
-            let wt = panel.worktree_path.clone();
-            match Git::stash(&wt) {
-                Ok(msg) => { panel.result_message = Some((msg, false)); refresh_changed_files(panel); }
-                Err(e) => panel.result_message = Some((format!("{}", e), true)),
-            }
-        }
-        // [S] Stash pop
-        (KeyModifiers::NONE, KeyCode::Char('S')) if panel.actions_focused => {
-            let wt = panel.worktree_path.clone();
-            match Git::stash_pop(&wt) {
-                Ok(msg) => { panel.result_message = Some((msg, false)); refresh_changed_files(panel); }
-                Err(e) => panel.result_message = Some((format!("{}", e), true)),
-            }
-        }
-
         // ── Enter on actions: execute the selected action by index ──
         (KeyModifiers::NONE, KeyCode::Enter) if panel.actions_focused => {
             // Fire the action corresponding to selected_action index
@@ -169,20 +152,6 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
                         Ok(msg) => panel.result_message = Some((if msg.is_empty() { "Pushed".into() } else { msg }, false)),
                         Err(e) => panel.result_message = Some((format!("{}", e), true)),
                     }
-                }
-                5 => { // Stash
-                    match Git::stash(&wt) {
-                        Ok(msg) => panel.result_message = Some((msg, false)),
-                        Err(e) => panel.result_message = Some((format!("{}", e), true)),
-                    }
-                    refresh_changed_files(panel);
-                }
-                6 => { // Stash pop
-                    match Git::stash_pop(&wt) {
-                        Ok(msg) => panel.result_message = Some((msg, false)),
-                        Err(e) => panel.result_message = Some((format!("{}", e), true)),
-                    }
-                    refresh_changed_files(panel);
                 }
                 _ => {}
             }

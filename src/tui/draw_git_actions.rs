@@ -1,5 +1,5 @@
 //! Git Actions panel rendering — centered modal overlay showing git operations
-//! (rebase, merge, fetch, pull, push, stash) and changed files list.
+//! (rebase, merge, fetch, pull, push) and changed files list.
 //! Uses Git brand orange (#F05032) for border styling.
 
 use ratatui::{
@@ -20,8 +20,6 @@ const ACTIONS: &[(&str, &str)] = &[
     ("f", "Fetch"),
     ("l", "Pull"),
     ("P", "Push"),
-    ("s", "Stash"),
-    ("S", "Stash pop"),
 ];
 
 /// Render the Git Actions panel as a centered modal overlay.

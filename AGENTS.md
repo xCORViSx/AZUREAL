@@ -935,8 +935,6 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - `f` / Enter on index 2 — Fetch all remotes (`Git::fetch()`)
 - `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
 - `P` / Enter on index 4 — Push (`Git::push()`)
-- `s` / Enter on index 5 — Stash (`Git::stash()`)
-- `S` / Enter on index 6 — Stash pop (`Git::stash_pop()`)
 
 **File list (when file list focused):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
@@ -951,7 +949,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 
 **Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (8 new methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`, `stash`, `stash_pop`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in GLOBAL)
+Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in GLOBAL)
 
 ### Rebase Support
 

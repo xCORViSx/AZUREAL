@@ -303,26 +303,4 @@ impl Git {
         else { anyhow::bail!("{}", combined.trim()) }
     }
 
-    /// Stash current working directory changes
-    pub fn stash(worktree_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["stash"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to stash")?;
-        if output.status.success() { Ok(String::from_utf8_lossy(&output.stdout).trim().to_string()) }
-        else { anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim()) }
-    }
-
-    /// Pop the most recent stash entry
-    pub fn stash_pop(worktree_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["stash", "pop"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to pop stash")?;
-        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        if output.status.success() { Ok(combined.trim().to_string()) }
-        else { anyhow::bail!("{}", combined.trim()) }
-    }
 }
