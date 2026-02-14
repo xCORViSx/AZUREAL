@@ -104,7 +104,7 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
-- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 

@@ -5,6 +5,7 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
+use crate::tui::keybindings::macos_opt_key;
 
 /// Handle keyboard input when Input field is focused (terminal mode or Claude prompt)
 pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -115,6 +116,17 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
         // Shift+Arrow for selection extension
         (KeyModifiers::SHIFT, KeyCode::Left) => app.input_left_select(true),
         (KeyModifiers::SHIFT, KeyCode::Right) => app.input_right_select(true),
+        // ⌥+number quick-select preset prompts (⌥1-⌥9 → presets 0-8, ⌥0 → preset 9)
+        // macOS ⌥+number produces unicode (¡™£¢∞§¶•ªº) — intercept before text input
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
+            if macos_opt_key(c).map(|k| k.is_ascii_digit()).unwrap_or(false) =>
+        {
+            let digit = macos_opt_key(c).unwrap();
+            let idx = if digit == '0' { 9 } else { (digit as usize) - ('1' as usize) };
+            if idx < app.preset_prompts.len() {
+                app.select_preset_prompt(idx);
+            }
+        }
         // Regular character input - clears selection first if typing replaces it
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
             if app.has_input_selection() { app.input_delete_selection(); }

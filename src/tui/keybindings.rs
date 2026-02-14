@@ -682,6 +682,10 @@ pub fn macos_opt_key(ch: char) -> Option<char> {
         'œ' => Some('q'), '®' => Some('r'), 'ß' => Some('s'), '†' => Some('t'),
         '¨' => Some('u'), '√' => Some('v'), '∑' => Some('w'), '≈' => Some('x'),
         '¥' => Some('y'), 'Ω' => Some('z'),
+        // ⌥+numbers on US keyboard layout
+        '¡' => Some('1'), '™' => Some('2'), '£' => Some('3'), '¢' => Some('4'),
+        '∞' => Some('5'), '§' => Some('6'), '¶' => Some('7'), '•' => Some('8'),
+        'ª' => Some('9'), 'º' => Some('0'),
         _ => None,
     }
 }
