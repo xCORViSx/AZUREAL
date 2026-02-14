@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::app::types::HealthTab;
+use crate::app::types::{HealthTab, ModuleStyleDialog, RustModuleStyle, PythonModuleStyle};
 use super::keybindings;
 
 /// Health panel accent — bright green from the scope overlay
@@ -58,10 +58,16 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
     lines.push(Line::from(""));
 
     // ── Tab content ── footer sourced from keybindings.rs hint generators
+    // Module style dialog overrides the god files tab content + footer
     let footer = match panel.tab {
         HealthTab::GodFiles => {
-            draw_god_files_tab(&mut lines, panel, inner_w, modal_h);
-            keybindings::health_god_files_hints()
+            if let Some(ref dialog) = panel.module_style_dialog {
+                draw_module_style_dialog(&mut lines, dialog, inner_w);
+                " Space:toggle  Enter:confirm  Esc:cancel ".to_string()
+            } else {
+                draw_god_files_tab(&mut lines, panel, inner_w, modal_h);
+                keybindings::health_god_files_hints()
+            }
         }
         HealthTab::Documentation => {
             draw_documentation_tab(&mut lines, panel, inner_w, modal_h);
@@ -278,4 +284,95 @@ fn draw_documentation_tab(
             Style::default().fg(Color::DarkGray),
         )));
     }
+}
+
+/// Render the module style selector inline where the god files list normally goes.
+/// One row per dual-style language (Rust and/or Python), with ●/○ radio indicators.
+/// The user's cursor highlights the selected row in green; Space toggles the style.
+fn draw_module_style_dialog(
+    lines: &mut Vec<Line<'static>>,
+    dialog: &ModuleStyleDialog,
+    _inner_w: usize,
+) {
+    lines.push(Line::from(Span::styled(
+        "  Select module style for checked files:",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+
+    // Track which visual row we're on so `selected` maps correctly
+    let mut row = 0usize;
+
+    if dialog.has_rust {
+        let is_selected = dialog.selected == row;
+        let (label, hint) = match dialog.rust_style {
+            RustModuleStyle::FileBased => (
+                "● File-based root (modulename.rs + modulename/)",
+                "○ Directory module (modulename/mod.rs)",
+            ),
+            RustModuleStyle::ModRs => (
+                "○ File-based root (modulename.rs + modulename/)",
+                "● Directory module (modulename/mod.rs)",
+            ),
+        };
+        let style = if is_selected {
+            Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let dim = if is_selected {
+            Style::default().fg(GF_GREEN)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(Span::styled("  Rust (.rs):", Style::default().fg(Color::DarkGray))));
+        let cursor = if is_selected { "▸ " } else { "  " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("    {}{}", cursor, label), style),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(format!("      {}", hint), dim),
+        ]));
+        lines.push(Line::from(""));
+        row += 1;
+    }
+
+    if dialog.has_python {
+        let is_selected = dialog.selected == row;
+        let (label, hint) = match dialog.python_style {
+            PythonModuleStyle::Package => (
+                "● Package (__init__.py directory)",
+                "○ Single-file modules (no __init__.py)",
+            ),
+            PythonModuleStyle::SingleFile => (
+                "○ Package (__init__.py directory)",
+                "● Single-file modules (no __init__.py)",
+            ),
+        };
+        let style = if is_selected {
+            Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let dim = if is_selected {
+            Style::default().fg(GF_GREEN)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(Span::styled("  Python (.py):", Style::default().fg(Color::DarkGray))));
+        let cursor = if is_selected { "▸ " } else { "  " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("    {}{}", cursor, label), style),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(format!("      {}", hint), dim),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // Instruction hint
+    lines.push(Line::from(Span::styled(
+        "  Space to toggle  ·  Enter to confirm  ·  Esc to cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
 }

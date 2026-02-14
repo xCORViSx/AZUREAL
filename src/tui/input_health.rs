@@ -2,17 +2,28 @@
 //! Full-screen modal overlay — consumes all input when active, dispatched via
 //! the centralized keybinding system (lookup_health_action in keybindings.rs).
 //! Tab switches between God Files and Documentation tabs.
+//! Module style dialog intercepts keys when active (pre-modularize selector).
 
 use anyhow::Result;
-use crossterm::event;
+use crossterm::event::{self, KeyCode};
 
 use crate::app::App;
+use crate::app::types::{RustModuleStyle, PythonModuleStyle};
 use crate::claude::ClaudeProcess;
 use super::keybindings::{lookup_health_action, Action};
 
 /// Handle keyboard input when the Worktree Health panel is active.
-/// All keys resolved through keybindings.rs — no hardcoded KeyCode matching.
+/// Module style dialog takes priority when shown (pre-modularize selector).
+/// Otherwise all keys resolved through keybindings.rs.
 pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    // Module style dialog intercepts all input when active
+    // (transient sub-state like confirm-delete y/n — raw key matching)
+    if let Some(ref panel) = app.health_panel {
+        if panel.module_style_dialog.is_some() {
+            return handle_module_style_input(key, app, claude_process);
+        }
+    }
+
     let tab = match app.health_panel {
         Some(ref p) => p.tab,
         None => return Ok(()),
@@ -88,7 +99,8 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         Action::HealthToggleAll => { app.god_file_toggle_all(); }
         Action::HealthViewChecked => { app.god_file_view_checked(); }
         Action::HealthScopeMode => { app.enter_god_file_scope_mode(); }
-        Action::HealthModularize => { app.god_file_modularize(claude_process); }
+        // Start modularize — may show module style dialog first
+        Action::HealthModularize => { app.god_file_start_modularize(claude_process); }
 
         // ── Documentation tab only ──
         Action::Confirm => {
@@ -101,6 +113,80 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Handle input for the module style selector dialog.
+/// Transient sub-state — raw key matching (same pattern as confirm-delete y/n).
+///   j/k/Up/Down: move cursor between language rows
+///   Space/Left/Right: toggle style for current language
+///   Enter: confirm and spawn GFM sessions with chosen styles
+///   Esc: cancel back to god files list
+fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    match key.code {
+        // Navigate between language rows
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(ref mut panel) = app.health_panel {
+                if let Some(ref mut d) = panel.module_style_dialog {
+                    let max = if d.has_rust && d.has_python { 1 } else { 0 };
+                    if d.selected < max { d.selected += 1; }
+                }
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(ref mut panel) = app.health_panel {
+                if let Some(ref mut d) = panel.module_style_dialog {
+                    if d.selected > 0 { d.selected -= 1; }
+                }
+            }
+        }
+        // Toggle style for the selected language row
+        KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right => {
+            if let Some(ref mut panel) = app.health_panel {
+                if let Some(ref mut d) = panel.module_style_dialog {
+                    // Map selected index to which language is on that row
+                    let on_rust = d.has_rust && d.selected == 0;
+                    let on_python = d.has_python && (d.selected == 1 || !d.has_rust);
+                    if on_rust {
+                        d.rust_style = match d.rust_style {
+                            RustModuleStyle::FileBased => RustModuleStyle::ModRs,
+                            RustModuleStyle::ModRs => RustModuleStyle::FileBased,
+                        };
+                    } else if on_python {
+                        d.python_style = match d.python_style {
+                            PythonModuleStyle::Package => PythonModuleStyle::SingleFile,
+                            PythonModuleStyle::SingleFile => PythonModuleStyle::Package,
+                        };
+                    }
+                }
+            }
+        }
+        // Confirm — extract styles and spawn
+        KeyCode::Enter => {
+            let (rust_style, python_style) = match app.health_panel {
+                Some(ref panel) => match panel.module_style_dialog {
+                    Some(ref d) => (
+                        if d.has_rust { Some(d.rust_style) } else { None },
+                        if d.has_python { Some(d.python_style) } else { None },
+                    ),
+                    None => (None, None),
+                },
+                None => (None, None),
+            };
+            // Clear dialog before spawning (god_file_modularize closes the panel)
+            if let Some(ref mut panel) = app.health_panel {
+                panel.module_style_dialog = None;
+            }
+            app.god_file_modularize(claude_process, rust_style, python_style);
+        }
+        // Cancel — close dialog, return to god files list
+        KeyCode::Esc => {
+            if let Some(ref mut panel) = app.health_panel {
+                panel.module_style_dialog = None;
+            }
+        }
+        _ => {} // dialog eats unrecognized keys
     }
     Ok(())
 }

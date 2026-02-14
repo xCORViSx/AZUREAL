@@ -8,7 +8,10 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use crate::app::types::{DocEntry, GodFileEntry, HealthPanel, HealthTab};
+use crate::app::types::{
+    DocEntry, GodFileEntry, HealthPanel, HealthTab,
+    ModuleStyleDialog, RustModuleStyle, PythonModuleStyle,
+};
 use crate::claude::ClaudeProcess;
 
 use super::App;
@@ -126,6 +129,7 @@ impl App {
             doc_selected: 0,
             doc_scroll: 0,
             doc_score,
+            module_style_dialog: None,
         });
     }
 
@@ -208,6 +212,7 @@ impl App {
             doc_selected: 0,
             doc_scroll: 0,
             doc_score,
+            module_style_dialog: None,
         });
     }
 
@@ -295,11 +300,10 @@ impl App {
         }
     }
 
-    /// Spawn modularization sessions for ALL checked god files simultaneously.
-    /// Each file gets its own concurrent Claude process on the main worktree.
-    /// The newest spawn becomes the active slot (its output is displayed).
-    pub fn god_file_modularize(&mut self, claude_process: &ClaudeProcess) {
-        // Collect checked files and build prompts
+    /// Entry point for modularize action (Enter/m on God Files tab).
+    /// If checked files include .rs or .py, shows the module style selector
+    /// dialog first. Otherwise spawns immediately with generic prompts.
+    pub fn god_file_start_modularize(&mut self, claude_process: &ClaudeProcess) {
         let checked: Vec<(String, usize)> = match self.health_panel {
             Some(ref panel) => panel.god_files.iter()
                 .filter(|e| e.checked)
@@ -307,7 +311,49 @@ impl App {
                 .collect(),
             None => return,
         };
+        if checked.is_empty() {
+            self.set_status("No files checked — use Space to check files");
+            return;
+        }
 
+        // Check if any checked files are Rust or Python
+        let has_rust = checked.iter().any(|(p, _)| p.ends_with(".rs"));
+        let has_python = checked.iter().any(|(p, _)| p.ends_with(".py"));
+
+        if has_rust || has_python {
+            // Show module style selector before spawning
+            if let Some(ref mut panel) = self.health_panel {
+                panel.module_style_dialog = Some(ModuleStyleDialog {
+                    has_rust,
+                    has_python,
+                    rust_style: RustModuleStyle::FileBased,
+                    python_style: PythonModuleStyle::Package,
+                    selected: 0,
+                });
+            }
+        } else {
+            // No dual-style languages — spawn immediately with no style override
+            self.god_file_modularize(claude_process, None, None);
+        }
+    }
+
+    /// Spawn modularization sessions for ALL checked god files simultaneously.
+    /// Each file gets its own concurrent Claude process on the main worktree.
+    /// The newest spawn becomes the active slot (its output is displayed).
+    /// `rust_style`/`python_style` are embedded in the prompt for matching files.
+    pub fn god_file_modularize(
+        &mut self,
+        claude_process: &ClaudeProcess,
+        rust_style: Option<RustModuleStyle>,
+        python_style: Option<PythonModuleStyle>,
+    ) {
+        let checked: Vec<(String, usize)> = match self.health_panel {
+            Some(ref panel) => panel.god_files.iter()
+                .filter(|e| e.checked)
+                .map(|e| (e.rel_path.clone(), e.line_count))
+                .collect(),
+            None => return,
+        };
         if checked.is_empty() {
             self.set_status("No files checked — use Space to check files");
             return;
@@ -324,7 +370,7 @@ impl App {
         let mut spawned = 0usize;
         let mut failed = 0usize;
         for (rel_path, lines) in &checked {
-            let prompt = build_modularize_prompt(rel_path, *lines);
+            let prompt = build_modularize_prompt(rel_path, *lines, rust_style, python_style);
             let filename = Path::new(rel_path).file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
@@ -664,9 +710,16 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
 
 /// Build the modularization prompt for a specific god file.
 /// Instructs Claude to read context first, then split the file into
-/// smaller focused modules following project conventions.
-fn build_modularize_prompt(rel_path: &str, line_count: usize) -> String {
-    format!(
+/// smaller focused modules. For .rs/.py files, embeds the user's chosen
+/// module style so Claude follows the right convention.
+fn build_modularize_prompt(
+    rel_path: &str,
+    line_count: usize,
+    rust_style: Option<RustModuleStyle>,
+    python_style: Option<PythonModuleStyle>,
+) -> String {
+    // Base prompt — language-agnostic modularization instructions
+    let mut prompt = format!(
         "You are tasked with modularizing a large \"god file\" that has accumulated too many responsibilities.\n\
         \n\
         File: {} ({} lines)\n\
@@ -685,5 +738,46 @@ fn build_modularize_prompt(rel_path: &str, line_count: usize) -> String {
         \n\
         Update the original file to re-export from the new modules for backwards compatibility.",
         rel_path, line_count
-    )
+    );
+
+    // Append language-specific module style instructions
+    if rel_path.ends_with(".rs") {
+        if let Some(style) = rust_style {
+            prompt.push_str("\n\n");
+            match style {
+                RustModuleStyle::FileBased => prompt.push_str(
+                    "Module structure: Use file-based module roots (modern Rust convention). \
+                    Create `modulename.rs` as the module root file alongside a `modulename/` directory \
+                    for submodule files. Do NOT use `mod.rs` inside directories.\n\
+                    Example:\n  src/apu.rs           (module root — declares submodules with mod statements)\n  \
+                    src/apu/channel1.rs  (submodule)\n  src/apu/channel2.rs  (submodule)"
+                ),
+                RustModuleStyle::ModRs => prompt.push_str(
+                    "Module structure: Use directory modules with mod.rs (legacy Rust convention). \
+                    Create a `modulename/` directory containing `mod.rs` as the module root, \
+                    with submodule files alongside it in the same directory.\n\
+                    Example:\n  src/apu/mod.rs       (module root — declares submodules with mod statements)\n  \
+                    src/apu/channel1.rs  (submodule)\n  src/apu/channel2.rs  (submodule)"
+                ),
+            }
+        }
+    } else if rel_path.ends_with(".py") {
+        if let Some(style) = python_style {
+            prompt.push_str("\n\n");
+            match style {
+                PythonModuleStyle::Package => prompt.push_str(
+                    "Module structure: Create Python packages. Each new module becomes a directory \
+                    containing `__init__.py` (which re-exports public names for clean imports) \
+                    plus submodule `.py` files inside the directory."
+                ),
+                PythonModuleStyle::SingleFile => prompt.push_str(
+                    "Module structure: Use single-file Python modules. Each new module is a standalone \
+                    `.py` file with explicit imports between them. Do not create `__init__.py` package \
+                    directories — keep modules as flat individual files."
+                ),
+            }
+        }
+    }
+
+    prompt
 }

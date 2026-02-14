@@ -927,6 +927,13 @@ Scans the project for "god files" — source files exceeding 1000 lines. Same ch
 *Scope Mode (`s`):*
 Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" God File Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to `.azureal/godfilescope` (one absolute path per line), rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
 
+*Module Style Selection:*
+When checked files include `.rs` or `.py`, pressing Enter/m shows a **module style selector** dialog before spawning. The dialog lets users choose between dual-style module conventions:
+- **Rust**: File-based root (`modulename.rs` + `modulename/`, modern) vs directory module (`modulename/mod.rs`, legacy)
+- **Python**: Package (`__init__.py` directory) vs single-file modules
+
+The choice is embedded in each file's modularization prompt. Languages without dual-style conventions (Go, Java, TypeScript, etc.) skip the dialog entirely. `Space` toggles between styles, `j/k` navigates between language rows (when both Rust and Python are checked), `Enter` confirms and spawns, `Esc` cancels back to the file list.
+
 *Parallel Modularization:*
 All checked files spawned simultaneously as concurrent Claude processes on the main worktree. Each session named `[GFM] <filename>`. Convo pane auto-switches to main worktree.
 

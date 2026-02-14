@@ -473,6 +473,40 @@ pub struct GodFileEntry {
     pub checked: bool,
 }
 
+/// Rust module organization: file-based root (modern) vs mod.rs (legacy)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RustModuleStyle {
+    /// Modern: `modulename.rs` as root alongside `modulename/` directory
+    FileBased,
+    /// Legacy: `modulename/mod.rs` as root inside the directory
+    ModRs,
+}
+
+/// Python module organization: package with __init__.py vs single-file modules
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PythonModuleStyle {
+    /// Directory package with `__init__.py` re-exporting public names
+    Package,
+    /// Standalone `.py` files with explicit imports (no __init__.py)
+    SingleFile,
+}
+
+/// Pre-modularize dialog: lets user pick module style for Rust/Python files
+/// before spawning GFM sessions. Only shown when checked files include .rs/.py.
+#[derive(Debug)]
+pub struct ModuleStyleDialog {
+    /// Whether any checked files are .rs
+    pub has_rust: bool,
+    /// Whether any checked files are .py
+    pub has_python: bool,
+    /// Currently selected Rust module style
+    pub rust_style: RustModuleStyle,
+    /// Currently selected Python module style
+    pub python_style: PythonModuleStyle,
+    /// Cursor row: 0 = first visible language, 1 = second (if both present)
+    pub selected: usize,
+}
+
 /// Which tab is active in the Worktree Health panel
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HealthTab {
@@ -504,6 +538,9 @@ pub struct HealthPanel {
     pub doc_scroll: usize,
     /// Overall documentation score 0.0–100.0 across all scanned files
     pub doc_score: f32,
+    /// When Some, the module style selector is shown before modularizing.
+    /// Set when Enter/m pressed and checked files include .rs or .py.
+    pub module_style_dialog: Option<ModuleStyleDialog>,
 }
 
 /// A source file with documentation coverage metrics — how many documentable
