@@ -110,7 +110,7 @@ Other features:
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
 - Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/presetprompts`, shared across all projects) or project-local (`.azureal/presetprompts`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
-Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
+Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 10 focused submodules, `health` has 2 sub-submodules).
 
 **Mouse Click Architecture:**
 - All 3 pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `input_area`
@@ -960,7 +960,7 @@ Scans all source files for documentation coverage — counts documentable items 
 *[DH] Session Spawning:*
 Checked files spawn concurrent Claude sessions on the main worktree, each prefixed `[DH] filename`. The prompt instructs Claude to add `///` and `//!` doc comments to all undocumented items without modifying executable code. Shows current documented/total ratio so Claude knows the starting coverage.
 
-Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked, scope persistence, doc scanner), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match), `src/tui/draw_health.rs` (panel rendering with tab bar, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED + HEALTH_GOD_FILES + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
+Implementation: `src/app/state/health.rs` (module root: shared constants, open/close panel, scope persistence), `src/app/state/health/god_files.rs` (scan, scope mode, modularize, module style selector, view_checked), `src/app/state/health/documentation.rs` (doc scanner, DH session spawning, toggle/view), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match), `src/tui/draw_health.rs` (panel rendering with tab bar, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED + HEALTH_GOD_FILES + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
 
 ### Git Panel
 
@@ -1144,7 +1144,10 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
-│   │   │   ├── god_files.rs # God File System + Doc scanner: scan, parallel modularize, doc coverage
+│   │   │   ├── health.rs    # Health module root: shared constants (SOURCE_EXTENSIONS, SKIP_DIRS, SOURCE_ROOTS), scope persistence, open/close panel
+│   │   │   ├── health/     # Health submodules (file-based module root)
+│   │   │   │   ├── god_files.rs     # God File System: scan, scope mode, parallel modularize, module style selector
+│   │   │   │   └── documentation.rs # Doc coverage scanner, DH session spawning, doc toggle/view
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management

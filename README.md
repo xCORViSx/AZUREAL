@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="azureal_icontp.png" alt="AZUREAL" width="180" />
+  <img src="azureal_icon.png" alt="AZUREAL" width="180" />
 </p>
 
 <h1 align="center">AZUREAL</h1>
