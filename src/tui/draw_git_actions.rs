@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use super::util::GIT_ORANGE;
+use super::util::{GIT_BROWN, GIT_ORANGE};
 
 /// Action labels displayed in the panel — index must match ACTION_COUNT in input handler
 const ACTIONS: &[(&str, &str)] = &[
@@ -51,7 +51,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     // ── Actions section header ──
     lines.push(Line::from(Span::styled(
         "  ACTIONS",
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+        Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD),
     )));
 
     // Each action row: "  > [r] Rebase from main" or "    [r] Rebase from main"
@@ -66,7 +66,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         let key_style = if selected {
             Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(GIT_BROWN)
         };
         lines.push(Line::from(vec![
             Span::styled(prefix, style),
@@ -83,10 +83,10 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     if panel.changed_files.is_empty() {
         lines.push(Line::from(Span::styled(
             "  CHANGED FILES (none)",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+            Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD),
         )));
     } else {
-        let hdr_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+        let hdr_style = Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD);
         lines.push(Line::from(vec![
             Span::styled(format!("  CHANGED FILES ({} files, ", panel.changed_files.len()), hdr_style),
             Span::styled(format!("+{}", total_add), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -100,7 +100,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     let sep_len = inner_w.min(40);
     lines.push(Line::from(Span::styled(
         format!("  {}", "\u{2500}".repeat(sep_len)),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(GIT_BROWN),
     )));
 
     // How many file rows can we fit? Reserve lines for: actions header(1) + actions(7) +
@@ -154,7 +154,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         // Selected rows use orange override; unselected uses semantic green/red
         let add_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Green) };
         let del_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Red) };
-        let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::DarkGray) };
+        let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(GIT_BROWN) };
 
         lines.push(Line::from(vec![
             Span::styled(prefix, Style::default()),
@@ -172,7 +172,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         let end = (scroll + visible_files).min(panel.changed_files.len());
         lines.push(Line::from(Span::styled(
             format!("    {}\u{2013}{} of {}", scroll + 1, end, panel.changed_files.len()),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(GIT_BROWN),
         )));
     }
 
@@ -207,7 +207,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         let footer_rect = Rect::new(footer_x, footer_y, footer.len() as u16, 1);
         f.render_widget(Paragraph::new(Line::from(Span::styled(
             footer,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(GIT_BROWN),
         ))), footer_rect);
     }
 }

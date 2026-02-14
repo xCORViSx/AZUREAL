@@ -307,7 +307,12 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.open_god_file_panel();
         }
         Action::OpenGitActions => {
-            app.open_git_actions_panel();
+            // Toggle: close if already open, open otherwise
+            if app.git_actions_panel.is_some() {
+                app.close_git_actions_panel();
+            } else {
+                app.open_git_actions_panel();
+            }
         }
 
         // --- FileTree ---

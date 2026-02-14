@@ -9,6 +9,10 @@ pub const AZURE: ratatui::style::Color = ratatui::style::Color::Rgb(51, 153, 255
 
 /// Git brand orange (#F05032) — used for Git Actions panel border and accents
 pub const GIT_ORANGE: ratatui::style::Color = ratatui::style::Color::Rgb(240, 80, 50);
+
+/// Git brown (#A0522D, sienna) — warm secondary color for Git panel text elements
+/// (headers, key hints, separators, footer) instead of generic gray
+pub const GIT_BROWN: ratatui::style::Color = ratatui::style::Color::Rgb(160, 82, 45);
 //
 // Re-exports commonly used items from submodules:
 // - `colorize`: Output colorization (colorize_output, MessageType, etc.)
