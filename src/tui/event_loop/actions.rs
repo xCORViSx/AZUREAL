@@ -62,6 +62,9 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.preset_prompt_dialog.is_some() { return handle_preset_prompt_dialog_input(key, app); }
     if app.preset_prompt_picker.is_some() { return handle_preset_prompt_picker_input(key, app); }
 
+    // FileTree options overlay: intercept all keys before keybinding resolution
+    if app.file_tree_options_mode { return handle_file_tree_input(key, app); }
+
     // Convo search modal: typing search text bypasses keybinding system
     if app.convo_search_active { return handle_output_input(key, app); }
 
@@ -317,6 +320,12 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 }
             }
         }
+        // Open file tree options overlay (toggle hidden dirs)
+        Action::FileTreeOptions if !app.god_file_filter_mode => {
+            app.file_tree_options_mode = true;
+            app.file_tree_options_selected = 0;
+        }
+
         // File actions disabled in god file filter mode (file tree is read-only scope picker)
         Action::AddFile if !app.god_file_filter_mode => {
             app.file_tree_action = Some(crate::app::types::FileTreeAction::Add(String::new()));

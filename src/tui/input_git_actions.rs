@@ -107,10 +107,6 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
                 p.result_message = Some(("Refreshed".into(), false));
             }
         }
-        Action::GitToggleDotGit => {
-            app.hide_dot_git = !app.hide_dot_git;
-            app.refresh_file_tree();
-        }
         _ => {}
     }
     Ok(())

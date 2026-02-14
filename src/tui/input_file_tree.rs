@@ -10,12 +10,20 @@ use crate::app::App;
 use crate::app::types::FileTreeAction;
 use super::keybindings::{Action, KeyContext, lookup_action};
 
+/// Directory names matching the options overlay (same order as draw_file_tree.rs)
+const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal"];
+
 /// Handle keyboard input for the FileTree panel.
 /// ALL command keybindings are resolved by lookup_action() in event_loop.rs BEFORE
 /// this is called. This handler only receives unresolved keys — meaning only
-/// clipboard mode (Copy/Move paste target selection) and text-input actions
-/// (Add filename, Rename, Delete confirmation) reach here.
+/// clipboard mode (Copy/Move paste target selection), text-input actions
+/// (Add filename, Rename, Delete confirmation), and options mode reach here.
 pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
+    // Options overlay mode: j/k navigate, Space/Enter toggle, Esc/O closes
+    if app.file_tree_options_mode {
+        return handle_options_input(key, app);
+    }
+
     // Copy/Move clipboard mode: allow navigation + Enter to paste
     if matches!(app.file_tree_action, Some(FileTreeAction::Copy(_) | FileTreeAction::Move(_))) {
         return handle_clipboard_input(key, app);
@@ -26,6 +34,41 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
     }
 
     // All file tree command bindings resolved upstream — nothing to handle here
+    Ok(())
+}
+
+/// Handle input in file tree options overlay (hidden directories toggles)
+fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
+    match key.code {
+        // Navigate options list with wrapping
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.file_tree_options_selected = (app.file_tree_options_selected + 1) % FT_OPTIONS.len();
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.file_tree_options_selected = app.file_tree_options_selected.checked_sub(1)
+                .unwrap_or(FT_OPTIONS.len() - 1);
+        }
+        // Toggle the selected directory's hidden state
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            let name = FT_OPTIONS[app.file_tree_options_selected].to_string();
+            if app.file_tree_hidden_dirs.contains(&name) {
+                app.file_tree_hidden_dirs.remove(&name);
+            } else {
+                app.file_tree_hidden_dirs.insert(name);
+            }
+            app.refresh_file_tree();
+        }
+        // Close options overlay
+        KeyCode::Esc => {
+            app.file_tree_options_mode = false;
+        }
+        // Shift+O also closes (same key that opened it)
+        KeyCode::Char('O') if key.modifiers == KeyModifiers::SHIFT || key.modifiers == KeyModifiers::NONE => {
+            app.file_tree_options_mode = false;
+        }
+        _ => {}
+    }
+    app.invalidate_file_tree();
     Ok(())
 }
 

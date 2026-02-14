@@ -375,7 +375,7 @@ impl App {
         let Some(session) = self.current_session() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
 
-        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, self.hide_dot_git);
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
         if !self.file_tree_entries.is_empty() {
             self.file_tree_selected = Some(0);
         }

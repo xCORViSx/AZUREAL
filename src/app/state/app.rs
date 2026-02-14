@@ -352,8 +352,12 @@ pub struct App {
     pub stt_transcribing: bool,
     /// Use Nerd Font icons in file tree (set from Config on startup)
     pub nerd_fonts: bool,
-    /// Hide .git directory from file tree (toggled via Git panel 'h' key)
-    pub hide_dot_git: bool,
+    /// Directory names to hide in the file tree (e.g. ".git", ".claude", ".azureal")
+    pub file_tree_hidden_dirs: HashSet<String>,
+    /// When true, the file tree pane switches to "options" overlay mode
+    pub file_tree_options_mode: bool,
+    /// Selected row in the file tree options overlay (0-indexed into OPTIONS list)
+    pub file_tree_options_selected: usize,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
@@ -601,7 +605,9 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             nerd_fonts: true,
-            hide_dot_git: true,
+            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into()]),
+            file_tree_options_mode: false,
+            file_tree_options_selected: 0,
             show_file_tree: false,
             health_panel: None,
             last_health_tab: HealthTab::GodFiles,
@@ -644,7 +650,7 @@ impl App {
         let Some(session) = self.current_session() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
         let wt = worktree_path.clone();
-        self.file_tree_entries = super::helpers::build_file_tree(&wt, &self.file_tree_expanded, self.hide_dot_git);
+        self.file_tree_entries = super::helpers::build_file_tree(&wt, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
         if self.file_tree_selected.map_or(true, |i| i >= self.file_tree_entries.len()) {
             self.file_tree_selected = if self.file_tree_entries.is_empty() { None } else { Some(0) };
         }

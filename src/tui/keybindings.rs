@@ -225,7 +225,9 @@ pub enum Action {
     GitPush,
     GitViewDiff,
     GitRefresh,
-    GitToggleDotGit,
+
+    // FileTree Options overlay
+    FileTreeOptions,
 
     // Projects Panel (modal, browse mode)
     ProjectsAdd,
@@ -375,7 +377,7 @@ pub static WORKTREES: [Keybinding; 13] = [
 ];
 
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 15] = [
+pub static FILE_TREE: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Back to worktrees", Action::ReturnToWorktrees),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
@@ -390,6 +392,7 @@ pub static FILE_TREE: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rename", Action::RenameFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Copy", Action::CopyFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Move", Action::MoveFile),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('O')), "Options", Action::FileTreeOptions),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
 ];
 
@@ -514,7 +517,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Guard note: git ops (r/m/f/l/P) only fire when actions_focused=true,
 /// diff view (d) only fires when actions_focused=false. Guards live in
 /// lookup_git_actions_action(), not here.
-pub static GIT_ACTIONS: [Keybinding; 15] = [
+pub static GIT_ACTIONS: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -528,7 +531,6 @@ pub static GIT_ACTIONS: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('P')), "Push", Action::GitPush),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('H')), "Toggle .git", Action::GitToggleDotGit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
 ];
 

@@ -57,9 +57,9 @@ pub fn sanitize_for_branch(s: &str) -> String {
 }
 
 /// Build file tree entries for a directory (respects expanded state)
-pub fn build_file_tree(root: &PathBuf, expanded: &HashSet<PathBuf>, hide_dot_git: bool) -> Vec<FileTreeEntry> {
+pub fn build_file_tree(root: &PathBuf, expanded: &HashSet<PathBuf>, hidden_dirs: &HashSet<String>) -> Vec<FileTreeEntry> {
     let mut entries = Vec::new();
-    build_file_tree_recursive(root, expanded, &mut entries, 0, false, hide_dot_git);
+    build_file_tree_recursive(root, expanded, &mut entries, 0, false, hidden_dirs);
     entries
 }
 
@@ -70,7 +70,7 @@ fn build_file_tree_recursive(
     entries: &mut Vec<FileTreeEntry>,
     depth: usize,
     parent_hidden: bool,
-    hide_dot_git: bool,
+    hidden_dirs: &HashSet<String>,
 ) {
     let Ok(read_dir) = std::fs::read_dir(dir) else { return };
 
@@ -80,8 +80,8 @@ fn build_file_tree_recursive(
             let name = e.file_name().to_string_lossy().to_string();
             // Skip common build/dependency directories (too noisy)
             if name == "target" || name == "node_modules" { return false; }
-            // Optionally hide .git directory (toggled from Git panel)
-            if hide_dot_git && name == ".git" { return false; }
+            // Hide directories configured in Filetree Options overlay
+            if hidden_dirs.contains(&name) { return false; }
             true
         })
         .collect();
@@ -123,7 +123,7 @@ fn build_file_tree_recursive(
 
         // Recurse into expanded directories, passing hidden state to children
         if is_dir && expanded.contains(&path) {
-            build_file_tree_recursive(&path, expanded, entries, depth + 1, is_hidden, hide_dot_git);
+            build_file_tree_recursive(&path, expanded, entries, depth + 1, is_hidden, hidden_dirs);
         }
     }
 }

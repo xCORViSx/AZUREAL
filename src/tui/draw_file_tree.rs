@@ -266,8 +266,54 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
     lines
 }
 
+/// Directory names that can be toggled visible/hidden in the options overlay.
+/// Order here = display order. All hidden by default on first launch.
+const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal"];
+
+/// Draw the file tree options overlay — replaces normal tree content when
+/// app.file_tree_options_mode is true. Shows toggleable checkboxes for each
+/// hidden directory with QuadrantOutside border and "Filetree Options" title.
+fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(""));
+
+    for (i, &name) in FT_OPTIONS.iter().enumerate() {
+        let checked = app.file_tree_hidden_dirs.contains(name);
+        let selected = i == app.file_tree_options_selected;
+        // Checkbox: [x] when hidden (checked), [ ] when visible (unchecked)
+        let checkbox = if checked { "[x]" } else { "[ ]" };
+        let label = format!("  {} Hide {}", checkbox, name);
+        let style = if selected {
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+        } else if checked {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(Span::styled(label, style)));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::QuadrantOutside)
+        .border_style(Style::default().fg(AZURE))
+        .title(Span::styled(" Filetree Options ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title_bottom(Line::from(Span::styled(
+            " Space:toggle  Esc:close ",
+            Style::default().fg(AZURE),
+        )));
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 /// Draw the file tree panel showing the session's worktree files
 pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
+    // Options overlay replaces normal file tree content
+    if app.file_tree_options_mode {
+        draw_file_tree_options(f, app, area);
+        return;
+    }
+
     let is_focused = app.focus == Focus::FileTree;
     // Inner width = area minus 2 border chars
     let inner_width = area.width.saturating_sub(2) as usize;
