@@ -80,7 +80,7 @@ fn build_file_tree_recursive(
             let name = e.file_name().to_string_lossy().to_string();
             // Skip common build/dependency directories (too noisy)
             if name == "target" || name == "node_modules" { return false; }
-            // Hide directories configured in Filetree Options overlay
+            // Hide entries configured in Filetree Options overlay
             if hidden_dirs.contains(&name) { return false; }
             true
         })

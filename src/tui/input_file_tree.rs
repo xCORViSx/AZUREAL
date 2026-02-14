@@ -10,8 +10,8 @@ use crate::app::App;
 use crate::app::types::FileTreeAction;
 use super::keybindings::{Action, KeyContext, lookup_action};
 
-/// Directory names matching the options overlay (same order as draw_file_tree.rs)
-const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal", "worktrees"];
+/// Names matching the options overlay (same order as draw_file_tree.rs)
+const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal", "worktrees", ".DS_Store"];
 
 /// Handle keyboard input for the FileTree panel.
 /// ALL command keybindings are resolved by lookup_action() in event_loop.rs BEFORE

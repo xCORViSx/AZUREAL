@@ -352,7 +352,7 @@ pub struct App {
     pub stt_transcribing: bool,
     /// Use Nerd Font icons in file tree (set from Config on startup)
     pub nerd_fonts: bool,
-    /// Directory names to hide in the file tree (e.g. ".git", ".claude", ".azureal")
+    /// File/directory names to hide in the file tree (e.g. ".git", ".DS_Store")
     pub file_tree_hidden_dirs: HashSet<String>,
     /// When true, the file tree pane switches to "options" overlay mode
     pub file_tree_options_mode: bool,
@@ -605,7 +605,7 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             nerd_fonts: true,
-            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into(), "worktrees".into()]),
+            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into(), "worktrees".into(), ".DS_Store".into()]),
             file_tree_options_mode: false,
             file_tree_options_selected: 0,
             show_file_tree: false,
