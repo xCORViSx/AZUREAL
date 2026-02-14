@@ -10,76 +10,99 @@ use crate::models::OutputType;
 use super::App;
 
 impl App {
-    pub fn handle_claude_started(&mut self, branch_name: &str, pid: u32) {
-        self.running_sessions.insert(branch_name.to_string());
-        self.claude_pids.insert(branch_name.to_string(), pid);
-        // Clear previous exit code — process is running again
-        self.claude_exit_codes.remove(branch_name);
+    /// Called when a Claude process emits Started { pid }. The slot_id IS the
+    /// PID string, already registered in register_claude() — this just confirms
+    /// the process is alive and clears stale exit codes.
+    pub fn handle_claude_started(&mut self, slot_id: &str, _pid: u32) {
+        self.running_sessions.insert(slot_id.to_string());
+        self.claude_exit_codes.remove(slot_id);
         self.invalidate_sidebar();
-        self.set_status(format!("Claude started in {}", branch_name));
+        let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
+        self.set_status(format!("Claude started in {}", branch));
     }
 
-    pub fn handle_claude_exited(&mut self, branch_name: &str, code: Option<i32>) {
-        // Send macOS notification before cleaning up state (need session info still available)
-        self.send_completion_notification(branch_name, code);
+    /// Called when a Claude process exits. Cleans up slot state, switches active
+    /// slot if needed, and triggers session file re-parse.
+    pub fn handle_claude_exited(&mut self, slot_id: &str, code: Option<i32>) {
+        // Resolve branch before cleanup removes the slot from branch_slots
+        let branch = self.branch_for_slot(slot_id);
 
-        self.running_sessions.remove(branch_name);
-        self.claude_pids.remove(branch_name);
-        self.claude_receivers.remove(branch_name);
-        self.interactive_sessions.remove(branch_name);
-        // Store exit code so the convo pane title can show it
-        if let Some(c) = code {
-            self.claude_exit_codes.insert(branch_name.to_string(), c);
+        // Send macOS notification before cleaning up state
+        if let Some(ref branch) = branch {
+            self.send_completion_notification(branch, slot_id, code);
         }
+
+        // Remove slot from all process-tracking maps
+        self.running_sessions.remove(slot_id);
+        self.claude_receivers.remove(slot_id);
+        self.interactive_sessions.remove(slot_id);
+        if let Some(c) = code {
+            self.claude_exit_codes.insert(slot_id.to_string(), c);
+        }
+
+        // Remove slot from its branch's slot list
+        if let Some(ref branch) = branch {
+            if let Some(slots) = self.branch_slots.get_mut(branch) {
+                slots.retain(|s| s != slot_id);
+                if slots.is_empty() { self.branch_slots.remove(branch); }
+            }
+        }
+
+        // If this was the active slot, switch to next available slot or clear
+        let was_active = branch.as_ref().and_then(|b| self.active_slot.get(b))
+            .map(|a| a == slot_id).unwrap_or(false);
+
+        if was_active {
+            if let Some(ref branch) = branch {
+                // Pick another running slot on this branch, or remove active
+                let next = self.branch_slots.get(branch)
+                    .and_then(|slots| slots.last().cloned());
+                match next {
+                    Some(next_slot) => { self.active_slot.insert(branch.clone(), next_slot); }
+                    None => { self.active_slot.remove(branch); }
+                }
+            }
+        }
+
         self.invalidate_sidebar();
 
         // Force a full re-parse from the session file now that streaming is done.
-        // During streaming, session file polling was skipped (to avoid duplicates).
-        // The authoritative session file has hook extraction, rewrite handling, etc.
-        // that the live EventParser doesn't — a full parse reconciles everything.
-        let is_current = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
-        if is_current {
+        let is_current = branch.as_ref().and_then(|b| self.current_session().map(|s| s.branch_name == *b)).unwrap_or(false);
+        if is_current && was_active {
             self.session_file_parse_offset = 0;
             self.session_file_dirty = true;
         }
 
         // If this was a [NewRunCmd] session, auto-reload run_commands.json
-        // so the newly generated command appears in the picker immediately.
         if is_current && self.title_session_name.starts_with("[NewRunCmd]") {
             self.load_run_commands();
         }
 
         // If a staged prompt exists, leave it for the event loop to auto-send.
-        // Otherwise show exit status.
         if self.staged_prompt.is_some() {
             self.set_status("Sending staged prompt...");
         } else {
+            let display = branch.as_deref().unwrap_or(slot_id);
             let exit_str = match code {
                 Some(0) => "exited OK".to_string(),
                 Some(c) => format!("exited: {}", c),
                 None => "exited".to_string(),
             };
-            self.set_status(format!("{} {}", branch_name, exit_str));
+            self.set_status(format!("{} {}", display, exit_str));
         }
     }
 
-    /// Send a macOS notification when Claude finishes. Uses notify-rust with a
-    /// custom Azureal .app bundle (resources/Azureal.app) so the notification
-    /// shows the Azureal icon. Runs in a background thread so it never blocks.
-    fn send_completion_notification(&self, branch_name: &str, code: Option<i32>) {
-        // Worktree name = branch name without "azureal/" prefix
+    /// Send a macOS notification when Claude finishes.
+    fn send_completion_notification(&self, branch_name: &str, slot_id: &str, code: Option<i32>) {
         let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
 
-        // Resolve session display name: use cached title if this is the current
-        // session, otherwise look up from session_files + session_names TOML.
+        // Resolve session display name
         let is_current = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
         let session_name = if is_current && !self.title_session_name.is_empty() {
             self.title_session_name.clone()
         } else {
-            let session_id = self.session_selected_file_idx.get(branch_name)
-                .and_then(|idx| self.session_files.get(branch_name).and_then(|f| f.get(*idx)))
-                .map(|(id, _, _)| id.clone())
-                .or_else(|| self.claude_session_ids.get(branch_name).cloned());
+            // Try to find Claude session UUID for this slot, then look up its name
+            let session_id = self.claude_session_ids.get(slot_id).cloned();
             match session_id {
                 Some(id) => {
                     let names = self.load_all_session_names();
@@ -91,7 +114,6 @@ impl App {
             }
         };
 
-        // Build the notification label: "worktree:session" or just "worktree"
         let label = if session_name.is_empty() {
             worktree.to_string()
         } else {
@@ -104,9 +126,6 @@ impl App {
             None => "Process terminated",
         };
 
-        // Fire-and-forget: spawn detached thread so the event loop never blocks.
-        // notify-rust uses the native macOS NSUserNotification API. Notifications
-        // appear attributed to Finder (no custom icon support on macOS).
         let title = label;
         let body = body.to_string();
         std::thread::spawn(move || {
@@ -118,29 +137,39 @@ impl App {
         });
     }
 
-    /// Cancel the currently running Claude process for the current session
+    /// Cancel the active Claude process for the current session.
+    /// Only kills the active slot — other concurrent sessions keep running.
     pub fn cancel_current_claude(&mut self) {
         let branch_name = match self.current_session() {
             Some(s) => s.branch_name.clone(),
             None => return,
         };
-        if let Some(pid) = self.claude_pids.get(&branch_name) {
-            #[cfg(unix)]
-            {
-                use std::process::Command;
-                let _ = Command::new("kill").arg(pid.to_string()).status();
+        // The active slot's key IS the PID string — parse it back to u32
+        if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
+            if let Ok(pid) = slot.parse::<u32>() {
+                #[cfg(unix)]
+                {
+                    use std::process::Command;
+                    let _ = Command::new("kill").arg(pid.to_string()).status();
+                }
+                #[cfg(windows)]
+                {
+                    use std::process::Command;
+                    let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+                }
+                self.set_status("Cancelled Claude");
             }
-            #[cfg(windows)]
-            {
-                use std::process::Command;
-                let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
-            }
-            self.set_status("Cancelled Claude".to_string());
         }
     }
 
-    pub fn handle_claude_output(&mut self, branch_name: &str, output_type: OutputType, data: String) {
-        let is_viewing = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
+    /// Handle Claude output. Only processes events from the active slot (the one
+    /// displayed in the convo pane). Non-active slots' output is silently drained
+    /// by the event loop to prevent channel backup.
+    pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
+        // Only display output from the active slot of the currently viewed branch
+        let is_viewing = self.current_session().map(|s| {
+            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
+        }).unwrap_or(false);
         if is_viewing {
             // Single JSON parse: EventParser returns both events AND the raw parsed
             // JSON value. We reuse that value for token/model extraction below instead
@@ -291,26 +320,43 @@ impl App {
         }
     }
 
-    pub fn handle_claude_error(&mut self, branch_name: &str, error: String) {
-        let is_viewing = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
+    pub fn handle_claude_error(&mut self, slot_id: &str, error: String) {
+        // Only display errors from the active slot
+        let is_viewing = self.current_session().map(|s| {
+            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
+        }).unwrap_or(false);
         if is_viewing { self.add_output(format!("Error: {}", error)); }
-        self.set_status(format!("{}: {}", branch_name, error));
+        let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
+        self.set_status(format!("{}: {}", branch, error));
     }
 
-    pub fn register_claude(&mut self, branch_name: String, receiver: Receiver<ClaudeEvent>) {
-        self.claude_receivers.insert(branch_name.clone(), receiver);
-        self.running_sessions.insert(branch_name);
-        self.invalidate_sidebar(); // Status indicator changed
+    /// Register a newly spawned Claude process. The PID is used as the slot key.
+    /// Newest spawn becomes the active slot (its output appears in convo pane).
+    pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<ClaudeEvent>) {
+        let slot = pid.to_string();
+        self.claude_receivers.insert(slot.clone(), receiver);
+        self.running_sessions.insert(slot.clone());
+        // Track this slot under its branch (append = spawn order preserved)
+        self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
+        // Newest spawn becomes active — its output shows in convo pane
+        self.active_slot.insert(branch_name, slot);
+        self.invalidate_sidebar();
     }
 
-    pub fn set_claude_session_id(&mut self, branch_name: &str, claude_session_id: String) {
-        // Check if there's a pending custom session name to save
-        self.check_pending_session_name(branch_name, &claude_session_id);
-        self.claude_session_ids.insert(branch_name.to_string(), claude_session_id);
+    /// Store Claude's real session UUID, keyed by slot_id (PID string)
+    pub fn set_claude_session_id(&mut self, slot_id: &str, claude_session_id: String) {
+        self.check_pending_session_name(slot_id, &claude_session_id);
+        self.claude_session_ids.insert(slot_id.to_string(), claude_session_id);
     }
 
+    /// Get the Claude session UUID for the active slot of a branch (for --resume)
     pub fn get_claude_session_id(&self, branch_name: &str) -> Option<&String> {
-        self.claude_session_ids.get(branch_name)
+        // Look up the active slot's Claude session UUID
+        self.active_slot.get(branch_name)
+            .and_then(|slot| self.claude_session_ids.get(slot))
+            // Fallback: check if there's a session_id stored directly by branch
+            // (from load_sessions at startup, before any slot was created)
+            .or_else(|| self.claude_session_ids.get(branch_name))
     }
 
     pub fn poll_interactive_sessions(&mut self) -> bool {

@@ -105,11 +105,12 @@ impl Session {
         self.branch_name.strip_prefix("azureal/").unwrap_or(&self.branch_name)
     }
 
-    /// Session status (derived from runtime state, not stored)
-    pub fn status(&self, running_sessions: &std::collections::HashSet<String>) -> SessionStatus {
+    /// Session status (derived from runtime state, not stored).
+    /// `is_running` = whether any Claude process is active on this branch.
+    pub fn status(&self, is_running: bool) -> SessionStatus {
         if self.archived {
             SessionStatus::Stopped
-        } else if running_sessions.contains(&self.branch_name) {
+        } else if is_running {
             SessionStatus::Running
         } else if self.claude_session_id.is_some() {
             SessionStatus::Waiting

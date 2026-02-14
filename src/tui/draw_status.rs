@@ -19,7 +19,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Session info (left side)
     if let Some(session) = app.current_session() {
-        let status = session.status(&app.running_sessions);
+        let status = session.status(app.is_session_running(&session.branch_name));
         let status_color = status.color();
         status_spans.push(Span::styled(
             format!("{} ", status.symbol()),

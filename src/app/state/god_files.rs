@@ -3,7 +3,6 @@
 //! indicating they've accumulated too many responsibilities and should be split
 //! into smaller, focused modules.
 
-use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -65,15 +64,15 @@ impl App {
         }
     }
 
-    /// Spawn modularization sessions for all checked god files.
-    /// First file starts immediately on the main worktree; remaining files
-    /// are queued and auto-start as each prior session completes.
+    /// Spawn modularization sessions for ALL checked god files simultaneously.
+    /// Each file gets its own concurrent Claude process on the main worktree.
+    /// The newest spawn becomes the active slot (its output is displayed).
     pub fn god_file_modularize(&mut self, claude_process: &ClaudeProcess) {
         // Collect checked files and build prompts
-        let checked: Vec<(String, String, usize)> = match self.god_file_panel {
+        let checked: Vec<(String, usize)> = match self.god_file_panel {
             Some(ref panel) => panel.entries.iter()
                 .filter(|e| e.checked)
-                .map(|e| (e.rel_path.clone(), e.path.display().to_string(), e.line_count))
+                .map(|e| (e.rel_path.clone(), e.line_count))
                 .collect(),
             None => return,
         };
@@ -83,92 +82,40 @@ impl App {
             return;
         }
 
-        // Find main worktree path + branch
         let (main_branch, main_path) = match self.find_main_worktree() {
             Some(v) => v,
-            None => {
-                self.set_status("No main worktree found");
-                return;
-            }
+            None => { self.set_status("No main worktree found"); return; }
         };
 
-        // Build prompt queue — each entry is (rel_path, full_prompt)
-        let mut queue: VecDeque<(String, String)> = checked.iter()
-            .map(|(rel, _abs, lines)| (rel.clone(), build_modularize_prompt(rel, *lines)))
-            .collect();
-
-        // Pop the first file and spawn it immediately
-        let (first_rel, first_prompt) = queue.pop_front().unwrap();
-
-        // Store remaining in the app queue for auto-advance
-        self.god_file_queue = queue;
-
-        // Close the panel
         self.god_file_panel = None;
 
-        // Extract just the filename for the session display name
-        let filename = Path::new(&first_rel).file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| first_rel.clone());
-        let session_name = format!("[GFM] {}", filename);
+        // Spawn ALL checked files concurrently — each gets its own PID slot
+        let mut spawned = 0usize;
+        let mut failed = 0usize;
+        for (rel_path, lines) in &checked {
+            let prompt = build_modularize_prompt(rel_path, *lines);
+            let filename = Path::new(rel_path).file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel_path.clone());
 
-        // Set pending name so it gets saved to sessions.toml when Claude returns session_id
-        self.pending_session_name = Some((main_branch.clone(), session_name));
-
-        // Spawn Claude on the main worktree
-        match claude_process.spawn(&main_path, &first_prompt, None) {
-            Ok(rx) => {
-                self.register_claude(main_branch.clone(), rx);
-                // Switch convo pane to the main worktree so GFM output is visible
-                self.switch_to_main_worktree(&main_branch);
-                let remaining = self.god_file_queue.len();
-                if remaining > 0 {
-                    self.set_status(format!("Modularizing {} ({} queued)", first_rel, remaining));
-                } else {
-                    self.set_status(format!("Modularizing {}", first_rel));
+            match claude_process.spawn(&main_path, &prompt, None) {
+                Ok((rx, pid)) => {
+                    let slot = pid.to_string();
+                    self.pending_session_names.push((slot, format!("[GFM] {}", filename)));
+                    self.register_claude(main_branch.clone(), pid, rx);
+                    spawned += 1;
                 }
-            }
-            Err(e) => {
-                self.set_status(format!("Failed to start: {}", e));
-                self.god_file_queue.clear();
+                Err(_) => { failed += 1; }
             }
         }
-    }
 
-    /// Called when a Claude session exits on the main branch. If there are
-    /// queued god file modularizations, pop the next and spawn it.
-    pub fn god_file_advance_queue(&mut self, claude_process: &ClaudeProcess) {
-        if self.god_file_queue.is_empty() { return; }
+        // Switch view to main worktree so GFM output is visible
+        self.switch_to_main_worktree(&main_branch);
 
-        let (main_branch, main_path) = match self.find_main_worktree() {
-            Some(v) => v,
-            None => return,
-        };
-
-        let (rel_path, prompt) = self.god_file_queue.pop_front().unwrap();
-
-        let filename = Path::new(&rel_path).file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| rel_path.clone());
-        let session_name = format!("[GFM] {}", filename);
-        self.pending_session_name = Some((main_branch.clone(), session_name));
-
-        match claude_process.spawn(&main_path, &prompt, None) {
-            Ok(rx) => {
-                self.register_claude(main_branch.clone(), rx);
-                // Switch convo pane to the main worktree so GFM output is visible
-                self.switch_to_main_worktree(&main_branch);
-                let remaining = self.god_file_queue.len();
-                if remaining > 0 {
-                    self.set_status(format!("Modularizing {} ({} queued)", rel_path, remaining));
-                } else {
-                    self.set_status(format!("Modularizing {} (last in queue)", rel_path));
-                }
-            }
-            Err(e) => {
-                self.set_status(format!("Queue failed: {}", e));
-                self.god_file_queue.clear();
-            }
+        if failed == 0 {
+            self.set_status(format!("Modularizing {} files simultaneously", spawned));
+        } else {
+            self.set_status(format!("Modularizing {} files ({} failed to start)", spawned, failed));
         }
     }
 

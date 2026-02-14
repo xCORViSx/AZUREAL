@@ -46,15 +46,20 @@ pub struct App {
     pub should_quit: bool,
     pub should_restart: bool,
     pub status_message: Option<String>,
+    /// Claude event receivers keyed by slot_id (PID string). One per running process.
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
+    /// Set of currently running slot_ids (PID strings)
     pub running_sessions: HashSet<String>,
-    /// PIDs of running Claude processes per branch (for killing)
-    pub claude_pids: HashMap<String, u32>,
-    /// Last exit code per branch (shown in convo pane title after Claude exits)
+    /// Last exit code per slot_id (shown in convo pane title after Claude exits)
     pub claude_exit_codes: HashMap<String, i32>,
+    /// Claude API session UUIDs per slot_id (for --resume)
     pub claude_session_ids: HashMap<String, String>,
     /// Interactive PTY sessions (kept alive between prompts)
     pub interactive_sessions: HashMap<String, InteractiveSession>,
+    /// Maps branch_name → list of active slot_ids (PID strings, spawn order)
+    pub branch_slots: HashMap<String, Vec<String>>,
+    /// Which slot_id is actively displayed per branch (its output feeds display_events)
+    pub active_slot: HashMap<String, String>,
     pub diff_text: Option<String>,
     /// Cached colorized diff lines (expensive highlighting done once, not per-frame)
     pub diff_lines_cache: Vec<Vec<ratatui::text::Span<'static>>>,
@@ -72,8 +77,9 @@ pub struct App {
     pub creation_wizard: Option<CreationWizard>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
-    /// Pending session name to save when Claude returns session ID (branch_name, custom_name)
-    pub pending_session_name: Option<(String, String)>,
+    /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
+    /// Multiple concurrent spawns (e.g. GFM) can each register their own pending name.
+    pub pending_session_names: Vec<(String, String)>,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
     pub terminal_writer: Option<Box<dyn Write + Send>>,
@@ -347,10 +353,6 @@ pub struct App {
     pub god_file_panel: Option<GodFilePanel>,
     /// Git Actions panel state (Shift+G overlay for git operations + changed files)
     pub git_actions_panel: Option<GitActionsPanel>,
-    /// Queue of god file modularization prompts waiting to be spawned on main worktree.
-    /// Each entry is (rel_path, full_prompt). When the current session completes, the
-    /// next item is popped and spawned automatically.
-    pub god_file_queue: VecDeque<(String, String)>,
     /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
     pub show_session_list: bool,
     /// True while session list message counts are being computed (shows loading dialog)
@@ -428,10 +430,11 @@ impl App {
             status_message: None,
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
-            claude_pids: HashMap::new(),
             claude_exit_codes: HashMap::new(),
             claude_session_ids: HashMap::new(),
             interactive_sessions: HashMap::new(),
+            branch_slots: HashMap::new(),
+            active_slot: HashMap::new(),
             diff_text: None,
             diff_lines_cache: Vec::new(),
             diff_lines_dirty: true,
@@ -446,7 +449,7 @@ impl App {
             context_menu: None,
             creation_wizard: None,
             projects_panel: None,
-            pending_session_name: None,
+            pending_session_names: Vec::new(),
             terminal_mode: false,
             terminal_pty: None,
             terminal_writer: None,
@@ -580,7 +583,6 @@ impl App {
             show_file_tree: false,
             god_file_panel: None,
             git_actions_panel: None,
-            god_file_queue: VecDeque::new(),
             show_session_list: false,
             session_list_loading: false,
             session_list_selected: 0,
@@ -646,12 +648,37 @@ impl App {
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
     pub fn current_session(&self) -> Option<&Session> { self.selected_worktree.and_then(|idx| self.sessions.get(idx)) }
 
+    /// True if ANY Claude process is running on this branch (any slot)
     pub fn is_session_running(&self, branch_name: &str) -> bool {
-        self.running_sessions.contains(branch_name)
+        self.branch_slots.get(branch_name)
+            .map(|slots| slots.iter().any(|s| self.running_sessions.contains(s)))
+            .unwrap_or(false)
     }
 
+    /// True if any Claude process is running on the currently viewed branch
     pub fn is_current_session_running(&self) -> bool {
-        self.current_session().map(|s| self.running_sessions.contains(&s.branch_name)).unwrap_or(false)
+        self.current_session().map(|s| self.is_session_running(&s.branch_name)).unwrap_or(false)
+    }
+
+    /// True if the ACTIVE slot (the one feeding display_events) is running
+    pub fn is_active_slot_running(&self) -> bool {
+        self.current_session().and_then(|s| {
+            self.active_slot.get(&s.branch_name)
+                .map(|slot| self.running_sessions.contains(slot))
+        }).unwrap_or(false)
+    }
+
+    /// Look up which branch a slot_id belongs to (reverse lookup)
+    pub fn branch_for_slot(&self, slot_id: &str) -> Option<String> {
+        self.branch_slots.iter()
+            .find(|(_, slots)| slots.contains(&slot_id.to_string()))
+            .map(|(branch, _)| branch.clone())
+    }
+
+    /// Get the Claude session UUID for the active slot of a branch (for --resume)
+    pub fn active_claude_session_id(&self, branch_name: &str) -> Option<&String> {
+        self.active_slot.get(branch_name)
+            .and_then(|slot| self.claude_session_ids.get(slot))
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }

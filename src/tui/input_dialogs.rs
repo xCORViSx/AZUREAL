@@ -526,8 +526,6 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     } else {
         format!("[NewRunCmd] {}", cmd_name)
     };
-    app.pending_session_name = Some((main_branch.clone(), display_name));
-
     // Select the main branch in sidebar so user sees the output
     if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == main_branch) {
         app.selected_worktree = Some(idx);
@@ -537,8 +535,9 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     // Spawn Claude on main branch (resume existing session if any)
     let resume_id = app.get_claude_session_id(&main_branch).cloned();
     match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
-        Ok(rx) => {
-            app.register_claude(main_branch, rx);
+        Ok((rx, pid)) => {
+            app.pending_session_names.push((pid.to_string(), display_name));
+            app.register_claude(main_branch, pid, rx);
             app.focus = Focus::Output;
             app.set_status(format!("Generating run command: {}...", cmd_name));
         }

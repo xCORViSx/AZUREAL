@@ -311,7 +311,7 @@ impl App {
     // Context menu
     pub fn open_context_menu(&mut self) {
         if let Some(session) = self.current_session() {
-            let status = session.status(&self.running_sessions);
+            let status = session.status(self.is_session_running(&session.branch_name));
             let actions = SessionAction::available_for_status(status);
             if !actions.is_empty() { self.context_menu = Some(ContextMenu { actions, selected: 0 }); }
         }
@@ -641,17 +641,21 @@ impl App {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
     }
 
-    /// Kill all running Claude processes across all sessions
+    /// Kill all running Claude processes across all sessions.
+    /// Slot keys ARE PID strings — parse each back to u32 for kill.
     pub fn cancel_all_claude(&mut self) {
-        let pids: Vec<(String, u32)> = self.claude_pids.drain().collect();
-        for (branch, pid) in pids {
-            #[cfg(unix)]
-            { let _ = std::process::Command::new("kill").arg(pid.to_string()).status(); }
-            #[cfg(windows)]
-            { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
-            self.running_sessions.remove(&branch);
-            self.claude_receivers.remove(&branch);
-            self.interactive_sessions.remove(&branch);
+        let slots: Vec<String> = self.running_sessions.drain().collect();
+        for slot in &slots {
+            if let Ok(pid) = slot.parse::<u32>() {
+                #[cfg(unix)]
+                { let _ = std::process::Command::new("kill").arg(pid.to_string()).status(); }
+                #[cfg(windows)]
+                { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
+            }
+            self.claude_receivers.remove(slot);
+            self.interactive_sessions.remove(slot);
         }
+        self.branch_slots.clear();
+        self.active_slot.clear();
     }
 }

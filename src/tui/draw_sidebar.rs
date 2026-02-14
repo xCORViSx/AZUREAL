@@ -35,7 +35,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
         }
 
         let is_selected = app.selected_worktree == Some(sess_idx);
-        let status = session.status(&app.running_sessions);
+        let status = session.status(app.is_session_running(&session.branch_name));
         let status_color = status.color();
         let prefix = if session.archived { "◌ " } else { "" };
 

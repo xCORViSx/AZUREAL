@@ -40,15 +40,12 @@ impl App {
         load_session_names(&sessions_path)
     }
 
-    /// Check if there's a pending session name to save and save it
-    pub fn check_pending_session_name(&mut self, branch_name: &str, session_id: &str) {
-        if let Some((pending_branch, custom_name)) = self.pending_session_name.take() {
-            if pending_branch == branch_name {
-                self.save_session_name(session_id, &custom_name);
-            } else {
-                // Put it back if it's for a different branch
-                self.pending_session_name = Some((pending_branch, custom_name));
-            }
+    /// Check if there's a pending session name for this slot and save it.
+    /// slot_id is the PID string — each concurrent spawn can register its own name.
+    pub fn check_pending_session_name(&mut self, slot_id: &str, session_id: &str) {
+        if let Some(idx) = self.pending_session_names.iter().position(|(s, _)| s == slot_id) {
+            let (_, custom_name) = self.pending_session_names.remove(idx);
+            self.save_session_name(session_id, &custom_name);
         }
     }
 }

@@ -306,7 +306,7 @@ impl ClaudeProcess {
         working_dir: &Path,
         prompt: &str,
         resume_session_id: Option<&str>,
-    ) -> Result<mpsc::Receiver<ClaudeEvent>> {
+    ) -> Result<(mpsc::Receiver<ClaudeEvent>, u32)> {
         if prompt.is_empty() {
             anyhow::bail!("Prompt cannot be empty");
         }
@@ -417,6 +417,6 @@ impl ClaudeProcess {
             let _ = tx.send(ClaudeEvent::Exited { code });
         });
 
-        Ok(rx)
+        Ok((rx, pid))
     }
 }

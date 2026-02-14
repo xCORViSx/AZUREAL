@@ -64,8 +64,8 @@ fn handle_worktree_input(app: &mut App, key_code: KeyCode, claude_process: &Clau
                             // Start Claude in the new worktree
                             if let Some(ref wt_path) = worktree.worktree_path {
                                 match claude_process.spawn(wt_path, &prompt, None) {
-                                    Ok(rx) => {
-                                        app.register_claude(branch_name.clone(), rx);
+                                    Ok((rx, pid)) => {
+                                        app.register_claude(branch_name.clone(), pid, rx);
                                         // Find and select the new worktree
                                         if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == branch_name) {
                                             app.selected_worktree = Some(idx);
@@ -131,13 +131,12 @@ fn handle_session_input(app: &mut App, key_code: KeyCode, claude_process: &Claud
                     // Get the selected worktree
                     if let Some(session) = app.sessions.get(worktree_idx).cloned() {
                         if let Some(ref wt_path) = session.worktree_path {
-                            // Store the pending session name to be saved when we get the session ID
-                            app.pending_session_name = Some((session.branch_name.clone(), session_name.clone()));
-
                             // Start Claude in the worktree
                             match claude_process.spawn(wt_path, &prompt, None) {
-                                Ok(rx) => {
-                                    app.register_claude(session.branch_name.clone(), rx);
+                                Ok((rx, pid)) => {
+                                    // Store pending session name keyed by slot (PID)
+                                    app.pending_session_names.push((pid.to_string(), session_name.clone()));
+                                    app.register_claude(session.branch_name.clone(), pid, rx);
                                     app.selected_worktree = Some(worktree_idx);
                                     app.load_session_output();
                                     app.set_status(format!("Started session '{}' in {}", session_name, session.name()));

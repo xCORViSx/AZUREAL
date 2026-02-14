@@ -295,8 +295,10 @@ impl App {
     pub fn poll_session_file(&mut self) -> bool {
         if !self.session_file_dirty { return false; }
         self.session_file_dirty = false;
-        // Live stream already provides events — polling would duplicate them
-        if self.is_current_session_running() { return false; }
+        // Skip while the ACTIVE slot is streaming — its live output already
+        // feeds display_events. Other concurrent slots on the same branch don't
+        // affect the displayed session file, so we only gate on the active one.
+        if self.is_active_slot_running() { return false; }
         self.refresh_session_events();
         true
     }

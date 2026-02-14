@@ -95,13 +95,12 @@ pub fn handle_session_list(
 ) -> Result<()> {
     let project = discover_project()?;
     let sessions = discover_sessions(&project)?;
-    let running: std::collections::HashSet<String> = std::collections::HashSet::new();
-
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&sessions)?),
         OutputFormat::Plain => {
             for session in &sessions {
-                println!("{}\t{}", session.branch_name, session.status(&running).as_str());
+                // CLI has no process tracking — pass false for is_running
+                println!("{}\t{}", session.branch_name, session.status(false).as_str());
             }
         }
         OutputFormat::Table => {
@@ -116,7 +115,7 @@ pub fn handle_session_list(
                         .unwrap_or_else(|| "(archived)".to_string());
                     println!("{:<40} {:<12} {}",
                         truncate(&session.branch_name, 40),
-                        session.status(&running).as_str(),
+                        session.status(false).as_str(),
                         wt
                     );
                 }
@@ -169,15 +168,14 @@ pub fn handle_session_status(session_query: &str, output_format: OutputFormat) -
     let project = discover_project()?;
     let sessions = discover_sessions(&project)?;
     let session = find_session(&sessions, session_query)?;
-    let running: std::collections::HashSet<String> = std::collections::HashSet::new();
-
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&session)?),
-        OutputFormat::Plain => println!("{}\t{}", session.branch_name, session.status(&running).as_str()),
+        // CLI has no process tracking — pass false for is_running
+        OutputFormat::Plain => println!("{}\t{}", session.branch_name, session.status(false).as_str()),
         OutputFormat::Table => {
             println!("Session: {}", session.name());
             println!("Branch: {}", session.branch_name);
-            println!("Status: {}", session.status(&running).as_str());
+            println!("Status: {}", session.status(false).as_str());
             if let Some(ref wt) = session.worktree_path {
                 println!("Worktree: {}", wt.display());
                 if let Ok(status) = Git::status(wt) {

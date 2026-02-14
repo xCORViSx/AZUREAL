@@ -354,14 +354,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             ));
         }
 
-        // PID while running, exit code after
+        // PID while running (active slot's PID = its key), exit code after
         if let Some(b) = branch.as_deref() {
-            if let Some(&pid) = app.claude_pids.get(b) {
+            // The active slot's key IS the PID string
+            let active_pid = app.active_slot.get(b)
+                .filter(|slot| app.running_sessions.contains(*slot))
+                .and_then(|slot| slot.parse::<u32>().ok());
+            if let Some(pid) = active_pid {
                 spans.push(Span::styled(
                     format!(" PID:{} ", pid),
                     Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                 ));
-            } else if let Some(&code) = app.claude_exit_codes.get(b) {
+            } else if let Some(&code) = app.active_slot.get(b)
+                .and_then(|slot| app.claude_exit_codes.get(slot))
+                .or_else(|| app.claude_exit_codes.get(b)) {
                 let (text, color) = if code == 0 {
                     (" exit:0 ".to_string(), Color::Green)
                 } else {

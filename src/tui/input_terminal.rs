@@ -154,63 +154,57 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
 
                 if let Some((branch_name, worktree_opt)) = session_data {
                     if let Some(wt_path) = worktree_opt {
-                        // If Claude is already running, cancel it and stage the new prompt
-                        if app.is_session_running(&branch_name) {
-                            app.cancel_current_claude();
-                            app.staged_prompt = Some(input);
-                            app.set_status("Cancelling... prompt staged");
-                        } else {
-                            // Display user prompt (Claude's session files store the actual messages)
-                            let prompt_text = format!("You: {}\n", input.clone());
-                            app.add_user_message(input.clone());
-                            app.process_output_chunk(&prompt_text);
+                        // Display user prompt (Claude's session files store the actual messages)
+                        let prompt_text = format!("You: {}\n", input.clone());
+                        app.add_user_message(input.clone());
+                        app.process_output_chunk(&prompt_text);
 
-                            // Clear stale todo widget — new turn starts fresh;
-                            // Claude will send a new TodoWrite if it has tasks
-                            app.current_todos.clear();
+                        // Clear stale todo widget — new turn starts fresh;
+                        // Claude will send a new TodoWrite if it has tasks
+                        app.current_todos.clear();
 
-                            // If awaiting plan approval, prepend hidden context explaining the options
-                            // User only sees their input; Claude receives the context + input
-                            let actual_prompt = if app.awaiting_plan_approval {
-                                app.awaiting_plan_approval = false;
-                                format!(
-                                    "[SYSTEM: You just called ExitPlanMode. The user is viewing the plan approval prompt with these options:\n\
-                                    1. Yes, clear context and bypass permissions\n\
-                                    2. Yes, and manually approve edits\n\
-                                    3. Yes, and bypass permissions\n\
-                                    4. Yes, manually approve edits\n\
-                                    5. Custom feedback - user will type what to change\n\n\
-                                    The user's response follows. Interpret numbers 1-5 as selecting that option. Any other text is custom feedback (option 5).]\n\n\
-                                    User response: {}",
-                                    input
-                                )
-                            } else if app.awaiting_ask_user_question {
-                                app.awaiting_ask_user_question = false;
-                                // Build context from cached questions so Claude knows which options were shown
-                                let ctx = if let Some(ref q) = app.ask_user_questions_cache {
-                                    build_ask_user_context(q)
-                                } else {
-                                    String::new()
-                                };
-                                app.ask_user_questions_cache = None;
-                                if ctx.is_empty() {
-                                    input.clone()
-                                } else {
-                                    format!("{}\n\nUser response: {}", ctx, input)
-                                }
+                        // If awaiting plan approval, prepend hidden context explaining the options
+                        // User only sees their input; Claude receives the context + input
+                        let actual_prompt = if app.awaiting_plan_approval {
+                            app.awaiting_plan_approval = false;
+                            format!(
+                                "[SYSTEM: You just called ExitPlanMode. The user is viewing the plan approval prompt with these options:\n\
+                                1. Yes, clear context and bypass permissions\n\
+                                2. Yes, and manually approve edits\n\
+                                3. Yes, and bypass permissions\n\
+                                4. Yes, manually approve edits\n\
+                                5. Custom feedback - user will type what to change\n\n\
+                                The user's response follows. Interpret numbers 1-5 as selecting that option. Any other text is custom feedback (option 5).]\n\n\
+                                User response: {}",
+                                input
+                            )
+                        } else if app.awaiting_ask_user_question {
+                            app.awaiting_ask_user_question = false;
+                            let ctx = if let Some(ref q) = app.ask_user_questions_cache {
+                                build_ask_user_context(q)
                             } else {
-                                input.clone()
+                                String::new()
                             };
-
-                            let resume_id = app.get_claude_session_id(&branch_name).cloned();
-
-                            match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref()) {
-                                Ok(rx) => {
-                                    app.register_claude(branch_name, rx);
-                                    app.set_status("Running...");
-                                }
-                                Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                            app.ask_user_questions_cache = None;
+                            if ctx.is_empty() {
+                                input.clone()
+                            } else {
+                                format!("{}\n\nUser response: {}", ctx, input)
                             }
+                        } else {
+                            input.clone()
+                        };
+
+                        // Spawn a new Claude process — concurrent with any already running.
+                        // The new process becomes the active slot (its output is displayed).
+                        let resume_id = app.get_claude_session_id(&branch_name).cloned();
+
+                        match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref()) {
+                            Ok((rx, pid)) => {
+                                app.register_claude(branch_name, pid, rx);
+                                app.set_status("Running...");
+                            }
+                            Err(e) => app.set_status(format!("Failed to start: {}", e)),
                         }
                     } else {
                         app.set_status("Session has no worktree (archived?)");
@@ -242,7 +236,7 @@ pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, claud
 
                         if let Some(ref wt_path) = worktree.worktree_path {
                             match claude_process.spawn(wt_path, &prompt, None) {
-                                Ok(rx) => app.register_claude(branch_name, rx),
+                                Ok((rx, pid)) => app.register_claude(branch_name, pid, rx),
                                 Err(e) => app.set_status(format!("Failed to start: {}", e)),
                             }
                         }

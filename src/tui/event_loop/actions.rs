@@ -753,7 +753,7 @@ fn rebase_current(app: &mut App) {
 fn start_or_resume(app: &mut App) {
     use crate::models::SessionStatus;
     if let Some(session) = app.current_session() {
-        let status = session.status(&app.running_sessions);
+        let status = session.status(app.is_session_running(&session.branch_name));
         if matches!(status, SessionStatus::Pending | SessionStatus::Stopped
             | SessionStatus::Completed | SessionStatus::Failed | SessionStatus::Waiting)
         {
