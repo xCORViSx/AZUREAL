@@ -396,6 +396,134 @@ impl App {
         }
     }
 
+    // ── Documentation Health tab actions ──
+
+    /// Toggle the check on the currently selected doc entry
+    pub fn doc_toggle_check(&mut self) {
+        if let Some(ref mut panel) = self.health_panel {
+            if let Some(entry) = panel.doc_entries.get_mut(panel.doc_selected) {
+                entry.checked = !entry.checked;
+            }
+        }
+    }
+
+    /// Toggle all non-100% entries: if all non-100% are checked, uncheck them;
+    /// otherwise check all non-100% and uncheck any 100% entries
+    pub fn doc_toggle_non100(&mut self) {
+        if let Some(ref mut panel) = self.health_panel {
+            let all_non100_checked = panel.doc_entries.iter()
+                .filter(|e| e.coverage_pct < 100.0)
+                .all(|e| e.checked);
+            for entry in &mut panel.doc_entries {
+                entry.checked = if entry.coverage_pct < 100.0 { !all_non100_checked } else { false };
+            }
+        }
+    }
+
+    /// Open checked doc entries as viewer tabs (same pattern as god_file_view_checked)
+    pub fn doc_view_checked(&mut self) {
+        const MAX_TABS: usize = 12;
+        let paths: Vec<std::path::PathBuf> = match self.health_panel {
+            Some(ref panel) => panel.doc_entries.iter()
+                .filter(|e| e.checked)
+                .map(|e| e.path.clone())
+                .collect(),
+            None => return,
+        };
+        if paths.is_empty() {
+            self.set_status("No files checked — use Space to check files");
+            return;
+        }
+        let mut opened = 0usize;
+        let mut skipped_dup = 0usize;
+        let mut skipped_cap = 0usize;
+        for path in &paths {
+            if self.viewer_tabs.iter().any(|t| t.path.as_ref() == Some(path)) {
+                skipped_dup += 1; continue;
+            }
+            if self.viewer_tabs.len() >= MAX_TABS {
+                skipped_cap += paths.len() - opened - skipped_dup - skipped_cap;
+                break;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let title = path.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Untitled".to_string());
+            self.viewer_tabs.push(crate::app::types::ViewerTab {
+                path: Some(path.clone()),
+                content: Some(content),
+                scroll: 0,
+                mode: crate::app::ViewerMode::File,
+                title,
+            });
+            opened += 1;
+        }
+        self.health_panel = None;
+        if opened > 0 {
+            self.viewer_active_tab = self.viewer_tabs.len() - 1;
+            self.load_tab_to_viewer();
+            self.focus = crate::app::Focus::Viewer;
+        }
+        let mut msg = format!("Opened {} file{}", opened, if opened == 1 { "" } else { "s" });
+        if skipped_dup > 0 { msg.push_str(&format!(", {} already tabbed", skipped_dup)); }
+        if skipped_cap > 0 { msg.push_str(&format!(", {} skipped (max {} tabs)", skipped_cap, MAX_TABS)); }
+        self.set_status(msg);
+    }
+
+    /// Spawn [DH] (Documentation Health) Claude sessions for all checked doc entries.
+    /// Each checked file gets its own concurrent Claude process with a prompt
+    /// instructing Claude to add missing doc comments to all documentable items.
+    pub fn doc_health_spawn(&mut self, claude_process: &ClaudeProcess) {
+        let checked: Vec<(String, usize, usize)> = match self.health_panel {
+            Some(ref panel) => panel.doc_entries.iter()
+                .filter(|e| e.checked)
+                .map(|e| (e.rel_path.clone(), e.documented_items, e.total_items))
+                .collect(),
+            None => return,
+        };
+        if checked.is_empty() {
+            self.set_status("No files checked — use Space to check files");
+            return;
+        }
+
+        let (main_branch, main_path) = match self.find_main_worktree() {
+            Some(v) => v,
+            None => { self.set_status("No main worktree found"); return; }
+        };
+
+        self.health_panel = None;
+
+        let mut spawned = 0usize;
+        let mut failed = 0usize;
+        for (rel_path, documented, total) in &checked {
+            let prompt = build_doc_health_prompt(rel_path, *documented, *total);
+            let filename = Path::new(rel_path).file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel_path.clone());
+
+            match claude_process.spawn(&main_path, &prompt, None) {
+                Ok((rx, pid)) => {
+                    let slot = pid.to_string();
+                    self.pending_session_names.push((slot, format!("[DH] {}", filename)));
+                    self.register_claude(main_branch.clone(), pid, rx);
+                    spawned += 1;
+                }
+                Err(_) => { failed += 1; }
+            }
+        }
+
+        self.switch_to_main_worktree(&main_branch);
+
+        if failed == 0 {
+            self.set_status(format!("Documenting {} files simultaneously", spawned));
+        } else {
+            self.set_status(format!("Documenting {} files ({} failed to start)", spawned, failed));
+        }
+    }
+
     /// Switch the convo pane + sidebar selection to the main worktree.
     /// Called after spawning a GFM session so output is immediately visible.
     fn switch_to_main_worktree(&mut self, main_branch: &str) {
@@ -526,7 +654,7 @@ impl App {
             let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
             total_all += total;
             documented_all += documented;
-            entries.push(DocEntry { path: path.clone(), rel_path, total_items: total, documented_items: documented, coverage_pct });
+            entries.push(DocEntry { path: path.clone(), rel_path, total_items: total, documented_items: documented, coverage_pct, checked: false });
         }
 
         // Sort worst-documented first so user sees problem files at top
@@ -780,4 +908,35 @@ fn build_modularize_prompt(
     }
 
     prompt
+}
+
+/// Build the documentation health prompt for a file missing doc comments.
+/// Instructs Claude to read the file, identify undocumented items, and add
+/// `///` or `//!` doc comments to every public and private item.
+fn build_doc_health_prompt(rel_path: &str, documented: usize, total: usize) -> String {
+    format!(
+        "You are tasked with adding documentation comments to a source file that is missing them.\n\
+        \n\
+        File: {}\n\
+        Current coverage: {}/{} items documented ({:.1}%)\n\
+        \n\
+        IMPORTANT: Before making any changes:\n\
+        1. Read the entire file to understand its structure and context\n\
+        2. Read other files that this file imports from or interacts with\n\
+        3. Understand what each undocumented function, struct, enum, trait, constant, type alias, \
+        impl block, and module declaration does\n\
+        \n\
+        Then add `///` doc comments to every item that is missing one. For module-level context, \
+        use `//!` at the top of the file. Each doc comment should:\n\
+        - Explain WHAT the item does and WHY it exists in plain language\n\
+        - Be written as if explaining to someone seeing the codebase for the first time\n\
+        - Include parameter/return descriptions for non-trivial functions\n\
+        - Be concise but informative — one sentence is fine for simple items, \
+        more for complex ones\n\
+        \n\
+        Do NOT modify any executable code — only add or improve doc comments. \
+        Do NOT remove existing comments. Do NOT reformat or restructure the code.",
+        rel_path, documented, total,
+        if total > 0 { documented as f64 / total as f64 * 100.0 } else { 100.0 }
+    )
 }

@@ -211,15 +211,23 @@ fn draw_documentation_tab(
         return;
     }
 
-    // Column header
+    // [DH] session naming hint — mirrors the [GFM] hint in God Files tab
     lines.push(Line::from(Span::styled(
-        "  Sorted by coverage (worst first)",
+        "  Sessions will be prefixed [DH] (Documentation Health)",
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
 
-    // Visible items
-    let visible_items = (modal_h as usize).saturating_sub(12);
+    // Column header with checked count
+    let checked_count = panel.doc_entries.iter().filter(|e| e.checked).count();
+    lines.push(Line::from(Span::styled(
+        format!("  {} files sorted by coverage — worst first ({} checked)", panel.doc_entries.len(), checked_count),
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+
+    // Visible items — extra chrome from hint + checked count rows
+    let visible_items = (modal_h as usize).saturating_sub(14);
     let scroll = if panel.doc_selected < panel.doc_scroll {
         panel.doc_selected
     } else if panel.doc_selected >= panel.doc_scroll + visible_items {
@@ -228,34 +236,34 @@ fn draw_documentation_tab(
         panel.doc_scroll
     };
 
-    // Bar width for the visual coverage indicator
     let bar_width = 10usize;
 
     for (i, entry) in panel.doc_entries.iter().enumerate().skip(scroll).take(visible_items) {
         let is_selected = i == panel.doc_selected;
 
-        // Coverage percentage string and color
+        // Checkbox prefix — same visual as God Files tab
+        let checkbox = if entry.checked { "[x] " } else { "[ ] " };
+        let checkbox_color = if entry.checked { GF_GREEN } else { Color::DarkGray };
+
         let pct_str = format!("{:5.1}%", entry.coverage_pct);
         let pct_color = if entry.coverage_pct >= 80.0 { GF_GREEN }
             else if entry.coverage_pct >= 50.0 { Color::Yellow }
             else { Color::Red };
 
-        // Visual coverage bar: filled blocks + empty blocks
         let filled = (entry.coverage_pct / 100.0 * bar_width as f32).round() as usize;
         let bar: String = "█".repeat(filled) + &"░".repeat(bar_width - filled);
 
-        // Items ratio
         let ratio = format!(" {}/{}", entry.documented_items, entry.total_items);
 
-        // Path — truncate if needed, leave room for pct + bar + ratio
-        let fixed_width = pct_str.len() + 1 + bar_width + ratio.len() + 2;
+        // Path — leave room for checkbox + pct + bar + ratio
+        let fixed_width = checkbox.len() + pct_str.len() + 1 + bar_width + ratio.len() + 2;
         let path_max = inner_w.saturating_sub(fixed_width + 1);
         let path_display = if entry.rel_path.len() > path_max {
             format!("…{}", &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..])
         } else {
             entry.rel_path.clone()
         };
-        let padding = inner_w.saturating_sub(path_display.len() + fixed_width);
+        let padding = inner_w.saturating_sub(checkbox.len() + path_display.len() + pct_str.len() + 1 + bar_width + ratio.len());
         let pad_str = " ".repeat(padding);
 
         let path_style = if is_selected {
@@ -265,6 +273,7 @@ fn draw_documentation_tab(
         };
 
         lines.push(Line::from(vec![
+            Span::styled(checkbox, Style::default().fg(checkbox_color)),
             Span::styled(path_display, path_style),
             Span::raw(pad_str),
             Span::styled(pct_str, Style::default().fg(pct_color)),

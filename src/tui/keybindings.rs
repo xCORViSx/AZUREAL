@@ -83,6 +83,7 @@ impl KeyCombo {
         if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
 
         match self.code {
+            KeyCode::Char(' ') => s.push_str("Space"),
             KeyCode::Char(c) => s.push(c),
             KeyCode::Enter => s.push_str("Enter"),
             KeyCode::Esc => s.push_str("Esc"),
@@ -211,6 +212,9 @@ pub enum Action {
     HealthViewChecked,
     HealthScopeMode,
     HealthModularize,
+    HealthDocToggleCheck,
+    HealthDocToggleNon100,
+    HealthDocSpawn,
 
     // Git Actions Panel (modal)
     GitToggleFocus,
@@ -497,9 +501,13 @@ pub static HEALTH_GOD_FILES: [Keybinding; 5] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_M, "Modularize", Action::HealthModularize),
 ];
 
-/// Health Panel — Documentation tab actions (Enter opens file)
-pub static HEALTH_DOCS: [Keybinding; 1] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open file", Action::Confirm),
+/// Health Panel — Documentation tab actions.
+/// Space checks, `a` toggles all non-100%, `v` views in Viewer, Enter spawns [DH] sessions.
+pub static HEALTH_DOCS: [Keybinding; 4] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle check", Action::HealthDocToggleCheck),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Check non-100%", Action::HealthDocToggleNon100),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View checked", Action::HealthViewChecked),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Spawn doc sessions", Action::HealthDocSpawn),
 ];
 
 /// Git Actions Panel — all keys for the git modal overlay.
@@ -665,11 +673,6 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
         HelpSection { title: "Convo", bindings: &OUTPUT },
-        HelpSection { title: "Health (H)", bindings: &HEALTH_SHARED },
-        HelpSection { title: "  God Files", bindings: &HEALTH_GOD_FILES },
-        HelpSection { title: "  Documentation", bindings: &HEALTH_DOCS },
-        HelpSection { title: "Git (G)", bindings: &GIT_ACTIONS },
-        HelpSection { title: "Projects (P)", bindings: &PROJECTS_BROWSE },
     ]
 }
 
@@ -874,10 +877,14 @@ pub fn health_god_files_hints() -> String {
 
 /// Health panel footer for Documentation tab
 pub fn health_docs_hints() -> String {
-    let enter = find_key_for_action(&HEALTH_DOCS, Action::Confirm).unwrap_or("Enter".into());
+    let check = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleCheck).unwrap_or("Space".into());
+    let all = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleNon100).unwrap_or("a".into());
+    let view = find_key_for_action(&HEALTH_DOCS, Action::HealthViewChecked).unwrap_or("v".into());
+    let spawn = find_key_for_action(&HEALTH_DOCS, Action::HealthDocSpawn).unwrap_or("Enter".into());
     let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
     let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:view  {}:switch  {}:close ", enter, tab, esc)
+    format!(" {}:check  {}:non-100%  {}:view  {}:spawn  {}:switch  {}:close ",
+        check, all, view, spawn, tab, esc)
 }
 
 /// Git Actions panel — action key+description pairs for the action list labels.

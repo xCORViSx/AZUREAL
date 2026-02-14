@@ -97,21 +97,22 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         // ── God Files tab only ──
         Action::HealthToggleCheck => { app.god_file_toggle_check(); }
         Action::HealthToggleAll => { app.god_file_toggle_all(); }
-        Action::HealthViewChecked => { app.god_file_view_checked(); }
         Action::HealthScopeMode => { app.enter_god_file_scope_mode(); }
         // Start modularize — may show module style dialog first
         Action::HealthModularize => { app.god_file_start_modularize(claude_process); }
 
-        // ── Documentation tab only ──
-        Action::Confirm => {
-            if let Some(ref p) = app.health_panel {
-                if let Some(entry) = p.doc_entries.get(p.doc_selected) {
-                    let path_str = entry.path.display().to_string();
-                    app.health_panel = None;
-                    app.load_file_at_path(&path_str);
-                }
+        // ── Shared — `v` opens checked files in Viewer from both tabs ──
+        Action::HealthViewChecked => {
+            match tab {
+                crate::app::types::HealthTab::GodFiles => app.god_file_view_checked(),
+                crate::app::types::HealthTab::Documentation => app.doc_view_checked(),
             }
         }
+
+        // ── Documentation tab only ──
+        Action::HealthDocToggleCheck => { app.doc_toggle_check(); }
+        Action::HealthDocToggleNon100 => { app.doc_toggle_non100(); }
+        Action::HealthDocSpawn => { app.doc_health_spawn(claude_process); }
         _ => {}
     }
     Ok(())

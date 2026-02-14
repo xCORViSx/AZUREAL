@@ -557,4 +557,6 @@ pub struct DocEntry {
     pub documented_items: usize,
     /// Per-file coverage percentage 0.0–100.0
     pub coverage_pct: f32,
+    /// Whether this entry is checked for batch doc-health session spawning
+    pub checked: bool,
 }

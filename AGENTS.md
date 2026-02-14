@@ -584,6 +584,7 @@ Implementation:
 - **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
+- Modal panels with visible footer hints (Health, Git, Projects) are excluded from the help panel — their keys are already self-documenting in the panel UI
 - Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
@@ -941,16 +942,23 @@ All checked files spawned simultaneously as concurrent Claude processes on the m
 Scans all source files for documentation coverage — counts documentable items (`fn`, `struct`, `enum`, `trait`, `const`, `static`, `type`, `impl`, `mod`) and checks whether each has a preceding `///` or `//!` doc comment. Line-based heuristic, no AST parsing.
 
 *Display:*
+- `[DH] (Documentation Health)` session naming hint at top
 - Overall score header: `Overall Documentation Score: XX.X%` color-coded (green ≥80%, yellow ≥50%, red <50%) with file count
-- Per-file list sorted by coverage ascending (worst-documented first)
-- Each row: file path, coverage percentage, visual bar (`█░` blocks), documented/total ratio
-- Selected row highlighted in green
+- Per-file list sorted by coverage ascending (worst-documented first) with `[x]/[ ]` checkboxes
+- Each row: checkbox, file path, coverage percentage, visual bar (`█░` blocks), documented/total ratio
+- Selected row highlighted in green; checked count shown in header
 
 *Keybindings (Documentation tab):*
 - `j/↓`, `k/↑` — navigate; `⌥↑/⌥↓` — jump top/bottom
-- `Enter` — open selected file in Viewer
+- `Space` — toggle check on selected file
+- `a` — check all non-100% files (toggle: if all non-100% checked, unchecks them)
+- `v` — view checked files as Viewer tabs (up to 12)
+- `Enter` — spawn [DH] Claude sessions for all checked files (concurrent, one per file)
 - `Tab` — switch to God Files tab
 - `Esc` — close panel
+
+*[DH] Session Spawning:*
+Checked files spawn concurrent Claude sessions on the main worktree, each prefixed `[DH] filename`. The prompt instructs Claude to add `///` and `//!` doc comments to all undocumented items without modifying executable code. Shows current documented/total ratio so Claude knows the starting coverage.
 
 Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked, scope persistence, doc scanner), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match), `src/tui/draw_health.rs` (panel rendering with tab bar, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED + HEALTH_GOD_FILES + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
 
@@ -1194,12 +1202,12 @@ azureal/
 │   │   ├── branch.rs       # Branch management
 │   │   ├── rebase.rs       # Rebase operations
 │   │   └── worktree.rs     # Worktree create/delete/list
-│   ├── cmd/                # CLI command handlers
-│   │   ├── mod.rs          # Main command routing
+│   ├── cmd.rs              # CLI command handler routing (file-based module root)
+│   ├── cmd/                # CLI command handler submodules
 │   │   ├── session.rs      # Session list/show commands
 │   │   └── project.rs      # Project info command
 │   ├── claude.rs           # Claude CLI process management
-│   ├── cli/mod.rs          # CLI argument parsing
+│   ├── cli.rs              # CLI argument parsing (clap definitions)
 │   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
