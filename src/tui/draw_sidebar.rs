@@ -27,6 +27,10 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
     let project_matches = !filter.is_empty() && project.name.to_lowercase().contains(&filter);
 
     for (sess_idx, session) in app.sessions.iter().enumerate() {
+        // Hide the main worktree when the option is enabled
+        if app.hide_main_worktree && session.branch_name == project.main_branch {
+            continue;
+        }
         // Filter: skip worktrees that don't match
         if !filter.is_empty() && !project_matches
             && !session.name().to_lowercase().contains(&filter)
@@ -90,7 +94,8 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         let match_count = app.sidebar_row_map.iter()
             .filter(|a| matches!(a, SidebarRowAction::Worktree(_)))
             .count();
-        let total = app.sessions.len();
+        // Total excludes hidden main worktree when the option is enabled
+        let total = if app.hide_main_worktree { app.sessions.len().saturating_sub(1) } else { app.sessions.len() };
         let title = format!(" {}/{} ", match_count, total);
         let border_color = if app.sidebar_filter_active { Color::Yellow } else { Color::DarkGray };
         let filter_widget = Paragraph::new(app.sidebar_filter.clone())

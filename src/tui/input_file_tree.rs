@@ -12,6 +12,8 @@ use super::keybindings::{Action, KeyContext, lookup_action};
 
 /// Directory names matching the options overlay (same order as draw_file_tree.rs)
 const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal"];
+/// Total option count: hidden dirs + "Hide main worktree"
+const FT_OPTIONS_TOTAL: usize = 4;
 
 /// Handle keyboard input for the FileTree panel.
 /// ALL command keybindings are resolved by lookup_action() in event_loop.rs BEFORE
@@ -37,26 +39,41 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
     Ok(())
 }
 
-/// Handle input in file tree options overlay (hidden directories toggles)
+/// Handle input in file tree options overlay (hidden directories + sidebar toggles)
 fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match key.code {
         // Navigate options list with wrapping
         KeyCode::Char('j') | KeyCode::Down => {
-            app.file_tree_options_selected = (app.file_tree_options_selected + 1) % FT_OPTIONS.len();
+            app.file_tree_options_selected = (app.file_tree_options_selected + 1) % FT_OPTIONS_TOTAL;
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.file_tree_options_selected = app.file_tree_options_selected.checked_sub(1)
-                .unwrap_or(FT_OPTIONS.len() - 1);
+                .unwrap_or(FT_OPTIONS_TOTAL - 1);
         }
-        // Toggle the selected directory's hidden state
+        // Toggle the selected option
         KeyCode::Char(' ') | KeyCode::Enter => {
-            let name = FT_OPTIONS[app.file_tree_options_selected].to_string();
-            if app.file_tree_hidden_dirs.contains(&name) {
-                app.file_tree_hidden_dirs.remove(&name);
+            let idx = app.file_tree_options_selected;
+            if idx < FT_OPTIONS.len() {
+                // Directory visibility toggle
+                let name = FT_OPTIONS[idx].to_string();
+                if app.file_tree_hidden_dirs.contains(&name) {
+                    app.file_tree_hidden_dirs.remove(&name);
+                } else {
+                    app.file_tree_hidden_dirs.insert(name);
+                }
+                app.refresh_file_tree();
             } else {
-                app.file_tree_hidden_dirs.insert(name);
+                // "Hide main worktree" toggle — affects sidebar, not file tree
+                app.hide_main_worktree = !app.hide_main_worktree;
+                // If we just hid main and it's currently selected, move to next
+                if app.hide_main_worktree {
+                    if let (Some(0), true) = (app.selected_worktree, app.sessions.len() > 1) {
+                        app.selected_worktree = Some(1);
+                        app.load_session_output();
+                    }
+                }
+                app.invalidate_sidebar();
             }
-            app.refresh_file_tree();
         }
         // Close options overlay
         KeyCode::Esc => {

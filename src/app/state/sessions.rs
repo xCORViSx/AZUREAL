@@ -38,20 +38,28 @@ impl App {
         self.session_matches_filter_with_names(idx, &filter, &names)
     }
 
+    /// Whether the main worktree at the given index is hidden by the toggle.
+    fn is_main_hidden(&self, idx: usize) -> bool {
+        if !self.hide_main_worktree { return false; }
+        let Some(session) = self.sessions.get(idx) else { return false };
+        let Some(ref project) = self.project else { return false };
+        session.branch_name == project.main_branch
+    }
+
     pub fn select_next_session(&mut self) {
         let start = self.selected_worktree.map(|i| i + 1).unwrap_or(0);
         if self.sidebar_filter.is_empty() {
-            // No filter — simple index bump
-            if start < self.sessions.len() {
+            // No filter — find next visible session (skip hidden main)
+            if let Some(next) = (start..self.sessions.len()).find(|&i| !self.is_main_hidden(i)) {
                 self.save_current_terminal();
-                self.selected_worktree = Some(start);
+                self.selected_worktree = Some(next);
                 self.load_session_output();
                 self.invalidate_sidebar();
             }
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(next) = (start..self.sessions.len()).find(|&i| !self.is_main_hidden(i) && self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(next) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(next);
@@ -70,10 +78,10 @@ impl App {
         let names = self.load_all_session_names();
         // Current selection already matches — keep it
         if let Some(idx) = self.selected_worktree {
-            if self.session_matches_filter_with_names(idx, &filter, &names) { return; }
+            if !self.is_main_hidden(idx) && self.session_matches_filter_with_names(idx, &filter, &names) { return; }
         }
-        // Find first matching session
-        if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+        // Find first visible matching session
+        if let Some(first) = (0..self.sessions.len()).find(|&i| !self.is_main_hidden(i) && self.session_matches_filter_with_names(i, &filter, &names)) {
             self.save_current_terminal();
             self.selected_worktree = Some(first);
             self.load_session_output();
@@ -84,14 +92,17 @@ impl App {
         let Some(current) = self.selected_worktree else { return };
         if current == 0 { return; }
         if self.sidebar_filter.is_empty() {
-            self.save_current_terminal();
-            self.selected_worktree = Some(current - 1);
-            self.load_session_output();
-            self.invalidate_sidebar();
+            // Find previous visible session (skip hidden main)
+            if let Some(prev) = (0..current).rev().find(|&i| !self.is_main_hidden(i)) {
+                self.save_current_terminal();
+                self.selected_worktree = Some(prev);
+                self.load_session_output();
+                self.invalidate_sidebar();
+            }
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(prev) = (0..current).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(prev) = (0..current).rev().find(|&i| !self.is_main_hidden(i) && self.session_matches_filter_with_names(i, &filter, &names)) {
                 self.save_current_terminal();
                 self.selected_worktree = Some(prev);
                 self.load_session_output();
@@ -191,20 +202,22 @@ impl App {
         }
     }
 
-    /// Jump to first session (respects sidebar filter)
+    /// Jump to first session (respects sidebar filter + main visibility)
     pub fn select_first_session(&mut self) {
         if self.sessions.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
-            if self.selected_worktree != Some(0) {
-                self.save_current_terminal();
-                self.selected_worktree = Some(0);
-                self.load_session_output();
-                self.invalidate_sidebar();
+            if let Some(first) = (0..self.sessions.len()).find(|&i| !self.is_main_hidden(i)) {
+                if self.selected_worktree != Some(first) {
+                    self.save_current_terminal();
+                    self.selected_worktree = Some(first);
+                    self.load_session_output();
+                    self.invalidate_sidebar();
+                }
             }
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(first) = (0..self.sessions.len()).find(|&i| !self.is_main_hidden(i) && self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(first) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(first);
@@ -215,21 +228,22 @@ impl App {
         }
     }
 
-    /// Jump to last session (respects sidebar filter)
+    /// Jump to last session (respects sidebar filter + main visibility)
     pub fn select_last_session(&mut self) {
         if self.sessions.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
-            let last = self.sessions.len() - 1;
-            if self.selected_worktree != Some(last) {
-                self.save_current_terminal();
-                self.selected_worktree = Some(last);
-                self.load_session_output();
-                self.invalidate_sidebar();
+            if let Some(last) = (0..self.sessions.len()).rev().find(|&i| !self.is_main_hidden(i)) {
+                if self.selected_worktree != Some(last) {
+                    self.save_current_terminal();
+                    self.selected_worktree = Some(last);
+                    self.load_session_output();
+                    self.invalidate_sidebar();
+                }
             }
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(last) = (0..self.sessions.len()).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(last) = (0..self.sessions.len()).rev().find(|&i| !self.is_main_hidden(i) && self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(last) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(last);
