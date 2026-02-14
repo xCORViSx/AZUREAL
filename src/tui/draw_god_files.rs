@@ -18,9 +18,9 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
     let Some(ref panel) = app.god_file_panel else { return };
     let area = f.area();
 
-    // Center a modal box (55% width, 70% height, min 50x12) — same size as Git panel
-    let modal_w = (area.width * 55 / 100).max(50).min(area.width);
-    let modal_h = (area.height * 70 / 100).max(12).min(area.height);
+    // Center a compact modal box (35% width, 40% height, min 40x8)
+    let modal_w = (area.width * 35 / 100).max(40).min(area.width);
+    let modal_h = (area.height * 40 / 100).max(8).min(area.height);
     let modal = Rect::new(
         area.x + (area.width.saturating_sub(modal_w)) / 2,
         area.y + (area.height.saturating_sub(modal_h)) / 2,

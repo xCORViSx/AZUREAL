@@ -109,14 +109,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
     //
-    // ┌──────────┬───────────────────────┬─────────────┐
-    // │Worktrees │       Viewer          │             │
-    // │  (40)    │       (rem)           │  Convo (80) │
-    // ├──────────┴───────────────────────┤             │
-    // │     Input / Terminal             │             │
-    // ├──────────────────────────────────┴─────────────┤
-    // │                 Status Bar                     │
-    // └───────────────────────────────────────────────┘
+    // ┌──────────┬──────────────────────────┬──────────────┐
+    // │Worktrees │         Viewer           │              │
+    // │  (15%)   │         (50%)            │  Convo (35%) │
+    // ├──────────┴──────────────────────────┤              │
+    // │     Input / Terminal                │              │
+    // ├─────────────────────────────────────┴──────────────┤
+    // │                  Status Bar                        │
+    // └────────────────────────────────────────────────────┘
     // Worktrees pane shows FileTree overlay when 'f' is pressed.
     // Convo pane shows Session list overlay when 's' is pressed.
 
@@ -128,13 +128,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let content_area = outer[0];
     let status_area = outer[1];
 
-    // Step 2: Split content horizontally — Worktrees (40) | Viewer (remaining) | Convo (80 fixed)
+    // Step 2: Split content horizontally — Worktrees (15%) | Viewer (50%) | Convo (35%)
     let h_split = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(40),  // Worktrees (or FileTree overlay)
-            Constraint::Min(20),    // Viewer (remaining space)
-            Constraint::Length(80), // Convo (fixed 80 cols)
+            Constraint::Percentage(15), // Worktrees (or FileTree overlay)
+            Constraint::Percentage(50), // Viewer
+            Constraint::Percentage(35), // Convo
         ])
         .split(content_area);
 

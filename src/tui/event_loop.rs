@@ -260,10 +260,11 @@ pub async fn run_app(
         if app.rendered_lines_dirty && !app.render_in_flight
             && app.last_render_submit.elapsed() >= Duration::from_millis(50)
         {
-            // Convo pane is fixed at 80 columns (Constraint::Length(80) in run.rs).
-            // We pass this directly — the old formula `(terminal - 80) / 2` was a
-            // leftover from the 50/50 split layout and made bubbles way too narrow.
-            submit_render_request(app, 80);
+            // Convo pane width is percentage-based (35% in run.rs), so we read the
+            // actual width from the cached pane rect set during the last draw.
+            // Falls back to 80 on first frame before any draw has occurred.
+            let convo_w = if app.pane_convo.width > 0 { app.pane_convo.width } else { 80 };
+            submit_render_request(app, convo_w);
             app.last_render_submit = Instant::now();
         }
 

@@ -20,7 +20,7 @@
 ## Features
 
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots
-- **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
+- **3-Pane TUI** — Worktrees (15%), Viewer (50%), and Convo (35%) panes with Tab cycling; proportional sizing maintained across all terminal sizes. FileTree and Session list available as toggle overlays (`f` and `s`)
 - **Viewer Tabs** — Up to 12 tabs across 2 fixed-width rows (6 per row); `t` to tab current file, `⌥t` for tab dialog, `[`/`]` to navigate, `x` to close
 - **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; **Nerd Font icons** auto-detected at startup with language-brand colors for ~60 file types (emoji fallback when Nerd Font not detected); file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste)
 - **Image Viewer** — Opening PNG, JPG, GIF, BMP, WebP, or ICO files from FileTree renders them inline in the Viewer pane using terminal graphics (Kitty on Ghostty/Kitty, Sixel on iTerm2, halfblock fallback everywhere else)

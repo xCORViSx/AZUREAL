@@ -259,18 +259,23 @@ impl Keybinding {
             || self.alternatives.iter().any(|k| k.matches(modifiers, code))
     }
 
-    /// Display string combining primary and alternatives (e.g., "j/↓")
+    /// Display string combining primary and alternatives (e.g., "j/↓").
+    /// Skips macOS ⌥+letter unicode fallback chars (®, π, †, etc.) — those are
+    /// internal matching alternatives, not meaningful to show in the help panel.
     pub fn display_keys(&self) -> String {
         if self.alternatives.is_empty() {
-            self.primary.display()
-        } else {
-            let mut s = self.primary.display();
-            for alt in self.alternatives {
-                s.push('/');
-                s.push_str(&alt.display());
-            }
-            s
+            return self.primary.display();
         }
+        let mut s = self.primary.display();
+        for alt in self.alternatives {
+            // Skip bare unicode chars produced by macOS ⌥+letter (not ASCII, no modifiers)
+            if let KeyCode::Char(c) = alt.code {
+                if !c.is_ascii() && alt.modifiers == KeyModifiers::NONE { continue; }
+            }
+            s.push('/');
+            s.push_str(&alt.display());
+        }
+        s
     }
 }
 

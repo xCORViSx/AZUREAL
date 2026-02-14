@@ -63,20 +63,20 @@ Implementation: `src/git.rs` handles worktree creation, deletion, and status que
 A ratatui-based terminal interface with 3-pane layout, toggle overlays, and status bar:
 
 ```
-┌──────────┬───────────────────────┬─ Convo [session] ──┐
-│Worktrees │       Viewer          │                     │
-│  (40)    │       (rem)           │  Convo (80 fixed)   │
-├──────────┴───────────────────────┤                     │
-│     Input / Terminal             │                     │
-├──────────────────────────────────┴────────────────────┤
-│                    Status Bar                          │
-└───────────────────────────────────────────────────────┘
+┌──────────┬──────────────────────────┬──────────────┐
+│Worktrees │         Viewer           │              │
+│  (15%)   │         (50%)            │  Convo (35%) │
+├──────────┴──────────────────────────┤              │
+│     Input / Terminal                │              │
+├─────────────────────────────────────┴──────────────┤
+│                  Status Bar                        │
+└────────────────────────────────────────────────────┘
 ```
 
 **Panes:**
-- **Worktrees** (40 cols): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `w` or `Esc` to return to worktree list.
-- **Viewer** (remaining width): File content viewer or diff detail (dual-purpose)
-- **Convo** (80 cols, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
+- **Worktrees** (15%): Worktree list showing all active and archived worktrees. Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `w` or `Esc` to return to worktree list.
+- **Viewer** (50%): File content viewer or diff detail (dual-purpose)
+- **Convo** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Context-sensitive help and session info; CPU% + PID badge right-aligned
 
@@ -595,7 +595,7 @@ Implementation:
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
 
-**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes.
+**macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes. **Help panel display:** `display_keys()` filters out non-ASCII bare-char alternatives (®, π, †) so the help panel shows clean `⌥r` instead of `⌥r/®` — the unicode chars are internal matching details, not user-facing.
 
 **input_cursor is a CHAR INDEX, not a byte offset.** `String::insert()` and `String::remove()` take byte offsets. Use `char_to_byte(char_idx)` to convert before calling them. Comparing `input_cursor` against `String::len()` (bytes) is wrong — use `.chars().count()` instead. See `src/app/input.rs`.
 
