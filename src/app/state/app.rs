@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Session};
@@ -359,6 +359,8 @@ pub struct App {
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
     /// documentation coverage, and future health checks. None when closed.
     pub health_panel: Option<HealthPanel>,
+    /// Remembers which tab was last active so the panel reopens on the same tab
+    pub last_health_tab: HealthTab,
     /// When true, the FileTree is in "god file filter mode" — directories included
     /// in the god file scan are highlighted green, and the user can press Enter to
     /// toggle directories in/out of the scan scope.
@@ -602,6 +604,7 @@ impl App {
             hide_dot_git: true,
             show_file_tree: false,
             health_panel: None,
+            last_health_tab: HealthTab::GodFiles,
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,

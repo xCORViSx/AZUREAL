@@ -32,6 +32,9 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - **Space key displays as "Space" in help panel** — `KeyCombo::display()` now renders `KeyCode::Char(' ')` as the word "Space" instead of a literal invisible space character.
 - **Help panel trimmed** — Removed Health (shared + God Files + Documentation), Git, and Projects sections from the help overlay since all their keybindings are already visible in their own panel footers.
+- **Health panel remembers last tab** — Reopens on whichever tab (God Files or Documentation) was active when closed. Stored in `App::last_health_tab`.
+- **Documentation tab Enter label** — Changed from "spawn" to "complete" in footer hints and binding descriptions.
+- **Health panel footer hints green** — Footer action hints now render in `GF_GREEN` (matching border) instead of dim gray.
 - **God File panel → Worktree Health Panel** — Standalone God File panel refactored into a tab within the new Worktree Health Panel. Keybinding moved from `g` (Worktrees-only) to `Shift+H` (global). Panel title changed from "God Files" to "Worktree Health". All existing God File functionality preserved as the first tab.
 - **God File panel color: azure → green** — Border, title, selected row highlight, and checkboxes all changed from AZURE (#3399FF) to GF_GREEN (`Rgb(80,200,80)`) — matching the scope mode overlay green for a cohesive God File visual identity.
 - **God File scope mode keybinding: `f` → `s`** — Renamed from "filter" to "scope" for clarity. Scope now persists to `.azureal/godfilescope` and auto-loads on panel open.

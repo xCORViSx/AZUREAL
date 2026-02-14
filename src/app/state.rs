@@ -11,13 +11,14 @@
 //! - `scroll`: Scroll operations
 //! - `claude`: Claude session handling
 //! - `file_browser`: File tree and viewer
+//! - `health`: Worktree Health (god files + documentation coverage)
 //! - `ui`: Focus, dialogs, menus, wizard
 //! - `helpers`: Utility functions
 
 mod app;
 mod claude;
 mod file_browser;
-mod god_files;
+mod health;
 mod helpers;
 mod load;
 mod output;

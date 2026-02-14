@@ -94,7 +94,7 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
     if footer_y < area.height && footer_x < area.width {
         let footer_rect = Rect::new(footer_x, footer_y, footer.len() as u16, 1);
         let footer_widget = Paragraph::new(Line::from(Span::styled(
-            footer, Style::default().fg(Color::DarkGray),
+            footer, Style::default().fg(GF_GREEN),
         )));
         f.render_widget(footer_widget, footer_rect);
     }

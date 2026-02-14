@@ -901,7 +901,7 @@ Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19
 
 ### Worktree Health Panel
 
-Tabbed modal overlay (`Shift+H` toggles open/close, global keybinding) housing multiple health-check systems. Green accent color (`Rgb(80,200,80)`, `GF_GREEN` constant) with QuadrantOutside border. Centered modal (55% × 70%, min 50×16). Bold title: `" Worktree Health "`.
+Tabbed modal overlay (`Shift+H` toggles open/close, global keybinding) housing multiple health-check systems. Green accent color (`Rgb(80,200,80)`, `GF_GREEN` constant) with QuadrantOutside border. Centered modal (55% × 70%, min 50×16). Bold title: `" Worktree Health "`. Reopens on the last-visited tab (`last_health_tab` in App state, defaults to God Files).
 
 **Tab Bar:**
 Row 0 inside border: `[ God Files ]  [ Documentation ]` — active tab bright green + bold, inactive dim gray. Tab key switches between tabs.
@@ -953,7 +953,7 @@ Scans all source files for documentation coverage — counts documentable items 
 - `Space` — toggle check on selected file
 - `a` — check all non-100% files (toggle: if all non-100% checked, unchecks them)
 - `v` — view checked files as Viewer tabs (up to 12)
-- `Enter` — spawn [DH] Claude sessions for all checked files (concurrent, one per file)
+- `Enter` — complete checked files (spawns concurrent [DH] Claude sessions, one per file)
 - `Tab` — switch to God Files tab
 - `Esc` — close panel
 

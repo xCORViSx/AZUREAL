@@ -507,7 +507,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle check", Action::HealthDocToggleCheck),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Check non-100%", Action::HealthDocToggleNon100),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View checked", Action::HealthViewChecked),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Spawn doc sessions", Action::HealthDocSpawn),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Complete checked", Action::HealthDocSpawn),
 ];
 
 /// Git Actions Panel — all keys for the git modal overlay.
@@ -880,11 +880,11 @@ pub fn health_docs_hints() -> String {
     let check = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleCheck).unwrap_or("Space".into());
     let all = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleNon100).unwrap_or("a".into());
     let view = find_key_for_action(&HEALTH_DOCS, Action::HealthViewChecked).unwrap_or("v".into());
-    let spawn = find_key_for_action(&HEALTH_DOCS, Action::HealthDocSpawn).unwrap_or("Enter".into());
+    let complete = find_key_for_action(&HEALTH_DOCS, Action::HealthDocSpawn).unwrap_or("Enter".into());
     let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
     let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:check  {}:non-100%  {}:view  {}:spawn  {}:switch  {}:close ",
-        check, all, view, spawn, tab, esc)
+    format!(" {}:check  {}:non-100%  {}:view  {}:complete  {}:switch  {}:close ",
+        check, all, view, complete, tab, esc)
 }
 
 /// Git Actions panel — action key+description pairs for the action list labels.
