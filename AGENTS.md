@@ -927,7 +927,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - Actions section: 5 git operations with single-key shortcuts, navigable with j/k
 - Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
-- Top-right toggle: `h:hide .git ✓` (green) or `h:hide .git ✗` (red) — toggles `.git` directory visibility in file tree
+- Top-right toggle: `H:hide .git ✓` (green) or `H:hide .git ✗` (red) — toggles `.git` directory visibility in file tree
 - Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
 
 **Actions (when actions section focused):**
@@ -945,7 +945,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 **Global within panel:**
 - `Tab` — toggle focus between actions and file list
 - `R` — refresh changed file list
-- `h` — toggle `.git` directory visibility in file tree (default: hidden)
+- `H` — toggle `.git` directory visibility in file tree (default: hidden)
 - `Esc` — close panel
 - Click outside — dismiss (mouse.rs)
 

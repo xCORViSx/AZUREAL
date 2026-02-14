@@ -199,8 +199,8 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, modal);
 
-    // ── Top-right toggle: "h: hide .git ✓" / "h: hide .git ✗" ──
-    let toggle_label = if app.hide_dot_git { " h:hide .git \u{2713} " } else { " h:hide .git \u{2717} " };
+    // ── Top-right toggle: "H: hide .git ✓" / "H: hide .git ✗" ──
+    let toggle_label = if app.hide_dot_git { " H:hide .git \u{2713} " } else { " H:hide .git \u{2717} " };
     let toggle_color = if app.hide_dot_git { Color::Green } else { Color::Red };
     let toggle_x = modal.x + modal.width.saturating_sub(toggle_label.len() as u16 + 1);
     let toggle_y = modal.y;
