@@ -21,6 +21,7 @@
 
 - **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots
 - **3-Pane TUI** — Worktrees (40), Viewer (remaining), and Convo (80) panes with Tab cycling; FileTree and Session list available as toggle overlays (`f` and `s`)
+- **Viewer Tabs** — Up to 12 tabs across 2 fixed-width rows (6 per row); `t` to tab current file, `⌥t` for tab dialog, `[`/`]` to navigate, `x` to close
 - **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste)
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support

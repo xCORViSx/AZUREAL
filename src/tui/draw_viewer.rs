@@ -18,7 +18,9 @@ use super::util::AZURE;
 /// Draw the viewer panel showing file content or diff detail
 pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.focus == Focus::Viewer;
-    let viewport_height = area.height.saturating_sub(2) as usize;
+    // Tab bar eats 1-2 rows from the top of the content area
+    let tb_rows = tab_bar_rows(app.viewer_tabs.len()) as usize;
+    let viewport_height = area.height.saturating_sub(2).saturating_sub(tb_rows as u16) as usize;
     let viewport_width = area.width.saturating_sub(2) as usize;
 
     // Cache viewport height for scroll operations (input handling uses this)
@@ -322,6 +324,14 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         Color::White
     };
+
+    // Prepend empty lines so the tab bar overlays blank space, not real content.
+    // The Paragraph renders from inner row 0, and the tab bar draws on top of rows 0-1.
+    let lines = if tb_rows > 0 {
+        let mut padded = vec![Line::from(""); tb_rows];
+        padded.extend(lines);
+        padded
+    } else { lines };
 
     let widget = Paragraph::new(lines).block(
         Block::default()
@@ -797,46 +807,54 @@ fn draw_discard_dialog(f: &mut Frame, area: Rect, from_edit_diff: bool) {
     }
 }
 
-/// Draw tab bar at top of viewer showing open tabs
+/// How many rows the tab bar occupies (0 if no tabs, 1 for ≤6, 2 for >6)
+fn tab_bar_rows(tab_count: usize) -> u16 {
+    if tab_count == 0 { 0 }
+    else if tab_count <= 6 { 1 }
+    else { 2 }
+}
+
+/// Draw fixed-width tab bar: 6 tabs per row, up to 2 rows (12 max).
+/// Each "slot" is inner_width/6. Tab content fills slot_w-1 chars + 1 char gap.
 fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
-    // Tab bar goes inside the border, at the top
-    let bar_area = Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), 1);
-    if bar_area.width < 10 || bar_area.height == 0 { return; }
+    let inner_w = area.width.saturating_sub(2) as usize;
+    if inner_w < 12 { return; }
+    // Each slot includes the tab + 1 trailing gap char. 6 slots fill the row.
+    let slot_w = inner_w / 6;
+    // Visible tab content = slot minus gap(1) minus leading pad(1)
+    let name_max = slot_w.saturating_sub(2);
+    let rows = tab_bar_rows(app.viewer_tabs.len());
 
-    let mut spans: Vec<Span> = Vec::new();
-    let max_tab_width = 15usize;
+    for row in 0..rows {
+        let y = area.y + 1 + row;
+        let bar_area = Rect::new(area.x + 1, y, inner_w as u16, 1);
+        let start = row as usize * 6;
+        let end = (start + 6).min(app.viewer_tabs.len());
+        let mut spans: Vec<Span> = Vec::new();
 
-    for (idx, tab) in app.viewer_tabs.iter().enumerate() {
-        let name = tab.name();
-        let display_name = if name.len() > max_tab_width - 4 {
-            format!("{}…", &name[..max_tab_width - 5])
-        } else {
-            name.to_string()
-        };
-
-        let is_active = idx == app.viewer_active_tab;
-        let style = if is_active {
-            Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray).bg(Color::DarkGray)
-        };
-
-        // Add separator before non-first tabs
-        if idx > 0 {
+        for idx in start..end {
+            let name = app.viewer_tabs[idx].name();
+            // Truncate to fit, ellipsis if too long
+            let display = if name.chars().count() > name_max {
+                let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
+                format!("{trunc}…")
+            } else {
+                name.to_string()
+            };
+            let is_active = idx == app.viewer_active_tab;
+            let style = if is_active {
+                Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray).bg(Color::DarkGray)
+            };
+            // " name" padded to slot_w-1, then 1 gap char = total slot_w
+            let padded = format!(" {:<width$}", display, width = slot_w - 2);
+            let tab_str: String = padded.chars().take(slot_w - 1).collect();
+            spans.push(Span::styled(tab_str, style));
             spans.push(Span::raw(" "));
         }
-
-        spans.push(Span::styled(format!(" {} ", display_name), style));
+        f.render_widget(Paragraph::new(Line::from(spans)), bar_area);
     }
-
-    // Add hint for more tabs
-    if app.viewer_tabs.len() > 1 {
-        spans.push(Span::styled("  [/] ", Style::default().fg(Color::DarkGray)));
-    }
-
-    let line = Line::from(spans);
-    let para = Paragraph::new(line);
-    f.render_widget(para, bar_area);
 }
 
 /// Draw tab dialog overlay for switching between tabs

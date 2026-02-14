@@ -510,8 +510,14 @@ impl App {
 
     // Viewer tabs
     pub fn viewer_tab_current(&mut self) {
+        // 2 rows × 6 tabs per row = 12 max
+        const MAX_TABS: usize = 12;
         // Save current viewer state to a new tab (if we have content)
         if self.viewer_content.is_some() || self.viewer_path.is_some() {
+            if self.viewer_tabs.len() >= MAX_TABS {
+                self.status_message = Some(format!("Max {} tabs reached", MAX_TABS));
+                return;
+            }
             use crate::app::types::ViewerTab;
             let title = self.viewer_path.as_ref()
                 .and_then(|p| p.file_name())
