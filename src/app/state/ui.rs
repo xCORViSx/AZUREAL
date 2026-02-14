@@ -382,27 +382,53 @@ impl App {
         self.set_status(format!("Running: {}", name));
     }
 
-    /// Save run commands to project data directory (.azureal/run_commands.json)
+    /// Save run commands — globals to ~/.azureal/, locals to .azureal/
     pub fn save_run_commands(&self) -> anyhow::Result<()> {
-        let Some(dir) = ensure_project_data_dir()? else { return Ok(()); };
-        let path = dir.join("run_commands.json");
-        let json: Vec<_> = self.run_commands.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
-        std::fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+        // Split by scope
+        let (globals, locals): (Vec<_>, Vec<_>) = self.run_commands.iter().partition(|c| c.global);
+
+        // Write global run commands to ~/.azureal/run_commands.json
+        let _ = ensure_config_dir();
+        let global_path = config_dir().join("run_commands.json");
+        let global_json: Vec<_> = globals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
+        std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
+
+        // Write project-local run commands to .azureal/run_commands.json
+        if let Some(dir) = ensure_project_data_dir()? {
+            let project_path = dir.join("run_commands.json");
+            let project_json: Vec<_> = locals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
+            std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
+        }
         Ok(())
     }
 
-    /// Load run commands from project data directory
+    /// Load run commands — merges globals (~/.azureal/) then project-locals (.azureal/)
     pub fn load_run_commands(&mut self) {
-        let Some(dir) = project_data_dir() else { return; };
-        let path = dir.join("run_commands.json");
-        if !path.exists() { return; }
-        if let Ok(content) = std::fs::read_to_string(&path) {
+        self.run_commands.clear();
+
+        // Load global run commands from ~/.azureal/run_commands.json
+        let global_path = config_dir().join("run_commands.json");
+        if let Ok(content) = std::fs::read_to_string(&global_path) {
             if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                self.run_commands = arr.iter().filter_map(|v| {
+                self.run_commands.extend(arr.iter().filter_map(|v| {
                     let name = v.get("name")?.as_str()?.to_string();
                     let command = v.get("command")?.as_str()?.to_string();
-                    Some(RunCommand::new(name, command))
-                }).collect();
+                    Some(RunCommand::new(name, command, true))
+                }));
+            }
+        }
+
+        // Load project-local run commands from .azureal/run_commands.json
+        if let Some(dir) = project_data_dir() {
+            let project_path = dir.join("run_commands.json");
+            if let Ok(content) = std::fs::read_to_string(&project_path) {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    self.run_commands.extend(arr.iter().filter_map(|v| {
+                        let name = v.get("name")?.as_str()?.to_string();
+                        let command = v.get("command")?.as_str()?.to_string();
+                        Some(RunCommand::new(name, command, false))
+                    }));
+                }
             }
         }
     }

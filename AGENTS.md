@@ -104,7 +104,7 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
-- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/preset_prompts.json`, shared across all projects) or project-local (`.azureal/preset_prompts.json`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 9 focused submodules).
 
@@ -525,9 +525,10 @@ The input box uses vim-style modal editing:
 
 Key mappings:
 - `p` (global, except edit mode): Enter prompt mode and focus input (closes terminal/help if open)
-- `t` (global, except edit mode): Open terminal pane
+- `T` (Shift+T, global, except edit mode): Toggle terminal pane
+- `G` (Shift+G, global, except edit mode): Toggle Git Actions panel
 
-**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `t`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
+**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
 - `Escape` / click another pane / `Tab` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
@@ -550,7 +551,7 @@ A PTY-based embedded terminal that acts as a portal to the user's actual shell:
 - Resizable height (5-40 lines)
 
 Key mappings:
-- `t` (command mode): Open terminal / Enter type mode (when in terminal)
+- `T` (Shift+T, global command mode): Toggle terminal; `t` (terminal command mode): Enter type mode
 - `Esc` (terminal command mode): Close terminal
 - `p` (terminal command mode): Close terminal and enter Claude prompt
 - `+/-` (terminal command mode): Increase/decrease terminal height
@@ -819,7 +820,7 @@ Press `/` in the Worktrees pane to activate a search filter. Type to narrow the 
 
 **Selection tracking:** When the filter changes, if the current selection doesn't match, it auto-snaps to the first matching worktree. `j/k` navigation skips filtered-out worktrees via `snap_selection_to_filter()`.
 
-**Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `t`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
+**Global key suppression:** While `sidebar_filter_active` is true, global single-letter bindings (`p`, `T`, `G`, `?`, `D`) are suppressed so typed chars go to the filter input. Tab/Shift+Tab clear the filter before cycling focus.
 
 **Rendering:** `build_sidebar_items()` filters worktrees by match, then builds the item list showing only matching items with parent project context. A 3-line filter bar (borders + text) is rendered above the worktree list via `Layout::vertical()` split. The filter bar shows yellow border when active, dim gray when accepted. Match count (visible worktrees) shown as right-aligned title (e.g., ` 3/12 `).
 
@@ -959,7 +960,7 @@ Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
 
 ### Run Commands
 
-User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are stored per-project in `.azureal/run_commands.json` and executed in the embedded terminal.
+User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/run_commands.json`, shared across all projects) or **project-local** (`.azureal/run_commands.json`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
 
 **Keybindings (from Worktrees pane):**
 - `r` — Open picker (if multiple saved commands) or execute directly (if only 1)
@@ -970,18 +971,19 @@ User-defined shell commands that can be saved and executed from the Worktrees pa
 - `1-9` — Quick-select by number
 - `Enter` — Execute selected command
 - `e` — Edit selected command
-- `x` — Delete selected command
+- `d` — Delete selected command (y/n confirmation)
 - `a` — Add new command
 
 **Dialog overlay:**
 - `Tab` — In Name field: advance to Command/Prompt field. In Command/Prompt field: cycle between Command and Prompt modes.
 - `⇧Tab` — Go back to Name field from Command/Prompt field
+- `⌃s` — Toggle global/project scope (shown as [GLOBAL]/[PROJECT] badge in title bar)
 - `Enter` — In Name field: advance. In Command mode: save. In Prompt mode: generate (spawns Claude session).
 - `Esc` — Cancel
 
 **Command vs Prompt mode:** The second field has a right-aligned title showing the current mode and Tab hint. In **Command** mode, user types a raw shell command directly. In **Prompt** mode, user types a natural-language description and Enter spawns a new Claude session on the main branch that reads the description, determines the right shell command, and writes it to `.azureal/run_commands.json`. The session is named `[NewRunCmd] <name>` in `.azureal/sessions.toml`. Run commands auto-reload when the `[NewRunCmd]` session exits (via `handle_claude_exited()` check on `title_session_name`).
 
-**Storage:** `.azureal/run_commands.json` — JSON array of `{name, command}` objects, loaded on startup.
+**Storage:** Global commands in `~/.azureal/run_commands.json`, project-local in `.azureal/run_commands.json` — JSON arrays of `{name, command}` objects, merged on load (globals first, then locals). Loaded on startup.
 
 Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker, CommandFieldMode), state methods in `src/app/state/ui.rs`, input handling + `spawn_run_command_prompt()` in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`, auto-reload in `src/app/state/claude.rs`
 
@@ -1262,7 +1264,8 @@ azureal
 | Key | Action |
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
-| `t` | Toggle terminal pane |
+| `T` | Toggle terminal pane |
+| `G` | Toggle Git Actions panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
@@ -1314,6 +1317,10 @@ azureal
 | `⌥↑/⌥↓` | Jump to top/bottom |
 | `⌥←/⌥→` | Prev/next Edit (syncs Convo scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
+| `t` | Tab current file (save to tab list) |
+| `⌃t` | Open tab dialog (browse/switch tabs) |
+| `]/[` | Next/prev tab |
+| `x` | Close current tab |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
 ### Convo Pane

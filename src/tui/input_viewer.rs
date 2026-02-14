@@ -209,7 +209,7 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
 fn handle_tab_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match (key.modifiers, key.code) {
         // Close dialog
-        (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::NONE, KeyCode::Char('T')) => {
+        (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::CONTROL, KeyCode::Char('t')) => {
             app.viewer_tab_dialog = false;
         }
 

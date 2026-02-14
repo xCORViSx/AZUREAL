@@ -309,7 +309,7 @@ pub static GLOBAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Toggle terminal", Action::ToggleTerminal),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('T')), "Toggle terminal", Action::ToggleTerminal),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
@@ -372,7 +372,7 @@ pub static VIEWER: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('T')), "Tab dialog", Action::ViewerOpenTabDialog),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('t')), "Tab dialog", Action::ViewerOpenTabDialog),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
@@ -503,8 +503,6 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             // pane — but NOT when focus is already on Input (would be a no-op that eats 'p')
             Action::EnterPromptMode
                 if ctx.prompt_mode && ctx.focus == Focus::Input => true,
-            // 't' toggle: already in terminal means terminal handler owns 't' (for type mode)
-            Action::ToggleTerminal if ctx.terminal_mode => true,
             _ => false,
         };
         if !skip && binding.matches(modifiers, code) {
@@ -574,7 +572,8 @@ pub fn prompt_type_title() -> String {
 /// selection which is self-explanatory) so the help panel can omit them.
 pub fn prompt_command_title() -> String {
     let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
-    let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("t".into());
+    let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("T".into());
+    let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
     let tab = find_key_for_action(&GLOBAL, Action::CycleFocusForward).unwrap_or("Tab".into());
     let stab = find_key_for_action(&GLOBAL, Action::CycleFocusBackward).unwrap_or("⇧Tab".into());
@@ -583,8 +582,8 @@ pub fn prompt_command_title() -> String {
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     format!(
-        " COMMAND ({}:PROMPT | {}:TERMINAL | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output) ",
-        p, t, help, tab, stab, cancel, quit, restart, debug
+        " COMMAND ({}:PROMPT | {}:TERMINAL | {}:GIT | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug) ",
+        p, t, g, help, tab, stab, cancel, quit, restart, debug
     )
 }
 

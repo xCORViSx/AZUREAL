@@ -116,6 +116,35 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
 
 /// Handle keyboard input when run command picker overlay is open
 pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Check if a delete confirmation is pending — only y confirms, anything else cancels
+    if let Some(del_idx) = app.run_command_picker.as_ref().and_then(|p| p.confirm_delete) {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if del_idx < app.run_commands.len() {
+                    let name = app.run_commands[del_idx].name.clone();
+                    app.run_commands.remove(del_idx);
+                    let _ = app.save_run_commands();
+                    app.set_status(format!("Deleted run command: {}", name));
+                    if app.run_commands.is_empty() {
+                        app.run_command_picker = None;
+                    } else if let Some(ref mut picker) = app.run_command_picker {
+                        picker.confirm_delete = None;
+                        if picker.selected >= app.run_commands.len() {
+                            picker.selected = app.run_commands.len() - 1;
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Cancel confirmation
+                if let Some(ref mut picker) = app.run_command_picker {
+                    picker.confirm_delete = None;
+                }
+            }
+        }
+        return Ok(());
+    }
+
     let cmd_count = app.run_commands.len();
     match key.code {
         // Navigate selection
@@ -151,21 +180,12 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
             }
             app.run_command_picker = None;
         }
-        // Delete selected command
-        KeyCode::Char('x') => {
+        // Delete selected command — enter confirmation mode
+        KeyCode::Char('d') => {
             let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
             if idx < cmd_count {
-                let name = app.run_commands[idx].name.clone();
-                app.run_commands.remove(idx);
-                let _ = app.save_run_commands();
-                app.set_status(format!("Deleted run command: {}", name));
-                // Adjust selection after deletion
-                if app.run_commands.is_empty() {
-                    app.run_command_picker = None;
-                } else if let Some(ref mut picker) = app.run_command_picker {
-                    if picker.selected >= app.run_commands.len() {
-                        picker.selected = app.run_commands.len() - 1;
-                    }
+                if let Some(ref mut picker) = app.run_command_picker {
+                    picker.confirm_delete = Some(idx);
                 }
             }
         }
@@ -183,8 +203,15 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
 /// Handle keyboard input when run command dialog (create/edit) is open.
 /// In Command mode, Enter saves a raw shell command directly.
 /// In Prompt mode, Enter spawns a Claude session on the main branch to generate the command.
+/// ⌃s toggles global/project scope (works from any field).
 pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     let Some(ref mut dialog) = app.run_command_dialog else { return Ok(()) };
+
+    // ⌃s toggles global/project scope (works from any field)
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
+        dialog.global = !dialog.global;
+        return Ok(());
+    }
 
     match key.code {
         // Tab: in Name field → advance to Command/Prompt; in Command/Prompt → cycle mode
@@ -226,7 +253,8 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
                 CommandFieldMode::Command => {
                     // Save the raw shell command directly
                     let editing_idx = dialog.editing_idx;
-                    let cmd = RunCommand::new(name.clone(), content);
+                    let is_global = dialog.global;
+                    let cmd = RunCommand::new(name.clone(), content, is_global);
                     if let Some(idx) = editing_idx {
                         if idx < app.run_commands.len() { app.run_commands[idx] = cmd; }
                     } else {

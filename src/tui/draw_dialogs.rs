@@ -366,7 +366,7 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(Clear, dialog_area);
 
-    // Build list items with number shortcuts and selection highlight
+    // Build list items with number shortcuts, scope badge, and selection highlight
     let items: Vec<ListItem> = app.run_commands.iter().enumerate().map(|(idx, cmd)| {
         let is_selected = idx == picker.selected;
         let style = if is_selected {
@@ -375,26 +375,46 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::White)
         };
         let key_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::DarkGray)
+            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
         } else {
             Style::default().fg(Color::Yellow)
         };
 
         // Show 1-9 number shortcuts, then just spaces for 10+
         let num_hint = if idx < 9 { format!(" [{}] ", idx + 1) } else { "     ".to_string() };
-        let max_name = (dialog_width as usize).saturating_sub(num_hint.len() + 4);
+
+        // Scope badge: G=global, P=project
+        let scope_badge = if cmd.global { " G " } else { " P " };
+        let scope_style = if is_selected {
+            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+        } else if cmd.global {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let max_name = (dialog_width as usize).saturating_sub(num_hint.len() + scope_badge.len() + 4);
 
         ListItem::new(Line::from(vec![
             Span::styled(num_hint, key_style),
             Span::styled(truncate(&cmd.name, max_name), style),
+            Span::styled(scope_badge, scope_style),
         ]))
     }).collect();
+
+    // Title changes when delete confirmation is pending
+    let title = if let Some(del_idx) = picker.confirm_delete {
+        let name = app.run_commands.get(del_idx).map(|c| c.name.as_str()).unwrap_or("?");
+        format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
+    } else {
+        " Run Command (1-9:select  a:add  e:edit  d:del) ".to_string()
+    };
 
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(AZURE))
-            .title(" Run Command (j/k:nav  1-9:quick  e:edit  x:del  a:add) ")
+            .title(title)
             .style(Style::default().bg(Color::Reset)),
     );
     f.render_widget(list, dialog_area);
@@ -415,12 +435,14 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
 
     f.render_widget(Clear, dialog_area);
 
-    // Outer border with title
+    // Outer border with title — left shows mode, right shows scope badge
     let title_text = if dialog.editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
+    let scope_label = if dialog.global { " [GLOBAL] " } else { " [PROJECT] " };
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Line::from(Span::styled(scope_label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))).alignment(Alignment::Right));
     let inner = outer.inner(dialog_area);
     f.render_widget(outer, dialog_area);
 
@@ -491,6 +513,8 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
         Span::styled(tab_hint, Style::default().fg(Color::DarkGray)),
         Span::styled("⇧Tab", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(":back  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("⌃s", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        Span::styled(":scope  ", Style::default().fg(Color::DarkGray)),
         Span::styled("Enter", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         Span::styled(enter_hint, Style::default().fg(Color::DarkGray)),
         Span::styled("Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
@@ -587,6 +611,18 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
             .style(Style::default().bg(Color::Reset)),
     );
     f.render_widget(list, dialog_area);
+
+    // Footer hint: ⌥+number shortcut works directly from prompt mode
+    let hint = " ⌥1-⌥9,⌥0 from prompt mode to skip picker ";
+    let hint_y = dialog_area.y + dialog_area.height.saturating_sub(1);
+    let hint_x = dialog_area.x + (dialog_area.width.saturating_sub(hint.len() as u16)) / 2;
+    if hint_y < area.height && hint_x + (hint.len() as u16) <= area.x + area.width {
+        let hint_rect = Rect::new(hint_x, hint_y, hint.len() as u16, 1);
+        f.render_widget(Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        ))), hint_rect);
+    }
 }
 
 /// Draw preset prompt dialog overlay (create/edit a preset prompt).

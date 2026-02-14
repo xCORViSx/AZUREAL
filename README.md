@@ -32,7 +32,7 @@
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
-- **Run Commands** — Save and execute shell commands/scripts per project; Prompt mode lets Claude generate commands from natural-language descriptions
+- **Run Commands** — Save and execute shell commands/scripts globally or per-project; Prompt mode lets Claude generate commands from natural-language descriptions; `d` to delete with y/n confirmation; `⌃s` toggles global/project scope in add/edit dialog; picker shows G/P scope badge
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
 - **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude’s task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix
@@ -46,7 +46,7 @@
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
-- **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (`~/.azureal/`, shared across all projects) or **project-local** (`.azureal/`); toggle scope with `⌃g` in the add/edit dialog
+- **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); picker footer shows the ⌥+number shortcut hint; add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (`~/.azureal/`, shared across all projects) or **project-local** (`.azureal/`); toggle scope with `⌃g` in the add/edit dialog
 - **Git Actions Panel** — `Shift+G` toggles a centered overlay with Git brand orange borders and brown secondary text; provides 7 git operations (rebase, merge, fetch, pull, push, stash, stash pop) with single-key shortcuts; shows changed files with per-file color-coded `+N/-N` stats (green additions, red deletions); navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections
 - **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
@@ -78,7 +78,7 @@ azureal
 | Key | Action |
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
-| `t` | Toggle terminal pane |
+| `T` | Toggle terminal pane |
 | `Esc` | Return to command mode |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (viewport minus 2 overlap lines) |

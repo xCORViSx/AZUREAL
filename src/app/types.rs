@@ -190,16 +190,18 @@ pub enum SidebarRowAction {
     Worktree(usize),
 }
 
-/// A saved run command
+/// A saved run command — can be global (~/.azureal/) or project-local (.azureal/)
 #[derive(Debug, Clone)]
 pub struct RunCommand {
     pub name: String,
     pub command: String,
+    /// true = saved globally (~/.azureal/), false = project-local (.azureal/)
+    pub global: bool,
 }
 
 impl RunCommand {
-    pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
-        Self { name: name.into(), command: command.into() }
+    pub fn new(name: impl Into<String>, command: impl Into<String>, global: bool) -> Self {
+        Self { name: name.into(), command: command.into(), global }
     }
 }
 
@@ -223,15 +225,17 @@ pub struct RunCommandDialog {
     pub editing_idx: Option<usize>,
     /// Whether the second field is "Command" (raw shell) or "Prompt" (AI-generated)
     pub field_mode: CommandFieldMode,
+    /// true = save globally (~/.azureal/), false = project-local (.azureal/)
+    pub global: bool,
 }
 
 impl RunCommandDialog {
     pub fn new() -> Self {
-        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None, field_mode: CommandFieldMode::Command }
+        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None, field_mode: CommandFieldMode::Command, global: false }
     }
 
     pub fn edit(idx: usize, cmd: &RunCommand) -> Self {
-        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx), field_mode: CommandFieldMode::Command }
+        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx), field_mode: CommandFieldMode::Command, global: cmd.global }
     }
 }
 
@@ -239,10 +243,12 @@ impl RunCommandDialog {
 #[derive(Debug, Clone)]
 pub struct RunCommandPicker {
     pub selected: usize,
+    /// When Some(idx), a delete confirmation is pending for this run command index
+    pub confirm_delete: Option<usize>,
 }
 
 impl RunCommandPicker {
-    pub fn new() -> Self { Self { selected: 0 } }
+    pub fn new() -> Self { Self { selected: 0, confirm_delete: None } }
 }
 
 /// A saved prompt template the user can quickly insert into the input box
