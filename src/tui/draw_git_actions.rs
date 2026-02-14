@@ -80,15 +80,21 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     // ── Changed files section header ──
     let total_add: usize = panel.changed_files.iter().map(|f| f.additions).sum();
     let total_del: usize = panel.changed_files.iter().map(|f| f.deletions).sum();
-    let header = if panel.changed_files.is_empty() {
-        "  CHANGED FILES (none)".to_string()
+    if panel.changed_files.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  CHANGED FILES (none)",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+        )));
     } else {
-        format!("  CHANGED FILES ({} files, +{}/-{})", panel.changed_files.len(), total_add, total_del)
-    };
-    lines.push(Line::from(Span::styled(
-        header,
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-    )));
+        let hdr_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+        lines.push(Line::from(vec![
+            Span::styled(format!("  CHANGED FILES ({} files, ", panel.changed_files.len()), hdr_style),
+            Span::styled(format!("+{}", total_add), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("/", hdr_style),
+            Span::styled(format!("-{}", total_del), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(")", hdr_style),
+        ]));
+    }
 
     // Thin separator under the header
     let sep_len = inner_w.min(40);
@@ -115,26 +121,29 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         let selected = !panel.actions_focused && i == panel.selected_file;
         let prefix = if selected { "  \u{25b8} " } else { "    " };
 
-        // Status character color: M=yellow, A=green, D=red, R=cyan
+        // Status character color: M=yellow, A=green, D=red, R=cyan, ?=magenta (untracked)
         let status_color = match file.status {
             'A' => Color::Green,
             'D' => Color::Red,
             'M' => Color::Yellow,
             'R' => Color::Cyan,
+            '?' => Color::Magenta,
             _ => Color::White,
         };
 
-        // Right-aligned +N/-N stats
-        let stat_str = format!("+{}/-{}", file.additions, file.deletions);
+        // Right-aligned +N/-N stats — green for additions, red for deletions
+        let add_str = format!("+{}", file.additions);
+        let del_str = format!("-{}", file.deletions);
+        let stat_len = add_str.len() + 1 + del_str.len(); // "+N/-N" total width
         // How much space for the file path? prefix(4) + status(2) + padding(1+) + stats
-        let path_budget = inner_w.saturating_sub(prefix.len() + 2 + stat_str.len() + 1);
+        let path_budget = inner_w.saturating_sub(prefix.len() + 2 + stat_len + 1);
         let path_display = if file.path.len() > path_budget {
             format!("\u{2026}{}", &file.path[file.path.len().saturating_sub(path_budget.saturating_sub(1))..])
         } else {
             file.path.clone()
         };
         // Padding between path and stats to right-align
-        let padding = inner_w.saturating_sub(prefix.len() + 2 + path_display.len() + stat_str.len());
+        let padding = inner_w.saturating_sub(prefix.len() + 2 + path_display.len() + stat_len);
 
         // Path style: underlined always, orange+bold when selected
         let path_style = if selected {
@@ -142,18 +151,19 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         } else {
             Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
         };
-        let stat_style = if selected {
-            Style::default().fg(GIT_ORANGE)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+        // Selected rows use orange override; unselected uses semantic green/red
+        let add_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Green) };
+        let del_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Red) };
+        let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::DarkGray) };
 
         lines.push(Line::from(vec![
             Span::styled(prefix, Style::default()),
             Span::styled(format!("{} ", file.status), Style::default().fg(status_color)),
             Span::styled(path_display, path_style),
             Span::raw(" ".repeat(padding)),
-            Span::styled(stat_str, stat_style),
+            Span::styled(add_str, add_style),
+            Span::styled("/", slash_style),
+            Span::styled(del_str, del_style),
         ]));
     }
 
@@ -183,7 +193,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(GIT_ORANGE));
 
     let paragraph = Paragraph::new(lines).block(block);

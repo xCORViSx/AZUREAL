@@ -42,7 +42,26 @@ impl KeyCombo {
     /// Check if key event matches this combo
     #[inline]
     pub fn matches(&self, modifiers: KeyModifiers, code: KeyCode) -> bool {
-        self.modifiers == modifiers && self.code == code
+        if self.modifiers == modifiers && self.code == code { return true; }
+        // Shift+letter bindings use shift(Char('G')) but crossterm delivers
+        // uppercase chars inconsistently depending on terminal + Kitty flags:
+        //   - (NONE, Char('G'))  — no Kitty or legacy terminals
+        //   - (SHIFT, Char('G')) — some Kitty implementations
+        //   - (SHIFT, Char('g')) — DISAMBIGUATE without REPORT_ALL_KEYS
+        // Match all three against a SHIFT + uppercase char binding.
+        if self.modifiers == KeyModifiers::SHIFT {
+            if let KeyCode::Char(c) = self.code {
+                if c.is_ascii_uppercase() {
+                    if let KeyCode::Char(pressed) = code {
+                        let upper = pressed.to_ascii_uppercase();
+                        if upper == c && (modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Platform-appropriate display string (macOS symbols)
@@ -282,7 +301,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 10] = [
+pub static GLOBAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
@@ -291,12 +310,13 @@ pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Toggle terminal", Action::ToggleTerminal),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 21] = [
+pub static WORKTREES: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('i')), "Focus input", Action::EnterInputMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
@@ -317,7 +337,6 @@ pub static WORKTREES: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('g')), "God files", Action::OpenGodFiles),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
 ];
 
 /// FileTree bindings
@@ -472,7 +491,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
             // sidebar filter, context menu, or wizard — they'd steal keystrokes
-            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
+            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp | Action::OpenGitActions
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
                    || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard

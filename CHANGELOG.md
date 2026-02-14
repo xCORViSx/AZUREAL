@@ -4,6 +4,24 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- `G` (Git Actions) is now a **global keybinding** — opens from any pane, not just Worktrees (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard)
+- Git Actions panel diff counts (`+N/-N`) now **color-coded**: green for additions, red for deletions (orange override when row is selected); header totals also green/red
+- Git Actions panel changed files now shows **working tree changes** (staged + unstaged vs HEAD) instead of committed divergence from main branch — shows what you're actively working on, including untracked files (`?` in magenta)
+- Git Actions panel border changed from Rounded to QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) for a distinct chunky look
+
+### Fixed
+- God File Modularization (`g` → modularize) now **auto-switches the convo pane** to the main worktree session — previously the convo title and output stayed on whatever session was open before, requiring manual session list navigation to see GFM output. Also applies to queue advancement (next file auto-switches too).
+- `Shift+G` (Git Actions panel) now works — `KeyCombo::matches()` fixed systemically to handle the Kitty protocol quirk where uppercase chars arrive as `(NONE, Char('G'))` not `(SHIFT, Char('G'))`. All future `KeyCombo::shift(Char('X'))` bindings are now immune to this bug.
+
+### Refactored
+- Modularized `draw_output.rs` (1002→443 lines) into file-based module root with 4 submodules:
+  - `draw_output/render_submit.rs` (201 lines) — background render thread submit/poll coordination
+  - `draw_output/session_list.rs` (248 lines) — session list overlay with filter and content search
+  - `draw_output/todo_widget.rs` (81 lines) — sticky task progress widget
+  - `draw_output/rebase_view.rs` (108 lines) — git rebase status display
+  - Module root keeps `draw_output()` function + re-exports public API for backwards compatibility
+
 ### Added
 - Startup splash screen: 2x-scale block-character "AZUREAL" logo in AZURE blue with half-block acronym subtitle, dim spring azure butterfly outline as background mascot, and "Loading project..." subtitle, shown for minimum 3 seconds while git/session I/O runs (replaces black screen)
 - Convo pane search (`/`): find text in current session's rendered output

@@ -118,7 +118,9 @@ impl App {
         // Spawn Claude on the main worktree
         match claude_process.spawn(&main_path, &first_prompt, None) {
             Ok(rx) => {
-                self.register_claude(main_branch, rx);
+                self.register_claude(main_branch.clone(), rx);
+                // Switch convo pane to the main worktree so GFM output is visible
+                self.switch_to_main_worktree(&main_branch);
                 let remaining = self.god_file_queue.len();
                 if remaining > 0 {
                     self.set_status(format!("Modularizing {} ({} queued)", first_rel, remaining));
@@ -153,7 +155,9 @@ impl App {
 
         match claude_process.spawn(&main_path, &prompt, None) {
             Ok(rx) => {
-                self.register_claude(main_branch, rx);
+                self.register_claude(main_branch.clone(), rx);
+                // Switch convo pane to the main worktree so GFM output is visible
+                self.switch_to_main_worktree(&main_branch);
                 let remaining = self.god_file_queue.len();
                 if remaining > 0 {
                     self.set_status(format!("Modularizing {} ({} queued)", rel_path, remaining));
@@ -164,6 +168,19 @@ impl App {
             Err(e) => {
                 self.set_status(format!("Queue failed: {}", e));
                 self.god_file_queue.clear();
+            }
+        }
+    }
+
+    /// Switch the convo pane + sidebar selection to the main worktree.
+    /// Called after spawning a GFM session so output is immediately visible.
+    fn switch_to_main_worktree(&mut self, main_branch: &str) {
+        if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == main_branch) {
+            if self.selected_worktree != Some(idx) {
+                self.save_current_terminal();
+                self.selected_worktree = Some(idx);
+                self.load_session_output();
+                self.invalidate_sidebar();
             }
         }
     }

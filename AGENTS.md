@@ -902,7 +902,7 @@ Full-screen centered modal overlay (65% × 75%, min 50×12). Shows an explanatio
 - `Esc` — close panel
 
 **Modularization Queue:**
-Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_name`.
+Only one Claude session per branch at a time. First checked file spawns immediately on the main worktree; remaining files are queued in `god_file_queue: VecDeque<(String, String)>`. When a Claude session exits on the main branch (`ClaudeEvent::Exited`), `god_file_advance_queue()` pops the next file and spawns it automatically. Each session named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_name`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible (both initial spawn and queue advancement).
 
 **Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
 
@@ -910,12 +910,12 @@ Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, qu
 
 ### Git Actions Panel
 
-Centered modal overlay (`Shift+G` from Worktrees pane) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling, matching the git identity.
+Centered modal overlay (`Shift+G`, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type for a distinct chunky look. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
 
 **Panel Layout:**
-- Title bar: `" Git Actions: <branch_name> "` centered in orange border
+- Title bar: `" Git Actions: <branch_name> "` centered in orange QuadrantOutside border
 - Actions section: 7 git operations with single-key shortcuts, navigable with j/k
-- Changed files section: per-file diff stats from `git diff main...HEAD`, underlined paths
+- Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
 - Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
 
@@ -929,7 +929,7 @@ Centered modal overlay (`Shift+G` from Worktrees pane) providing common git oper
 - `S` / Enter on index 6 — Stash pop (`Git::stash_pop()`)
 
 **File list (when file list focused):**
-- Each file shows status char (M=yellow, A=green, D=red, R=cyan), underlined path, right-aligned `+N/-N` stats
+- Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
 - `j/k` — navigate files; `Enter`/`d` — view selected file's diff in Viewer pane (closes panel)
 - Scroll indicator shown when list overflows
 
@@ -939,9 +939,9 @@ Centered modal overlay (`Shift+G` from Worktrees pane) providing common git oper
 - `Esc` — close panel
 - Click outside — dismiss (mouse.rs)
 
-**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff --name-status` + `git diff --numstat`. Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (8 new methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`, `stash`, `stash_pop`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in WORKTREES)
+Implementation: `src/tui/input_git_actions.rs` (input handler), `src/tui/draw_git_actions.rs` (rendering), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (8 new methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`, `stash`, `stash_pop`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (Action::OpenGitActions, `G` binding in GLOBAL)
 
 ### Rebase Support
 
@@ -1114,7 +1114,12 @@ azureal/
 │   │   ├── draw_sidebar.rs # Worktrees pane rendering (project name in border title) + FileTree overlay delegate
 │   │   ├── draw_file_tree.rs # FileTree overlay rendering (called from draw_sidebar when overlay active)
 │   │   ├── draw_viewer.rs  # Viewer pane rendering
-│   │   ├── draw_output.rs  # Convo pane rendering
+│   │   ├── draw_output.rs  # Convo pane module root (re-exports + main draw_output fn)
+│   │   ├── draw_output/    # Convo pane submodules
+│   │   │   ├── render_submit.rs  # Background render thread submit/poll (submit_render_request, poll_render_result)
+│   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
+│   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane
+│   │   │   └── rebase_view.rs    # Git rebase status display
 │   │   ├── draw_god_files.rs # God File panel modal (full-screen god file scanner/modularizer)
 │   │   ├── draw_git_actions.rs # Git Actions panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions

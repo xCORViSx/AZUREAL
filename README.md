@@ -47,7 +47,7 @@
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
 - **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` (keyboard layout order); add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (`~/.azureal/`, shared across all projects) or **project-local** (`.azureal/`); toggle scope with `⌃g` in the add/edit dialog
-- **Git Actions Panel** — Press `Shift+G` in Worktrees pane to open a centered overlay with Git brand orange borders; provides 7 git operations (rebase, merge, fetch, pull, push, stash, stash pop) with single-key shortcuts; shows changed files with per-file `+N/-N` stats; navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections
+- **Git Actions Panel** — Press `Shift+G` from any pane to open a centered overlay with Git brand orange borders; provides 7 git operations (rebase, merge, fetch, pull, push, stash, stash pop) with single-key shortcuts; shows changed files with per-file color-coded `+N/-N` stats (green additions, red deletions); navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections
 - **Minimal Footprint** — Optional `~/.azureal/projects.txt` for project persistence; scans git worktrees and `~/.claude/` at runtime
 
 ## Requirements
@@ -91,7 +91,7 @@ azureal
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
 | `g` | God files (scan/modularize large files) |
-| `G` | Git actions panel (rebase, merge, fetch, pull, push, stash) |
+| `G` | Git actions panel — global (rebase, merge, fetch, pull, push, stash) |
 | `P` | Projects panel |
 | `R` | Rebase onto main |
 | `d` | View diff |

@@ -181,20 +181,23 @@ impl Git {
     /// Get per-file diff stats against main branch.
     /// Returns Vec<(path, status_char, additions, deletions)> by combining
     /// `git diff --name-status` (M/A/D/R) with `git diff --numstat` (+/-).
-    pub fn get_diff_files(worktree_path: &Path, main_branch: &str) -> Result<Vec<(String, char, usize, usize)>> {
-        let range = format!("{}...HEAD", main_branch);
+    pub fn get_diff_files(worktree_path: &Path, _main_branch: &str) -> Result<Vec<(String, char, usize, usize)>> {
+        // Show working tree changes (staged + unstaged) — this is what the user
+        // is actively working on. Uses `git diff HEAD` to compare working tree
+        // against last commit, capturing both staged and unstaged modifications.
+        // Untracked files added separately via `git ls-files --others --exclude-standard`.
 
-        // M\tpath or A\tpath — tells us what kind of change
+        // M\tpath — status of each changed file vs HEAD
         let status_out = Command::new("git")
-            .args(["diff", "--name-status", &range])
+            .args(["diff", "HEAD", "--name-status"])
             .current_dir(worktree_path)
             .output()
             .context("Failed to get diff name-status")?;
         let status_text = String::from_utf8_lossy(&status_out.stdout);
 
-        // add\tdel\tpath — tells us line counts per file
+        // add\tdel\tpath — line-level stats for each changed file
         let numstat_out = Command::new("git")
-            .args(["diff", "--numstat", &range])
+            .args(["diff", "HEAD", "--numstat"])
             .current_dir(worktree_path)
             .output()
             .context("Failed to get diff numstat")?;
@@ -211,24 +214,39 @@ impl Git {
             }
         }
 
-        // Combine status chars with numstat counts
         let mut result = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for line in status_text.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
                 let status = parts[0].chars().next().unwrap_or('M');
                 let path = parts.last().unwrap().to_string();
                 let (add, del) = stats.get(&path).copied().unwrap_or((0, 0));
+                seen.insert(path.clone());
                 result.push((path, status, add, del));
             }
         }
+
+        // Also pick up untracked files (shown as '?' status, 0/0 stats)
+        let untracked_out = Command::new("git")
+            .args(["ls-files", "--others", "--exclude-standard"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to list untracked files")?;
+        for line in String::from_utf8_lossy(&untracked_out.stdout).lines() {
+            let path = line.trim().to_string();
+            if !path.is_empty() && !seen.contains(&path) {
+                result.push((path, '?', 0, 0));
+            }
+        }
+
         Ok(result)
     }
 
-    /// Get the diff for a single file against main branch (for viewer display)
-    pub fn get_file_diff(worktree_path: &Path, main_branch: &str, file_path: &str) -> Result<String> {
+    /// Get the diff for a single file (working tree vs HEAD, for viewer display)
+    pub fn get_file_diff(worktree_path: &Path, _main_branch: &str, file_path: &str) -> Result<String> {
         let output = Command::new("git")
-            .args(["diff", &format!("{}...HEAD", main_branch), "--", file_path])
+            .args(["diff", "HEAD", "--", file_path])
             .current_dir(worktree_path)
             .output()
             .context("Failed to get file diff")?;
