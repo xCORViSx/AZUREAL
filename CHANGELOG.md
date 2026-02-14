@@ -4,6 +4,12 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **FileTree Options overlay** — Press `O` in the FileTree to switch the pane into an options view with QuadrantOutside AZURE border and "Filetree Options" title. Three toggleable options: hide `.git`, `.claude`, `.azureal` directories (all hidden by default). `j/k` navigate, `Space`/`Enter` toggle visibility, `Esc`/`O` close. Hidden dirs stored in `file_tree_hidden_dirs: HashSet<String>` replacing the old `hide_dot_git: bool`. Tree rebuilds immediately on toggle.
+
+### Changed
+- **Hide .git toggle moved from Git panel to FileTree Options** — The `H:hide .git ✓/✗` toggle and top-right indicator removed from the Git panel. Directory visibility is now managed via the FileTree Options overlay (`O`) which supports `.git`, `.claude`, and `.azureal` directories instead of just `.git`.
+
 ### Refactored
 - **Split `god_files.rs` into `health` module** — The monolithic 946-line `src/app/state/god_files.rs` (god file scanning + doc coverage + DH sessions + scope mode + modularization) split into a file-based module root with 2 submodules: `src/app/state/health.rs` (shared constants: ~60 source extensions, ~55 skip dirs, ~15 source roots; open/close panel; scope persistence), `health/god_files.rs` (god file scanning, scope mode, modularize with module style selector), `health/documentation.rs` (doc coverage scanner, DH session spawning, toggle/view). `state.rs` declares `mod health` instead of `mod god_files`.
 - **Converted `src/cli/mod.rs` → `src/cli.rs` and `src/cmd/mod.rs` → `src/cmd.rs`** — Both legacy `mod.rs` module roots migrated to modern file-based roots. `cmd/` submodules (`session.rs`, `project.rs`) remain in place; `cli/` had no submodules so the directory was removed entirely. Zero code changes needed — Rust resolves the new layout automatically.
