@@ -48,8 +48,9 @@ pub fn split_title_hints(label: &str, hints: &str, max_w: usize) -> (String, Opt
 
     let bottom = if split_at < segments.len() {
         let rest = segments[split_at..].join(" | ");
-        // Truncate to fit bottom border width
-        let trimmed: String = rest.chars().take(max_w.saturating_sub(2)).collect();
+        // Wrap in parens to match top border format, truncate to fit
+        let content = format!("({})", rest);
+        let trimmed: String = content.chars().take(max_w.saturating_sub(2)).collect();
         Some(format!(" {} ", trimmed))
     } else {
         None
@@ -107,9 +108,9 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         .title(Span::styled(top_title, title_style))
         .border_style(title_style);
 
-    // Overflow hints on bottom border in dim gray
+    // Overflow hints on bottom border — same style as top title (color + bold match)
     if let Some(ref bot) = bottom_title {
-        block = block.title_bottom(Span::styled(bot.as_str(), Style::default().fg(Color::DarkGray)));
+        block = block.title_bottom(Span::styled(bot.as_str(), title_style));
     }
 
     let input = Paragraph::new(content)

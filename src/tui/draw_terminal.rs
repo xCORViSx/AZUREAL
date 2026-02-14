@@ -63,9 +63,9 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
         .title(Span::styled(top_title, border_style))
         .border_style(border_style);
 
-    // Overflow hints on bottom border in dim gray
+    // Overflow hints on bottom border — same style as top title (color + bold match)
     if let Some(ref bot) = bottom_title {
-        block = block.title_bottom(Span::styled(bot.as_str(), Style::default().fg(Color::DarkGray)));
+        block = block.title_bottom(Span::styled(bot.as_str(), border_style));
     }
 
     let terminal = Paragraph::new(text).block(block);

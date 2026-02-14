@@ -579,7 +579,7 @@ Implementation:
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
-- Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border in dim gray via ratatui's `.title_bottom()`. No content shifting or padding needed.
+- Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
 1. Modal overlays (help, context menu, wizard, projects, run command, session list) intercept ALL input first
@@ -1345,7 +1345,7 @@ azureal
 
 ### Prompt Mode (Input Focused)
 
-Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in dim gray via `.title_bottom()`.
+Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
 **Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:debug)`
