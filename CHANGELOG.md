@@ -5,7 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **FileTree Options overlay** — Press `O` in the FileTree to switch the pane into an options view with QuadrantOutside AZURE border and "Filetree Options" title. Three toggleable options: hide `.git`, `.claude`, `.azureal` directories (all hidden by default). `j/k` navigate, `Space`/`Enter` toggle visibility, `Esc`/`O` close. Hidden dirs stored in `file_tree_hidden_dirs: HashSet<String>` replacing the old `hide_dot_git: bool`. Tree rebuilds immediately on toggle.
+- **FileTree Options overlay** — Press `O` in the FileTree to switch the pane into an options view with QuadrantOutside AZURE border and "Filetree Options" title. Four toggleable options: hide `.git`, `.claude`, `.azureal` directories (all hidden by default) and **Hide main worktree** (hidden by default — removes main branch from sidebar list). `j/k` navigate, `Space`/`Enter` toggle visibility, `Esc`/`O` close. Hidden dirs stored in `file_tree_hidden_dirs: HashSet<String>` replacing the old `hide_dot_git: bool`. Tree rebuilds immediately on toggle; sidebar navigation and initial selection skip hidden main.
 
 ### Changed
 - **Hide .git toggle moved from Git panel to FileTree Options** — The `H:hide .git ✓/✗` toggle and top-right indicator removed from the Git panel. Directory visibility is now managed via the FileTree Options overlay (`O`) which supports `.git`, `.claude`, and `.azureal` directories instead of just `.git`.
