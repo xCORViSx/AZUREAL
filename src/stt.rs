@@ -279,8 +279,10 @@ fn transcribe(ctx: &whisper_rs::WhisperContext, samples_16k: &[f32]) -> Result<S
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
-    // Single segment mode for short dictation clips
-    params.set_single_segment(true);
+    // Multi-segment mode: allows Whisper to handle pauses and longer recordings
+    // by splitting audio into multiple segments internally. Single-segment mode
+    // treats the whole clip as one utterance and drops content after pauses.
+    params.set_single_segment(false);
     // Suppress non-speech tokens (reduce hallucinations on silence)
     params.set_suppress_blank(true);
     params.set_suppress_nst(true);
