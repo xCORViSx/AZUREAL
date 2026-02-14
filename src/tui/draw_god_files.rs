@@ -1,6 +1,5 @@
-//! God File panel rendering — centered modal showing source files >1k LOC
-//! with checkboxes for batch modularization. Same full-screen modal pattern
-//! as the Projects panel.
+//! God File panel rendering — centered modal overlay showing source files >1k LOC
+//! with checkboxes for batch modularization. Same overlay pattern as the Git panel.
 
 use ratatui::{
     layout::Rect,
@@ -133,11 +132,14 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
     let footer = " Space:check  a:all  Enter/m:modularize  Esc:close ";
 
     // Render the modal block with border and title
+    let title = Line::from(vec![
+        Span::styled(" God Files (>1000 LOC) ", Style::default().fg(AZURE).bold()),
+    ]);
     let block = Block::default()
-        .title(" God Files (>1000 LOC) ")
+        .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(AZURE));
 
     let paragraph = Paragraph::new(lines)

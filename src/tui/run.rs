@@ -99,11 +99,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // God File panel takes over the screen (shown via 'g' in Worktrees)
-    if app.god_file_panel.is_some() {
-        draw_god_files::draw_god_files_panel(f, app);
-        return;
-    }
+
 
     // Wizard modal takes over the screen
     if app.is_wizard_active() {
@@ -242,7 +238,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.preset_prompt_dialog.is_some() {
         draw_dialogs::draw_preset_prompt_dialog(f, app);
     }
-    // Git Actions panel overlay (Shift+G from worktrees)
+    // God File panel overlay (g from Worktrees)
+    if app.god_file_panel.is_some() {
+        draw_god_files::draw_god_files_panel(f, app);
+    }
+    // Git panel overlay (Shift+G global)
     if app.git_actions_panel.is_some() {
         draw_git_actions::draw_git_actions_panel(f, app);
     }

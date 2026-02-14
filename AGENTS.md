@@ -901,7 +901,7 @@ Scans the project for "god files" — source files exceeding 1000 lines — and 
 - Synchronous scan — fast enough for typical projects (~50k files in <100ms)
 
 **Panel UI:**
-Full-screen centered modal overlay (65% × 75%, min 50×12). Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
+Centered modal overlay (65% × 75%, min 50×12) — same overlay pattern as the Git panel (normal panes visible behind). Bold azure title, QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) azure border. Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
 
 **Keybindings (panel active):**
 - `j/↓` — navigate down, `k/↑` — navigate up
@@ -1130,7 +1130,7 @@ azureal/
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
 │   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane
 │   │   │   └── rebase_view.rs    # Git rebase status display
-│   │   ├── draw_god_files.rs # God File panel modal (full-screen god file scanner/modularizer)
+│   │   ├── draw_god_files.rs # God File panel modal (overlay god file scanner/modularizer)
 │   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()

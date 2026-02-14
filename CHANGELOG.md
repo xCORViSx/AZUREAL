@@ -30,6 +30,7 @@ All notable changes to Azureal will be documented in this file.
 - **Extensionless config files** — All app-created files are now extensionless plain documents: `sessions` (was `.toml`), `runcmds` (was `.json`), `presetprompts` (was `.json`), `projects` (was `.txt`), `debug_output` (was `.txt`), `config` (was `.toml`). Internal format unchanged — just no file extensions.
 - **Removed stash/stash pop from Git Actions** — Worktree-based workflow eliminates the need for stash (each branch has its own working directory). Reduced action count from 7 to 5; removed `Git::stash()` and `Git::stash_pop()` methods, `s`/`S` keybindings, and Enter-on-index 5/6 paths.
 - **Git Actions panel renamed to Git** — Panel title changed from "Git Actions: branch" to bold "Git: branch" for brevity.
+- **God File panel changed from full-screen blackout to overlay** — Now renders as a centered modal on top of normal panes (same pattern as Git panel) instead of taking over the entire screen. Border changed from Rounded to QuadrantOutside with bold azure title.
 
 ### Fixed
 - God File Modularization (`g` → modularize) now **auto-switches the convo pane** to the main worktree session — previously the convo title and output stayed on whatever session was open before, requiring manual session list navigation to see GFM output. Also applies to queue advancement (next file auto-switches too).
