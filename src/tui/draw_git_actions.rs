@@ -1,4 +1,4 @@
-//! Git Actions panel rendering — centered modal overlay showing git operations
+//! Git panel rendering — centered modal overlay showing git operations
 //! (rebase, merge, fetch, pull, push) and changed files list.
 //! Uses Git brand orange (#F05032) for border styling.
 
@@ -186,7 +186,9 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
     }
 
     // ── Modal chrome: orange border with centered title ──
-    let title = format!(" Git Actions: {} ", panel.worktree_name);
+    let title = Line::from(vec![
+        Span::styled(format!(" Git: {} ", panel.worktree_name), Style::default().fg(GIT_ORANGE).bold()),
+    ]);
     let block = Block::default()
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)

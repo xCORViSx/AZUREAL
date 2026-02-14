@@ -529,7 +529,7 @@ The input box uses vim-style modal editing:
 Key mappings:
 - `p` (global, except edit mode): Enter prompt mode and focus input (closes terminal/help if open)
 - `T` (Shift+T, global, except edit mode): Toggle terminal pane
-- `G` (Shift+G, global, except edit mode): Toggle Git Actions panel
+- `G` (Shift+G, global, except edit mode): Toggle Git panel
 
 **CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
 - `Escape` / click another pane / `Tab` (in prompt mode): Return to command mode
@@ -918,13 +918,13 @@ All checked files are spawned **simultaneously** as concurrent Claude processes 
 
 Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
 
-### Git Actions Panel
+### Git Panel
 
 Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
 
 **Panel Layout:**
-- Title bar: `" Git Actions: <branch_name> "` centered in orange QuadrantOutside border
-- Actions section: 7 git operations with single-key shortcuts, navigable with j/k
+- Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
+- Actions section: 5 git operations with single-key shortcuts, navigable with j/k
 - Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
 - Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
@@ -1131,7 +1131,7 @@ azureal/
 │   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane
 │   │   │   └── rebase_view.rs    # Git rebase status display
 │   │   ├── draw_god_files.rs # God File panel modal (full-screen god file scanner/modularizer)
-│   │   ├── draw_git_actions.rs # Git Actions panel modal (centered overlay with git ops + changed files)
+│   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum, KeyContext, lookup_action() with guards, execute_action() dispatch, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
@@ -1139,7 +1139,7 @@ azureal/
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: convo search + session list overlay + rebase mode only (commands resolved upstream)
 │   │   ├── input_god_files.rs # God File panel input (navigate, check, modularize)
-│   │   ├── input_git_actions.rs # Git Actions panel input (actions, file nav, git operations)
+│   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1268,7 +1268,7 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `T` | Toggle terminal pane |
-| `G` | Toggle Git Actions panel |
+| `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
 | `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
