@@ -350,10 +350,10 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         .title(Span::styled(title, title_style))
         .border_style(Style::default().fg(border_color));
 
-    // Bottom border hint in filter mode: "Enter:toggle  Esc:rescan"
+    // Bottom border hint in scope mode: "Enter:toggle  Esc:save & rescan"
     if in_filter_mode {
         block = block.title_bottom(Line::from(Span::styled(
-            " Enter:toggle  Esc:rescan ",
+            " Enter:toggle  Esc:save & rescan ",
             Style::default().fg(GF_BORDER_GREEN),
         )));
     }

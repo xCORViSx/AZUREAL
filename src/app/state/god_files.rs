@@ -104,9 +104,18 @@ const SOURCE_ROOTS: &[&str] = &[
 
 impl App {
     /// Open the God File panel — scans the project and shows results.
-    /// Called when user presses 'g' in Worktrees pane.
+    /// Uses persisted scope from .azureal/godfilescope if it exists;
+    /// otherwise falls back to auto-detected source roots.
     pub fn open_god_file_panel(&mut self) {
-        let entries = self.scan_god_files();
+        let entries = if let Some(ref project) = self.project {
+            if let Some(dirs) = load_god_file_scope(&project.path) {
+                self.scan_god_files_with_dirs(&dirs)
+            } else {
+                self.scan_god_files()
+            }
+        } else {
+            self.scan_god_files()
+        };
         self.god_file_panel = Some(GodFilePanel {
             entries,
             selected: 0,
@@ -121,27 +130,30 @@ impl App {
         self.god_file_filter_dirs.clear();
     }
 
-    /// Enter god file filter mode — opens the FileTree overlay with green highlights
+    /// Enter god file scope mode — opens the FileTree overlay with green highlights
     /// on directories that are currently in the scan scope. User can toggle dirs
     /// with Enter, then Esc to rescan and return to the god file panel.
-    pub fn enter_god_file_filter_mode(&mut self) {
+    /// Loads persisted scope from .azureal/godfilescope if it exists; otherwise
+    /// falls back to auto-detected SOURCE_ROOTS.
+    pub fn enter_god_file_scope_mode(&mut self) {
         let Some(ref project) = self.project else { return };
         let root = &project.path;
 
-        // Build the initial filter set from auto-detected source roots
-        let mut dirs = HashSet::new();
-        let found_roots: Vec<PathBuf> = SOURCE_ROOTS.iter()
-            .map(|name| root.join(name))
-            .filter(|p| p.is_dir())
-            .collect();
-        if found_roots.is_empty() {
-            // No source roots found — mark the project root itself
-            dirs.insert(root.clone());
-        } else {
-            for r in found_roots {
-                dirs.insert(r);
+        // Try loading persisted scope first
+        let dirs = load_god_file_scope(root).unwrap_or_else(|| {
+            // Fall back to auto-detected source roots
+            let found: Vec<PathBuf> = SOURCE_ROOTS.iter()
+                .map(|name| root.join(name))
+                .filter(|p| p.is_dir())
+                .collect();
+            if found.is_empty() {
+                let mut s = HashSet::new();
+                s.insert(root.clone());
+                s
+            } else {
+                found.into_iter().collect()
             }
-        }
+        });
         self.god_file_filter_dirs = dirs;
         self.god_file_filter_mode = true;
 
@@ -164,10 +176,15 @@ impl App {
         self.invalidate_file_tree();
     }
 
-    /// Exit god file filter mode — rescan with the user's custom directory scope,
-    /// then reopen the god file panel with updated results.
-    pub fn exit_god_file_filter_mode(&mut self) {
-        // Rescan using the custom filter dirs
+    /// Exit god file scope mode — persist the scope to .azureal/godfilescope,
+    /// rescan with the user's custom directory scope, then reopen the god file
+    /// panel with updated results.
+    pub fn exit_god_file_scope_mode(&mut self) {
+        // Persist scope so it survives panel close / app restart
+        if let Some(ref project) = self.project {
+            save_god_file_scope(&project.path, &self.god_file_filter_dirs);
+        }
+        // Rescan using the custom scope dirs
         let entries = self.scan_god_files_with_dirs(&self.god_file_filter_dirs.clone());
         self.god_file_filter_mode = false;
         self.god_file_filter_dirs.clear();
@@ -476,6 +493,32 @@ fn scan_dir_recursive(root: &Path, dir: &Path, results: &mut Vec<GodFileEntry>) 
             }
         }
     }
+}
+
+/// Load persisted god file scope from .azureal/godfilescope.
+/// File format: one absolute path per line. Returns None if file doesn't exist
+/// or is empty, signaling the caller to use auto-detection instead.
+fn load_god_file_scope(project_root: &Path) -> Option<HashSet<PathBuf>> {
+    let scope_path = project_root.join(".azureal").join("godfilescope");
+    let content = fs::read_to_string(&scope_path).ok()?;
+    let dirs: HashSet<PathBuf> = content.lines()
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .collect();
+    if dirs.is_empty() { None } else { Some(dirs) }
+}
+
+/// Save god file scope to .azureal/godfilescope.
+/// Stores one absolute path per line — simple, human-readable, no serde needed.
+fn save_god_file_scope(project_root: &Path, dirs: &HashSet<PathBuf>) {
+    let azureal_dir = project_root.join(".azureal");
+    let _ = fs::create_dir_all(&azureal_dir);
+    let content: String = dirs.iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = fs::write(azureal_dir.join("godfilescope"), content);
 }
 
 /// Build the modularization prompt for a specific god file.

@@ -586,8 +586,8 @@ fn dispatch_escape(app: &mut App) {
         }
         Focus::FileTree => {
             if app.god_file_filter_mode {
-                // Exit filter mode — rescan with user's custom scope and reopen god file panel
-                app.exit_god_file_filter_mode();
+                // Exit scope mode — persist, rescan, reopen god file panel
+                app.exit_god_file_scope_mode();
             } else {
                 app.show_file_tree = false;
                 app.focus = Focus::Worktrees;

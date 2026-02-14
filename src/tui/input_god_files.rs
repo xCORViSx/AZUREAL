@@ -51,9 +51,9 @@ pub fn handle_god_files_input(key: event::KeyEvent, app: &mut App, claude_proces
         (KeyModifiers::NONE, KeyCode::Char('v')) => {
             app.god_file_view_checked();
         }
-        // Filter mode — open FileTree overlay to see/edit scan scope
-        (KeyModifiers::NONE, KeyCode::Char('f')) => {
-            app.enter_god_file_filter_mode();
+        // Scope mode — open FileTree overlay to see/edit scan scope
+        (KeyModifiers::NONE, KeyCode::Char('s')) => {
+            app.enter_god_file_scope_mode();
         }
         // Modularize checked files (Enter or 'm')
         (KeyModifiers::NONE, KeyCode::Enter) | (KeyModifiers::NONE, KeyCode::Char('m')) => {

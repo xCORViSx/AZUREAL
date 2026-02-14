@@ -10,7 +10,9 @@ use ratatui::{
 };
 
 use crate::app::App;
-use super::util::AZURE;
+
+/// God File panel accent — same green used in the filter mode scope overlay
+const GF_GREEN: Color = Color::Rgb(80, 200, 80);
 
 /// Draw the God File panel as a centered modal overlay.
 /// Caller should return early after this — it takes over the whole screen.
@@ -42,7 +44,7 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  No source files exceed 1000 lines. Your codebase is well-modularized!",
-            Style::default().fg(Color::Green),
+            Style::default().fg(GF_GREEN),
         )));
     } else {
         // Explain session naming convention: [GFM] = God File Modularize
@@ -80,7 +82,7 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
 
             // Checkbox: [x] or [ ]
             let checkbox = if entry.checked { "[x] " } else { "[ ] " };
-            let checkbox_color = if entry.checked { Color::Green } else { Color::DarkGray };
+            let checkbox_color = if entry.checked { GF_GREEN } else { Color::DarkGray };
 
             // File path — truncate if needed, leave room for line count
             let line_count_str = format!(" {} lines", entry.line_count);
@@ -95,11 +97,11 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
             let padding = inner_w.saturating_sub(checkbox.len() + path_display.len() + line_count_str.len());
             let pad_str = " ".repeat(padding);
 
-            // Style: selected row gets azure highlight, others white
+            // Style: selected row gets green highlight, others white
             let (path_style, count_style) = if is_selected {
                 (
-                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
-                    Style::default().fg(AZURE),
+                    Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+                    Style::default().fg(GF_GREEN),
                 )
             } else {
                 (
@@ -129,18 +131,18 @@ pub fn draw_god_files_panel(f: &mut Frame, app: &App) {
     }
 
     // Footer key hints
-    let footer = " Space:check  a:all  v:view  f:filter  Enter/m:modularize  Esc:close ";
+    let footer = " Space:check  a:all  v:view  s:scope  Enter/m:modularize  Esc:close ";
 
     // Render the modal block with border and title
     let title = Line::from(vec![
-        Span::styled(" God Files (>1000 LOC) ", Style::default().fg(AZURE).bold()),
+        Span::styled(" God Files (>1000 LOC) ", Style::default().fg(GF_GREEN).bold()),
     ]);
     let block = Block::default()
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::QuadrantOutside)
-        .border_style(Style::default().fg(AZURE));
+        .border_style(Style::default().fg(GF_GREEN));
 
     let paragraph = Paragraph::new(lines)
         .block(block);

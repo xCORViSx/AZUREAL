@@ -15,6 +15,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 **Persistent State:**
 - `~/.azureal/projects` stores registered project paths (auto-created on first launch in a git repo)
 - `.azureal/sessions` stores custom session name → UUID mappings (only created when user provides custom names)
+- `.azureal/godfilescope` stores persisted god file scan scope — one absolute directory path per line (created when user exits scope mode)
 
 # FEATURES
 
@@ -902,7 +903,7 @@ Scans the project for "god files" — source files exceeding 1000 lines — and 
 - Synchronous scan — fast enough for typical projects (~50k files in <100ms)
 
 **Panel UI:**
-Centered modal overlay (55% × 70%, min 50×16) — same size as the Git panel (normal panes visible behind). Bold azure title, QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) azure border. Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Azure highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  v:view  f:filter  Enter/m:modularize  Esc:close`. Empty state message when no god files found.
+Centered modal overlay (55% × 70%, min 50×16) — same size as the Git panel (normal panes visible behind). Bold green title and QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) green border (`Rgb(80,200,80)` — same `GF_GREEN` used in scope mode overlay). Shows an explanation line ("Sessions will be prefixed [GFM] (God File Modularize)") before the file list. Each entry shows `[x]`/`[ ]` checkbox, relative path, and right-aligned line count. Green highlight on selected row, green checkbox color when checked. Footer: `Space:check  a:all  v:view  s:scope  Enter/m:modularize  Esc:close`. Empty state message when no god files found. On open, loads persisted scope from `.azureal/godfilescope` if it exists; otherwise uses auto-detected SOURCE_ROOTS.
 
 **Keybindings (panel active):**
 - `j/↓` — navigate down, `k/↑` — navigate up
@@ -910,21 +911,21 @@ Centered modal overlay (55% × 70%, min 50×16) — same size as the Git panel (
 - `Space` — toggle check on selected entry
 - `a` — toggle all checks (if any unchecked → check all; if all checked → uncheck all)
 - `v` — view checked files in Viewer as tabs (fills available slots up to 12-tab max; skips duplicates; closes panel and focuses Viewer)
-- `f` — enter filter mode (see below)
+- `s` — enter scope mode (see below)
 - `Enter` / `m` — modularize checked files
 - `Esc` — close panel
 
-**Filter Mode (`f`):**
-Opens the FileTree overlay in a special "god file filter mode" that lets the user see and modify which directories are included in the scan scope. Directories currently in the scan scope are highlighted in bright green (`Rgb(80,200,80)`) with green icons; files inside scoped directories are dim green (`Rgb(60,140,60)`); everything else is dimmed gray. The FileTree border turns green (double-line) with a `" God File Scope (N dirs) "` title and `" Enter:toggle  Esc:rescan "` bottom hint. File actions (add, delete, rename, copy, move) are disabled in this mode.
+**Scope Mode (`s`):**
+Opens the FileTree overlay in a special "god file scope mode" that lets the user see and modify which directories are included in the scan scope. Directories currently in the scan scope are highlighted in bright green (`Rgb(80,200,80)`) with green icons; **subdirectories of accepted dirs automatically inherit accepted status** (also bright green) — acceptance propagates down the tree via ancestor walk. Files inside scoped directories are dim green (`Rgb(60,140,60)`); everything else is dimmed gray. The FileTree border turns green (double-line) with a `" God File Scope (N dirs) "` title and `" Enter:toggle  Esc:save & rescan "` bottom hint. File actions (add, delete, rename, copy, move) are disabled in this mode.
 
-The initial scope is computed from the same SOURCE_ROOTS auto-detection used by the scanner. Pressing `Enter` on a directory toggles it in/out of the scope set. Pressing `Esc` exits filter mode, rescans the project using the user's custom scope, and reopens the god file panel with the updated results. State: `god_file_filter_mode: bool` and `god_file_filter_dirs: HashSet<PathBuf>` on App.
+The initial scope is loaded from `.azureal/godfilescope` if it exists; otherwise computed from SOURCE_ROOTS auto-detection. Pressing `Enter` on a directory toggles it in/out of the scope set. Pressing `Esc` **persists the scope** to `.azureal/godfilescope` (one absolute path per line), rescans the project using the custom scope, and reopens the god file panel with updated results. On next panel open, the persisted scope is loaded automatically — no need to re-enter scope mode unless the user wants to change it. State: `god_file_filter_mode: bool` and `god_file_filter_dirs: HashSet<PathBuf>` on App. Both `is_god_file_filter_dir()` and `is_in_god_file_scope()` walk ancestors to propagate acceptance — a directory or file is "in scope" if it or any ancestor is in the filter set.
 
 **Parallel Modularization:**
 All checked files are spawned **simultaneously** as concurrent Claude processes on the main worktree — each gets its own PID slot via the multi-session architecture. The sequential queue (`god_file_queue`) was removed. Each session is named `[GFM] <filename>` (GFM = God File Modularize) via `pending_session_names`. On spawn, the convo pane auto-switches to the main worktree via `switch_to_main_worktree()` so GFM output is immediately visible. The newest spawn becomes the active slot (its output is displayed).
 
 **Prompt:** Instructs Claude to read the file and its dependents, understand project conventions, plan the decomposition, then split into focused modules with re-exports for backward compatibility.
 
-Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
+Implementation: `src/app/state/god_files.rs` (scan, open, toggle, modularize, view_checked, scope persistence via `load_god_file_scope`/`save_god_file_scope`), `src/tui/input_god_files.rs` (panel input handler), `src/tui/draw_god_files.rs` (panel rendering), `src/app/types.rs` (GodFileEntry, GodFilePanel), `src/tui/keybindings.rs` (Action::OpenGodFiles, `g` binding in WORKTREES)
 
 ### Git Panel
 
