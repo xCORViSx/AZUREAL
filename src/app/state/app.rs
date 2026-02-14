@@ -358,8 +358,6 @@ pub struct App {
     pub file_tree_options_mode: bool,
     /// Selected row in the file tree options overlay (0-indexed into OPTIONS list)
     pub file_tree_options_selected: usize,
-    /// Hide the main worktree from the sidebar list (on by default)
-    pub hide_main_worktree: bool,
     /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
     pub show_file_tree: bool,
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
@@ -607,10 +605,9 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             nerd_fonts: true,
-            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into()]),
+            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into(), "worktrees".into()]),
             file_tree_options_mode: false,
             file_tree_options_selected: 0,
-            hide_main_worktree: true,
             show_file_tree: false,
             health_panel: None,
             last_health_tab: HealthTab::GodFiles,

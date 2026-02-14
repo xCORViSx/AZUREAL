@@ -95,15 +95,7 @@ impl App {
         }
 
         self.sessions = sessions;
-        // Select first visible worktree (skip hidden main if applicable)
-        self.selected_worktree = if self.sessions.is_empty() {
-            None
-        } else if self.hide_main_worktree && self.sessions.len() > 1 {
-            // Main is always index 0 — select next visible
-            Some(1)
-        } else {
-            Some(0)
-        };
+        self.selected_worktree = if self.sessions.is_empty() { None } else { Some(0) };
 
         // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
         for session in &self.sessions {

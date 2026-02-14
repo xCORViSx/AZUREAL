@@ -268,16 +268,15 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
 
 /// Directory names that can be toggled visible/hidden in the options overlay.
 /// Order here = display order. All hidden by default on first launch.
-const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal"];
+const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal", "worktrees"];
 
 /// Draw the file tree options overlay — replaces normal tree content when
 /// app.file_tree_options_mode is true. Shows toggleable checkboxes for each
-/// hidden directory plus sidebar options, with QuadrantOutside border.
+/// hidden directory with QuadrantOutside border and "Filetree Options" title.
 fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(""));
 
-    // Directory visibility toggles
     for (i, &name) in FT_OPTIONS.iter().enumerate() {
         let checked = app.file_tree_hidden_dirs.contains(name);
         let selected = i == app.file_tree_options_selected;
@@ -292,19 +291,6 @@ fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
         };
         lines.push(Line::from(Span::styled(label, style)));
     }
-
-    // "Hide main worktree" toggle (last option, index = FT_OPTIONS.len())
-    let main_selected = app.file_tree_options_selected == FT_OPTIONS.len();
-    let main_checkbox = if app.hide_main_worktree { "[x]" } else { "[ ]" };
-    let main_label = format!("  {} Hide main worktree", main_checkbox);
-    let main_style = if main_selected {
-        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
-    } else if app.hide_main_worktree {
-        Style::default().fg(Color::Green)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    lines.push(Line::from(Span::styled(main_label, main_style)));
 
     let block = Block::default()
         .borders(Borders::ALL)
