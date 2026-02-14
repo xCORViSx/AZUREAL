@@ -230,10 +230,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     } else if app.run_command_dialog.is_some() {
         draw_dialogs::draw_run_command_dialog(f, app);
     }
-    // Preset prompt overlays (picker takes priority over dialog)
+    // Preset prompt overlays — dialog draws on top of picker (spawned from picker via e/a)
     if app.preset_prompt_picker.is_some() {
         draw_dialogs::draw_preset_prompt_picker(f, app, f.area());
-    } else if app.preset_prompt_dialog.is_some() {
+    }
+    if app.preset_prompt_dialog.is_some() {
         draw_dialogs::draw_preset_prompt_dialog(f, app);
     }
     // Git Actions panel overlay (Shift+G from worktrees)

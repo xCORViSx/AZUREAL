@@ -32,6 +32,7 @@ All notable changes to Azureal will be documented in this file.
 - God File Modularization (`g` → modularize) now **auto-switches the convo pane** to the main worktree session — previously the convo title and output stayed on whatever session was open before, requiring manual session list navigation to see GFM output. Also applies to queue advancement (next file auto-switches too).
 - `Shift+G` (Git Actions panel) now works — `KeyCombo::matches()` fixed systemically to handle the Kitty protocol quirk where uppercase chars arrive as `(NONE, Char('G'))` not `(SHIFT, Char('G'))`. All future `KeyCombo::shift(Char('X'))` bindings are now immune to this bug.
 - **Lowercase `t` no longer triggers terminal toggle** — `KeyCombo::matches()` was matching `(NONE, 't')` against `shift('T')` because `'t'.to_ascii_uppercase() == 'T'`. Now rejects plain lowercase: only `(NONE, 'T')` or `(SHIFT, *)` match uppercase bindings.
+- **Preset prompt dialogs stuck in Esc loop** — When both the preset picker and add/edit dialog were open simultaneously, pressing Esc on the picker revealed the dialog underneath, and pressing Esc on the dialog reopened the picker (infinite cycle). Fixed by: (1) removing the "reopen picker on Esc" behavior from the dialog, (2) checking dialog input before picker input (dialog is on top), (3) drawing dialog on top of picker instead of exclusively.
 
 ### Refactored
 - Modularized `draw_output.rs` (1002→443 lines) into file-based module root with 4 submodules:

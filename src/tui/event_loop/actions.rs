@@ -58,8 +58,9 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
-    if app.preset_prompt_picker.is_some() { return handle_preset_prompt_picker_input(key, app); }
+    // Dialog checked before picker — dialog is spawned on top of picker (e/a keys)
     if app.preset_prompt_dialog.is_some() { return handle_preset_prompt_dialog_input(key, app); }
+    if app.preset_prompt_picker.is_some() { return handle_preset_prompt_picker_input(key, app); }
 
     // Convo search modal: typing search text bypasses keybinding system
     if app.convo_search_active { return handle_output_input(key, app); }

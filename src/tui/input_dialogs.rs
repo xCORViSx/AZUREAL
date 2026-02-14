@@ -462,10 +462,6 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
         }
         KeyCode::Esc => {
             app.preset_prompt_dialog = None;
-            // Reopen picker if presets exist (user cancelled add/edit but picker was open)
-            if !app.preset_prompts.is_empty() {
-                app.preset_prompt_picker = Some(crate::app::types::PresetPromptPicker::new());
-            }
         }
         // Text editing for the active field
         KeyCode::Backspace => {
