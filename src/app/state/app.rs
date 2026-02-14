@@ -681,6 +681,12 @@ impl App {
             .and_then(|slot| self.claude_session_ids.get(slot))
     }
 
+    /// Check if a Claude session UUID has a running process (for status dots in session list)
+    pub fn is_claude_session_running(&self, claude_session_id: &str) -> bool {
+        self.claude_session_ids.iter()
+            .any(|(slot, sid)| sid == claude_session_id && self.running_sessions.contains(slot))
+    }
+
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }
     pub fn clear_status(&mut self) { self.status_message = None; }
 

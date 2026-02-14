@@ -173,8 +173,8 @@ fn draw_name_list(
             let msg_count = app.session_msg_counts.get(session_id).map(|&(c, _)| c).unwrap_or(0);
             let msg_badge = format!("[{} msgs]", msg_count);
             let suffix = format!(" {} {} ", time_str, msg_badge);
-            // Row: " session_name    mtime [N msgs]"
-            let name_space = inner_width.saturating_sub(1 + suffix.chars().count());
+            // Row: " ● session_name    mtime [N msgs]"
+            let name_space = inner_width.saturating_sub(3 + suffix.chars().count());
             let truncated_name = if name_display.chars().count() > name_space {
                 let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
                 format!("{}\u{2026}", trunc)
@@ -195,7 +195,13 @@ fn draw_name_list(
                 Style::default()
             };
 
+            // Green dot for running sessions, dim circle for idle
+            let running = app.is_claude_session_running(session_id);
+            let (dot, dot_color) = if running { ("●", Color::Green) } else { ("○", Color::DarkGray) };
+
             rows.push(Line::from(vec![
+                Span::styled(" ", bg_style),
+                Span::styled(dot, if is_selected { bg_style } else { Style::default().fg(dot_color) }),
                 Span::styled(" ", bg_style),
                 Span::styled(truncated_name, name_style),
                 Span::styled(" ".repeat(pad), bg_style),
