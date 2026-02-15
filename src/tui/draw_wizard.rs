@@ -288,7 +288,7 @@ fn draw_session_worktree_select(f: &mut Frame, app: &App, wizard: &SessionWizard
         Line::from(""),
     ];
 
-    for (idx, session) in app.sessions.iter().enumerate() {
+    for (idx, session) in app.worktrees.iter().enumerate() {
         let is_selected = idx == wizard.selected_worktree_idx;
         let prefix = if is_selected { "> " } else { "  " };
         let style = if is_selected {
@@ -301,7 +301,7 @@ fn draw_session_worktree_select(f: &mut Frame, app: &App, wizard: &SessionWizard
         ]));
     }
 
-    if app.sessions.is_empty() {
+    if app.worktrees.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  (No worktrees available)", Style::default().fg(Color::DarkGray)),
         ]));
@@ -361,7 +361,7 @@ fn draw_session_details_input(f: &mut Frame, wizard: &SessionWizard, area: Rect)
 }
 
 fn draw_session_confirmation(f: &mut Frame, app: &App, wizard: &SessionWizard, area: Rect) {
-    let worktree_name = app.sessions.get(wizard.selected_worktree_idx)
+    let worktree_name = app.worktrees.get(wizard.selected_worktree_idx)
         .map(|s| s.name())
         .unwrap_or("Unknown");
 

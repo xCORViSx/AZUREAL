@@ -1,6 +1,6 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::app::types::{BranchDialog, ContextMenu, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, WorktreeAction, ViewMode};
 use crate::config::load_projects;
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
@@ -67,7 +67,7 @@ impl App {
 
     // Diff view - loads git diff into Viewer pane
     pub fn load_diff(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_session() {
+        if let Some(session) = self.current_worktree() {
             if let Some(ref wt_path) = session.worktree_path {
                 if let Some(project) = self.current_project() {
                     let diff = Git::get_diff(wt_path, &project.main_branch)?;
@@ -92,7 +92,7 @@ impl App {
     /// Open the Git Actions panel for the currently selected worktree.
     /// Gathers branch info and changed files via `git diff --name-status` + `--numstat`.
     pub fn open_git_actions_panel(&mut self) {
-        let session = match self.current_session() {
+        let session = match self.current_worktree() {
             Some(s) => s,
             None => { self.set_status("No worktree selected"); return; }
         };
@@ -116,6 +116,9 @@ impl App {
             Err(_) => Vec::new(),
         };
 
+        // Check if auto-rebase is enabled for this worktree (reads worktree-local azufig)
+        let autorebase_on = crate::azufig::is_autorebase_enabled(&wt_path);
+
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
@@ -127,6 +130,8 @@ impl App {
             actions_focused: true,
             selected_action: 0,
             result_message: None,
+            autorebase_on,
+            autorebase_scope: None,
         });
     }
 
@@ -314,9 +319,9 @@ impl App {
 
     // Context menu
     pub fn open_context_menu(&mut self) {
-        if let Some(session) = self.current_session() {
+        if let Some(session) = self.current_worktree() {
             let status = session.status(self.is_session_running(&session.branch_name));
-            let actions = SessionAction::available_for_status(status);
+            let actions = WorktreeAction::available_for_status(status);
             if !actions.is_empty() { self.context_menu = Some(ContextMenu { actions, selected: 0 }); }
         }
     }
@@ -335,7 +340,7 @@ impl App {
         }
     }
 
-    pub fn selected_action(&self) -> Option<SessionAction> {
+    pub fn selected_action(&self) -> Option<WorktreeAction> {
         self.context_menu.as_ref().map(|menu| menu.actions[menu.selected].clone())
     }
 
@@ -584,7 +589,7 @@ impl App {
         self.cancel_all_claude();
 
         // Clear all session and render state
-        self.sessions.clear();
+        self.worktrees.clear();
         self.selected_worktree = None;
         self.display_events.clear();
         self.output_lines.clear();
@@ -630,7 +635,7 @@ impl App {
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
         // Reload sessions and output
-        let _ = self.load_sessions();
+        let _ = self.load_worktrees();
         self.load_session_output();
         self.load_run_commands();
         self.load_preset_prompts();
@@ -643,7 +648,7 @@ impl App {
     /// Set the OS terminal window title to reflect the current state.
     /// "AZUREAL" when no project, "AZUREAL @ project : branch" when loaded.
     pub fn update_terminal_title(&self) {
-        let title = match (&self.project, self.current_session()) {
+        let title = match (&self.project, self.current_worktree()) {
             (Some(project), Some(session)) => {
                 let branch = session.branch_name.strip_prefix("azureal/")
                     .unwrap_or(&session.branch_name);

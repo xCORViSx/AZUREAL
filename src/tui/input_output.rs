@@ -179,7 +179,7 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
     }
 
     // Count session files for current worktree only (matches draw_session_list scope)
-    let total_rows: usize = app.current_session()
+    let total_rows: usize = app.current_worktree()
         .and_then(|s| app.session_files.get(&s.branch_name))
         .map(|f| f.len())
         .unwrap_or(0);
@@ -301,7 +301,7 @@ fn handle_session_filter_input(key: event::KeyEvent, app: &mut App) -> Result<()
 /// Uses two-phase deferred draw: sets loading indicator → draw renders popup →
 /// actual session parse runs on next frame via DeferredAction::LoadSession.
 fn select_session_at_row(app: &mut App) {
-    let Some(session) = app.current_session() else { return };
+    let Some(session) = app.current_worktree() else { return };
     let branch = session.branch_name.clone();
     let file_count = app.session_files.get(&branch).map(|f| f.len()).unwrap_or(0);
     if app.session_list_selected < file_count {
@@ -321,7 +321,7 @@ fn select_content_search_result(app: &mut App) {
     if sel >= app.session_search_results.len() { return; }
     let (_row_idx, ref session_id, _) = app.session_search_results[sel];
 
-    let Some(session) = app.current_session() else { return };
+    let Some(session) = app.current_worktree() else { return };
     let branch = session.branch_name.clone();
     if let Some(files) = app.session_files.get(&branch) {
         if let Some(file_idx) = files.iter().position(|(sid, _, _)| sid == session_id) {
@@ -341,7 +341,7 @@ fn run_cross_session_search(app: &mut App) {
     let query = app.session_filter.to_lowercase();
     if query.len() < 3 { return; }
 
-    let branch = match app.current_session() {
+    let branch = match app.current_worktree() {
         Some(s) => s.branch_name.clone(),
         None => return,
     };

@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use crate::git::Git;
-use crate::models::{Project, Session};
+use crate::models::{Project, Worktree};
 
 use super::helpers::build_file_tree;
 use super::App;
@@ -36,13 +36,13 @@ impl App {
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
-        self.load_sessions()?;
+        self.load_worktrees()?;
 
         Ok(())
     }
 
     /// Load sessions from git worktrees and branches
-    pub fn load_sessions(&mut self) -> anyhow::Result<()> {
+    pub fn load_worktrees(&mut self) -> anyhow::Result<()> {
         let Some(project) = &self.project else { return Ok(()) };
 
         let worktrees = Git::list_worktrees_detailed(&project.path)?;
@@ -59,7 +59,7 @@ impl App {
                 if let Some(ref id) = claude_id {
                     self.claude_session_ids.insert(branch_name.clone(), id.clone());
                 }
-                sessions.push(Session {
+                sessions.push(Worktree {
                     branch_name: branch_name.clone(),
                     worktree_path: Some(wt.path.clone()),
                     claude_session_id: claude_id,
@@ -77,7 +77,7 @@ impl App {
                 if let Some(ref id) = claude_id {
                     self.claude_session_ids.insert(branch_name.clone(), id.clone());
                 }
-                sessions.push(Session {
+                sessions.push(Worktree {
                     branch_name: branch_name.clone(),
                     worktree_path: Some(wt.path.clone()),
                     claude_session_id: claude_id,
@@ -90,7 +90,7 @@ impl App {
         // Add archived sessions (azureal/* branches without worktrees)
         for branch in azureal_branches {
             if !active_branches.contains(&branch) {
-                sessions.push(Session {
+                sessions.push(Worktree {
                     branch_name: branch,
                     worktree_path: None,
                     claude_session_id: None,
@@ -99,11 +99,11 @@ impl App {
             }
         }
 
-        self.sessions = sessions;
-        self.selected_worktree = if self.sessions.is_empty() { None } else { Some(0) };
+        self.worktrees = sessions;
+        self.selected_worktree = if self.worktrees.is_empty() { None } else { Some(0) };
 
         // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
-        for session in &self.sessions {
+        for session in &self.worktrees {
             if let Some(ref wt_path) = session.worktree_path {
                 let files = crate::config::list_claude_sessions(wt_path);
                 self.session_files.insert(session.branch_name.clone(), files);
@@ -144,7 +144,7 @@ impl App {
         self.awaiting_ask_user_question = false;
         self.ask_user_questions_cache = None;
 
-        if let Some(session) = self.current_session() {
+        if let Some(session) = self.current_worktree() {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
 
@@ -247,7 +247,7 @@ impl App {
             watcher.send(crate::watcher::WatchCommand::WatchSessionFile(path.clone()));
         }
         if let Some(idx) = self.selected_worktree {
-            if let Some(session) = self.sessions.get(idx) {
+            if let Some(session) = self.worktrees.get(idx) {
                 if let Some(ref wt_path) = session.worktree_path {
                     watcher.send(crate::watcher::WatchCommand::WatchWorktree(wt_path.to_path_buf()));
                 }
@@ -258,7 +258,7 @@ impl App {
     /// Cache the session display name for the title bar.
     /// Reads session_names TOML once here so draw_title_bar() is zero I/O.
     pub fn update_title_session_name(&mut self) {
-        let Some(session) = self.current_session() else {
+        let Some(session) = self.current_worktree() else {
             self.title_session_name.clear();
             return;
         };
@@ -268,7 +268,7 @@ impl App {
         let session_id = self.session_selected_file_idx.get(&branch)
             .and_then(|idx| self.session_files.get(&branch).and_then(|f| f.get(*idx)))
             .map(|(id, _, _)| id.clone())
-            .or_else(|| self.sessions.get(self.selected_worktree?)
+            .or_else(|| self.worktrees.get(self.selected_worktree?)
                 .and_then(|s| s.claude_session_id.clone()))
             .or_else(|| self.claude_session_ids.get(&branch).cloned());
         self.title_session_name = match session_id {
@@ -377,7 +377,7 @@ impl App {
         self.file_tree_selected = None;
         self.file_tree_scroll = 0;
 
-        let Some(session) = self.current_session() else { return };
+        let Some(session) = self.current_worktree() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
 
         self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
@@ -387,7 +387,7 @@ impl App {
         self.invalidate_file_tree();
     }
 
-    pub fn refresh_sessions(&mut self) -> anyhow::Result<()> { self.load_sessions() }
+    pub fn refresh_worktrees(&mut self) -> anyhow::Result<()> { self.load_worktrees() }
 
     /// Scan display_events backwards for the latest TodoWrite and AskUserQuestion.
     /// TodoWrite: update sticky todo widget. AskUserQuestion: check if awaiting response.

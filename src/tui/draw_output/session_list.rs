@@ -153,7 +153,7 @@ fn draw_name_list(
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut total_unfiltered = 0usize;
 
-    let branch = app.current_session().map(|s| s.branch_name.clone());
+    let branch = app.current_worktree().map(|s| s.branch_name.clone());
     let files = branch.as_deref().and_then(|b| app.session_files.get(b));
 
     if let Some(files) = files {
@@ -232,7 +232,7 @@ fn draw_name_list(
         .collect();
 
     // Title includes worktree name since list is scoped to current worktree
-    let wt_label = app.current_session().map(|s| s.name().to_string()).unwrap_or_default();
+    let wt_label = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if filtering {
         format!(" {} [{}/{} of {}] ", wt_label, app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
     } else {

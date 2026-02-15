@@ -1,7 +1,7 @@
 //! Session navigation and CRUD operations
 
 use crate::git::Git;
-use crate::models::Session;
+use crate::models::Worktree;
 
 use super::helpers::{generate_session_name, sanitize_for_branch};
 use super::App;
@@ -15,7 +15,7 @@ impl App {
         if let Some(ref project) = self.project {
             if project.name.to_lowercase().contains(filter) { return true; }
         }
-        let Some(session) = self.sessions.get(idx) else { return false };
+        let Some(session) = self.worktrees.get(idx) else { return false };
         // Match on worktree/branch display name
         if session.name().to_lowercase().contains(filter) { return true; }
         // Match on session file UUIDs and custom names
@@ -42,7 +42,7 @@ impl App {
         let start = self.selected_worktree.map(|i| i + 1).unwrap_or(0);
         if self.sidebar_filter.is_empty() {
             // No filter — simple index bump
-            if start < self.sessions.len() {
+            if start < self.worktrees.len() {
                 self.save_current_terminal();
                 self.selected_worktree = Some(start);
                 self.load_session_output();
@@ -51,7 +51,7 @@ impl App {
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(next) = (start..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(next) = (start..self.worktrees.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(next) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(next);
@@ -73,7 +73,7 @@ impl App {
             if self.session_matches_filter_with_names(idx, &filter, &names) { return; }
         }
         // Find first matching session
-        if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+        if let Some(first) = (0..self.worktrees.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
             self.save_current_terminal();
             self.selected_worktree = Some(first);
             self.load_session_output();
@@ -101,14 +101,14 @@ impl App {
     }
 
     /// Create a new git worktree with a Claude session (name auto-generated from prompt)
-    pub fn create_new_worktree(&mut self, prompt: String) -> anyhow::Result<Session> {
+    pub fn create_new_worktree(&mut self, prompt: String) -> anyhow::Result<Worktree> {
         let name = generate_session_name(&prompt);
         let worktree_name = sanitize_for_branch(&name);
         self.create_new_worktree_with_name(worktree_name, prompt)
     }
 
     /// Create a new git worktree with a custom name
-    pub fn create_new_worktree_with_name(&mut self, worktree_name: String, _prompt: String) -> anyhow::Result<Session> {
+    pub fn create_new_worktree_with_name(&mut self, worktree_name: String, _prompt: String) -> anyhow::Result<Worktree> {
         let Some(project) = self.project.clone() else {
             anyhow::bail!("No project loaded")
         };
@@ -123,17 +123,17 @@ impl App {
         // Create git worktree
         Git::create_worktree(&project.path, &worktree_path, &branch_name)?;
 
-        let worktree = Session {
+        let worktree = Worktree {
             branch_name: branch_name.clone(),
             worktree_path: Some(worktree_path),
             claude_session_id: None,
             archived: false,
         };
 
-        self.refresh_sessions()?;
+        self.refresh_worktrees()?;
 
         // Select the new worktree
-        if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == branch_name) {
+        if let Some(idx) = self.worktrees.iter().position(|s| s.branch_name == branch_name) {
             self.save_current_terminal(); // Save before switching
             self.selected_worktree = Some(idx);
             self.load_session_output();
@@ -142,8 +142,8 @@ impl App {
         Ok(worktree)
     }
 
-    pub fn archive_current_session(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_session() {
+    pub fn archive_current_worktree(&mut self) -> anyhow::Result<()> {
+        if let Some(session) = self.current_worktree() {
             // Never allow archiving the main branch — it would destroy the primary worktree
             if let Some(project) = &self.project {
                 if session.branch_name == project.main_branch {
@@ -157,13 +157,13 @@ impl App {
                 }
             }
             self.set_status("Session archived");
-            self.refresh_sessions()?;
+            self.refresh_worktrees()?;
         }
         Ok(())
     }
 
-    pub fn rebase_current_session(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_session() {
+    pub fn rebase_current_worktree(&mut self) -> anyhow::Result<()> {
+        if let Some(session) = self.current_worktree() {
             if let Some(ref wt_path) = session.worktree_path {
                 if let Some(project) = self.current_project() {
                     Git::rebase_onto_main(wt_path, &project.main_branch)?;
@@ -177,7 +177,7 @@ impl App {
 
     /// Load and cache session files for a branch from Claude's project directory
     pub fn load_session_files(&mut self, branch_name: &str) {
-        let Some(session) = self.sessions.iter().find(|s| s.branch_name == branch_name) else { return };
+        let Some(session) = self.worktrees.iter().find(|s| s.branch_name == branch_name) else { return };
         let Some(ref wt_path) = session.worktree_path else { return };
         let files = crate::config::list_claude_sessions(wt_path);
         self.session_files.insert(branch_name.to_string(), files);
@@ -200,7 +200,7 @@ impl App {
 
     /// Jump to first session (respects sidebar filter)
     pub fn select_first_session(&mut self) {
-        if self.sessions.is_empty() { return; }
+        if self.worktrees.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
             if self.selected_worktree != Some(0) {
                 self.save_current_terminal();
@@ -211,7 +211,7 @@ impl App {
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(first) = (0..self.sessions.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(first) = (0..self.worktrees.len()).find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(first) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(first);
@@ -224,9 +224,9 @@ impl App {
 
     /// Jump to last session (respects sidebar filter)
     pub fn select_last_session(&mut self) {
-        if self.sessions.is_empty() { return; }
+        if self.worktrees.is_empty() { return; }
         if self.sidebar_filter.is_empty() {
-            let last = self.sessions.len() - 1;
+            let last = self.worktrees.len() - 1;
             if self.selected_worktree != Some(last) {
                 self.save_current_terminal();
                 self.selected_worktree = Some(last);
@@ -236,7 +236,7 @@ impl App {
         } else {
             let filter = self.sidebar_filter.to_lowercase();
             let names = self.load_all_session_names();
-            if let Some(last) = (0..self.sessions.len()).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
+            if let Some(last) = (0..self.worktrees.len()).rev().find(|&i| self.session_matches_filter_with_names(i, &filter, &names)) {
                 if self.selected_worktree != Some(last) {
                     self.save_current_terminal();
                     self.selected_worktree = Some(last);

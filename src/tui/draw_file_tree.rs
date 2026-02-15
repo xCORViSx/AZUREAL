@@ -63,7 +63,7 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     const GF_GREEN_DIM: Color = Color::Rgb(60, 140, 60);
 
     if app.file_tree_entries.is_empty() {
-        if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_none() {
+        if app.current_worktree().and_then(|s| s.worktree_path.as_ref()).is_none() {
             lines.push(Line::from(Span::styled(
                 "No worktree",
                 Style::default().fg(Color::DarkGray),
@@ -364,7 +364,7 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     /// Green color matching the scoped directory highlights
     const GF_BORDER_GREEN: Color = Color::Rgb(80, 200, 80);
 
-    let wt_name = app.current_session().map(|s| s.name().to_string()).unwrap_or_default();
+    let wt_name = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if in_filter_mode {
         // Filter mode title shows scope count and Enter/Esc hints
         let scope_count = app.god_file_filter_dirs.len();

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::cli::OutputFormat;
 use crate::git::Git;
-use crate::models::{Project, Session};
+use crate::models::{Project, Worktree};
 
 /// Truncate string with ellipsis
 fn truncate(s: &str, max_len: usize) -> String {
@@ -24,7 +24,7 @@ fn discover_project() -> Result<Project> {
 }
 
 /// Discover sessions from git worktrees and branches
-fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
+fn discover_worktrees(project: &Project) -> Result<Vec<Worktree>> {
     let worktrees = Git::list_worktrees_detailed(&project.path)?;
     let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
@@ -36,7 +36,7 @@ fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
         let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
         let claude_id = crate::config::find_latest_claude_session(&wt.path);
 
-        sessions.push(Session {
+        sessions.push(Worktree {
             branch_name: branch_name.clone(),
             worktree_path: Some(wt.path.clone()),
             claude_session_id: claude_id,
@@ -48,7 +48,7 @@ fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
     // Add archived sessions (azureal/* branches without worktrees)
     for branch in azureal_branches {
         if !active_branches.contains(&branch) {
-            sessions.push(Session {
+            sessions.push(Worktree {
                 branch_name: branch,
                 worktree_path: None,
                 claude_session_id: None,
@@ -60,30 +60,30 @@ fn discover_sessions(project: &Project) -> Result<Vec<Session>> {
     Ok(sessions)
 }
 
-/// Find session by name or branch
-fn find_session(sessions: &[Session], query: &str) -> Result<Session> {
+/// Find worktree by name or branch
+fn find_worktree(worktrees: &[Worktree], query: &str) -> Result<Worktree> {
     // Exact branch match
-    if let Some(s) = sessions.iter().find(|s| s.branch_name == query) {
+    if let Some(s) = worktrees.iter().find(|s| s.branch_name == query) {
         return Ok(s.clone());
     }
 
     // Match by name (without azureal/ prefix)
-    if let Some(s) = sessions.iter().find(|s| s.name() == query) {
+    if let Some(s) = worktrees.iter().find(|s| s.name() == query) {
         return Ok(s.clone());
     }
 
     // Partial match
-    let matches: Vec<_> = sessions.iter()
+    let matches: Vec<_> = worktrees.iter()
         .filter(|s| s.branch_name.contains(query) || s.name().to_lowercase().contains(&query.to_lowercase()))
         .collect();
 
     match matches.len() {
-        0 => anyhow::bail!("Session not found: {}", query),
+        0 => anyhow::bail!("Worktree not found: {}", query),
         1 => Ok(matches[0].clone()),
         _ => {
-            eprintln!("Multiple sessions match '{}':", query);
+            eprintln!("Multiple worktrees match '{}':", query);
             for s in &matches { eprintln!("  {}", s.branch_name); }
-            anyhow::bail!("Please specify a more precise session name");
+            anyhow::bail!("Please specify a more precise name");
         }
     }
 }
@@ -94,7 +94,7 @@ pub fn handle_session_list(
     output_format: OutputFormat,
 ) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
+    let sessions = discover_worktrees(&project)?;
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&sessions)?),
         OutputFormat::Plain => {
@@ -146,7 +146,7 @@ pub fn handle_session_new(
     // Create git worktree
     Git::create_worktree(&project.path, &worktree_path, &branch_name)?;
 
-    let session = Session {
+    let session = Worktree {
         branch_name: branch_name.clone(),
         worktree_path: Some(worktree_path.clone()),
         claude_session_id: None,
@@ -166,8 +166,8 @@ pub fn handle_session_new(
 
 pub fn handle_session_status(session_query: &str, output_format: OutputFormat) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&session)?),
         // CLI has no process tracking — pass false for is_running
@@ -196,8 +196,8 @@ pub fn handle_session_status(session_query: &str, output_format: OutputFormat) -
 
 pub fn handle_session_stop(session_query: &str, _force: bool) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     // Note: In stateless mode, we can't track PIDs
     // User should use `pkill` or similar to stop Claude processes
@@ -208,8 +208,8 @@ pub fn handle_session_stop(session_query: &str, _force: bool) -> Result<()> {
 
 pub fn handle_session_delete(session_query: &str, skip_confirm: bool) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     if !skip_confirm {
         if let Some(ref wt) = session.worktree_path {
@@ -243,8 +243,8 @@ pub fn handle_session_delete(session_query: &str, skip_confirm: bool) -> Result<
 
 pub fn handle_session_archive(session_query: &str) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     if session.archived {
         println!("Session is already archived: {}", session.name());
@@ -262,8 +262,8 @@ pub fn handle_session_archive(session_query: &str) -> Result<()> {
 
 pub fn handle_session_resume(session_query: &str, _prompt: Option<String>) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     println!("Session: {}", session.name());
     if let Some(ref wt) = session.worktree_path {
@@ -279,8 +279,8 @@ pub fn handle_session_resume(session_query: &str, _prompt: Option<String>) -> Re
 
 pub fn handle_session_logs(session_query: &str, _follow: bool, _lines: usize) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     println!("Session: {}", session.name());
 
@@ -301,8 +301,8 @@ pub fn handle_session_logs(session_query: &str, _follow: bool, _lines: usize) ->
 
 pub fn handle_session_diff(session_query: &str, stat_only: bool) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
-    let session = find_session(&sessions, session_query)?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
 
     let Some(ref wt) = session.worktree_path else {
         anyhow::bail!("Session is archived (no worktree)");
@@ -333,7 +333,7 @@ pub fn handle_session_cleanup(
     dry_run: bool,
 ) -> Result<()> {
     let project = discover_project()?;
-    let sessions = discover_sessions(&project)?;
+    let sessions = discover_worktrees(&project)?;
 
     // Find cleanable sessions (archived ones)
     let cleanable: Vec<_> = sessions.iter().filter(|s| s.archived).collect();

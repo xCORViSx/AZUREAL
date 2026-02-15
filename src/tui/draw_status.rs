@@ -19,7 +19,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Worktree + branch info (left side)
     // Shows: ● name (branch) — but skips the (branch) when it matches name to avoid "main (main)"
-    if let Some(session) = app.current_session() {
+    if let Some(session) = app.current_worktree() {
         let status = session.status(app.is_session_running(&session.branch_name));
         let status_color = status.color();
         status_spans.push(Span::styled(

@@ -30,7 +30,7 @@ impl App {
         }
 
         // Check if this session has a saved terminal
-        if let Some(session) = self.current_session() {
+        if let Some(session) = self.current_worktree() {
             if self.worktree_terminals.contains_key(&session.branch_name) {
                 self.restore_session_terminal();
                 self.terminal_mode = true;
@@ -41,7 +41,7 @@ impl App {
         }
 
         // Create new terminal
-        let cwd = self.current_session()
+        let cwd = self.current_worktree()
             .and_then(|s| s.worktree_path.clone())
             .or_else(|| self.project.as_ref().map(|p| p.path.clone()))
             .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -213,7 +213,7 @@ impl App {
     /// Save current terminal to worktree_terminals map (called before switching sessions)
     pub fn save_current_terminal(&mut self) {
         // Get current session's branch name
-        let branch_name = match self.current_session() {
+        let branch_name = match self.current_worktree() {
             Some(s) => s.branch_name.clone(),
             None => return,
         };
@@ -250,7 +250,7 @@ impl App {
 
     /// Restore terminal for current session from worktree_terminals map
     pub fn restore_session_terminal(&mut self) {
-        let branch_name = match self.current_session() {
+        let branch_name = match self.current_worktree() {
             Some(s) => s.branch_name.clone(),
             None => return,
         };
@@ -273,7 +273,7 @@ impl App {
         if self.terminal_pty.is_some() {
             return true;
         }
-        if let Some(session) = self.current_session() {
+        if let Some(session) = self.current_worktree() {
             return self.worktree_terminals.contains_key(&session.branch_name);
         }
         false

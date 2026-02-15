@@ -67,7 +67,7 @@ impl App {
         self.invalidate_sidebar();
 
         // Force a full re-parse from the session file now that streaming is done.
-        let is_current = branch.as_ref().and_then(|b| self.current_session().map(|s| s.branch_name == *b)).unwrap_or(false);
+        let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
         if is_current && was_active {
             self.session_file_parse_offset = 0;
             self.session_file_dirty = true;
@@ -97,7 +97,7 @@ impl App {
         let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
 
         // Resolve session display name
-        let is_current = self.current_session().map(|s| s.branch_name == branch_name).unwrap_or(false);
+        let is_current = self.current_worktree().map(|s| s.branch_name == branch_name).unwrap_or(false);
         let session_name = if is_current && !self.title_session_name.is_empty() {
             self.title_session_name.clone()
         } else {
@@ -140,7 +140,7 @@ impl App {
     /// Cancel the active Claude process for the current session.
     /// Only kills the active slot — other concurrent sessions keep running.
     pub fn cancel_current_claude(&mut self) {
-        let branch_name = match self.current_session() {
+        let branch_name = match self.current_worktree() {
             Some(s) => s.branch_name.clone(),
             None => return,
         };
@@ -167,7 +167,7 @@ impl App {
     /// by the event loop to prevent channel backup.
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
         // Only display output from the active slot of the currently viewed branch
-        let is_viewing = self.current_session().map(|s| {
+        let is_viewing = self.current_worktree().map(|s| {
             self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
         }).unwrap_or(false);
         if is_viewing {
@@ -324,7 +324,7 @@ impl App {
 
     pub fn handle_claude_error(&mut self, slot_id: &str, error: String) {
         // Only display errors from the active slot
-        let is_viewing = self.current_session().map(|s| {
+        let is_viewing = self.current_worktree().map(|s| {
             self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
         }).unwrap_or(false);
         if is_viewing { self.add_output(format!("Error: {}", error)); }
@@ -357,12 +357,12 @@ impl App {
         self.active_slot.get(branch_name)
             .and_then(|slot| self.claude_session_ids.get(slot))
             // Fallback: check if there's a session_id stored directly by branch
-            // (from load_sessions at startup, before any slot was created)
+            // (from load_worktrees at startup, before any slot was created)
             .or_else(|| self.claude_session_ids.get(branch_name))
     }
 
     pub fn poll_interactive_sessions(&mut self) -> bool {
-        let current_branch = self.current_session().map(|s| s.branch_name.clone());
+        let current_branch = self.current_worktree().map(|s| s.branch_name.clone());
         let Some(branch_name) = current_branch else { return false };
 
         let events = if let Some(interactive) = self.interactive_sessions.get_mut(&branch_name) {

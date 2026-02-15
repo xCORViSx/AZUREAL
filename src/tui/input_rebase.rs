@@ -13,7 +13,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         KeyCode::Char('j') | KeyCode::Down => app.select_next_conflict(),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev_conflict(),
         KeyCode::Char('c') => {
-            if let Some(session) = app.current_session() {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     match Git::rebase_continue(wt_path) {
                         Ok(RebaseResult::Success) => {
@@ -39,7 +39,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
         KeyCode::Char('A') => {
-            if let Some(session) = app.current_session() {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     match Git::rebase_abort(wt_path) {
                         Ok(RebaseResult::Aborted) => {
@@ -60,7 +60,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
         KeyCode::Char('s') => {
-            if let Some(session) = app.current_session() {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     match Git::rebase_skip(wt_path) {
                         Ok(RebaseResult::Success) => {
@@ -86,7 +86,7 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
         KeyCode::Char('o') => {
-            let session_data = app.current_session().and_then(|s| {
+            let session_data = app.current_worktree().and_then(|s| {
                 s.worktree_path.clone().map(|wt| (wt, app.current_conflict_file().map(|f| f.to_string())))
             });
             if let Some((wt_path, Some(file))) = session_data {
@@ -104,12 +104,12 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                         app.set_status(format!("Failed to resolve: {}", e));
                     }
                 }
-            } else if app.current_session().is_some() {
+            } else if app.current_worktree().is_some() {
                 app.set_status("Session has no worktree (archived?)");
             }
         }
         KeyCode::Char('t') => {
-            let session_data = app.current_session().and_then(|s| {
+            let session_data = app.current_worktree().and_then(|s| {
                 s.worktree_path.clone().map(|wt| (wt, app.current_conflict_file().map(|f| f.to_string())))
             });
             if let Some((wt_path, Some(file))) = session_data {
@@ -127,12 +127,12 @@ pub fn handle_rebase_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                         app.set_status(format!("Failed to resolve: {}", e));
                     }
                 }
-            } else if app.current_session().is_some() {
+            } else if app.current_worktree().is_some() {
                 app.set_status("Session has no worktree (archived?)");
             }
         }
         KeyCode::Enter => {
-            if let Some(session) = app.current_session() {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     if let Some(file) = app.current_conflict_file() {
                         let file = file.to_string();

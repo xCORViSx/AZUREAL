@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::config::ProjectEntry;
-use crate::models::SessionStatus;
+use crate::models::WorktreeStatus;
 
 /// Viewer pane display mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -91,12 +91,12 @@ impl BranchDialog {
 /// Context menu for session actions
 #[derive(Debug, Clone)]
 pub struct ContextMenu {
-    pub actions: Vec<SessionAction>,
+    pub actions: Vec<WorktreeAction>,
     pub selected: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionAction {
+pub enum WorktreeAction {
     Start,
     Stop,
     Archive,
@@ -107,58 +107,58 @@ pub enum SessionAction {
     CopyWorktreePath,
 }
 
-impl SessionAction {
+impl WorktreeAction {
     pub fn label(&self) -> &'static str {
         match self {
-            SessionAction::Start => "Start/Resume Session",
-            SessionAction::Stop => "Stop Session",
-            SessionAction::Archive => "Archive Session",
-            SessionAction::Delete => "Delete Session",
-            SessionAction::ViewDiff => "View Diff",
-            SessionAction::RebaseFromMain => "Rebase from Main",
-            SessionAction::OpenInEditor => "Open in Editor",
-            SessionAction::CopyWorktreePath => "Copy Worktree Path",
+            WorktreeAction::Start => "Start/Resume Session",
+            WorktreeAction::Stop => "Stop Session",
+            WorktreeAction::Archive => "Archive Session",
+            WorktreeAction::Delete => "Delete Session",
+            WorktreeAction::ViewDiff => "View Diff",
+            WorktreeAction::RebaseFromMain => "Rebase from Main",
+            WorktreeAction::OpenInEditor => "Open in Editor",
+            WorktreeAction::CopyWorktreePath => "Copy Worktree Path",
         }
     }
 
     pub fn key_hint(&self) -> &'static str {
         match self {
-            SessionAction::Start => "Enter",
-            SessionAction::Stop => "s",
-            SessionAction::Archive => "a",
-            SessionAction::Delete => "D",
-            SessionAction::ViewDiff => "d",
-            SessionAction::RebaseFromMain => "r",
-            SessionAction::OpenInEditor => "e",
-            SessionAction::CopyWorktreePath => "c",
+            WorktreeAction::Start => "Enter",
+            WorktreeAction::Stop => "s",
+            WorktreeAction::Archive => "a",
+            WorktreeAction::Delete => "D",
+            WorktreeAction::ViewDiff => "d",
+            WorktreeAction::RebaseFromMain => "r",
+            WorktreeAction::OpenInEditor => "e",
+            WorktreeAction::CopyWorktreePath => "c",
         }
     }
 
-    pub fn available_for_status(status: SessionStatus) -> Vec<SessionAction> {
+    pub fn available_for_status(status: WorktreeStatus) -> Vec<WorktreeAction> {
         match status {
-            SessionStatus::Pending | SessionStatus::Stopped | SessionStatus::Completed => vec![
-                SessionAction::Start,
-                SessionAction::ViewDiff,
-                SessionAction::RebaseFromMain,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
-                SessionAction::Archive,
-                SessionAction::Delete,
+            WorktreeStatus::Pending | WorktreeStatus::Stopped | WorktreeStatus::Completed => vec![
+                WorktreeAction::Start,
+                WorktreeAction::ViewDiff,
+                WorktreeAction::RebaseFromMain,
+                WorktreeAction::OpenInEditor,
+                WorktreeAction::CopyWorktreePath,
+                WorktreeAction::Archive,
+                WorktreeAction::Delete,
             ],
-            SessionStatus::Running | SessionStatus::Waiting => vec![
-                SessionAction::Stop,
-                SessionAction::ViewDiff,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
+            WorktreeStatus::Running | WorktreeStatus::Waiting => vec![
+                WorktreeAction::Stop,
+                WorktreeAction::ViewDiff,
+                WorktreeAction::OpenInEditor,
+                WorktreeAction::CopyWorktreePath,
             ],
-            SessionStatus::Failed => vec![
-                SessionAction::Start,
-                SessionAction::ViewDiff,
-                SessionAction::RebaseFromMain,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
-                SessionAction::Archive,
-                SessionAction::Delete,
+            WorktreeStatus::Failed => vec![
+                WorktreeAction::Start,
+                WorktreeAction::ViewDiff,
+                WorktreeAction::RebaseFromMain,
+                WorktreeAction::OpenInEditor,
+                WorktreeAction::CopyWorktreePath,
+                WorktreeAction::Archive,
+                WorktreeAction::Delete,
             ],
         }
     }
@@ -187,7 +187,7 @@ pub enum Focus {
 /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
 #[derive(Debug, Clone)]
 pub enum SidebarRowAction {
-    /// A worktree row — index into app.sessions
+    /// A worktree row — index into app.worktrees
     Worktree(usize),
 }
 
@@ -460,6 +460,12 @@ pub struct GitActionsPanel {
     pub selected_action: usize,
     /// Transient status/result message from last git operation: (message, is_error)
     pub result_message: Option<(String, bool)>,
+    /// When true, auto-rebase is enabled for this worktree's branch
+    pub autorebase_on: bool,
+    /// When Some, the auto-rebase scope picker is shown:
+    /// 0 = "This worktree" selected, 1 = "All worktrees" selected.
+    /// Toggling ON opens this picker; toggling OFF skips it (just disables).
+    pub autorebase_scope: Option<usize>,
 }
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization

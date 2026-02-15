@@ -38,7 +38,7 @@ impl App {
         }
 
         // Rebuild tree and restore selection to same path
-        let Some(session) = self.current_session() else { return };
+        let Some(session) = self.current_worktree() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
 
         self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
@@ -312,7 +312,7 @@ impl App {
 
     /// Rebuild file tree after a file action, selecting the target path
     fn file_tree_refresh_after_action(&mut self, select_path: &std::path::Path) {
-        let Some(session) = self.current_session() else { return };
+        let Some(session) = self.current_worktree() else { return };
         let Some(ref worktree_path) = session.worktree_path else { return };
         let select_target = select_path.to_path_buf();
         self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);

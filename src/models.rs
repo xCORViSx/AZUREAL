@@ -28,7 +28,7 @@ impl Project {
 
 /// Session status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SessionStatus {
+pub enum WorktreeStatus {
     Pending,
     Running,
     Waiting,
@@ -37,85 +37,85 @@ pub enum SessionStatus {
     Failed,
 }
 
-impl SessionStatus {
+impl WorktreeStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            SessionStatus::Pending => "pending",
-            SessionStatus::Running => "running",
-            SessionStatus::Waiting => "waiting",
-            SessionStatus::Stopped => "stopped",
-            SessionStatus::Completed => "completed",
-            SessionStatus::Failed => "failed",
+            WorktreeStatus::Pending => "pending",
+            WorktreeStatus::Running => "running",
+            WorktreeStatus::Waiting => "waiting",
+            WorktreeStatus::Stopped => "stopped",
+            WorktreeStatus::Completed => "completed",
+            WorktreeStatus::Failed => "failed",
         }
     }
 
     pub fn from_str(s: &str) -> Self {
         match s {
-            "pending" => SessionStatus::Pending,
-            "running" => SessionStatus::Running,
-            "waiting" => SessionStatus::Waiting,
-            "stopped" => SessionStatus::Stopped,
-            "completed" => SessionStatus::Completed,
-            "failed" => SessionStatus::Failed,
-            _ => SessionStatus::Pending,
+            "pending" => WorktreeStatus::Pending,
+            "running" => WorktreeStatus::Running,
+            "waiting" => WorktreeStatus::Waiting,
+            "stopped" => WorktreeStatus::Stopped,
+            "completed" => WorktreeStatus::Completed,
+            "failed" => WorktreeStatus::Failed,
+            _ => WorktreeStatus::Pending,
         }
     }
 
     pub fn symbol(&self) -> &'static str {
         match self {
-            SessionStatus::Pending => "○",
-            SessionStatus::Running => "●",
-            SessionStatus::Waiting => "○",
-            SessionStatus::Stopped => "◌",
-            SessionStatus::Completed => "✓",
-            SessionStatus::Failed => "✗",
+            WorktreeStatus::Pending => "○",
+            WorktreeStatus::Running => "●",
+            WorktreeStatus::Waiting => "○",
+            WorktreeStatus::Stopped => "◌",
+            WorktreeStatus::Completed => "✓",
+            WorktreeStatus::Failed => "✗",
         }
     }
 
     pub fn color(&self) -> ratatui::style::Color {
         use ratatui::style::Color;
         match self {
-            SessionStatus::Pending => Color::Gray,
-            SessionStatus::Running => Color::Green,
-            SessionStatus::Waiting => Color::Yellow,
-            SessionStatus::Stopped => Color::Gray,
-            SessionStatus::Completed => AZURE,
-            SessionStatus::Failed => Color::Red,
+            WorktreeStatus::Pending => Color::Gray,
+            WorktreeStatus::Running => Color::Green,
+            WorktreeStatus::Waiting => Color::Yellow,
+            WorktreeStatus::Stopped => Color::Gray,
+            WorktreeStatus::Completed => AZURE,
+            WorktreeStatus::Failed => Color::Red,
         }
     }
 }
 
-/// A session represents a single Claude Code conversation in a worktree
-/// Derived from git worktrees + Claude session files (stateless)
+/// A worktree represents a git worktree paired with an optional Claude session.
+/// Derived from git worktrees + Claude session files (stateless).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
+pub struct Worktree {
     /// Branch name (e.g., "azureal/tui-help-overlay")
     pub branch_name: String,
     /// Worktree path (None if archived - branch exists but no worktree)
     pub worktree_path: Option<PathBuf>,
     /// Claude CLI session ID for --resume (read from Claude's session file)
     pub claude_session_id: Option<String>,
-    /// Whether this is an archived session (branch exists, no worktree)
+    /// Whether this is an archived worktree (branch exists, no worktree dir)
     pub archived: bool,
 }
 
-impl Session {
+impl Worktree {
     /// Display name (branch name without azureal/ prefix)
     pub fn name(&self) -> &str {
         self.branch_name.strip_prefix("azureal/").unwrap_or(&self.branch_name)
     }
 
-    /// Session status (derived from runtime state, not stored).
+    /// Worktree status (derived from runtime state, not stored).
     /// `is_running` = whether any Claude process is active on this branch.
-    pub fn status(&self, is_running: bool) -> SessionStatus {
+    pub fn status(&self, is_running: bool) -> WorktreeStatus {
         if self.archived {
-            SessionStatus::Stopped
+            WorktreeStatus::Stopped
         } else if is_running {
-            SessionStatus::Running
+            WorktreeStatus::Running
         } else if self.claude_session_id.is_some() {
-            SessionStatus::Waiting
+            WorktreeStatus::Waiting
         } else {
-            SessionStatus::Pending
+            WorktreeStatus::Pending
         }
     }
 }

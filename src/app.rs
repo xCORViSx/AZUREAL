@@ -2,7 +2,7 @@
 //!
 //! Split into focused submodules:
 //! - `state`: App struct and core state management methods
-//! - `types`: Enums and dialog types (BranchDialog, ContextMenu, SessionAction, etc.)
+//! - `types`: Enums and dialog types (BranchDialog, ContextMenu, WorktreeAction, etc.)
 //! - `input`: Input handling methods
 //! - `terminal`: PTY terminal management
 //! - `util`: Utility functions (ANSI stripping, JSON parsing)
@@ -17,4 +17,4 @@ mod util;
 
 pub use state::{App, DeferredAction, TodoItem, TodoStatus};
 pub(crate) use state::health::save_health_scope;
-pub use types::{BranchDialog, Focus, RunCommand, SessionAction, SidebarRowAction, ViewMode, ViewerMode};
+pub use types::{BranchDialog, Focus, RunCommand, WorktreeAction, SidebarRowAction, ViewMode, ViewerMode};

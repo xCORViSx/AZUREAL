@@ -47,7 +47,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
     // This is the only worktree key that isn't in the centralized system — it's a
     // destructive action (removes receiver) that only makes sense contextually.
     if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Char('s') {
-        if let Some(session) = app.current_session() {
+        if let Some(session) = app.current_worktree() {
             let branch_name = session.branch_name.clone();
             let session_name = session.name().to_string();
             if app.running_sessions.remove(&branch_name) {

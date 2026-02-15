@@ -14,8 +14,8 @@ use crate::git::Git;
 use crate::models::RebaseResult;
 use super::keybindings::{lookup_git_actions_action, Action};
 
-/// Total number of action items displayed in the actions section
-const ACTION_COUNT: usize = 5;
+/// Total number of action items displayed in the actions section (5 git ops + 1 auto-rebase toggle)
+const ACTION_COUNT: usize = 6;
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
@@ -24,6 +24,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
         Some(p) => p,
         None => return Ok(()),
     };
+
+    // If auto-rebase scope picker is open, handle it before anything else
+    if panel.autorebase_scope.is_some() {
+        return handle_autorebase_scope(key, app);
+    }
 
     // Clear stale result message on any non-nav key
     let is_nav = matches!(action_is_nav(key.modifiers, key.code, panel.actions_focused),
@@ -80,6 +85,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
         Action::GitPull => { exec_pull(app); }
         Action::GitPush => { exec_push(app); }
 
+        // Auto-rebase toggle: if currently ON → turn off, if OFF → open scope picker
+        Action::GitAutoRebase => { exec_autorebase_toggle(app); }
+
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
         Action::Confirm => {
             let (focused, idx) = match app.git_actions_panel.as_ref() {
@@ -93,6 +101,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
                     2 => exec_fetch(app),
                     3 => exec_pull(app),
                     4 => exec_push(app),
+                    5 => exec_autorebase_toggle(app),
                     _ => {}
                 }
             } else {
@@ -220,6 +229,67 @@ fn exec_push(app: &mut App) {
         Err(e) => (format!("{}", e), true),
     };
     if let Some(ref mut p) = app.git_actions_panel { p.result_message = Some(msg); }
+}
+
+/// Toggle auto-rebase: if yes → set no (direct), if no → open scope picker
+fn exec_autorebase_toggle(app: &mut App) {
+    let panel = match app.git_actions_panel.as_mut() {
+        Some(p) => p,
+        None => return,
+    };
+    if panel.autorebase_on {
+        // Currently yes — disable for this worktree
+        crate::azufig::set_autorebase(&panel.worktree_path, false);
+        panel.autorebase_on = false;
+        panel.result_message = Some(("Auto-rebase: No".into(), false));
+    } else {
+        // Currently no — open the scope picker (0 = this worktree, 1 = all)
+        panel.autorebase_scope = Some(0);
+    }
+}
+
+/// Handle input while the auto-rebase scope picker is open.
+/// j/k or ↑/↓ to select, Enter to confirm, Esc to cancel.
+fn handle_autorebase_scope(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let panel = match app.git_actions_panel.as_mut() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let sel = panel.autorebase_scope.unwrap_or(0);
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+            if sel < 1 { panel.autorebase_scope = Some(1); }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+            if sel > 0 { panel.autorebase_scope = Some(0); }
+        }
+        (KeyModifiers::NONE, KeyCode::Enter) => {
+            if sel == 0 {
+                // This worktree only — write to this worktree's config
+                let wt = panel.worktree_path.clone();
+                crate::azufig::set_autorebase(&wt, true);
+                panel.autorebase_on = true;
+                panel.result_message = Some(("Auto-rebase: Yes (this worktree)".into(), false));
+            } else {
+                // All worktrees — write to each worktree's config individually
+                let paths: Vec<_> = app.worktrees.iter()
+                    .filter_map(|s| s.worktree_path.clone())
+                    .collect();
+                for wt in &paths { crate::azufig::set_autorebase(wt, true); }
+                if let Some(ref mut p) = app.git_actions_panel {
+                    p.autorebase_on = true;
+                    p.result_message = Some((format!("Auto-rebase: Yes ({} worktrees)", paths.len()), false));
+                }
+            }
+            if let Some(ref mut p) = app.git_actions_panel { p.autorebase_scope = None; }
+        }
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            panel.autorebase_scope = None;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Re-scan changed files from git diff (called after operations that change working tree)

@@ -63,7 +63,7 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     } else if app.pane_convo.contains(pos) {
         // Session list overlay: scroll selected item
         if app.show_session_list {
-            let total: usize = app.sessions.iter().map(|s| {
+            let total: usize = app.worktrees.iter().map(|s| {
                 app.session_files.get(&s.branch_name).map(|f| f.len().max(1)).unwrap_or(1)
             }).sum();
             if delta > 0 {

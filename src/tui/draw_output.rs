@@ -345,7 +345,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     // Build right-aligned title: token percentage + PID/exit code
-    let branch = app.current_session().map(|s| s.branch_name.clone());
+    let branch = app.current_worktree().map(|s| s.branch_name.clone());
     let right_title: Option<Line<'static>> = {
         let mut spans: Vec<Span<'static>> = Vec::new();
 

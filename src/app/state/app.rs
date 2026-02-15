@@ -11,7 +11,7 @@ use crate::app::terminal::SessionTerminal;
 use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
-use crate::models::{Project, RebaseStatus, Session};
+use crate::models::{Project, RebaseStatus, Worktree};
 use crate::syntax::{DiffHighlighter, SyntaxHighlighter};
 use crate::tui::render_thread::RenderThread;
 use crate::wizard::CreationWizard;
@@ -39,7 +39,7 @@ pub enum DeferredAction {
 /// Application state
 pub struct App {
     pub project: Option<Project>,
-    pub sessions: Vec<Session>,
+    pub worktrees: Vec<Worktree>,
     pub selected_worktree: Option<usize>,
     pub output_lines: VecDeque<String>,
     pub max_output_lines: usize,
@@ -464,7 +464,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             project: None,
-            sessions: Vec::new(),
+            worktrees: Vec::new(),
             selected_worktree: None,
             output_lines: VecDeque::with_capacity(10000),
             max_output_lines: 10000,
@@ -690,10 +690,10 @@ impl App {
 
     /// Rebuild file tree entries from disk (preserves expanded set, resets selection)
     pub fn refresh_file_tree(&mut self) {
-        let Some(session) = self.current_session() else { return };
-        let Some(ref worktree_path) = session.worktree_path else { return };
-        let wt = worktree_path.clone();
-        self.file_tree_entries = super::helpers::build_file_tree(&wt, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
+        let Some(wt) = self.current_worktree() else { return };
+        let Some(ref worktree_path) = wt.worktree_path else { return };
+        let wt_path = worktree_path.clone();
+        self.file_tree_entries = super::helpers::build_file_tree(&wt_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
         if self.file_tree_selected.map_or(true, |i| i >= self.file_tree_entries.len()) {
             self.file_tree_selected = if self.file_tree_entries.is_empty() { None } else { Some(0) };
         }
@@ -732,7 +732,7 @@ impl App {
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
-    pub fn current_session(&self) -> Option<&Session> { self.selected_worktree.and_then(|idx| self.sessions.get(idx)) }
+    pub fn current_worktree(&self) -> Option<&Worktree> { self.selected_worktree.and_then(|idx| self.worktrees.get(idx)) }
 
     /// True if ANY Claude process is running on this branch (any slot)
     pub fn is_session_running(&self, branch_name: &str) -> bool {
@@ -743,12 +743,12 @@ impl App {
 
     /// True if any Claude process is running on the currently viewed branch
     pub fn is_current_session_running(&self) -> bool {
-        self.current_session().map(|s| self.is_session_running(&s.branch_name)).unwrap_or(false)
+        self.current_worktree().map(|s| self.is_session_running(&s.branch_name)).unwrap_or(false)
     }
 
     /// True if the ACTIVE slot (the one feeding display_events) is running
     pub fn is_active_slot_running(&self) -> bool {
-        self.current_session().and_then(|s| {
+        self.current_worktree().and_then(|s| {
             self.active_slot.get(&s.branch_name)
                 .map(|slot| self.running_sessions.contains(slot))
         }).unwrap_or(false)

@@ -162,7 +162,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                 app.clear_input();
 
                 // Get session info: branch_name and worktree_path
-                let session_data = app.current_session().map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
+                let session_data = app.current_worktree().map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
 
                 if let Some((branch_name, worktree_opt)) = session_data {
                     if let Some(wt_path) = worktree_opt {

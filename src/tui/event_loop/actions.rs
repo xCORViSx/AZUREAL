@@ -200,7 +200,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         // --- All other actions are focus-specific; dispatch inline ---
         // Worktrees
         Action::ToggleFileTree if !app.god_file_filter_mode => {
-            if app.current_session().and_then(|s| s.worktree_path.as_ref()).is_some() {
+            if app.current_worktree().and_then(|s| s.worktree_path.as_ref()).is_some() {
                 app.show_file_tree = true;
                 app.focus = Focus::FileTree;
                 app.load_file_tree();
@@ -292,7 +292,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         Action::RunCommand => { app.open_run_command_picker(); }
         Action::AddRunCommand => { app.open_run_command_dialog(); }
         Action::ArchiveWorktree => {
-            if let Err(e) = app.archive_current_session() {
+            if let Err(e) = app.archive_current_worktree() {
                 app.set_status(format!("Failed to archive: {}", e));
             }
         }
@@ -695,9 +695,9 @@ fn open_session_list(app: &mut App) {
     app.session_list_selected = 0;
     app.session_list_scroll = 0;
     // Refresh file list immediately (cheap directory listing)
-    if let Some(session) = app.current_session() {
+    if let Some(session) = app.current_worktree() {
         let branch = session.branch_name.clone();
-        if let Some(ref wt_path) = app.sessions[app.selected_worktree.unwrap()].worktree_path {
+        if let Some(ref wt_path) = app.worktrees[app.selected_worktree.unwrap()].worktree_path {
             let files = crate::config::list_claude_sessions(wt_path);
             app.session_files.insert(branch, files);
         }
@@ -707,7 +707,7 @@ fn open_session_list(app: &mut App) {
 /// Phase 2 of session list loading — compute message counts (expensive I/O).
 /// Called from event loop after the loading dialog has had a chance to render.
 pub fn finish_session_list_load(app: &mut App) {
-    if let Some(session) = app.current_session() {
+    if let Some(session) = app.current_worktree() {
         let branch = session.branch_name.clone();
         if let Some(files) = app.session_files.get(&branch) {
             for (session_id, path, _) in files.iter() {
@@ -786,11 +786,11 @@ fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
 /// Start or resume a Claude session from worktrees Enter key
 /// Enter prompt mode for the selected worktree (Enter key in worktree list)
 fn start_or_resume(app: &mut App) {
-    use crate::models::SessionStatus;
-    if let Some(session) = app.current_session() {
+    use crate::models::WorktreeStatus;
+    if let Some(session) = app.current_worktree() {
         let status = session.status(app.is_session_running(&session.branch_name));
-        if matches!(status, SessionStatus::Pending | SessionStatus::Stopped
-            | SessionStatus::Completed | SessionStatus::Failed | SessionStatus::Waiting)
+        if matches!(status, WorktreeStatus::Pending | WorktreeStatus::Stopped
+            | WorktreeStatus::Completed | WorktreeStatus::Failed | WorktreeStatus::Waiting)
         {
             app.focus = Focus::Input;
             app.prompt_mode = true;

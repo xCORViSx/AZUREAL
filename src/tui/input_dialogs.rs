@@ -8,7 +8,7 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
-use crate::app::{App, Focus, RunCommand, SessionAction};
+use crate::app::{App, Focus, RunCommand, WorktreeAction};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
 use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog};
@@ -37,10 +37,10 @@ pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_pro
 }
 
 /// Execute a session action from the context menu
-fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: SessionAction) -> Result<()> {
+fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: WorktreeAction) -> Result<()> {
     match action {
-        SessionAction::Start => {
-            if let Some(session) = app.current_session() {
+        WorktreeAction::Start => {
+            if let Some(session) = app.current_worktree() {
                 if app.is_session_running(&session.branch_name) {
                     app.set_status("Claude already running in this session");
                 } else {
@@ -49,37 +49,37 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
                 }
             }
         }
-        SessionAction::Stop => {
+        WorktreeAction::Stop => {
             app.set_status("Stop action not yet implemented");
         }
-        SessionAction::Archive => {
-            if let Err(e) = app.archive_current_session() {
+        WorktreeAction::Archive => {
+            if let Err(e) = app.archive_current_worktree() {
                 app.set_status(format!("Failed to archive: {}", e));
             }
         }
-        SessionAction::Delete => {
+        WorktreeAction::Delete => {
             app.set_status("Delete action not yet implemented - use CLI: azureal session delete");
         }
-        SessionAction::ViewDiff => {
+        WorktreeAction::ViewDiff => {
             if let Err(e) = app.load_diff() {
                 app.set_status(format!("Failed to get diff: {}", e));
             }
         }
-        SessionAction::RebaseFromMain => {
-            if let Err(e) = app.rebase_current_session() {
+        WorktreeAction::RebaseFromMain => {
+            if let Err(e) = app.rebase_current_worktree() {
                 app.set_status(format!("Rebase failed: {}", e));
             }
         }
-        SessionAction::OpenInEditor => {
-            if let Some(session) = app.current_session() {
+        WorktreeAction::OpenInEditor => {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     let path = wt_path.display().to_string();
                     app.set_status(format!("Editor integration not implemented. Path: {}", path));
                 }
             }
         }
-        SessionAction::CopyWorktreePath => {
-            if let Some(session) = app.current_session() {
+        WorktreeAction::CopyWorktreePath => {
+            if let Some(session) = app.current_worktree() {
                 if let Some(ref wt_path) = session.worktree_path {
                     let path = wt_path.display().to_string();
                     app.set_status(format!("Copied to clipboard (not implemented): {}", path));
@@ -108,7 +108,7 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                             match Git::create_worktree(&project.path, &worktree_path, &branch) {
                                 Ok(()) => {
                                     app.set_status(format!("Created worktree: {}", worktree_name));
-                                    let _ = app.refresh_sessions();
+                                    let _ = app.refresh_worktrees();
                                 }
                                 Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                             }
@@ -542,7 +542,7 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     let main_branch = project.main_branch.clone();
 
     // Find the main worktree path (the repo root itself for the main branch)
-    let main_wt_path = app.sessions.iter()
+    let main_wt_path = app.worktrees.iter()
         .find(|s| s.branch_name == main_branch)
         .and_then(|s| s.worktree_path.clone());
     let Some(wt_path) = main_wt_path else {
@@ -576,7 +576,7 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
         format!("[NewRunCmd] {}", cmd_name)
     };
     // Select the main branch in sidebar so user sees the output
-    if let Some(idx) = app.sessions.iter().position(|s| s.branch_name == main_branch) {
+    if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == main_branch) {
         app.selected_worktree = Some(idx);
         app.load_session_output();
     }
