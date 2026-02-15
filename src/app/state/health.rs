@@ -102,11 +102,11 @@ pub(crate) const SOURCE_ROOTS: &[&str] = &[
 
 impl App {
     /// Open the Worktree Health panel — scans both god files and documentation.
-    /// Uses persisted scope from .azureal/godfilescope if it exists;
+    /// Uses persisted scope from `[healthscope]` in .azureal/azufig.toml if it exists;
     /// otherwise falls back to auto-detected source roots.
     pub fn open_health_panel(&mut self) {
         let god_files = if let Some(ref project) = self.project {
-            if let Some(dirs) = load_god_file_scope(&project.path) {
+            if let Some(dirs) = load_health_scope(&project.path) {
                 self.scan_god_files_with_dirs(&dirs)
             } else {
                 self.scan_god_files()
@@ -160,12 +160,12 @@ impl App {
     }
 }
 
-/// Load persisted god file scope from `[godfilescope]` in project azufig.
+/// Load persisted health scope from `[healthscope]` in project azufig.
 /// Returns None if no scope is configured or all dirs are gone,
 /// signaling the caller to use auto-detection instead.
-pub(crate) fn load_god_file_scope(project_root: &Path) -> Option<HashSet<PathBuf>> {
+pub(crate) fn load_health_scope(project_root: &Path) -> Option<HashSet<PathBuf>> {
     let az = crate::azufig::load_project_azufig(project_root);
-    let dirs: HashSet<PathBuf> = az.godfilescope.dirs.iter()
+    let dirs: HashSet<PathBuf> = az.healthscope.dirs.iter()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
@@ -173,10 +173,10 @@ pub(crate) fn load_god_file_scope(project_root: &Path) -> Option<HashSet<PathBuf
     if dirs.is_empty() { None } else { Some(dirs) }
 }
 
-/// Save god file scope to `[godfilescope]` in project azufig (load-modify-save).
-pub(crate) fn save_god_file_scope(project_root: &Path, dirs: &HashSet<PathBuf>) {
+/// Save health scope to `[healthscope]` in project azufig (load-modify-save).
+pub(crate) fn save_health_scope(project_root: &Path, dirs: &HashSet<PathBuf>) {
     crate::azufig::update_project_azufig(project_root, |az| {
-        az.godfilescope.dirs = dirs.iter()
+        az.healthscope.dirs = dirs.iter()
             .map(|p| p.display().to_string())
             .collect();
     });

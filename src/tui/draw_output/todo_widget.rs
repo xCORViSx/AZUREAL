@@ -18,6 +18,8 @@ use super::super::util::AZURE;
 /// Render the sticky todo widget — shows at the bottom of the convo pane.
 /// Main agent todos show as check/bullet/circle. Subagent todos show indented
 /// with "↳" prefix directly after the parent todo item.
+/// When content exceeds the visible area (20 lines max), a scrollbar column
+/// appears on the right edge and the widget responds to mouse wheel scrolling.
 pub fn draw_todo_widget(
     f: &mut Frame,
     todos: &[TodoItem],
@@ -25,6 +27,8 @@ pub fn draw_todo_widget(
     parent_idx: Option<usize>,
     area: Rect,
     animation_tick: u64,
+    scroll: u16,
+    total_lines: u16,
 ) {
     let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
     let pulse = pulse_colors[(animation_tick / 3) as usize % pulse_colors.len()];
@@ -70,12 +74,45 @@ pub fn draw_todo_widget(
         }
     }
 
+    // Content height inside borders (area minus top+bottom border)
+    let content_h = area.height.saturating_sub(2);
+    // Whether we need a scrollbar (content overflows the visible area)
+    let needs_scrollbar = total_lines > content_h;
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(Span::styled(" Tasks ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
         .border_style(Style::default().fg(Color::DarkGray));
 
-    let widget = Paragraph::new(todo_lines).block(block).wrap(Wrap { trim: false });
+    // Apply scroll offset so the widget starts at the right place
+    let widget = Paragraph::new(todo_lines).block(block).wrap(Wrap { trim: false }).scroll((scroll, 0));
     f.render_widget(widget, area);
+
+    // Draw scrollbar track on the rightmost column inside the border.
+    // Uses block chars: █ for thumb, │ for track — same visual language as other panes.
+    if needs_scrollbar && content_h > 0 {
+        let track_x = area.x + area.width - 1;
+        let track_top = area.y + 1;
+        let max_scroll = total_lines.saturating_sub(content_h);
+        // Thumb size: proportional to visible/total, minimum 1 row
+        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32).max(1).min(content_h as u32) as u16;
+        // Thumb position: proportional to scroll offset within max_scroll
+        let thumb_top = if max_scroll == 0 { 0 } else {
+            ((scroll as u32 * (content_h - thumb_h) as u32) / max_scroll as u32) as u16
+        };
+        let track_style = Style::default().fg(Color::DarkGray);
+        let thumb_style = Style::default().fg(AZURE);
+        let buf = f.buffer_mut();
+        for row in 0..content_h {
+            let cell = &mut buf[(track_x, track_top + row)];
+            if row >= thumb_top && row < thumb_top + thumb_h {
+                cell.set_symbol("█");
+                cell.set_style(thumb_style);
+            } else {
+                cell.set_symbol("│");
+                cell.set_style(track_style);
+            }
+        }
+    }
 }

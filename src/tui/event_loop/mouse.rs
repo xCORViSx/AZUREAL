@@ -12,6 +12,25 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     use ratatui::layout::Position;
     let pos = Position::new(col, row);
 
+    // Health panel is a modal overlay — scroll anywhere goes to the active tab's list
+    if let Some(ref mut p) = app.health_panel {
+        match p.tab {
+            crate::app::types::HealthTab::GodFiles => {
+                if p.god_files.is_empty() { return false; }
+                let max = p.god_files.len() - 1;
+                if delta > 0 { p.god_selected = (p.god_selected + delta as usize).min(max); }
+                else { p.god_selected = p.god_selected.saturating_sub((-delta) as usize); }
+            }
+            crate::app::types::HealthTab::Documentation => {
+                if p.doc_entries.is_empty() { return false; }
+                let max = p.doc_entries.len() - 1;
+                if delta > 0 { p.doc_selected = (p.doc_selected + delta as usize).min(max); }
+                else { p.doc_selected = p.doc_selected.saturating_sub((-delta) as usize); }
+            }
+        }
+        return true;
+    }
+
     if app.pane_worktrees.contains(pos) {
         if app.show_file_tree {
             // File tree overlay is showing — scroll file tree items
@@ -32,6 +51,14 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     } else if app.terminal_mode && app.input_area.contains(pos) {
         if delta > 0 { app.scroll_terminal_down(delta as usize); }
         else { app.scroll_terminal_up((-delta) as usize); }
+        true
+    } else if app.pane_todo.width > 0 && app.pane_todo.contains(pos) {
+        // Todo widget scroll — only when content overflows the 20-line cap
+        let content_h = app.pane_todo.height.saturating_sub(2);
+        let max_scroll = app.todo_total_lines.saturating_sub(content_h);
+        if max_scroll == 0 { return false; }
+        if delta > 0 { app.todo_scroll = (app.todo_scroll + delta as u16).min(max_scroll); }
+        else { app.todo_scroll = app.todo_scroll.saturating_sub((-delta) as u16); }
         true
     } else if app.pane_convo.contains(pos) {
         // Session list overlay: scroll selected item

@@ -45,7 +45,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let has_todos = !app.current_todos.is_empty() || !app.subagent_todos.is_empty();
     let todo_height = if has_todos {
         // Account for text wrapping: each todo may span multiple visual lines.
-        // Inner width = area width minus 2 for borders.
+        // Inner width = area width minus 2 for borders (minus 1 more if scrollbar needed).
         let inner_w = area.width.saturating_sub(2) as usize;
         // Helper closure: count wrapped visual lines for a todo list.
         // prefix_extra = extra chars before text (e.g. 2 for "↳ " indent on subtasks)
@@ -63,9 +63,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         let main_lines = count_lines(&app.current_todos, 0);
         // Subagent todos get "↳ " prefix (2 display-width chars)
         let sub_lines = count_lines(&app.subagent_todos, 2);
-        // +2 for border top/bottom, cap so convo still has at least 10 rows
-        (main_lines + sub_lines + 2).min(area.height.saturating_sub(10))
-    } else { 0 };
+        let total_content_lines = main_lines + sub_lines;
+        app.todo_total_lines = total_content_lines;
+        // Cap at 20 content lines + 2 border = 22, also ensure convo has >= 10 rows
+        let max_h = 22u16.min(area.height.saturating_sub(10));
+        (total_content_lines + 2).min(max_h)
+    } else { app.todo_total_lines = 0; 0 };
     // Search bar at bottom of convo: visible when search is active or has residual matches
     let has_search = app.convo_search_active || !app.convo_search_matches.is_empty();
     let search_height: u16 = if has_search { 3 } else { 0 };
@@ -442,8 +445,16 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // Render sticky todo widget at bottom of convo pane (main + subagent todos)
+    // Render sticky todo widget at bottom of convo pane (main + subagent todos).
+    // Cache the rect for mouse scroll hit-testing, and clamp scroll to valid range.
     if todo_height > 0 {
-        todo_widget::draw_todo_widget(f, &app.current_todos, &app.subagent_todos, app.subagent_parent_idx, todo_area, app.animation_tick);
+        app.pane_todo = todo_area;
+        let content_h = todo_area.height.saturating_sub(2);
+        let max_scroll = app.todo_total_lines.saturating_sub(content_h);
+        if app.todo_scroll > max_scroll { app.todo_scroll = max_scroll; }
+        todo_widget::draw_todo_widget(f, &app.current_todos, &app.subagent_todos, app.subagent_parent_idx, todo_area, app.animation_tick, app.todo_scroll, app.todo_total_lines);
+    } else {
+        // No todos visible — clear cached rect so mouse scroll won't hit-test stale area
+        app.pane_todo = Rect::default();
     }
 }

@@ -486,21 +486,23 @@ pub static WIZARD: [Keybinding; 3] = [
 // the non-modal system runs. Each modal has its own lookup_*_action() function below.
 
 /// Health Panel — bindings shared across both tabs (Tab, nav, Esc)
-pub static HEALTH_SHARED: [Keybinding; 6] = [
+pub static HEALTH_SHARED: [Keybinding; 9] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch tab", Action::HealthSwitchTab),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown).paired(),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('K')), &ALT_PGUP, "Page up", Action::PageUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Scope mode", Action::HealthScopeMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
-/// Health Panel — God Files tab actions (Space/a/v/s/Enter/m)
-pub static HEALTH_GOD_FILES: [Keybinding; 5] = [
+/// Health Panel — God Files tab actions (Space/a/v/Enter/m)
+pub static HEALTH_GOD_FILES: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char(' ')), "Toggle check", Action::HealthToggleCheck),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Toggle all", Action::HealthToggleAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View checked", Action::HealthViewChecked),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Scope mode", Action::HealthScopeMode),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_M, "Modularize", Action::HealthModularize),
 ];
 
@@ -869,12 +871,11 @@ pub fn health_god_files_hints() -> String {
     let check = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleCheck).unwrap_or("Space".into());
     let all = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleAll).unwrap_or("a".into());
     let view = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthViewChecked).unwrap_or("v".into());
-    let scope = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthScopeMode).unwrap_or("s".into());
     let modularize = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthModularize).unwrap_or("Enter".into());
     let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
     let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:check  {}:all  {}:view  {}:scope  {}/m:modularize  {}:switch  {}:close ",
-        check, all, view, scope, modularize, tab, esc)
+    format!(" {}:check  {}:all  {}:view  {}/m:modularize  {}:switch  {}:close ",
+        check, all, view, modularize, tab, esc)
 }
 
 /// Health panel footer for Documentation tab

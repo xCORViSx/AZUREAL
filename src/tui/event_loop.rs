@@ -157,6 +157,7 @@ pub async fn run_app(
                     Event::Resize(w, h) => {
                         cached_width = w;
                         cached_height = h;
+                        app.screen_height = h;
                         needs_redraw = true;
                     }
                     _ => {}
@@ -313,7 +314,7 @@ pub async fn run_app(
                         handle_key_event(key, app, &claude_process)?;
                         got_key = true;
                     }
-                    Event::Resize(w, h) => { cached_width = w; cached_height = h; }
+                    Event::Resize(w, h) => { cached_width = w; cached_height = h; app.screen_height = h; }
                     _ => {}
                 }
             }

@@ -75,13 +75,19 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
         }
     };
 
-    // Render the modal block
+    // Render the modal block with scope hint in top-right corner
     let title = Line::from(vec![
         Span::styled(" Worktree Health ", Style::default().fg(GF_GREEN).bold()),
     ]);
+    let scope_key = keybindings::find_key_for_action(&keybindings::HEALTH_SHARED, keybindings::Action::HealthScopeMode)
+        .unwrap_or("s".into());
+    let scope_hint = Line::from(Span::styled(
+        format!(" {}:scope ", scope_key), Style::default().fg(GF_GREEN),
+    )).alignment(ratatui::layout::Alignment::Right);
     let block = Block::default()
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
+        .title(scope_hint)
         .borders(Borders::ALL)
         .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(GF_GREEN));

@@ -2,7 +2,7 @@
 //!
 //! Two TOML files consolidate all persistent state:
 //! - **Global**: `~/.azureal/azufig.toml` — app config, projects, global runcmds/presets
-//! - **Project-local**: `.azureal/azufig.toml` — filetree options, sessions, godfilescope, local runcmds/presets
+//! - **Project-local**: `.azureal/azufig.toml` — filetree options, sessions, healthscope, local runcmds/presets
 //!
 //! All sections use `#[serde(default)]` so missing sections produce defaults (forward-compat).
 //! Save pattern: load-modify-save (read current, update one section, write back) to avoid clobbering.
@@ -61,9 +61,9 @@ pub struct ProjectAzufig {
     /// FileTree display options (hidden entry names)
     #[serde(default)]
     pub filetree: AzufigFiletree,
-    /// God file scope — directories included in the health scanner
-    #[serde(default)]
-    pub godfilescope: AzufigGodFileScope,
+    /// Health scope — directories included in all health scanners (god files, docs, etc.)
+    #[serde(default, alias = "godfilescope")]
+    pub healthscope: AzufigHealthScope,
     /// Custom session name mappings: session_uuid = "display_name"
     #[serde(default)]
     pub sessions: HashMap<String, String>,
@@ -100,9 +100,9 @@ impl Default for AzufigFiletree {
     }
 }
 
-/// Directories included in the god file / documentation health scanner.
+/// Directories included in all health scanners (god files, documentation, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AzufigGodFileScope {
+pub struct AzufigHealthScope {
     /// Absolute paths to scan directories
     #[serde(default)]
     pub dirs: Vec<String>,

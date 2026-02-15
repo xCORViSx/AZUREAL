@@ -16,5 +16,5 @@ pub(crate) mod types;
 mod util;
 
 pub use state::{App, DeferredAction, TodoItem, TodoStatus};
-pub(crate) use state::health::save_god_file_scope;
+pub(crate) use state::health::save_health_scope;
 pub use types::{BranchDialog, Focus, RunCommand, SessionAction, SidebarRowAction, ViewMode, ViewerMode};

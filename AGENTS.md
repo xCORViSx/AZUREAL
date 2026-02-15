@@ -15,7 +15,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 **Persistent State (azufig.toml):**
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
-- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, god file scan scope (directory paths), project-local run commands, project-local preset prompts
+- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -96,9 +96,9 @@ Any user action that triggers blocking I/O (session parse, file read, health sca
 - **File open** (`"Loading <filename>…"`) — Enter on file in FileTree
 - **Health panel** (`"Scanning project health…"`) — Shift+H to open Worktree Health
 - **Project switch** (`"Switching project…"`) — Enter on project in Projects panel
-- **God file scope rescan** (`"Rescanning god file scope…"`) — Esc from scope mode (saves scope immediately, defers expensive rescan)
+- **Health scope rescan** (`"Rescanning health scope…"`) — Esc from scope mode (saves scope immediately, defers expensive rescan)
 
-`DeferredAction` enum variants: `LoadSession { branch, idx }`, `LoadFile { path }`, `OpenHealthPanel`, `SwitchProject { path }`, `RescanGodFileScope { dirs }`. The existing session list loading (`session_list_loading`) and debug dump saving (`debug_dump_saving`) use their own two-phase patterns predating this system.
+`DeferredAction` enum variants: `LoadSession { branch, idx }`, `LoadFile { path }`, `OpenHealthPanel`, `SwitchProject { path }`, `RescanHealthScope { dirs }`. The existing session list loading (`session_list_loading`) and debug dump saving (`debug_dump_saving`) use their own two-phase patterns predating this system.
 
 Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/run.rs` (`draw_loading_indicator()`), `src/tui/event_loop.rs` (deferred execution block), `src/tui/event_loop/actions.rs` (`execute_deferred_action()`)
 
@@ -126,7 +126,7 @@ Other features:
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 10 focused submodules, `health` has 2 sub-submodules).
 
 **Mouse Click Architecture:**
-- All 3 pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `input_area`
+- All pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `pane_todo`, `input_area`
 - Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
 - Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader` or `Worktree(idx)`
 - FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
@@ -591,7 +591,7 @@ Implementation:
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
 - `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
-- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED`, `HEALTH_GOD_FILES`, `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `CONTEXT_MENU`, `BRANCH_DIALOG`
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — includes `s:scope` which displays in the panel border top-right), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `CONTEXT_MENU`, `BRANCH_DIALOG`
 - Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
 - **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_context_menu_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
 - **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
@@ -611,7 +611,7 @@ Implementation:
 - `input_output.rs` — session list overlay input, rebase mode input
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
-- `input_health.rs` — `lookup_health_action()` → Action match (tab switching, per-tab keys)
+- `input_health.rs` — `lookup_health_action()` → Action match (tab switching, panel-level keys like scope, per-tab keys)
 - `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav)
 - `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
 - `input_dialogs.rs` — `lookup_context_menu_action()`, `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
@@ -791,6 +791,8 @@ Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Opt
 
 Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Convo pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed. When a subagent (Task tool) is active, its TodoWrite calls render as indented subtasks directly beneath the parent todo item (the in-progress item when the Task spawned), tracked via `subagent_parent_idx`, and prefixed with `↳`. Subagent todos are cleared when the Task tool completes.
 
+**Height cap and scrollbar:** The widget grows to fit its content but caps at 20 visual lines (including wrapped text). When content exceeds 20 lines, a scrollbar column appears on the rightmost border position (AZURE `█` thumb on `│` track) and the widget responds to mouse wheel scrolling. Scroll offset (`todo_scroll`) resets to 0 whenever todos are updated (new TodoWrite tool call). The `pane_todo` rect is cached during draw for mouse hit-testing — checked before `pane_convo` in `apply_scroll_cached()` since the todo widget overlaps the convo area.
+
 **Status icons:**
 | Icon | Color | Meaning |
 |------|-------|---------|
@@ -804,13 +806,13 @@ In-progress items show their `activeForm` text (present tense, e.g., "Building p
 1. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` detects `TodoWrite` ToolCall events and routes them: if a Task tool is active (`active_task_tool_ids` non-empty), todos go to `app.subagent_todos` and `subagent_parent_idx` is set to the index of the current in-progress item; otherwise to `app.current_todos`. Task tool calls are tracked via `active_task_tool_ids` — when the last Task completes, subagent todos are cleared.
 2. **Session load:** `extract_skill_tools_from_events()` in `src/app/state/load.rs` scans all display_events forward to find the latest TodoWrite and restore todo state
 3. **Session switch:** `current_todos` cleared on session switch and rebuilt from new session's events
-4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below
+4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below. Height capped at 22 rows (20 content + 2 borders); when content overflows, accepts `scroll` offset and renders a proportional scrollbar on the rightmost column via direct buffer writes
 
 **Lifecycle:** Widget stays visible even after all items are completed (showing all checkmarks). It clears when the user submits their next prompt (`current_todos.clear()` in the Enter handler). This ensures the user sees the final completed state before it disappears.
 
 **Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline convo stream (`render_display_events()` skips them). The sticky widget is the only representation.
 
-Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs` (includes `subagent_todos` and `active_task_tool_ids` fields), `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output.rs` (renders subtasks beneath parent item via `subagent_parent_idx` with `↳` prefix), suppression in `src/tui/render_events.rs`
+Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs` (includes `subagent_todos`, `active_task_tool_ids`, `pane_todo`, `todo_scroll`, `todo_total_lines` fields), `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` (renders subtasks beneath parent item via `subagent_parent_idx` with `↳` prefix, scroll offset, scrollbar column), mouse scroll routing in `src/tui/event_loop/mouse.rs` (`pane_todo` hit-test before `pane_convo`), suppression in `src/tui/render_events.rs`
 
 ### AskUserQuestion Options Box
 
@@ -930,16 +932,16 @@ Scans the project for "god files" — source files exceeding 1000 lines. Same ch
 - Synchronous scan — fast enough for typical projects.
 
 *Keybindings (God Files tab):*
-- `j/↓`, `k/↑` — navigate; `⌥↑/⌥↓` — jump top/bottom
+- `j/↓`, `k/↑` — navigate; `J/K` — page scroll (page size = `screen_height` minus chrome, NOT the embedded terminal pane's `terminal_height`); `⌥↑/⌥↓` — jump top/bottom
+- Mouse wheel scrolls the list (modal intercepts all scroll events)
 - `Space` — toggle check; `a` — toggle all
 - `v` — view checked files as Viewer tabs (up to 12)
-- `s` — enter scope mode (see below)
 - `Enter`/`m` — modularize checked files
 - `Tab` — switch to Documentation tab
 - `Esc` — close panel
 
-*Scope Mode (`s`):*
-Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" God File Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to project azufig.toml `[godfilescope].dirs`, rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
+*Scope Mode (`s` — panel-level, accessible from any tab):*
+`s` is a shared health panel keybinding (in `HEALTH_SHARED`, displayed as `s:scope` in the panel border top-right). Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" Health Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to project azufig.toml `[healthscope].dirs` (alias `[godfilescope]` for backward compatibility via `#[serde(alias = "godfilescope")]`), rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
 
 *Module Style Selection:*
 When checked files include `.rs` or `.py`, pressing Enter/m shows a **module style selector** dialog before spawning. The dialog lets users choose between dual-style module conventions:
@@ -962,7 +964,8 @@ Scans all source files for documentation coverage — counts documentable items 
 - Selected row highlighted in green; checked count shown in header
 
 *Keybindings (Documentation tab):*
-- `j/↓`, `k/↑` — navigate; `⌥↑/⌥↓` — jump top/bottom
+- `j/↓`, `k/↑` — navigate; `J/K` — page scroll (page size = `screen_height` minus chrome, NOT the embedded terminal pane's `terminal_height`); `⌥↑/⌥↓` — jump top/bottom
+- Mouse wheel scrolls the list (modal intercepts all scroll events)
 - `Space` — toggle check on selected file
 - `a` — check all non-100% files (toggle: if all non-100% checked, unchecks them)
 - `v` — view checked files as Viewer tabs (up to 12)
@@ -973,7 +976,7 @@ Scans all source files for documentation coverage — counts documentable items 
 *[DH] Session Spawning:*
 Checked files spawn concurrent Claude sessions on the main worktree, each prefixed `[DH] filename`. The prompt instructs Claude to add `///` and `//!` doc comments to all undocumented items without modifying executable code. Shows current documented/total ratio so Claude knows the starting coverage.
 
-Implementation: `src/app/state/health.rs` (module root: shared constants, open/close panel, scope persistence), `src/app/state/health/god_files.rs` (scan, scope mode, modularize, module style selector, view_checked), `src/app/state/health/documentation.rs` (doc scanner, DH session spawning, toggle/view), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match), `src/tui/draw_health.rs` (panel rendering with tab bar, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED + HEALTH_GOD_FILES + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
+Implementation: `src/app/state/health.rs` (module root: shared constants, open/close panel, scope persistence via `load_health_scope()` / `save_health_scope()`, `AzufigHealthScope` struct), `src/app/state/health/god_files.rs` (scan, scope mode, modularize, module style selector, view_checked), `src/app/state/health/documentation.rs` (doc scanner, DH session spawning, toggle/view), `src/tui/input_health.rs` (uses `lookup_health_action()` → Action match; `HealthScopeMode` action handled as panel-level, not tab-specific), `src/tui/draw_health.rs` (panel rendering with tab bar, `s:scope` label in panel border top-right, footer hints from `keybindings::health_god_files_hints()` / `health_docs_hints()`), `src/app/types.rs` (GodFileEntry, HealthPanel, HealthTab, DocEntry), `src/tui/keybindings.rs` (HEALTH_SHARED (9 entries, includes scope) + HEALTH_GOD_FILES (4 entries) + HEALTH_DOCS arrays, `lookup_health_action()`, hint generators, `Shift+H` in GLOBAL)
 
 ### Git Panel
 
@@ -1131,7 +1134,7 @@ Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `s
 ```
 azureal/
 ├── .azureal/                # Project-level azureal data (gitignored)
-│   └── azufig.toml         # Project-local unified config (TOML): filetree options, sessions, godfilescope, local runcmds, local presetprompts
+│   └── azufig.toml         # Project-local unified config (TOML): filetree options, sessions, healthscope (alias: godfilescope), local runcmds, local presetprompts
 ├── .claude/                 # Project-level Claude Code config
 │   ├── settings.json        # Hook configuration (PreToolUse keybinding enforcement)
 │   └── scripts/
@@ -1146,7 +1149,7 @@ azureal/
 │   ├── app/                # Application state module
 │   │   ├── state.rs        # State module root (re-exports only)
 │   │   ├── state/          # State submodules
-│   │   │   ├── app.rs      # App struct definition + new()
+│   │   │   ├── app.rs      # App struct definition + new(); includes `screen_height` (actual terminal window rows, updated on startup/resize) used for modal page-scroll calculations
 │   │   │   ├── load.rs     # Session loading and discovery
 │   │   │   ├── sessions.rs # Session navigation and CRUD
 │   │   │   ├── output.rs   # Output processing
@@ -1156,7 +1159,7 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
-│   │   │   ├── health.rs    # Health module root: shared constants (SOURCE_EXTENSIONS, SKIP_DIRS, SOURCE_ROOTS), scope persistence, open/close panel
+│   │   │   ├── health.rs    # Health module root: shared constants (SOURCE_EXTENSIONS, SKIP_DIRS, SOURCE_ROOTS), scope persistence (load_health_scope/save_health_scope, AzufigHealthScope), open/close panel
 │   │   │   ├── health/     # Health submodules (file-based module root)
 │   │   │   │   ├── god_files.rs     # God File System: scan, scope mode, parallel modularize, module style selector
 │   │   │   │   └── documentation.rs # Doc coverage scanner, DH session spawning, doc toggle/view
@@ -1193,7 +1196,7 @@ azureal/
 │   │   ├── draw_output/    # Convo pane submodules
 │   │   │   ├── render_submit.rs  # Background render thread submit/poll (submit_render_request, poll_render_result)
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
-│   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane
+│   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
 │   │   │   └── rebase_view.rs    # Git rebase status display
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
 │   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)

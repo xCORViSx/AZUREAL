@@ -196,8 +196,10 @@ impl App {
                         if tool_name == "TodoWrite" {
                             if self.active_task_tool_ids.is_empty() {
                                 self.current_todos = parse_todos_from_input(input);
+                                self.todo_scroll = 0;
                             } else {
                                 self.subagent_todos = parse_todos_from_input(input);
+                                self.todo_scroll = 0;
                             }
                         }
                         // AskUserQuestion: flag for special input handling

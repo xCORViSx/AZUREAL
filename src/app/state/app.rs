@@ -32,8 +32,8 @@ pub enum DeferredAction {
     OpenHealthPanel,
     /// Switch to a different project (kills processes, reloads everything)
     SwitchProject { path: PathBuf },
-    /// Rescan god files + documentation after scope mode changes
-    RescanGodFileScope { dirs: Vec<String> },
+    /// Rescan all health features after scope mode changes
+    RescanHealthScope { dirs: Vec<String> },
 }
 
 /// Application state
@@ -104,6 +104,9 @@ pub struct App {
     pub terminal_parser: vt100::Parser,
     pub terminal_scroll: usize,
     pub terminal_height: u16,
+    /// Actual terminal window height in rows (for modal page-scroll calculations).
+    /// Updated on startup and resize events — NOT the embedded terminal pane height.
+    pub screen_height: u16,
     pub terminal_rows: u16,
     pub terminal_cols: u16,
     pub terminal_needs_resize: bool,
@@ -205,6 +208,12 @@ pub struct App {
     pub pane_worktrees: ratatui::layout::Rect,
     pub pane_viewer: ratatui::layout::Rect,
     pub pane_convo: ratatui::layout::Rect,
+    /// Cached rect for the todo widget area (mouse scroll hit-testing)
+    pub pane_todo: ratatui::layout::Rect,
+    /// Scroll offset for the todo widget (lines scrolled from top)
+    pub todo_scroll: u16,
+    /// Total visual lines in the todo widget (for scroll bounds, set during draw)
+    pub todo_total_lines: u16,
     /// Maps sidebar visual rows (0-indexed) to clickable actions.
     /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
     pub sidebar_row_map: Vec<SidebarRowAction>,
@@ -505,6 +514,7 @@ impl App {
             terminal_parser: vt100::Parser::new(24, 120, 1000),
             terminal_scroll: 0,
             terminal_height: 12,
+            screen_height: crossterm::terminal::size().map(|(_, h)| h).unwrap_or(24),
             terminal_rows: 24,
             terminal_cols: 120,
             terminal_needs_resize: false,
@@ -554,6 +564,9 @@ impl App {
             pane_worktrees: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
             pane_convo: ratatui::layout::Rect::default(),
+            pane_todo: ratatui::layout::Rect::default(),
+            todo_scroll: 0,
+            todo_total_lines: 0,
             sidebar_row_map: Vec::new(),
             output_viewport_cache: Vec::new(),
             output_viewport_scroll: usize::MAX,

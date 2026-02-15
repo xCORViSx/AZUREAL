@@ -12,7 +12,7 @@ use crate::app::types::DocEntry;
 use crate::claude::ClaudeProcess;
 
 use super::super::App;
-use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, load_god_file_scope, collect_source_files};
+use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, load_health_scope, collect_source_files};
 
 impl App {
     /// Scan project source files for documentation coverage — counts documentable
@@ -24,7 +24,7 @@ impl App {
         let root = &project.path;
 
         // Determine which directories to scan (same logic as god files)
-        let dirs = load_god_file_scope(root).unwrap_or_else(|| {
+        let dirs = load_health_scope(root).unwrap_or_else(|| {
             let found: HashSet<PathBuf> = SOURCE_ROOTS.iter()
                 .map(|name| root.join(name))
                 .filter(|p| p.is_dir())

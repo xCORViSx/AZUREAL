@@ -627,7 +627,7 @@ fn dispatch_escape(app: &mut App) {
             if app.god_file_filter_mode {
                 // Exit scope mode — save scope (fast) and defer the expensive rescan
                 if let Some(ref project) = app.project {
-                    crate::app::save_god_file_scope(&project.path, &app.god_file_filter_dirs);
+                    crate::app::save_health_scope(&project.path, &app.god_file_filter_dirs);
                 }
                 let dirs: Vec<String> = app.god_file_filter_dirs.iter()
                     .map(|p| p.to_string_lossy().to_string()).collect();
@@ -635,8 +635,8 @@ fn dispatch_escape(app: &mut App) {
                 app.god_file_filter_dirs.clear();
                 app.show_file_tree = false;
                 app.focus = crate::app::Focus::Worktrees;
-                app.loading_indicator = Some("Rescanning god file scope…".into());
-                app.deferred_action = Some(crate::app::DeferredAction::RescanGodFileScope { dirs });
+                app.loading_indicator = Some("Rescanning health scope…".into());
+                app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });
             } else {
                 app.show_file_tree = false;
                 app.focus = Focus::Worktrees;
@@ -742,7 +742,7 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
         DeferredAction::SwitchProject { path } => {
             app.switch_project(path);
         }
-        DeferredAction::RescanGodFileScope { dirs } => {
+        DeferredAction::RescanHealthScope { dirs } => {
             app.rescan_health_with_dirs(&dirs);
         }
     }

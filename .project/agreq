@@ -1,1 +1,3 @@
 have rebasing hooks that immediately inject into all session agents whenever main is ahead for them to rebase without manual request
+
+model picker

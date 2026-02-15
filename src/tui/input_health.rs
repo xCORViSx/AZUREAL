@@ -94,10 +94,47 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
             }
         }
 
+        // ── Page scroll — move selected cursor by one viewport page ──
+        Action::PageDown => {
+            if let Some(ref mut p) = app.health_panel {
+                // Same modal_h and chrome calculations as draw_health.rs
+                let modal_h = (app.screen_height * 70 / 100).max(16).min(app.screen_height) as usize;
+                match p.tab {
+                    crate::app::types::HealthTab::GodFiles => {
+                        let page = modal_h.saturating_sub(12).max(1);
+                        let max = p.god_files.len().saturating_sub(1);
+                        p.god_selected = (p.god_selected + page).min(max);
+                    }
+                    crate::app::types::HealthTab::Documentation => {
+                        let page = modal_h.saturating_sub(14).max(1);
+                        let max = p.doc_entries.len().saturating_sub(1);
+                        p.doc_selected = (p.doc_selected + page).min(max);
+                    }
+                }
+            }
+        }
+        Action::PageUp => {
+            if let Some(ref mut p) = app.health_panel {
+                let modal_h = (app.screen_height * 70 / 100).max(16).min(app.screen_height) as usize;
+                match p.tab {
+                    crate::app::types::HealthTab::GodFiles => {
+                        let page = modal_h.saturating_sub(12).max(1);
+                        p.god_selected = p.god_selected.saturating_sub(page);
+                    }
+                    crate::app::types::HealthTab::Documentation => {
+                        let page = modal_h.saturating_sub(14).max(1);
+                        p.doc_selected = p.doc_selected.saturating_sub(page);
+                    }
+                }
+            }
+        }
+
+        // ── Panel-level — scope applies to all health features ──
+        Action::HealthScopeMode => { app.enter_god_file_scope_mode(); }
+
         // ── God Files tab only ──
         Action::HealthToggleCheck => { app.god_file_toggle_check(); }
         Action::HealthToggleAll => { app.god_file_toggle_all(); }
-        Action::HealthScopeMode => { app.enter_god_file_scope_mode(); }
         // Start modularize — may show module style dialog first
         Action::HealthModularize => { app.god_file_start_modularize(claude_process); }
 

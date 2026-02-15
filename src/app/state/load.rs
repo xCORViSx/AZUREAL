@@ -401,6 +401,7 @@ impl App {
                 crate::events::DisplayEvent::ToolCall { tool_name, input, .. } => {
                     if tool_name == "TodoWrite" {
                         self.current_todos = super::claude::parse_todos_from_input(input);
+                        self.todo_scroll = 0;
                         saw_user_after_todo = false;
                     }
                     if tool_name == "AskUserQuestion" {
