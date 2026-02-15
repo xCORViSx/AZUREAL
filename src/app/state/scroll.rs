@@ -47,6 +47,10 @@ impl App {
         }
         let old = self.output_scroll;
         self.output_scroll = self.output_scroll.saturating_sub(lines);
+        // If we hit the top and early events were deferred, trigger full render
+        if self.output_scroll == 0 && self.rendered_events_start > 0 {
+            self.rendered_lines_dirty = true;
+        }
         self.output_scroll != old
     }
 
@@ -166,5 +170,12 @@ impl App {
         }
         // No previous bubbles, scroll to top
         self.output_scroll = 0;
+        // If early events were deferred (not yet rendered), trigger a full render
+        // so the user can continue navigating upward through the entire conversation.
+        // Without this, rendered_lines_dirty stays false and submit_render_request
+        // never re-checks the deferred expansion condition.
+        if self.rendered_events_start > 0 {
+            self.rendered_lines_dirty = true;
+        }
     }
 }

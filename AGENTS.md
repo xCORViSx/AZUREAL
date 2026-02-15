@@ -369,7 +369,7 @@ During active Claude streaming, events are added to `display_events` by the live
 
 ### 10. Deferred Initial Render for Large Conversations
 
-For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`output_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when user scrolls to the top.
+For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`output_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when the user reaches scroll position 0 — both `scroll_output_up()` and `jump_to_prev_bubble()` set `rendered_lines_dirty = true` when they hit scroll 0 with `rendered_events_start > 0`, triggering deferred render expansion on the next event loop frame.
 
 ```rust
 // On initial full render with many events, skip early ones:
