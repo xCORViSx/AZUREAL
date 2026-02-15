@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 
 use crate::config::ProjectEntry;
-use crate::models::SessionStatus;
 
 /// Viewer pane display mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -85,92 +84,6 @@ impl BranchDialog {
     pub fn filter_backspace(&mut self) {
         self.filter.pop();
         self.apply_filter();
-    }
-}
-
-/// Context menu for session actions
-#[derive(Debug, Clone)]
-pub struct ContextMenu {
-    pub actions: Vec<SessionAction>,
-    pub selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionAction {
-    Start,
-    Stop,
-    Archive,
-    Unarchive,
-    Delete,
-    ViewDiff,
-    RebaseFromMain,
-    OpenInEditor,
-    CopyWorktreePath,
-}
-
-impl SessionAction {
-    pub fn label(&self) -> &'static str {
-        match self {
-            SessionAction::Start => "Start/Resume Session",
-            SessionAction::Stop => "Stop Session",
-            SessionAction::Archive => "Archive Session",
-            SessionAction::Unarchive => "Unarchive Session",
-            SessionAction::Delete => "Delete Session",
-            SessionAction::ViewDiff => "View Diff",
-            SessionAction::RebaseFromMain => "Rebase from Main",
-            SessionAction::OpenInEditor => "Open in Editor",
-            SessionAction::CopyWorktreePath => "Copy Worktree Path",
-        }
-    }
-
-    pub fn key_hint(&self) -> &'static str {
-        match self {
-            SessionAction::Start => "Enter",
-            SessionAction::Stop => "s",
-            SessionAction::Archive => "a",
-            SessionAction::Unarchive => "u",
-            SessionAction::Delete => "D",
-            SessionAction::ViewDiff => "d",
-            SessionAction::RebaseFromMain => "r",
-            SessionAction::OpenInEditor => "e",
-            SessionAction::CopyWorktreePath => "c",
-        }
-    }
-
-    pub fn available_for_status(status: SessionStatus, archived: bool) -> Vec<SessionAction> {
-        // Archived sessions: only unarchive or delete (no worktree to operate on)
-        if archived {
-            return vec![
-                SessionAction::Unarchive,
-                SessionAction::Delete,
-            ];
-        }
-        match status {
-            SessionStatus::Pending | SessionStatus::Stopped | SessionStatus::Completed => vec![
-                SessionAction::Start,
-                SessionAction::ViewDiff,
-                SessionAction::RebaseFromMain,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
-                SessionAction::Archive,
-                SessionAction::Delete,
-            ],
-            SessionStatus::Running | SessionStatus::Waiting => vec![
-                SessionAction::Stop,
-                SessionAction::ViewDiff,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
-            ],
-            SessionStatus::Failed => vec![
-                SessionAction::Start,
-                SessionAction::ViewDiff,
-                SessionAction::RebaseFromMain,
-                SessionAction::OpenInEditor,
-                SessionAction::CopyWorktreePath,
-                SessionAction::Archive,
-                SessionAction::Delete,
-            ],
-        }
     }
 }
 

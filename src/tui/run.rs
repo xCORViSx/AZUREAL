@@ -223,9 +223,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.show_help {
         draw_dialogs::draw_help_overlay(f);
     }
-    if app.context_menu.is_some() {
-        draw_dialogs::draw_context_menu(f, app, f.area());
-    }
     // Run command overlays (picker takes priority over dialog)
     if app.run_command_picker.is_some() {
         draw_dialogs::draw_run_command_picker(f, app, f.area());

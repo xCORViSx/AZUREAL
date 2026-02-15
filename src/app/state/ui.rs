@@ -1,6 +1,6 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, ContextMenu, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
+use crate::app::types::{BranchDialog, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode};
 use crate::config::load_projects;
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
@@ -306,33 +306,6 @@ impl App {
         self.rebase_status.as_ref().and_then(|status| {
             self.selected_conflict.and_then(|idx| status.conflicted_files.get(idx).map(|s| s.as_str()))
         })
-    }
-
-    // Context menu
-    pub fn open_context_menu(&mut self) {
-        if let Some(session) = self.current_session() {
-            let status = session.status(self.is_session_running(&session.branch_name));
-            let actions = SessionAction::available_for_status(status, session.archived);
-            if !actions.is_empty() { self.context_menu = Some(ContextMenu { actions, selected: 0 }); }
-        }
-    }
-
-    pub fn close_context_menu(&mut self) { self.context_menu = None; }
-
-    pub fn context_menu_next(&mut self) {
-        if let Some(ref mut menu) = self.context_menu {
-            if menu.selected + 1 < menu.actions.len() { menu.selected += 1; }
-        }
-    }
-
-    pub fn context_menu_prev(&mut self) {
-        if let Some(ref mut menu) = self.context_menu {
-            if menu.selected > 0 { menu.selected -= 1; }
-        }
-    }
-
-    pub fn selected_action(&self) -> Option<SessionAction> {
-        self.context_menu.as_ref().map(|menu| menu.actions[menu.selected].clone())
     }
 
     // Wizard

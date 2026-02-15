@@ -58,7 +58,7 @@ Each worktree provides true branch isolation:
 - Can have different uncommitted changes
 - Operates on a separate branch from main
 - **Archiving** removes the worktree directory but preserves the git branch (`a` key). Archived sessions show as `◇` with dimmed text in the sidebar.
-- **Unarchiving** recreates the worktree from the preserved branch (`u` key, or `Enter` on an archived session auto-unarchives). Context menu for archived sessions only offers Unarchive and Delete.
+- **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
 - CLI: `azureal session archive <name>` / `azureal session unarchive <name>`
 
 Implementation: `src/git.rs` handles worktree creation, deletion, and status queries.
@@ -134,7 +134,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: a
 - Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader` or `Worktree(idx)`
 - FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — uses `word_wrap_break_points()` to map screen coords to char index with word-boundary wrapping
-- Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
+- Overlays (help, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
 **Text Selection (Mouse Drag):**
 - `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=convo, 2=input, 3=edit-mode-viewer. Clears existing `viewer_selection` / `output_selection`.
@@ -548,7 +548,7 @@ Key mappings:
 - `T` (Shift+T, global, except edit mode): Toggle terminal pane
 - `G` (Shift+G, global, except edit mode): Toggle Git panel
 
-**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
+**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
 - `Escape` / click another pane / `Tab` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
@@ -587,16 +587,16 @@ Implementation:
 
 ### Centralized Keybindings
 
-**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, context menu, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
+**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
 
 **Architecture:**
 - `Action` enum: All possible keybinding actions (~60 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitRebase`, `ProjectsAdd`, `PickerQuickDelete`, `BranchDialogOpen`, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
-- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
-- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — `Tab:tab` top-left and `s:scope` top-right of panel border), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `CONTEXT_MENU`, `BRANCH_DIALOG`
-- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
-- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_context_menu_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
+- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — `Tab:tab` top-left and `s:scope` top-right of panel border), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`
+- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, or wizard. No guard duplication in event_loop.rs.
+- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
 - **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
@@ -604,7 +604,7 @@ Implementation:
 - Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, context menu, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
+1. Modal overlays (help, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
 2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
 3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline which fall through to handle_input_mode)
 4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
@@ -617,7 +617,7 @@ Implementation:
 - `input_health.rs` — `lookup_health_action()` → Action match (tab switching, panel-level keys like scope, per-tab keys)
 - `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav)
 - `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
-- `input_dialogs.rs` — `lookup_context_menu_action()`, `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
+- `input_dialogs.rs` — `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
 
 **macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes. **Help panel display:** `display_keys()` filters out non-ASCII bare-char alternatives (®, π, †) so the help panel shows clean `⌥r` instead of `⌥r/®` — the unicode chars are internal matching details, not user-facing.
 
@@ -983,7 +983,7 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 ### Git Panel
 
-Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
+Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard).
 
 **Panel Layout:**
 - Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
@@ -1352,21 +1352,18 @@ azureal
 ### Worktrees Pane
 | Key | Action |
 |-----|--------|
-| `j/k` | Navigate worktrees |
-| `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
-| `f` | Toggle FileTree overlay (browse worktree files) |
-| `Enter` | Switch to selected worktree |
-| `Space` | Context menu |
+| `j/k` | Select worktree |
+| `⌥↑/⌥↓` | Jump to top/bottom |
+| `f` | Browse files (FileTree overlay) |
+| `Enter` | Start/resume session |
+| `/` | Search/filter sessions |
 | `n` | New worktree/session wizard |
 | `b` | Browse branches |
-| `d` | View diff |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
-| `R` | Rebase onto main |
 | `a` | Archive worktree |
 | `u` | Unarchive worktree (recreate from branch) |
-| `g` | God files (scan and modularize >1000 LOC files) |
-| `/` | Search/filter sessions |
+| `Shift+P` | Projects |
 | `⌥↑/⌥↓` | Jump to first/last worktree |
 
 ### FileTree Overlay (`f` in Worktrees)

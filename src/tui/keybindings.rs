@@ -563,14 +563,6 @@ pub static PICKER: [Keybinding; 7] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
-/// Context Menu — simple nav + select
-pub static CONTEXT_MENU: [Keybinding; 4] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
-    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
-];
-
 /// Branch Dialog — nav + select (filter chars stay raw)
 pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -587,7 +579,6 @@ pub struct KeyContext {
     pub edit_mode: bool,
     pub terminal_mode: bool,
     pub filter_active: bool,
-    pub has_context_menu: bool,
     pub wizard_active: bool,
     pub help_open: bool,
 }
@@ -601,7 +592,6 @@ impl KeyContext {
             edit_mode: app.viewer_edit_mode,
             terminal_mode: app.terminal_mode,
             filter_active: app.sidebar_filter_active,
-            has_context_menu: app.context_menu.is_some(),
             wizard_active: app.is_wizard_active(),
             help_open: app.show_help,
         }
@@ -618,11 +608,11 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     for binding in &GLOBAL {
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
-            // sidebar filter, context menu, or wizard — they'd steal keystrokes
+            // sidebar filter, or wizard — they'd steal keystrokes
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
             | Action::OpenGitActions | Action::OpenHealth
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-                   || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
+                   || ctx.filter_active || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
@@ -848,12 +838,6 @@ pub fn lookup_projects_action(modifiers: KeyModifiers, code: KeyCode) -> Option<
 /// Number quick-select and confirm-delete y/n stay raw in handlers.
 pub fn lookup_picker_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &PICKER { if b.matches(modifiers, code) { return Some(b.action); } }
-    None
-}
-
-/// Resolve key → Action for the context menu overlay.
-pub fn lookup_context_menu_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
-    for b in &CONTEXT_MENU { if b.matches(modifiers, code) { return Some(b.action); } }
     None
 }
 
