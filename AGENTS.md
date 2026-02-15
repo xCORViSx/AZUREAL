@@ -57,6 +57,9 @@ Each worktree provides true branch isolation:
 - Has its own working directory
 - Can have different uncommitted changes
 - Operates on a separate branch from main
+- **Archiving** removes the worktree directory but preserves the git branch (`a` key). Archived sessions show as `◇` with dimmed text in the sidebar.
+- **Unarchiving** recreates the worktree from the preserved branch (`u` key, or `Enter` on an archived session auto-unarchives). Context menu for archived sessions only offers Unarchive and Delete.
+- CLI: `azureal session archive <name>` / `azureal session unarchive <name>`
 
 Implementation: `src/git.rs` handles worktree creation, deletion, and status queries.
 
@@ -1361,6 +1364,7 @@ azureal
 | `⌥r` | Add new run command |
 | `R` | Rebase onto main |
 | `a` | Archive worktree |
+| `u` | Unarchive worktree (recreate from branch) |
 | `g` | God files (scan and modularize >1000 LOC files) |
 | `/` | Search/filter sessions |
 | `⌥↑/⌥↓` | Jump to first/last worktree |
