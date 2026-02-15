@@ -101,9 +101,12 @@ impl App {
             None => { self.set_status("No worktree path"); return; }
         };
         let worktree_name = session.branch_name.clone();
-        let main_branch = self.project.as_ref()
-            .map(|p| p.main_branch.clone())
-            .unwrap_or_else(|| "main".to_string());
+        let project = match self.project.as_ref() {
+            Some(p) => p,
+            None => { self.set_status("No project loaded"); return; }
+        };
+        let main_branch = project.main_branch.clone();
+        let repo_root = project.path.clone();
 
         // Load changed files — typically <100ms, fine for modal open
         let changed_files = match Git::get_diff_files(&wt_path, &main_branch) {
@@ -116,6 +119,7 @@ impl App {
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
+            repo_root,
             main_branch,
             changed_files,
             selected_file: 0,

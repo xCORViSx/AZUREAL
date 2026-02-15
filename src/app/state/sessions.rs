@@ -144,6 +144,13 @@ impl App {
 
     pub fn archive_current_session(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
+            // Never allow archiving the main branch — it would destroy the primary worktree
+            if let Some(project) = &self.project {
+                if session.branch_name == project.main_branch {
+                    self.set_status("Cannot archive main branch");
+                    return Ok(());
+                }
+            }
             if let Some(ref wt_path) = session.worktree_path {
                 if let Some(project) = &self.project {
                     Git::remove_worktree(&project.path, wt_path)?;

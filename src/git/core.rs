@@ -291,11 +291,12 @@ impl Git {
         else { anyhow::bail!("{}", combined.trim()) }
     }
 
-    /// Merge main branch into current branch
-    pub fn merge_from_main(worktree_path: &Path, main_branch: &str) -> Result<String> {
+    /// Merge a feature branch into main. Runs from the repo root (main worktree)
+    /// which is already checked out on the main branch — no checkout needed.
+    pub fn merge_into_main(repo_root: &Path, branch_name: &str) -> Result<String> {
         let output = Command::new("git")
-            .args(["merge", main_branch])
-            .current_dir(worktree_path)
+            .args(["merge", branch_name])
+            .current_dir(repo_root)
             .output()
             .context("Failed to merge")?;
         let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));

@@ -2,7 +2,7 @@
 //!
 //! Full-screen modal overlay — consumes ALL input when active, dispatched via
 //! the centralized keybinding system (lookup_git_actions_action in keybindings.rs).
-//! Actions section (Tab to switch): r=rebase, m=merge, f=fetch, l=pull, P=push.
+//! Actions section (Tab to switch): r=rebase from main, m=merge to main, f=fetch, l=pull, P=push.
 //! File list section: j/k navigate, Enter/d opens file diff in viewer.
 
 use anyhow::Result;
@@ -166,12 +166,14 @@ fn exec_rebase(app: &mut App) {
     }
 }
 
+/// Merge the current worktree's branch into main. Runs from repo root
+/// (which is always checked out on main) so no checkout is needed.
 fn exec_merge(app: &mut App) {
-    let (wt, main) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.worktree_path.clone(), p.main_branch.clone()),
+    let (repo_root, branch) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.repo_root.clone(), p.worktree_name.clone()),
         None => return,
     };
-    let msg = match Git::merge_from_main(&wt, &main) {
+    let msg = match Git::merge_into_main(&repo_root, &branch) {
         Ok(m) => (m, false),
         Err(e) => (format!("{}", e), true),
     };

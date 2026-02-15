@@ -4,6 +4,11 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Archive worktree blocked on main branch** — Pressing `a` when the main branch is selected now shows "Cannot archive main branch" instead of destroying the primary worktree. Guard added in `archive_current_session()`.
+- **Git merge direction fixed** — `merge_from_main()` renamed to `merge_into_main()` and rewritten to merge the feature branch INTO main by running from the repo root (which is always checked out on main). Previously merged main into the feature branch. `GitActionsPanel` now stores `repo_root` (project path) for this operation. Keybinding label changed from "Merge from main" to "Merge to main".
+- **STT toggle in edit mode** — `⌃s` (speech-to-text) in viewer edit mode now dispatched via `execute_action()` instead of a raw handler in `input_viewer.rs`. The raw handler never fired because `lookup_action()` intercepted the key first. Now works correctly from both edit mode and prompt mode.
+
 ### Added
 - **Generic loading indicators** — Centered AZURE-bordered popup shown during all blocking I/O operations so the UI never appears frozen. Uses a `DeferredAction` enum + two-phase deferred draw pattern: set loading state → `terminal.draw()` renders popup → event loop executes expensive action on next frame → triggers redraw with result. Five operations converted: session load (`"Loading session…"`), file open (`"Loading <filename>…"`), health panel open (`"Scanning project health…"`), project switch (`"Switching project…"`), health scope rescan (`"Rescanning health scope…"`). Reusable `draw_loading_indicator()` function and `execute_deferred_action()` dispatcher.
 - **Health panel page scroll + mouse wheel** — `J/K` (Shift+J/K) now pages through both God Files and Documentation lists by one viewport height. Mouse wheel scrolls the active tab's list — the health modal intercepts all scroll events while open so scrolling works regardless of cursor position. Page size derived from actual terminal window height (`screen_height`), not the embedded terminal pane height (`terminal_height`).

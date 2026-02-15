@@ -94,10 +94,7 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.viewer_edit_select_all();
         }
 
-        // Speech input: ⌃s — toggle speech-to-text recording
-        (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
-            app.toggle_stt();
-        }
+        // ⌃s (STT) handled by execute_action() via lookup_action() — never reaches here
 
         // Exit edit mode: Esc
         (KeyModifiers::NONE, KeyCode::Esc) => {

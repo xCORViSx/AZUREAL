@@ -603,7 +603,7 @@ Implementation:
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
 1. Modal overlays (help, context menu, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
 2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
-3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline which fall through to handle_input_mode)
+3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
 4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
 
 **Input handlers only handle unresolved keys:**
@@ -889,7 +889,7 @@ mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin \
 - Events collected into Vec first (avoids borrow conflict: `try_recv` borrows handle, processing borrows `&mut self`)
 - Short poll timeout (16ms) when `stt_recording || stt_transcribing`
 
-Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs`, handler in `src/tui/input_terminal.rs` and `src/tui/input_viewer.rs` (edit mode), polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs` and `src/tui/draw_viewer.rs` (edit mode magenta border + REC indicator)
+Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_transcribing` in `src/app/state/app.rs`, `toggle_stt()`, `poll_stt()`, `insert_stt_text()` methods, `⌃s` binding in `src/tui/keybindings.rs` (`EDIT_MODE` and `INPUT` arrays), `Action::ToggleStt` dispatched via `execute_action()` in `actions.rs` (edit mode) and raw match in `handle_input_mode()` (prompt mode), polling in `src/tui/event_loop.rs`, visual feedback in `src/tui/draw_input.rs` and `src/tui/draw_viewer.rs` (edit mode magenta border + REC indicator)
 
 ### Conversation Persistence
 
@@ -991,7 +991,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 
 **Actions (when actions section focused):**
 - `r` / Enter on index 0 — Rebase from main (`Git::rebase_onto_main()`)
-- `m` / Enter on index 1 — Merge from main (`Git::merge_from_main()`)
+- `m` / Enter on index 1 — Merge to main (`Git::merge_into_main()`) — merges the current worktree's branch INTO main by running from repo root
 - `f` / Enter on index 2 — Fetch all remotes (`Git::fetch()`)
 - `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
 - `P` / Enter on index 4 — Push (`Git::push()`)
@@ -1004,13 +1004,14 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 **Global within panel:**
 - `Tab` — toggle focus between actions and file list
 - `R` — refresh changed file list
-- `H` — toggle `.git` directory visibility in file tree (default: hidden)
 - `Esc` — close panel
 - Click outside — dismiss (mouse.rs)
 
-**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path` and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_from_main`), `src/app/types.rs` (GitActionsPanel, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array, `lookup_git_action()`, hint generators, `G` in GLOBAL)
+**Data flow (merge-to-main):** `exec_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::merge_into_main(repo_root, branch)`. The merge runs from the repo root — no checkout needed because the repo root IS on main. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
+
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`), `src/app/types.rs` (GitActionsPanel with `repo_root` field, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array, `lookup_git_action()`, hint generators, `G` in GLOBAL)
 
 ### Rebase Support
 
@@ -1269,7 +1270,7 @@ azureal/
 - [x] Search/filter sessions (`/` in Worktrees pane)
 - [x] Convo search (`/` in Convo pane — find text in current session, `n/N` to cycle matches)
 - [x] Session list search (`/` name filter, `//` cross-session content search)
-- [x] Speech-to-text input (`⌃s` in prompt mode)
+- [x] Speech-to-text input (`⌃s` in prompt mode and file edit mode)
 
 ## Phase 3: Advanced Features
 - [x] God File System (scan >1000 LOC files, batch-modularize via concurrent Claude sessions)
@@ -1350,18 +1351,15 @@ azureal
 | Key | Action |
 |-----|--------|
 | `j/k` | Navigate worktrees |
-| `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
+| `J/K` | Page scroll |
 | `f` | Toggle FileTree overlay (browse worktree files) |
-| `Enter` | Switch to selected worktree |
-| `Space` | Context menu |
+| `Enter` | Start/resume session |
 | `n` | New worktree/session wizard |
 | `b` | Browse branches |
-| `d` | View diff |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
-| `R` | Rebase onto main |
-| `a` | Archive worktree |
-| `g` | God files (scan and modularize >1000 LOC files) |
+| `a` | Archive worktree (blocked on main branch) |
+| `P` | Projects panel |
 | `/` | Search/filter sessions |
 | `⌥↑/⌥↓` | Jump to first/last worktree |
 
@@ -1406,9 +1404,6 @@ azureal
 | `s` | Toggle Session list overlay (browse all session files) |
 | `/` | Search text in current session (yellow highlights, `[N/M]` counter) |
 | `n/N` | Next/prev search match (after `/` search confirmed with Enter) |
-| `o` | Switch to output view |
-| `d` | Git worktree diff |
-| `R` | Rebase status |
 | `Esc` | Return to Worktrees |
 
 **Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Convo pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Convo scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Convo pane.

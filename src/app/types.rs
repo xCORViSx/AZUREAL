@@ -444,6 +444,8 @@ pub struct GitActionsPanel {
     pub worktree_name: String,
     /// Worktree path on disk (for running git commands without reborrowing App)
     pub worktree_path: std::path::PathBuf,
+    /// Repo root path (main worktree, always on main branch — for merge-into-main)
+    pub repo_root: std::path::PathBuf,
     /// Main branch name (for rebase/merge/diff base)
     pub main_branch: String,
     /// Changed files from git diff --stat against main

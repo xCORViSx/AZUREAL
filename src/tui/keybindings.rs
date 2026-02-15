@@ -527,7 +527,7 @@ pub static GIT_ACTIONS: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase from main", Action::GitRebase),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Merge from main", Action::GitMerge),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Merge to main", Action::GitMerge),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Fetch", Action::GitFetch),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('P')), "Push", Action::GitPush),

@@ -417,7 +417,13 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         Action::Submit | Action::InsertNewline | Action::ExitPromptMode
         | Action::WordLeft | Action::WordRight | Action::DeleteWord
         | Action::HistoryPrev | Action::HistoryNext
-        | Action::ToggleStt | Action::EnterTerminalType => {}
+        | Action::EnterTerminalType => {}
+
+        // STT toggle — works from edit mode (viewer) AND prompt input.
+        // Input focus is filtered out above (is_input_action) so the raw handler
+        // in handle_input_mode() catches it there. For edit mode, this is the
+        // only path since lookup_action() intercepts ⌃s before handle_viewer_input().
+        Action::ToggleStt => { app.toggle_stt(); }
 
         // --- Generic escape: context-dependent close/back ---
         Action::Escape => {
