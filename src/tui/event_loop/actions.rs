@@ -301,7 +301,11 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::OpenHealth => {
             if app.health_panel.is_some() { app.close_health_panel(); }
-            else { app.open_health_panel(); }
+            else {
+                // Deferred health scan — show loading popup while recursive dir walk runs
+                app.loading_indicator = Some("Scanning project health…".into());
+                app.deferred_action = Some(crate::app::DeferredAction::OpenHealthPanel);
+            }
         }
         Action::OpenGitActions => {
             // Toggle: close if already open, open otherwise
@@ -332,7 +336,14 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                     } else if entry.is_dir {
                         app.toggle_file_tree_dir();
                     } else {
-                        app.load_file_into_viewer();
+                        // Deferred file load — show "Loading <filename>…" while I/O runs
+                        let filename = entry.path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "file".into());
+                        app.loading_indicator = Some(format!("Loading {}…", filename));
+                        app.deferred_action = Some(crate::app::DeferredAction::LoadFile {
+                            path: entry.path.clone(),
+                        });
                         app.focus = Focus::Viewer;
                     }
                 }
@@ -614,8 +625,18 @@ fn dispatch_escape(app: &mut App) {
         }
         Focus::FileTree => {
             if app.god_file_filter_mode {
-                // Exit scope mode — persist, rescan, reopen god file panel
-                app.exit_god_file_scope_mode();
+                // Exit scope mode — save scope (fast) and defer the expensive rescan
+                if let Some(ref project) = app.project {
+                    crate::app::save_god_file_scope(&project.path, &app.god_file_filter_dirs);
+                }
+                let dirs: Vec<String> = app.god_file_filter_dirs.iter()
+                    .map(|p| p.to_string_lossy().to_string()).collect();
+                app.god_file_filter_mode = false;
+                app.god_file_filter_dirs.clear();
+                app.show_file_tree = false;
+                app.focus = crate::app::Focus::Worktrees;
+                app.loading_indicator = Some("Rescanning god file scope…".into());
+                app.deferred_action = Some(crate::app::DeferredAction::RescanGodFileScope { dirs });
             } else {
                 app.show_file_tree = false;
                 app.focus = Focus::Worktrees;
@@ -694,6 +715,37 @@ pub fn finish_session_list_load(app: &mut App) {
         }
     }
     app.session_list_loading = false;
+}
+
+/// Execute a deferred action after its loading indicator has rendered on-screen.
+/// Called from the event loop's post-draw section. Each variant delegates to the
+/// same method that would have been called synchronously before the deferred pattern.
+pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction) {
+    use crate::app::DeferredAction;
+    match action {
+        DeferredAction::LoadSession { branch, idx } => {
+            app.save_current_terminal();
+            app.select_session_file(&branch, idx);
+            app.show_session_list = false;
+            app.session_filter.clear();
+            app.session_filter_active = false;
+            app.session_content_search = false;
+            app.session_search_results.clear();
+            app.invalidate_sidebar();
+        }
+        DeferredAction::LoadFile { path } => {
+            app.load_file_by_path(&path);
+        }
+        DeferredAction::OpenHealthPanel => {
+            app.open_health_panel();
+        }
+        DeferredAction::SwitchProject { path } => {
+            app.switch_project(path);
+        }
+        DeferredAction::RescanGodFileScope { dirs } => {
+            app.rescan_health_with_dirs(&dirs);
+        }
+    }
 }
 
 /// Count message bubbles in a JSONL session file for the session list [N msgs] badge.

@@ -18,7 +18,7 @@
 mod app;
 mod claude;
 mod file_browser;
-mod health;
+pub(crate) mod health;
 mod helpers;
 mod load;
 mod output;
@@ -35,8 +35,8 @@ use crate::events::DisplayEvent;
 // Re-export FileTreeEntry for helpers module
 pub use crate::app::types::FileTreeEntry;
 
-// Re-export App and todo types as public
-pub use app::{App, TodoItem, TodoStatus};
+// Re-export App, todo types, and DeferredAction as public
+pub use app::{App, DeferredAction, TodoItem, TodoStatus};
 
 // Re-export helper functions for external use (used by sessions.rs)
 pub(crate) use helpers::{generate_session_name, sanitize_for_branch};

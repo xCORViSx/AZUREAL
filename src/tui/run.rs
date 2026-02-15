@@ -255,6 +255,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if let Some(ref name) = app.debug_dump_saving {
         draw_debug_dump_saving(f, name);
     }
+    // Generic loading indicator — highest z-order, shown while a deferred action runs next frame
+    if let Some(ref msg) = app.loading_indicator {
+        draw_loading_indicator(f, msg);
+    }
 }
 
 /// Block-pixel ASCII art splash screen shown during app initialization.
@@ -441,6 +445,26 @@ fn draw_debug_dump_saving(f: &mut Frame, name: &str) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(AZURE))
             .title(Span::styled(" Debug Dump ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))));
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(dialog, rect);
+}
+
+/// Generic loading indicator — centered popup shown while a deferred action
+/// (session load, file open, health scan, project switch, etc.) runs on the
+/// next frame. Reused by all two-phase deferred draw operations.
+fn draw_loading_indicator(f: &mut Frame, msg: &str) {
+    let area = f.area();
+    let padded = format!(" {} ", msg);
+    let w = (padded.len() as u16 + 4).min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+    let dialog = Paragraph::new(Span::styled(padded, Style::default().fg(Color::White)))
+        .alignment(Alignment::Center)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(AZURE)));
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }

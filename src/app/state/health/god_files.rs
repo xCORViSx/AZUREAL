@@ -90,6 +90,26 @@ impl App {
         });
     }
 
+    /// Rescan god files + documentation using the given scope directories
+    /// and rebuild the health panel. Called from deferred action after the
+    /// "Rescanning god file scope…" loading indicator renders.
+    pub fn rescan_health_with_dirs(&mut self, dirs: &[String]) {
+        let dir_set: HashSet<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        let god_files = self.scan_god_files_with_dirs(&dir_set);
+        let (doc_entries, doc_score) = self.scan_documentation();
+        self.health_panel = Some(HealthPanel {
+            tab: self.last_health_tab,
+            god_files,
+            god_selected: 0,
+            god_scroll: 0,
+            doc_entries,
+            doc_selected: 0,
+            doc_scroll: 0,
+            doc_score,
+            module_style_dialog: None,
+        });
+    }
+
     /// Open checked god files as viewer tabs. Fills available tab slots
     /// (up to the 12-tab max), skipping files that are already open in a tab.
     /// Closes the panel and focuses the Viewer pane on the last opened tab.

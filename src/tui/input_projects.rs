@@ -62,7 +62,9 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
                         panel.error = Some("Not a git repository".to_string());
                     }
                 } else {
-                    app.switch_project(path);
+                    // Deferred project switch — show loading while git ops + session reload run
+                    app.loading_indicator = Some("Switching project…".into());
+                    app.deferred_action = Some(crate::app::DeferredAction::SwitchProject { path });
                 }
             }
         }

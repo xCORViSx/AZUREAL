@@ -297,24 +297,25 @@ fn handle_session_filter_input(key: event::KeyEvent, app: &mut App) -> Result<()
     Ok(())
 }
 
-/// Load the session file at session_list_selected (scoped to current worktree)
+/// Load the session file at session_list_selected (scoped to current worktree).
+/// Uses two-phase deferred draw: sets loading indicator → draw renders popup →
+/// actual session parse runs on next frame via DeferredAction::LoadSession.
 fn select_session_at_row(app: &mut App) {
     let Some(session) = app.current_session() else { return };
     let branch = session.branch_name.clone();
     let file_count = app.session_files.get(&branch).map(|f| f.len()).unwrap_or(0);
     if app.session_list_selected < file_count {
-        app.save_current_terminal();
-        app.select_session_file(&branch, app.session_list_selected);
-        app.show_session_list = false;
-        app.session_filter.clear();
-        app.session_filter_active = false;
-        app.session_content_search = false;
-        app.session_search_results.clear();
-        app.invalidate_sidebar();
+        app.loading_indicator = Some("Loading session…".into());
+        app.deferred_action = Some(crate::app::DeferredAction::LoadSession {
+            branch,
+            idx: app.session_list_selected,
+        });
     }
 }
 
-/// Load the session from the selected content search result (current worktree only)
+/// Load the session from the selected content search result (current worktree only).
+/// Same deferred pattern as select_session_at_row — resolves session ID → file index,
+/// then defers the actual parse via DeferredAction::LoadSession.
 fn select_content_search_result(app: &mut App) {
     let sel = app.session_list_selected;
     if sel >= app.session_search_results.len() { return; }
@@ -324,14 +325,11 @@ fn select_content_search_result(app: &mut App) {
     let branch = session.branch_name.clone();
     if let Some(files) = app.session_files.get(&branch) {
         if let Some(file_idx) = files.iter().position(|(sid, _, _)| sid == session_id) {
-            app.save_current_terminal();
-            app.select_session_file(&branch, file_idx);
-            app.show_session_list = false;
-            app.session_filter.clear();
-            app.session_filter_active = false;
-            app.session_content_search = false;
-            app.session_search_results.clear();
-            app.invalidate_sidebar();
+            app.loading_indicator = Some("Loading session…".into());
+            app.deferred_action = Some(crate::app::DeferredAction::LoadSession {
+                branch,
+                idx: file_idx,
+            });
         }
     }
 }

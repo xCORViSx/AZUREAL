@@ -334,6 +334,12 @@ pub async fn run_app(
                     app.dump_debug_output(&name);
                     app.draw_pending = true;
                 }
+                // Generic deferred action: loading indicator just rendered, now do the work.
+                if let Some(action) = app.deferred_action.take() {
+                    app.loading_indicator = None;
+                    actions::execute_deferred_action(app, action);
+                    app.draw_pending = true;
+                }
             }
         }
 

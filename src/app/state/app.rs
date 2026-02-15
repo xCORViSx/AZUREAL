@@ -19,6 +19,23 @@ use crate::wizard::CreationWizard;
 use super::ClaudeEvent;
 use super::DisplayEvent;
 
+/// Action to run after a loading indicator popup renders on-screen.
+/// Part of the two-phase deferred draw pattern: set the loading message +
+/// deferred action → draw renders the popup → event loop executes the action
+/// after draw completes → triggers another draw to show the result.
+pub enum DeferredAction {
+    /// Load a session file from the session list overlay
+    LoadSession { branch: String, idx: usize },
+    /// Load a file into the viewer pane (from FileTree Enter/click)
+    LoadFile { path: PathBuf },
+    /// Open the Worktree Health panel (scans god files + documentation)
+    OpenHealthPanel,
+    /// Switch to a different project (kills processes, reloads everything)
+    SwitchProject { path: PathBuf },
+    /// Rescan god files + documentation after scope mode changes
+    RescanGodFileScope { dirs: Vec<String> },
+}
+
 /// Application state
 pub struct App {
     pub project: Option<Project>,
@@ -383,6 +400,11 @@ pub struct App {
     pub show_session_list: bool,
     /// True while session list message counts are being computed (shows loading dialog)
     pub session_list_loading: bool,
+    /// Generic loading indicator — Some(message) shows a centered popup while
+    /// a deferred action runs on the next frame (two-phase deferred draw pattern)
+    pub loading_indicator: Option<String>,
+    /// Action to execute after the loading indicator has rendered on-screen
+    pub deferred_action: Option<DeferredAction>,
     /// Selected index in session list overlay
     pub session_list_selected: usize,
     /// Scroll offset in session list overlay
@@ -622,6 +644,8 @@ impl App {
             git_actions_panel: None,
             show_session_list: false,
             session_list_loading: false,
+            loading_indicator: None,
+            deferred_action: None,
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),

@@ -129,18 +129,23 @@ impl App {
         )
     }
 
-    /// Load selected file into viewer
+    /// Load selected file into viewer (from FileTree selection)
     pub fn load_file_into_viewer(&mut self) {
         let Some(idx) = self.file_tree_selected else { return };
         let Some(entry) = self.file_tree_entries.get(idx) else { return };
         if entry.is_dir { return; }
-        // Clone path early so the borrow on file_tree_entries is dropped
-        // before we call exit_viewer_edit_mode (needs &mut self)
         let path = entry.path.clone();
+        self.load_file_by_path(&path);
+    }
 
+    /// Load a file by path into the viewer pane. Handles both image files
+    /// (decoded via terminal graphics protocol) and text files (syntax-highlighted).
+    /// Called directly or via deferred action after a loading indicator renders.
+    pub fn load_file_by_path(&mut self, path: &std::path::Path) {
         if self.viewer_edit_mode {
             self.exit_viewer_edit_mode();
         }
+        let path = path.to_path_buf();
 
         // Image files get decoded and rendered via terminal graphics protocol
         if Self::is_image_extension(&path) {
@@ -161,7 +166,6 @@ impl App {
                             self.viewer_lines_dirty = false;
                             return;
                         }
-                        // Picker failed — fall through to show error
                         self.viewer_content = Some("Error: terminal does not support image rendering".into());
                         self.viewer_path = Some(path);
                         self.viewer_mode = ViewerMode::File;
