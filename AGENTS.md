@@ -341,7 +341,7 @@ fn refresh_session_events(&mut self) {
 ```
 
 **Streaming vs Polling (Dual-Source Prevention):**
-During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). **Important:** stream-json stdout does NOT include `user` type events — only system/assistant/result/progress. The live stream path clears `pending_user_message` when the **first assistant/tool event** arrives (proof Claude received the prompt), and **immediately trims the stale pending bubble from `rendered_lines_cache`** using `rendered_content_line_count`. When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
+During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). **Important:** stream-json stdout does NOT include `user` type events — only system/assistant/result/progress. User messages are pushed as real `DisplayEvent::UserMessage` events into `display_events` at prompt submit time (`add_user_message()` in `output.rs`), ensuring they render immediately and persist throughout the conversation. The `pending_user_message` field is kept only as a dedup marker — cleared by `load.rs` when the session file's authoritative `UserMessage` appears during re-parse. When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
 
 **Files:**
 - `src/watcher.rs` - `FileWatcher` thread, `WatchEvent`/`WatchCommand` types, noise filtering
@@ -356,7 +356,7 @@ During active Claude streaming, events are added to `display_events` by the live
 - `file_watcher: Option<FileWatcher>` — background watcher thread handle (None = fallback to polling)
 - `file_tree_refresh_pending: bool` — set by WorktreeChanged, cleared after debounced refresh
 - `worktree_last_notify: Instant` — timestamp of last worktree change (for 500ms debounce)
-- `rendered_content_line_count: usize` — line count in cache BEFORE pending bubble was appended (used to trim stale bubble on incremental renders)
+- `rendered_content_line_count: usize` — total line count of rendered cache (equals `rendered_lines_cache.len()`)
 - `session_file_parse_offset: u64` — byte offset after last successful parse
 - `rendered_events_count: usize` — how many events were rendered into current cache
 - `rendered_events_start: usize` — start index for deferred render (>0 means early events skipped)
