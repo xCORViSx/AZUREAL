@@ -34,6 +34,13 @@ impl App {
     /// `pending_user_message` — this is ONLY used as a dedup marker so the
     /// full re-parse on Claude exit can detect and skip the duplicate.
     pub fn add_user_message(&mut self, content: String) {
+        // Compaction summaries are internal — show banner, not raw text
+        if content.starts_with("This session is being continued from a previous conversation") {
+            self.display_events.push(DisplayEvent::Compacting);
+            self.invalidate_render_cache();
+            self.output_scroll = usize::MAX;
+            return;
+        }
         // Push a real event so it renders immediately and persists through
         // the entire conversation. stream-json stdout never emits user events,
         // so without this the message would be invisible until Claude exits

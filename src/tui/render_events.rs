@@ -130,6 +130,15 @@ fn render_display_events_with_state(
                 render_plan(&mut lines, name, content, w);
             }
             DisplayEvent::UserMessage { content, .. } => {
+                // Safety net: if a compaction summary slipped through parsing,
+                // render the banner instead of the raw multi-page summary text
+                if content.starts_with("This session is being continued from a previous conversation") {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled(" ⏳ Compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                    ]).alignment(Alignment::Center));
+                    continue;
+                }
                 saw_content = true;
                 last_hook = None;
                 if saw_exit_plan_mode { saw_user_after_exit_plan = true; }

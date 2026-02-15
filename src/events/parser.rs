@@ -145,6 +145,19 @@ impl EventParser {
         let Some(content_val) = message.get("content") else { return events };
 
         if let Some(content) = content_val.as_str() {
+            // Compaction summary — show banner instead of raw text
+            if content.starts_with("This session is being continued from a previous conversation") {
+                events.push(DisplayEvent::Compacting);
+                return events;
+            }
+            // local-command-stdout (e.g., /compact output) — filter or show Compacted banner
+            if content.contains("<local-command-stdout>") {
+                if content.contains("Compacted") { events.push(DisplayEvent::Compacted); }
+                return events;
+            }
+            // local-command-caveat — filter entirely
+            if content.contains("<local-command-caveat>") { return events; }
+
             events.extend(Self::extract_hooks_from_content(content));
             events.push(DisplayEvent::UserMessage {
                 uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
