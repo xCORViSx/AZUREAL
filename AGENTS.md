@@ -1402,8 +1402,8 @@ azureal
 | Key | Action |
 |-----|--------|
 | `j/k` | Scroll line |
-| `↑/↓` | Jump to prev/next user prompt |
-| `Shift+↑/↓` | Jump to prev/next message (incl. assistant) |
+| `↑/↓` | Jump to prev/next message (user + assistant) |
+| `Shift+↑/↓` | Jump to prev/next user prompt only |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` | Jump to top/bottom |
 | `s` | Toggle Session list overlay (browse all session files) |
