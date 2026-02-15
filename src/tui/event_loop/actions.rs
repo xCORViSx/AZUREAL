@@ -391,17 +391,19 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
 
         // --- Output/Convo ---
+        // Plain Up/Down: step through ALL bubbles (user + assistant)
         Action::JumpNextBubble => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_next_bubble(false); }
-        }
-        Action::JumpPrevBubble => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_prev_bubble(false); }
-        }
-        Action::JumpNextMessage => {
             if app.view_mode == crate::app::ViewMode::Output { app.jump_to_next_bubble(true); }
         }
-        Action::JumpPrevMessage => {
+        Action::JumpPrevBubble => {
             if app.view_mode == crate::app::ViewMode::Output { app.jump_to_prev_bubble(true); }
+        }
+        // Shift+Up/Down: jump to user prompts only (skip assistant responses)
+        Action::JumpNextMessage => {
+            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_next_bubble(false); }
+        }
+        Action::JumpPrevMessage => {
+            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_prev_bubble(false); }
         }
         Action::SearchConvo => {
             // Activate the convo search bar — clears previous query and matches

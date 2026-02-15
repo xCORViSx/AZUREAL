@@ -124,37 +124,43 @@ impl App {
         self.viewer_scroll = usize::MAX;
     }
 
-    /// Jump to the next message bubble in convo pane
-    /// If include_assistant is true, jumps to both UserMessage and AssistantText bubbles
-    /// Otherwise, only jumps to UserMessage bubbles
+    /// Jump to the next message bubble in convo pane.
+    /// If include_assistant is true, jumps to ALL bubbles (user + assistant).
+    /// Otherwise, only jumps to UserMessage bubbles (user prompts).
+    /// Positions viewport so the bubble header sits 2 lines from top (showing the spacer).
     pub fn jump_to_next_bubble(&mut self, include_assistant: bool) {
         if self.output_scroll == usize::MAX {
             self.output_scroll = self.output_natural_bottom();
         }
         let current = self.output_scroll;
-        // Find next bubble position after current scroll
+        // Bubble positions store the header line index. We display at line_idx - 2
+        // (showing the empty spacer lines above). Find next bubble whose display
+        // position (line_idx - 2) is strictly after current scroll.
         for &(line_idx, is_user) in &self.message_bubble_positions {
-            if line_idx > current && (include_assistant || is_user) {
-                self.output_scroll = line_idx.min(self.output_max_scroll());
+            let display_pos = line_idx.saturating_sub(2);
+            if display_pos > current && (include_assistant || is_user) {
+                self.output_scroll = display_pos.min(self.output_max_scroll());
                 return;
             }
         }
-        // No more bubbles, scroll to bottom
-        self.output_scroll = self.output_max_scroll();
+        // No more bubbles — re-engage auto-follow sentinel
+        self.output_scroll = usize::MAX;
     }
 
-    /// Jump to the previous message bubble in convo pane
-    /// If include_assistant is true, jumps to both UserMessage and AssistantText bubbles
-    /// Otherwise, only jumps to UserMessage bubbles
+    /// Jump to the previous message bubble in convo pane.
+    /// If include_assistant is true, jumps to ALL bubbles (user + assistant).
+    /// Otherwise, only jumps to UserMessage bubbles (user prompts).
+    /// Positions viewport so the bubble header sits 2 lines from top (showing the spacer).
     pub fn jump_to_prev_bubble(&mut self, include_assistant: bool) {
         if self.output_scroll == usize::MAX {
             self.output_scroll = self.output_natural_bottom();
         }
         let current = self.output_scroll;
-        // Find previous bubble position before current scroll (iterate in reverse)
+        // Find previous bubble whose display position is strictly before current scroll
         for &(line_idx, is_user) in self.message_bubble_positions.iter().rev() {
-            if line_idx < current && (include_assistant || is_user) {
-                self.output_scroll = line_idx;
+            let display_pos = line_idx.saturating_sub(2);
+            if display_pos < current && (include_assistant || is_user) {
+                self.output_scroll = display_pos;
                 return;
             }
         }
