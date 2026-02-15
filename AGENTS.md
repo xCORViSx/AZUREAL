@@ -16,6 +16,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
 - **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts
+- **Worktree-local** `<worktree_path>/.azureal/azufig.toml` — per-worktree git settings (`[git]` section with `auto-rebase = "yes"/"no"`). Each worktree can have its own azufig for worktree-specific config; created on demand when a worktree-level setting is toggled
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -463,7 +464,7 @@ pub fn list_claude_sessions(...) -> Vec<(String, PathBuf, String)> {
 // ❌ WRONG - Rebuilds ALL sidebar ListItems on EVERY FRAME
 fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     let mut items: Vec<ListItem> = Vec::new();
-    for session in &app.sessions { ... }  // O(sessions) per frame
+    for wt in &app.worktrees { ... }  // O(worktrees) per frame
 }
 
 // ✅ CORRECT - Cache sidebar items, only rebuild when state changes
@@ -477,10 +478,10 @@ let sidebar = List::new(app.sidebar_cache.clone());  // Cheap clone of cached it
 
 **Files:**
 - `src/tui/draw_sidebar.rs` uses `app.sidebar_cache`
-- Call `app.invalidate_sidebar()` when sessions, selection, or expansion changes:
+- Call `app.invalidate_sidebar()` when worktrees, selection, or expansion changes:
   - `src/app/state/sessions.rs` - selection, expansion, file navigation
   - `src/app/state/claude.rs` - running_sessions changes
-  - `src/app/state/load.rs` - sessions list changes
+  - `src/app/state/load.rs` - worktrees list changes
 
 ### Performance Checklist for PRs
 
@@ -907,7 +908,7 @@ Azureal reads all data at runtime without persisting anything:
 - **Live polling**: Session file is continuously polled for changes; output updates in real-time
 - **Hooks**: Extracted from `system-reminder` tags embedded in Claude's session files (no separate storage)
 
-Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_sessions()` in `src/app/state.rs`
+Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_worktrees()` in `src/app/state/load.rs`
 
 **Fixed Bug: tool_use ID Collision**
 Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19 would return "tool_use ids must be unique" error (GitHub issues #20508, #20527, #13124).
@@ -984,7 +985,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 
 **Panel Layout:**
 - Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
-- Actions section: 5 git operations with single-key shortcuts, navigable with j/k
+- Actions section: 6 git operations with single-key shortcuts, navigable with j/k
 - Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
 - Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
@@ -995,6 +996,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - `f` / Enter on index 2 — Fetch all remotes (`Git::fetch()`)
 - `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
 - `P` / Enter on index 4 — Push (`Git::push()`)
+- `A` / Enter on index 5 — Auto-rebase toggle (see below)
 
 **File list (when file list focused):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
@@ -1007,11 +1009,14 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - `Esc` — close panel
 - Click outside — dismiss (mouse.rs)
 
-**Data flow:** On open, `open_git_actions_panel()` reads `current_session().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+**Auto-rebase toggle:**
+Pressing `A` (Shift+A) or Enter on index 5 toggles automatic rebase-on-Claude-exit. When toggled No→Yes, a scope picker dialog appears (`j/k` navigate, Enter confirms, Esc cancels) offering "This worktree" or "All worktrees". Toggling Yes→No disables immediately (no picker). The action row displays a `[Yes]` (green) or `[No]` (dim gray) badge. State persisted to the **worktree's own** `.azureal/azufig.toml` `[git]` section as `auto-rebase = "yes"` or `auto-rebase = "no"`. "All worktrees" iterates `app.worktrees` and writes to each worktree's config individually — no sentinel keys, each worktree gets its own config file edited directly. On Claude exit, `auto_rebase_on_exit()` reads the worktree's azufig and runs `Git::rebase_onto_main()` if enabled (skipped on main branch; result shown as status message).
+
+**Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. Checks `is_autorebase_enabled(&wt_path)` to set initial `autorebase_on` state. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
 **Data flow (merge-to-main):** `exec_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::merge_into_main(repo_root, branch)`. The merge runs from the repo root — no checkout needed because the repo root IS on main. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`), `src/app/types.rs` (GitActionsPanel with `repo_root` field, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array, `lookup_git_action()`, hint generators, `G` in GLOBAL)
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; auto-rebase toggle + scope picker writes to each worktree's azufig), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`, Yes/No badge, scope picker overlay), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `autorebase_on`, `autorebase_scope` fields, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array (15 entries), `lookup_git_action()`, hint generators, `G` in GLOBAL), `src/tui/event_loop/claude_events.rs` (`auto_rebase_on_exit()` reads worktree-local azufig), `src/azufig.rs` (`[git]` section with `is_autorebase_enabled(worktree_path)` and `set_autorebase(worktree_path, bool)`)
 
 ### Rebase Support
 
@@ -1152,7 +1157,7 @@ azureal/
 │   │   ├── state/          # State submodules
 │   │   │   ├── app.rs      # App struct definition + new(); includes `screen_height` (actual terminal window rows, updated on startup/resize) used for modal page-scroll calculations
 │   │   │   ├── load.rs     # Session loading and discovery
-│   │   │   ├── sessions.rs # Session navigation and CRUD
+│   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive/rebase
 │   │   │   ├── output.rs   # Output processing
 │   │   │   ├── scroll.rs   # Scroll operations
 │   │   │   ├── claude.rs   # Claude session handling
@@ -1167,7 +1172,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, SidebarRowAction, FileTreeAction, ProjectsPanel, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, WorktreeAction, SidebarRowAction, FileTreeAction, ProjectsPanel, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
@@ -1230,7 +1235,7 @@ azureal/
 │   ├── cli.rs              # CLI argument parsing (clap definitions)
 │   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence (reads from azufig)
 │   ├── main.rs             # Entry point
-│   ├── models.rs           # Domain models (Session, Project, etc.)
+│   ├── models.rs           # Domain models (Worktree, WorktreeStatus, Project, RebaseStatus)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
 │   ├── syntax.rs           # Syntax highlighting for diffs
 │   ├── watcher.rs          # Filesystem watcher (notify crate — kqueue/inotify/ReadDirectoryChangesW)
@@ -1262,7 +1267,7 @@ azureal/
 - [x] Token usage percentage on Convo pane title
 - [x] TodoWrite sticky widget (persistent checkbox list at bottom of Convo pane)
 - [x] AskUserQuestion options box (numbered options with context-aware response handling)
-- [ ] Auto-rebase hooks when main is ahead
+- [x] Auto-rebase on Claude exit (toggle from Git panel, per-worktree or all-worktrees, persisted to each worktree's own azufig.toml `[git]` section)
 - [ ] Session templates
 - [ ] Per-project configuration
 - [ ] Theme customization
