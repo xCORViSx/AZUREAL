@@ -145,6 +145,12 @@ pub enum SessionCommands {
         session: String,
     },
 
+    /// Unarchive a session (recreate worktree from preserved branch)
+    Unarchive {
+        /// Session ID or name
+        session: String,
+    },
+
     /// Resume a stopped or waiting session
     Resume {
         /// Session ID or name

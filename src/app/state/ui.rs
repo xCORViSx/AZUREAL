@@ -312,7 +312,7 @@ impl App {
     pub fn open_context_menu(&mut self) {
         if let Some(session) = self.current_session() {
             let status = session.status(self.is_session_running(&session.branch_name));
-            let actions = SessionAction::available_for_status(status);
+            let actions = SessionAction::available_for_status(status, session.archived);
             if !actions.is_empty() { self.context_menu = Some(ContextMenu { actions, selected: 0 }); }
         }
     }

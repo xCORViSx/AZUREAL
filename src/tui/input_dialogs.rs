@@ -57,6 +57,11 @@ fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: Sessio
                 app.set_status(format!("Failed to archive: {}", e));
             }
         }
+        SessionAction::Unarchive => {
+            if let Err(e) = app.unarchive_current_session() {
+                app.set_status(format!("Failed to unarchive: {}", e));
+            }
+        }
         SessionAction::Delete => {
             app.set_status("Delete action not yet implemented - use CLI: azureal session delete");
         }

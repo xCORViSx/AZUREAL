@@ -138,6 +138,7 @@ pub enum Action {
     RunCommand,
     AddRunCommand,
     ArchiveWorktree,
+    UnarchiveWorktree,
     StartResume,
     OpenHealth,
     OpenGitActions,
@@ -360,7 +361,7 @@ pub static GLOBAL: [Keybinding; 12] = [
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 13] = [
+pub static WORKTREES: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
@@ -373,6 +374,7 @@ pub static WORKTREES: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('u')), "Unarchive worktree", Action::UnarchiveWorktree),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 

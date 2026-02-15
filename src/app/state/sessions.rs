@@ -155,6 +155,28 @@ impl App {
         Ok(())
     }
 
+    /// Restore an archived session by recreating its git worktree from the preserved branch
+    pub fn unarchive_current_session(&mut self) -> anyhow::Result<()> {
+        let session = self.current_session().ok_or_else(|| anyhow::anyhow!("No session selected"))?;
+        if !session.archived {
+            anyhow::bail!("Session is not archived");
+        }
+        let branch = session.branch_name.clone();
+        let worktree_name = session.name().to_string();
+        let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        let worktree_path = project.worktrees_dir().join(&worktree_name);
+        // Recreate worktree from the existing branch
+        Git::create_worktree_from_branch(&project.path, &worktree_path, &branch)?;
+        self.set_status(format!("Unarchived: {}", worktree_name));
+        self.refresh_sessions()?;
+        // Re-select the session (index may have shifted after refresh)
+        if let Some(idx) = self.sessions.iter().position(|s| s.branch_name == branch) {
+            self.selected_worktree = Some(idx);
+            self.load_session_output();
+        }
+        Ok(())
+    }
+
     pub fn rebase_current_session(&mut self) -> anyhow::Result<()> {
         if let Some(session) = self.current_session() {
             if let Some(ref wt_path) = session.worktree_path {

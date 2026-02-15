@@ -296,6 +296,11 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 app.set_status(format!("Failed to archive: {}", e));
             }
         }
+        Action::UnarchiveWorktree => {
+            if let Err(e) = app.unarchive_current_session() {
+                app.set_status(format!("Failed to unarchive: {}", e));
+            }
+        }
         Action::StartResume => {
             start_or_resume(app);
         }
@@ -777,18 +782,29 @@ fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     count
 }
 
-/// Start or resume a Claude session from worktrees Enter key
-/// Enter prompt mode for the selected worktree (Enter key in worktree list)
+/// Start or resume a Claude session from worktrees Enter key.
+/// If the session is archived, unarchive it first (recreate worktree), then enter prompt mode.
 fn start_or_resume(app: &mut App) {
     use crate::models::SessionStatus;
-    if let Some(session) = app.current_session() {
-        let status = session.status(app.is_session_running(&session.branch_name));
-        if matches!(status, SessionStatus::Pending | SessionStatus::Stopped
-            | SessionStatus::Completed | SessionStatus::Failed | SessionStatus::Waiting)
-        {
-            app.focus = Focus::Input;
-            app.prompt_mode = true;
-            app.set_status("Type your prompt and press Enter to send");
+    let Some(session) = app.current_session() else { return };
+    // Archived: unarchive first, then enter prompt mode
+    if session.archived {
+        match app.unarchive_current_session() {
+            Ok(()) => {
+                app.focus = Focus::Input;
+                app.prompt_mode = true;
+                app.set_status("Unarchived — type your prompt and press Enter to send");
+            }
+            Err(e) => app.set_status(format!("Failed to unarchive: {}", e)),
         }
+        return;
+    }
+    let status = session.status(app.is_session_running(&session.branch_name));
+    if matches!(status, SessionStatus::Pending | SessionStatus::Stopped
+        | SessionStatus::Completed | SessionStatus::Failed | SessionStatus::Waiting)
+    {
+        app.focus = Focus::Input;
+        app.prompt_mode = true;
+        app.set_status("Type your prompt and press Enter to send");
     }
 }

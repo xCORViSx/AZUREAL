@@ -100,6 +100,7 @@ pub enum SessionAction {
     Start,
     Stop,
     Archive,
+    Unarchive,
     Delete,
     ViewDiff,
     RebaseFromMain,
@@ -113,6 +114,7 @@ impl SessionAction {
             SessionAction::Start => "Start/Resume Session",
             SessionAction::Stop => "Stop Session",
             SessionAction::Archive => "Archive Session",
+            SessionAction::Unarchive => "Unarchive Session",
             SessionAction::Delete => "Delete Session",
             SessionAction::ViewDiff => "View Diff",
             SessionAction::RebaseFromMain => "Rebase from Main",
@@ -126,6 +128,7 @@ impl SessionAction {
             SessionAction::Start => "Enter",
             SessionAction::Stop => "s",
             SessionAction::Archive => "a",
+            SessionAction::Unarchive => "u",
             SessionAction::Delete => "D",
             SessionAction::ViewDiff => "d",
             SessionAction::RebaseFromMain => "r",
@@ -134,7 +137,14 @@ impl SessionAction {
         }
     }
 
-    pub fn available_for_status(status: SessionStatus) -> Vec<SessionAction> {
+    pub fn available_for_status(status: SessionStatus, archived: bool) -> Vec<SessionAction> {
+        // Archived sessions: only unarchive or delete (no worktree to operate on)
+        if archived {
+            return vec![
+                SessionAction::Unarchive,
+                SessionAction::Delete,
+            ];
+        }
         match status {
             SessionStatus::Pending | SessionStatus::Stopped | SessionStatus::Completed => vec![
                 SessionAction::Start,
