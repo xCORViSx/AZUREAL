@@ -713,7 +713,7 @@ pub fn prompt_command_title() -> (String, String, String) {
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:debug",
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output",
         p, t, g, h, help, tab, stab, cancel, quit, restart, debug
     );
     let label = " COMMAND ".to_string();

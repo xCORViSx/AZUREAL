@@ -30,7 +30,12 @@ impl App {
         crate::config::register_project(&repo_root);
 
         let main_branch = Git::get_main_branch(&repo_root)?;
-        self.project = Some(Project::from_path(repo_root, main_branch));
+        self.project = Some(Project::from_path(repo_root.clone(), main_branch));
+
+        // Load filetree hidden dirs from project azufig (persisted Options overlay state)
+        let az = crate::azufig::load_project_azufig(&repo_root);
+        self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
+
         self.load_sessions()?;
 
         Ok(())
@@ -418,19 +423,22 @@ impl App {
         if !found_ask { self.ask_user_questions_cache = None; }
     }
 
-    /// Dump debug output to .azureal/debug_output (triggered by Ctrl+Opt+Cmd+D)
+    /// Dump debug output to .azureal/debug-output[_name] (triggered by ⌃d)
     /// All user/assistant content is obfuscated so the file can be shared in bug reports
     /// without exposing sensitive project details. Tool names, event types, and structural
-    /// markers are preserved for diagnostic value.
-    pub fn dump_debug_output(&mut self) {
-        if let Err(e) = self.dump_debug_output_inner() {
+    /// markers are preserved for diagnostic value. Optional name suffix appended after underscore.
+    pub fn dump_debug_output(&mut self, name: &str) {
+        let suffix = name.trim();
+        if let Err(e) = self.dump_debug_output_inner(suffix) {
             self.set_status(format!("Debug dump failed: {}", e));
         } else {
-            self.set_status("Debug output saved to .azureal/debug_output");
+            let filename = if suffix.is_empty() { "debug-output".to_string() }
+                else { format!("debug-output_{}", suffix) };
+            self.set_status(format!("Debug output saved to .azureal/{}", filename));
         }
     }
 
-    fn dump_debug_output_inner(&self) -> anyhow::Result<()> {
+    fn dump_debug_output_inner(&self, name_suffix: &str) -> anyhow::Result<()> {
         use std::io::Write;
         use std::collections::HashMap;
         use crate::events::DisplayEvent;
@@ -520,7 +528,9 @@ impl App {
 
         let debug_dir = crate::config::ensure_project_data_dir()?
             .ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
-        let debug_path = debug_dir.join("debug_output");
+        let filename = if name_suffix.is_empty() { "debug-output".to_string() }
+            else { format!("debug-output_{}", name_suffix) };
+        let debug_path = debug_dir.join(&filename);
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header — safe metadata (no content leaked)

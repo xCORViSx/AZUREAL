@@ -329,6 +329,11 @@ pub async fn run_app(
                     actions::finish_session_list_load(app);
                     app.draw_pending = true;
                 }
+                // Deferred debug dump: "Saving..." dialog just rendered, now do the I/O.
+                if let Some(name) = app.debug_dump_saving.take() {
+                    app.dump_debug_output(&name);
+                    app.draw_pending = true;
+                }
             }
         }
 

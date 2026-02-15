@@ -11,7 +11,7 @@ use crate::app::types::FileTreeAction;
 use super::keybindings::{Action, KeyContext, lookup_action};
 
 /// Names matching the options overlay (same order as draw_file_tree.rs)
-const FT_OPTIONS: &[&str] = &[".git", ".claude", ".azureal", "worktrees", ".DS_Store"];
+const FT_OPTIONS: &[&str] = &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"];
 
 /// Handle keyboard input for the FileTree panel.
 /// ALL command keybindings are resolved by lookup_action() in event_loop.rs BEFORE
@@ -48,7 +48,7 @@ fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.file_tree_options_selected = app.file_tree_options_selected.checked_sub(1)
                 .unwrap_or(FT_OPTIONS.len() - 1);
         }
-        // Toggle the selected directory's hidden state
+        // Toggle the selected entry's hidden state and persist to azufig
         KeyCode::Char(' ') | KeyCode::Enter => {
             let name = FT_OPTIONS[app.file_tree_options_selected].to_string();
             if app.file_tree_hidden_dirs.contains(&name) {
@@ -57,6 +57,13 @@ fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 app.file_tree_hidden_dirs.insert(name);
             }
             app.refresh_file_tree();
+            // Persist to project azufig so toggles survive restarts
+            if let Some(ref project) = app.project {
+                let hidden: Vec<String> = app.file_tree_hidden_dirs.iter().cloned().collect();
+                crate::azufig::update_project_azufig(&project.path, |az| {
+                    az.filetree.hidden = hidden;
+                });
+            }
         }
         // Close options overlay
         KeyCode::Esc => {

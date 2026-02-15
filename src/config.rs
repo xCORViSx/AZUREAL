@@ -42,23 +42,34 @@ pub enum PermissionMode {
 
 
 impl Config {
+    /// Load config from the `[config]` section of global azufig.
     pub fn load() -> Result<Self> {
-        let config_path = config_file_path();
-        if config_path.exists() {
-            let content = std::fs::read_to_string(&config_path)
-                .context("Failed to read config file")?;
-            toml::from_str(&content).context("Failed to parse config file")
-        } else {
-            Ok(Config::default())
-        }
+        let az = crate::azufig::load_global_azufig();
+        Ok(Self {
+            anthropic_api_key: az.config.anthropic_api_key,
+            claude_executable: az.config.claude_executable,
+            default_permission_mode: match az.config.default_permission_mode.as_str() {
+                "approve" => PermissionMode::Approve,
+                "ask" => PermissionMode::Ask,
+                _ => PermissionMode::Ignore,
+            },
+            verbose: az.config.verbose,
+        })
     }
 
+    /// Save config to the `[config]` section of global azufig (load-modify-save).
     pub fn save(&self) -> Result<()> {
-        let config_path = config_file_path();
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
-        std::fs::write(&config_path, content)
-            .context("Failed to write config file")?;
+        let mode = match self.default_permission_mode {
+            PermissionMode::Approve => "approve",
+            PermissionMode::Ignore => "ignore",
+            PermissionMode::Ask => "ask",
+        };
+        crate::azufig::update_global_azufig(|az| {
+            az.config.anthropic_api_key = self.anthropic_api_key.clone();
+            az.config.claude_executable = self.claude_executable.clone();
+            az.config.default_permission_mode = mode.to_string();
+            az.config.verbose = self.verbose;
+        });
         Ok(())
     }
 
@@ -76,7 +87,7 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// Get project-specific Azureal data directory (.azureal/ in git root)
-/// Used for runcmds, debug_output, etc.
+/// Used for debug-output, etc.
 /// Returns None if not in a git repository
 pub fn project_data_dir() -> Option<PathBuf> {
     let output = std::process::Command::new("git")
@@ -194,11 +205,6 @@ pub struct ProjectEntry {
     pub display_name: String,
 }
 
-/// Path to the projects registry file
-fn projects_file_path() -> PathBuf {
-    config_dir().join("projects")
-}
-
 /// Expand ~ to home dir and canonicalize if the path exists on disk
 fn resolve_path(raw: &str) -> PathBuf {
     let expanded = if let Some(rest) = raw.strip_prefix("~/") {
@@ -221,42 +227,31 @@ pub fn display_path(path: &std::path::Path) -> String {
     path.display().to_string()
 }
 
-/// Load all registered projects from ~/.azureal/projects
-/// Format per line: `/path/to/repo` or `/path/to/repo|Display Name`
-/// Lines starting with # are comments. Empty lines skipped.
+/// Load all registered projects from `[projects]` in global azufig.
 /// Validates each entry: directories that don't exist or aren't git repos
-/// are pruned from the file automatically.
+/// are pruned automatically. Format: display_name = "~/path"
 pub fn load_projects() -> Vec<ProjectEntry> {
-    let path = projects_file_path();
-    let Ok(content) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let az = crate::azufig::load_global_azufig();
     let mut entries = Vec::new();
     let mut pruned = false;
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
-        let (raw_path, name) = if let Some((p, n)) = line.split_once('|') {
-            (p.trim(), Some(n.trim().to_string()))
-        } else {
-            (line, None)
-        };
+    for (name, raw_path) in &az.projects {
         let resolved = resolve_path(raw_path);
-        // Skip entries whose directory is gone or is no longer a git repo
         if !resolved.exists() || !crate::git::Git::is_git_repo(&resolved) {
             pruned = true;
             continue;
         }
-        let display_name = name.unwrap_or_else(|| {
-            resolved.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| raw_path.to_string())
-        });
+        let display_name = if name.is_empty() {
+            resolved.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| raw_path.clone())
+        } else {
+            name.clone()
+        };
         entries.push(ProjectEntry { path: resolved, display_name });
     }
-    // Write back cleaned list so stale entries don't persist
     if pruned { save_projects(&entries); }
     entries
 }
 
 /// Look up the display name for a repo path from projects.
-/// Returns None if the path isn't registered.
 pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
     let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     load_projects().into_iter()
@@ -264,20 +259,14 @@ pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
         .map(|e| e.display_name)
 }
 
-/// Save the project list back to ~/.azureal/projects
+/// Save the project list to `[projects]` in global azufig (load-modify-save).
+/// Format: display_name = "~/path"
 pub fn save_projects(entries: &[ProjectEntry]) {
-    let path = projects_file_path();
-    let content: String = entries.iter().map(|e| {
-        let short = display_path(&e.path);
-        let derived = e.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-        // Only write |name if it differs from the auto-derived name
-        if e.display_name != derived {
-            format!("{}|{}", short, e.display_name)
-        } else {
-            short
-        }
-    }).collect::<Vec<_>>().join("\n");
-    let _ = std::fs::write(&path, if content.is_empty() { content } else { content + "\n" });
+    crate::azufig::update_global_azufig(|az| {
+        az.projects = entries.iter()
+            .map(|e| (e.display_name.clone(), display_path(&e.path)))
+            .collect();
+    });
 }
 
 /// Auto-register a project path if it isn't already in projects.
@@ -287,7 +276,6 @@ pub fn register_project(repo_path: &std::path::Path) {
     let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     let mut entries = load_projects();
     if entries.iter().any(|e| e.path == canonical) { return; }
-    // Try extracting repo name from git remote origin URL first
     let display_name = repo_name_from_origin(&canonical)
         .unwrap_or_else(|| canonical.file_name()
             .map(|f| f.to_string_lossy().to_string())

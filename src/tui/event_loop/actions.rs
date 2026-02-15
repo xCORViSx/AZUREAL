@@ -65,6 +65,24 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     // FileTree options overlay: intercept all keys before keybinding resolution
     if app.file_tree_options_mode { return handle_file_tree_input(key, app); }
 
+    // Debug dump naming dialog: text input for optional dump file suffix
+    if app.debug_dump_naming.is_some() {
+        match key.code {
+            KeyCode::Enter => {
+                // Transition to "saving" state — draw shows the dialog, dump runs next frame
+                let name = app.debug_dump_naming.take().unwrap_or_default();
+                app.debug_dump_saving = Some(name);
+            }
+            KeyCode::Esc => { app.debug_dump_naming = None; }
+            KeyCode::Backspace => { if let Some(ref mut s) = app.debug_dump_naming { s.pop(); } }
+            KeyCode::Char(c) if !key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                if let Some(ref mut s) = app.debug_dump_naming { s.push(c); }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Convo search modal: typing search text bypasses keybinding system
     if app.convo_search_active { return handle_output_input(key, app); }
 
@@ -116,7 +134,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         // --- Global actions ---
         Action::Quit => { app.should_quit = true; }
         Action::Restart => { app.should_restart = true; app.should_quit = true; }
-        Action::DumpDebug => { app.dump_debug_output(); }
+        Action::DumpDebug => { app.debug_dump_naming = Some(String::new()); }
         Action::CancelClaude => { app.cancel_current_claude(); }
         Action::CopySelection => {
             // Copy from whichever pane has an active selection

@@ -199,6 +199,10 @@ pub struct App {
     pub output_viewport_anim_tick: u64,
     /// Title string corresponding to the cached viewport
     pub output_viewport_title: String,
+    /// Debug dump naming input — Some(text) means the naming dialog is open
+    pub debug_dump_naming: Option<String>,
+    /// Debug dump saving — Some(name) means "Saving..." dialog is shown, dump runs next frame
+    pub debug_dump_saving: Option<String>,
     /// Total lines in last parsed session file
     pub parse_total_lines: usize,
     /// Parse errors in last parsed session file
@@ -533,6 +537,8 @@ impl App {
             output_viewport_scroll: usize::MAX,
             output_viewport_anim_tick: u64::MAX,
             output_viewport_title: String::new(),
+            debug_dump_naming: None,
+            debug_dump_saving: None,
             parse_total_lines: 0,
             parse_errors: 0,
             assistant_total: 0,
@@ -605,7 +611,7 @@ impl App {
             stt_recording: false,
             stt_transcribing: false,
             nerd_fonts: true,
-            file_tree_hidden_dirs: HashSet::from([".git".into(), ".claude".into(), ".azureal".into(), "worktrees".into(), ".DS_Store".into()]),
+            file_tree_hidden_dirs: HashSet::new(), // populated from azufig in load()
             file_tree_options_mode: false,
             file_tree_options_selected: 0,
             show_file_tree: false,

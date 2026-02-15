@@ -1,7 +1,7 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
 use crate::app::types::{BranchDialog, ContextMenu, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SessionAction, ViewMode};
-use crate::config::{config_dir, ensure_config_dir, ensure_project_data_dir, load_projects, project_data_dir};
+use crate::config::load_projects;
 use crate::git::Git;
 use crate::models::{Project, RebaseStatus};
 
@@ -382,54 +382,42 @@ impl App {
         self.set_status(format!("Running: {}", name));
     }
 
-    /// Save run commands — globals to ~/.azureal/, locals to .azureal/
+    /// Save run commands — globals to `[runcmds]` in global azufig,
+    /// locals to `[runcmds]` in project azufig (load-modify-save).
+    /// Format: N_name = "command" where N is the 1-based position (quick-select number)
     pub fn save_run_commands(&self) -> anyhow::Result<()> {
-        // Split by scope
         let (globals, locals): (Vec<_>, Vec<_>) = self.run_commands.iter().partition(|c| c.global);
 
-        // Write global run commands to ~/.azureal/runcmds
-        let _ = ensure_config_dir();
-        let global_path = config_dir().join("runcmds");
-        let global_json: Vec<_> = globals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
-        std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
+        // Write global run commands — enumerate with 1-based prefix to preserve order
+        crate::azufig::update_global_azufig(|az| {
+            az.runcmds = globals.iter().enumerate()
+                .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone())).collect();
+        });
 
-        // Write project-local run commands to .azureal/runcmds
-        if let Some(dir) = ensure_project_data_dir()? {
-            let project_path = dir.join("runcmds");
-            let project_json: Vec<_> = locals.iter().map(|c| serde_json::json!({"name": c.name, "command": c.command})).collect();
-            std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
+        // Write project-local run commands — same numbering (continues from globals in the Vec,
+        // but each scope has its own 1-based numbering)
+        if let Some(ref project) = self.project {
+            crate::azufig::update_project_azufig(&project.path, |az| {
+                az.runcmds = locals.iter().enumerate()
+                    .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone())).collect();
+            });
         }
         Ok(())
     }
 
-    /// Load run commands — merges globals (~/.azureal/) then project-locals (.azureal/)
+    /// Load run commands — merges globals then project-locals from azufig.
+    /// Format: N_name = "command" — sorted by N to restore saved order, prefix stripped
     pub fn load_run_commands(&mut self) {
         self.run_commands.clear();
 
-        // Load global run commands from ~/.azureal/runcmds
-        let global_path = config_dir().join("runcmds");
-        if let Ok(content) = std::fs::read_to_string(&global_path) {
-            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                self.run_commands.extend(arr.iter().filter_map(|v| {
-                    let name = v.get("name")?.as_str()?.to_string();
-                    let command = v.get("command")?.as_str()?.to_string();
-                    Some(RunCommand::new(name, command, true))
-                }));
-            }
-        }
+        // Load global run commands, sorted by numeric prefix
+        let global = crate::azufig::load_global_azufig();
+        self.run_commands.extend(load_ordered_map(&global.runcmds, true));
 
-        // Load project-local run commands from .azureal/runcmds
-        if let Some(dir) = project_data_dir() {
-            let project_path = dir.join("runcmds");
-            if let Ok(content) = std::fs::read_to_string(&project_path) {
-                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                    self.run_commands.extend(arr.iter().filter_map(|v| {
-                        let name = v.get("name")?.as_str()?.to_string();
-                        let command = v.get("command")?.as_str()?.to_string();
-                        Some(RunCommand::new(name, command, false))
-                    }));
-                }
-            }
+        // Load project-local run commands, sorted by numeric prefix
+        if let Some(ref project) = self.project {
+            let local = crate::azufig::load_project_azufig(&project.path);
+            self.run_commands.extend(load_ordered_map(&local.runcmds, false));
         }
     }
 
@@ -455,56 +443,42 @@ impl App {
         self.set_status(format!("Loaded preset: {}", preset.name));
     }
 
-    /// Save preset prompts — globals to ~/.azureal/, project-locals to .azureal/
-    /// Each file stores only its own scope; both are always overwritten on save.
+    /// Save preset prompts — globals to `[presetprompts]` in global azufig,
+    /// locals to `[presetprompts]` in project azufig (load-modify-save).
+    /// Format: N_name = "prompt text" where N is the 1-based position
     pub fn save_preset_prompts(&self) -> anyhow::Result<()> {
-        // Split presets by scope
         let (globals, locals): (Vec<_>, Vec<_>) = self.preset_prompts.iter()
             .partition(|p| p.global);
 
-        // Write global presets to ~/.azureal/presetprompts
-        let _ = ensure_config_dir();
-        let global_path = config_dir().join("presetprompts");
-        let global_json: Vec<_> = globals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
-        std::fs::write(&global_path, serde_json::to_string_pretty(&global_json)?)?;
+        // Write global presets — enumerate with 1-based prefix to preserve order
+        crate::azufig::update_global_azufig(|az| {
+            az.presetprompts = globals.iter().enumerate()
+                .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone())).collect();
+        });
 
-        // Write project presets to .azureal/presetprompts
-        if let Some(dir) = ensure_project_data_dir()? {
-            let project_path = dir.join("presetprompts");
-            let project_json: Vec<_> = locals.iter().map(|p| serde_json::json!({"name": p.name, "prompt": p.prompt})).collect();
-            std::fs::write(&project_path, serde_json::to_string_pretty(&project_json)?)?;
+        // Write project-local presets
+        if let Some(ref project) = self.project {
+            crate::azufig::update_project_azufig(&project.path, |az| {
+                az.presetprompts = locals.iter().enumerate()
+                    .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone())).collect();
+            });
         }
         Ok(())
     }
 
-    /// Load preset prompts — merges globals (~/.azureal/) then project-locals (.azureal/)
+    /// Load preset prompts — merges globals then project-locals from azufig.
+    /// Format: N_name = "prompt text" — sorted by N to restore saved order, prefix stripped
     pub fn load_preset_prompts(&mut self) {
         self.preset_prompts.clear();
 
-        // Load global presets from ~/.azureal/presetprompts
-        let global_path = config_dir().join("presetprompts");
-        if let Ok(content) = std::fs::read_to_string(&global_path) {
-            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                self.preset_prompts.extend(arr.iter().filter_map(|v| {
-                    let name = v.get("name")?.as_str()?.to_string();
-                    let prompt = v.get("prompt")?.as_str()?.to_string();
-                    Some(PresetPrompt::new(name, prompt, true))
-                }));
-            }
-        }
+        // Load global presets, sorted by numeric prefix
+        let global = crate::azufig::load_global_azufig();
+        self.preset_prompts.extend(load_ordered_presets(&global.presetprompts, true));
 
-        // Load project-local presets from .azureal/presetprompts
-        if let Some(dir) = project_data_dir() {
-            let project_path = dir.join("presetprompts");
-            if let Ok(content) = std::fs::read_to_string(&project_path) {
-                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                    self.preset_prompts.extend(arr.iter().filter_map(|v| {
-                        let name = v.get("name")?.as_str()?.to_string();
-                        let prompt = v.get("prompt")?.as_str()?.to_string();
-                        Some(PresetPrompt::new(name, prompt, false))
-                    }));
-                }
-            }
+        // Load project-local presets, sorted by numeric prefix
+        if let Some(ref project) = self.project {
+            let local = crate::azufig::load_project_azufig(&project.path);
+            self.preset_prompts.extend(load_ordered_presets(&local.presetprompts, false));
         }
     }
 
@@ -645,7 +619,11 @@ impl App {
 
         // Set the new project
         let main_branch = Git::get_main_branch(&path).unwrap_or_else(|_| "main".to_string());
-        self.project = Some(Project::from_path(path, main_branch));
+        self.project = Some(Project::from_path(path.clone(), main_branch));
+
+        // Reload filetree hidden dirs from the new project's azufig
+        let az = crate::azufig::load_project_azufig(&path);
+        self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
         // Reload sessions and output
         let _ = self.load_sessions();
@@ -690,4 +668,35 @@ impl App {
         self.branch_slots.clear();
         self.active_slot.clear();
     }
+}
+
+/// Parse a "N_name" key: extract the numeric prefix for sorting and strip it to get the clean name.
+/// Keys without a valid prefix get sort key usize::MAX (appended at end) and are used as-is.
+fn parse_ordered_key(key: &str) -> (usize, String) {
+    if let Some(idx) = key.find('_') {
+        if let Ok(n) = key[..idx].parse::<usize>() {
+            return (n, key[idx + 1..].to_string());
+        }
+    }
+    (usize::MAX, key.to_string())
+}
+
+/// Load a HashMap of "N_name" = "value" entries as an ordered Vec of RunCommands.
+/// Sorts by numeric prefix, strips prefix from name.
+fn load_ordered_map(map: &std::collections::HashMap<String, String>, global: bool) -> Vec<RunCommand> {
+    let mut entries: Vec<_> = map.iter()
+        .map(|(k, v)| { let (ord, name) = parse_ordered_key(k); (ord, name, v.clone()) })
+        .collect();
+    entries.sort_by_key(|(ord, _, _)| *ord);
+    entries.into_iter().map(|(_, name, cmd)| RunCommand::new(name, cmd, global)).collect()
+}
+
+/// Load a HashMap of "N_name" = "value" entries as an ordered Vec of PresetPrompts.
+/// Sorts by numeric prefix, strips prefix from name.
+fn load_ordered_presets(map: &std::collections::HashMap<String, String>, global: bool) -> Vec<PresetPrompt> {
+    let mut entries: Vec<_> = map.iter()
+        .map(|(k, v)| { let (ord, name) = parse_ordered_key(k); (ord, name, v.clone()) })
+        .collect();
+    entries.sort_by_key(|(ord, _, _)| *ord);
+    entries.into_iter().map(|(_, name, prompt)| PresetPrompt::new(name, prompt, global)).collect()
 }

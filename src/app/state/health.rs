@@ -160,30 +160,26 @@ impl App {
     }
 }
 
-/// Load persisted god file scope from .azureal/godfilescope.
-/// File format: one absolute path per line. Returns None if file doesn't exist
-/// or is empty, signaling the caller to use auto-detection instead.
+/// Load persisted god file scope from `[godfilescope]` in project azufig.
+/// Returns None if no scope is configured or all dirs are gone,
+/// signaling the caller to use auto-detection instead.
 pub(crate) fn load_god_file_scope(project_root: &Path) -> Option<HashSet<PathBuf>> {
-    let scope_path = project_root.join(".azureal").join("godfilescope");
-    let content = fs::read_to_string(&scope_path).ok()?;
-    let dirs: HashSet<PathBuf> = content.lines()
-        .filter(|l| !l.is_empty())
+    let az = crate::azufig::load_project_azufig(project_root);
+    let dirs: HashSet<PathBuf> = az.godfilescope.dirs.iter()
+        .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
         .collect();
     if dirs.is_empty() { None } else { Some(dirs) }
 }
 
-/// Save god file scope to .azureal/godfilescope.
-/// Stores one absolute path per line — simple, human-readable, no serde needed.
+/// Save god file scope to `[godfilescope]` in project azufig (load-modify-save).
 pub(crate) fn save_god_file_scope(project_root: &Path, dirs: &HashSet<PathBuf>) {
-    let azureal_dir = project_root.join(".azureal");
-    let _ = fs::create_dir_all(&azureal_dir);
-    let content: String = dirs.iter()
-        .map(|p| p.display().to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _ = fs::write(azureal_dir.join("godfilescope"), content);
+    crate::azufig::update_project_azufig(project_root, |az| {
+        az.godfilescope.dirs = dirs.iter()
+            .map(|p| p.display().to_string())
+            .collect();
+    });
 }
 
 /// Collect all source files recursively from a directory (for doc scanner).

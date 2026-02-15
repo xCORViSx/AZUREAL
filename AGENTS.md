@@ -12,10 +12,11 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 - Git branches via `git branch | grep azureal/` for archived worktrees
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 
-**Persistent State:**
-- `~/.azureal/projects` stores registered project paths (auto-created on first launch in a git repo)
-- `.azureal/sessions` stores custom session name → UUID mappings (only created when user provides custom names)
-- `.azureal/godfilescope` stores persisted god file scan scope — one absolute directory path per line (created when user exits scope mode)
+**Persistent State (azufig.toml):**
+All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
+- **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
+- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, god file scan scope (directory paths), project-local run commands, project-local preset prompts
+All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
 
@@ -86,7 +87,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 **OS Terminal Title:** Set dynamically via crossterm `SetTitle`. Shows `AZUREAL` when no project loaded, `AZUREAL @ <project> : <branch>` when a session is selected. Updated on startup, session switch, and project switch (via `update_terminal_title()` in `src/app/state/ui.rs`, called from `load_session_output()`). Reset to empty on exit.
 
 **Overlays:**
-- **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Uses **Nerd Font icons** (~60 file types with language-brand colors: Rust orange, Python blue, etc.) with automatic detection via `detect_nerd_font()` — probes a PUA glyph during splash and measures cursor advance via DSR. Falls back to emoji icons if the terminal font lacks Nerd Font glyphs (status bar shows "Nerd Font not detected" message). Icon mapping in `src/tui/file_icons.rs` — checks filename first (Dockerfile, Makefile, LICENSE, etc.), then extension. Border title shows `Filetree (worktree_name)` with optional `[pos/total]` scroll indicator when content overflows. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. **Options overlay** (`O`): replaces tree content with a checkbox list for toggling visibility — `.git`, `.claude`, `.azureal`, `worktrees`, `.DS_Store` (all hidden by default). QuadrantOutside AZURE border with `" Filetree Options "` title and `" Space:toggle  Esc:close "` footer. `j/k` navigate, `Space`/`Enter` toggle, `Esc`/`O` close. Hidden names stored in `file_tree_hidden_dirs: HashSet<String>` — tree rebuilds immediately on toggle. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
+- **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Uses **Nerd Font icons** (~60 file types with language-brand colors: Rust orange, Python blue, etc.) with automatic detection via `detect_nerd_font()` — probes a PUA glyph during splash and measures cursor advance via DSR. Falls back to emoji icons if the terminal font lacks Nerd Font glyphs (status bar shows "Nerd Font not detected" message). Icon mapping in `src/tui/file_icons.rs` — checks filename first (Dockerfile, Makefile, LICENSE, etc.), then extension. Border title shows `Filetree (worktree_name)` with optional `[pos/total]` scroll indicator when content overflows. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. **Options overlay** (`O`): replaces tree content with a checkbox list for toggling visibility — `worktrees`, `.git`, `.claude`, `.azureal`, `.DS_Store` (all hidden by default). QuadrantOutside AZURE border with `" Filetree Options "` title and `" Space:toggle  Esc:close "` footer. `j/k` navigate, `Space`/`Enter` toggle, `Esc`/`O` close. Hidden names stored in `file_tree_hidden_dirs: HashSet<String>` — tree rebuilds immediately on toggle. **Persisted to project azufig.toml** `[filetree].hidden` on every toggle and loaded on startup/project switch. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
 - **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows a **status dot** (green `●` if a Claude process is actively running that session, dim gray `○` if idle — mirrors the worktree sidebar dots), session name (from `.azureal/sessions`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
@@ -108,7 +109,7 @@ Other features:
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
 - Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
-- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/presetprompts`, shared across all projects) or project-local (`.azureal/presetprompts`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
+- Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/azufig.toml` `[presetprompts]`, shared across all projects) or project-local (`.azureal/azufig.toml` `[presetprompts]`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
 Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 10 focused submodules, `health` has 2 sub-submodules).
 
@@ -680,7 +681,7 @@ Note: For auto-compaction, there's no visible "starting" event - we only see the
   - Detection: Multiple user messages sharing the same `parentUuid` - keep only the most recent by timestamp
 
 **Debug Output:**
-`⌃D` dumps diagnostic output to `.azureal/debug_output`. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
+`⌃D` opens a naming dialog, then dumps diagnostic output to `.azureal/debug-output[_name]`. Enter with empty name saves as `debug-output`; typing a name saves as `debug-output_<name>` (e.g., `debug-output_scroll_bug`). Esc cancels. A "Saving…" dialog is shown while the dump I/O runs (two-phase: draw dialog first, run dump next frame) so the app doesn't appear frozen on large sessions. All user/assistant message content, file paths, and rendered conversation text are **obfuscated** via deterministic word replacement (same word → same fake word) so the file can be safely attached to GitHub issues without exposing sensitive project details. Tool names, event types, parsing stats, and structural markers are preserved for diagnostic value. Contains: parsing stats, event type breakdown, last 5 events (obfuscated previews), and full rendered output (obfuscated).
 
 **Markdown Rendering:**
 Claude responses are parsed for markdown syntax and rendered with proper styling:
@@ -926,7 +927,7 @@ Scans the project for "god files" — source files exceeding 1000 lines. Same ch
 - `Esc` — close panel
 
 *Scope Mode (`s`):*
-Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" God File Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to `.azureal/godfilescope` (one absolute path per line), rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
+Opens the FileTree overlay in scope mode with green highlights on directories in the scan scope. Subdirectories of accepted dirs automatically inherit accepted status (bright green). Files inside scoped dirs dimmed green; everything else dimmed gray. Green double-line border with `" God File Scope (N dirs) "` title. Enter toggles dirs in/out of scope. Esc persists scope to project azufig.toml `[godfilescope].dirs`, rescans both god files and documentation, and reopens the health panel with updated results. Scope auto-loaded on panel open.
 
 *Module Style Selection:*
 When checked files include `.rs` or `.py`, pressing Enter/m shows a **module style selector** dialog before spawning. The dialog lets users choose between dual-style module conventions:
@@ -1007,7 +1008,7 @@ Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
 
 ### Run Commands
 
-User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/runcmds`, shared across all projects) or **project-local** (`.azureal/runcmds`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
+User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/azufig.toml` `[runcmds]`, shared across all projects) or **project-local** (`.azureal/azufig.toml` `[runcmds]`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
 
 **Keybindings (from Worktrees pane):**
 - `r` — Open picker (if multiple saved commands) or execute directly (if only 1)
@@ -1030,13 +1031,13 @@ User-defined shell commands that can be saved and executed from the Worktrees pa
 
 **Command vs Prompt mode:** The second field has a right-aligned title showing the current mode and Tab hint. In **Command** mode, user types a raw shell command directly. In **Prompt** mode, user types a natural-language description and Enter spawns a new Claude session on the main branch that reads the description, determines the right shell command, and writes it to `.azureal/runcmds`. The session is named `[NewRunCmd] <name>` in `.azureal/sessions`. Run commands auto-reload when the `[NewRunCmd]` session exits (via `handle_claude_exited()` check on `title_session_name`).
 
-**Storage:** Global commands in `~/.azureal/runcmds`, project-local in `.azureal/runcmds` — JSON arrays of `{name, command}` objects, merged on load (globals first, then locals). Loaded on startup.
+**Storage:** Global commands in `~/.azureal/azufig.toml` `[runcmds]`, project-local in `.azureal/azufig.toml` `[runcmds]` — keys prefixed with 1-based position number: `N_name = "command"` (e.g., `1_Build = "cargo build"`). Prefix preserves quick-select number across restarts; stripped on load, re-written on save. Merged on load (globals first, then locals). Loaded on startup.
 
 Implementation: Types in `src/app/types.rs` (RunCommand, RunCommandDialog, RunCommandPicker, CommandFieldMode), state methods in `src/app/state/ui.rs`, input handling + `spawn_run_command_prompt()` in `src/tui/input_dialogs.rs`, rendering in `src/tui/draw_dialogs.rs`, auto-reload in `src/app/state/claude.rs`
 
 ### Projects Panel
 
-Persistent project management across azureal sessions. Projects are stored in `~/.azureal/projects` (one path per line, optional `|display_name` suffix). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
+Persistent project management across azureal sessions. Projects are stored in `~/.azureal/azufig.toml` `[projects]` section (`DisplayName = "~/path"` pairs). Opened with `P` from Worktrees pane, or shown automatically on startup when not inside a git repo.
 
 **Behavior:**
 - When launched inside a git repo, auto-registers the repo in `projects` and loads normally. Display name derived from `git remote get-url origin` (repo name from SSH/HTTPS URL, `.git` stripped); folder name fallback if no remote. `Project::from_path()` reads display name via `project_display_name()` so title bar, sidebar, and terminal title all use it.
@@ -1075,7 +1076,7 @@ Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
    - Worktree: select target from list
 
 **Session Name Storage:**
-Custom session names map to Claude-generated UUIDs in `.azureal/sessions`:
+Custom session names map to Claude-generated UUIDs in `.azureal/azufig.toml`:
 ```toml
 [sessions]
 "9d409dfb-422b-4f4b-9f32-755277e3e527" = "hook-visibility-fix"
@@ -1118,7 +1119,7 @@ Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `s
 ```
 azureal/
 ├── .azureal/                # Project-level azureal data (gitignored)
-│   └── config.toml         # Optional project config
+│   └── azufig.toml         # Project-local unified config (TOML): filetree options, sessions, godfilescope, local runcmds, local presetprompts
 ├── .claude/                 # Project-level Claude Code config
 │   ├── settings.json        # Hook configuration (PreToolUse keybinding enforcement)
 │   └── scripts/
@@ -1208,9 +1209,10 @@ azureal/
 │   ├── cmd/                # CLI command handler submodules
 │   │   ├── session.rs      # Session list/show commands
 │   │   └── project.rs      # Project info command
+│   ├── azufig.rs           # Unified config: GlobalAzufig + ProjectAzufig structs (HashMap-based flat sections), load/save/update helpers (TOML I/O with bare-key post-processing)
 │   ├── claude.rs           # Claude CLI process management
 │   ├── cli.rs              # CLI argument parsing (clap definitions)
-│   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence
+│   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence (reads from azufig)
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Session, Project, etc.)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
@@ -1221,9 +1223,7 @@ azureal/
 ├── AGENTS.md               # This file
 ├── CHANGELOG.md            # Version history
 ├── Cargo.toml              # Rust dependencies
-├── PTY_FEATURE.md          # PTY implementation notes
-├── README.md               # User-facing documentation
-└── WORKTREES.md            # Worktree documentation
+└── README.md               # User-facing documentation
 ```
 
 # ROADMAP
@@ -1403,7 +1403,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:debug)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
 
 ### Terminal Mode
 

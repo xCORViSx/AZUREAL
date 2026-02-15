@@ -1,4 +1,5 @@
 mod app;
+mod azufig;
 mod claude;
 mod cli;
 mod cmd;

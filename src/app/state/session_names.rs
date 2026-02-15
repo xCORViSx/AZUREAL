@@ -1,43 +1,32 @@
-//! Session name storage in .azureal/sessions
+//! Session name storage in `.azureal/azufig.toml` under the `[sessions]` section.
 //!
 //! Allows users to assign custom names to sessions that are stored
 //! locally and displayed in the UI instead of the cryptic session IDs.
 
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 use super::App;
 
 impl App {
-    /// Save a custom session name mapping
+    /// Save a custom session name mapping to the `[sessions]` section of project azufig.
     pub fn save_session_name(&self, session_id: &str, custom_name: &str) {
         let Some(ref project) = self.project else { return };
-        let azureal_dir = project.path.join(".azureal");
-        let _ = fs::create_dir_all(&azureal_dir);
-
-        let sessions_path = azureal_dir.join("sessions");
-        let mut names = load_session_names(&sessions_path);
-        names.insert(session_id.to_string(), custom_name.to_string());
-
-        if let Ok(content) = toml::to_string_pretty(&names) {
-            let _ = fs::write(&sessions_path, content);
-        }
+        crate::azufig::update_project_azufig(&project.path, |az| {
+            az.sessions.insert(session_id.to_string(), custom_name.to_string());
+        });
     }
 
     /// Get the custom name for a session ID (if one exists)
     pub fn get_session_name(&self, session_id: &str) -> Option<String> {
         let project = self.project.as_ref()?;
-        let sessions_path = project.path.join(".azureal").join("sessions");
-        let names = load_session_names(&sessions_path);
-        names.get(session_id).cloned()
+        let az = crate::azufig::load_project_azufig(&project.path);
+        az.sessions.get(session_id).cloned()
     }
 
     /// Load all custom session name mappings (session_id → custom_name)
     pub fn load_all_session_names(&self) -> HashMap<String, String> {
         let Some(ref project) = self.project else { return HashMap::new() };
-        let sessions_path = project.path.join(".azureal").join("sessions");
-        load_session_names(&sessions_path)
+        crate::azufig::load_project_azufig(&project.path).sessions
     }
 
     /// Check if there's a pending session name for this slot and save it.
@@ -48,16 +37,4 @@ impl App {
             self.save_session_name(session_id, &custom_name);
         }
     }
-}
-
-/// Load session names from TOML file
-fn load_session_names(path: &Path) -> HashMap<String, String> {
-    if !path.exists() {
-        return HashMap::new();
-    }
-
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|content| toml::from_str(&content).ok())
-        .unwrap_or_default()
 }
