@@ -1,6 +1,7 @@
 //! Output processing and display event handling
 
 use crate::app::util::strip_ansi_escapes;
+use crate::events::DisplayEvent;
 use super::App;
 
 impl App {
@@ -27,8 +28,22 @@ impl App {
         self.process_output_chunk(&chunk);
     }
 
+    /// Add a user message to the convo pane immediately on prompt submit.
+    /// Pushes a real DisplayEvent::UserMessage into display_events so it
+    /// renders persistently (no disappearing). Also stores the content as
+    /// `pending_user_message` — this is ONLY used as a dedup marker so the
+    /// full re-parse on Claude exit can detect and skip the duplicate.
     pub fn add_user_message(&mut self, content: String) {
-        // Store as pending - will be shown until session file contains it
+        // Push a real event so it renders immediately and persists through
+        // the entire conversation. stream-json stdout never emits user events,
+        // so without this the message would be invisible until Claude exits
+        // and the session file is re-parsed.
+        self.display_events.push(DisplayEvent::UserMessage {
+            uuid: String::new(),
+            content: content.clone(),
+        });
+        // Dedup marker: full re-parse (on Claude exit) will check this to
+        // avoid creating a second UserMessage for the same content.
         self.pending_user_message = Some(content);
         self.invalidate_render_cache();
         self.output_scroll = usize::MAX;

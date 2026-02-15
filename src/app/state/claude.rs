@@ -226,27 +226,6 @@ impl App {
                 }
             }
 
-            // Clear pending user message when Claude starts responding.
-            // stream-json does NOT include user events in stdout (only
-            // system/assistant/result/progress), so we can't match on
-            // UserMessage. Instead, any assistant or tool event proves
-            // Claude received our prompt — the pending bubble is no
-            // longer needed. Just clear the flag and invalidate; the next
-            // background render will naturally exclude the bubble.
-            // NOTE: we do NOT truncate the cache here — rendered_content_line_count
-            // can be stale (from a previous render cycle) and truncating to a stale
-            // value destroys real content, causing messages to vanish permanently.
-            if self.pending_user_message.is_some() {
-                let has_response = events.iter().any(|ev| matches!(ev,
-                    DisplayEvent::AssistantText { .. }
-                    | DisplayEvent::ToolCall { .. }
-                    | DisplayEvent::ToolResult { .. }
-                ));
-                if has_response {
-                    self.pending_user_message = None;
-                }
-            }
-
             // Reuse the JSON value that EventParser already parsed — zero additional
             // serde_json::from_str calls. EventParser returns it alongside events.
 
