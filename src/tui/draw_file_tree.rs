@@ -57,7 +57,7 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     };
     let clipboard_is_move = matches!(&app.file_tree_action, Some(FileTreeAction::Move(_)));
 
-    /// Green color for directories/files that are in the god file scan scope
+    /// Green color for directories/files that are in the health scan scope
     const GF_GREEN: Color = Color::Rgb(80, 200, 80);
     /// Dim green for files inside a scanned directory (less prominent than dir itself)
     const GF_GREEN_DIM: Color = Color::Rgb(60, 140, 60);
@@ -361,14 +361,14 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let in_filter_mode = app.god_file_filter_mode;
-    /// Green color matching the scoped directory highlights
+    /// Green color matching the scoped directory highlights (health scope mode)
     const GF_BORDER_GREEN: Color = Color::Rgb(80, 200, 80);
 
     let wt_name = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if in_filter_mode {
         // Filter mode title shows scope count and Enter/Esc hints
         let scope_count = app.god_file_filter_dirs.len();
-        format!(" God File Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
+        format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
     } else if total > viewport_height {
         format!(" Filetree ({}) [{}/{}] ", wt_name, scroll + display_lines.len().min(total - scroll), total)
     } else {
