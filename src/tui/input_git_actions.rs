@@ -301,7 +301,7 @@ fn handle_autorebase_scope(key: event::KeyEvent, app: &mut App) -> Result<()> {
 }
 
 /// Re-scan changed files from git diff (called after operations that change working tree)
-fn refresh_changed_files(panel: &mut GitActionsPanel) {
+pub(crate) fn refresh_changed_files(panel: &mut GitActionsPanel) {
     match Git::get_diff_files(&panel.worktree_path, &panel.main_branch) {
         Ok(files) => {
             panel.changed_files = files.into_iter().map(|(path, status, add, del)| {
@@ -368,10 +368,29 @@ fn exec_commit_start(app: &mut App) {
             "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
             stat, diff_trimmed
         );
+        // Snapshot existing session files so we can delete the one-shot session after
+        let sessions_before: std::collections::HashSet<std::ffi::OsString> =
+            crate::config::claude_project_dir(&wt_clone)
+                .and_then(|d| std::fs::read_dir(&d).ok())
+                .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name()).collect())
+                .unwrap_or_default();
+
         let result = std::process::Command::new(&claude_bin)
             .args(["-p", &prompt])
             .current_dir(&wt_clone)
             .output();
+
+        // Delete the session file created by this one-shot — it's just noise
+        if let Some(dir) = crate::config::claude_project_dir(&wt_clone) {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for entry in rd.filter_map(|e| e.ok()) {
+                    if !sessions_before.contains(&entry.file_name()) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+
         match result {
             Ok(output) if output.status.success() => {
                 // Strip markdown code fences Claude sometimes wraps the message in
@@ -423,39 +442,26 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
             panel.commit_overlay = None;
         }
 
-        // Enter — commit with current message (only if message is non-empty and done generating)
+        // Enter — commit with current message (deferred so loading indicator renders first)
         (KeyModifiers::NONE, KeyCode::Enter) if !generating && !overlay.message.trim().is_empty() => {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;
-            match Git::commit(&wt, &msg) {
-                Ok(out) => {
-                    panel.result_message = Some((format!("Committed: {}", first_line(&out)), false));
-                    refresh_changed_files(panel);
-                }
-                Err(e) => { panel.result_message = Some((format!("{}", e), true)); }
-            }
+            app.loading_indicator = Some("Committing...".into());
+            app.deferred_action = Some(crate::app::DeferredAction::GitCommit {
+                worktree: wt, message: msg,
+            });
         }
 
-        // ⌘P — commit + push (only if message is non-empty and done generating)
+        // ⌘P — commit + push (deferred so loading indicator renders first)
         (m, KeyCode::Char('p')) if m.contains(KeyModifiers::SUPER) && !generating && !overlay.message.trim().is_empty() => {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;
-            match Git::commit(&wt, &msg) {
-                Ok(_) => {
-                    match Git::push(&wt) {
-                        Ok(_) => {
-                            panel.result_message = Some(("Committed and pushed".into(), false));
-                        }
-                        Err(e) => {
-                            panel.result_message = Some((format!("Committed but push failed: {}", e), true));
-                        }
-                    }
-                    refresh_changed_files(panel);
-                }
-                Err(e) => { panel.result_message = Some((format!("{}", e), true)); }
-            }
+            app.loading_indicator = Some("Committing and pushing...".into());
+            app.deferred_action = Some(crate::app::DeferredAction::GitCommitAndPush {
+                worktree: wt, message: msg,
+            });
         }
 
         // Backspace — delete char before cursor

@@ -753,6 +753,36 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
         DeferredAction::RescanHealthScope { dirs } => {
             app.rescan_health_with_dirs(&dirs);
         }
+        DeferredAction::GitCommit { worktree, message } => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                match crate::git::Git::commit(&worktree, &message) {
+                    Ok(out) => {
+                        let first = out.lines().next().unwrap_or(&out);
+                        p.result_message = Some((format!("Committed: {}", first), false));
+                        super::super::input_git_actions::refresh_changed_files(p);
+                    }
+                    Err(e) => { p.result_message = Some((format!("{}", e), true)); }
+                }
+            }
+        }
+        DeferredAction::GitCommitAndPush { worktree, message } => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                match crate::git::Git::commit(&worktree, &message) {
+                    Ok(_) => {
+                        match crate::git::Git::push(&worktree) {
+                            Ok(_) => {
+                                p.result_message = Some(("Committed and pushed".into(), false));
+                            }
+                            Err(e) => {
+                                p.result_message = Some((format!("Committed but push failed: {}", e), true));
+                            }
+                        }
+                        super::super::input_git_actions::refresh_changed_files(p);
+                    }
+                    Err(e) => { p.result_message = Some((format!("{}", e), true)); }
+                }
+            }
+        }
     }
 }
 

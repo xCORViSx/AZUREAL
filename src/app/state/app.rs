@@ -34,6 +34,10 @@ pub enum DeferredAction {
     SwitchProject { path: PathBuf },
     /// Rescan all health features after scope mode changes
     RescanHealthScope { dirs: Vec<String> },
+    /// Git commit from the commit overlay (message already captured)
+    GitCommit { worktree: PathBuf, message: String },
+    /// Git commit + push from the commit overlay
+    GitCommitAndPush { worktree: PathBuf, message: String },
 }
 
 /// Application state
