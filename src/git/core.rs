@@ -313,17 +313,79 @@ impl Git {
         else { anyhow::bail!("{}", combined.trim()) }
     }
 
-    /// Merge a feature branch into main. Runs from the repo root (main worktree)
-    /// which is already checked out on the main branch — no checkout needed.
-    pub fn merge_into_main(repo_root: &Path, branch_name: &str) -> Result<String> {
-        let output = Command::new("git")
-            .args(["merge", branch_name])
+    /// Squash-merge a feature branch into main:
+    /// 1. Pull main from remote (so we merge onto the latest upstream)
+    /// 2. Squash-merge the branch (collapses all commits into one staged changeset)
+    /// 3. Commit with a clean message
+    /// Push is separate — user triggers it manually via the Push action.
+    /// Runs from the repo root (main worktree, already on main branch).
+    pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<String> {
+        // Step 1: pull main so we're merging onto the latest upstream.
+        // --ff-only prevents accidental merge commits on main itself.
+        // Failure here is non-fatal — we might be offline or have no remote.
+        let pull_out = Command::new("git")
+            .args(["pull", "--ff-only"])
+            .current_dir(repo_root)
+            .output();
+        let pull_note = match pull_out {
+            Ok(ref o) if !o.status.success() => {
+                let err = String::from_utf8_lossy(&o.stderr);
+                // Diverged main is a real problem — abort before squash merge
+                if err.contains("fatal") || err.contains("divergent") {
+                    anyhow::bail!("Cannot update main before merge: {}", err.trim());
+                }
+                " (pull skipped)"
+            }
+            Err(_) => " (pull skipped)",
+            _ => "",
+        };
+
+        // Step 2: squash-merge stages all changes without committing
+        let merge_out = Command::new("git")
+            .args(["merge", "--squash", branch_name])
             .current_dir(repo_root)
             .output()
-            .context("Failed to merge")?;
-        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        if output.status.success() { Ok(combined.trim().to_string()) }
-        else { anyhow::bail!("{}", combined.trim()) }
+            .context("Failed to squash merge")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&merge_out.stdout), String::from_utf8_lossy(&merge_out.stderr));
+        let text = combined.trim();
+
+        if !merge_out.status.success() {
+            let conflicts: Vec<&str> = text.lines()
+                .filter(|l| l.starts_with("CONFLICT"))
+                .collect();
+            if !conflicts.is_empty() {
+                let merged = text.lines().filter(|l| l.starts_with("Auto-merging")).count();
+                anyhow::bail!(
+                    "Squash merge has {} conflict{} ({} file{} auto-merged). Resolve on main:\n{}",
+                    conflicts.len(),
+                    if conflicts.len() == 1 { "" } else { "s" },
+                    merged,
+                    if merged == 1 { "" } else { "s" },
+                    conflicts.join("\n"),
+                );
+            }
+            anyhow::bail!("{}", text);
+        }
+
+        // Step 3: commit the squashed changes with a clean message.
+        // Strip "azureal/" prefix from branch name for a readable commit.
+        let display = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
+        let commit_out = Command::new("git")
+            .args(["commit", "-m", &format!("feat: merge {} into main", display)])
+            .current_dir(repo_root)
+            .output()
+            .context("Failed to commit squash merge")?;
+        if !commit_out.status.success() {
+            let err = String::from_utf8_lossy(&commit_out.stderr).trim().to_string();
+            if err.contains("nothing to commit") {
+                return Ok("Already up to date — nothing to merge".into());
+            }
+            anyhow::bail!("Squash merge staged but commit failed: {}", err);
+        }
+
+        let out = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
+        let first = out.lines().next().unwrap_or(&out);
+        Ok(format!("Merged: {}{}", first, pull_note))
     }
 
     /// Stage all changes (tracked + untracked) via `git add -A`

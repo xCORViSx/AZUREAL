@@ -138,6 +138,7 @@ pub enum Action {
     RunCommand,
     AddRunCommand,
     ArchiveWorktree,
+    UnarchiveWorktree,
     StartResume,
     OpenHealth,
     OpenGitActions,
@@ -218,15 +219,11 @@ pub enum Action {
 
     // Git Actions Panel (modal)
     GitToggleFocus,
-    GitRebase,
-    GitMerge,
-    GitFetch,
-    GitPull,
-    GitPush,
+    GitSquashMerge,
     GitViewDiff,
     GitRefresh,
-    GitAutoRebase,
     GitCommit,
+    GitPush,
 
     // FileTree Options overlay
     FileTreeOptions,
@@ -362,7 +359,7 @@ pub static GLOBAL: [Keybinding; 12] = [
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 13] = [
+pub static WORKTREES: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
@@ -375,6 +372,7 @@ pub static WORKTREES: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Archive worktree", Action::ArchiveWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('u')), "Unarchive worktree", Action::UnarchiveWorktree),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
@@ -518,23 +516,19 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 ];
 
 /// Git Actions Panel — all keys for the git modal overlay.
-/// Guard note: git ops (r/m/f/l/P) only fire when actions_focused=true,
+/// Guard note: git ops (m/c) only fire when actions_focused=true,
 /// diff view (d) only fires when actions_focused=false. Guards live in
 /// lookup_git_actions_action(), not here.
-pub static GIT_ACTIONS: [Keybinding; 16] = [
+pub static GIT_ACTIONS: [Keybinding; 12] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase from main", Action::GitRebase),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Merge to main", Action::GitMerge),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Fetch", Action::GitFetch),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('P')), "Push", Action::GitPush),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Squash merge to main", Action::GitSquashMerge),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('A')), "Auto-rebase", Action::GitAutoRebase),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push", Action::GitPush),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
@@ -565,14 +559,6 @@ pub static PICKER: [Keybinding; 7] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
-/// Context Menu — simple nav + select
-pub static CONTEXT_MENU: [Keybinding; 4] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
-    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
-];
-
 /// Branch Dialog — nav + select (filter chars stay raw)
 pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -589,7 +575,6 @@ pub struct KeyContext {
     pub edit_mode: bool,
     pub terminal_mode: bool,
     pub filter_active: bool,
-    pub has_context_menu: bool,
     pub wizard_active: bool,
     pub help_open: bool,
 }
@@ -603,7 +588,6 @@ impl KeyContext {
             edit_mode: app.viewer_edit_mode,
             terminal_mode: app.terminal_mode,
             filter_active: app.sidebar_filter_active,
-            has_context_menu: app.context_menu.is_some(),
             wizard_active: app.is_wizard_active(),
             help_open: app.show_help,
         }
@@ -620,11 +604,11 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     for binding in &GLOBAL {
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
-            // sidebar filter, context menu, or wizard — they'd steal keystrokes
+            // sidebar filter, or wizard — they'd steal keystrokes
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
             | Action::OpenGitActions | Action::OpenHealth
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-                   || ctx.filter_active || ctx.has_context_menu || ctx.wizard_active => true,
+                   || ctx.filter_active || ctx.wizard_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
@@ -829,9 +813,9 @@ pub fn lookup_git_actions_action(
 ) -> Option<Action> {
     for b in &GIT_ACTIONS {
         let skip = match b.action {
-            Action::GitRebase | Action::GitMerge | Action::GitFetch
-            | Action::GitPull | Action::GitPush | Action::GitAutoRebase
-            | Action::GitCommit if !actions_focused => true,
+            Action::GitSquashMerge
+            | Action::GitCommit
+            | Action::GitPush if !actions_focused => true,
             Action::GitViewDiff if actions_focused => true,
             _ => false,
         };
@@ -851,12 +835,6 @@ pub fn lookup_projects_action(modifiers: KeyModifiers, code: KeyCode) -> Option<
 /// Number quick-select and confirm-delete y/n stay raw in handlers.
 pub fn lookup_picker_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &PICKER { if b.matches(modifiers, code) { return Some(b.action); } }
-    None
-}
-
-/// Resolve key → Action for the context menu overlay.
-pub fn lookup_context_menu_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
-    for b in &CONTEXT_MENU { if b.matches(modifiers, code) { return Some(b.action); } }
     None
 }
 
@@ -898,7 +876,7 @@ pub fn health_docs_hints() -> String {
 /// Git Actions panel — action key+description pairs for the action list labels.
 /// Returns (display_key, description) for each git action in display order.
 pub fn git_actions_labels() -> Vec<(String, &'static str)> {
-    [Action::GitRebase, Action::GitMerge, Action::GitFetch, Action::GitPull, Action::GitPush, Action::GitCommit, Action::GitAutoRebase]
+    [Action::GitSquashMerge, Action::GitCommit, Action::GitPush]
         .iter()
         .filter_map(|&a| {
             GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))

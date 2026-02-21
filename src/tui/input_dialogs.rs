@@ -1,4 +1,4 @@
-//! Context menu, branch dialog, picker, and dialog input handling.
+//! Branch dialog, picker, and dialog input handling.
 //!
 //! Structural keys (nav, enter, esc, edit, delete, add) resolved via keybindings.rs
 //! lookup functions. Text input keys (Char, Backspace, Left, Right) stay raw in dialogs.
@@ -8,87 +8,11 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
-use crate::app::{App, Focus, RunCommand, WorktreeAction};
+use crate::app::{App, Focus, RunCommand};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
 use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog};
-use super::keybindings::{lookup_context_menu_action, lookup_branch_dialog_action, lookup_picker_action, Action};
-
-/// Handle keyboard input when context menu is open.
-/// All structural keys resolved through keybindings.rs.
-pub fn handle_context_menu_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
-    let Some(action) = lookup_context_menu_action(key.modifiers, key.code) else {
-        return Ok(());
-    };
-
-    match action {
-        Action::NavDown => app.context_menu_next(),
-        Action::NavUp => app.context_menu_prev(),
-        Action::Confirm => {
-            if let Some(session_action) = app.selected_action() {
-                execute_action(app, claude_process, session_action)?;
-            }
-            app.close_context_menu();
-        }
-        Action::Escape => app.close_context_menu(),
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Execute a session action from the context menu
-fn execute_action(app: &mut App, _claude_process: &ClaudeProcess, action: WorktreeAction) -> Result<()> {
-    match action {
-        WorktreeAction::Start => {
-            if let Some(session) = app.current_worktree() {
-                if app.is_session_running(&session.branch_name) {
-                    app.set_status("Claude already running in this session");
-                } else {
-                    app.focus = Focus::Input;
-                    app.set_status("Enter your prompt");
-                }
-            }
-        }
-        WorktreeAction::Stop => {
-            app.set_status("Stop action not yet implemented");
-        }
-        WorktreeAction::Archive => {
-            if let Err(e) = app.archive_current_worktree() {
-                app.set_status(format!("Failed to archive: {}", e));
-            }
-        }
-        WorktreeAction::Delete => {
-            app.set_status("Delete action not yet implemented - use CLI: azureal session delete");
-        }
-        WorktreeAction::ViewDiff => {
-            if let Err(e) = app.load_diff() {
-                app.set_status(format!("Failed to get diff: {}", e));
-            }
-        }
-        WorktreeAction::RebaseFromMain => {
-            if let Err(e) = app.rebase_current_worktree() {
-                app.set_status(format!("Rebase failed: {}", e));
-            }
-        }
-        WorktreeAction::OpenInEditor => {
-            if let Some(session) = app.current_worktree() {
-                if let Some(ref wt_path) = session.worktree_path {
-                    let path = wt_path.display().to_string();
-                    app.set_status(format!("Editor integration not implemented. Path: {}", path));
-                }
-            }
-        }
-        WorktreeAction::CopyWorktreePath => {
-            if let Some(session) = app.current_worktree() {
-                if let Some(ref wt_path) = session.worktree_path {
-                    let path = wt_path.display().to_string();
-                    app.set_status(format!("Copied to clipboard (not implemented): {}", path));
-                }
-            }
-        }
-    }
-    Ok(())
-}
+use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
 
 /// Handle keyboard input when Branch dialog is focused.
 /// Nav/Enter/Esc through keybindings; filter chars (Backspace, Char) stay raw.

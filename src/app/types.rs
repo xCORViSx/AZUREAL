@@ -102,7 +102,6 @@ pub enum WorktreeAction {
     Archive,
     Delete,
     ViewDiff,
-    RebaseFromMain,
     OpenInEditor,
     CopyWorktreePath,
 }
@@ -115,7 +114,6 @@ impl WorktreeAction {
             WorktreeAction::Archive => "Archive Session",
             WorktreeAction::Delete => "Delete Session",
             WorktreeAction::ViewDiff => "View Diff",
-            WorktreeAction::RebaseFromMain => "Rebase from Main",
             WorktreeAction::OpenInEditor => "Open in Editor",
             WorktreeAction::CopyWorktreePath => "Copy Worktree Path",
         }
@@ -128,7 +126,6 @@ impl WorktreeAction {
             WorktreeAction::Archive => "a",
             WorktreeAction::Delete => "D",
             WorktreeAction::ViewDiff => "d",
-            WorktreeAction::RebaseFromMain => "r",
             WorktreeAction::OpenInEditor => "e",
             WorktreeAction::CopyWorktreePath => "c",
         }
@@ -139,7 +136,6 @@ impl WorktreeAction {
             WorktreeStatus::Pending | WorktreeStatus::Stopped | WorktreeStatus::Completed => vec![
                 WorktreeAction::Start,
                 WorktreeAction::ViewDiff,
-                WorktreeAction::RebaseFromMain,
                 WorktreeAction::OpenInEditor,
                 WorktreeAction::CopyWorktreePath,
                 WorktreeAction::Archive,
@@ -154,7 +150,6 @@ impl WorktreeAction {
             WorktreeStatus::Failed => vec![
                 WorktreeAction::Start,
                 WorktreeAction::ViewDiff,
-                WorktreeAction::RebaseFromMain,
                 WorktreeAction::OpenInEditor,
                 WorktreeAction::CopyWorktreePath,
                 WorktreeAction::Archive,
@@ -453,16 +448,16 @@ pub struct GitCommitOverlay {
 }
 
 /// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
-/// Shows git operations (rebase, merge, fetch, etc.) and changed files list.
+/// Shows git operations (squash-merge, fetch, pull, push, commit) and changed files list.
 #[derive(Debug)]
 pub struct GitActionsPanel {
     /// Current worktree name (branch) shown in the title
     pub worktree_name: String,
     /// Worktree path on disk (for running git commands without reborrowing App)
     pub worktree_path: std::path::PathBuf,
-    /// Repo root path (main worktree, always on main branch — for merge-into-main)
+    /// Repo root path (main worktree, always on main branch — for squash-merge)
     pub repo_root: std::path::PathBuf,
-    /// Main branch name (for rebase/merge/diff base)
+    /// Main branch name (for diff base)
     pub main_branch: String,
     /// Changed files from git diff --stat against main
     pub changed_files: Vec<GitChangedFile>,
@@ -476,12 +471,6 @@ pub struct GitActionsPanel {
     pub selected_action: usize,
     /// Transient status/result message from last git operation: (message, is_error)
     pub result_message: Option<(String, bool)>,
-    /// When true, auto-rebase is enabled for this worktree's branch
-    pub autorebase_on: bool,
-    /// When Some, the auto-rebase scope picker is shown:
-    /// 0 = "This worktree" selected, 1 = "All worktrees" selected.
-    /// Toggling ON opens this picker; toggling OFF skips it (just disables).
-    pub autorebase_scope: Option<usize>,
     /// Commit message overlay — shown when `c` is pressed in the actions list.
     /// Claude generates a conventional commit message from `git diff --staged`.
     pub commit_overlay: Option<GitCommitOverlay>,

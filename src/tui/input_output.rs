@@ -3,8 +3,7 @@
 use anyhow::Result;
 use crossterm::event;
 
-use crate::app::{App, ViewMode};
-use super::input_rebase::handle_rebase_input;
+use crate::app::App;
 
 /// Handle keyboard input when Output pane is focused.
 /// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
@@ -37,11 +36,6 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
             _ => {}
         }
-    }
-
-    // Rebase mode has its own handler
-    if app.view_mode == ViewMode::Rebase {
-        return handle_rebase_input(key, app);
     }
 
     // All output keybindings resolved upstream — nothing to handle here

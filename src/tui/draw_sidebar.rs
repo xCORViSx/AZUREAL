@@ -36,20 +36,27 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
 
         let is_selected = app.selected_worktree == Some(sess_idx);
         let status = session.status(app.is_session_running(&session.branch_name));
-        let status_color = status.color();
-        let prefix = if session.archived { "◌ " } else { "" };
 
-        // Selected: blue bg highlight box like file tree
-        let name_style = if is_selected {
-            Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+        // Archived sessions: distinct icon + dimmed name (clearly different from active)
+        let (status_symbol, status_color, name_style) = if session.archived {
+            let ns = if is_selected {
+                Style::default().bg(Color::Blue).fg(Color::DarkGray).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            ("◇", Color::DarkGray, ns)
         } else {
-            Style::default()
+            let ns = if is_selected {
+                Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            (status.symbol(), status.color(), ns)
         };
 
         items.push(ListItem::new(Line::from(vec![
             Span::raw(" "),
-            Span::styled(prefix, Style::default().fg(Color::DarkGray)),
-            Span::styled(status.symbol(), Style::default().fg(status_color)),
+            Span::styled(status_symbol, Style::default().fg(status_color)),
             Span::raw(" "),
             Span::styled(truncate(session.name(), 36), name_style),
         ])));

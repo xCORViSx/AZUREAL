@@ -11,7 +11,7 @@ use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
 
 use super::super::keybindings::{Action, KeyContext, lookup_action};
-use super::super::input_dialogs::{handle_branch_dialog_input, handle_context_menu_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
+use super::super::input_dialogs::{handle_branch_dialog_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
@@ -26,7 +26,7 @@ use super::mouse::{copy_viewer_selection, copy_output_selection};
 
 /// Handle keyboard input events.
 /// All key → action resolution goes through lookup_action() in keybindings.rs.
-/// Modal overlays (help, context menu, wizard, dialogs) bypass this and consume
+/// Modal overlays (help, wizard, dialogs) bypass this and consume
 /// all input directly. Focus-specific handlers only see keys that lookup_action()
 /// didn't resolve (text input, dialog nav, etc.).
 pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -51,7 +51,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     }
 
     // Full-screen modals that intercept everything
-    if app.context_menu.is_some() { return handle_context_menu_input(key, app, claude_process); }
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
@@ -294,6 +293,11 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         Action::ArchiveWorktree => {
             if let Err(e) = app.archive_current_worktree() {
                 app.set_status(format!("Failed to archive: {}", e));
+            }
+        }
+        Action::UnarchiveWorktree => {
+            if let Err(e) = app.unarchive_current_worktree() {
+                app.set_status(format!("Failed to unarchive: {}", e));
             }
         }
         Action::StartResume => {
@@ -815,18 +819,21 @@ fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
     count
 }
 
-/// Start or resume a Claude session from worktrees Enter key
-/// Enter prompt mode for the selected worktree (Enter key in worktree list)
+/// Start or resume a Claude session from worktrees Enter key.
+/// Archived sessions can't be started — user must press `u` to unarchive first.
 fn start_or_resume(app: &mut App) {
     use crate::models::WorktreeStatus;
-    if let Some(session) = app.current_worktree() {
-        let status = session.status(app.is_session_running(&session.branch_name));
-        if matches!(status, WorktreeStatus::Pending | WorktreeStatus::Stopped
-            | WorktreeStatus::Completed | WorktreeStatus::Failed | WorktreeStatus::Waiting)
-        {
-            app.focus = Focus::Input;
-            app.prompt_mode = true;
-            app.set_status("Type your prompt and press Enter to send");
-        }
+    let Some(session) = app.current_worktree() else { return };
+    if session.archived {
+        app.set_status("Session is archived — press u to unarchive first");
+        return;
+    }
+    let status = session.status(app.is_session_running(&session.branch_name));
+    if matches!(status, WorktreeStatus::Pending | WorktreeStatus::Stopped
+        | WorktreeStatus::Completed | WorktreeStatus::Failed | WorktreeStatus::Waiting)
+    {
+        app.focus = Focus::Input;
+        app.prompt_mode = true;
+        app.set_status("Type your prompt and press Enter to send");
     }
 }

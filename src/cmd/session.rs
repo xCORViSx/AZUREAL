@@ -260,6 +260,24 @@ pub fn handle_session_archive(session_query: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn handle_session_unarchive(session_query: &str) -> Result<()> {
+    let project = discover_project()?;
+    let sessions = discover_worktrees(&project)?;
+    let session = find_worktree(&sessions, session_query)?;
+
+    if !session.archived {
+        println!("Session is not archived: {}", session.name());
+        return Ok(());
+    }
+
+    let worktree_name = session.name().to_string();
+    let worktree_path = project.worktrees_dir().join(&worktree_name);
+
+    Git::create_worktree_from_branch(&project.path, &worktree_path, &session.branch_name)?;
+    println!("Unarchived session: {} → {}", session.name(), worktree_path.display());
+    Ok(())
+}
+
 pub fn handle_session_resume(session_query: &str, _prompt: Option<String>) -> Result<()> {
     let project = discover_project()?;
     let sessions = discover_worktrees(&project)?;

@@ -2,7 +2,7 @@
 //!
 //! Full-screen modal overlay — consumes ALL input when active, dispatched via
 //! the centralized keybinding system (lookup_git_actions_action in keybindings.rs).
-//! Actions section (Tab to switch): r=rebase, m=merge, f=fetch, l=pull, P=push, c=commit.
+//! Actions section (Tab to switch): m=squash-merge, c=commit, P=push.
 //! File list section: j/k navigate, Enter/d opens file diff in viewer.
 
 use anyhow::Result;
@@ -11,12 +11,11 @@ use crossterm::event;
 use crate::app::App;
 use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay};
 use crate::git::Git;
-use crate::models::RebaseResult;
 use super::keybindings::{lookup_git_actions_action, Action};
 
 /// Total number of action items in the actions section
-/// (6 git ops: rebase/merge/fetch/pull/push/commit + 1 auto-rebase toggle)
-const ACTION_COUNT: usize = 7;
+/// (3 git ops: squash-merge, commit, push)
+const ACTION_COUNT: usize = 3;
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
@@ -29,11 +28,6 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
     // Commit overlay intercepts all input when open (text editing + actions)
     if panel.commit_overlay.is_some() {
         return handle_commit_overlay(key, app);
-    }
-
-    // If auto-rebase scope picker is open, handle it before anything else
-    if panel.autorebase_scope.is_some() {
-        return handle_autorebase_scope(key, app);
     }
 
     // Clear stale result message on any non-nav key
@@ -85,15 +79,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
         }
 
         // ── Git operations (only fire when actions_focused, enforced by lookup guard) ──
-        Action::GitRebase => { exec_rebase(app); }
-        Action::GitMerge => { exec_merge(app); }
-        Action::GitFetch => { exec_fetch(app); }
-        Action::GitPull => { exec_pull(app); }
-        Action::GitPush => { exec_push(app); }
+        Action::GitSquashMerge => { exec_squash_merge(app); }
         Action::GitCommit => { exec_commit_start(app); }
-
-        // Auto-rebase toggle: if currently ON → turn off, if OFF → open scope picker
-        Action::GitAutoRebase => { exec_autorebase_toggle(app); }
+        Action::GitPush => { exec_push(app); }
 
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
         Action::Confirm => {
@@ -103,13 +91,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
             };
             if focused {
                 match idx {
-                    0 => exec_rebase(app),
-                    1 => exec_merge(app),
-                    2 => exec_fetch(app),
-                    3 => exec_pull(app),
-                    4 => exec_push(app),
-                    5 => exec_commit_start(app),
-                    6 => exec_autorebase_toggle(app),
+                    0 => exec_squash_merge(app),
+                    1 => exec_commit_start(app),
+                    2 => exec_push(app),
                     _ => {}
                 }
             } else {
@@ -163,34 +147,15 @@ fn open_file_diff(app: &mut App) {
     }
 }
 
-/// Execute rebase and set result message
-fn exec_rebase(app: &mut App) {
-    let (wt, main) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.worktree_path.clone(), p.main_branch.clone()),
-        None => return,
-    };
-    let msg = match Git::rebase_onto_main(&wt, &main) {
-        Ok(RebaseResult::Success) => ("Rebase completed".into(), false),
-        Ok(RebaseResult::UpToDate) => ("Already up to date".into(), false),
-        Ok(RebaseResult::Conflicts(s)) => (format!("Conflicts: {} files", s.conflicted_files.len()), true),
-        Ok(RebaseResult::Aborted) => ("Rebase aborted".into(), true),
-        Ok(RebaseResult::Failed(e)) => (e, true),
-        Err(e) => (format!("{}", e), true),
-    };
-    if let Some(ref mut p) = app.git_actions_panel {
-        p.result_message = Some(msg);
-        refresh_changed_files(p);
-    }
-}
-
-/// Merge the current worktree's branch into main. Runs from repo root
-/// (which is always checked out on main) so no checkout is needed.
-fn exec_merge(app: &mut App) {
+/// Squash-merge the current worktree's branch into main. Runs from repo root
+/// (which is always checked out on main) so no checkout is needed. Collapses
+/// all branch commits into a single commit on main.
+fn exec_squash_merge(app: &mut App) {
     let (repo_root, branch) = match app.git_actions_panel.as_ref() {
         Some(p) => (p.repo_root.clone(), p.worktree_name.clone()),
         None => return,
     };
-    let msg = match Git::merge_into_main(&repo_root, &branch) {
+    let msg = match Git::squash_merge_into_main(&repo_root, &branch) {
         Ok(m) => (m, false),
         Err(e) => (format!("{}", e), true),
     };
@@ -200,104 +165,22 @@ fn exec_merge(app: &mut App) {
     }
 }
 
-fn exec_fetch(app: &mut App) {
-    let wt = match app.git_actions_panel.as_ref() {
-        Some(p) => p.worktree_path.clone(),
-        None => return,
-    };
-    let msg = match Git::fetch(&wt) {
-        Ok(m) => (if m.is_empty() { "Fetched".into() } else { m }, false),
-        Err(e) => (format!("{}", e), true),
-    };
-    if let Some(ref mut p) = app.git_actions_panel { p.result_message = Some(msg); }
-}
-
-fn exec_pull(app: &mut App) {
-    let wt = match app.git_actions_panel.as_ref() {
-        Some(p) => p.worktree_path.clone(),
-        None => return,
-    };
-    let msg = match Git::pull(&wt) {
-        Ok(m) => (m, false),
-        Err(e) => (format!("{}", e), true),
-    };
-    if let Some(ref mut p) = app.git_actions_panel {
-        p.result_message = Some(msg);
-        refresh_changed_files(p);
-    }
-}
-
+/// Push the current worktree branch to remote
 fn exec_push(app: &mut App) {
     let wt = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_path.clone(),
         None => return,
     };
     let msg = match Git::push(&wt) {
-        Ok(m) => (if m.is_empty() { "Pushed".into() } else { m }, false),
+        Ok(m) => {
+            let summary = m.lines().next().unwrap_or(&m);
+            (format!("Pushed: {}", summary), false)
+        }
         Err(e) => (format!("{}", e), true),
     };
-    if let Some(ref mut p) = app.git_actions_panel { p.result_message = Some(msg); }
-}
-
-/// Toggle auto-rebase: if yes → set no (direct), if no → open scope picker
-fn exec_autorebase_toggle(app: &mut App) {
-    let panel = match app.git_actions_panel.as_mut() {
-        Some(p) => p,
-        None => return,
-    };
-    if panel.autorebase_on {
-        // Currently yes — disable for this worktree
-        crate::azufig::set_autorebase(&panel.worktree_path, false);
-        panel.autorebase_on = false;
-        panel.result_message = Some(("Auto-rebase: No".into(), false));
-    } else {
-        // Currently no — open the scope picker (0 = this worktree, 1 = all)
-        panel.autorebase_scope = Some(0);
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.result_message = Some(msg);
     }
-}
-
-/// Handle input while the auto-rebase scope picker is open.
-/// j/k or ↑/↓ to select, Enter to confirm, Esc to cancel.
-fn handle_autorebase_scope(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    use crossterm::event::{KeyCode, KeyModifiers};
-    let panel = match app.git_actions_panel.as_mut() {
-        Some(p) => p,
-        None => return Ok(()),
-    };
-    let sel = panel.autorebase_scope.unwrap_or(0);
-    match (key.modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
-            if sel < 1 { panel.autorebase_scope = Some(1); }
-        }
-        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
-            if sel > 0 { panel.autorebase_scope = Some(0); }
-        }
-        (KeyModifiers::NONE, KeyCode::Enter) => {
-            if sel == 0 {
-                // This worktree only — write to this worktree's config
-                let wt = panel.worktree_path.clone();
-                crate::azufig::set_autorebase(&wt, true);
-                panel.autorebase_on = true;
-                panel.result_message = Some(("Auto-rebase: Yes (this worktree)".into(), false));
-            } else {
-                // All worktrees — write to each worktree's config individually
-                let paths: Vec<_> = app.worktrees.iter()
-                    .filter_map(|s| s.worktree_path.clone())
-                    .collect();
-                for wt in &paths { crate::azufig::set_autorebase(wt, true); }
-                if let Some(ref mut p) = app.git_actions_panel {
-                    p.autorebase_on = true;
-                    p.result_message = Some((format!("Auto-rebase: Yes ({} worktrees)", paths.len()), false));
-                }
-            }
-            if let Some(ref mut p) = app.git_actions_panel { p.autorebase_scope = None; }
-        }
-        (KeyModifiers::NONE, KeyCode::Esc) => {
-            panel.autorebase_scope = None;
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 /// Re-scan changed files from git diff (called after operations that change working tree)
@@ -552,9 +435,4 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
         _ => {}
     }
     Ok(())
-}
-
-/// Extract the first line from a multi-line string (for result messages)
-fn first_line(s: &str) -> &str {
-    s.lines().next().unwrap_or(s)
 }

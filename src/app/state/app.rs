@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, ContextMenu, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Worktree};
@@ -94,7 +94,6 @@ pub struct App {
     pub branch_dialog: Option<BranchDialog>,
     pub rebase_status: Option<RebaseStatus>,
     pub selected_conflict: Option<usize>,
-    pub context_menu: Option<ContextMenu>,
     pub creation_wizard: Option<CreationWizard>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
@@ -507,7 +506,6 @@ impl App {
             branch_dialog: None,
             rebase_status: None,
             selected_conflict: None,
-            context_menu: None,
             creation_wizard: None,
             projects_panel: None,
             pending_session_names: Vec::new(),

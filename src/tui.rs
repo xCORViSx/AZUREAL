@@ -32,7 +32,6 @@ mod input_git_actions;
 mod input_health;
 mod input_output;
 mod input_projects;
-mod input_rebase;
 mod input_worktrees;
 mod input_terminal;
 mod input_viewer;

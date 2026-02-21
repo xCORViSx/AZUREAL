@@ -245,51 +245,6 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
     f.render_widget(list, dialog_chunks[1]);
 }
 
-/// Draw context menu overlay
-pub fn draw_context_menu(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(ref menu) = app.context_menu {
-        let menu_width = 50;
-        let menu_height = menu.actions.len() as u16 + 4;
-
-        let menu_x = (area.width.saturating_sub(menu_width)) / 2;
-        let menu_y = (area.height.saturating_sub(menu_height)) / 2;
-
-        let menu_area = Rect { x: menu_x, y: menu_y, width: menu_width, height: menu_height };
-
-        let items: Vec<ListItem> = menu.actions.iter().enumerate().map(|(idx, action)| {
-            let is_selected = idx == menu.selected;
-            let style = if is_selected {
-                Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-
-            let key_style = if is_selected {
-                Style::default().bg(AZURE).fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::Yellow)
-            };
-
-            ListItem::new(Line::from(vec![
-                Span::styled(format!(" [{:>5}] ", action.key_hint()), key_style),
-                Span::styled(action.label(), style),
-            ]))
-        }).collect();
-
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(AZURE))
-                    .title(" Worktree Actions (↑↓ to navigate, Enter to select, Esc to close) ")
-                    .style(Style::default().bg(Color::Reset)),
-            );
-
-        f.render_widget(Block::default().style(Style::default().bg(Color::Reset)), menu_area);
-        f.render_widget(list, menu_area);
-    }
-}
-
 /// Draw worktree creation modal
 pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
     let area = f.area();

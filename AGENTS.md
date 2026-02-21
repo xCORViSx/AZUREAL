@@ -16,7 +16,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
 - **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts
-- **Worktree-local** `<worktree_path>/.azureal/azufig.toml` — per-worktree git settings (`[git]` section with `auto-rebase = "yes"/"no"`). Each worktree can have its own azufig for worktree-specific config; created on demand when a worktree-level setting is toggled
+- **Worktree-local** `<worktree_path>/.azureal/azufig.toml` — per-worktree git settings (`[git]` section). Each worktree can have its own azufig for worktree-specific config; created on demand when a worktree-level setting is toggled
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -58,6 +58,9 @@ Each worktree provides true branch isolation:
 - Has its own working directory
 - Can have different uncommitted changes
 - Operates on a separate branch from main
+- **Archiving** removes the worktree directory but preserves the git branch (`a` key). Archived sessions show as `◇` with dimmed text in the sidebar.
+- **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
+- CLI: `azureal session archive <name>` / `azureal session unarchive <name>`
 
 Implementation: `src/git.rs` handles worktree creation, deletion, and status queries.
 
@@ -132,7 +135,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: a
 - Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader` or `Worktree(idx)`
 - FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
 - Input click enters prompt mode and positions cursor via `click_to_input_cursor()` — uses `word_wrap_break_points()` to map screen coords to char index with word-boundary wrapping
-- Overlays (help, context_menu, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
+- Overlays (help, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
 **Text Selection (Mouse Drag):**
 - `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=convo, 2=input, 3=edit-mode-viewer. Clears existing `viewer_selection` / `output_selection`.
@@ -546,7 +549,7 @@ Key mappings:
 - `T` (Shift+T, global, except edit mode): Toggle terminal pane
 - `G` (Shift+G, global, except edit mode): Toggle Git panel
 
-**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, context menu, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
+**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `?`, `Tab`, `Shift+Tab`) from firing during text input, edit mode, terminal mode, sidebar filter, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead.
 - `Escape` / click another pane / `Tab` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
@@ -585,16 +588,16 @@ Implementation:
 
 ### Centralized Keybindings
 
-**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, context menu, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
+**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
 
 **Architecture:**
-- `Action` enum: All possible keybinding actions (~60 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitRebase`, `ProjectsAdd`, `PickerQuickDelete`, `BranchDialogOpen`, etc.)
+- `Action` enum: All possible keybinding actions (~60 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `ProjectsAdd`, `PickerQuickDelete`, `BranchDialogOpen`, etc.)
 - `KeyCombo`: Key + modifier combination with display helpers
 - `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
-- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, has_context_menu, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
-- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — `Tab:tab` top-left and `s:scope` top-right of panel border), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS`, `PROJECTS_BROWSE`, `PICKER`, `CONTEXT_MENU`, `BRANCH_DIALOG`
-- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, context menu, or wizard. No guard duplication in event_loop.rs.
-- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_context_menu_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
+- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
+- Static arrays per context: `GLOBAL`, `WORKTREES`, `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — `Tab:tab` top-left and `s:scope` top-right of panel border), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS` (11 entries — 2 actions + navigation/focus/refresh/diff), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`
+- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, or wizard. No guard duplication in event_loop.rs.
+- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_action(actions_focused, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
 - **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
@@ -602,20 +605,20 @@ Implementation:
 - Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, context menu, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
+1. Modal overlays (help, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
 2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
 3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
 4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
 
 **Input handlers only handle unresolved keys:**
 - `input_viewer.rs` — tab dialog, save dialog, discard dialog, edit mode text editing
-- `input_output.rs` — session list overlay input, rebase mode input
+- `input_output.rs` — session list overlay input
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
 - `input_health.rs` — `lookup_health_action()` → Action match (tab switching, panel-level keys like scope, per-tab keys)
 - `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav, commit overlay text editing)
 - `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
-- `input_dialogs.rs` — `lookup_context_menu_action()`, `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
+- `input_dialogs.rs` — `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
 
 **macOS ⌥+letter gotcha:** On macOS, `Option+letter` produces Unicode characters (e.g., `⌥c` → `ç`, `⌥r` → `®`), so crossterm sees `KeyCode::Char('ç')` with `KeyModifiers::NONE` — NOT `ALT + 'c'`. For keybindings that use `⌥+letter`, add the unicode char as an alternative via `with_alt()` and `ALT_MACOS_R` style statics (e.g., `⌥r` has `®` as alternative). `macos_opt_key()` maps all 26 unicode chars back to their letter for runtime lookups. `⌥+arrow` keys work fine since arrows don't produce Unicode. In text input modes, prefer `⌃+letter` (Ctrl) instead since those send real control codes. **Help panel display:** `display_keys()` filters out non-ASCII bare-char alternatives (®, π, †) so the help panel shows clean `⌥r` instead of `⌥r/®` — the unicode chars are internal matching details, not user-facing.
 
@@ -981,23 +984,19 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 ### Git Panel
 
-Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, context menu, wizard).
+Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard).
 
 **Panel Layout:**
 - Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
-- Actions section: 7 git operations with single-key shortcuts, navigable with j/k
+- Actions section: 3 git operations with single-key shortcuts, navigable with j/k
 - Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
-- Footer: `Tab:switch  Enter:exec/view  c:commit  R:refresh  Esc`
+- Footer: `Tab:switch  Enter:exec/view  c:commit  P:push  R:refresh  Esc`
 
 **Actions (when actions section focused):**
-- `r` / Enter on index 0 — Rebase from main (`Git::rebase_onto_main()`)
-- `m` / Enter on index 1 — Merge to main (`Git::merge_into_main()`) — merges the current worktree's branch INTO main by running from repo root
-- `f` / Enter on index 2 — Fetch all remotes (`Git::fetch()`)
-- `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
-- `P` / Enter on index 4 — Push (`Git::push()`)
-- `A` / Enter on index 5 — Auto-rebase toggle (see below)
-- `c` / Enter on index 6 — Commit (see below)
+- `m` / Enter on index 0 — Squash merge to main (`Git::squash_merge_into_main()`) — pull main → squash merge → commit (see data flow below). Does NOT auto-push; user triggers push separately.
+- `c` / Enter on index 1 — Commit (see below)
+- `Shift+P` / Enter on index 2 — Push current branch to remote
 
 **File list (when file list focused):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
@@ -1010,26 +1009,25 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - `Esc` — close panel
 - Click outside — dismiss (mouse.rs)
 
-**Auto-rebase toggle:**
-Pressing `A` (Shift+A) or Enter on index 5 toggles automatic rebase-on-Claude-exit. When toggled No→Yes, a scope picker dialog appears (`j/k` navigate, Enter confirms, Esc cancels) offering "This worktree" or "All worktrees". Toggling Yes→No disables immediately (no picker). The action row displays a `[Yes]` (green) or `[No]` (dim gray) badge. State persisted to the **worktree's own** `.azureal/azufig.toml` `[git]` section as `auto-rebase = "yes"` or `auto-rebase = "no"`. "All worktrees" iterates `app.worktrees` and writes to each worktree's config individually — no sentinel keys, each worktree gets its own config file edited directly. On Claude exit, `auto_rebase_on_exit()` reads the worktree's azufig and runs `Git::rebase_onto_main()` if enabled (skipped on main branch; result shown as status message).
-
 **Commit overlay:**
-Pressing `c` or Enter on index 6 stages all changes (`git add -A`), gets `git diff --staged` + `git diff --staged --stat`, and spawns `claude -p` as a one-shot background thread to generate a conventional commit message. While generating (~3 sec), the overlay shows "Generating..." with a spinner. The overlay is a centered dialog rendered on top of the Git panel with the generated message in an editable text area. `Enter` commits (deferred with "Committing..." loading indicator), `⌘P` commits + pushes (deferred with "Committing and pushing..." loading indicator), `Shift+Enter` inserts a newline, `Esc` cancels. Both commit actions use the `DeferredAction` two-phase pattern so the loading popup renders before the blocking git operation runs. Full text editing with word-wrap: type, backspace, delete, left/right arrows, up/down line navigation, home/end. Session persistence is disabled via `--no-session-persistence` so no .jsonl file is created. No streaming occurs — uses `std::process::Command` stdout capture. Markdown code fences are stripped from the output. State managed by `GitCommitOverlay` struct on `GitActionsPanel` (`commit_overlay: Option<GitCommitOverlay>`). `ACTION_COUNT` = 7 (was 6). Confirm-index mapping updated in input handler. Commit message receiver polled in event loop with short-poll (250ms) while generating.
+Pressing `c` or Enter on index 1 stages all changes (`git add -A`), gets `git diff --staged` + `git diff --staged --stat`, and spawns `claude -p` as a one-shot background thread to generate a conventional commit message. While generating (~3 sec), the overlay shows "Generating..." with a spinner. The overlay is a centered dialog rendered on top of the Git panel with the generated message in an editable text area. `Enter` commits (deferred with "Committing..." loading indicator), `⌘P` commits + pushes (deferred with "Committing and pushing..." loading indicator), `Shift+Enter` inserts a newline, `Esc` cancels. Both commit actions use the `DeferredAction` two-phase pattern so the loading popup renders before the blocking git operation runs. Full text editing with word-wrap: type, backspace, delete, left/right arrows, up/down line navigation, home/end. Session persistence is disabled via `--no-session-persistence` so no .jsonl file is created. No streaming occurs — uses `std::process::Command` stdout capture. Markdown code fences are stripped from the output. State managed by `GitCommitOverlay` struct on `GitActionsPanel` (`commit_overlay: Option<GitCommitOverlay>`). `ACTION_COUNT` = 3. Confirm-index mapping: 0=squash-merge, 1=commit, 2=push. Commit message receiver polled in event loop with short-poll (250ms) while generating.
 
-**Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. Checks `is_autorebase_enabled(&wt_path)` to set initial `autorebase_on` state. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+**Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-**Data flow (merge-to-main):** `exec_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::merge_into_main(repo_root, branch)`. The merge runs from the repo root — no checkout needed because the repo root IS on main. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
+**Data flow (squash-merge-to-main):** `exec_squash_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::squash_merge_into_main(repo_root, branch)`. Executes a 3-step cycle from the repo root:
+1. `git pull --ff-only` on main — non-fatal if offline (merge continues with local state), fatal if main has diverged (fast-forward required)
+2. `git merge --squash <branch>` — collapses all branch commits into staged changes
+3. `git commit -m "feat: merge <branch> into main"` — commits the squashed changes
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; auto-rebase toggle + scope picker writes to each worktree's azufig; `handle_commit_overlay()` for overlay text editing, `exec_commit_start()` to stage/spawn; `ACTION_COUNT` = 7), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`, Yes/No badge, scope picker overlay, commit overlay dialog with cursor and hint bar), `src/app/state/ui.rs` (open/close methods, `commit_overlay: None` in panel constructor), `src/git/core.rs` (10 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`, `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `autorebase_on`, `autorebase_scope`, `commit_overlay` fields, GitChangedFile, GitCommitOverlay), `src/tui/keybindings.rs` (GIT_ACTIONS array (16 entries), `lookup_git_action()`, hint generators, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating), `src/tui/event_loop/claude_events.rs` (`auto_rebase_on_exit()` reads worktree-local azufig), `src/azufig.rs` (`[git]` section with `is_autorebase_enabled(worktree_path)` and `set_autorebase(worktree_path, bool)`)
+Push is a separate user-triggered action (`Shift+P`). Result message reports merge status with optional "(pull skipped)" suffix if step 1 failed. Reports conflicts with count and auto-merged file count. Returns "Already up to date" when nothing to merge. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
 
-### Rebase Support
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; `handle_commit_overlay()` for overlay text editing, `exec_commit_start()` to stage/spawn, `exec_push()` for push; `ACTION_COUNT` = 3, confirm index mapping: 0=squash-merge, 1=commit, 2=push), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`, commit overlay dialog with cursor and hint bar), `src/app/state/ui.rs` (open/close methods, `commit_overlay: None` in panel constructor), `src/git/core.rs` (7 methods: `get_diff_files`, `get_file_diff`, `squash_merge_into_main` (internally runs pull/merge/commit — no push), `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `commit_overlay` fields, GitChangedFile, GitCommitOverlay), `src/tui/keybindings.rs` (GIT_ACTIONS array (12 entries), `lookup_git_action()`, hint generators, `GitPush` action, `Shift+P` binding, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating)
 
-Sessions can be rebased onto main with conflict detection:
-- View rebase status
-- Navigate conflicts
-- Resolve and continue
+### Rebase Support (Dead Code)
 
-Implementation: `src/git.rs` rebase functions, `RebaseStatus` in `src/models.rs`
+Legacy rebase infrastructure preserved on disk but no longer compiled or reachable. `src/git/rebase.rs` and `src/tui/input_rebase.rs` still exist but `input_rebase` is removed from the `tui.rs` module list. The rebase view UI code (`src/tui/draw_output/rebase_view.rs`) still compiles but has no entry points. Replaced by squash merge workflow in the Git panel.
+
+Implementation (legacy, unreachable): `src/git/rebase.rs`, `src/tui/draw_output/rebase_view.rs`, `RebaseStatus` in `src/models.rs`
 
 ### Run Commands
 
@@ -1161,7 +1159,7 @@ azureal/
 │   │   ├── state/          # State submodules
 │   │   │   ├── app.rs      # App struct definition + new(); includes `screen_height` (actual terminal window rows, updated on startup/resize) used for modal page-scroll calculations
 │   │   │   ├── load.rs     # Session loading and discovery
-│   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive/rebase
+│   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive
 │   │   │   ├── output.rs   # Output processing
 │   │   │   ├── scroll.rs   # Scroll operations
 │   │   │   ├── claude.rs   # Claude session handling
@@ -1207,7 +1205,7 @@ azureal/
 │   │   │   ├── render_submit.rs  # Background render thread submit/poll (submit_render_request, poll_render_result)
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
 │   │   │   ├── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
-│   │   │   └── rebase_view.rs    # Git rebase status display
+│   │   │   └── rebase_view.rs    # Git rebase status display (dead code — no entry points)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
 │   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)
 │   │   ├── draw_*.rs       # Other rendering functions
@@ -1215,7 +1213,7 @@ azureal/
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
-│   │   ├── input_output.rs # Convo: convo search + session list overlay + rebase mode only (commands resolved upstream)
+│   │   ├── input_output.rs # Convo: convo search + session list overlay only (commands resolved upstream)
 │   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
 │   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations)
 │   │   └── input_*.rs      # Other input handlers
@@ -1228,7 +1226,7 @@ azureal/
 │   ├── git/                # Git operations module
 │   │   ├── core.rs         # Git struct, repo detection, diffs
 │   │   ├── branch.rs       # Branch management
-│   │   ├── rebase.rs       # Rebase operations
+│   │   ├── rebase.rs       # Rebase operations (dead code — preserved on disk but not compiled from tui.rs)
 │   │   └── worktree.rs     # Worktree create/delete/list
 │   ├── cmd.rs              # CLI command handler routing (file-based module root)
 │   ├── cmd/                # CLI command handler submodules
@@ -1261,7 +1259,7 @@ azureal/
 - [x] Stream-JSON parsing for clean output
 - [x] Conversation persistence via --resume
 - [x] Diff viewing with syntax highlighting
-- [x] Rebase support
+- [x] Squash merge to main (replaced rebase/merge)
 - [x] Vim-style modal input (command/insert modes)
 - [x] Embedded terminal pane for shell commands
 
@@ -1271,7 +1269,7 @@ azureal/
 - [x] Token usage percentage on Convo pane title
 - [x] TodoWrite sticky widget (persistent checkbox list at bottom of Convo pane)
 - [x] AskUserQuestion options box (numbered options with context-aware response handling)
-- [x] Auto-rebase on Claude exit (toggle from Git panel, per-worktree or all-worktrees, persisted to each worktree's own azufig.toml `[git]` section)
+- [x] Squash merge to main (collapses all branch commits into single main commit, replaced rebase/merge/auto-rebase)
 - [ ] Session templates
 - [ ] Per-project configuration
 - [ ] Theme customization
@@ -1361,15 +1359,17 @@ azureal
 |-----|--------|
 | `j/k` | Navigate worktrees |
 | `J/K` | Page scroll |
+| `⌥↑/⌥↓` | Jump to top/bottom |
 | `f` | Toggle FileTree overlay (browse worktree files) |
 | `Enter` | Start/resume session |
+| `/` | Search/filter sessions |
 | `n` | New worktree/session wizard |
 | `b` | Browse branches |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
 | `a` | Archive worktree (blocked on main branch) |
+| `u` | Unarchive worktree (recreate from branch) |
 | `P` | Projects panel |
-| `/` | Search/filter sessions |
 | `⌥↑/⌥↓` | Jump to first/last worktree |
 
 ### FileTree Overlay (`f` in Worktrees)

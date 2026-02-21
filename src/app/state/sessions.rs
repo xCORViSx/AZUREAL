@@ -162,17 +162,26 @@ impl App {
         Ok(())
     }
 
-    pub fn rebase_current_worktree(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_worktree() {
-            if let Some(ref wt_path) = session.worktree_path {
-                if let Some(project) = self.current_project() {
-                    Git::rebase_onto_main(wt_path, &project.main_branch)?;
-                    self.set_status("Rebased successfully");
-                    return Ok(());
-                }
-            }
+    /// Restore an archived worktree by recreating its git worktree from the preserved branch
+    pub fn unarchive_current_worktree(&mut self) -> anyhow::Result<()> {
+        let session = self.current_worktree().ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
+        if !session.archived {
+            anyhow::bail!("Worktree is not archived");
         }
-        anyhow::bail!("No active session with worktree")
+        let branch = session.branch_name.clone();
+        let worktree_name = session.name().to_string();
+        let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        let worktree_path = project.worktrees_dir().join(&worktree_name);
+        // Recreate worktree from the existing branch
+        Git::create_worktree_from_branch(&project.path, &worktree_path, &branch)?;
+        self.set_status(format!("Unarchived: {}", worktree_name));
+        self.refresh_worktrees()?;
+        // Re-select the worktree (index may have shifted after refresh)
+        if let Some(idx) = self.worktrees.iter().position(|s| s.branch_name == branch) {
+            self.selected_worktree = Some(idx);
+            self.load_session_output();
+        }
+        Ok(())
     }
 
     /// Load and cache session files for a branch from Claude's project directory

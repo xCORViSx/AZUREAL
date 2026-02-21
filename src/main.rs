@@ -202,6 +202,7 @@ async fn main() -> Result<()> {
             SessionCommands::Stop { session, force } => cmd::handle_session_stop(&session, force)?,
             SessionCommands::Delete { session, yes } => cmd::handle_session_delete(&session, yes)?,
             SessionCommands::Archive { session } => cmd::handle_session_archive(&session)?,
+            SessionCommands::Unarchive { session } => cmd::handle_session_unarchive(&session)?,
             SessionCommands::Resume { session, prompt } => cmd::handle_session_resume(&session, prompt)?,
             SessionCommands::Logs { session, follow, lines } => cmd::handle_session_logs(&session, follow, lines)?,
             SessionCommands::Diff { session, stat } => cmd::handle_session_diff(&session, stat)?,

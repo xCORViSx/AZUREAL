@@ -1,5 +1,5 @@
 //! Git panel rendering — centered modal overlay showing git operations
-//! (rebase, merge, fetch, pull, push) and changed files list.
+//! (squash-merge, commit) and changed files list.
 //! Uses Git brand orange (#F05032) for border styling.
 
 use ratatui::{
@@ -44,9 +44,8 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD),
     )));
 
-    // Each action row: "  ▸ [r] Rebase from main" or "    [r] Rebase from main"
+    // Each action row: "  ▸ [m] Squash merge to main" or "    [m] Squash merge to main"
     // Labels sourced from keybindings.rs so they stay in sync with actual key bindings.
-    // Auto-rebase row gets an ON/OFF badge appended.
     let action_labels = keybindings::git_actions_labels();
     for (i, (key, label)) in action_labels.iter().enumerate() {
         let selected = panel.actions_focused && i == panel.selected_action;
@@ -61,20 +60,11 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         } else {
             Style::default().fg(GIT_BROWN)
         };
-        let mut spans = vec![
+        lines.push(Line::from(vec![
             Span::styled(prefix, style),
             Span::styled(format!("[{}]", key), key_style),
             Span::styled(format!(" {}", label), style),
-        ];
-        // Append Yes/No badge to the auto-rebase row (last action, index 5)
-        if *label == "Auto-rebase" {
-            if panel.autorebase_on {
-                spans.push(Span::styled(" [Yes]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
-            } else {
-                spans.push(Span::styled(" [No]", Style::default().fg(Color::DarkGray)));
-            }
-        }
-        lines.push(Line::from(spans));
+        ]));
     }
 
     lines.push(Line::from(""));
@@ -105,9 +95,9 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         Style::default().fg(GIT_BROWN),
     )));
 
-    // How many file rows can we fit? Reserve lines for: actions header(1) + actions(6+blank=8) +
-    // blank(1) + files header(1) + separator(1) + result(2) + borders(2) = 16 fixed
-    let visible_files = (modal_h as usize).saturating_sub(16);
+    // How many file rows can we fit? Reserve lines for: actions header(1) + actions(3) +
+    // blank(1) + files header(1) + separator(1) + result(2) + borders(2) = 11 fixed
+    let visible_files = (modal_h as usize).saturating_sub(11);
 
     // Adjust scroll so selected file is visible
     let scroll = if panel.selected_file < panel.file_scroll {
@@ -202,44 +192,6 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, modal);
-
-    // ── Auto-rebase scope picker (small centered dialog on top of panel) ──
-    if let Some(sel) = panel.autorebase_scope {
-        let dlg_w: u16 = 30;
-        let dlg_h: u16 = 6;
-        let dlg = Rect::new(
-            modal.x + (modal.width.saturating_sub(dlg_w)) / 2,
-            modal.y + (modal.height.saturating_sub(dlg_h)) / 2,
-            dlg_w.min(modal.width),
-            dlg_h.min(modal.height),
-        );
-        f.render_widget(Clear, dlg);
-
-        let scope_block = Block::default()
-            .title(Line::from(Span::styled(" Auto-rebase scope ", Style::default().fg(GIT_ORANGE).bold())))
-            .title_alignment(ratatui::layout::Alignment::Center)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(GIT_ORANGE));
-
-        let opt = |idx: usize, label: &str| -> Line {
-            let selected = sel == idx;
-            let prefix = if selected { " ▸ " } else { "   " };
-            let style = if selected {
-                Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            Line::from(Span::styled(format!("{}{}", prefix, label), style))
-        };
-        let scope_lines = vec![
-            opt(0, "This worktree"),
-            opt(1, "All worktrees"),
-            Line::from(""),
-            Line::from(Span::styled(" Enter:select  Esc:cancel", Style::default().fg(GIT_BROWN))),
-        ];
-        f.render_widget(Paragraph::new(scope_lines).block(scope_block), dlg);
-    }
 
     // ── Commit message overlay (centered dialog on top of panel) ──
     if let Some(ref overlay) = panel.commit_overlay {
