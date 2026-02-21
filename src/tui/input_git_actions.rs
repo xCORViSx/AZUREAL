@@ -368,28 +368,12 @@ fn exec_commit_start(app: &mut App) {
             "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
             stat, diff_trimmed
         );
-        // Snapshot existing session files so we can delete the one-shot session after
-        let sessions_before: std::collections::HashSet<std::ffi::OsString> =
-            crate::config::claude_project_dir(&wt_clone)
-                .and_then(|d| std::fs::read_dir(&d).ok())
-                .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name()).collect())
-                .unwrap_or_default();
-
+        // --no-session-persistence prevents Claude from saving a .jsonl session
+        // file for this throwaway one-shot invocation (no session to resume)
         let result = std::process::Command::new(&claude_bin)
-            .args(["-p", &prompt])
+            .args(["-p", "--no-session-persistence", &prompt])
             .current_dir(&wt_clone)
             .output();
-
-        // Delete the session file created by this one-shot — it's just noise
-        if let Some(dir) = crate::config::claude_project_dir(&wt_clone) {
-            if let Ok(rd) = std::fs::read_dir(&dir) {
-                for entry in rd.filter_map(|e| e.ok()) {
-                    if !sessions_before.contains(&entry.file_name()) {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                }
-            }
-        }
 
         match result {
             Ok(output) if output.status.success() => {
