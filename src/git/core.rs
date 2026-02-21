@@ -245,7 +245,7 @@ impl Git {
         if !result.is_empty() {
             let paths: Vec<&str> = result.iter().map(|(p, ..)| p.as_str()).collect();
             let mut child = Command::new("git")
-                .args(["check-ignore", "--stdin"])
+                .args(["check-ignore", "--no-index", "--stdin"])
                 .current_dir(worktree_path)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
