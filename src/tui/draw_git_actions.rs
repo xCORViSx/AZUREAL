@@ -381,7 +381,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
             commit_lines.push(Line::from(vec![
                 Span::styled(" Enter", Style::default().fg(GIT_ORANGE)),
                 Span::styled(":commit  ", Style::default().fg(GIT_BROWN)),
-                Span::styled("p", Style::default().fg(GIT_ORANGE)),
+                Span::styled("⌘P", Style::default().fg(GIT_ORANGE)),
                 Span::styled(":commit+push  ", Style::default().fg(GIT_BROWN)),
                 Span::styled("Shift+Enter", Style::default().fg(GIT_ORANGE)),
                 Span::styled(":newline  ", Style::default().fg(GIT_BROWN)),

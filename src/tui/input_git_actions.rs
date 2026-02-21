@@ -434,8 +434,8 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // p — commit + push (only if message is non-empty and done generating)
-        (KeyModifiers::NONE, KeyCode::Char('p')) if !generating && !overlay.message.trim().is_empty() => {
+        // ⌘P — commit + push (only if message is non-empty and done generating)
+        (m, KeyCode::Char('p')) if m.contains(KeyModifiers::SUPER) && !generating && !overlay.message.trim().is_empty() => {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;
