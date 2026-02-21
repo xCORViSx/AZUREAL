@@ -374,7 +374,10 @@ fn exec_commit_start(app: &mut App) {
             .output();
         match result {
             Ok(output) if output.status.success() => {
-                let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                // Strip markdown code fences Claude sometimes wraps the message in
+                let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let msg = raw.strip_prefix("```").unwrap_or(&raw);
+                let msg = msg.strip_suffix("```").unwrap_or(msg).trim().to_string();
                 let _ = tx.send(Ok(msg));
             }
             Ok(output) => {
