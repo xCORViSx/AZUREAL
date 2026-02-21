@@ -240,6 +240,28 @@ impl Git {
             }
         }
 
+        // Filter out gitignored files — tracked files in .gitignore still appear
+        // in `git diff HEAD` but are noise the user doesn't want to see
+        if !result.is_empty() {
+            let paths: Vec<&str> = result.iter().map(|(p, ..)| p.as_str()).collect();
+            let mut child = Command::new("git")
+                .args(["check-ignore", "--stdin"])
+                .current_dir(worktree_path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .context("Failed to spawn git check-ignore")?;
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(paths.join("\n").as_bytes());
+            }
+            let ignore_out = child.wait_with_output().context("git check-ignore failed")?;
+            let ignored: std::collections::HashSet<&str> =
+                std::str::from_utf8(&ignore_out.stdout).unwrap_or("")
+                    .lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+            result.retain(|(path, ..)| !ignored.contains(path.as_str()));
+        }
+
         Ok(result)
     }
 
