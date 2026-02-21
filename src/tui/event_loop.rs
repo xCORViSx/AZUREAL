@@ -82,7 +82,11 @@ pub async fn run_app(
         // idle to avoid burning CPU spinning on an empty event queue.
         // Short poll when we have pending work: draw waiting, render in-flight,
         // or Claude streaming. Ensures fast pickup without burning CPU when idle.
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending { 16 } else { 100 };
+        // Also short-poll while commit message is generating (waiting for Claude one-shot)
+        let commit_generating = app.git_actions_panel.as_ref()
+            .and_then(|p| p.commit_overlay.as_ref())
+            .map(|o| o.generating).unwrap_or(false);
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || commit_generating { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -182,6 +186,34 @@ pub async fn run_app(
             for (session_id, event) in claude_events {
                 handle_claude_event(&session_id, event, app, &claude_process)?;
                 needs_redraw = true;
+            }
+        }
+
+        // Poll commit message generation — background thread sends the Claude-generated
+        // commit message via mpsc. Non-blocking try_recv; fills the overlay when ready.
+        if let Some(ref mut panel) = app.git_actions_panel {
+            if let Some(ref mut overlay) = panel.commit_overlay {
+                if overlay.generating {
+                    if let Some(ref rx) = overlay.receiver {
+                        if let Ok(result) = rx.try_recv() {
+                            match result {
+                                Ok(msg) => {
+                                    overlay.message = msg;
+                                    overlay.cursor = overlay.message.chars().count();
+                                    overlay.generating = false;
+                                    overlay.receiver = None;
+                                    needs_redraw = true;
+                                }
+                                Err(err) => {
+                                    // Generation failed — close overlay and show error
+                                    panel.commit_overlay = None;
+                                    panel.result_message = Some((err, true));
+                                    needs_redraw = true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

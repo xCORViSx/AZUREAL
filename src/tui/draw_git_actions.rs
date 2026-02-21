@@ -241,6 +241,127 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(scope_lines).block(scope_block), dlg);
     }
 
+    // ── Commit message overlay (centered dialog on top of panel) ──
+    if let Some(ref overlay) = panel.commit_overlay {
+        // Size: 70% of panel width, 60% height — large enough for multi-line messages
+        let dlg_w = (modal.width * 70 / 100).max(40).min(modal.width.saturating_sub(4));
+        let dlg_h = (modal.height * 60 / 100).max(10).min(modal.height.saturating_sub(4));
+        let dlg = Rect::new(
+            modal.x + (modal.width.saturating_sub(dlg_w)) / 2,
+            modal.y + (modal.height.saturating_sub(dlg_h)) / 2,
+            dlg_w, dlg_h,
+        );
+        f.render_widget(Clear, dlg);
+
+        // Inner content area height (inside borders)
+        let inner_h = dlg_h.saturating_sub(2) as usize;
+
+        let mut commit_lines: Vec<Line> = Vec::new();
+
+        if overlay.generating {
+            // Pulsating "Generating..." message while waiting for Claude
+            let dots = ".".repeat((std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() / 500 % 4) as usize);
+            commit_lines.push(Line::from(""));
+            commit_lines.push(Line::from(Span::styled(
+                format!("  Generating commit message{}", dots),
+                Style::default().fg(GIT_ORANGE),
+            )));
+        } else {
+            // Render the editable message with a cursor indicator.
+            // Split message into lines and apply scroll offset.
+            let msg_lines: Vec<&str> = overlay.message.lines().collect();
+            // If message ends with newline, add an empty line at the end
+            let msg_lines: Vec<&str> = if overlay.message.ends_with('\n') {
+                let mut v = msg_lines;
+                v.push("");
+                v
+            } else if msg_lines.is_empty() {
+                vec![""]
+            } else {
+                msg_lines
+            };
+
+            // Reserve 2 lines for the bottom hint bar
+            let visible_h = inner_h.saturating_sub(2);
+            let scroll = overlay.scroll.min(msg_lines.len().saturating_sub(visible_h));
+
+            // Figure out which line/col the cursor is on
+            let mut cursor_line = 0;
+            let mut cursor_col = 0;
+            let mut chars_seen = 0;
+            for (i, line) in msg_lines.iter().enumerate() {
+                let line_chars = line.chars().count();
+                if chars_seen + line_chars >= overlay.cursor && i >= cursor_line {
+                    cursor_line = i;
+                    cursor_col = overlay.cursor - chars_seen;
+                    break;
+                }
+                // +1 for the newline character between lines
+                chars_seen += line_chars + 1;
+                cursor_line = i + 1;
+            }
+
+            for (i, line) in msg_lines.iter().enumerate().skip(scroll).take(visible_h) {
+                let prefix = " ";
+                if i == cursor_line {
+                    // Render line with cursor — split at cursor_col, insert block cursor
+                    let chars: Vec<char> = line.chars().collect();
+                    let before: String = chars[..cursor_col.min(chars.len())].iter().collect();
+                    let cursor_char = chars.get(cursor_col).copied().unwrap_or(' ');
+                    let after: String = if cursor_col < chars.len() {
+                        chars[cursor_col + 1..].iter().collect()
+                    } else {
+                        String::new()
+                    };
+                    commit_lines.push(Line::from(vec![
+                        Span::raw(prefix),
+                        Span::styled(before, Style::default().fg(Color::White)),
+                        Span::styled(
+                            cursor_char.to_string(),
+                            Style::default().fg(Color::Black).bg(GIT_ORANGE),
+                        ),
+                        Span::styled(after, Style::default().fg(Color::White)),
+                    ]));
+                } else {
+                    commit_lines.push(Line::from(vec![
+                        Span::raw(prefix),
+                        Span::styled((*line).to_string(), Style::default().fg(Color::White)),
+                    ]));
+                }
+            }
+
+            // Pad remaining visible lines so the hint bar sits at the bottom
+            while commit_lines.len() < visible_h {
+                commit_lines.push(Line::from(""));
+            }
+
+            // Hint bar at the bottom of the dialog content
+            commit_lines.push(Line::from(""));
+            commit_lines.push(Line::from(vec![
+                Span::styled(" Enter", Style::default().fg(GIT_ORANGE)),
+                Span::styled(":commit  ", Style::default().fg(GIT_BROWN)),
+                Span::styled("p", Style::default().fg(GIT_ORANGE)),
+                Span::styled(":commit+push  ", Style::default().fg(GIT_BROWN)),
+                Span::styled("Shift+Enter", Style::default().fg(GIT_ORANGE)),
+                Span::styled(":newline  ", Style::default().fg(GIT_BROWN)),
+                Span::styled("Esc", Style::default().fg(GIT_ORANGE)),
+                Span::styled(":cancel", Style::default().fg(GIT_BROWN)),
+            ]));
+        }
+
+        let commit_block = Block::default()
+            .title(Line::from(Span::styled(" Commit ", Style::default().fg(GIT_ORANGE).bold())))
+            .title_alignment(ratatui::layout::Alignment::Center)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(GIT_ORANGE));
+
+        f.render_widget(Paragraph::new(commit_lines).block(commit_block), dlg);
+    }
+
     // ── Footer hints rendered on top of the bottom border ──
     let footer = keybindings::git_actions_footer();
     let footer_y = modal.y + modal.height.saturating_sub(1);

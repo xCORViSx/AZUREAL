@@ -304,4 +304,47 @@ impl Git {
         else { anyhow::bail!("{}", combined.trim()) }
     }
 
+    /// Stage all changes (tracked + untracked) via `git add -A`
+    pub fn stage_all(worktree_path: &Path) -> Result<()> {
+        let output = Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to stage changes")?;
+        if output.status.success() { Ok(()) }
+        else { anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim()) }
+    }
+
+    /// Get the full diff of staged changes for commit message generation
+    pub fn get_staged_diff(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["diff", "--staged"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get staged diff")?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Get a short summary of staged changes (file count + stats)
+    pub fn get_staged_stat(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["diff", "--staged", "--stat"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get staged stat")?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Commit staged changes with the given message
+    pub fn commit(worktree_path: &Path, message: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to commit")?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if output.status.success() { Ok(combined.trim().to_string()) }
+        else { anyhow::bail!("{}", combined.trim()) }
+    }
+
 }

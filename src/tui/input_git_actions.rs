@@ -2,20 +2,21 @@
 //!
 //! Full-screen modal overlay — consumes ALL input when active, dispatched via
 //! the centralized keybinding system (lookup_git_actions_action in keybindings.rs).
-//! Actions section (Tab to switch): r=rebase from main, m=merge to main, f=fetch, l=pull, P=push.
+//! Actions section (Tab to switch): r=rebase, m=merge, f=fetch, l=pull, P=push, c=commit.
 //! File list section: j/k navigate, Enter/d opens file diff in viewer.
 
 use anyhow::Result;
 use crossterm::event;
 
 use crate::app::App;
-use crate::app::types::{GitActionsPanel, GitChangedFile};
+use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay};
 use crate::git::Git;
 use crate::models::RebaseResult;
 use super::keybindings::{lookup_git_actions_action, Action};
 
-/// Total number of action items displayed in the actions section (5 git ops + 1 auto-rebase toggle)
-const ACTION_COUNT: usize = 6;
+/// Total number of action items in the actions section
+/// (6 git ops: rebase/merge/fetch/pull/push/commit + 1 auto-rebase toggle)
+const ACTION_COUNT: usize = 7;
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
@@ -24,6 +25,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
         Some(p) => p,
         None => return Ok(()),
     };
+
+    // Commit overlay intercepts all input when open (text editing + actions)
+    if panel.commit_overlay.is_some() {
+        return handle_commit_overlay(key, app);
+    }
 
     // If auto-rebase scope picker is open, handle it before anything else
     if panel.autorebase_scope.is_some() {
@@ -84,6 +90,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
         Action::GitFetch => { exec_fetch(app); }
         Action::GitPull => { exec_pull(app); }
         Action::GitPush => { exec_push(app); }
+        Action::GitCommit => { exec_commit_start(app); }
 
         // Auto-rebase toggle: if currently ON → turn off, if OFF → open scope picker
         Action::GitAutoRebase => { exec_autorebase_toggle(app); }
@@ -101,7 +108,8 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
                     2 => exec_fetch(app),
                     3 => exec_pull(app),
                     4 => exec_push(app),
-                    5 => exec_autorebase_toggle(app),
+                    5 => exec_commit_start(app),
+                    6 => exec_autorebase_toggle(app),
                     _ => {}
                 }
             } else {
@@ -305,4 +313,229 @@ fn refresh_changed_files(panel: &mut GitActionsPanel) {
         }
         Err(_) => { panel.changed_files.clear(); panel.selected_file = 0; }
     }
+}
+
+/// Start the commit flow: stage all changes, get the diff, spawn Claude one-shot
+/// to generate a commit message, and open the commit overlay.
+fn exec_commit_start(app: &mut App) {
+    let wt = match app.git_actions_panel.as_ref() {
+        Some(p) => p.worktree_path.clone(),
+        None => return,
+    };
+
+    // Stage everything and check if there's anything to commit
+    if let Err(e) = Git::stage_all(&wt) {
+        if let Some(ref mut p) = app.git_actions_panel {
+            p.result_message = Some((format!("Stage failed: {}", e), true));
+        }
+        return;
+    }
+    let diff = match Git::get_staged_diff(&wt) {
+        Ok(d) if d.trim().is_empty() => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some(("Nothing to commit".into(), false));
+            }
+            return;
+        }
+        Ok(d) => d,
+        Err(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("Diff failed: {}", e), true));
+            }
+            return;
+        }
+    };
+
+    // Also get --stat summary for a more compact prompt (Claude sees both)
+    let stat = Git::get_staged_stat(&wt).unwrap_or_default();
+
+    // Resolve the Claude binary path from config
+    let claude_bin = crate::azufig::load_global_azufig()
+        .config.claude_executable
+        .unwrap_or_else(|| "claude".into());
+
+    // Spawn background thread to run Claude one-shot for commit message generation.
+    // Uses `claude -p` with a focused prompt — no session file, no streaming, just
+    // stdout capture. The diff is piped in full so Claude has complete context.
+    let (tx, rx) = std::sync::mpsc::channel();
+    let wt_clone = wt.clone();
+    std::thread::spawn(move || {
+        // Truncate diff to ~30k chars to stay within reasonable prompt size.
+        // The stat summary provides overview even if the diff is truncated.
+        let max_diff = 30_000;
+        let diff_trimmed = if diff.len() > max_diff { &diff[..max_diff] } else { &diff };
+        let prompt = format!(
+            "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
+            stat, diff_trimmed
+        );
+        let result = std::process::Command::new(&claude_bin)
+            .args(["-p", &prompt])
+            .current_dir(&wt_clone)
+            .output();
+        match result {
+            Ok(output) if output.status.success() => {
+                let msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let _ = tx.send(Ok(msg));
+            }
+            Ok(output) => {
+                let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let _ = tx.send(Err(format!("Claude failed: {}", err)));
+            }
+            Err(e) => { let _ = tx.send(Err(format!("Failed to run claude: {}", e))); }
+        }
+    });
+
+    // Open the overlay in "generating" state — message will be filled by the
+    // event loop polling the receiver once Claude returns
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.commit_overlay = Some(GitCommitOverlay {
+            message: String::new(),
+            cursor: 0,
+            generating: true,
+            scroll: 0,
+            receiver: Some(rx),
+        });
+    }
+}
+
+/// Handle input while the commit message overlay is open.
+/// Supports text editing (type/backspace/arrows), Enter to commit, p to commit+push, Esc to cancel.
+fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let panel = match app.git_actions_panel.as_mut() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let overlay = match panel.commit_overlay.as_mut() {
+        Some(o) => o,
+        None => return Ok(()),
+    };
+
+    // Block editing while Claude is still generating
+    let generating = overlay.generating;
+
+    match (key.modifiers, key.code) {
+        // Esc — cancel and close overlay
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            panel.commit_overlay = None;
+        }
+
+        // Enter — commit with current message (only if message is non-empty and done generating)
+        (KeyModifiers::NONE, KeyCode::Enter) if !generating && !overlay.message.trim().is_empty() => {
+            let msg = overlay.message.clone();
+            let wt = panel.worktree_path.clone();
+            panel.commit_overlay = None;
+            match Git::commit(&wt, &msg) {
+                Ok(out) => {
+                    panel.result_message = Some((format!("Committed: {}", first_line(&out)), false));
+                    refresh_changed_files(panel);
+                }
+                Err(e) => { panel.result_message = Some((format!("{}", e), true)); }
+            }
+        }
+
+        // p — commit + push (only if message is non-empty and done generating)
+        (KeyModifiers::NONE, KeyCode::Char('p')) if !generating && !overlay.message.trim().is_empty() => {
+            let msg = overlay.message.clone();
+            let wt = panel.worktree_path.clone();
+            panel.commit_overlay = None;
+            match Git::commit(&wt, &msg) {
+                Ok(_) => {
+                    match Git::push(&wt) {
+                        Ok(_) => {
+                            panel.result_message = Some(("Committed and pushed".into(), false));
+                        }
+                        Err(e) => {
+                            panel.result_message = Some((format!("Committed but push failed: {}", e), true));
+                        }
+                    }
+                    refresh_changed_files(panel);
+                }
+                Err(e) => { panel.result_message = Some((format!("{}", e), true)); }
+            }
+        }
+
+        // Backspace — delete char before cursor
+        (KeyModifiers::NONE, KeyCode::Backspace) if !generating => {
+            if overlay.cursor > 0 {
+                let byte_pos = overlay.message.char_indices()
+                    .nth(overlay.cursor - 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                let next_byte = overlay.message.char_indices()
+                    .nth(overlay.cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(overlay.message.len());
+                overlay.message.replace_range(byte_pos..next_byte, "");
+                overlay.cursor -= 1;
+            }
+        }
+
+        // Delete — delete char at cursor
+        (KeyModifiers::NONE, KeyCode::Delete) if !generating => {
+            let char_count = overlay.message.chars().count();
+            if overlay.cursor < char_count {
+                let byte_pos = overlay.message.char_indices()
+                    .nth(overlay.cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(overlay.message.len());
+                let next_byte = overlay.message.char_indices()
+                    .nth(overlay.cursor + 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(overlay.message.len());
+                overlay.message.replace_range(byte_pos..next_byte, "");
+            }
+        }
+
+        // Left/Right arrow — move cursor within message
+        (KeyModifiers::NONE, KeyCode::Left) if !generating => {
+            if overlay.cursor > 0 { overlay.cursor -= 1; }
+        }
+        (KeyModifiers::NONE, KeyCode::Right) if !generating => {
+            let char_count = overlay.message.chars().count();
+            if overlay.cursor < char_count { overlay.cursor += 1; }
+        }
+
+        // Home/End — jump to start/end of current line
+        (KeyModifiers::NONE, KeyCode::Home) if !generating => { overlay.cursor = 0; }
+        (KeyModifiers::NONE, KeyCode::End) if !generating => {
+            overlay.cursor = overlay.message.chars().count();
+        }
+
+        // Up/Down — scroll the message view
+        (KeyModifiers::NONE, KeyCode::Up) if !generating => {
+            if overlay.scroll > 0 { overlay.scroll -= 1; }
+        }
+        (KeyModifiers::NONE, KeyCode::Down) if !generating => {
+            overlay.scroll += 1;
+        }
+
+        // Shift+Enter — insert newline (Enter alone commits)
+        (m, KeyCode::Enter) if m.contains(KeyModifiers::SHIFT) && !generating => {
+            let byte_pos = overlay.message.char_indices()
+                .nth(overlay.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(overlay.message.len());
+            overlay.message.insert(byte_pos, '\n');
+            overlay.cursor += 1;
+        }
+
+        // Regular char — insert at cursor
+        (m, KeyCode::Char(c)) if !generating && !m.contains(KeyModifiers::CONTROL) => {
+            let byte_pos = overlay.message.char_indices()
+                .nth(overlay.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(overlay.message.len());
+            overlay.message.insert(byte_pos, c);
+            overlay.cursor += 1;
+        }
+
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Extract the first line from a multi-line string (for result messages)
+fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or(s)
 }

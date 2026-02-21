@@ -226,6 +226,7 @@ pub enum Action {
     GitViewDiff,
     GitRefresh,
     GitAutoRebase,
+    GitCommit,
 
     // FileTree Options overlay
     FileTreeOptions,
@@ -520,7 +521,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Guard note: git ops (r/m/f/l/P) only fire when actions_focused=true,
 /// diff view (d) only fires when actions_focused=false. Guards live in
 /// lookup_git_actions_action(), not here.
-pub static GIT_ACTIONS: [Keybinding; 15] = [
+pub static GIT_ACTIONS: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -532,6 +533,7 @@ pub static GIT_ACTIONS: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Fetch", Action::GitFetch),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('P')), "Push", Action::GitPush),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('A')), "Auto-rebase", Action::GitAutoRebase),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
@@ -828,7 +830,8 @@ pub fn lookup_git_actions_action(
     for b in &GIT_ACTIONS {
         let skip = match b.action {
             Action::GitRebase | Action::GitMerge | Action::GitFetch
-            | Action::GitPull | Action::GitPush | Action::GitAutoRebase if !actions_focused => true,
+            | Action::GitPull | Action::GitPush | Action::GitAutoRebase
+            | Action::GitCommit if !actions_focused => true,
             Action::GitViewDiff if actions_focused => true,
             _ => false,
         };
@@ -895,7 +898,7 @@ pub fn health_docs_hints() -> String {
 /// Git Actions panel — action key+description pairs for the action list labels.
 /// Returns (display_key, description) for each git action in display order.
 pub fn git_actions_labels() -> Vec<(String, &'static str)> {
-    [Action::GitRebase, Action::GitMerge, Action::GitFetch, Action::GitPull, Action::GitPush, Action::GitAutoRebase]
+    [Action::GitRebase, Action::GitMerge, Action::GitFetch, Action::GitPull, Action::GitPush, Action::GitCommit, Action::GitAutoRebase]
         .iter()
         .filter_map(|&a| {
             GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))

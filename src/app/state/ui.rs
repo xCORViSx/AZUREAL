@@ -132,6 +132,7 @@ impl App {
             result_message: None,
             autorebase_on,
             autorebase_scope: None,
+            commit_overlay: None,
         });
     }
 

@@ -436,6 +436,22 @@ pub struct GitChangedFile {
     pub deletions: usize,
 }
 
+/// Commit message overlay state — shown when pressing `c` in the Git panel.
+/// Claude generates the message via one-shot `claude -p`, user can edit before committing.
+#[derive(Debug)]
+pub struct GitCommitOverlay {
+    /// The editable commit message text (may be multi-line)
+    pub message: String,
+    /// Cursor position as char index within message
+    pub cursor: usize,
+    /// True while Claude is still generating the message in a background thread
+    pub generating: bool,
+    /// Scroll offset for displaying long messages
+    pub scroll: usize,
+    /// Receiver for the generated message from the background thread
+    pub receiver: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+}
+
 /// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
 /// Shows git operations (rebase, merge, fetch, etc.) and changed files list.
 #[derive(Debug)]
@@ -466,6 +482,9 @@ pub struct GitActionsPanel {
     /// 0 = "This worktree" selected, 1 = "All worktrees" selected.
     /// Toggling ON opens this picker; toggling OFF skips it (just disables).
     pub autorebase_scope: Option<usize>,
+    /// Commit message overlay — shown when `c` is pressed in the actions list.
+    /// Claude generates a conventional commit message from `git diff --staged`.
+    pub commit_overlay: Option<GitCommitOverlay>,
 }
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization

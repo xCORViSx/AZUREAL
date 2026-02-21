@@ -613,7 +613,7 @@ Implementation:
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — file tree overlay routing, sidebar filter text input, 's' stop-tracking
 - `input_health.rs` — `lookup_health_action()` → Action match (tab switching, panel-level keys like scope, per-tab keys)
-- `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav)
+- `input_git_actions.rs` — `lookup_git_action()` → Action match (git ops, file nav, commit overlay text editing)
 - `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
 - `input_dialogs.rs` — `lookup_context_menu_action()`, `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
 
@@ -985,10 +985,10 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 
 **Panel Layout:**
 - Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
-- Actions section: 6 git operations with single-key shortcuts, navigable with j/k
+- Actions section: 7 git operations with single-key shortcuts, navigable with j/k
 - Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
 - Result message area: green (success) or red (error) after each operation
-- Footer: `Tab:switch  Enter:exec/view  R:refresh  Esc`
+- Footer: `Tab:switch  Enter:exec/view  c:commit  R:refresh  Esc`
 
 **Actions (when actions section focused):**
 - `r` / Enter on index 0 — Rebase from main (`Git::rebase_onto_main()`)
@@ -997,6 +997,7 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 - `l` / Enter on index 3 — Pull (`Git::pull()` — 'l' avoids 'p' conflict with prompt mode)
 - `P` / Enter on index 4 — Push (`Git::push()`)
 - `A` / Enter on index 5 — Auto-rebase toggle (see below)
+- `c` / Enter on index 6 — Commit (see below)
 
 **File list (when file list focused):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
@@ -1012,11 +1013,14 @@ Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providi
 **Auto-rebase toggle:**
 Pressing `A` (Shift+A) or Enter on index 5 toggles automatic rebase-on-Claude-exit. When toggled No→Yes, a scope picker dialog appears (`j/k` navigate, Enter confirms, Esc cancels) offering "This worktree" or "All worktrees". Toggling Yes→No disables immediately (no picker). The action row displays a `[Yes]` (green) or `[No]` (dim gray) badge. State persisted to the **worktree's own** `.azureal/azufig.toml` `[git]` section as `auto-rebase = "yes"` or `auto-rebase = "no"`. "All worktrees" iterates `app.worktrees` and writes to each worktree's config individually — no sentinel keys, each worktree gets its own config file edited directly. On Claude exit, `auto_rebase_on_exit()` reads the worktree's azufig and runs `Git::rebase_onto_main()` if enabled (skipped on main branch; result shown as status message).
 
+**Commit overlay:**
+Pressing `c` or Enter on index 6 stages all changes (`git add -A`), gets `git diff --staged` + `git diff --staged --stat`, and spawns `claude -p` as a one-shot background thread to generate a conventional commit message. While generating (~3 sec), the overlay shows "Generating..." with a spinner. The overlay is a centered dialog rendered on top of the Git panel with the generated message in an editable text area. `Enter` runs `git commit -m "<message>"`, `p` commits + pushes, `Shift+Enter` inserts a newline, `Esc` cancels. Full text editing: type, backspace, delete, left/right arrows, up/down scroll, home/end. No Claude session file is created and no streaming occurs — uses `std::process::Command` stdout capture. State managed by `GitCommitOverlay` struct on `GitActionsPanel` (`commit_overlay: Option<GitCommitOverlay>`). `ACTION_COUNT` = 7 (was 6). Confirm-index mapping updated in input handler. Commit message receiver polled in event loop with short-poll (250ms) while generating.
+
 **Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. Checks `is_autorebase_enabled(&wt_path)` to set initial `autorebase_on` state. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
 **Data flow (merge-to-main):** `exec_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::merge_into_main(repo_root, branch)`. The merge runs from the repo root — no checkout needed because the repo root IS on main. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; auto-rebase toggle + scope picker writes to each worktree's azufig), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`, Yes/No badge, scope picker overlay), `src/app/state/ui.rs` (open/close methods), `src/git/core.rs` (6 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `autorebase_on`, `autorebase_scope` fields, GitChangedFile), `src/tui/keybindings.rs` (GIT_ACTIONS array (15 entries), `lookup_git_action()`, hint generators, `G` in GLOBAL), `src/tui/event_loop/claude_events.rs` (`auto_rebase_on_exit()` reads worktree-local azufig), `src/azufig.rs` (`[git]` section with `is_autorebase_enabled(worktree_path)` and `set_autorebase(worktree_path, bool)`)
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; auto-rebase toggle + scope picker writes to each worktree's azufig; `handle_commit_overlay()` for overlay text editing, `exec_commit_start()` to stage/spawn; `ACTION_COUNT` = 7), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels()`, footer from `keybindings::git_actions_footer()`, Yes/No badge, scope picker overlay, commit overlay dialog with cursor and hint bar), `src/app/state/ui.rs` (open/close methods, `commit_overlay: None` in panel constructor), `src/git/core.rs` (10 methods: `get_diff_files`, `get_file_diff`, `fetch`, `pull`, `push`, `merge_into_main`, `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `autorebase_on`, `autorebase_scope`, `commit_overlay` fields, GitChangedFile, GitCommitOverlay), `src/tui/keybindings.rs` (GIT_ACTIONS array (16 entries), `lookup_git_action()`, hint generators, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating), `src/tui/event_loop/claude_events.rs` (`auto_rebase_on_exit()` reads worktree-local azufig), `src/azufig.rs` (`[git]` section with `is_autorebase_enabled(worktree_path)` and `set_autorebase(worktree_path, bool)`)
 
 ### Rebase Support
 
@@ -1172,7 +1176,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, WorktreeAction, SidebarRowAction, FileTreeAction, ProjectsPanel, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, WorktreeAction, SidebarRowAction, FileTreeAction, ProjectsPanel, GitCommitOverlay, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
