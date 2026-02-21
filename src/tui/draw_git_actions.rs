@@ -270,49 +270,86 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
                 Style::default().fg(GIT_ORANGE),
             )));
         } else {
-            // Render the editable message with a cursor indicator.
-            // Split message into lines and apply scroll offset.
+            // Render the editable message with word-wrap and cursor indicator.
+            // Split into logical lines, then wrap each to fit the dialog width.
             let msg_lines: Vec<&str> = overlay.message.lines().collect();
-            // If message ends with newline, add an empty line at the end
             let msg_lines: Vec<&str> = if overlay.message.ends_with('\n') {
-                let mut v = msg_lines;
-                v.push("");
-                v
+                let mut v = msg_lines; v.push(""); v
             } else if msg_lines.is_empty() {
                 vec![""]
             } else {
                 msg_lines
             };
 
-            // Reserve 2 lines for the bottom hint bar
-            let visible_h = inner_h.saturating_sub(2);
-            let scroll = overlay.scroll.min(msg_lines.len().saturating_sub(visible_h));
+            // Available text width: dialog minus 2 border chars minus 1 prefix space
+            let wrap_w = (dlg_w as usize).saturating_sub(3).max(1);
 
-            // Figure out which line/col the cursor is on
-            let mut cursor_line = 0;
-            let mut cursor_col = 0;
-            let mut chars_seen = 0;
+            // Find cursor's logical line and column
+            let mut cursor_logical = 0usize;
+            let mut cursor_col_in_logical = 0usize;
+            let mut chars_seen = 0usize;
             for (i, line) in msg_lines.iter().enumerate() {
-                let line_chars = line.chars().count();
-                if chars_seen + line_chars >= overlay.cursor && i >= cursor_line {
-                    cursor_line = i;
-                    cursor_col = overlay.cursor - chars_seen;
+                let lc = line.chars().count();
+                if chars_seen + lc >= overlay.cursor {
+                    cursor_logical = i;
+                    cursor_col_in_logical = overlay.cursor - chars_seen;
                     break;
                 }
-                // +1 for the newline character between lines
-                chars_seen += line_chars + 1;
-                cursor_line = i + 1;
+                chars_seen += lc + 1;
+                cursor_logical = i + 1;
             }
 
-            for (i, line) in msg_lines.iter().enumerate().skip(scroll).take(visible_h) {
+            // Wrap logical lines into display lines, tracking cursor position.
+            // Each entry: (char vec for this display row, has_cursor, cursor_col_in_row)
+            let mut wrapped: Vec<(Vec<char>, bool, usize)> = Vec::new();
+            let mut cursor_display_row = 0usize;
+            for (li, line) in msg_lines.iter().enumerate() {
+                let chars: Vec<char> = line.chars().collect();
+                if chars.is_empty() {
+                    let has = li == cursor_logical && cursor_col_in_logical == 0;
+                    if has { cursor_display_row = wrapped.len(); }
+                    wrapped.push((vec![], has, 0));
+                } else {
+                    let mut off = 0;
+                    while off < chars.len() {
+                        let end = (off + wrap_w).min(chars.len());
+                        let sub = chars[off..end].to_vec();
+                        let has = li == cursor_logical
+                            && cursor_col_in_logical >= off
+                            && cursor_col_in_logical < end;
+                        let col = if has { cursor_col_in_logical - off } else { 0 };
+                        if has { cursor_display_row = wrapped.len(); }
+                        wrapped.push((sub, has, col));
+                        off = end;
+                    }
+                    // Cursor at end of line (past last char) — place on last sub-line
+                    if li == cursor_logical && cursor_col_in_logical == chars.len() {
+                        let last = wrapped.len() - 1;
+                        wrapped[last].1 = true;
+                        wrapped[last].2 = wrapped[last].0.len();
+                        cursor_display_row = last;
+                    }
+                }
+            }
+
+            // Reserve 2 lines for the bottom hint bar
+            let visible_h = inner_h.saturating_sub(2);
+            // Auto-scroll to keep cursor visible
+            let scroll = if cursor_display_row >= overlay.scroll + visible_h {
+                cursor_display_row - visible_h + 1
+            } else if cursor_display_row < overlay.scroll {
+                cursor_display_row
+            } else {
+                overlay.scroll.min(wrapped.len().saturating_sub(visible_h))
+            };
+
+            for (chars, has_cursor, col) in wrapped.iter().skip(scroll).take(visible_h) {
                 let prefix = " ";
-                if i == cursor_line {
-                    // Render line with cursor — split at cursor_col, insert block cursor
-                    let chars: Vec<char> = line.chars().collect();
-                    let before: String = chars[..cursor_col.min(chars.len())].iter().collect();
-                    let cursor_char = chars.get(cursor_col).copied().unwrap_or(' ');
-                    let after: String = if cursor_col < chars.len() {
-                        chars[cursor_col + 1..].iter().collect()
+                if *has_cursor {
+                    let before: String = chars[..(*col).min(chars.len())].iter().collect();
+                    let cursor_char = chars.get(*col).copied().unwrap_or(' ');
+                    let after: String = if *col < chars.len() {
+                        chars[*col + 1..].iter().collect()
                     } else {
                         String::new()
                     };
@@ -326,9 +363,10 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
                         Span::styled(after, Style::default().fg(Color::White)),
                     ]));
                 } else {
+                    let text: String = chars.iter().collect();
                     commit_lines.push(Line::from(vec![
                         Span::raw(prefix),
-                        Span::styled((*line).to_string(), Style::default().fg(Color::White)),
+                        Span::styled(text, Style::default().fg(Color::White)),
                     ]));
                 }
             }

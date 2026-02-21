@@ -74,8 +74,9 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     };
     status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
 
-    // Right badge: CPU% + PID
+    // Right badge: CPU% + PID — azure text in debug builds as a visual indicator
     let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
+    let badge_color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
     let badge_width = badge_text.len() as u16;
 
     // Left side: status content (leave room for badge on right)
@@ -91,7 +92,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         ..area
     };
     let badge_widget = Paragraph::new(Line::from(
-        Span::styled(badge_text, Style::default().fg(Color::DarkGray))
+        Span::styled(badge_text, Style::default().fg(badge_color))
     ));
     f.render_widget(badge_widget, right_area);
 }

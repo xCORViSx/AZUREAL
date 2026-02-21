@@ -502,12 +502,38 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
             overlay.cursor = overlay.message.chars().count();
         }
 
-        // Up/Down — scroll the message view
+        // Up/Down — move cursor to previous/next logical line (auto-scroll follows)
         (KeyModifiers::NONE, KeyCode::Up) if !generating => {
-            if overlay.scroll > 0 { overlay.scroll -= 1; }
+            // Find start of current line, then move to same column on previous line
+            let chars: Vec<char> = overlay.message.chars().collect();
+            let mut line_start = overlay.cursor;
+            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+            if line_start > 0 {
+                // There's a previous line — find its start
+                let prev_end = line_start - 1; // the '\n' before current line
+                let mut prev_start = prev_end;
+                while prev_start > 0 && chars.get(prev_start - 1) != Some(&'\n') { prev_start -= 1; }
+                let col = overlay.cursor - line_start;
+                let prev_len = prev_end - prev_start;
+                overlay.cursor = prev_start + col.min(prev_len);
+            }
         }
         (KeyModifiers::NONE, KeyCode::Down) if !generating => {
-            overlay.scroll += 1;
+            let chars: Vec<char> = overlay.message.chars().collect();
+            let mut line_start = overlay.cursor;
+            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+            let col = overlay.cursor - line_start;
+            // Find end of current line (the '\n' or message end)
+            let mut line_end = overlay.cursor;
+            while line_end < chars.len() && chars[line_end] != '\n' { line_end += 1; }
+            if line_end < chars.len() {
+                // There's a next line
+                let next_start = line_end + 1;
+                let mut next_end = next_start;
+                while next_end < chars.len() && chars[next_end] != '\n' { next_end += 1; }
+                let next_len = next_end - next_start;
+                overlay.cursor = next_start + col.min(next_len);
+            }
         }
 
         // Shift+Enter — insert newline (Enter alone commits)
