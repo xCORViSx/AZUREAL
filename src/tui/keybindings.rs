@@ -217,9 +217,13 @@ pub enum Action {
     HealthDocToggleNon100,
     HealthDocSpawn,
 
+    // Main branch browse (read-only inspection of main's files and sessions)
+    BrowseMain,
+
     // Git Actions Panel (modal)
     GitToggleFocus,
     GitSquashMerge,
+    GitPull,
     GitViewDiff,
     GitRefresh,
     GitCommit,
@@ -359,8 +363,9 @@ pub static GLOBAL: [Keybinding; 12] = [
 ];
 
 /// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 14] = [
+pub static WORKTREES: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Browse main", Action::BrowseMain),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
@@ -516,10 +521,10 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 ];
 
 /// Git Actions Panel — all keys for the git modal overlay.
-/// Guard note: git ops (m/c) only fire when actions_focused=true,
-/// diff view (d) only fires when actions_focused=false. Guards live in
-/// lookup_git_actions_action(), not here.
-pub static GIT_ACTIONS: [Keybinding; 12] = [
+/// Actions are context-aware: main branch shows pull+commit+push,
+/// feature branches show squash-merge+commit+push. Guards in
+/// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
+pub static GIT_ACTIONS: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -527,6 +532,7 @@ pub static GIT_ACTIONS: [Keybinding; 12] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Squash merge to main", Action::GitSquashMerge),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push", Action::GitPush),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
@@ -804,18 +810,23 @@ pub fn lookup_health_action(
 }
 
 /// Resolve key → Action for the Git Actions panel.
-/// Git operations (r/m/f/l/P) only fire when actions section is focused.
-/// View diff (d) only fires from the file list section.
+/// Context-aware: squash-merge only on feature branches, pull only on main.
+/// Git ops only fire when actions_focused=true; diff only when file list focused.
 pub fn lookup_git_actions_action(
     actions_focused: bool,
+    is_on_main: bool,
     modifiers: KeyModifiers,
     code: KeyCode,
 ) -> Option<Action> {
     for b in &GIT_ACTIONS {
         let skip = match b.action {
-            Action::GitSquashMerge
-            | Action::GitCommit
-            | Action::GitPush if !actions_focused => true,
+            // Squash merge only available on feature branches (not main)
+            Action::GitSquashMerge if is_on_main || !actions_focused => true,
+            // Pull only available on main branch
+            Action::GitPull if !is_on_main || !actions_focused => true,
+            // Commit + push need actions focus
+            Action::GitCommit | Action::GitPush if !actions_focused => true,
+            // Diff only from file list
             Action::GitViewDiff if actions_focused => true,
             _ => false,
         };
@@ -874,9 +885,10 @@ pub fn health_docs_hints() -> String {
 }
 
 /// Git Actions panel — action key+description pairs for the action list labels.
-/// Returns (display_key, description) for each git action in display order.
-pub fn git_actions_labels() -> Vec<(String, &'static str)> {
-    [Action::GitSquashMerge, Action::GitCommit, Action::GitPush]
+/// Context-aware: main branch shows pull+commit+push, feature shows squash-merge+commit+push.
+pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
+    let first = if is_on_main { Action::GitPull } else { Action::GitSquashMerge };
+    [first, Action::GitCommit, Action::GitPush]
         .iter()
         .filter_map(|&a| {
             GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))

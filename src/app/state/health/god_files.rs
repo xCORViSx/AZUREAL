@@ -243,9 +243,10 @@ impl App {
             return;
         }
 
-        let (main_branch, main_path) = match self.find_main_worktree() {
+        // Spawn GFM sessions on the current worktree — changes merge back to main
+        let (branch, wt_path) = match self.current_worktree_info() {
             Some(v) => v,
-            None => { self.set_status("No main worktree found"); return; }
+            None => { self.set_status("No active worktree"); return; }
         };
 
         self.health_panel = None;
@@ -258,18 +259,16 @@ impl App {
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
 
-            match claude_process.spawn(&main_path, &prompt, None) {
+            match claude_process.spawn(&wt_path, &prompt, None) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
                     self.pending_session_names.push((slot, format!("[GFM] {}", filename)));
-                    self.register_claude(main_branch.clone(), pid, rx);
+                    self.register_claude(branch.clone(), pid, rx);
                     spawned += 1;
                 }
                 Err(_) => { failed += 1; }
             }
         }
-
-        self.switch_to_main_worktree(&main_branch);
 
         if failed == 0 {
             self.set_status(format!("Modularizing {} files simultaneously", spawned));

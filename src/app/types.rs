@@ -448,7 +448,8 @@ pub struct GitCommitOverlay {
 }
 
 /// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
-/// Shows git operations (squash-merge, fetch, pull, push, commit) and changed files list.
+/// Actions are context-aware: main branch gets pull+commit+push,
+/// feature branches get squash-merge+commit+push.
 #[derive(Debug)]
 pub struct GitActionsPanel {
     /// Current worktree name (branch) shown in the title
@@ -459,6 +460,8 @@ pub struct GitActionsPanel {
     pub repo_root: std::path::PathBuf,
     /// Main branch name (for diff base)
     pub main_branch: String,
+    /// Whether the panel was opened on the main/master branch (changes available actions)
+    pub is_on_main: bool,
     /// Changed files from git diff --stat against main
     pub changed_files: Vec<GitChangedFile>,
     /// Selected file index in the file list

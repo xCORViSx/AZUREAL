@@ -37,7 +37,7 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
         let is_selected = app.selected_worktree == Some(sess_idx);
         let status = session.status(app.is_session_running(&session.branch_name));
 
-        // Archived sessions: distinct icon + dimmed name (clearly different from active)
+        // Archived get diamond icon; active worktrees use status symbol
         let (status_symbol, status_color, name_style) = if session.archived {
             let ns = if is_selected {
                 Style::default().bg(Color::Blue).fg(Color::DarkGray).add_modifier(Modifier::BOLD)
@@ -119,11 +119,14 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // Show project name in border title: " Worktrees (projectname) "
-    let title_text = if let Some(ref project) = app.project {
-        format!(" {} ", project.name)
+    // Show project name in border title, or main browse indicator
+    let (title_text, title_color) = if app.browsing_main {
+        let branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
+        (format!(" ★ {} (read-only) ", branch), Color::Yellow)
+    } else if let Some(ref project) = app.project {
+        (format!(" {} ", project.name), if is_focused { AZURE } else { Color::White })
     } else {
-        " Worktrees ".to_string()
+        (" Worktrees ".to_string(), if is_focused { AZURE } else { Color::White })
     };
 
     let sidebar = List::new(app.sidebar_cache.clone())
@@ -131,11 +134,7 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-                .title(if is_focused {
-                    Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
-                } else {
-                    Span::styled(title_text, Style::default().fg(Color::White))
-                })
+                .title(Span::styled(title_text, Style::default().fg(title_color).add_modifier(if is_focused { Modifier::BOLD } else { Modifier::empty() })))
                 .border_style(if is_focused {
                     Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
                 } else {

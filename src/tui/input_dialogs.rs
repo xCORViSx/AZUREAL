@@ -459,20 +459,20 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
 /// Spawn a Claude session on the main branch to generate a run command from a prompt.
 /// Claude reads/writes `.azureal/runcmds` and adds the new entry.
 fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_name: &str, user_prompt: &str) {
-    let Some(project) = app.project.as_ref() else {
+    if app.project.is_none() {
         app.set_status("No project loaded");
         return;
-    };
-    let main_branch = project.main_branch.clone();
-
-    // Find the main worktree path (the repo root itself for the main branch)
-    let main_wt_path = app.worktrees.iter()
-        .find(|s| s.branch_name == main_branch)
-        .and_then(|s| s.worktree_path.clone());
-    let Some(wt_path) = main_wt_path else {
-        app.set_status("Main branch worktree not found");
+    }
+    // Spawn on the current worktree (changes merge back to main via squash-merge)
+    let Some(session) = app.current_worktree() else {
+        app.set_status("No active worktree");
         return;
     };
+    let Some(wt_path) = session.worktree_path.clone() else {
+        app.set_status("No worktree path");
+        return;
+    };
+    let branch = session.branch_name.clone();
 
     // Build prompt with context about runcmds format and location
     let prompt = format!(
@@ -499,18 +499,12 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     } else {
         format!("[NewRunCmd] {}", cmd_name)
     };
-    // Select the main branch in sidebar so user sees the output
-    if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == main_branch) {
-        app.selected_worktree = Some(idx);
-        app.load_session_output();
-    }
-
-    // Spawn Claude on main branch (resume existing session if any)
-    let resume_id = app.get_claude_session_id(&main_branch).cloned();
+    // Spawn Claude on current worktree (resume existing session if any)
+    let resume_id = app.get_claude_session_id(&branch).cloned();
     match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
         Ok((rx, pid)) => {
             app.pending_session_names.push((pid.to_string(), display_name));
-            app.register_claude(main_branch, pid, rx);
+            app.register_claude(branch, pid, rx);
             app.focus = Focus::Output;
             app.set_status(format!("Generating run command: {}...", cmd_name));
         }

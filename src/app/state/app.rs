@@ -408,6 +408,14 @@ pub struct App {
     pub god_file_filter_dirs: std::collections::HashSet<std::path::PathBuf>,
     /// Git Actions panel state (Shift+G overlay for git operations + changed files)
     pub git_actions_panel: Option<GitActionsPanel>,
+    /// True when user is browsing the main/master branch in read-only mode (via 'm').
+    /// While active, file mutations, prompt mode, edit mode, and session start are blocked.
+    pub browsing_main: bool,
+    /// Saved worktree selection before entering main browse mode (restored on exit)
+    pub pre_main_browse_selection: Option<usize>,
+    /// Main worktree data — stored separately from app.worktrees so browse mode
+    /// can display main's files/sessions without main polluting the sidebar list
+    pub main_worktree: Option<Worktree>,
     /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
     pub show_session_list: bool,
     /// True while session list message counts are being computed (shows loading dialog)
@@ -657,6 +665,9 @@ impl App {
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,
+            browsing_main: false,
+            pre_main_browse_selection: None,
+            main_worktree: None,
             show_session_list: false,
             session_list_loading: false,
             loading_indicator: None,
@@ -734,7 +745,11 @@ impl App {
     }
 
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
-    pub fn current_worktree(&self) -> Option<&Worktree> { self.selected_worktree.and_then(|idx| self.worktrees.get(idx)) }
+    /// When browsing main, returns the separate main_worktree; otherwise indexes into worktrees vec
+    pub fn current_worktree(&self) -> Option<&Worktree> {
+        if self.browsing_main { return self.main_worktree.as_ref(); }
+        self.selected_worktree.and_then(|idx| self.worktrees.get(idx))
+    }
 
     /// True if ANY Claude process is running on this branch (any slot)
     pub fn is_session_running(&self, branch_name: &str) -> bool {

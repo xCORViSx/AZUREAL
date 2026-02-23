@@ -2,7 +2,8 @@
 //!
 //! Full-screen modal overlay — consumes ALL input when active, dispatched via
 //! the centralized keybinding system (lookup_git_actions_action in keybindings.rs).
-//! Actions section (Tab to switch): m=squash-merge, c=commit, P=push.
+//! Context-aware actions: main branch gets l=pull, c=commit, P=push;
+//! feature branches get m=squash-merge, c=commit, P=push.
 //! File list section: j/k navigate, Enter/d opens file diff in viewer.
 
 use anyhow::Result;
@@ -36,9 +37,10 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
     if !is_nav { panel.result_message = None; }
 
     let actions_focused = panel.actions_focused;
+    let is_on_main = panel.is_on_main;
 
     // Resolve key → action via centralized binding arrays
-    let Some(action) = lookup_git_actions_action(actions_focused, key.modifiers, key.code) else {
+    let Some(action) = lookup_git_actions_action(actions_focused, is_on_main, key.modifiers, key.code) else {
         return Ok(());
     };
 
@@ -80,18 +82,20 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<(
 
         // ── Git operations (only fire when actions_focused, enforced by lookup guard) ──
         Action::GitSquashMerge => { exec_squash_merge(app); }
+        Action::GitPull => { exec_pull(app); }
         Action::GitCommit => { exec_commit_start(app); }
         Action::GitPush => { exec_push(app); }
 
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
+        // Index 0 is context-dependent: pull on main, squash-merge on feature branches.
         Action::Confirm => {
-            let (focused, idx) = match app.git_actions_panel.as_ref() {
-                Some(p) => (p.actions_focused, p.selected_action),
+            let (focused, idx, on_main) = match app.git_actions_panel.as_ref() {
+                Some(p) => (p.actions_focused, p.selected_action, p.is_on_main),
                 None => return Ok(()),
             };
             if focused {
                 match idx {
-                    0 => exec_squash_merge(app),
+                    0 => if on_main { exec_pull(app) } else { exec_squash_merge(app) },
                     1 => exec_commit_start(app),
                     2 => exec_push(app),
                     _ => {}
@@ -157,6 +161,25 @@ fn exec_squash_merge(app: &mut App) {
     };
     let msg = match Git::squash_merge_into_main(&repo_root, &branch) {
         Ok(m) => (m, false),
+        Err(e) => (format!("{}", e), true),
+    };
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.result_message = Some(msg);
+        refresh_changed_files(p);
+    }
+}
+
+/// Pull latest changes from remote (for main branch)
+fn exec_pull(app: &mut App) {
+    let wt = match app.git_actions_panel.as_ref() {
+        Some(p) => p.worktree_path.clone(),
+        None => return,
+    };
+    let msg = match Git::pull(&wt) {
+        Ok(m) => {
+            let summary = m.lines().next().unwrap_or(&m);
+            (format!("Pulled: {}", summary), false)
+        }
         Err(e) => (format!("{}", e), true),
     };
     if let Some(ref mut p) = app.git_actions_panel {

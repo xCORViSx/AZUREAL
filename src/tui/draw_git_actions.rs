@@ -46,7 +46,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
 
     // Each action row: "  ▸ [m] Squash merge to main" or "    [m] Squash merge to main"
     // Labels sourced from keybindings.rs so they stay in sync with actual key bindings.
-    let action_labels = keybindings::git_actions_labels();
+    let action_labels = keybindings::git_actions_labels(panel.is_on_main);
     for (i, (key, label)) in action_labels.iter().enumerate() {
         let selected = panel.actions_focused && i == panel.selected_action;
         let prefix = if selected { "  \u{25b8} " } else { "    " };
@@ -264,7 +264,20 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
                 } else {
                     let mut off = 0;
                     while off < chars.len() {
-                        let end = (off + wrap_w).min(chars.len());
+                        let remaining = chars.len() - off;
+                        // Word-based wrapping: find last space within the wrap width
+                        // so lines break at word boundaries instead of mid-word
+                        let end = if remaining <= wrap_w {
+                            chars.len()
+                        } else {
+                            let window_end = off + wrap_w;
+                            let mut break_at = None;
+                            for j in (off..window_end).rev() {
+                                if chars[j] == ' ' { break_at = Some(j + 1); break; }
+                            }
+                            // No space found — hard break (single long word)
+                            break_at.unwrap_or(window_end)
+                        };
                         let sub = chars[off..end].to_vec();
                         let has = li == cursor_logical
                             && cursor_col_in_logical >= off

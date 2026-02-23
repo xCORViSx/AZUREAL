@@ -365,14 +365,15 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     const GF_BORDER_GREEN: Color = Color::Rgb(80, 200, 80);
 
     let wt_name = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
+    let ro_suffix = if app.browsing_main { " (read-only)" } else { "" };
     let title = if in_filter_mode {
         // Filter mode title shows scope count and Enter/Esc hints
         let scope_count = app.god_file_filter_dirs.len();
         format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
     } else if total > viewport_height {
-        format!(" Filetree ({}) [{}/{}] ", wt_name, scroll + display_lines.len().min(total - scroll), total)
+        format!(" Filetree ({}){} [{}/{}] ", wt_name, ro_suffix, scroll + display_lines.len().min(total - scroll), total)
     } else {
-        format!(" Filetree ({}) ", wt_name)
+        format!(" Filetree ({}){} ", wt_name, ro_suffix)
     };
 
     // Append wrapped action bar lines at the bottom
@@ -380,9 +381,11 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         display_lines.push(line);
     }
 
-    // In filter mode: green border + bottom hint; normal mode: azure/white
+    // In filter mode: green border; main browse: yellow; normal: azure/white
     let (border_color, title_style) = if in_filter_mode {
         (GF_BORDER_GREEN, Style::default().fg(GF_BORDER_GREEN).add_modifier(Modifier::BOLD))
+    } else if app.browsing_main {
+        (Color::Yellow, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     } else if is_focused {
         (AZURE, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
     } else {

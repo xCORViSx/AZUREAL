@@ -146,7 +146,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             }
         }
         Action::ToggleHelp => { app.toggle_help(); }
-        Action::EnterPromptMode => {
+        Action::EnterPromptMode if !app.browsing_main => {
             app.show_help = false;
             if app.terminal_mode { app.close_terminal(); }
             app.focus = Focus::Input;
@@ -208,10 +208,17 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 app.set_status("No worktree path available");
             }
         }
+        Action::BrowseMain => {
+            if app.browsing_main { app.exit_main_browse(); }
+            else { app.enter_main_browse(); }
+        }
         Action::ReturnToWorktrees if !app.god_file_filter_mode => {
-            app.show_file_tree = false;
-            app.focus = Focus::Worktrees;
-            app.invalidate_sidebar();
+            if app.browsing_main { app.exit_main_browse(); }
+            else {
+                app.show_file_tree = false;
+                app.focus = Focus::Worktrees;
+                app.invalidate_sidebar();
+            }
         }
         Action::ToggleSessionList => {
             if app.show_session_list { app.show_session_list = false; }
@@ -240,7 +247,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
 
         // --- Viewer navigation ---
-        Action::EnterEditMode => {
+        Action::EnterEditMode if !app.browsing_main => {
             if app.viewer_path.is_some() { app.enter_viewer_edit_mode(); }
         }
         Action::JumpNextEdit => { jump_edit(app, true); }
@@ -359,23 +366,23 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.file_tree_options_selected = 0;
         }
 
-        // File actions disabled in god file filter mode (file tree is read-only scope picker)
-        Action::AddFile if !app.god_file_filter_mode => {
+        // File actions disabled in god file filter mode and main browse mode (read-only)
+        Action::AddFile if !app.god_file_filter_mode && !app.browsing_main => {
             app.file_tree_action = Some(crate::app::types::FileTreeAction::Add(String::new()));
         }
-        Action::DeleteFile if !app.god_file_filter_mode => {
+        Action::DeleteFile if !app.god_file_filter_mode && !app.browsing_main => {
             if app.file_tree_selected.is_some() {
                 app.file_tree_action = Some(crate::app::types::FileTreeAction::Delete);
             }
         }
-        Action::RenameFile if !app.god_file_filter_mode => {
+        Action::RenameFile if !app.god_file_filter_mode && !app.browsing_main => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Rename(entry.name.clone()));
                 }
             }
         }
-        Action::CopyFile if !app.god_file_filter_mode => {
+        Action::CopyFile if !app.god_file_filter_mode && !app.browsing_main => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Copy(entry.path.clone()));
@@ -384,7 +391,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 }
             }
         }
-        Action::MoveFile if !app.god_file_filter_mode => {
+        Action::MoveFile if !app.god_file_filter_mode && !app.browsing_main => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Move(entry.path.clone()));
@@ -635,6 +642,10 @@ fn dispatch_escape(app: &mut App) {
                 app.focus = Focus::FileTree;
             }
         }
+        Focus::FileTree if app.browsing_main => {
+            // Exit main browse mode — restore previous worktree selection
+            app.exit_main_browse();
+        }
         Focus::FileTree => {
             if app.god_file_filter_mode {
                 // Exit scope mode — save scope (fast) and defer the expensive rescan
@@ -822,6 +833,7 @@ fn count_messages_in_jsonl(path: &std::path::Path) -> usize {
 /// Start or resume a Claude session from worktrees Enter key.
 /// Archived sessions can't be started — user must press `u` to unarchive first.
 fn start_or_resume(app: &mut App) {
+    if app.browsing_main { app.set_status("Read-only: main branch"); return; }
     use crate::models::WorktreeStatus;
     let Some(session) = app.current_worktree() else { return };
     if session.archived {

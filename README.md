@@ -19,7 +19,7 @@
 
 ## Features
 
-- **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots
+- **Multi-Worktree Sessions** — Run multiple Claude Code agents concurrently, each in its own git worktree; supports multiple simultaneous sessions per worktree via PID-keyed slots; main branch isolated from sidebar (browse read-only with `m`), archived worktrees show `◇` diamond, feature branches use status circles
 - **3-Pane TUI** — Worktrees (15%), Viewer (50%), and Convo (35%) panes with Tab cycling; proportional sizing maintained across all terminal sizes. FileTree and Session list available as toggle overlays (`f` and `s`)
 - **Viewer Tabs** — Up to 12 tabs across 2 fixed-width rows (6 per row); `t` to tab current file, `⌥t` for tab dialog, `[`/`]` to navigate, `x` to close
 - **File Browser** — Press `f` in Worktrees pane to toggle FileTree overlay; navigate with expand/collapse, open in syntax-highlighted Viewer; **Nerd Font icons** auto-detected at startup with language-brand colors for ~60 file types (emoji fallback when Nerd Font not detected); file actions: `a`dd, `d`elete, `r`ename (inline input), `c`opy/`m`ove (clipboard-style: grab → navigate → paste); `O` opens **Options overlay** to toggle visibility of `worktrees`, `.git`, `.claude`, `.azureal`, `.DS_Store` (all hidden by default, persisted to project azufig.toml)
@@ -43,14 +43,14 @@
 - **Convo Search** — Press `/` in Convo pane to find text in current session with yellow match highlighting and `[N/M]` counter; `n`/`N` to cycle matches. In Session list: `/` filters by name, `//` searches across all session file contents
 - **Speech-to-Text** — Press `⌃s` in prompt mode or file edit mode to dictate via microphone; transcribed locally with Whisper (Metal-accelerated), text inserted at cursor position
 - **Projects Panel** — Persistent project registry (`~/.azureal/azufig.toml`); auto-registers git repos on startup; `P` to open panel for switching, adding, deleting, renaming, or initializing projects
-- **Worktree Health Panel** — Press `Shift+H` from any pane to open a tabbed health-check modal. Panel border shows `Tab:tab` top-left and `s:scope` top-right — press `s` from any tab to enter scope mode (FileTree with green highlights, subdirs inherit accepted status, scope persists to `.azureal/azufig.toml` `[healthscope]`). **God Files tab**: scans for source files >1000 LOC across ~60 language extensions with smart source-root detection; check files and modularize via simultaneous Claude sessions (with module style selector for Rust/Python dual-convention languages), or press `v` to open as Viewer tabs. **Documentation tab**: scans all source files for doc-comment coverage (`///` and `//!`), showing per-file coverage percentage with visual bars sorted worst-first; overall score color-coded (green/yellow/red); check files and spawn concurrent `[DH]` Claude sessions to add missing doc comments, or press `v` to open as Viewer tabs; `a` checks all non-100% files. Tab key switches between tabs. Both tabs support `J/K` page scroll and mouse wheel scrolling.
+- **Worktree Health Panel** — Press `Shift+H` from any pane to open a tabbed health-check modal. Panel border shows `Tab:tab` top-left and `s:scope` top-right — press `s` from any tab to enter scope mode (FileTree with green highlights, subdirs inherit accepted status, scope persists to `.azureal/azufig.toml` `[healthscope]`). **God Files tab**: scans for source files >1000 LOC across ~60 language extensions with smart source-root detection; check files and modularize via simultaneous Claude sessions on the current worktree (with module style selector for Rust/Python dual-convention languages), or press `v` to open as Viewer tabs. **Documentation tab**: scans all source files for doc-comment coverage (`///` and `//!`), showing per-file coverage percentage with visual bars sorted worst-first; overall score color-coded (green/yellow/red); check files and spawn concurrent `[DH]` Claude sessions on the current worktree to add missing doc comments, or press `v` to open as Viewer tabs; `a` checks all non-100% files. Tab key switches between tabs. Both tabs support `J/K` page scroll and mouse wheel scrolling.
 - **Rebase Support** — Interactive rebase with conflict detection and resolution
 - **Splash Screen** — Branded startup with 2x-scale AZUREAL block logo, half-block acronym, dim spring azure butterfly outline (app mascot), and "Loading project..." subtitle; minimum 3-second display while git/session I/O runs
 - **Debug Build Indicator** — The CPU|PID status bar badge displays in azure when running a debug build and DarkGray for release builds, for quick build-profile identification
 - **Terminal Title** — Shows `AZUREAL @ project : branch` in the OS terminal title bar; updates on session/project switch
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
 - **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); picker footer shows the ⌥+number shortcut hint; add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (shared across all projects) or **project-local**; toggle scope with `⌃g` in the add/edit dialog
-- **Git Panel** — `Shift+G` toggles a centered overlay with bold title, Git brand orange borders and brown secondary text; provides 7 git operations (rebase from main, merge to main, fetch, pull, push, auto-rebase toggle, commit) with single-key shortcuts; merge runs from repo root so it works on any selected worktree without checkout; shows changed files with per-file color-coded `+N/-N` stats (green additions, red deletions); navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections; **commit** (`c`) stages all changes, generates a conventional commit message via `claude -p` one-shot (~3 sec), and shows an editable overlay dialog — `Enter` commits, `⌘P` commits + pushes, `Esc` cancels; **auto-rebase** (`A`) toggles automatic rebase-on-Claude-exit with scope picker (this worktree / all worktrees), persisted to each worktree's own `azufig.toml` `[git]` section
+- **Git Panel** — `Shift+G` toggles a centered overlay with bold title, Git brand orange borders and brown secondary text; context-aware actions change based on branch: **main branch** shows pull (`l`), commit (`c`), push (`P`); **feature branches** show squash-merge (`m`), commit (`c`), push (`P`); shows changed files with per-file color-coded `+N/-N` stats (green additions, red deletions); navigate files with `j/k`, press `Enter` to view a file's diff in the Viewer pane; Tab toggles between actions and file sections; **commit** (`c`) stages all changes, generates a conventional commit message via `claude -p` one-shot (~3 sec), and shows an editable overlay dialog — `Enter` commits, `⌘P` commits + pushes, `Esc` cancels
 - **Loading Indicators** — Centered AZURE-bordered popups for all blocking operations: session loading, file opening, health scanning, project switching, health scope rescanning. Two-phase deferred draw ensures the UI never appears frozen during I/O
 - **Minimal Footprint** — Two `azufig.toml` files consolidate all persistent state (global `~/.azureal/azufig.toml` + project-local `.azureal/azufig.toml`); scans git worktrees and `~/.claude/` at runtime
 
@@ -90,12 +90,13 @@ azureal
 | `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
 | `Tab` | Cycle focus forward (Worktrees > Viewer > Convo > Input), closes overlays |
 | `⇧Tab` | Cycle focus backward; lands on FileTree if overlay is open |
+| `m` | Browse main branch read-only (in Worktrees pane); Esc to exit |
 | `f` | Toggle FileTree overlay (in Worktrees pane) |
 | `s` | Toggle Session list overlay (in Convo pane) |
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
-| `G` | Git panel — global (rebase, merge, fetch, pull, push) |
+| `G` | Git panel — global (context-aware: pull/squash-merge, commit, push) |
 | `H` | Worktree Health panel (God Files + Documentation tabs) |
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Convo); Filter/search sessions (Session list) |
@@ -119,7 +120,7 @@ Azureal is **mostly stateless** — all runtime state is derived from:
 - Git branches via `git branch | grep azureal/`
 - Claude's session files at `~/.claude/projects/<encoded-path>/*.jsonl`
 
-No database. All persistent state consolidated into two `azufig.toml` files: `~/.azureal/azufig.toml` (global config, projects, shared runcmds/presets) and `.azureal/azufig.toml` (filetree options, session names, healthscope, local runcmds/presets, auto-rebase settings).
+No database. All persistent state consolidated into two `azufig.toml` files: `~/.azureal/azufig.toml` (global config, projects, shared runcmds/presets) and `.azureal/azufig.toml` (filetree options, session names, healthscope, local runcmds/presets).
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 

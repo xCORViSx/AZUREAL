@@ -213,6 +213,8 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
             return true;
         }
         // Enter prompt mode and position cursor at click point
+        // Blocked in main browse mode — main is read-only
+        if app.browsing_main { return true; }
         if !app.prompt_mode {
             app.prompt_mode = true;
         }

@@ -51,7 +51,8 @@ impl App {
         let mut sessions = Vec::new();
         let mut active_branches: HashSet<String> = HashSet::new();
 
-        // First, add main worktree
+        // Store main worktree separately — it's accessed via 'm' browse mode, not the sidebar.
+        // Excluded from app.worktrees so it never appears in navigation or sidebar rendering.
         for wt in &worktrees {
             if wt.is_main {
                 let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
@@ -59,12 +60,16 @@ impl App {
                 if let Some(ref id) = claude_id {
                     self.claude_session_ids.insert(branch_name.clone(), id.clone());
                 }
-                sessions.push(Worktree {
+                self.main_worktree = Some(Worktree {
                     branch_name: branch_name.clone(),
                     worktree_path: Some(wt.path.clone()),
                     claude_session_id: claude_id,
                     archived: false,
                 });
+                // Also load session files for main so browse mode can show sessions
+                let files = crate::config::list_claude_sessions(&wt.path);
+                self.session_files.insert(branch_name.clone(), files);
+                self.session_selected_file_idx.entry(branch_name.clone()).or_insert(0);
                 active_branches.insert(branch_name);
             }
         }

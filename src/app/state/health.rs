@@ -138,25 +138,11 @@ impl App {
         self.god_file_filter_dirs.clear();
     }
 
-    /// Switch the convo pane + sidebar selection to the main worktree.
-    /// Called after spawning a GFM/DH session so output is immediately visible.
-    pub(crate) fn switch_to_main_worktree(&mut self, main_branch: &str) {
-        if let Some(idx) = self.worktrees.iter().position(|s| s.branch_name == main_branch) {
-            if self.selected_worktree != Some(idx) {
-                self.save_current_terminal();
-                self.selected_worktree = Some(idx);
-                self.load_session_output();
-                self.invalidate_sidebar();
-            }
-        }
-    }
-
-    /// Find the main worktree's branch name and path
-    pub(crate) fn find_main_worktree(&self) -> Option<(String, PathBuf)> {
-        let project = self.project.as_ref()?;
-        self.worktrees.iter()
-            .find(|s| s.branch_name == project.main_branch)
-            .and_then(|s| s.worktree_path.as_ref().map(|p| (s.branch_name.clone(), p.clone())))
+    /// Get the current worktree's branch name and path for spawning sessions.
+    /// Health sessions (GFM, DH) run on the current worktree — changes merge back to main.
+    pub(crate) fn current_worktree_info(&self) -> Option<(String, PathBuf)> {
+        let wt = self.current_worktree()?;
+        wt.worktree_path.as_ref().map(|p| (wt.branch_name.clone(), p.clone()))
     }
 }
 

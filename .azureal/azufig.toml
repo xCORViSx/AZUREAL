@@ -1,17 +1,23 @@
 [filetree]
-hidden = []
+hidden = [
+    "worktrees",
+    ".DS_Store",
+    ".git",
+    ".azureal",
+    ".claude",
+]
 
 [healthscope]
 dirs = ["/Users/macbookpro/AZUREAL/src"]
 
 [sessions]
 b11fb363-7d09-4233-823d-41e9560e81fb = "[GFM] draw_output.rs"
-975a150b-942e-490a-a180-4f4ad8b0ecdc = "tesst"
 b32d8463-7f9c-4bfc-81ee-ca4557847d28 = "[GodFileModularize] event_loop.rs"
+975a150b-942e-490a-a180-4f4ad8b0ecdc = "tesst"
 
 [runcmds]
-"Cargo run (release)" = "cargo r --release"
 "Cargo run (debug)" = "cargo r"
+"Cargo run (release)" = "cargo r --release"
 
 [presetprompts]
 

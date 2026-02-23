@@ -116,11 +116,13 @@ impl App {
             Err(_) => Vec::new(),
         };
 
+        let is_on_main = worktree_name == main_branch;
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
             repo_root,
             main_branch,
+            is_on_main,
             changed_files,
             selected_file: 0,
             file_scroll: 0,
@@ -277,6 +279,35 @@ impl App {
         }
 
         0 // Fallback to top of file
+    }
+
+    // ── Main branch browse mode ──
+
+    /// Enter read-only main branch browse mode. Saves current selection,
+    /// switches to main_worktree, opens file tree, and loads main's session.
+    pub fn enter_main_browse(&mut self) {
+        if self.main_worktree.is_none() {
+            self.set_status("No main worktree found");
+            return;
+        }
+        self.save_current_terminal();
+        self.pre_main_browse_selection = self.selected_worktree;
+        self.browsing_main = true;
+        // current_worktree() now returns main_worktree — load its session + file tree
+        self.load_session_output();
+        self.show_file_tree = true;
+        self.focus = Focus::FileTree;
+        self.invalidate_sidebar();
+    }
+
+    /// Exit main branch browse mode. Restores previous worktree selection and focus.
+    pub fn exit_main_browse(&mut self) {
+        self.browsing_main = false;
+        self.selected_worktree = self.pre_main_browse_selection.take();
+        self.show_file_tree = false;
+        self.focus = Focus::Worktrees;
+        self.load_session_output();
+        self.invalidate_sidebar();
     }
 
     // Rebase status
@@ -558,6 +589,9 @@ impl App {
         self.cancel_all_claude();
 
         // Clear all session and render state
+        self.browsing_main = false;
+        self.pre_main_browse_selection = None;
+        self.main_worktree = None;
         self.worktrees.clear();
         self.selected_worktree = None;
         self.display_events.clear();
