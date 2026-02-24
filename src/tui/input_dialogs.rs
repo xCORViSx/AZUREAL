@@ -25,17 +25,22 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                 Action::NavUp => dialog.select_prev(),
                 Action::Confirm => {
                     if let Some(branch) = dialog.selected_branch().cloned() {
-                        if let Some(project) = app.current_project().cloned() {
-                            // Strip remote prefix for worktree dir name (origin/foo → foo)
+                        let is_active = dialog.is_checked_out(&branch);
+                        if is_active {
+                            // Branch already has a worktree — switch focus to it
+                            let target_idx = app.worktrees.iter().position(|wt| wt.branch_name == branch);
+                            if let Some(idx) = target_idx {
+                                app.selected_worktree = Some(idx);
+                                app.set_status(format!("Switched to {}", branch));
+                            }
+                        } else if let Some(project) = app.current_project().cloned() {
+                            // Create a new worktree from this branch
                             let local_name = if branch.contains('/') {
                                 branch.split('/').skip(1).collect::<Vec<_>>().join("/")
                             } else {
                                 branch.clone()
                             };
                             let worktree_path = project.worktrees_dir().join(&local_name);
-
-                            // Use create_worktree_from_branch — these are existing branches,
-                            // not new ones (list_available_branches returns already-existing refs)
                             match Git::create_worktree_from_branch(&project.path, &worktree_path, &branch) {
                                 Ok(()) => {
                                     app.set_status(format!("Created worktree: {}", local_name));

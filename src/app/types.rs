@@ -43,15 +43,27 @@ pub enum FileTreeAction {
 /// State for the branch selection dialog
 pub struct BranchDialog {
     pub branches: Vec<String>,
+    /// Branches already checked out in a worktree
+    pub checked_out: Vec<String>,
     pub selected: usize,
     pub filter: String,
     pub filtered_indices: Vec<usize>,
 }
 
 impl BranchDialog {
-    pub fn new(branches: Vec<String>) -> Self {
+    pub fn new(branches: Vec<String>, checked_out: Vec<String>) -> Self {
         let filtered_indices: Vec<usize> = (0..branches.len()).collect();
-        Self { branches, selected: 0, filter: String::new(), filtered_indices }
+        Self { branches, checked_out, selected: 0, filter: String::new(), filtered_indices }
+    }
+
+    /// True if the branch is already checked out in a worktree
+    pub fn is_checked_out(&self, branch: &str) -> bool {
+        let local_name = if branch.contains('/') {
+            branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+        } else {
+            branch.to_string()
+        };
+        self.checked_out.iter().any(|co| co == branch || co == &local_name)
     }
 
     pub fn apply_filter(&mut self) {

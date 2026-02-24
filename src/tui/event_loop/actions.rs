@@ -411,8 +411,8 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::BrowseBranches => {
             if let Some(project) = app.current_project() {
-                match crate::git::Git::list_available_branches(&project.path) {
-                    Ok(branches) => app.open_branch_dialog(branches),
+                match crate::git::Git::list_all_branches_with_status(&project.path) {
+                    Ok((branches, checked_out)) => app.open_branch_dialog(branches, checked_out),
                     Err(e) => app.set_status(format!("Failed to list branches: {}", e)),
                 }
             } else {

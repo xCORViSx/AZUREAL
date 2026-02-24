@@ -72,9 +72,10 @@ impl Git {
             .collect())
     }
 
-    /// Get branches that are not already checked out in a worktree.
+    /// Get all branches with their checked-out status.
+    /// Returns (all_branches, checked_out_set) so the UI can show which are active.
     /// Uses cached remote refs to avoid blocking the UI with network calls.
-    pub fn list_available_branches(repo_path: &Path) -> Result<Vec<String>> {
+    pub fn list_all_branches_with_status(repo_path: &Path) -> Result<(Vec<String>, Vec<String>)> {
         let worktrees = Self::list_worktrees(repo_path)?;
 
         let mut checked_out: Vec<String> = Vec::new();
@@ -83,22 +84,19 @@ impl Git {
             if let Ok(branch) = Self::current_branch(path) { checked_out.push(branch); }
         }
 
-        let local = Self::list_local_branches(repo_path)?;
-        // Use cached remote refs — no git fetch, keeps the TUI responsive
+        // Local branches first (checked out ones will be marked in UI)
+        let mut all: Vec<String> = Self::list_local_branches(repo_path)?;
+
+        // Append remote branches that don't have a local equivalent
         let remote = Self::list_remote_branches_cached(repo_path)?;
-
-        let mut available: Vec<String> = local.into_iter()
-            .filter(|b| !checked_out.contains(b))
-            .collect();
-
         for remote_branch in remote {
             let local_name = remote_branch.split('/').skip(1).collect::<Vec<_>>().join("/");
-            if !checked_out.contains(&local_name) && !available.contains(&remote_branch) {
-                available.push(remote_branch);
+            if !all.contains(&local_name) && !all.contains(&remote_branch) {
+                all.push(remote_branch);
             }
         }
 
-        Ok(available)
+        Ok((all, checked_out))
     }
 
     /// Get number of commits ahead/behind main branch

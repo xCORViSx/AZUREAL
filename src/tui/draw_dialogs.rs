@@ -214,27 +214,42 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         );
     f.render_widget(filter, dialog_chunks[0]);
 
-    // Branch list
+    // Branch list — checked-out branches shown dimmed with indicator
     let items: Vec<ListItem> = dialog.filtered_indices.iter().enumerate().map(|(display_idx, &branch_idx)| {
         let branch = &dialog.branches[branch_idx];
         let is_selected = display_idx == dialog.selected;
+        let is_active = dialog.is_checked_out(branch);
+
+        let prefix = if is_selected { "▸ " } else { "  " };
+        let max_name_width = dialog_width as usize - 4 - if is_active { 10 } else { 0 };
 
         let style = if is_selected {
             Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+        } else if is_active {
+            Style::default().fg(Color::DarkGray)
         } else if branch.contains('/') {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default()
         };
 
-        let prefix = if is_selected { "▸ " } else { "  " };
-        ListItem::new(Line::from(vec![
+        let mut spans = vec![
             Span::raw(prefix),
-            Span::styled(truncate(branch, dialog_width as usize - 4), style),
-        ]))
+            Span::styled(truncate(branch, max_name_width), style),
+        ];
+        // Active worktree indicator (dim suffix)
+        if is_active {
+            let tag_style = if is_selected {
+                Style::default().bg(Color::Blue).fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            spans.push(Span::styled(" [active]", tag_style));
+        }
+        ListItem::new(Line::from(spans))
     }).collect();
 
-    let title = format!(" Select Branch ({}/{}) ", dialog.filtered_indices.len(), dialog.branches.len());
+    let title = format!(" Branches ({}/{}) ", dialog.filtered_indices.len(), dialog.branches.len());
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)

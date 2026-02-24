@@ -51,12 +51,12 @@ impl App {
     }
 
     // Branch dialog
-    pub fn open_branch_dialog(&mut self, branches: Vec<String>) {
+    pub fn open_branch_dialog(&mut self, branches: Vec<String>, checked_out: Vec<String>) {
         if branches.is_empty() {
-            self.set_status("No available branches to checkout");
+            self.set_status("No branches found");
             return;
         }
-        self.branch_dialog = Some(BranchDialog::new(branches));
+        self.branch_dialog = Some(BranchDialog::new(branches, checked_out));
         self.focus = Focus::BranchDialog;
     }
 
