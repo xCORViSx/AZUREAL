@@ -20,8 +20,6 @@ use super::super::input_worktrees::handle_worktrees_input;
 use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::super::input_viewer::handle_viewer_input;
 use super::super::input_projects::handle_projects_input;
-use super::super::input_wizard::handle_wizard_input;
-
 use super::mouse::{copy_viewer_selection, copy_output_selection};
 
 /// Handle keyboard input events.
@@ -152,7 +150,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     // Full-screen modals that intercept everything
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
-    if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
@@ -281,17 +278,6 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.focus_prev();
         }
 
-        // --- Wizard actions ---
-        Action::WizardNextTab => {
-            if let Some(wizard) = app.creation_wizard.as_mut() { wizard.next_tab(); }
-        }
-        Action::WizardPrevTab => {
-            if let Some(wizard) = app.creation_wizard.as_mut() { wizard.prev_tab(); }
-        }
-        // WizardNextField: wizard intercepts all input before lookup_action() runs,
-        // so this arm never fires. Exists only for help text generation.
-        Action::WizardNextField => {}
-
         // --- Terminal resize (global when terminal is open) ---
         Action::ResizeUp => { app.adjust_terminal_height(2); }
         Action::ResizeDown => { app.adjust_terminal_height(-2); }
@@ -384,8 +370,44 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
             app.sidebar_filter.clear();
             app.invalidate_sidebar();
         }
-        Action::NewWorktree => {
-            app.start_wizard();
+        Action::AddWorktree => {
+            // Open the lightweight name input modal for creating a new worktree
+            app.focus = Focus::WorktreeCreation;
+            app.worktree_creation_input.clear();
+            app.worktree_creation_cursor = 0;
+            app.set_status("Enter worktree name");
+        }
+        Action::NewSession => {
+            // Start a fresh Claude session in the current worktree (don't resume)
+            if let Some(wt) = app.current_worktree().cloned() {
+                if wt.archived {
+                    app.set_status("Worktree is archived — unarchive first (⌘a)");
+                } else if wt.worktree_path.is_some() {
+                    let branch = wt.branch_name.clone();
+                    // Clear session ID so next prompt starts fresh (no --resume)
+                    app.claude_session_ids.remove(&branch);
+                    // Clear display to show fresh conversation
+                    app.display_events.clear();
+                    app.output_lines.clear();
+                    app.output_buffer.clear();
+                    app.output_scroll = usize::MAX;
+                    app.session_file_parse_offset = 0;
+                    app.rendered_events_count = 0;
+                    app.rendered_content_line_count = 0;
+                    app.rendered_events_start = 0;
+                    app.event_parser = crate::events::EventParser::new();
+                    app.selected_event = None;
+                    app.current_todos.clear();
+                    app.subagent_todos.clear();
+                    app.session_tokens = None;
+                    app.token_badge_cache = None;
+                    app.invalidate_render_cache();
+                    // Enter prompt mode for the new session
+                    app.focus = Focus::Input;
+                    app.prompt_mode = true;
+                    app.set_status("New session — type your prompt and press Enter");
+                }
+            }
         }
         Action::BrowseBranches => {
             if let Some(project) = app.current_project() {

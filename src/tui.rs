@@ -23,7 +23,6 @@ mod draw_sidebar;
 mod draw_status;
 mod draw_terminal;
 mod draw_viewer;
-mod draw_wizard;
 mod event_loop;
 pub mod render_thread;
 mod input_dialogs;
@@ -35,7 +34,6 @@ mod input_projects;
 mod input_worktrees;
 mod input_terminal;
 mod input_viewer;
-mod input_wizard;
 pub mod keybindings;
 mod run;
 

@@ -249,32 +249,30 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     Ok(())
 }
 
-/// Handle keyboard input when worktree creation modal is focused
-pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+/// Handle keyboard input when worktree creation modal is focused.
+/// Single-line name input — Enter submits, Esc cancels.
+/// Only allows alphanumeric, dash, underscore, and dot characters.
+pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, _claude_process: &ClaudeProcess) -> Result<()> {
     match (key.modifiers, key.code) {
-        (KeyModifiers::CONTROL, KeyCode::Enter) => {
-            if !app.worktree_creation_input.is_empty() {
-                let prompt = app.worktree_creation_input.clone();
+        // Submit: create worktree with the entered name (no auto-spawn)
+        (_, KeyCode::Enter) => {
+            let name = app.worktree_creation_input.trim().to_string();
+            if !name.is_empty() {
                 app.exit_worktree_creation_mode();
-
-                match app.create_new_worktree(prompt.clone()) {
-                    Ok(worktree) => {
-                        let branch_name = worktree.branch_name.clone();
-                        app.set_status(format!("Created worktree: {}", worktree.name()));
-
-                        if let Some(ref wt_path) = worktree.worktree_path {
-                            match claude_process.spawn(wt_path, &prompt, None) {
-                                Ok((rx, pid)) => app.register_claude(branch_name, pid, rx),
-                                Err(e) => app.set_status(format!("Failed to start: {}", e)),
-                            }
-                        }
+                match app.create_new_worktree_with_name(name.clone(), String::new()) {
+                    Ok(_worktree) => {
+                        app.set_status(format!("Created worktree: {}", name));
                     }
                     Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
                 }
             }
         }
-        (KeyModifiers::NONE, KeyCode::Enter) => app.worktree_creation_char('\n'),
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => app.worktree_creation_char(c),
+        // Only allow valid worktree name chars: alphanumeric, dash, underscore, dot
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' =>
+        {
+            app.worktree_creation_char(c);
+        }
         (_, KeyCode::Backspace) => app.worktree_creation_backspace(),
         (_, KeyCode::Delete) => app.worktree_creation_delete(),
         (_, KeyCode::Left) => app.worktree_creation_left(),

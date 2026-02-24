@@ -351,19 +351,6 @@ impl App {
         })
     }
 
-    // Wizard
-    pub fn start_wizard(&mut self) {
-        self.creation_wizard = Some(crate::wizard::CreationWizard::new_single_project(self.project.as_ref()));
-        self.focus = Focus::Input;
-    }
-
-    pub fn cancel_wizard(&mut self) {
-        self.creation_wizard = None;
-        self.focus = Focus::Worktrees;
-    }
-
-    pub fn is_wizard_active(&self) -> bool { self.creation_wizard.is_some() }
-
     // Run commands
     pub fn open_run_command_dialog(&mut self) {
         self.run_command_dialog = Some(RunCommandDialog::new());

@@ -12,7 +12,6 @@ mod stt;
 mod syntax;
 mod tui;
 mod watcher;
-mod wizard;
 
 use anyhow::Result;
 use clap::Parser;

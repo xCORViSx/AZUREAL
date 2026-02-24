@@ -14,8 +14,6 @@ use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Worktree};
 use crate::syntax::{DiffHighlighter, SyntaxHighlighter};
 use crate::tui::render_thread::RenderThread;
-use crate::wizard::CreationWizard;
-
 use super::ClaudeEvent;
 use super::DisplayEvent;
 
@@ -94,7 +92,6 @@ pub struct App {
     pub branch_dialog: Option<BranchDialog>,
     pub rebase_status: Option<RebaseStatus>,
     pub selected_conflict: Option<usize>,
-    pub creation_wizard: Option<CreationWizard>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
     /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
@@ -520,7 +517,6 @@ impl App {
             branch_dialog: None,
             rebase_status: None,
             selected_conflict: None,
-            creation_wizard: None,
             projects_panel: None,
             pending_session_names: Vec::new(),
             terminal_mode: false,

@@ -66,7 +66,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
             (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
             (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
-            (Focus::WorktreeCreation, _) => "⌃Enter:submit  Esc:cancel  Enter:newline",
+            (Focus::WorktreeCreation, _) => "Enter:create  Esc:cancel",
             (Focus::BranchDialog, _) => "j/k:select  Enter:confirm  Esc:cancel  type to filter",
             (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back",
             (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  e:edit  Esc:close  Tab:switch",

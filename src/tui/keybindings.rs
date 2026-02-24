@@ -133,7 +133,7 @@ pub enum Action {
     // Worktrees
     ToggleFileTree,
     SearchFilter,
-    NewWorktree,
+    AddWorktree,
     BrowseBranches,
     RunCommand,
     AddRunCommand,
@@ -170,6 +170,7 @@ pub enum Action {
     Redo,
 
     // Output/Convo
+    NewSession,
     ToggleSessionList,
     SearchConvo,
     JumpNextBubble,
@@ -192,11 +193,6 @@ pub enum Action {
     ResizeUp,
     ResizeDown,
     EnterTerminalType,
-
-    // Wizard
-    WizardNextTab,
-    WizardPrevTab,
-    WizardNextField,
 
     // Dialogs
     Confirm,
@@ -371,7 +367,7 @@ pub static WORKTREES: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('n')), "New...", Action::NewWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add worktree", Action::AddWorktree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
@@ -429,7 +425,8 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 ];
 
 /// Convo/Output bindings
-pub static OUTPUT: [Keybinding; 13] = [
+pub static OUTPUT: [Keybinding; 14] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "New session", Action::NewSession),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchConvo),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),
@@ -475,13 +472,6 @@ pub static TERMINAL: [Keybinding; 11] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Scroll to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('+')), "Resize up", Action::ResizeUp).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('-')), "Resize down", Action::ResizeDown),
-];
-
-/// Wizard/New dialog bindings
-pub static WIZARD: [Keybinding; 3] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::WizardNextTab),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::WizardPrevTab),
-    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Next field", Action::WizardNextField),
 ];
 
 // ─── Modal panel binding arrays ───────────────────────────────────────────────
@@ -579,7 +569,6 @@ pub struct KeyContext {
     pub edit_mode: bool,
     pub terminal_mode: bool,
     pub filter_active: bool,
-    pub wizard_active: bool,
     pub help_open: bool,
 }
 
@@ -592,7 +581,6 @@ impl KeyContext {
             edit_mode: app.viewer_edit_mode,
             terminal_mode: app.terminal_mode,
             filter_active: app.sidebar_filter_active,
-            wizard_active: app.is_wizard_active(),
             help_open: app.show_help,
         }
     }
@@ -612,12 +600,12 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
             | Action::OpenGitActions | Action::OpenHealth
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-                   || ctx.filter_active || ctx.wizard_active => true,
+                   || ctx.filter_active => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
             Action::CycleFocusForward | Action::CycleFocusBackward
-                if ctx.edit_mode || ctx.help_open || ctx.wizard_active => true,
+                if ctx.edit_mode || ctx.help_open => true,
             // 'p' also fires when already in prompt mode to re-focus input from another
             // pane — but NOT when focus is already on Input (would be a no-op that eats 'p')
             Action::EnterPromptMode
@@ -626,15 +614,6 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         };
         if !skip && binding.matches(modifiers, code) {
             return Some(binding.action);
-        }
-    }
-
-    // Wizard bindings checked before focus-specific (wizard is a modal overlay)
-    if ctx.wizard_active {
-        for binding in &WIZARD {
-            if binding.matches(modifiers, code) {
-                return Some(binding.action);
-            }
         }
     }
 
@@ -660,7 +639,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
 }
 
 /// Generate help sections from binding definitions
-/// Note: Wizard, Terminal, and Input bindings are shown in their own title bars, not here
+/// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
         // HelpSection { title: "Global", bindings: &GLOBAL },
@@ -756,35 +735,6 @@ pub fn terminal_scroll_title(scroll: usize) -> (String, String, String) {
     let label = format!(" TERMINAL [{}↑] ", scroll);
     let full = format!(" TERMINAL [{}↑] ({}) ", scroll, hints);
     (label, full, hints)
-}
-
-/// Generate wizard help text for "coming soon" tabs
-pub fn wizard_coming_soon_help() -> String {
-    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
-    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
-    format!("{}/{}:switch tabs  (Coming soon)", prev, next)
-}
-
-/// Generate wizard help text for selection step (worktree or session list selection)
-pub fn wizard_select_help() -> String {
-    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
-    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
-    format!("{}/{}:tabs  j/k:select  Enter:next  Esc:cancel", prev, next)
-}
-
-/// Generate wizard help text for details entry step
-pub fn wizard_details_help() -> String {
-    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
-    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
-    let field = find_key_for_action(&WIZARD, Action::WizardNextField).unwrap_or("Tab".to_string());
-    format!("{}/{}:tabs  {}:field  Enter:next  Esc:back", prev, next, field)
-}
-
-/// Generate wizard help text for confirmation step
-pub fn wizard_confirm_help() -> String {
-    let next = find_key_for_action(&WIZARD, Action::WizardNextTab).unwrap_or("]".to_string());
-    let prev = find_key_for_action(&WIZARD, Action::WizardPrevTab).unwrap_or("[".to_string());
-    format!("{}/{}:tabs  Enter:create  Esc:back", prev, next)
 }
 
 // ─── Modal panel lookup functions ─────────────────────────────────────────────

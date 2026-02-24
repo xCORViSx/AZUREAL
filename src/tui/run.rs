@@ -26,7 +26,7 @@ use crate::config::Config;
 
 use super::event_loop;
 use super::util::AZURE;
-use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer, draw_wizard};
+use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -101,12 +101,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
 
-
-    // Wizard modal takes over the screen
-    if app.is_wizard_active() {
-        draw_wizard::draw_wizard_modal(f, app);
-        return;
-    }
 
     // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
     //

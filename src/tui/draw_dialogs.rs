@@ -246,65 +246,41 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
 }
 
 /// Draw worktree creation modal
+/// Compact single-line name input for creating a new worktree.
+/// Centered 50-wide, 3-tall dialog with AZURE border.
 pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
     let area = f.area();
-    let modal_width = (area.width * 4) / 5;
-    let modal_height = (area.height * 3) / 5;
-    let modal_x = (area.width - modal_width) / 2;
-    let modal_y = (area.height - modal_height) / 2;
-
+    let modal_width = 50u16.min(area.width.saturating_sub(4));
+    let modal_height = 3u16;
+    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
     let modal_area = Rect { x: modal_x, y: modal_y, width: modal_width, height: modal_height };
 
-    let bg_block = Block::default().style(Style::default().bg(Color::Reset));
-    f.render_widget(bg_block, modal_area);
-
-    let modal_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
-        .split(modal_area);
-
-    // Title
-    let title = Paragraph::new("Create New Worktree")
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT));
-    f.render_widget(title, modal_chunks[0]);
-
-    // Input area
+    // Single-line input with border, title, and hint
     let input_text = &app.worktree_creation_input;
-    let lines: Vec<Line> = input_text.split('\n').map(Line::from).collect();
-
-    let input_widget = Paragraph::new(lines)
+    let input_widget = Paragraph::new(Line::from(input_text.as_str()))
         .block(
             Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT)
-                .style(Style::default().fg(Color::Yellow))
-        )
-        .wrap(Wrap { trim: false });
-    f.render_widget(input_widget, modal_chunks[1]);
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(AZURE))
+                .title(Line::from(vec![
+                    Span::styled(" New Worktree ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+                ]))
+                .title_bottom(Line::from(vec![
+                    Span::styled(" Enter ", Style::default().fg(Color::Green)),
+                    Span::styled("create  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Esc ", Style::default().fg(Color::Yellow)),
+                    Span::styled("cancel ", Style::default().fg(Color::DarkGray)),
+                ]).alignment(Alignment::Center))
+        );
+    f.render_widget(input_widget, modal_area);
 
-    // Cursor position
-    if let Some((cursor_x, cursor_y)) = calculate_cursor_position(
-        input_text,
-        app.worktree_creation_cursor,
-        modal_chunks[1].width.saturating_sub(2) as usize,
-    ) {
-        f.set_cursor_position((
-            modal_chunks[1].x + 1 + cursor_x as u16,
-            modal_chunks[1].y + cursor_y as u16,
-        ));
+    // Cursor position: single line, just offset by cursor pos
+    let cursor_x = modal_area.x + 1 + app.worktree_creation_cursor as u16;
+    let cursor_y = modal_area.y + 1;
+    if cursor_x < modal_area.x + modal_area.width - 1 {
+        f.set_cursor_position((cursor_x, cursor_y));
     }
-
-    // Info bar
-    let char_count = input_text.len();
-    let line_count = input_text.lines().count().max(1);
-    let info_text = format!(" {} chars | {} lines | Ctrl+Enter: Submit | Esc: Cancel ", char_count, line_count);
-
-    let info = Paragraph::new(info_text)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Gray))
-        .block(Block::default().borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT));
-    f.render_widget(info, modal_chunks[2]);
 }
 
 /// Draw run command picker overlay (select from saved commands)

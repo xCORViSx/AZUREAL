@@ -105,7 +105,6 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.run_command_picker.is_some() { app.run_command_picker = None; return true; }
     if app.run_command_dialog.is_some() { app.run_command_dialog = None; return true; }
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
-    if app.creation_wizard.is_some() { app.creation_wizard = None; app.focus = Focus::Worktrees; return true; }
 
     // Clicking any pane exits prompt mode (input pane re-enables it below)
     app.prompt_mode = false;
