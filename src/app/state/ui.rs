@@ -130,11 +130,18 @@ impl App {
             selected_action: 0,
             result_message: None,
             commit_overlay: None,
+            conflict_overlay: None,
         });
     }
 
-    /// Close the Git Actions panel
+    /// Close the Git Actions panel. If a conflict overlay is open (dirty merge
+    /// state on main), abort the merge first to leave the repo clean.
     pub fn close_git_actions_panel(&mut self) {
+        if let Some(ref panel) = self.git_actions_panel {
+            if panel.conflict_overlay.is_some() {
+                let _ = Git::merge_abort(&panel.repo_root);
+            }
+        }
         self.git_actions_panel = None;
     }
 

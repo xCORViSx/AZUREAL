@@ -365,6 +365,98 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(commit_lines).block(commit_block), dlg);
     }
 
+    // ── Conflict resolution overlay (shown when squash merge has conflicts) ──
+    if let Some(ref ov) = panel.conflict_overlay {
+        // Larger dialog — needs room for file lists and action prompt
+        let dlg_w = (modal.width * 85 / 100).max(44).min(modal.width.saturating_sub(4));
+        let dlg_h = (modal.height * 80 / 100).max(14).min(modal.height.saturating_sub(4));
+        let dlg = Rect::new(
+            modal.x + (modal.width.saturating_sub(dlg_w)) / 2,
+            modal.y + (modal.height.saturating_sub(dlg_h)) / 2,
+            dlg_w, dlg_h,
+        );
+        f.render_widget(Clear, dlg);
+
+        let inner_w = dlg_w.saturating_sub(4) as usize;
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Conflicted files section (red)
+        lines.push(Line::from(Span::styled(
+            format!("  {} CONFLICTED FILE{}", ov.conflicted_files.len(),
+                if ov.conflicted_files.len() == 1 { "" } else { "S" }),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+        for cf in &ov.conflicted_files {
+            let display = if cf.len() > inner_w.saturating_sub(4) {
+                format!("    …{}", &cf[cf.len().saturating_sub(inner_w.saturating_sub(5))..])
+            } else { format!("    {}", cf) };
+            lines.push(Line::from(Span::styled(display, Style::default().fg(Color::Red))));
+        }
+
+        // Auto-merged files section (green, only shown if any)
+        if !ov.auto_merged_files.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                format!("  {} AUTO-MERGED", ov.auto_merged_files.len()),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            )));
+            for am in &ov.auto_merged_files {
+                let display = if am.len() > inner_w.saturating_sub(4) {
+                    format!("    …{}", &am[am.len().saturating_sub(inner_w.saturating_sub(5))..])
+                } else { format!("    {}", am) };
+                lines.push(Line::from(Span::styled(display, Style::default().fg(Color::Green))));
+            }
+        }
+
+        lines.push(Line::from(""));
+
+        // [MCR] naming convention hint — mirrors [DH] and [GFM] hints
+        lines.push(Line::from(Span::styled(
+            "  Session will be prefixed [MCR] (Merge Conflict Resolution)",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+
+        // Action options with arrow selector
+        let resolve_style = if ov.selected == 0 {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        } else { Style::default().fg(Color::White) };
+        let abort_style = if ov.selected == 1 {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        } else { Style::default().fg(Color::White) };
+        let arrow_0 = if ov.selected == 0 { " ▸ " } else { "   " };
+        let arrow_1 = if ov.selected == 1 { " ▸ " } else { "   " };
+        lines.push(Line::from(Span::styled(format!("{}[y] Resolve with Claude", arrow_0), resolve_style)));
+        lines.push(Line::from(Span::styled(format!("{}[n] Abort merge", arrow_1), abort_style)));
+
+        // Render with scroll and block
+        let visible_h = dlg_h.saturating_sub(2) as usize;
+        let skip = ov.scroll.min(lines.len().saturating_sub(visible_h));
+        let visible: Vec<Line> = lines.into_iter().skip(skip).take(visible_h).collect();
+
+        let conflict_block = Block::default()
+            .title(Line::from(Span::styled(
+                " Merge Conflicts ", Style::default().fg(Color::Red).bold(),
+            )))
+            .title_alignment(ratatui::layout::Alignment::Center)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Red));
+
+        f.render_widget(Paragraph::new(visible).block(conflict_block), dlg);
+
+        // Footer hint overlaid on bottom border of conflict dialog
+        let hint = " j/k:navigate  Enter/y:resolve  n/Esc:abort ";
+        let hint_x = dlg.x + (dlg.width.saturating_sub(hint.len() as u16)) / 2;
+        let hint_y = dlg.y + dlg.height.saturating_sub(1);
+        if hint_y < area.height {
+            let hr = Rect::new(hint_x, hint_y, hint.len() as u16, 1);
+            f.render_widget(Paragraph::new(Line::from(Span::styled(
+                hint, Style::default().fg(GIT_BROWN),
+            ))), hr);
+        }
+    }
+
     // ── Footer hints rendered on top of the bottom border ──
     let footer = keybindings::git_actions_footer();
     let footer_y = modal.y + modal.height.saturating_sub(1);

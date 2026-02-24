@@ -66,11 +66,40 @@ impl App {
 
         self.invalidate_sidebar();
 
+        // MCR exit intercept — when the MCR Claude process exits, show the approval
+        // dialog instead of re-parsing (which would clobber the streaming output the
+        // user is currently viewing). The session file lives under main's path, not
+        // the feature branch's, so a normal re-parse would load the wrong data.
+        if let Some(ref mut mcr) = self.mcr_session {
+            if mcr.slot_id == slot_id {
+                mcr.approval_pending = true;
+                let display = branch.as_deref().unwrap_or(slot_id);
+                let exit_str = match code {
+                    Some(0) => "finished".to_string(),
+                    Some(c) => format!("exited: {}", c),
+                    None => "exited".to_string(),
+                };
+                self.set_status(format!("[MCR] {} — {}", display, exit_str));
+                return;
+            }
+        }
+
         // Force a full re-parse from the session file now that streaming is done.
+        // Skip re-parse if the exiting slot's session file isn't in the current
+        // worktree's directory (e.g. merge resolution spawned from main's repo
+        // root — its session file lives under main's path, not the feature branch's).
+        // Without this guard, the re-parse would reload the OLD session file and
+        // clobber the streaming output that the user is viewing.
         let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
         if is_current && was_active {
-            self.session_file_parse_offset = 0;
-            self.session_file_dirty = true;
+            let session_file_exists = self.claude_session_ids.get(slot_id)
+                .and_then(|sid| self.current_worktree().and_then(|wt| wt.worktree_path.as_deref().map(|p| (sid, p))))
+                .and_then(|(sid, path)| crate::config::claude_session_file(path, sid))
+                .is_some();
+            if session_file_exists {
+                self.session_file_parse_offset = 0;
+                self.session_file_dirty = true;
+            }
         }
 
         // If this was a [NewRunCmd] session, auto-reload runcmds
@@ -324,9 +353,16 @@ impl App {
         self.invalidate_sidebar();
     }
 
-    /// Store Claude's real session UUID, keyed by slot_id (PID string)
+    /// Store Claude's real session UUID, keyed by slot_id (PID string).
+    /// Also propagates to McrSession if this slot is the active MCR process.
     pub fn set_claude_session_id(&mut self, slot_id: &str, claude_session_id: String) {
         self.check_pending_session_name(slot_id, &claude_session_id);
+        // Keep MCR session_id in sync so we can --resume and clean up the file
+        if let Some(ref mut mcr) = self.mcr_session {
+            if mcr.slot_id == slot_id {
+                mcr.session_id = Some(claude_session_id.clone());
+            }
+        }
         self.claude_session_ids.insert(slot_id.to_string(), claude_session_id);
     }
 

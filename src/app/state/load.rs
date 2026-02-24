@@ -105,7 +105,15 @@ impl App {
         }
 
         self.worktrees = sessions;
-        self.selected_worktree = if self.worktrees.is_empty() { None } else { Some(0) };
+        // Pre-select the worktree matching the launch directory (cwd) so the
+        // user lands on the branch they're actually working in.
+        let cwd = std::env::current_dir().ok();
+        self.selected_worktree = if self.worktrees.is_empty() {
+            None
+        } else {
+            cwd.and_then(|c| self.worktrees.iter().position(|w| w.worktree_path.as_ref() == Some(&c)))
+                .or(Some(0))
+        };
 
         // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
         for session in &self.worktrees {
@@ -262,7 +270,10 @@ impl App {
 
     /// Cache the session display name for the title bar.
     /// Reads session_names TOML once here so draw_title_bar() is zero I/O.
+    /// During MCR, the title is locked to "[MCR] <name>" and won't be overwritten.
     pub fn update_title_session_name(&mut self) {
+        // MCR mode locks the title — don't let normal session logic overwrite it
+        if self.mcr_session.is_some() { return; }
         let Some(session) = self.current_worktree() else {
             self.title_session_name.clear();
             return;

@@ -346,7 +346,7 @@ fn refresh_session_events(&mut self) {
 ```
 
 **Streaming vs Polling (Dual-Source Prevention):**
-During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). **Important:** stream-json stdout does NOT include `user` type events — only system/assistant/result/progress. User messages are pushed as real `DisplayEvent::UserMessage` events into `display_events` at prompt submit time (`add_user_message()` in `output.rs`), ensuring they render immediately and persist throughout the conversation. The `pending_user_message` field is kept only as a dedup marker — cleared by `load.rs` when the session file's authoritative `UserMessage` appears during re-parse. When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't).
+During active Claude streaming, events are added to `display_events` by the live process handler (`handle_claude_output()` in `claude.rs`). Session file polling is **skipped** during streaming (`poll_session_file()` returns early if `is_current_session_running()`). **Important:** stream-json stdout does NOT include `user` type events — only system/assistant/result/progress. User messages are pushed as real `DisplayEvent::UserMessage` events into `display_events` at prompt submit time (`add_user_message()` in `output.rs`), ensuring they render immediately and persist throughout the conversation. The `pending_user_message` field is kept only as a dedup marker — cleared by `load.rs` when the session file's authoritative `UserMessage` appears during re-parse. When Claude exits, `handle_claude_exited()` forces a full re-parse (`session_file_parse_offset = 0`, `session_file_dirty = true`) to reconcile live-streamed events with the authoritative session file (which has hook extraction, rewrite handling, etc. that the live EventParser doesn't). **MCR intercept:** if the exiting slot is the active MCR process, `handle_claude_exited()` sets `approval_pending = true` and returns early — skipping re-parse entirely to preserve the streaming output the user is viewing. **Guard:** the re-parse is also skipped if the exiting slot's session file doesn't exist in the current worktree's session directory (checked via `claude_session_file(worktree_path, sid)`). This prevents sessions spawned from a different working directory (e.g. merge conflict resolution spawned from main's repo root) from clobbering `display_events` with an unrelated old session file.
 
 **Files:**
 - `src/watcher.rs` - `FileWatcher` thread, `WatchEvent`/`WatchCommand` types, noise filtering
@@ -922,7 +922,7 @@ Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19
 
 ### Worktree Health Panel
 
-Tabbed modal overlay (`Shift+H` toggles open/close, global keybinding) housing multiple health-check systems. Green accent color (`Rgb(80,200,80)`, `GF_GREEN` constant) with QuadrantOutside border. Centered modal (55% × 70%, min 50×16). Bold title: `" Worktree Health "`. Reopens on the last-visited tab (`last_health_tab` in App state, defaults to God Files).
+Tabbed modal overlay (`Shift+H` toggles open/close, global keybinding) housing multiple health-check systems. Green accent color (`Rgb(80,200,80)`, `GF_GREEN` constant) with QuadrantOutside border. Centered modal (55% × 70%, min 50×16). Bold title: `" Health: <worktree_name> "` (mirrors the Git panel's `" Git: <worktree_name> "` pattern — `worktree_name` field on `HealthPanel` struct, populated from `Worktree::name()` at open time). Reopens on the last-visited tab (`last_health_tab` in App state, defaults to God Files).
 
 **Tab Bar:**
 Row 0 inside border: `[ God Files ]  [ Documentation ]` — active tab bright green + bold, inactive dim gray. Tab key switches between tabs.
@@ -1026,14 +1026,52 @@ Pressing `c` or Enter on index 1 stages all changes (`git add -A`), gets `git di
 
 **Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
 
-**Data flow (squash-merge-to-main):** `exec_squash_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::squash_merge_into_main(repo_root, branch)`. Executes a 3-step cycle from the repo root:
+**Data flow (squash-merge-to-main):** `exec_squash_merge()` uses `panel.repo_root` (the main worktree path, always checked out on main) and `panel.worktree_name` (the feature branch name) to call `Git::squash_merge_into_main(repo_root, branch)`. Returns `SquashMergeResult` enum:
+- `SquashMergeResult::Success(String)` — clean merge, commit done, message returned
+- `SquashMergeResult::Conflict { conflicted, auto_merged, raw_output }` — partial conflict, repo in dirty merge state
+
+Executes a 4-step cycle from the repo root:
+0. `git stash --include-untracked` — stashes any dirty working tree on main (e.g. `.DS_Store`, editor swap files) so the merge isn't blocked. Popped after commit, on non-conflict failure, or on `merge_abort()`. Left in place during conflict (merge state is dirty).
 1. `git pull --ff-only` on main — non-fatal if offline (merge continues with local state), fatal if main has diverged (fast-forward required)
-2. `git merge --squash <branch>` — collapses all branch commits into staged changes
-3. `git commit -m "feat: merge <branch> into main"` — commits the squashed changes
+2. `git merge --squash <branch>` — collapses all branch commits into staged changes; on conflict, parses CONFLICT lines from git output via `rsplit("Merge conflict in ")` and returns `SquashMergeResult::Conflict`
+3. `git commit -m "feat: merge <branch> into main"` — commits the squashed changes (only on success), then pops stash
 
-Push is a separate user-triggered action (`Shift+P`). Result message reports merge status with optional "(pull skipped)" suffix if step 1 failed. Reports conflicts with count and auto-merged file count. Returns "Already up to date" when nothing to merge. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works.
+Push is a separate user-triggered action (`Shift+P`). Result message reports merge status with optional "(pull skipped)" suffix if step 1 failed. Returns "Already up to date" when nothing to merge. `get_main_branch()` dynamically detects main/master/HEAD so any naming convention works. `Git::merge_abort(repo_root)` runs `git merge --abort` + `git stash pop` to clean up dirty merge state and restore stashed changes.
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; `handle_commit_overlay()` for overlay text editing, `exec_commit_start()` to stage/spawn, `exec_pull()` for pull, `exec_push()` for push; `ACTION_COUNT` = 3, confirm index mapping: 0=pull/squash-merge (context-aware), 1=commit, 2=push), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels(is_on_main)`, footer from `keybindings::git_actions_footer()`, commit overlay dialog with cursor and hint bar), `src/app/state/ui.rs` (open/close methods, `is_on_main` set from `worktree_name == main_branch`, `commit_overlay: None` in panel constructor), `src/git/core.rs` (7 methods: `get_diff_files`, `get_file_diff`, `squash_merge_into_main` (internally runs pull/merge/commit — no push), `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `is_on_main`, `commit_overlay` fields, GitChangedFile, GitCommitOverlay), `src/tui/keybindings.rs` (GIT_ACTIONS array (13 entries), `lookup_git_actions_action()` takes `is_on_main` param with mutual exclusivity guards, `git_actions_labels()` takes `is_on_main` param, hint generators, `GitPull`/`GitPush` actions, `l`/`Shift+P` bindings, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating)
+**Conflict resolution overlay:**
+When `exec_squash_merge()` returns `SquashMergeResult::Conflict`, a `GitConflictOverlay` opens on top of the Git panel (same layering as commit overlay). The overlay is a centered red-bordered dialog (85% × 80% of panel area) with `" Merge Conflicts "` title. Contents:
+- Red section: conflicted file list with count header (files with CONFLICT markers)
+- Green section: auto-merged file list with count header (cleanly merged files)
+- Two selectable action options with `▶` arrow indicator: `[y] Resolve with Claude` / `[n] Abort merge`
+- Footer hint bar: `j/k:navigate  Enter/y:resolve  n/Esc:abort`
+
+Input handled by `handle_conflict_overlay()` (intercepted before commit overlay and normal panel dispatch):
+- `j/k` or `↑/↓` — navigate between two options
+- `Enter` or `y` — if selected=0: calls `spawn_conflict_claude()` to spawn a streaming Claude session
+- `n` or `Esc` — calls `abort_merge()` which runs `Git::merge_abort()`, closes overlay, shows "Merge aborted" status
+
+`spawn_conflict_claude()` follows the GFM/DH streaming session pattern (NOT one-shot):
+1. Builds a prompt listing conflicted and auto-merged files with resolution instructions (read markers, edit files, stage, commit, verify with `git status`)
+2. `ClaudeProcess::spawn(repo_root, &prompt, None)` — spawns interactive Claude session in the main worktree directory
+3. `pending_session_names.push(("[MCR] <branch>", slot))` — names the session for display
+4. `register_claude(branch, pid, rx)` — registers under the feature branch name so output appears in the current view immediately
+5. Creates `McrSession { branch, display_name, repo_root, slot_id, session_id: None, approval_pending: false }` → sets `app.mcr_session`
+6. Sets `app.title_session_name = "[MCR] <display>"` (locked — `update_title_session_name()` early-returns during MCR)
+7. Closes git panel, sets `focus = Focus::Output` so the user sees the convo pane in MCR mode
+
+**MCR (Merge Conflict Resolution) mode:**
+When `spawn_conflict_claude()` activates MCR, the convo pane switches to green-themed borders and titles. The user can send follow-up prompts to Claude during/after resolution — prompts are routed to `mcr.repo_root` (main worktree, not the feature branch) with `--resume mcr.session_id`. Each follow-up spawns a new Claude process; `mcr.slot_id` is updated to the new PID. When the MCR Claude process exits, `handle_claude_exited()` intercepts: sets `mcr.approval_pending = true`, skips the normal re-parse (preserving streaming output), and returns early. A green-bordered approval dialog renders over the convo pane:
+- `y` / `Enter` — `accept_mcr()`: deletes session file from `~/.claude/projects/<main-encoded>/<session-id>.jsonl`, clears MCR state, restores normal borders and title
+- `n` / `Esc` — dismisses dialog, status shows "Review the resolution, then press ⌃a to accept"
+- `⌃a` — re-shows the approval dialog (available when MCR active, Claude not running, dialog not shown)
+
+MCR state tracked by `McrSession` struct on `App` (fields: `branch`, `display_name`, `repo_root`, `slot_id`, `session_id`, `approval_pending`). Session ID propagated via `set_claude_session_id()` when the MCR slot receives its session UUID.
+
+Closing the git panel while conflict overlay is open auto-aborts the merge via `Git::merge_abort()` in `close_git_actions_panel()` — no dirty merge state left behind.
+
+`handle_git_actions_input()` takes `&ClaudeProcess` parameter (passed from `event_loop/actions.rs`) to enable conflict resolution spawning.
+
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; `handle_commit_overlay()` for commit editing, `handle_conflict_overlay()` for conflict dialog, `spawn_conflict_claude()` + `abort_merge()` for conflict resolution, MCR session creation, `exec_commit_start()` to stage/spawn, `exec_pull()` for pull, `exec_push()` for push; takes `&ClaudeProcess` param; `ACTION_COUNT` = 3, confirm index mapping: 0=pull/squash-merge (context-aware), 1=commit, 2=push), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels(is_on_main)`, footer from `keybindings::git_actions_footer()`, commit overlay dialog, conflict overlay dialog with red border), `src/tui/draw_output.rs` (green border override when `mcr_session.is_some()`, green center title color, `draw_mcr_approval()` dialog), `src/tui/run.rs` (MCR approval dialog render after `draw_output`), `src/app/state/ui.rs` (open/close methods, `is_on_main` set from `worktree_name == main_branch`, `commit_overlay: None`, `conflict_overlay: None` in panel constructor; `close_git_actions_panel()` auto-aborts merge if conflict overlay open), `src/app/state/claude.rs` (MCR session ID tracking in `set_claude_session_id()`, MCR exit intercept in `handle_claude_exited()` — sets `approval_pending`, skips re-parse, returns early), `src/app/state/load.rs` (title guard: `update_title_session_name()` early-returns when `mcr_session.is_some()`), `src/tui/input_terminal.rs` (MCR prompt routing: uses `mcr.repo_root` as cwd, `mcr.session_id` for `--resume`, updates `mcr.slot_id`), `src/tui/event_loop/actions.rs` (MCR approval dialog intercept before modal checks: y/Enter → `accept_mcr()`, n/Esc → dismiss; `⌃a` re-shows dialog; `accept_mcr()` helper deletes session file + clears state; passes `claude_process` to `handle_git_actions_input`), `src/git/core.rs` (8 methods: `get_diff_files`, `get_file_diff`, `squash_merge_into_main` (returns `SquashMergeResult`), `merge_abort`, `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`; `SquashMergeResult` enum), `src/app/types.rs` (GitActionsPanel with `repo_root`, `is_on_main`, `commit_overlay`, `conflict_overlay` fields, GitChangedFile, GitCommitOverlay, GitConflictOverlay, McrSession), `src/tui/keybindings.rs` (GIT_ACTIONS array (13 entries), `lookup_git_actions_action()` takes `is_on_main` param with mutual exclusivity guards, `git_actions_labels()` takes `is_on_main` param, hint generators, `GitPull`/`GitPush` actions, `l`/`Shift+P` bindings, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating)
 
 ### Rebase Support (Dead Code)
 
@@ -1186,7 +1224,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, WorktreeAction, SidebarRowAction, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main, GitCommitOverlay, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, WorktreeAction, SidebarRowAction, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main, GitCommitOverlay, GitConflictOverlay, McrSession, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
@@ -1227,7 +1265,7 @@ azureal/
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: convo search + session list overlay only (commands resolved upstream)
 │   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
-│   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations)
+│   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations, conflict overlay + Claude spawn)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1236,7 +1274,7 @@ azureal/
 │   │   └── parser.rs       # EventParser + tests
 │   ├── git.rs              # Module root (re-exports only)
 │   ├── git/                # Git operations module
-│   │   ├── core.rs         # Git struct, repo detection, diffs
+│   │   ├── core.rs         # Git struct, repo detection, diffs, SquashMergeResult enum, merge_abort()
 │   │   ├── branch.rs       # Branch management
 │   │   ├── rebase.rs       # Rebase operations (dead code — preserved on disk but not compiled from tui.rs)
 │   │   └── worktree.rs     # Worktree create/delete/list

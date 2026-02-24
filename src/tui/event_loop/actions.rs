@@ -41,6 +41,107 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
 
+    // MCR approval dialog — highest priority modal (conflict resolution decision)
+    if let Some(ref mcr) = app.mcr_session {
+        if mcr.approval_pending {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => { accept_mcr(app); }
+                KeyCode::Char('n') => {
+                    // Abort the merge entirely — reset main to pre-merge HEAD,
+                    // undoing any commits Claude made during resolution
+                    let mcr = app.mcr_session.take().unwrap();
+                    if let Some(ref sid) = mcr.session_id {
+                        if let Some(path) = crate::config::claude_session_file(&mcr.repo_root, sid) {
+                            let _ = std::fs::remove_file(path);
+                        }
+                    }
+                    if !mcr.pre_merge_head.is_empty() {
+                        let _ = std::process::Command::new("git")
+                            .args(["reset", "--hard", &mcr.pre_merge_head])
+                            .current_dir(&mcr.repo_root)
+                            .output();
+                    }
+                    // Pop any stash that squash_merge_into_main() pushed
+                    let _ = std::process::Command::new("git")
+                        .args(["stash", "pop"])
+                        .current_dir(&mcr.repo_root)
+                        .output();
+                    app.load_session_output();
+                    app.update_title_session_name();
+                    app.set_status(format!("MCR cancelled — merge aborted for {}", mcr.display_name));
+                }
+                KeyCode::Esc => {
+                    // Dismiss dialog — user wants to review the convo first.
+                    // ⌃a re-shows the dialog when they're ready to accept.
+                    if let Some(ref mut m) = app.mcr_session {
+                        m.approval_pending = false;
+                    }
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+    }
+
+    // ⌃a re-shows the MCR approval dialog after dismissing with 'n'
+    // Only active when MCR session exists, Claude isn't running, and dialog isn't shown
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('a') {
+        if let Some(ref mcr) = app.mcr_session {
+            if !mcr.approval_pending && !app.running_sessions.contains(&mcr.slot_id) {
+                if let Some(ref mut m) = app.mcr_session {
+                    m.approval_pending = true;
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    // Post-merge dialog — keep/archive/delete worktree after squash merge
+    if app.post_merge_dialog.is_some() {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if let Some(ref mut d) = app.post_merge_dialog { if d.selected < 2 { d.selected += 1; } }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if let Some(ref mut d) = app.post_merge_dialog { if d.selected > 0 { d.selected -= 1; } }
+            }
+            KeyCode::Enter => {
+                let d = app.post_merge_dialog.take().unwrap();
+                match d.selected {
+                    0 => {
+                        // Keep — rebase worktree onto main
+                        let _ = std::process::Command::new("git")
+                            .args(["rebase", "main"])
+                            .current_dir(&d.worktree_path)
+                            .output();
+                        app.set_status(format!("{} — rebased onto main", d.display_name));
+                    }
+                    1 => {
+                        // Archive — remove worktree, keep branch
+                        if let Some(project) = &app.project {
+                            let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
+                        }
+                        app.set_status(format!("{} — archived", d.display_name));
+                        let _ = app.refresh_worktrees();
+                    }
+                    2 => {
+                        // Delete — remove worktree + delete branch
+                        if let Some(project) = &app.project {
+                            let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
+                            let _ = crate::git::Git::delete_branch(&project.path, &d.branch);
+                        }
+                        app.set_status(format!("{} — deleted", d.display_name));
+                        let _ = app.refresh_worktrees();
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Esc => { app.post_merge_dialog = None; }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Help overlay: only ? and Esc close it, everything else ignored
     if app.show_help {
         match key.code {
@@ -54,7 +155,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.is_wizard_active() { handle_wizard_input(app, key, claude_process); return Ok(()); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
-    if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app); }
+    if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
     // Dialog checked before picker — dialog is spawned on top of picker (e/a keys)
@@ -847,5 +948,33 @@ fn start_or_resume(app: &mut App) {
         app.focus = Focus::Input;
         app.prompt_mode = true;
         app.set_status("Type your prompt and press Enter to send");
+    }
+}
+
+/// Accept the MCR resolution — delete the temporary session file from
+/// `~/.claude/projects/<main-encoded>/<session-id>.jsonl`, clear MCR state,
+/// and restore normal convo pane borders + title.
+fn accept_mcr(app: &mut App) {
+    if let Some(mcr) = app.mcr_session.take() {
+        // Delete the MCR session file so it doesn't pollute main's session list
+        if let Some(ref sid) = mcr.session_id {
+            if let Some(path) = crate::config::claude_session_file(&mcr.repo_root, sid) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        // Restore convo pane, then show post-merge dialog
+        app.load_session_output();
+        app.update_title_session_name();
+        let wt_path = app.current_worktree()
+            .and_then(|w| w.worktree_path.clone())
+            .unwrap_or_else(|| mcr.repo_root.clone());
+        app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
+            branch: mcr.branch.clone(),
+            display_name: mcr.display_name.clone(),
+            worktree_path: wt_path,
+            repo_root: mcr.repo_root,
+            selected: 0,
+        });
+        app.set_status(format!("MCR complete — {} merged", mcr.display_name));
     }
 }

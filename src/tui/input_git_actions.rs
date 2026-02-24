@@ -9,9 +9,10 @@
 use anyhow::Result;
 use crossterm::event;
 
-use crate::app::App;
-use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay};
-use crate::git::Git;
+use crate::app::{App, Focus};
+use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay, McrSession, PostMergeDialog};
+use crate::claude::ClaudeProcess;
+use crate::git::{Git, SquashMergeResult};
 use super::keybindings::{lookup_git_actions_action, Action};
 
 /// Total number of action items in the actions section
@@ -20,11 +21,16 @@ const ACTION_COUNT: usize = 3;
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
-pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     let panel = match app.git_actions_panel.as_mut() {
         Some(p) => p,
         None => return Ok(()),
     };
+
+    // Conflict overlay intercepts all input when open (resolve/abort actions)
+    if panel.conflict_overlay.is_some() {
+        return handle_conflict_overlay(key, app, claude_process);
+    }
 
     // Commit overlay intercepts all input when open (text editing + actions)
     if panel.commit_overlay.is_some() {
@@ -151,21 +157,50 @@ fn open_file_diff(app: &mut App) {
     }
 }
 
-/// Squash-merge the current worktree's branch into main. Runs from repo root
-/// (which is always checked out on main) so no checkout is needed. Collapses
-/// all branch commits into a single commit on main.
+/// Squash-merge the current worktree's branch into main. On success, shows
+/// result message. On conflict, opens the conflict resolution overlay.
 fn exec_squash_merge(app: &mut App) {
-    let (repo_root, branch) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.repo_root.clone(), p.worktree_name.clone()),
+    let (repo_root, branch, wt_path) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone()),
         None => return,
     };
-    let msg = match Git::squash_merge_into_main(&repo_root, &branch) {
-        Ok(m) => (m, false),
-        Err(e) => (format!("{}", e), true),
-    };
+    // Block squash merge when the feature branch has uncommitted changes —
+    // those changes won't be included in the squash and could be lost
     if let Some(ref mut p) = app.git_actions_panel {
-        p.result_message = Some(msg);
-        refresh_changed_files(p);
+        if !p.changed_files.is_empty() {
+            p.result_message = Some(("Commit your changes first (c) before squash merging".into(), true));
+            return;
+        }
+    }
+    match Git::squash_merge_into_main(&repo_root, &branch) {
+        Ok(SquashMergeResult::Success(msg)) => {
+            let display = branch.strip_prefix("azureal/").unwrap_or(&branch).to_string();
+            app.git_actions_panel = None;
+            app.post_merge_dialog = Some(PostMergeDialog {
+                branch: branch.clone(),
+                display_name: display,
+                worktree_path: wt_path,
+                repo_root,
+                selected: 0,
+            });
+            app.set_status(msg);
+        }
+        Ok(SquashMergeResult::Conflict { conflicted, auto_merged, raw_output }) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = Some(GitConflictOverlay {
+                    conflicted_files: conflicted,
+                    auto_merged_files: auto_merged,
+                    raw_output,
+                    scroll: 0,
+                    selected: 0,
+                });
+            }
+        }
+        Err(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("{}", e), true));
+            }
+        }
     }
 }
 
@@ -458,4 +493,173 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// Handle input while the conflict resolution overlay is open.
+/// j/k or Up/Down navigate between "Resolve with Claude" and "Abort merge".
+/// Enter/y resolves, n/Esc aborts the merge and closes the overlay.
+fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    // Extract what we need before the mutable borrow dance
+    let (sel, repo_root, branch, main_branch, conflicted, auto_merged) = match app.git_actions_panel.as_ref() {
+        Some(p) => match p.conflict_overlay.as_ref() {
+            Some(ov) => (
+                ov.selected, p.repo_root.clone(), p.worktree_name.clone(),
+                p.main_branch.clone(), ov.conflicted_files.clone(), ov.auto_merged_files.clone(),
+            ),
+            None => return Ok(()),
+        },
+        None => return Ok(()),
+    };
+
+    match (key.modifiers, key.code) {
+        // Navigate between the two options
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                if let Some(ref mut ov) = p.conflict_overlay {
+                    if ov.selected < 1 { ov.selected = 1; }
+                }
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                if let Some(ref mut ov) = p.conflict_overlay {
+                    if ov.selected > 0 { ov.selected = 0; }
+                }
+            }
+        }
+
+        // Enter — execute selected action
+        (KeyModifiers::NONE, KeyCode::Enter) => {
+            if sel == 0 {
+                spawn_conflict_claude(app, claude_process, &repo_root, &branch, &main_branch, &conflicted, &auto_merged);
+            } else {
+                abort_merge(app, &repo_root);
+            }
+        }
+
+        // y — quick shortcut to resolve with Claude
+        (KeyModifiers::NONE, KeyCode::Char('y')) => {
+            spawn_conflict_claude(app, claude_process, &repo_root, &branch, &main_branch, &conflicted, &auto_merged);
+        }
+
+        // n or Esc — abort merge and close overlay
+        (KeyModifiers::NONE, KeyCode::Char('n')) | (KeyModifiers::NONE, KeyCode::Esc) => {
+            abort_merge(app, &repo_root);
+        }
+
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Abort an in-progress merge, close the conflict overlay, show status
+fn abort_merge(app: &mut App, repo_root: &std::path::Path) {
+    let _ = Git::merge_abort(repo_root);
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.conflict_overlay = None;
+        p.result_message = Some(("Merge aborted".into(), false));
+        refresh_changed_files(p);
+    }
+}
+
+/// Spawn a streaming Claude session to resolve merge conflicts on main.
+/// Registers under the feature branch so the user immediately sees the
+/// convo output without navigating away from their current view.
+fn spawn_conflict_claude(
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+    repo_root: &std::path::Path,
+    branch: &str,
+    _main_branch: &str,
+    conflicted: &[String],
+    auto_merged: &[String],
+) {
+    // Build a prompt describing the conflict state and what Claude should do
+    let display = branch.strip_prefix("azureal/").unwrap_or(branch);
+    let mut prompt = format!(
+        "A squash merge of branch '{}' into main produced merge conflicts.\n\
+         Git left the working directory in a partially-merged state.\n\n",
+        display
+    );
+    prompt.push_str(&format!("Conflicted files ({}):\n", conflicted.len()));
+    for f in conflicted { prompt.push_str(&format!("  - {}\n", f)); }
+    if !auto_merged.is_empty() {
+        prompt.push_str(&format!("\nAuto-merged cleanly ({}):\n", auto_merged.len()));
+        for f in auto_merged { prompt.push_str(&format!("  - {}\n", f)); }
+    }
+    prompt.push_str(
+        "\nResolve all conflicts:\n\
+         1. Read each conflicted file — look for <<<<<<< / ======= / >>>>>>> markers\n\
+         2. Edit each file to keep the correct combined content, removing all markers\n\
+         3. Stage resolved files: git add <files>\n\
+         4. Commit: git commit -m \"feat: merge "
+    );
+    prompt.push_str(display);
+    prompt.push_str(
+        " into main\"\n\
+         5. Verify with: git status\n\n\
+         Ask me if any conflict is ambiguous."
+    );
+
+    // Capture HEAD on main before Claude touches anything — needed for abort
+    let pre_merge_head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo_root)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    match claude_process.spawn(repo_root, &prompt, None) {
+        Ok((rx, pid)) => {
+            let slot = pid.to_string();
+            app.pending_session_names.push((slot.clone(), format!("[MCR] {}", display)));
+            // Register under feature branch so output appears in the current view
+            app.register_claude(branch.to_string(), pid, rx);
+            // Enter MCR mode — green borders, routed prompts, approval dialog on exit
+            app.mcr_session = Some(McrSession {
+                branch: branch.to_string(),
+                display_name: display.to_string(),
+                repo_root: repo_root.to_path_buf(),
+                slot_id: slot,
+                session_id: None,
+                approval_pending: false,
+                pre_merge_head: pre_merge_head.clone(),
+            });
+            app.title_session_name = format!("[MCR] {}", display);
+            // Clear convo pane so MCR starts as a visually fresh session
+            app.display_events.clear();
+            app.output_lines.clear();
+            app.output_buffer.clear();
+            app.output_scroll = usize::MAX;
+            app.session_file_parse_offset = 0;
+            app.rendered_events_count = 0;
+            app.rendered_content_line_count = 0;
+            app.rendered_events_start = 0;
+            app.event_parser = crate::events::EventParser::new();
+            app.selected_event = None;
+            app.pending_tool_calls.clear();
+            app.failed_tool_calls.clear();
+            app.session_tokens = None;
+            app.model_context_window = None;
+            app.token_badge_cache = None;
+            app.current_todos.clear();
+            app.subagent_todos.clear();
+            app.active_task_tool_ids.clear();
+            app.subagent_parent_idx = None;
+            app.awaiting_ask_user_question = false;
+            app.ask_user_questions_cache = None;
+            app.invalidate_render_cache();
+            // Close the git panel and focus on output so user sees the convo
+            app.git_actions_panel = None;
+            app.focus = Focus::Output;
+        }
+        Err(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = None;
+                p.result_message = Some((format!("Failed to spawn Claude: {}", e), true));
+            }
+        }
+    }
 }

@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, McrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::claude::InteractiveSession;
 use crate::events::EventParser;
 use crate::models::{Project, RebaseStatus, Worktree};
@@ -408,6 +408,12 @@ pub struct App {
     pub god_file_filter_dirs: std::collections::HashSet<std::path::PathBuf>,
     /// Git Actions panel state (Shift+G overlay for git operations + changed files)
     pub git_actions_panel: Option<GitActionsPanel>,
+    /// Active Merge Conflict Resolution session — when Some, convo pane shows green
+    /// borders, routes prompts to repo root, and displays approval dialog after Claude exits
+    pub mcr_session: Option<McrSession>,
+    /// Post-merge dialog — shown after successful squash merge or MCR accept.
+    /// Asks user to keep (rebase), archive, or delete the worktree/branch.
+    pub post_merge_dialog: Option<PostMergeDialog>,
     /// True when user is browsing the main/master branch in read-only mode (via 'm').
     /// While active, file mutations, prompt mode, edit mode, and session start are blocked.
     pub browsing_main: bool,
@@ -665,6 +671,8 @@ impl App {
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,
+            mcr_session: None,
+            post_merge_dialog: None,
             browsing_main: false,
             pre_main_browse_selection: None,
             main_worktree: None,

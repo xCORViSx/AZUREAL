@@ -77,7 +77,11 @@ impl App {
 
         self.show_file_tree = false;
         self.focus = crate::app::Focus::Worktrees;
+        let worktree_name = self.selected_worktree
+            .map(|i| self.worktrees[i].name().to_string())
+            .unwrap_or_default();
         self.health_panel = Some(HealthPanel {
+            worktree_name,
             tab: self.last_health_tab,
             god_files,
             god_selected: 0,
@@ -97,7 +101,11 @@ impl App {
         let dir_set: HashSet<PathBuf> = dirs.iter().map(PathBuf::from).collect();
         let god_files = self.scan_god_files_with_dirs(&dir_set);
         let (doc_entries, doc_score) = self.scan_documentation();
+        let worktree_name = self.selected_worktree
+            .map(|i| self.worktrees[i].name().to_string())
+            .unwrap_or_default();
         self.health_panel = Some(HealthPanel {
+            worktree_name,
             tab: self.last_health_tab,
             god_files,
             god_selected: 0,

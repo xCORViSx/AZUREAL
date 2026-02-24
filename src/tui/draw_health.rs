@@ -82,7 +82,7 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
         format!(" {}:tab ", tab_key), Style::default().fg(GF_GREEN),
     ));
     let title = Line::from(vec![
-        Span::styled(" Worktree Health ", Style::default().fg(GF_GREEN).bold()),
+        Span::styled(format!(" Health: {} ", panel.worktree_name), Style::default().fg(GF_GREEN).bold()),
     ]).alignment(ratatui::layout::Alignment::Center);
     let scope_key = keybindings::find_key_for_action(&keybindings::HEALTH_SHARED, keybindings::Action::HealthScopeMode)
         .unwrap_or("s".into());

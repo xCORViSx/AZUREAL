@@ -24,7 +24,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -338,7 +338,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let is_focused = app.focus == Focus::Output;
-    let border_style = if is_focused {
+    let mcr_active = app.mcr_session.is_some();
+    let border_style = if mcr_active {
+        // MCR mode: green borders to visually indicate active conflict resolution
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+    } else if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
@@ -404,8 +408,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             String::new()
         };
         if !bracketed.is_empty() {
+            let title_color = if mcr_active { Color::Green } else { Color::White };
             block = block.title(
-                Line::from(Span::styled(bracketed, Style::default().fg(Color::White)))
+                Line::from(Span::styled(bracketed, Style::default().fg(title_color)))
                     .alignment(Alignment::Center)
             );
         }
@@ -414,6 +419,18 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     // Add right-aligned PID/exit title — ratatui fills gap with border chars
     if let Some(rt) = right_title {
         block = block.title(rt);
+    }
+
+    // MCR review mode: show ⌃a hint on bottom border when dialog is dismissed
+    if let Some(ref mcr) = app.mcr_session {
+        if !mcr.approval_pending {
+            block = block.title_bottom(
+                Line::from(vec![
+                    Span::styled(" ⌃a ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled("Accept/Abort ", Style::default().fg(Color::DarkGray)),
+                ]).alignment(Alignment::Center)
+            );
+        }
     }
 
     let output = Paragraph::new(content).block(block);
@@ -457,4 +474,74 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         // No todos visible — clear cached rect so mouse scroll won't hit-test stale area
         app.pane_todo = Rect::default();
     }
+}
+
+/// Draw the MCR approval dialog — a small centered green-bordered box asking
+/// whether the user wants to accept the conflict resolution. Rendered over the
+/// convo pane after Claude exits during MCR mode.
+pub fn draw_mcr_approval(f: &mut Frame, area: Rect) {
+    // Size: 46 wide × 5 tall, centered within the convo pane
+    let w = 46u16.min(area.width.saturating_sub(2));
+    let h = 5u16.min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let dialog = Rect::new(x, y, w, h);
+
+    f.render_widget(Clear, dialog);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        .title(Span::styled(" MCR ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
+
+    let text = vec![
+        Line::from(Span::styled("Accept conflict resolution?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(vec![
+            Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw(" Accept  "),
+            Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(" Abort  "),
+            Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(" Review"),
+        ]),
+    ];
+    let para = Paragraph::new(text).block(block).alignment(Alignment::Center);
+    f.render_widget(para, dialog);
+}
+
+/// Draw the post-merge dialog — asks whether to keep, archive, or delete the
+/// worktree after a successful squash merge. Centered over the convo pane.
+pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::app::types::PostMergeDialog) {
+    let w = 50u16.min(area.width.saturating_sub(2));
+    let h = 9u16.min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
+        .title(Span::styled(
+            format!(" {} merged ", dialog_state.display_name),
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ));
+
+    let arrow = |i: usize| if dialog_state.selected == i { "▸ " } else { "  " };
+    let style = |i: usize, color: Color| {
+        if dialog_state.selected == i {
+            Style::default().fg(color).add_modifier(Modifier::BOLD)
+        } else { Style::default().fg(Color::White) }
+    };
+
+    let text = vec![
+        Line::from(Span::styled("What should happen to this worktree?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(Span::styled(format!("{}Keep — rebase onto main, continue working", arrow(0)), style(0, Color::Green))),
+        Line::from(Span::styled(format!("{}Archive — remove worktree, keep branch", arrow(1)), style(1, Color::Yellow))),
+        Line::from(Span::styled(format!("{}Delete — remove worktree and branch", arrow(2)), style(2, Color::Red))),
+    ];
+    let para = Paragraph::new(text).block(block).alignment(Alignment::Left);
+    f.render_widget(para, rect);
 }

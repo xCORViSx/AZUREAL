@@ -11,4 +11,4 @@ mod core;
 mod rebase;
 mod worktree;
 
-pub use core::{Git, WorktreeInfo};
+pub use core::{Git, SquashMergeResult, WorktreeInfo};

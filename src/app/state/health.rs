@@ -115,7 +115,12 @@ impl App {
             self.scan_god_files()
         };
         let (doc_entries, doc_score) = self.scan_documentation();
+        // Grab the display name of the currently selected worktree for the panel title
+        let worktree_name = self.selected_worktree
+            .map(|i| self.worktrees[i].name().to_string())
+            .unwrap_or_default();
         self.health_panel = Some(HealthPanel {
+            worktree_name,
             tab: self.last_health_tab,
             god_files,
             god_selected: 0,

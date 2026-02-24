@@ -447,6 +447,61 @@ pub struct GitCommitOverlay {
     pub receiver: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
 }
 
+/// Conflict resolution overlay — shown when squash merge encounters conflicts.
+/// Displays conflicted/auto-merged file lists and offers Claude-assisted resolution.
+#[derive(Debug)]
+pub struct GitConflictOverlay {
+    /// Files with CONFLICT markers that need resolution
+    pub conflicted_files: Vec<String>,
+    /// Files that git auto-merged cleanly
+    pub auto_merged_files: Vec<String>,
+    /// Full raw git output for reference
+    pub raw_output: String,
+    /// Scroll offset for the file list display
+    pub scroll: usize,
+    /// Selected action: 0 = "Resolve with Claude", 1 = "Abort merge"
+    pub selected: usize,
+}
+
+/// Merge Conflict Resolution session state. Tracks an active MCR flow so the
+/// convo pane routes prompts to the correct working directory (repo root, not
+/// feature branch worktree), shows green borders, and displays the approval
+/// dialog after Claude exits.
+#[derive(Debug)]
+pub struct McrSession {
+    /// Feature branch name this MCR is resolving (e.g. "azureal/health")
+    pub branch: String,
+    /// Display name for the title (branch without "azureal/" prefix)
+    pub display_name: String,
+    /// Repo root path (main worktree) — Claude's working directory during MCR
+    pub repo_root: std::path::PathBuf,
+    /// Slot ID (PID string) of the current MCR Claude process
+    pub slot_id: String,
+    /// Claude API session UUID (set when SessionId event arrives, used for --resume + cleanup)
+    pub session_id: Option<String>,
+    /// True when Claude has exited and we're awaiting user approval
+    pub approval_pending: bool,
+    /// HEAD commit hash on main BEFORE the merge — used to reset on abort
+    pub pre_merge_head: String,
+}
+
+/// Post-merge dialog shown after a successful squash merge. Asks the user
+/// whether to keep (rebase), archive (remove worktree, keep branch), or
+/// delete (remove worktree + delete branch) the feature worktree.
+#[derive(Debug)]
+pub struct PostMergeDialog {
+    /// Branch name being merged (e.g. "azureal/health")
+    pub branch: String,
+    /// Display name for the dialog (without "azureal/" prefix)
+    pub display_name: String,
+    /// Worktree path on disk (needed for archive/delete)
+    pub worktree_path: std::path::PathBuf,
+    /// Repo root (main worktree) for running git commands
+    pub repo_root: std::path::PathBuf,
+    /// Currently selected option: 0=Keep, 1=Archive, 2=Delete
+    pub selected: usize,
+}
+
 /// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
 /// Actions are context-aware: main branch gets pull+commit+push,
 /// feature branches get squash-merge+commit+push.
@@ -477,6 +532,9 @@ pub struct GitActionsPanel {
     /// Commit message overlay — shown when `c` is pressed in the actions list.
     /// Claude generates a conventional commit message from `git diff --staged`.
     pub commit_overlay: Option<GitCommitOverlay>,
+    /// Conflict resolution overlay — shown when squash merge hits conflicts.
+    /// Offers Claude-assisted resolution or merge abort.
+    pub conflict_overlay: Option<GitConflictOverlay>,
 }
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization
@@ -539,6 +597,8 @@ pub enum HealthTab {
 /// multiple health-check systems (god files, documentation coverage, etc.)
 #[derive(Debug)]
 pub struct HealthPanel {
+    /// Worktree display name shown in the panel title (e.g. "Health: my-feature")
+    pub worktree_name: String,
     /// Which tab is currently active/visible
     pub tab: HealthTab,
     // ── God Files tab ──

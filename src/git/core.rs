@@ -8,6 +8,23 @@ use std::process::Command;
 
 use crate::models::DiffInfo;
 
+/// Result of a squash merge attempt — distinguishes clean success from
+/// partial-conflict scenarios that need interactive resolution.
+pub enum SquashMergeResult {
+    /// Clean merge completed and committed successfully
+    Success(String),
+    /// Conflicts detected — repo left in dirty merge state on main.
+    /// User must resolve conflicts or abort before main is usable.
+    Conflict {
+        /// Files with CONFLICT markers that need manual resolution
+        conflicted: Vec<String>,
+        /// Files that git auto-merged without issues
+        auto_merged: Vec<String>,
+        /// Full raw git output from the merge command
+        raw_output: String,
+    },
+}
+
 /// Worktree info from git
 #[derive(Debug, Clone)]
 pub struct WorktreeInfo {
@@ -33,14 +50,19 @@ impl Git {
 
     /// Get the root path of the git repository
     pub fn repo_root(path: &Path) -> Result<std::path::PathBuf> {
+        // Use --git-common-dir to resolve to the MAIN repo root, not the
+        // worktree root. --show-toplevel returns the worktree's own directory
+        // when run from a worktree, which breaks project/worktree discovery.
         let output = Command::new("git")
-            .args(["rev-parse", "--show-toplevel"])
+            .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
             .current_dir(path)
             .output()
             .context("Failed to get repo root")?;
 
         if output.status.success() {
-            Ok(std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+            let git_dir = std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            // --git-common-dir returns the .git directory; parent is the repo root
+            Ok(git_dir.parent().unwrap_or(&git_dir).to_path_buf())
         } else {
             anyhow::bail!("Not in a git repository")
         }
@@ -316,10 +338,38 @@ impl Git {
     /// Squash-merge a feature branch into main:
     /// 1. Pull main from remote (so we merge onto the latest upstream)
     /// 2. Squash-merge the branch (collapses all commits into one staged changeset)
-    /// 3. Commit with a clean message
+    /// 3. On success: commit with a clean message → `SquashMergeResult::Success`
+    /// 4. On conflict: return structured conflict info → `SquashMergeResult::Conflict`
     /// Push is separate — user triggers it manually via the Push action.
     /// Runs from the repo root (main worktree, already on main branch).
-    pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<String> {
+    pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<SquashMergeResult> {
+        // Pre-flight: clean up any leftover dirty merge state from a previous
+        // MCR that was interrupted (app crash, force-quit, etc.). Without this,
+        // `git pull` and `git stash` both fail with "unmerged files" errors.
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo_root)
+            .output()
+            .ok();
+        let has_unmerged = status.as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with("U") || l.starts_with("AA") || l.starts_with("DD")))
+            .unwrap_or(false);
+        if has_unmerged {
+            let _ = Command::new("git").args(["reset", "--merge"]).current_dir(repo_root).output();
+        }
+
+        // Step 0: stash any dirty working tree on main (e.g. .DS_Store, editor
+        // swap files) so `git merge --squash` doesn't fail with "your local
+        // changes would be overwritten". Pop unconditionally after merge/commit.
+        let stash_out = Command::new("git")
+            .args(["stash", "--include-untracked"])
+            .current_dir(repo_root)
+            .output()
+            .ok();
+        let did_stash = stash_out.as_ref()
+            .map(|o| !String::from_utf8_lossy(&o.stdout).contains("No local changes"))
+            .unwrap_or(false);
+
         // Step 1: pull main so we're merging onto the latest upstream.
         // --ff-only prevents accidental merge commits on main itself.
         // Failure here is non-fatal — we might be offline or have no remote.
@@ -349,21 +399,35 @@ impl Git {
         let combined = format!("{}{}", String::from_utf8_lossy(&merge_out.stdout), String::from_utf8_lossy(&merge_out.stderr));
         let text = combined.trim();
 
+        // Conflict detected — return structured info instead of bailing
         if !merge_out.status.success() {
-            let conflicts: Vec<&str> = text.lines()
-                .filter(|l| l.starts_with("CONFLICT"))
-                .collect();
-            if !conflicts.is_empty() {
-                let merged = text.lines().filter(|l| l.starts_with("Auto-merging")).count();
-                anyhow::bail!(
-                    "Squash merge has {} conflict{} ({} file{} auto-merged). Resolve on main:\n{}",
-                    conflicts.len(),
-                    if conflicts.len() == 1 { "" } else { "s" },
-                    merged,
-                    if merged == 1 { "" } else { "s" },
-                    conflicts.join("\n"),
-                );
+            let mut conflicted = Vec::new();
+            let mut auto_merged = Vec::new();
+            for line in text.lines() {
+                if line.starts_with("CONFLICT") {
+                    // Extract file path from various CONFLICT formats:
+                    // "CONFLICT (content): Merge conflict in <path>"
+                    // "CONFLICT (add/add): Merge conflict in <path>"
+                    if let Some(path) = line.rsplit("Merge conflict in ").next() {
+                        conflicted.push(path.trim().to_string());
+                    } else {
+                        conflicted.push(line.to_string());
+                    }
+                } else if let Some(path) = line.strip_prefix("Auto-merging ") {
+                    auto_merged.push(path.trim().to_string());
+                }
             }
+            // If we parsed CONFLICT lines, return structured result.
+            // Don't pop stash here — merge state is dirty; stash pop would
+            // conflict. The stash survives merge_abort() and gets popped by
+            // whatever resolves the conflict (or by the user manually).
+            if !conflicted.is_empty() {
+                return Ok(SquashMergeResult::Conflict {
+                    conflicted, auto_merged, raw_output: text.to_string(),
+                });
+            }
+            // Non-conflict failure — restore stash before bailing
+            if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
             anyhow::bail!("{}", text);
         }
 
@@ -377,15 +441,39 @@ impl Git {
             .context("Failed to commit squash merge")?;
         if !commit_out.status.success() {
             let err = String::from_utf8_lossy(&commit_out.stderr).trim().to_string();
+            if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
             if err.contains("nothing to commit") {
-                return Ok("Already up to date — nothing to merge".into());
+                return Ok(SquashMergeResult::Success("Already up to date — nothing to merge".into()));
             }
             anyhow::bail!("Squash merge staged but commit failed: {}", err);
         }
 
+        // Restore any stashed changes now that merge+commit is complete
+        if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
+
         let out = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
         let first = out.lines().next().unwrap_or(&out);
-        Ok(format!("Merged: {}{}", first, pull_note))
+        Ok(SquashMergeResult::Success(format!("Merged: {}{}", first, pull_note)))
+    }
+
+    /// Abort an in-progress merge — cleans up the dirty merge state on main.
+    /// Called when user dismisses the conflict overlay or chooses to abort.
+    /// Also pops any stash that squash_merge_into_main() may have pushed.
+    pub fn merge_abort(repo_root: &Path) -> Result<()> {
+        let output = Command::new("git")
+            .args(["merge", "--abort"])
+            .current_dir(repo_root)
+            .output()
+            .context("Failed to abort merge")?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            anyhow::bail!("{}", err);
+        }
+        // Best-effort pop stash — squash_merge_into_main() stashes dirty state
+        // before merging; if the user aborts, we should restore it. Harmless
+        // no-op if there's nothing to pop.
+        let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output();
+        Ok(())
     }
 
     /// Stage all changes (tracked + untracked) via `git add -A`
