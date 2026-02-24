@@ -397,14 +397,15 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         }
         Action::RunCommand => { app.open_run_command_picker(); }
         Action::AddRunCommand => { app.open_run_command_dialog(); }
-        Action::ArchiveWorktree => {
-            if let Err(e) = app.archive_current_worktree() {
-                app.set_status(format!("Failed to archive: {}", e));
-            }
-        }
-        Action::UnarchiveWorktree => {
-            if let Err(e) = app.unarchive_current_worktree() {
-                app.set_status(format!("Failed to unarchive: {}", e));
+        Action::ToggleArchiveWorktree => {
+            let is_archived = app.current_worktree().map(|w| w.archived).unwrap_or(false);
+            let result = if is_archived {
+                app.unarchive_current_worktree()
+            } else {
+                app.archive_current_worktree()
+            };
+            if let Err(e) = result {
+                app.set_status(format!("Failed: {}", e));
             }
         }
         Action::StartResume => {
