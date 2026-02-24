@@ -136,7 +136,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                     _ => {}
                 }
             }
-            KeyCode::Esc => { app.post_merge_dialog = None; }
             _ => {}
         }
         return Ok(());
