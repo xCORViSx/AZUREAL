@@ -1,3 +1,4 @@
+// AZUREAL: multi-agent worktree orchestrator
 mod app;
 mod azufig;
 mod claude;
