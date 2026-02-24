@@ -405,7 +405,7 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                     // Enter prompt mode for the new session
                     app.focus = Focus::Input;
                     app.prompt_mode = true;
-                    app.set_status("New session — type your prompt and press Enter");
+                    app.set_status("Add session — type your prompt and press Enter");
                 }
             }
         }
@@ -415,6 +415,8 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                     Ok(branches) => app.open_branch_dialog(branches),
                     Err(e) => app.set_status(format!("Failed to list branches: {}", e)),
                 }
+            } else {
+                app.set_status("No project loaded — open a project first");
             }
         }
         Action::RunCommand => { app.open_run_command_picker(); }

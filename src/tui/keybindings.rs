@@ -426,7 +426,7 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 
 /// Convo/Output bindings
 pub static OUTPUT: [Keybinding; 14] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "New session", Action::NewSession),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add session", Action::NewSession),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchConvo),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),

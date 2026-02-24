@@ -57,7 +57,23 @@ impl Git {
         Ok(branches)
     }
 
-    /// Get branches that are not already checked out in a worktree
+    /// List remote branches from cache (no network fetch — instant, won't block UI)
+    pub fn list_remote_branches_cached(repo_path: &Path) -> Result<Vec<String>> {
+        let output = Command::new("git")
+            .args(["branch", "-r", "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list remote branches")?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
+            .collect())
+    }
+
+    /// Get branches that are not already checked out in a worktree.
+    /// Uses cached remote refs to avoid blocking the UI with network calls.
     pub fn list_available_branches(repo_path: &Path) -> Result<Vec<String>> {
         let worktrees = Self::list_worktrees(repo_path)?;
 
@@ -68,7 +84,8 @@ impl Git {
         }
 
         let local = Self::list_local_branches(repo_path)?;
-        let remote = Self::list_remote_branches(repo_path)?;
+        // Use cached remote refs — no git fetch, keeps the TUI responsive
+        let remote = Self::list_remote_branches_cached(repo_path)?;
 
         let mut available: Vec<String> = local.into_iter()
             .filter(|b| !checked_out.contains(b))

@@ -26,12 +26,19 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                 Action::Confirm => {
                     if let Some(branch) = dialog.selected_branch().cloned() {
                         if let Some(project) = app.current_project().cloned() {
-                            let worktree_name = branch.strip_prefix("azureal/").unwrap_or(&branch);
-                            let worktree_path = project.worktrees_dir().join(worktree_name);
+                            // Strip remote prefix for worktree dir name (origin/foo → foo)
+                            let local_name = if branch.contains('/') {
+                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                            } else {
+                                branch.clone()
+                            };
+                            let worktree_path = project.worktrees_dir().join(&local_name);
 
-                            match Git::create_worktree(&project.path, &worktree_path, &branch) {
+                            // Use create_worktree_from_branch — these are existing branches,
+                            // not new ones (list_available_branches returns already-existing refs)
+                            match Git::create_worktree_from_branch(&project.path, &worktree_path, &branch) {
                                 Ok(()) => {
-                                    app.set_status(format!("Created worktree: {}", worktree_name));
+                                    app.set_status(format!("Created worktree: {}", local_name));
                                     let _ = app.refresh_worktrees();
                                 }
                                 Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
