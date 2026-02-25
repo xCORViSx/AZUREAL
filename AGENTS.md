@@ -72,13 +72,13 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 
 ```
 Normal Mode:                              Git Mode (Shift+G):
-┌──────────┬───────────────┬──────────┐   ▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▜
-│Worktrees │    Viewer     │          │   ▌ Actions  ▌   Viewer    ▌Commits ▐
-│  (15%)   │    (50%)      │Convo(35%)│   ▌──────────▌             ▌        ▐
-├──────────┴───────────────┤          │   ▌ Files    ▌             ▌        ▐
-│  Input / Terminal        │          │   ▛▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▜
-├──────────────────────────┴──────────┤   ▌ Git: worktree  Tab:cycle ...    ▐
-│             Status Bar              │   ▙▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▟
+┌──────────┬───────────────┬──────────┐   ╔══════════╦═══════════════╦═════════╗
+│Worktrees │    Viewer     │          │   ║ Actions  ║   Viewer      ║Commits  ║
+│  (15%)   │    (50%)      │Convo(35%)│   ║──────────║               ║         ║
+├──────────┴───────────────┤          │   ║ Files    ║               ║         ║
+│  Input / Terminal        │          │   ╠══════════╩═══════════════╩═════════╣
+├──────────────────────────┴──────────┤   ║ GIT: wt (Tab:cycle | Enter:exec)  ║
+│             Status Bar              │   ╚════════════════════════════════════╝
 └─────────────────────────────────────┘    Status Bar (minimal)
 ```
 
@@ -989,7 +989,7 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 ### Git Panel
 
-Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybinding) — each pane detects git mode (`app.git_actions_panel.is_some()`) and renders git-specific content instead of its normal content. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). All git panes use QuadrantOutside borders with GIT_ORANGE (`#F05032`) when focused and GIT_BROWN (`#A0522D`) when unfocused — distinct from the main layout's AZURE/Double convention.
+Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybinding) — each pane detects git mode (`app.git_actions_panel.is_some()`) and renders git-specific content instead of its normal content. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Uses standard Double/Plain border types with Git brand colors: GIT_ORANGE (`#F05032`) when focused, GIT_BROWN (`#A0522D`) when unfocused.
 
 **Layout geometry (differs from normal mode):** Git mode uses a completely separate layout branch in `run.rs::ui()`. Normal mode has the input spanning only the left two columns with the convo pane extending full height on the right. Git mode replaces the input with a **full-width git status box** that stretches across the entire window at the bottom, with the 3-column panes filling the space above.
 
@@ -1003,13 +1003,13 @@ Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybindi
 | Input (bottom) | Full-width git status box with keybinding hints in title | "Git: <worktree> <footer hints>" |
 | Status bar | Minimal: "Git: <worktree>" + CPU/PID badge | — |
 
-Commit editor and conflict overlays render on top of the viewer pane from `run.rs::ui()` overlay section (not inline in the viewer). The git status box (`draw_git_status_box()` in `run.rs`) shows result messages (green=success, red=error) as content, with keybinding hints from `keybindings::git_actions_footer()` in the title. Uses GIT_ORANGE QuadrantOutside border always (no unfocused state — it's a status display, not a focusable pane).
+Commit editor and conflict overlays render on top of the viewer pane from `run.rs::ui()` overlay section (not inline in the viewer). Uses GIT_ORANGE (#F05032) for overlay borders (commit editor, conflict resolver) and cursor highlights; GIT_BROWN (#A0522D) for diff header coloring and dim key hints.
 
-- **Actions section** (sidebar top, auto-height): Context-aware git operations with single-key shortcuts, navigable with j/k. QuadrantOutside border: GIT_ORANGE focused, GIT_BROWN unfocused. Focus: `panel.focused_pane == 0`.
-- **Changed Files section** (sidebar bottom, fills remaining): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer. QuadrantOutside border: GIT_ORANGE focused, GIT_BROWN unfocused. Focus: `panel.focused_pane == 1`.
-- **Viewer pane** (center): Shows file diffs or commit diffs with diff coloring (green additions, red deletions, cyan hunks, GIT_BROWN headers). Empty state shows "Select a file or commit to view its diff". QuadrantOutside border always GIT_ORANGE.
-- **Commits pane** (right): Recent commits from `git log` — unpushed commits show green, pushed show dim. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations. QuadrantOutside border: GIT_ORANGE focused, GIT_BROWN unfocused. Focus: `panel.focused_pane == 2`.
-- **Git status box** (full-width bottom): Title contains worktree name + keybinding hints from `git_actions_footer()`. Content shows result messages (green=success, red=error). QuadrantOutside border always GIT_ORANGE.
+- **Actions section** (sidebar top, auto-height): Context-aware git operations with single-key shortcuts, navigable with j/k. Focus: `panel.focused_pane == 0`.
+- **Changed Files section** (sidebar bottom, fills remaining): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer. Focus: `panel.focused_pane == 1`.
+- **Viewer pane** (center): Shows file diffs or commit diffs with diff coloring (green additions, red deletions, cyan hunks, GIT_BROWN headers). Empty state shows "Select a file or commit to view its diff".
+- **Commits pane** (right): Recent commits from `git log` — unpushed commits show green, pushed show dim. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations. Focus: `panel.focused_pane == 2`.
+- **Git status box** (full-width bottom): Title formatted via `split_title_hints()` — label `" GIT: <worktree> "` with keybinding hints in `(key:desc | key:desc)` format (same style as the prompt box). Content shows result messages (green=success, red=error). Always Double + GIT_ORANGE border.
 - **Status bar**: Minimal — shows "Git: <worktree>" on left, CPU/PID badge on right.
 
 **Context-Aware Actions (when actions section focused):**
@@ -1365,7 +1365,7 @@ azureal/
 - [x] Worktree Health Panel (tabbed modal: God Files tab + Documentation coverage tab, Shift+H global)
 - [x] Rebase-before-merge flow with RCR conflict resolution
 - [x] Auto-rebase toggle per worktree (sidebar `R` indicator, 2-second polling, conflict → RCR flow)
-- [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in convo; full-width status box; QuadrantOutside GIT_ORANGE borders)
+- [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in convo; full-width status box with prompt-style keybind hints)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)

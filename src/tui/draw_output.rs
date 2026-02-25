@@ -577,16 +577,16 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
 
     let title = format!(" Commits ({}) ", panel.commits.len());
     let border_style = if focused {
-        Style::default().fg(GIT_ORANGE)
+        Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(GIT_BROWN)
     };
     let block = Block::default()
         .title(Span::styled(title, Style::default()
             .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(Modifier::BOLD)))
+            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() })))
         .borders(Borders::ALL)
-        .border_type(BorderType::QuadrantOutside)
+        .border_type(if focused { BorderType::Double } else { BorderType::Plain })
         .border_style(border_style);
 
     f.render_widget(Paragraph::new(lines).block(block), area);

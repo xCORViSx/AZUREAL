@@ -16,7 +16,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::io;
@@ -510,16 +510,17 @@ fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
 }
 
 /// Git status box — full-width bar reusing the input box area.
-/// Title shows keybinding hints; content shows operation result messages.
+/// Title shows keybinding hints (formatted like the prompt box); content shows operation result messages.
 fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
     let panel = match app.git_actions_panel {
         Some(ref p) => p,
         None => return,
     };
 
-    // Title: worktree name + keybinding hints
-    let footer = keybindings::git_actions_footer();
-    let title = format!(" Git: {} {} ", panel.worktree_name, footer);
+    let hints = keybindings::git_actions_footer();
+    let label = format!(" GIT: {} ", panel.worktree_name);
+    let max_w = area.width.saturating_sub(2) as usize;
+    let (top_title, bottom_title) = draw_input::split_title_hints(&label, &hints, max_w);
 
     // Content: result message or empty
     let content = if let Some((ref msg, is_error)) = panel.result_message {
@@ -529,11 +530,16 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
         vec![]
     };
 
-    let block = Block::default()
-        .title(Line::from(Span::styled(title, Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD))))
+    let border_style = Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD);
+    let mut block = Block::default()
+        .title(Span::styled(top_title, border_style))
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::QuadrantOutside)
-        .border_style(Style::default().fg(GIT_ORANGE));
+        .border_type(BorderType::Double)
+        .border_style(border_style);
+
+    if let Some(bottom) = bottom_title {
+        block = block.title_bottom(Span::styled(bottom, border_style));
+    }
 
     f.render_widget(Paragraph::new(content).block(block), area);
 }

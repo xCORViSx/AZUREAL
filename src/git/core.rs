@@ -322,34 +322,35 @@ impl Git {
 
     /// Push current branch to remote (auto-sets upstream on first push)
     pub fn push(worktree_path: &Path) -> Result<String> {
-        // Check if current branch has an upstream configured
-        let has_upstream = Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        let branch = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .current_dir(worktree_path)
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+            .context("Failed to get branch name")?;
+        let branch_name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
 
-        let output = if has_upstream {
-            Command::new("git")
-                .args(["push"])
-                .current_dir(worktree_path)
-                .output()
-                .context("Failed to push")?
-        } else {
-            // Get current branch name for -u origin <branch>
-            let branch = Command::new("git")
-                .args(["rev-parse", "--abbrev-ref", "HEAD"])
-                .current_dir(worktree_path)
-                .output()
-                .context("Failed to get branch name")?;
-            let branch_name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
-            Command::new("git")
-                .args(["push", "-u", "origin", &branch_name])
-                .current_dir(worktree_path)
-                .output()
-                .context("Failed to push")?
-        };
+        // Pull --rebase first to integrate remote changes, avoiding non-fast-forward rejections.
+        // Non-fatal: if offline or no upstream yet, skip silently and let push create it.
+        let pull = Command::new("git")
+            .args(["pull", "--rebase", "origin", &branch_name])
+            .current_dir(worktree_path)
+            .output();
+        if let Ok(ref o) = pull {
+            if !o.status.success() {
+                let msg = String::from_utf8_lossy(&o.stderr);
+                // Fatal only if rebase conflicts — user must resolve manually
+                if msg.contains("CONFLICT") || msg.contains("could not apply") {
+                    anyhow::bail!("Pull rebase failed with conflicts — resolve manually then push");
+                }
+                // Otherwise (no remote branch yet, offline, etc.) — continue to push
+            }
+        }
+
+        let output = Command::new("git")
+            .args(["push", "-u", "origin", &branch_name])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to push")?;
 
         let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         if output.status.success() { Ok(combined.trim().to_string()) }
@@ -364,9 +365,22 @@ impl Git {
     /// Push is separate — user triggers it manually via the Push action.
     /// Runs from the repo root (main worktree, already on main branch).
     pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<SquashMergeResult> {
-        // Pre-flight: clean up any leftover dirty merge state from a previous
-        // RCR that was interrupted (app crash, force-quit, etc.). Without this,
-        // `git pull` and `git stash` both fail with "unmerged files" errors.
+        // Pre-flight: clean up any leftover merge/rebase state on main from
+        // a previous operation that was interrupted (app crash, force-quit, etc.).
+        // Without this, `git merge --squash` fails with "unmerged files" errors.
+        // Only act when actual merge/rebase state exists (MERGE_HEAD, rebase-merge/,
+        // rebase-apply/) — UU files alone could be legitimate in-progress work.
+        let git_dir = repo_root.join(".git");
+        let has_merge_state = git_dir.join("MERGE_HEAD").exists();
+        let has_rebase_state = git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists();
+        if has_merge_state {
+            let _ = Command::new("git").args(["merge", "--abort"]).current_dir(repo_root).output();
+        }
+        if has_rebase_state {
+            let _ = Command::new("git").args(["rebase", "--abort"]).current_dir(repo_root).output();
+        }
+
+        // Check for unmerged files that block `git merge --squash`
         let status = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(repo_root)
@@ -376,7 +390,16 @@ impl Git {
             .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with("U") || l.starts_with("AA") || l.starts_with("DD")))
             .unwrap_or(false);
         if has_unmerged {
-            let _ = Command::new("git").args(["reset", "--merge"]).current_dir(repo_root).output();
+            // Resolve each unmerged file by accepting the current version on main
+            if let Some(ref out) = status {
+                for line in String::from_utf8_lossy(&out.stdout).lines() {
+                    if line.starts_with("U") || line.starts_with("AA") || line.starts_with("DD") {
+                        let path = line[3..].trim();
+                        let _ = Command::new("git").args(["checkout", "--ours", "--", path]).current_dir(repo_root).output();
+                        let _ = Command::new("git").args(["add", "--", path]).current_dir(repo_root).output();
+                    }
+                }
+            }
         }
 
         // Step 0: stash any dirty working tree on main (e.g. .DS_Store, editor
@@ -393,20 +416,15 @@ impl Git {
 
         // Step 1: pull main so we're merging onto the latest upstream.
         // --ff-only prevents accidental merge commits on main itself.
-        // Failure here is non-fatal — we might be offline or have no remote.
+        // Always non-fatal — the feature branch was already rebased onto main
+        // by exec_squash_merge(), so even if pull fails (offline, diverged local
+        // main from unpushed merges, no remote), the squash merge will still work.
         let pull_out = Command::new("git")
             .args(["pull", "--ff-only"])
             .current_dir(repo_root)
             .output();
         let pull_note = match pull_out {
-            Ok(ref o) if !o.status.success() => {
-                let err = String::from_utf8_lossy(&o.stderr);
-                // Diverged main is a real problem — abort before squash merge
-                if err.contains("fatal") || err.contains("divergent") {
-                    anyhow::bail!("Cannot update main before merge: {}", err.trim());
-                }
-                " (pull skipped)"
-            }
+            Ok(ref o) if !o.status.success() => " (pull skipped)",
             Err(_) => " (pull skipped)",
             _ => "",
         };

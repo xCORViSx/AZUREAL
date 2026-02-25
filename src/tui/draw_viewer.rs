@@ -1001,8 +1001,8 @@ fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, ar
     let block = Block::default()
         .title(Span::styled(&title, Style::default().fg(super::util::GIT_ORANGE).add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(BorderType::QuadrantOutside)
-        .border_style(Style::default().fg(super::util::GIT_ORANGE));
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(super::util::GIT_ORANGE).add_modifier(Modifier::BOLD));
 
     match panel.viewer_diff {
         Some(ref diff) => {

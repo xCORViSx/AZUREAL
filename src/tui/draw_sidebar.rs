@@ -249,11 +249,11 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     let actions_block = Block::default()
         .title(Span::styled(" Actions ", Style::default()
             .fg(if actions_focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(Modifier::BOLD)))
+            .add_modifier(if actions_focused { Modifier::BOLD } else { Modifier::empty() })))
         .borders(Borders::ALL)
-        .border_type(BorderType::QuadrantOutside)
+        .border_type(if actions_focused { BorderType::Double } else { BorderType::Plain })
         .border_style(if actions_focused {
-            Style::default().fg(GIT_ORANGE)
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(GIT_BROWN)
         });
@@ -331,11 +331,11 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     let files_block = Block::default()
         .title(Span::styled(files_title, Style::default()
             .fg(if files_focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(Modifier::BOLD)))
+            .add_modifier(if files_focused { Modifier::BOLD } else { Modifier::empty() })))
         .borders(Borders::ALL)
-        .border_type(BorderType::QuadrantOutside)
+        .border_type(if files_focused { BorderType::Double } else { BorderType::Plain })
         .border_style(if files_focused {
-            Style::default().fg(GIT_ORANGE)
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(GIT_BROWN)
         });
