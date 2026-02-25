@@ -19,6 +19,7 @@ All notable changes to Azureal will be documented in this file.
 - **Health panel title shows worktree name** — Panel title changed from static `" Worktree Health "` to `" Health: <worktree> "`, matching the Git panel's naming pattern.
 
 ### Fixed
+- **Push/pull fails on worktree branches without upstream** — `Git::push()` now auto-sets upstream with `git push -u origin <branch>` on first push. `Git::pull()` falls back to `git pull origin <branch>` when no upstream is configured.
 - **Squash merge fails when main has dirty working tree** — `squash_merge_into_main()` now stashes dirty state before merging and pops after commit.
 - **Squash merge with uncommitted changes loses work** — `exec_squash_merge()` now blocks if the feature branch has uncommitted changes.
 - **RCR convo disappears after Claude exits** — Fixed by skipping session-file re-parse when the exiting slot's file doesn't exist in the current worktree's session directory.

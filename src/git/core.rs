@@ -286,25 +286,71 @@ impl Git {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Pull from remote (current branch's upstream)
+    /// Pull from remote (current branch's upstream, or origin/<branch> if no upstream set)
     pub fn pull(worktree_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["pull"])
+        let has_upstream = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
             .current_dir(worktree_path)
             .output()
-            .context("Failed to pull")?;
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        let output = if has_upstream {
+            Command::new("git")
+                .args(["pull"])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to pull")?
+        } else {
+            let branch = Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to get branch name")?;
+            let branch_name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
+            Command::new("git")
+                .args(["pull", "origin", &branch_name])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to pull")?
+        };
+
         let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         if output.status.success() { Ok(combined.trim().to_string()) }
         else { anyhow::bail!("{}", combined.trim()) }
     }
 
-    /// Push current branch to remote
+    /// Push current branch to remote (auto-sets upstream on first push)
     pub fn push(worktree_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["push"])
+        // Check if current branch has an upstream configured
+        let has_upstream = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
             .current_dir(worktree_path)
             .output()
-            .context("Failed to push")?;
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        let output = if has_upstream {
+            Command::new("git")
+                .args(["push"])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to push")?
+        } else {
+            // Get current branch name for -u origin <branch>
+            let branch = Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to get branch name")?;
+            let branch_name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
+            Command::new("git")
+                .args(["push", "-u", "origin", &branch_name])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to push")?
+        };
+
         let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         if output.status.success() { Ok(combined.trim().to_string()) }
         else { anyhow::bail!("{}", combined.trim()) }
