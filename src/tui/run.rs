@@ -14,7 +14,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
@@ -279,14 +279,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // AZUREAL++ developer hub panel (⌃a global)
     if app.azureal_panel.is_some() {
         draw_azureal::draw_azureal_panel(f, app);
-    }
-    // Debug dump naming dialog (⌃d) — small centered input popup
-    if let Some(ref name) = app.debug_dump_naming {
-        draw_debug_dump_naming(f, name);
-    }
-    // Debug dump saving indicator — shown while the dump I/O runs on next frame
-    if let Some(ref name) = app.debug_dump_saving {
-        draw_debug_dump_saving(f, name);
     }
     // Auto-rebase success dialog — 2-second toast after successful auto-rebase
     if let Some((ref branch, _)) = app.auto_rebase_success_until {

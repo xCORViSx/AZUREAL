@@ -68,8 +68,7 @@ pub fn draw_azureal_panel(f: &mut Frame, app: &App) {
     };
 
     // Render
-    let worktree_name = app.current_worktree().map(|w| w.name()).unwrap_or_default();
-    let title = format!(" AZUREAL++: {} ", worktree_name);
+    let title = " AZUREAL++ ";
 
     let block = Block::default()
         .borders(Borders::ALL)
