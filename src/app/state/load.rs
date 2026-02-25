@@ -62,6 +62,10 @@ impl App {
         let worktrees = Git::list_worktrees_detailed(&project.path)?;
         let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
+        // Migrate old-encoding Claude project dirs (e.g. AZUREAL++ → AZUREAL--)
+        let wt_paths: Vec<_> = worktrees.iter().map(|w| w.path.clone()).collect();
+        crate::config::migrate_project_dirs(&wt_paths);
+
         let mut sessions = Vec::new();
         let mut active_branches: HashSet<String> = HashSet::new();
 

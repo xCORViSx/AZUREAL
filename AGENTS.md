@@ -910,11 +910,12 @@ Azureal reads all data at runtime without persisting anything:
 - **Project**: Discovered via `git rev-parse --show-toplevel`, main branch detected from git
 - **Sessions**: Discovered from `git worktree list` (active) + `git branch | grep azureal/` (archived)
 - **Conversation**: Read from Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
+- **Path encoding**: `encode_project_path()` in `config.rs` — matches Claude CLI's `OP()` function: `replace(/[^a-zA-Z0-9]/g, "-")`. Paths >200 chars get truncated + hash suffix. Startup migration (`migrate_project_dirs()`) renames old-encoding dirs (which only replaced `/` with `-`) to new encoding.
 - **Auto-discovery**: Azureal scans Claude's project directory to find/link session files by worktree path
 - **Live polling**: Session file is continuously polled for changes; output updates in real-time
 - **Hooks**: Extracted from `system-reminder` tags embedded in Claude's session files (no separate storage)
 
-Implementation: `find_latest_claude_session()`, `list_claude_sessions()` in `src/config.rs`, `load_worktrees()` in `src/app/state/load.rs`
+Implementation: `encode_project_path()`, `find_latest_claude_session()`, `list_claude_sessions()`, `migrate_project_dirs()` in `src/config.rs`, `load_worktrees()` in `src/app/state/load.rs`
 
 **Fixed Bug: tool_use ID Collision**
 Previously when using `-p --resume` with parallel tool calls, Claude Code 2.1.19 would return "tool_use ids must be unique" error (GitHub issues #20508, #20527, #13124).

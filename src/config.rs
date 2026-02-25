@@ -110,12 +110,42 @@ pub fn ensure_project_data_dir() -> Result<Option<PathBuf>> {
     }
 }
 
+/// Encode a path the same way Claude CLI does: replace all non-alphanumeric
+/// chars with `-`. If the result exceeds 200 chars, truncate and append a hash.
+/// Matches Claude CLI v2.1+ `OP()` function exactly.
+fn encode_project_path(path: &std::path::Path) -> String {
+    let raw = path.to_string_lossy();
+    let encoded: String = raw.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    if encoded.len() <= 200 {
+        encoded
+    } else {
+        // Same truncation + hash scheme as Claude CLI (djb2-style hash, base-36)
+        let hash = raw.bytes().fold(0u64, |h, b| {
+            h.wrapping_mul(31).wrapping_add(b as u64)
+        });
+        format!("{}-{}", &encoded[..200], radix_36(hash))
+    }
+}
+
+fn radix_36(mut n: u64) -> String {
+    if n == 0 { return "0".to_string(); }
+    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut buf = Vec::new();
+    while n > 0 {
+        buf.push(digits[(n % 36) as usize]);
+        n /= 36;
+    }
+    buf.reverse();
+    String::from_utf8(buf).unwrap()
+}
+
 /// Get Claude's session file path for a given project path and session ID
 /// Claude stores sessions at: ~/.claude/projects/<encoded-path>/<session-id>.jsonl
 pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    // Claude encodes paths by replacing / with -
-    let encoded_path = project_path.to_string_lossy().replace('/', "-");
+    let encoded_path = encode_project_path(project_path);
     let session_file = home
         .join(".claude")
         .join("projects")
@@ -127,9 +157,33 @@ pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> 
 /// Get Claude's project directory for a given worktree path
 pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let encoded_path = worktree_path.to_string_lossy().replace('/', "-");
+    let encoded_path = encode_project_path(worktree_path);
     let dir = home.join(".claude").join("projects").join(&encoded_path);
     if dir.exists() { Some(dir) } else { None }
+}
+
+/// Migrate old-encoding project directories to the new encoding.
+/// Old Claude CLI versions used `replace('/', '-')` which preserved chars like `+`.
+/// Current Claude CLI uses `replace(/[^a-zA-Z0-9]/g, '-')`.
+/// Call once at startup to rename any stale directories.
+pub fn migrate_project_dirs(worktree_paths: &[std::path::PathBuf]) {
+    let Some(home) = dirs::home_dir() else { return };
+    let projects_dir = home.join(".claude").join("projects");
+    if !projects_dir.exists() { return; }
+
+    for wt_path in worktree_paths {
+        let new_name = encode_project_path(wt_path);
+        let old_name = wt_path.to_string_lossy().replace('/', "-");
+        if new_name == old_name { continue; } // no change needed
+
+        let old_dir = projects_dir.join(&old_name);
+        let new_dir = projects_dir.join(&new_name);
+
+        // Old dir exists but new dir doesn't → rename
+        if old_dir.exists() && !new_dir.exists() {
+            let _ = std::fs::rename(&old_dir, &new_dir);
+        }
+    }
 }
 
 /// Format a SystemTime as a relative or absolute time string (called once at load, not per-frame)
