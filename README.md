@@ -51,6 +51,7 @@
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
 - **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); picker footer shows the ⌥+number shortcut hint; add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (shared across all projects) or **project-local**; toggle scope with `⌃g` in the add/edit dialog
 - **Git Panel** — `Shift+G` transforms the existing 3-pane layout into a git operations view: sidebar splits into Actions (top) + Changed Files (bottom), viewer shows file/commit diffs, convo becomes a scrollable commit log ("Commits"), and a full-width git status box at the bottom displays keybinding hints and operation results. Context-aware actions change based on branch: **main branch** shows pull (`l`), commit (`c`), push (`P`); **feature branches** show squash-merge (`m`), rebase (`r`), commit (`c`), push (`P`); shows changed files with per-file color-coded `+N/-N` stats; navigate with `j/k`, `Enter` to view diff, `Tab` cycles focus through Actions → Files → Commits; **squash-merge** (`m`) rebases onto main first for clean linear merges; **commit** (`c`) generates a conventional commit message via `claude -p` (~3 sec), shown in an editable overlay — `Enter` commits, `⌘P` commits + pushes; **RCR** — rebase conflicts show a red overlay listing conflicted files; `y` enters RCR mode where Claude resolves on the feature branch, with approval dialog after completion
+- **AZUREAL++ Panel** — Press `⌃a` to open the developer hub — a tabbed modal with Debug (dump file management), Issues (GitHub issues browser via `gh` CLI with create/filter/detail view), and PRs (pull request browser and cross-fork PR creation) tabs
 - **Loading Indicators** — Centered AZURE-bordered popups for all blocking operations: session loading, file opening, health scanning, project switching, health scope rescanning. Two-phase deferred draw ensures the UI never appears frozen during I/O
 - **Minimal Footprint** — Two `azufig.toml` files consolidate all persistent state (global `~/.azureal/azufig.toml` + project-local `.azureal/azufig.toml`); scans git worktrees and `~/.claude/` at runtime
 
@@ -59,6 +60,7 @@
 - **Rust** (latest stable)
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
+- **GitHub CLI** (`gh`) — Required for AZUREAL++ panel Issues/PRs tabs (`brew install gh`)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons with language-brand colors. Auto-detected on startup; emoji fallback used automatically when Nerd Font not detected
 - **Whisper model** (optional, for speech input): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
 
@@ -101,6 +103,7 @@ azureal
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Convo); Filter/search sessions (Session list) |
 | `?` | Help |
+| `⌃a` | AZUREAL++ panel (Debug, Issues, PRs) |
 | `⌃c` | Cancel agent |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
@@ -124,7 +127,7 @@ No database. All persistent state consolidated into two `azufig.toml` files: `~/
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 
-**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver for main views and 6 per-modal lookup functions (`lookup_health_action()`, `lookup_git_action()`, `lookup_projects_action()`, `lookup_picker_action()`, `lookup_context_menu_action()`, `lookup_branch_dialog_action()`) for modal panels. Guard logic lives inside lookup functions — never duplicated across input handlers. Draw functions source footer hints and labels from keybinding hint generators, not hardcoded strings. Press `?` for the help overlay.
+**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver for main views and 7 per-modal lookup functions (`lookup_health_action()`, `lookup_git_action()`, `lookup_azureal_action()`, `lookup_projects_action()`, `lookup_picker_action()`, `lookup_context_menu_action()`, `lookup_branch_dialog_action()`) for modal panels. Guard logic lives inside lookup functions — never duplicated across input handlers. Draw functions source footer hints and labels from keybinding hint generators, not hardcoded strings. Press `?` for the help overlay.
 
 ## License
 

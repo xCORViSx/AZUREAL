@@ -602,3 +602,100 @@ pub struct DocEntry {
     /// Whether this entry is checked for batch doc-health session spawning
     pub checked: bool,
 }
+
+// ── AZUREAL++ Panel ──
+
+/// Tab selection for the AZUREAL++ developer hub panel
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AzurealTab {
+    #[default]
+    Debug,
+    Issues,
+    PullRequests,
+}
+
+/// A GitHub issue fetched via `gh issue list`
+#[derive(Debug, Clone)]
+pub struct GitHubIssue {
+    pub number: u32,
+    pub title: String,
+    pub state: String,
+    pub labels: Vec<String>,
+    pub author: String,
+    pub created_at: String,
+    pub body: String,
+}
+
+/// A GitHub PR fetched via `gh pr list`
+#[derive(Debug, Clone)]
+pub struct GitHubPR {
+    pub number: u32,
+    pub title: String,
+    pub state: String,
+    pub head_branch: String,
+}
+
+/// Inline form state for creating a new issue
+#[derive(Debug)]
+pub struct IssueCreateState {
+    pub title: String,
+    pub body: String,
+    pub cursor_in_title: bool,
+    pub cursor: usize,
+}
+
+/// Inline form state for creating a new PR
+#[derive(Debug)]
+pub struct PrCreateState {
+    pub title: String,
+    pub body: String,
+    pub cursor_in_title: bool,
+    pub cursor: usize,
+    pub head_branch: String,
+}
+
+/// State for the AZUREAL++ developer hub panel (⌃a global).
+/// Tabbed modal with Debug, Issues, and PRs tabs.
+#[derive(Debug)]
+pub struct AzurealPlusPlusPanel {
+    pub tab: AzurealTab,
+    /// Upstream repo identifier (e.g. "xCORViSx/AZUREAL") — target for issues/PRs
+    pub upstream_repo: String,
+    /// Fork owner if this repo is a fork (None if working on the official repo)
+    pub fork_owner: Option<String>,
+
+    // ── Debug tab ──
+    /// Existing debug dump files: (filename, size_bytes, modified_display)
+    pub dump_files: Vec<(String, u64, String)>,
+    /// Selected index in the dump files list
+    pub dump_selected: usize,
+    /// Inline naming input — Some(text) means the input is active
+    pub dump_naming: Option<String>,
+    /// True while a debug dump is being saved (shows indicator, runs on next frame)
+    pub dump_saving: bool,
+
+    // ── Issues tab ──
+    pub issues: Vec<GitHubIssue>,
+    pub issues_loading: bool,
+    pub issues_receiver: Option<std::sync::mpsc::Receiver<Result<Vec<GitHubIssue>, String>>>,
+    pub issue_selected: usize,
+    pub issue_scroll: usize,
+    /// True when viewing a single issue's body (Enter on an issue)
+    pub issue_detail_view: bool,
+    /// Scroll offset within the issue detail view
+    pub issue_detail_scroll: usize,
+    /// Inline issue creation form
+    pub issue_create: Option<IssueCreateState>,
+    /// Whether to include closed issues in the list
+    pub show_closed: bool,
+    /// Text filter for issue titles
+    pub issue_filter: Option<String>,
+
+    // ── PRs tab ──
+    pub prs: Vec<GitHubPR>,
+    pub prs_loading: bool,
+    pub prs_receiver: Option<std::sync::mpsc::Receiver<Result<Vec<GitHubPR>, String>>>,
+    pub pr_selected: usize,
+    /// Inline PR creation form
+    pub pr_create: Option<PrCreateState>,
+}

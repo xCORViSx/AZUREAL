@@ -111,7 +111,7 @@ pub enum Action {
     // Global
     Quit,
     Restart,
-    DumpDebug,
+    OpenAzurealPanel,
     CancelClaude,
     CopySelection,
     ToggleHelp,
@@ -236,6 +236,18 @@ pub enum Action {
     ProjectsRename,
     ProjectsInit,
 
+    // AZUREAL++ Panel (modal)
+    AzurealSwitchTab,
+    AzurealDumpDebug,
+    AzurealViewDump,
+    AzurealDeleteDump,
+    AzurealCreateIssue,
+    AzurealToggleClosed,
+    AzurealOpenInBrowser,
+    AzurealRefresh,
+    AzurealFilter,
+    AzurealCreatePR,
+
     // Generic
     Escape,
 }
@@ -345,7 +357,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 pub static GLOBAL: [Keybinding; 12] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('a')), "AZUREAL++ panel", Action::OpenAzurealPanel),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
@@ -563,6 +575,65 @@ pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
+/// AZUREAL++ Panel — shared bindings across all tabs
+pub static AZUREAL_SHARED: [Keybinding; 4] = [
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch tab", Action::AzurealSwitchTab),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::AzurealRefresh),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('a')), "Close", Action::Escape),
+];
+
+/// AZUREAL++ Panel — Debug tab bindings
+pub static AZUREAL_DEBUG: [Keybinding; 5] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Create dump", Action::AzurealDumpDebug),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View dump", Action::AzurealViewDump),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "Delete dump", Action::AzurealDeleteDump),
+];
+
+/// AZUREAL++ Panel — Issues tab bindings
+pub static AZUREAL_ISSUES: [Keybinding; 7] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "View issue", Action::Confirm),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Create issue", Action::AzurealCreateIssue),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Toggle closed", Action::AzurealToggleClosed),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Open in browser", Action::AzurealOpenInBrowser),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Filter", Action::AzurealFilter),
+];
+
+/// AZUREAL++ Panel — PRs tab bindings
+pub static AZUREAL_PRS: [Keybinding; 5] = [
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
+    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Create PR", Action::AzurealCreatePR),
+    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open in browser", Action::AzurealOpenInBrowser),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Open in browser", Action::AzurealOpenInBrowser),
+];
+
+/// Resolve a key press in the AZUREAL++ panel to an action.
+pub fn lookup_azureal_action(
+    tab: crate::app::types::AzurealTab,
+    modifiers: KeyModifiers,
+    code: KeyCode,
+) -> Option<Action> {
+    // Shared bindings first (Tab, Esc, R, ⌃a)
+    for b in &AZUREAL_SHARED {
+        if b.matches(modifiers, code) { return Some(b.action); }
+    }
+    // Tab-specific bindings
+    let tab_bindings: &[Keybinding] = match tab {
+        crate::app::types::AzurealTab::Debug => &AZUREAL_DEBUG,
+        crate::app::types::AzurealTab::Issues => &AZUREAL_ISSUES,
+        crate::app::types::AzurealTab::PullRequests => &AZUREAL_PRS,
+    };
+    for b in tab_bindings {
+        if b.matches(modifiers, code) { return Some(b.action); }
+    }
+    None
+}
+
 /// All state needed to resolve a key press into an action.
 /// Built from &App so guards are defined ONCE here, not scattered across input handlers.
 pub struct KeyContext {
@@ -686,10 +757,10 @@ pub fn prompt_command_title() -> (String, String, String) {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
-    let debug = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
+    let azureal = find_key_for_action(&GLOBAL, Action::OpenAzurealPanel).unwrap_or("⌃a".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart | {}:dump debug output",
-        p, t, g, h, help, tab, stab, cancel, quit, restart, debug
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:AZUREAL++ | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart",
+        p, t, g, h, azureal, help, tab, stab, cancel, quit, restart
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);

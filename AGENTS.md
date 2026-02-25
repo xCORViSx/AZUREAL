@@ -105,7 +105,7 @@ Any user action that triggers blocking I/O (session parse, file read, health sca
 - **Project switch** (`"Switching project…"`) — Enter on project in Projects panel
 - **Health scope rescan** (`"Rescanning health scope…"`) — Esc from scope mode (saves scope immediately, defers expensive rescan)
 
-`DeferredAction` enum variants: `LoadSession { branch, idx }`, `LoadFile { path }`, `OpenHealthPanel`, `SwitchProject { path }`, `RescanHealthScope { dirs }`. The existing session list loading (`session_list_loading`) and debug dump saving (`debug_dump_saving`) use their own two-phase patterns predating this system.
+`DeferredAction` enum variants: `LoadSession { branch, idx }`, `LoadFile { path }`, `OpenHealthPanel`, `SwitchProject { path }`, `RescanHealthScope { dirs }`. The existing session list loading (`session_list_loading`) uses its own two-phase pattern predating this system.
 
 Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/run.rs` (`draw_loading_indicator()`), `src/tui/event_loop.rs` (deferred execution block), `src/tui/event_loop/actions.rs` (`execute_deferred_action()`)
 
@@ -1165,6 +1165,21 @@ When switching projects, azureal kills all running Claude processes, clears all 
 
 Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
 
+### AZUREAL++ Panel
+
+Developer hub panel opened with `⌃a` (global keybinding). Centered modal overlay (55%×70%, QuadrantOutside AZURE border) with three tabs: Debug, Issues, PRs. Replaces the old `⌃d` global debug dump shortcut — debug dump functionality now lives inside this panel's Debug tab (`⌃d` works as a panel-internal bind).
+
+**Tabs:**
+1. **Debug** — Lists all `debug-output*` files in `.azureal/`, showing name, size, and modified time. `⌃d`/`Enter` creates a new dump with inline naming input. `v` opens the selected dump in the Viewer. `d` deletes the selected dump. `R` refreshes the file list.
+2. **Issues** — Full GitHub issues browser for the project's upstream repo (detected via `gh repo view --json nameWithOwner,parent`). Shows issue list with `#number`, title, labels, open/closed state (green/red). `Enter` opens issue detail view with body scroll. `a` creates a new issue (inline title+body form). `c` toggles showing closed issues. `/` activates name filter. `o` opens issue in browser. `R` refreshes. Issues loaded in a background thread via `gh issue list`.
+3. **PRs** — PR browser and creator. Shows PR list with state colors (green=open, magenta=merged, red=closed). Fork detection: shows `Fork (owner) → upstream` header when working from a fork. `a` opens PR creation form (auto-detects head branch, supports `fork_owner:branch` format for cross-fork PRs). `o` opens PR in browser. PRs loaded in a background thread via `gh pr list`.
+
+**Panel State:** `AzurealPlusPlusPanel` struct with all fields for 3 tabs. `app.azureal_panel: Option<AzurealPlusPlusPanel>` — panel is active when `Some`. `app.last_azureal_tab: AzurealTab` preserves tab selection across open/close cycles.
+
+**Background Fetching:** Issues and PRs are fetched via `std::sync::mpsc::Receiver` polled in the event loop (same pattern as commit message generation). Short-poll (16ms) is activated while `issues_loading` or `prs_loading` is true.
+
+Implementation: `src/github.rs` (GitHub CLI wrapper: `detect_repo_info()`, `fetch_issues()`, `create_issue()`, `fetch_prs()`, `create_pr()`, browser openers), `src/app/types.rs` (`AzurealTab`, `GitHubIssue`, `GitHubPR`, `IssueCreateState`, `PrCreateState`, `AzurealPlusPlusPanel`), `src/app/state/ui.rs` (`open_azureal_panel()`, `close_azureal_panel()`, `scan_debug_dumps_pub()`), `src/tui/draw_azureal.rs` (rendering), `src/tui/input_azureal.rs` (input handling), `src/tui/keybindings.rs` (`lookup_azureal_action()` + 4 keybinding arrays: `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`)
+
 ### Creation Wizard
 
 Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
@@ -1289,14 +1304,16 @@ azureal/
 │   │   │   └── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
 │   │   ├── draw_git_actions.rs # Git panel overlay renderers only (commit editor + conflict resolution)
+│   │   ├── draw_azureal.rs  # AZUREAL++ developer hub panel (tabbed: Debug, Issues, PRs)
 │   │   ├── draw_*.rs       # Other rendering functions
-│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~98 variants incl GitPull, GitAutoRebase, BrowseMain), KeyContext, lookup_action() + 6 per-modal lookups (lookup_git_actions_action takes is_on_main), ~17 static arrays (WORKTREES: 15 entries, GIT_ACTIONS: 15 entries), hint generators, help_sections()
+│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~108 variants incl GitPull, GitAutoRebase, BrowseMain, OpenAzurealPanel, AzurealSwitchTab, AzurealDumpDebug, etc.), KeyContext, lookup_action() + 7 per-modal lookups (lookup_git_actions_action, lookup_azureal_action), ~21 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, AZUREAL_SHARED, AZUREAL_DEBUG, AZUREAL_ISSUES, AZUREAL_PRS, etc.), hint generators, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Convo: convo search + session list overlay only (commands resolved upstream)
 │   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
 │   │   ├── input_git_actions.rs # Git panel input (actions, file nav, git operations, conflict overlay + Claude spawn)
+│   │   ├── input_azureal.rs # AZUREAL++ panel input (debug dumps, issues CRUD, PR creation)
 │   │   └── input_*.rs      # Other input handlers
 │   ├── events.rs           # Module root (re-exports only)
 │   ├── events/             # Stream-JSON events module
@@ -1314,6 +1331,7 @@ azureal/
 │   │   ├── session.rs      # Session list/show commands
 │   │   └── project.rs      # Project info command
 │   ├── azufig.rs           # Unified config: GlobalAzufig + ProjectAzufig structs (HashMap-based flat sections), load/save/update helpers (TOML I/O with bare-key post-processing), auto-rebase helpers (set_auto_rebase, load_auto_rebase_branches)
+│   ├── github.rs           # GitHub CLI wrapper (issues, PRs, repo detection via `gh`)
 │   ├── claude.rs           # Claude CLI process management
 │   ├── cli.rs              # CLI argument parsing (clap definitions)
 │   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence (reads from azufig)
@@ -1366,6 +1384,7 @@ azureal/
 - [x] Rebase-before-merge flow with RCR conflict resolution
 - [x] Auto-rebase toggle per worktree (sidebar `R` indicator, 2-second polling, conflict → RCR flow)
 - [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in convo; full-width status box with prompt-style keybind hints)
+- [x] AZUREAL++ developer hub panel (⌃a: Debug dumps, GitHub Issues browser, PR creation; replaces ⌃d global)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)
@@ -1506,7 +1525,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃d:dump debug output)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | ?:help | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃r:restart | ⌃a:AZUREAL++)`
 
 ### Terminal Mode
 

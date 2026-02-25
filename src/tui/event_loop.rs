@@ -86,7 +86,9 @@ pub async fn run_app(
         let commit_generating = app.git_actions_panel.as_ref()
             .and_then(|p| p.commit_overlay.as_ref())
             .map(|o| o.generating).unwrap_or(false);
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || commit_generating { 16 } else { 100 };
+        let azureal_loading = app.azureal_panel.as_ref()
+            .map(|p| p.issues_loading || p.prs_loading).unwrap_or(false);
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || commit_generating || azureal_loading { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -213,6 +215,32 @@ pub async fn run_app(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Poll AZUREAL++ panel background fetches (GitHub issues / PRs)
+        if let Some(ref mut panel) = app.azureal_panel {
+            if let Some(ref rx) = panel.issues_receiver {
+                if let Ok(result) = rx.try_recv() {
+                    match result {
+                        Ok(issues) => panel.issues = issues,
+                        Err(e) => tracing::warn!("gh issue fetch failed: {e}"),
+                    }
+                    panel.issues_loading = false;
+                    panel.issues_receiver = None;
+                    needs_redraw = true;
+                }
+            }
+            if let Some(ref rx) = panel.prs_receiver {
+                if let Ok(result) = rx.try_recv() {
+                    match result {
+                        Ok(prs) => panel.prs = prs,
+                        Err(e) => tracing::warn!("gh pr fetch failed: {e}"),
+                    }
+                    panel.prs_loading = false;
+                    panel.prs_receiver = None;
+                    needs_redraw = true;
                 }
             }
         }
@@ -377,11 +405,6 @@ pub async fn run_app(
                 // "Loading sessions..." while this runs, then the list appears.
                 if app.session_list_loading {
                     actions::finish_session_list_load(app);
-                    app.draw_pending = true;
-                }
-                // Deferred debug dump: "Saving..." dialog just rendered, now do the I/O.
-                if let Some(name) = app.debug_dump_saving.take() {
-                    app.dump_debug_output(&name);
                     app.draw_pending = true;
                 }
                 // Generic deferred action: loading indicator just rendered, now do the work.

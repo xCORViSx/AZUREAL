@@ -14,7 +14,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
@@ -27,7 +27,7 @@ use crate::config::Config;
 use super::event_loop;
 use super::keybindings;
 use super::util::{GIT_ORANGE, AZURE};
-use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
+use super::{draw_azureal, draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -276,6 +276,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             draw_git_actions::draw_conflict_inline(f, ov, app.pane_viewer);
         }
     }
+    // AZUREAL++ developer hub panel (⌃a global)
+    if app.azureal_panel.is_some() {
+        draw_azureal::draw_azureal_panel(f, app);
+    }
     // Debug dump naming dialog (⌃d) — small centered input popup
     if let Some(ref name) = app.debug_dump_naming {
         draw_debug_dump_naming(f, name);
@@ -419,67 +423,6 @@ fn draw_splash(f: &mut Frame) {
         area.x, text_start_y, area.width, total_height,
     );
     f.render_widget(splash, splash_area);
-}
-
-/// Small centered dialog for naming a debug dump file.
-/// Shows "debug-output_<name>" preview with text input. Enter confirms, Esc cancels.
-fn draw_debug_dump_naming(f: &mut Frame, name: &str) {
-    let area = f.area();
-    // Preview what the filename will be
-    let preview = if name.is_empty() { "debug-output".to_string() }
-        else { format!("debug-output_{}", name) };
-    let display = format!(" .azureal/{} ", preview);
-    let hint = "Name this dump (Enter:save  Esc:cancel)";
-    // Dialog width: fits whichever content line is widest + 2 for borders + 2 padding
-    let content_w = (display.len()).max(hint.len()) as u16 + 4;
-    let w = content_w.max(40).min(area.width.saturating_sub(4));
-    let h = 5u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    // Two lines: instruction + filename preview with cursor
-    let content = vec![
-        Line::from(Span::styled(hint, Style::default().fg(Color::White))),
-        Line::from(vec![
-            Span::styled(".azureal/debug-output".to_string(), Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                if name.is_empty() { String::new() } else { format!("_{}", name) },
-                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("▏".to_string(), Style::default().fg(AZURE)),
-        ]),
-    ];
-    let dialog = Paragraph::new(content)
-        .alignment(Alignment::Center)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE))
-            .title(Span::styled(" Debug Dump ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))));
-    // Clear the background behind the dialog
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
-}
-
-/// "Saving..." indicator shown while the debug dump I/O runs on the next frame.
-/// Prevents the app from looking frozen during large dumps.
-fn draw_debug_dump_saving(f: &mut Frame, name: &str) {
-    let area = f.area();
-    let filename = if name.is_empty() { "debug-output".to_string() }
-        else { format!("debug-output_{}", name) };
-    let msg = format!(" Saving {}… ", filename);
-    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
-        .alignment(Alignment::Center)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE))
-            .title(Span::styled(" Debug Dump ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD))));
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
 }
 
 /// Generic loading indicator — centered popup shown while a deferred action

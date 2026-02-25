@@ -19,6 +19,7 @@ use super::super::input_output::handle_output_input;
 use super::super::input_worktrees::handle_worktrees_input;
 use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::super::input_viewer::handle_viewer_input;
+use super::super::input_azureal::handle_azureal_input;
 use super::super::input_projects::handle_projects_input;
 use super::mouse::{copy_viewer_selection, copy_output_selection};
 
@@ -147,6 +148,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
+    if app.azureal_panel.is_some() { return handle_azureal_input(key, app); }
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
     // Dialog checked before picker — dialog is spawned on top of picker (e/a keys)
@@ -155,24 +157,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     // FileTree options overlay: intercept all keys before keybinding resolution
     if app.file_tree_options_mode { return handle_file_tree_input(key, app); }
-
-    // Debug dump naming dialog: text input for optional dump file suffix
-    if app.debug_dump_naming.is_some() {
-        match key.code {
-            KeyCode::Enter => {
-                // Transition to "saving" state — draw shows the dialog, dump runs next frame
-                let name = app.debug_dump_naming.take().unwrap_or_default();
-                app.debug_dump_saving = Some(name);
-            }
-            KeyCode::Esc => { app.debug_dump_naming = None; }
-            KeyCode::Backspace => { if let Some(ref mut s) = app.debug_dump_naming { s.pop(); } }
-            KeyCode::Char(c) if !key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                if let Some(ref mut s) = app.debug_dump_naming { s.push(c); }
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
 
     // Convo search modal: typing search text bypasses keybinding system
     if app.convo_search_active { return handle_output_input(key, app); }
@@ -235,7 +219,13 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
         // --- Global actions ---
         Action::Quit => { app.should_quit = true; }
         Action::Restart => { app.should_restart = true; app.should_quit = true; }
-        Action::DumpDebug => { app.debug_dump_naming = Some(String::new()); }
+        Action::OpenAzurealPanel => {
+            if app.azureal_panel.is_some() {
+                app.close_azureal_panel();
+            } else {
+                app.open_azureal_panel();
+            }
+        }
         Action::CancelClaude => { app.cancel_current_claude(); }
         Action::CopySelection => {
             // Copy from whichever pane has an active selection

@@ -11,6 +11,7 @@
 //! - `render_tools`: Tool result rendering
 //! - `util`: Small utility functions
 
+mod draw_azureal;
 mod draw_dialogs;
 mod file_icons;
 mod draw_file_tree;
@@ -25,6 +26,7 @@ mod draw_terminal;
 mod draw_viewer;
 mod event_loop;
 pub mod render_thread;
+mod input_azureal;
 mod input_dialogs;
 mod input_file_tree;
 mod input_git_actions;
