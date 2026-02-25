@@ -251,7 +251,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
 
 /// Handle keyboard input when worktree creation modal is focused.
 /// Single-line name input — Enter submits, Esc cancels.
-/// Only allows alphanumeric, dash, underscore, and dot characters.
+/// Allows all git-safe characters (rejects git-invalid: space ~ ^ : ? * [ \ ..).
 pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, _claude_process: &ClaudeProcess) -> Result<()> {
     match (key.modifiers, key.code) {
         // Submit: create worktree with the entered name (no auto-spawn)
@@ -267,9 +267,16 @@ pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, _clau
                 }
             }
         }
-        // Only allow valid worktree name chars: alphanumeric, dash, underscore, dot
+        // Allow git-safe worktree name chars (reject git-invalid: space ~ ^ : ? * [ \ ..)
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' =>
+            if c.is_alphanumeric()
+                || c == '-'
+                || c == '_'
+                || c == '.'
+                || c == '+'
+                || c == '@'
+                || c == '/'
+                || c == '!' =>
         {
             app.worktree_creation_char(c);
         }
