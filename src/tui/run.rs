@@ -100,14 +100,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Git panel takes over the screen (Shift+G) — full-app 4-pane layout
-    if app.git_actions_panel.is_some() {
-        draw_git_actions::draw_git_layout(f, app);
-        return;
-    }
-
-
-
     // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
     //
     // ┌──────────┬──────────────────────────┬──────────────┐
@@ -144,7 +136,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let convo_area = h_split[2];
 
     // Step 3: Split left side vertically — top 3 panes + input/terminal at bottom
-    let input_height = if app.terminal_mode {
+    let input_height = if app.git_actions_panel.is_some() {
+        0 // Hide input area in git panel mode — no prompts needed
+    } else if app.terminal_mode {
         app.terminal_height + 2
     } else {
         // Dynamic input height: count visual lines from newlines + word-wrapping
@@ -198,7 +192,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     app.pane_convo = convo_area;
 
     // Draw panes — worktrees pane shows file tree overlay when toggled
-    if app.show_file_tree {
+    if app.show_file_tree && app.git_actions_panel.is_none() {
         draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
     } else {
         draw_sidebar::draw_sidebar(f, app, top_h[0]);
@@ -250,7 +244,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.health_panel.is_some() && !app.god_file_filter_mode {
         draw_health::draw_health_panel(f, app);
     }
-    // Git panel now takes over the full screen (early return above)
+    // Git panel overlays — commit editor and conflict resolution render over viewer pane
+    if let Some(ref panel) = app.git_actions_panel {
+        if let Some(ref overlay) = panel.commit_overlay {
+            draw_git_actions::draw_commit_editor(f, overlay, app.pane_viewer);
+        }
+        if let Some(ref ov) = panel.conflict_overlay {
+            draw_git_actions::draw_conflict_inline(f, ov, app.pane_viewer);
+        }
+    }
     // Debug dump naming dialog (⌃d) — small centered input popup
     if let Some(ref name) = app.debug_dump_naming {
         draw_debug_dump_naming(f, name);

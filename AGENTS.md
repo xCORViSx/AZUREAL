@@ -988,26 +988,25 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 ### Git Panel
 
-Full-app layout takeover (`Shift+G` toggles open/close, global keybinding) providing git operations, changed-files browser, inline diff viewer, and commit log. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for focused pane borders with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for unfocused pane borders and secondary text. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Replaces the entire normal layout (early return in `ui()`, same pattern as Projects panel).
+Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybinding) — each pane detects git mode (`app.git_actions_panel.is_some()`) and renders git-specific content instead of its normal content. Input area is hidden (`input_height = 0`). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Uses standard border convention (AZURE/Double when focused, White/Plain when unfocused) to integrate visually with the main layout.
 
-**Panel Layout (4 panes + status bar):**
-```
-┌──────────┬──────────────────────────┬──────────────┐
-│ Actions  │                          │              │
-│ (20%)    │     Viewer/Detail        │   Commits    │
-├──────────┤  (diff, commit editor,   │  (git log)   │
-│ Changed  │   conflict resolution)   │   (25%)      │
-│ Files    │        (55%)             │              │
-│ (fills)  │                          │              │
-├──────────┴──────────────────────────┴──────────────┤
-│         Status (operation result messages)         │
-└────────────────────────────────────────────────────┘
-```
-- **Actions pane** (top-left, 20% width): Context-aware git operations with single-key shortcuts, navigable with j/k. Focused pane border is bright orange; unfocused is brown.
-- **Files pane** (bottom-left, fills remaining height): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer.
-- **Viewer pane** (center, 55% width): Shows file diffs or commit diffs inline with diff coloring (green additions, red deletions, cyan hunks). When commit overlay is active, replaced by the commit message editor. When conflict overlay is active, replaced by the conflict resolution UI. Empty state shows "Select a file or commit to view its diff".
-- **Commits pane** (right, 25% width): Recent commits from `git log` — unpushed commits show green, pushed show white. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations.
-- **Status bar** (bottom, 1 row): Shows latest result message (green=success, red=error) or keybinding hints with worktree name.
+**Pane mapping (git mode → normal pane):**
+
+| Normal Pane | Git Mode Content | Title |
+|-------------|------------------|-------|
+| Sidebar (left) | Actions list (top) + Changed Files (bottom) — split vertically | "Actions" / "Changed Files (N, +X/-Y)" |
+| Viewer (center) | File/commit diff with diff coloring | "Viewer" (or diff title) |
+| Convo (right) | Commit log | "Commits (N)" |
+| Input (bottom) | Hidden (height 0) | — |
+| Status bar | Git-specific footer (result message or keybinding hints) | — |
+
+Commit editor and conflict overlays render on top of the viewer pane from `run.rs::ui()` overlay section (not inline in the viewer). Uses Git brand orange (#F05032, `GIT_ORANGE`) for overlay borders (QuadrantOutside) and cursor highlight; Git brown (#A0522D, `GIT_BROWN`) for hint text.
+
+- **Actions section** (sidebar top, auto-height): Context-aware git operations with single-key shortcuts, navigable with j/k. Focus: `panel.focused_pane == 0`.
+- **Changed Files section** (sidebar bottom, fills remaining): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer. Focus: `panel.focused_pane == 1`.
+- **Viewer pane** (center): Shows file diffs or commit diffs with diff coloring (green additions, red deletions, cyan hunks, brown headers). Empty state shows "Select a file or commit to view its diff".
+- **Commits pane** (right): Recent commits from `git log` — unpushed commits show green, pushed show dim. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations. Focus: `panel.focused_pane == 2`.
+- **Status bar**: Shows latest result message (green=success, red=error) or keybinding hints with worktree name.
 - Footer: `Tab:cycle panes  Enter:exec/view  a:auto-rebase  R:refresh  Esc:close`
 
 **Context-Aware Actions (when actions section focused):**
@@ -1286,7 +1285,7 @@ azureal/
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
 │   │   │   └── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
-│   │   ├── draw_git_actions.rs # Git panel full-app layout (4 panes: actions, files, viewer, commits + status bar)
+│   │   ├── draw_git_actions.rs # Git panel overlay renderers only (commit editor + conflict resolution)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~98 variants incl GitPull, GitAutoRebase, BrowseMain), KeyContext, lookup_action() + 6 per-modal lookups (lookup_git_actions_action takes is_on_main), ~17 static arrays (WORKTREES: 15 entries, GIT_ACTIONS: 15 entries), hint generators, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)

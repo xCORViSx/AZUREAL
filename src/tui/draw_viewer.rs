@@ -14,7 +14,7 @@ use ratatui_image::StatefulImage;
 use textwrap::{wrap, Options};
 
 use crate::app::{App, Focus, ViewerMode};
-use super::util::AZURE;
+use super::util::{GIT_BROWN, AZURE};
 
 /// Draw the viewer panel showing file content or diff detail
 pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
@@ -36,6 +36,12 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         } else if app.viewer_edit_discard_dialog {
             draw_discard_dialog(f, area, app.viewer_edit_diff.is_some());
         }
+        return;
+    }
+
+    // Git panel mode — show diff content instead of file viewer
+    if let Some(ref panel) = app.git_actions_panel {
+        draw_git_viewer(f, panel, area, is_focused);
         return;
     }
 
@@ -983,4 +989,59 @@ fn draw_save_dialog(f: &mut Frame, area: Rect) {
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Gray));
     f.render_widget(options, chunks[1]);
-}  
+}
+
+/// Git panel viewer — renders diff content from the git panel state
+fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect, is_focused: bool) {
+    let title = match panel.viewer_diff_title {
+        Some(ref t) => format!(" {} ", t),
+        None => " Viewer ".to_string(),
+    };
+
+    let border_style = if is_focused {
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let block = Block::default()
+        .title(Span::styled(&title, border_style))
+        .borders(Borders::ALL)
+        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .border_style(border_style);
+
+    match panel.viewer_diff {
+        Some(ref diff) => {
+            let lines: Vec<Line> = diff.lines().map(|l| {
+                let style = if l.starts_with('+') && !l.starts_with("+++") {
+                    Style::default().fg(Color::Green)
+                } else if l.starts_with('-') && !l.starts_with("---") {
+                    Style::default().fg(Color::Red)
+                } else if l.starts_with("@@") {
+                    Style::default().fg(Color::Cyan)
+                } else if l.starts_with("diff ") || l.starts_with("index ") {
+                    Style::default().fg(GIT_BROWN)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(Span::styled(format!(" {}", l), style))
+            }).collect();
+            f.render_widget(
+                Paragraph::new(lines)
+                    .block(block)
+                    .wrap(ratatui::widgets::Wrap { trim: false }),
+                area,
+            );
+        }
+        None => {
+            let hint = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    " Select a file or commit to view its diff",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ];
+            f.render_widget(Paragraph::new(hint).block(block), area);
+        }
+    }
+}

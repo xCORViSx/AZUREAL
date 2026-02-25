@@ -31,6 +31,12 @@ use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
+    // Git panel mode — show commit log instead of conversation
+    if let Some(ref panel) = app.git_actions_panel {
+        draw_git_commits(f, panel, area);
+        return;
+    }
+
     // Session list overlay takes over the entire convo pane when active
     if app.show_session_list {
         session_list::draw_session_list(f, app, area);
@@ -513,4 +519,73 @@ pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::a
     ];
     let para = Paragraph::new(text).block(block).alignment(Alignment::Left);
     f.render_widget(para, rect);
+}
+
+/// Git panel commit log — scrollable list of recent commits
+fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect) {
+    let focused = panel.focused_pane == 2;
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let mut lines: Vec<Line> = Vec::new();
+
+    if panel.commits.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " No commits",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        // Adjust scroll so selected commit is visible
+        let scroll = if panel.selected_commit < panel.commit_scroll {
+            panel.selected_commit
+        } else if panel.selected_commit >= panel.commit_scroll + inner_h {
+            panel.selected_commit.saturating_sub(inner_h.saturating_sub(1))
+        } else {
+            panel.commit_scroll
+        };
+
+        for (i, commit) in panel.commits.iter().enumerate().skip(scroll).take(inner_h) {
+            let selected = focused && i == panel.selected_commit;
+            let prefix = if selected { " \u{25b8} " } else { "   " };
+
+            // Green for unpushed, dim for pushed
+            let hash_color = if !commit.is_pushed { Color::Green } else { Color::DarkGray };
+            let subject_color = if selected {
+                AZURE
+            } else if !commit.is_pushed {
+                Color::Green
+            } else {
+                Color::White
+            };
+            let subject_mod = if selected { Modifier::BOLD } else { Modifier::empty() };
+
+            // Truncate subject to fit: prefix(3) + hash(7) + space(1) + subject
+            let subject_budget = inner_w.saturating_sub(prefix.len() + 8);
+            let subject_display = if commit.subject.len() > subject_budget {
+                format!("{}\u{2026}", &commit.subject[..subject_budget.saturating_sub(1)])
+            } else {
+                commit.subject.clone()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default()),
+                Span::styled(&commit.hash, Style::default().fg(hash_color)),
+                Span::raw(" "),
+                Span::styled(subject_display, Style::default().fg(subject_color).add_modifier(subject_mod)),
+            ]));
+        }
+    }
+
+    let title = format!(" Commits ({}) ", panel.commits.len());
+    let border_style = if focused {
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let block = Block::default()
+        .title(Span::styled(title, border_style))
+        .borders(Borders::ALL)
+        .border_type(if focused { BorderType::Double } else { BorderType::Plain })
+        .border_style(border_style);
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
 }
