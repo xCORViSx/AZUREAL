@@ -164,6 +164,14 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
     save_project_azufig(project_root, &azufig);
 }
 
+// ── Mock test helper (delete after testing) ──
+
+/// This is a mock function to create a git conflict for RCR testing.
+/// It occupies the same location as the auto-rebase helpers on the health branch.
+pub fn mock_conflict_test() -> bool {
+    true
+}
+
 // ── Internal TOML I/O ──
 
 /// Parse a TOML file into the given type. Returns None on any failure.
