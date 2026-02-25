@@ -164,14 +164,6 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
     save_project_azufig(project_root, &azufig);
 }
 
-// ── Mock test helper (delete after testing) ──
-
-/// Second mock conflict — tests that the auto-rebase dialog is visible before RCR.
-/// Deliberately conflicts with the auto-rebase helpers on the health branch.
-pub fn mock_conflict_test_v2() -> &'static str {
-    "This is a second mock conflict to test the auto-rebase dialog"
-}
-
 // ── Internal TOML I/O ──
 
 /// Parse a TOML file into the given type. Returns None on any failure.
