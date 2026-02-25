@@ -403,6 +403,10 @@ impl App {
 
         self.invalidate_render_cache();
 
+        // Activity detected from session file — reset compaction inactivity watcher
+        self.last_convo_event_time = std::time::Instant::now();
+        self.compaction_banner_injected = false;
+
         // If we were following bottom, stay at bottom after content update
         if was_at_bottom {
             self.output_scroll = usize::MAX;
@@ -661,6 +665,7 @@ impl App {
                 DisplayEvent::Command { name } => format!("Command: {}", name),
                 DisplayEvent::Compacting => "Compacting".to_string(),
                 DisplayEvent::Compacted => "Compacted".to_string(),
+                DisplayEvent::MayBeCompacting => "MayBeCompacting".to_string(),
                 DisplayEvent::Plan { name, .. } => format!("Plan: {}", ob.text(name)),
                 DisplayEvent::Filtered => "Filtered".to_string(),
             };

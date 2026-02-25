@@ -310,6 +310,9 @@ impl App {
             if !events.is_empty() {
                 self.display_events.extend(events);
                 self.invalidate_render_cache();
+                // Activity detected — reset compaction inactivity watcher
+                self.last_convo_event_time = std::time::Instant::now();
+                self.compaction_banner_injected = false;
             }
 
             // Feed the fallback output_lines only when the rendered cache is empty

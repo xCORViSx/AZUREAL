@@ -29,6 +29,8 @@ pub enum DisplayEvent {
     Compacting,
     /// Context compaction completed indicator
     Compacted,
+    /// Suspected compaction (95%+ context, 20s inactivity)
+    MayBeCompacting,
     /// Plan mode content (from ~/.claude/plans/)
     Plan {
         name: String,

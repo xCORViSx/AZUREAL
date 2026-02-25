@@ -36,7 +36,7 @@
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
 - **Run Commands** — Save and execute shell commands/scripts globally or per-project; Prompt mode lets Claude generate commands from natural-language descriptions; `d` to delete with y/n confirmation; `⌃s` toggles global/project scope in add/edit dialog; picker shows G/P scope badge
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
-- **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction
+- **Token Usage Counter** — Color-coded context window percentage on Convo pane border (green/yellow/red) to predict compaction; at 95%+, a 20-second inactivity watcher detects likely auto-compaction and shows a banner so the user knows why the convo appears frozen
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Convo pane showing Claude's task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix; caps at 20 visual lines with a proportional scrollbar and mouse wheel scrolling when content overflows
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy

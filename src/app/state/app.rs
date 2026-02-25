@@ -336,6 +336,12 @@ pub struct App {
     pub model_context_window: Option<u64>,
     /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
     pub token_badge_cache: Option<(String, ratatui::style::Color)>,
+    /// True when computed context usage ≥ 95% (triggers compaction inactivity watcher)
+    pub context_pct_high: bool,
+    /// Last time display_events were extended (new events parsed from session or stream)
+    pub last_convo_event_time: std::time::Instant,
+    /// Whether we've already injected the MayBeCompacting banner for the current high-context period
+    pub compaction_banner_injected: bool,
     /// Sidebar search filter text (empty = no filter). Case-insensitive substring match on session names.
     pub sidebar_filter: String,
     /// Whether the sidebar filter input is active (typing goes to filter, not commands)
@@ -624,6 +630,9 @@ impl App {
             session_tokens: None,
             model_context_window: None,
             token_badge_cache: None,
+            context_pct_high: false,
+            last_convo_event_time: std::time::Instant::now(),
+            compaction_banner_injected: false,
             sidebar_filter: String::new(),
             sidebar_filter_active: false,
             current_todos: Vec::new(),
@@ -703,6 +712,7 @@ impl App {
     /// Recompute the cached token usage badge from current session_tokens + model_context_window.
     /// Call this whenever session_tokens or model_context_window changes — draw path just reads the cache.
     pub fn update_token_badge(&mut self) {
+        let mut pct_value = 0.0_f64;
         self.token_badge_cache = self.session_tokens.map(|(ctx_tokens, _)| {
             let base_window = self.model_context_window.unwrap_or(200_000);
             let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
@@ -710,11 +720,19 @@ impl App {
             // Subtract the buffer so percentage reflects usable context, not total window.
             let usable = window.saturating_sub(33_000);
             let pct = (ctx_tokens as f64 / usable as f64 * 100.0).min(100.0);
+            pct_value = pct;
             let color = if pct < 60.0 { ratatui::style::Color::Green }
                 else if pct < 80.0 { ratatui::style::Color::Yellow }
                 else { ratatui::style::Color::Red };
             (format!(" {:.0}% ", pct), color)
         });
+        // Track 95% threshold for compaction inactivity watcher
+        let was_high = self.context_pct_high;
+        self.context_pct_high = pct_value >= 95.0;
+        // Reset banner state when context drops below threshold (e.g. after compaction)
+        if was_high && !self.context_pct_high {
+            self.compaction_banner_injected = false;
+        }
     }
 
     /// Sample getrusage and update cached CPU% string. Called from draw path;

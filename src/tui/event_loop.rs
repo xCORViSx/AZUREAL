@@ -301,6 +301,19 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
+        // Compaction inactivity watcher: when context ≥ 95% and no events for 20s,
+        // inject a "may be compacting" banner so the user knows why convo is frozen
+        if app.context_pct_high
+            && !app.compaction_banner_injected
+            && !app.claude_receivers.is_empty()
+            && now_poll.duration_since(app.last_convo_event_time) >= Duration::from_secs(20)
+        {
+            app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
+            app.invalidate_render_cache();
+            app.compaction_banner_injected = true;
+            needs_redraw = true;
+        }
+
         // Dismiss auto-rebase success dialog after 2 seconds
         if let Some((_, until)) = &app.auto_rebase_success_until {
             if now_poll >= *until {

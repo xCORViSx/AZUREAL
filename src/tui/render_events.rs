@@ -124,6 +124,12 @@ fn render_display_events_with_state(
                     Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
                 ]).alignment(Alignment::Center));
             }
+            DisplayEvent::MayBeCompacting => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled(" ⏳ Session may be compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                ]).alignment(Alignment::Center));
+            }
             DisplayEvent::Plan { name, content } => {
                 saw_content = true;
                 last_hook = None;

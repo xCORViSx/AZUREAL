@@ -689,8 +689,9 @@ User messages containing `<command-name>/xxx</command-name>` tags are parsed as 
 **Compacting Detection:**
 - "⏳ Compacting context..." (yellow) - shown when `/compact` command is detected (START of manual compaction)
 - "✓ Context compacted" (green) - shown when `system` event with `subtype: "compact_boundary"` is received (compaction complete)
+- "⏳ Session may be compacting context..." (yellow) - shown when context usage ≥ 95% AND 20 seconds pass with no new events parsed from the session. Since there's no way to detect auto-compaction until after it completes, this inactivity heuristic warns the user why the convo pane appears frozen. Banner is injected once per high-context period; cleared when new events arrive or context drops below 95%.
 
-Note: For auto-compaction, there's no visible "starting" event - we only see the `compact_boundary` after it completes.
+Note: For auto-compaction, there's no visible "starting" event from Claude — we only see the `compact_boundary` after it completes. The `MayBeCompacting` inactivity watcher bridges this gap.
 
 **Filtered Messages:**
 - Meta messages (`isMeta: true`) are hidden - internal Claude instructions
@@ -793,7 +794,9 @@ Stored as `model_context_window: Option<u64>` on App state — `None` until firs
 
 **Reset:** `session_tokens` and `model_context_window` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
 
-Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Option<u64>`, `token_badge_cache: Option<(String, Color)>` in `src/app/state/app.rs`, `update_token_badge()` method, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`
+**Compaction inactivity watcher:** When context usage ≥ 95%, `update_token_badge()` sets `context_pct_high = true`. The event loop checks: if `context_pct_high && !compaction_banner_injected && claude_receivers non-empty && last_convo_event_time elapsed ≥ 20s`, it injects a `DisplayEvent::MayBeCompacting` banner. When new events arrive (in `handle_claude_output()` or `refresh_session_events()`), both `last_convo_event_time` and `compaction_banner_injected` are reset. When context drops below 95% (e.g. after compaction completes), `compaction_banner_injected` is cleared.
+
+Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Option<u64>`, `token_badge_cache: Option<(String, Color)>`, `context_pct_high: bool`, `last_convo_event_time: Instant`, `compaction_banner_injected: bool` in `src/app/state/app.rs`, `update_token_badge()` method, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`, inactivity check in `src/tui/event_loop.rs`
 
 ### TodoWrite Sticky Widget
 
