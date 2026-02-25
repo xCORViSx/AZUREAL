@@ -151,6 +151,10 @@ impl App {
         self.output_buffer.clear();
         self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
+        self.session_file_path = None;
+        self.session_file_modified = None;
+        self.session_file_size = 0;
+        self.session_file_dirty = false;
         self.session_file_parse_offset = 0;
         self.invalidate_render_cache();
         // Reset deferred render state so the new session gets fast initial load

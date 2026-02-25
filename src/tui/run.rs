@@ -100,6 +100,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
+    // Git panel takes over the screen (Shift+G) — full-app 4-pane layout
+    if app.git_actions_panel.is_some() {
+        draw_git_actions::draw_git_layout(f, app);
+        return;
+    }
+
 
 
     // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
@@ -244,10 +250,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.health_panel.is_some() && !app.god_file_filter_mode {
         draw_health::draw_health_panel(f, app);
     }
-    // Git panel overlay (Shift+G global)
-    if app.git_actions_panel.is_some() {
-        draw_git_actions::draw_git_actions_panel(f, app);
-    }
+    // Git panel now takes over the full screen (early return above)
     // Debug dump naming dialog (⌃d) — small centered input popup
     if let Some(ref name) = app.debug_dump_naming {
         draw_debug_dump_naming(f, name);

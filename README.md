@@ -32,7 +32,7 @@
 - **Async Rendering** — Convo pane renders on a background thread with backpressure + 50ms throttle; incremental renders send only new events (pre-scanned state from already-rendered events avoids mega-clones); single JSON parse per streaming event; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
-- **Diff Viewer** — Syntax-highlighted git diffs per worktree
+- **Diff Viewer** — Syntax-highlighted git diffs per worktree; inline diff viewing in the Git panel for changed files and commits
 - **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
 - **Run Commands** — Save and execute shell commands/scripts globally or per-project; Prompt mode lets Claude generate commands from natural-language descriptions; `d` to delete with y/n confirmation; `⌃s` toggles global/project scope in add/edit dialog; picker shows G/P scope badge
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
@@ -96,7 +96,7 @@ azureal
 | `n` | New worktree/session (creation wizard) |
 | `r` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
-| `G` | Git panel — global (context-aware: pull/squash-merge/rebase, commit, push) |
+| `G` | Git panel — full-app layout (actions, files, inline diff viewer, commit log) |
 | `H` | Health panel (God Files + Documentation tabs) |
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Convo); Filter/search sessions (Session list) |

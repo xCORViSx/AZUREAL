@@ -763,11 +763,12 @@ pub fn lookup_health_action(
 /// Context-aware: squash-merge only on feature branches, pull only on main.
 /// Git ops only fire when actions_focused=true; diff only when file list focused.
 pub fn lookup_git_actions_action(
-    actions_focused: bool,
+    focused_pane: u8,
     is_on_main: bool,
     modifiers: KeyModifiers,
     code: KeyCode,
 ) -> Option<Action> {
+    let actions_focused = focused_pane == 0;
     for b in &GIT_ACTIONS {
         let skip = match b.action {
             // Squash merge + rebase + auto-rebase only available on feature branches (not main)
@@ -856,7 +857,7 @@ pub fn git_actions_footer() -> String {
     let auto_rebase = find_key_for_action(&GIT_ACTIONS, Action::GitAutoRebase).unwrap_or("a".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:switch  {}:exec/view  {}:auto-rebase  {}:refresh  {}:close ", tab, enter, auto_rebase, refresh, esc)
+    format!(" {}:cycle panes  {}:exec/view  {}:auto-rebase  {}:refresh  {}:close ", tab, enter, auto_rebase, refresh, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.

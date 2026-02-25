@@ -38,55 +38,83 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
     }
 
     // Clear stale result message on any non-nav key
-    let is_nav = matches!(action_is_nav(key.modifiers, key.code, panel.actions_focused),
+    let is_nav = matches!(action_is_nav(key.modifiers, key.code, panel.focused_pane),
         Some(true));
     if !is_nav { panel.result_message = None; }
 
-    let actions_focused = panel.actions_focused;
+    let focused_pane = panel.focused_pane;
     let is_on_main = panel.is_on_main;
 
     // Resolve key → action via centralized binding arrays
-    let Some(action) = lookup_git_actions_action(actions_focused, is_on_main, key.modifiers, key.code) else {
+    let Some(action) = lookup_git_actions_action(focused_pane, is_on_main, key.modifiers, key.code) else {
         return Ok(());
     };
 
     match action {
         Action::Escape => { app.close_git_actions_panel(); }
         Action::GitToggleFocus => {
-            if let Some(ref mut p) = app.git_actions_panel { p.actions_focused = !p.actions_focused; }
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.focused_pane = (p.focused_pane + 1) % 3;
+            }
         }
         Action::NavDown => {
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.actions_focused {
-                    if p.selected_action + 1 < action_count(p.is_on_main) { p.selected_action += 1; }
-                } else if !p.changed_files.is_empty() && p.selected_file + 1 < p.changed_files.len() {
-                    p.selected_file += 1;
+                match p.focused_pane {
+                    0 => { if p.selected_action + 1 < action_count(p.is_on_main) { p.selected_action += 1; } }
+                    1 => {
+                        if !p.changed_files.is_empty() && p.selected_file + 1 < p.changed_files.len() {
+                            p.selected_file += 1;
+                        }
+                        load_file_diff_inline(p);
+                    }
+                    2 => {
+                        if !p.commits.is_empty() && p.selected_commit + 1 < p.commits.len() {
+                            p.selected_commit += 1;
+                        }
+                        load_commit_diff_inline(p);
+                    }
+                    _ => {}
                 }
             }
         }
         Action::NavUp => {
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.actions_focused {
-                    if p.selected_action > 0 { p.selected_action -= 1; }
-                } else if p.selected_file > 0 {
-                    p.selected_file -= 1;
+                match p.focused_pane {
+                    0 => { if p.selected_action > 0 { p.selected_action -= 1; } }
+                    1 => {
+                        if p.selected_file > 0 { p.selected_file -= 1; }
+                        load_file_diff_inline(p);
+                    }
+                    2 => {
+                        if p.selected_commit > 0 { p.selected_commit -= 1; }
+                        load_commit_diff_inline(p);
+                    }
+                    _ => {}
                 }
             }
         }
         Action::GoToTop => {
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.actions_focused { p.selected_action = 0; }
-                else { p.selected_file = 0; p.file_scroll = 0; }
+                match p.focused_pane {
+                    0 => { p.selected_action = 0; }
+                    1 => { p.selected_file = 0; p.file_scroll = 0; load_file_diff_inline(p); }
+                    2 => { p.selected_commit = 0; p.commit_scroll = 0; load_commit_diff_inline(p); }
+                    _ => {}
+                }
             }
         }
         Action::GoToBottom => {
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.actions_focused { p.selected_action = action_count(p.is_on_main).saturating_sub(1); }
-                else if !p.changed_files.is_empty() { p.selected_file = p.changed_files.len() - 1; }
+                match p.focused_pane {
+                    0 => { p.selected_action = action_count(p.is_on_main).saturating_sub(1); }
+                    1 => { if !p.changed_files.is_empty() { p.selected_file = p.changed_files.len() - 1; load_file_diff_inline(p); } }
+                    2 => { if !p.commits.is_empty() { p.selected_commit = p.commits.len() - 1; load_commit_diff_inline(p); } }
+                    _ => {}
+                }
             }
         }
 
-        // ── Git operations (only fire when actions_focused, enforced by lookup guard) ──
+        // ── Git operations (only fire when focused_pane==0, enforced by lookup guard) ──
         Action::GitSquashMerge => { exec_squash_merge(app); }
         Action::GitRebase => { exec_rebase(app); }
         Action::GitPull => { exec_pull(app); }
@@ -116,25 +144,33 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
         // Index mapping: main=[pull,commit,push], feature=[squash-merge,rebase,commit,push]
         Action::Confirm => {
-            let (focused, idx, on_main) = match app.git_actions_panel.as_ref() {
-                Some(p) => (p.actions_focused, p.selected_action, p.is_on_main),
+            let (pane, idx, on_main) = match app.git_actions_panel.as_ref() {
+                Some(p) => (p.focused_pane, p.selected_action, p.is_on_main),
                 None => return Ok(()),
             };
-            if focused {
-                if on_main {
-                    match idx { 0 => exec_pull(app), 1 => exec_commit_start(app), 2 => exec_push(app), _ => {} }
-                } else {
-                    match idx { 0 => exec_squash_merge(app), 1 => exec_rebase(app), 2 => exec_commit_start(app), 3 => exec_push(app), _ => {} }
+            match pane {
+                0 => {
+                    if on_main {
+                        match idx { 0 => exec_pull(app), 1 => exec_commit_start(app), 2 => exec_push(app), _ => {} }
+                    } else {
+                        match idx { 0 => exec_squash_merge(app), 1 => exec_rebase(app), 2 => exec_commit_start(app), 3 => exec_push(app), _ => {} }
+                    }
                 }
-            } else {
-                open_file_diff(app);
+                1 => { open_file_diff_inline(app); }
+                2 => {
+                    if let Some(ref mut p) = app.git_actions_panel {
+                        load_commit_diff_inline(p);
+                    }
+                }
+                _ => {}
             }
         }
-        Action::GitViewDiff => { open_file_diff(app); }
+        Action::GitViewDiff => { open_file_diff_inline(app); }
 
         Action::GitRefresh => {
             if let Some(ref mut p) = app.git_actions_panel {
                 refresh_changed_files(p);
+                refresh_commit_log(p);
                 p.result_message = Some(("Refreshed".into(), false));
             }
         }
@@ -144,7 +180,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
 }
 
 /// Quick check if a key is a nav key (used to preserve result_message during scrolling)
-fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::event::KeyCode, _actions_focused: bool) -> Option<bool> {
+fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::event::KeyCode, _focused_pane: u8) -> Option<bool> {
     use crossterm::event::{KeyCode, KeyModifiers};
     Some(matches!((modifiers, code),
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Char('k'))
@@ -153,8 +189,8 @@ fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::eve
     ))
 }
 
-/// Open the selected file's diff in the viewer pane
-fn open_file_diff(app: &mut App) {
+/// Load the selected file's diff into the inline viewer pane (no panel close)
+fn open_file_diff_inline(app: &mut App) {
     let (wt, main, path) = match app.git_actions_panel.as_ref() {
         Some(p) => {
             if let Some(file) = p.changed_files.get(p.selected_file) {
@@ -165,15 +201,71 @@ fn open_file_diff(app: &mut App) {
     };
     match Git::get_file_diff(&wt, &main, &path) {
         Ok(diff) => {
-            let title = format!("diff: {}", path);
-            app.load_diff_into_viewer(&diff, Some(title));
-            app.close_git_actions_panel();
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.viewer_diff_title = Some(format!("diff: {}", path));
+                p.viewer_diff = Some(diff);
+            }
         }
         Err(e) => {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.result_message = Some((format!("{}", e), true));
             }
         }
+    }
+}
+
+/// Load the currently selected file's diff into viewer_diff (called on j/k navigation)
+fn load_file_diff_inline(panel: &mut GitActionsPanel) {
+    let file = match panel.changed_files.get(panel.selected_file) {
+        Some(f) => f,
+        None => { panel.viewer_diff = None; panel.viewer_diff_title = None; return; }
+    };
+    let path = file.path.clone();
+    match Git::get_file_diff(&panel.worktree_path, &panel.main_branch, &path) {
+        Ok(diff) => {
+            panel.viewer_diff_title = Some(format!("diff: {}", path));
+            panel.viewer_diff = Some(diff);
+        }
+        Err(_) => {
+            panel.viewer_diff = None;
+            panel.viewer_diff_title = None;
+        }
+    }
+}
+
+/// Load the currently selected commit's diff into viewer_diff (called on j/k navigation)
+fn load_commit_diff_inline(panel: &mut GitActionsPanel) {
+    let commit = match panel.commits.get(panel.selected_commit) {
+        Some(c) => c,
+        None => { panel.viewer_diff = None; panel.viewer_diff_title = None; return; }
+    };
+    let hash = commit.full_hash.clone();
+    let subject = commit.subject.clone();
+    let short = commit.hash.clone();
+    match Git::get_commit_diff(&panel.worktree_path, &hash) {
+        Ok(diff) => {
+            panel.viewer_diff_title = Some(format!("{} {}", short, subject));
+            panel.viewer_diff = Some(diff);
+        }
+        Err(_) => {
+            panel.viewer_diff = None;
+            panel.viewer_diff_title = None;
+        }
+    }
+}
+
+/// Re-fetch the commit log from git (called after commit/push operations)
+pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
+    match Git::get_commit_log(&panel.worktree_path, 200) {
+        Ok(entries) => {
+            panel.commits = entries.into_iter().map(|(hash, full_hash, subject, is_pushed)| {
+                crate::app::types::GitCommit { hash, full_hash, subject, is_pushed }
+            }).collect();
+            if panel.selected_commit >= panel.commits.len() {
+                panel.selected_commit = panel.commits.len().saturating_sub(1);
+            }
+        }
+        Err(_) => { panel.commits.clear(); panel.selected_commit = 0; }
     }
 }
 

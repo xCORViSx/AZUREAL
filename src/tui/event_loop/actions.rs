@@ -877,6 +877,7 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
                         let first = out.lines().next().unwrap_or(&out);
                         p.result_message = Some((format!("Committed: {}", first), false));
                         super::super::input_git_actions::refresh_changed_files(p);
+                        super::super::input_git_actions::refresh_commit_log(p);
                     }
                     Err(e) => { p.result_message = Some((format!("{}", e), true)); }
                 }
@@ -895,6 +896,7 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
                             }
                         }
                         super::super::input_git_actions::refresh_changed_files(p);
+                        super::super::input_git_actions::refresh_commit_log(p);
                     }
                     Err(e) => { p.result_message = Some((format!("{}", e), true)); }
                 }

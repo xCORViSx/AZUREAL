@@ -987,14 +987,27 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 ### Git Panel
 
-Centered modal overlay (`Shift+G` toggles open/close, global keybinding) providing common git operations and a changed-files browser. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for border styling with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for secondary text (headers, key hints, separators, footer). Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard).
+Full-app layout takeover (`Shift+G` toggles open/close, global keybinding) providing git operations, changed-files browser, inline diff viewer, and commit log. Uses Git brand orange (#F05032, `GIT_ORANGE` constant) for focused pane borders with QuadrantOutside (`▛▀▜▌ ▐▙▄▟`) border type and Git brown (#A0522D, `GIT_BROWN` constant) for unfocused pane borders and secondary text. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Replaces the entire normal layout (early return in `ui()`, same pattern as Projects panel).
 
-**Panel Layout:**
-- Title bar: `" Git: <branch_name> "` bold centered in orange QuadrantOutside border
-- Actions section: 3 context-aware git operations with single-key shortcuts, navigable with j/k
-- Changed files section: working tree changes (staged + unstaged vs HEAD) + untracked files, underlined paths
-- Result message area: green (success) or red (error) after each operation
-- Footer: `Tab:switch  Enter:exec/view  a:auto-rebase  R:refresh  Esc`
+**Panel Layout (4 panes + status bar):**
+```
+┌──────────┬──────────────────────────┬──────────────┐
+│ Actions  │                          │              │
+│ (20%)    │     Viewer/Detail        │   Commits    │
+├──────────┤  (diff, commit editor,   │  (git log)   │
+│ Changed  │   conflict resolution)   │   (25%)      │
+│ Files    │        (55%)             │              │
+│ (fills)  │                          │              │
+├──────────┴──────────────────────────┴──────────────┤
+│         Status (operation result messages)         │
+└────────────────────────────────────────────────────┘
+```
+- **Actions pane** (top-left, 20% width): Context-aware git operations with single-key shortcuts, navigable with j/k. Focused pane border is bright orange; unfocused is brown.
+- **Files pane** (bottom-left, fills remaining height): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer.
+- **Viewer pane** (center, 55% width): Shows file diffs or commit diffs inline with diff coloring (green additions, red deletions, cyan hunks). When commit overlay is active, replaced by the commit message editor. When conflict overlay is active, replaced by the conflict resolution UI. Empty state shows "Select a file or commit to view its diff".
+- **Commits pane** (right, 25% width): Recent commits from `git log` — unpushed commits show green, pushed show white. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations.
+- **Status bar** (bottom, 1 row): Shows latest result message (green=success, red=error) or keybinding hints with worktree name.
+- Footer: `Tab:cycle panes  Enter:exec/view  a:auto-rebase  R:refresh  Esc:close`
 
 **Context-Aware Actions (when actions section focused):**
 Actions change based on whether the current worktree is the main/master branch or a feature branch. `is_on_main: bool` on `GitActionsPanel` determines which set is shown, set by comparing `worktree_name == main_branch` in `open_git_actions_panel()`.
@@ -1010,23 +1023,27 @@ Actions change based on whether the current worktree is the main/master branch o
 - `c` / Enter on index 2 — Commit (see below)
 - `Shift+P` / Enter on index 3 — Push current branch to remote
 
-**Mutual exclusivity guards:** `lookup_git_actions_action()` blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
+**Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
 
-**File list (when file list focused):**
-- Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Header totals also color-coded green/red.
-- `j/k` — navigate files; `Enter`/`d` — view selected file's diff in Viewer pane (closes panel)
-- Scroll indicator shown when list overflows
+**File list (when files pane focused, focused_pane==1):**
+- Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Title shows total file count and +/- stats.
+- `j/k` — navigate files (auto-loads diff in viewer pane via `load_file_diff_inline()`); `Enter`/`d` — also loads diff inline
+- Scroll maintained via `file_scroll` field
+
+**Commits list (when commits pane focused, focused_pane==2):**
+- Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
+- `j/k` — navigate commits (auto-loads `git show <hash>` in viewer via `load_commit_diff_inline()`); `Enter` — also loads diff inline
+- `Git::get_commit_log(worktree_path, 200)` loads commits on panel open, `refresh_commit_log()` called after commit/push operations
 
 **Global within panel:**
-- `Tab` — toggle focus between actions and file list
-- `R` — refresh changed file list
-- `Esc` — close panel
-- Click outside — dismiss (mouse.rs)
+- `Tab` — cycle focus: Actions → Files → Commits → Actions (`focused_pane = (focused_pane + 1) % 3`)
+- `R` — refresh changed files and commit log
+- `Esc` — close panel and return to normal layout
 
-**Commit overlay:**
-Pressing `c` stages all changes (`git add -A`), gets `git diff --staged` + `git diff --staged --stat`, and spawns `claude -p` as a one-shot background thread to generate a conventional commit message. While generating (~3 sec), the overlay shows "Generating..." with a spinner. The overlay is a centered dialog rendered on top of the Git panel with the generated message in an editable text area. `Enter` commits (deferred with "Committing..." loading indicator), `⌘P` commits + pushes (deferred with "Committing and pushing..." loading indicator), `Shift+Enter` inserts a newline, `Esc` cancels. Both commit actions use the `DeferredAction` two-phase pattern so the loading popup renders before the blocking git operation runs. Full text editing with word-wrap: type, backspace, delete, left/right arrows, up/down line navigation, home/end. Session persistence is disabled via `--no-session-persistence` so no .jsonl file is created. No streaming occurs — uses `std::process::Command` stdout capture. Markdown code fences are stripped from the output. State managed by `GitCommitOverlay` struct on `GitActionsPanel` (`commit_overlay: Option<GitCommitOverlay>`). Action count is context-dependent: `action_count(is_on_main)` returns 3 for main, 4 for feature branches. Confirm-index mapping: main=[0=pull, 1=commit, 2=push], feature=[0=squash-merge, 1=rebase, 2=commit, 3=push]. Commit message receiver polled in event loop with short-poll (250ms) while generating.
+**Commit overlay (renders inline in viewer pane):**
+Pressing `c` stages all changes (`git add -A`), gets `git diff --staged` + `git diff --staged --stat`, and spawns `claude -p` as a one-shot background thread to generate a conventional commit message. While generating (~3 sec), the viewer pane shows "Generating..." with a spinner. The commit editor fills the viewer pane area with the generated message in an editable text area (no longer a centered sub-dialog). `Enter` commits (deferred with "Committing..." loading indicator), `⌘P` commits + pushes (deferred with "Committing and pushing..." loading indicator), `Shift+Enter` inserts a newline, `Esc` cancels. Both commit actions use the `DeferredAction` two-phase pattern so the loading popup renders before the blocking git operation runs. Full text editing with word-wrap: type, backspace, delete, left/right arrows, up/down line navigation, home/end. Session persistence is disabled via `--no-session-persistence` so no .jsonl file is created. No streaming occurs — uses `std::process::Command` stdout capture. Markdown code fences are stripped from the output. State managed by `GitCommitOverlay` struct on `GitActionsPanel` (`commit_overlay: Option<GitCommitOverlay>`). Action count is context-dependent: `action_count(is_on_main)` returns 3 for main, 4 for feature branches. Confirm-index mapping: main=[0=pull, 1=commit, 2=push], feature=[0=squash-merge, 1=rebase, 2=commit, 3=push]. Commit message receiver polled in event loop with short-poll (250ms) while generating.
 
-**Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans.
+**Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Also calls `Git::get_commit_log(&wt_path, 200)` to populate the commits pane. Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans. After commit/push operations, `refresh_commit_log()` re-fetches the commit log.
 
 **Data flow (rebase-before-merge):** `exec_squash_merge()` first calls `exec_rebase_inner(&wt_path, &main_branch)` to rebase the feature branch onto main. This ensures the subsequent squash merge is always clean and linear — conflicts are resolved during rebase, not during merge. Returns `RebaseOutcome` enum:
 - `RebaseOutcome::Rebased` — rebase succeeded, proceed to merge
@@ -1049,8 +1066,8 @@ Executes a 4-step cycle from the repo root:
 
 Push is a separate user-triggered action (`Shift+P`). `get_main_branch()` dynamically detects main/master/HEAD. `exec_squash_merge()` blocks if the feature branch has uncommitted changes (must commit first).
 
-**Conflict resolution overlay:**
-When a rebase produces conflicts (either from manual `r` or pre-merge rebase in `exec_squash_merge()`), a `GitConflictOverlay` opens on top of the Git panel (same layering as commit overlay). The rebase is left in progress (NOT aborted) so RCR can resolve it. The overlay is a centered red-bordered dialog (85% × 80% of panel area). Contents:
+**Conflict resolution overlay (renders inline in viewer pane):**
+When a rebase produces conflicts (either from manual `r` or pre-merge rebase in `exec_squash_merge()`), a `GitConflictOverlay` fills the viewer pane area with a red-bordered UI. The rebase is left in progress (NOT aborted) so RCR can resolve it. Contents:
 - Red section: conflicted file list with count header (files with CONFLICT markers)
 - Green section: auto-merged file list with count header (cleanly merged files)
 - Two selectable action options with `▶` arrow indicator: `[y] Resolve with Claude` / `[n] Abort rebase`
@@ -1083,7 +1100,7 @@ Closing the git panel while conflict overlay is open auto-aborts the rebase via 
 
 `handle_git_actions_input()` takes `&ClaudeProcess` parameter (passed from `event_loop/actions.rs`) to enable conflict resolution spawning.
 
-Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; `handle_commit_overlay()` for commit editing, `handle_conflict_overlay()` for conflict dialog, `spawn_conflict_claude()` + `abort_rebase()` for conflict resolution, RCR session creation, `exec_squash_merge()` with rebase-before-merge, `exec_rebase()` + `exec_rebase_inner()` for manual/pre-merge rebase, `RebaseOutcome` enum, `exec_commit_start()` to stage/spawn, `exec_pull()` for pull, `exec_push()` for push; takes `&ClaudeProcess` param; `action_count(is_on_main)` returns 3/4, confirm index mapping: main=[0=pull, 1=commit, 2=push], feature=[0=squash-merge, 1=rebase, 2=commit, 3=push]), `src/tui/draw_git_actions.rs` (rendering, labels from `keybindings::git_actions_labels(is_on_main)`, footer from `keybindings::git_actions_footer()`, commit overlay dialog, conflict overlay dialog with red border), `src/tui/draw_output.rs` (green border override when `rcr_session.is_some()`, green center title color, `draw_rcr_approval()` dialog), `src/tui/run.rs` (RCR approval dialog render after `draw_output`), `src/app/state/ui.rs` (open/close methods, `is_on_main` set from `worktree_name == main_branch`, `commit_overlay: None`, `conflict_overlay: None` in panel constructor; `close_git_actions_panel()` auto-aborts rebase if conflict overlay open), `src/app/state/claude.rs` (RCR session ID tracking in `set_claude_session_id()`, RCR exit intercept in `handle_claude_exited()` — sets `approval_pending`, skips re-parse, returns early), `src/app/state/load.rs` (title guard: `update_title_session_name()` early-returns when `rcr_session.is_some()`; startup cleanup: `load()` auto-aborts orphaned rebase state on all worktrees), `src/tui/input_terminal.rs` (RCR prompt routing: uses `rcr.worktree_path` as cwd, `rcr.session_id` for `--resume`, updates `rcr.slot_id`), `src/tui/event_loop/actions.rs` (RCR approval dialog intercept before modal checks: y/Enter → `accept_rcr()`, n → abort rebase + dismiss; `⌃a` re-shows dialog; `accept_rcr()` helper deletes session file + clears state, pops orphaned stash before re-calling squash merge when `continue_with_merge` is true; post-merge dialog archive/delete handlers clean up `auto-rebase` config keys; passes `claude_process` to `handle_git_actions_input`), `src/git/core.rs` (methods: `get_diff_files`, `get_file_diff`, `squash_merge_into_main` (returns `SquashMergeResult`), `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`, `pull`, `push`; `SquashMergeResult` enum), `src/git/rebase.rs` (3 functions: `is_rebase_in_progress`, `get_conflicted_files`, `rebase_abort`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `is_on_main`, `commit_overlay`, `conflict_overlay` fields, GitChangedFile, GitCommitOverlay, GitConflictOverlay with `continue_with_merge`, RcrSession with `worktree_path` and `continue_with_merge`), `src/tui/keybindings.rs` (GIT_ACTIONS array (15 entries), `lookup_git_actions_action()` takes `is_on_main` param with mutual exclusivity guards for `GitSquashMerge`/`GitRebase`/`GitAutoRebase`, `git_actions_labels()` takes `is_on_main` param returning 3 or 4 actions, hint generators, `GitPull`/`GitPush`/`GitRebase`/`GitAutoRebase` actions, `l`/`r`/`a`/`Shift+P` bindings, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating, `check_auto_rebase()` every 2 seconds with dirty worktree guard)
+Implementation: `src/tui/input_git_actions.rs` (uses `lookup_git_action()` → Action match; `handle_commit_overlay()` for commit editing, `handle_conflict_overlay()` for conflict dialog, `spawn_conflict_claude()` + `abort_rebase()` for conflict resolution, RCR session creation, `exec_squash_merge()` with rebase-before-merge, `exec_rebase()` + `exec_rebase_inner()` for manual/pre-merge rebase, `RebaseOutcome` enum, `exec_commit_start()` to stage/spawn, `exec_pull()` for pull, `exec_push()` for push; takes `&ClaudeProcess` param; `action_count(is_on_main)` returns 3/4, confirm index mapping: main=[0=pull, 1=commit, 2=push], feature=[0=squash-merge, 1=rebase, 2=commit, 3=push]; helper functions: `load_file_diff_inline()` loads selected file diff into `viewer_diff`, `load_commit_diff_inline()` loads selected commit diff, `open_file_diff_inline()` loads via `Git::get_file_diff()`, `refresh_commit_log()` re-fetches commit log after operations), `src/tui/draw_git_actions.rs` (full-app layout entry point `draw_git_layout()` with 5 sub-functions: `draw_actions_pane`, `draw_files_pane`, `draw_viewer_pane`, `draw_commits_pane`, `draw_status_bar`; `draw_commit_editor()` renders inline in viewer area, `draw_conflict_inline()` renders inline in viewer area; labels from `keybindings::git_actions_labels(is_on_main)`, footer from `keybindings::git_actions_footer()`; diff coloring: green=additions, red=deletions, cyan=hunks, brown=headers), `src/tui/draw_output.rs` (green border override when `rcr_session.is_some()`, green center title color, `draw_rcr_approval()` dialog), `src/tui/run.rs` (early-return in `ui()` for git layout — same pattern as Projects panel takeover; RCR approval dialog render after `draw_output`), `src/app/state/ui.rs` (open/close methods, `is_on_main` set from `worktree_name == main_branch`, initializes `focused_pane: 0`, `commits`, `selected_commit: 0`, `commit_scroll: 0`, `viewer_diff: None`, `viewer_diff_title: None` in panel constructor; `close_git_actions_panel()` auto-aborts rebase if conflict overlay open), `src/app/state/claude.rs` (RCR session ID tracking in `set_claude_session_id()`, RCR exit intercept in `handle_claude_exited()` — sets `approval_pending`, skips re-parse, returns early), `src/app/state/load.rs` (title guard: `update_title_session_name()` early-returns when `rcr_session.is_some()`; startup cleanup: `load()` auto-aborts orphaned rebase state on all worktrees), `src/tui/input_terminal.rs` (RCR prompt routing: uses `rcr.worktree_path` as cwd, `rcr.session_id` for `--resume`, updates `rcr.slot_id`), `src/tui/event_loop/actions.rs` (RCR approval dialog intercept before modal checks: y/Enter → `accept_rcr()`, n → abort rebase + dismiss; `⌃a` re-shows dialog; `accept_rcr()` helper deletes session file + clears state, pops orphaned stash before re-calling squash merge when `continue_with_merge` is true; post-merge dialog archive/delete handlers clean up `auto-rebase` config keys; passes `claude_process` to `handle_git_actions_input`; `DeferredAction::GitCommit` and `GitCommitAndPush` call `refresh_commit_log()` after completion), `src/git/core.rs` (methods: `get_diff_files`, `get_file_diff`, `get_commit_log` (ahead count via `git rev-list --count @{u}..HEAD`), `get_commit_diff` (`git show <hash> --stat --patch`), `squash_merge_into_main` (returns `SquashMergeResult`), `stage_all`, `get_staged_diff`, `get_staged_stat`, `commit`, `pull`, `push`; `SquashMergeResult` enum), `src/git/rebase.rs` (3 functions: `is_rebase_in_progress`, `get_conflicted_files`, `rebase_abort`), `src/app/types.rs` (GitActionsPanel with `repo_root`, `is_on_main`, `focused_pane: u8` (0=Actions, 1=Files, 2=Commits), `commits: Vec<GitCommit>`, `selected_commit`, `commit_scroll`, `viewer_diff: Option<String>`, `viewer_diff_title: Option<String>`, `commit_overlay`, `conflict_overlay` fields; GitCommit with `hash`, `full_hash`, `subject`, `is_pushed`; GitChangedFile, GitCommitOverlay, GitConflictOverlay with `continue_with_merge`, RcrSession with `worktree_path` and `continue_with_merge`), `src/tui/keybindings.rs` (GIT_ACTIONS array (15 entries), `lookup_git_actions_action()` takes `focused_pane: u8` + `is_on_main` params with mutual exclusivity guards for `GitSquashMerge`/`GitRebase`/`GitAutoRebase`, `git_actions_labels()` takes `is_on_main` param returning 3 or 4 actions, hint generators, `GitPull`/`GitPush`/`GitRebase`/`GitAutoRebase` actions, `l`/`r`/`a`/`Shift+P` bindings, `G` in GLOBAL), `src/tui/event_loop.rs` (polls commit message receiver, short-poll when generating, `check_auto_rebase()` every 2 seconds with dirty worktree guard)
 
 ### Rebase Support
 
@@ -1268,7 +1285,7 @@ azureal/
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
 │   │   │   └── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
-│   │   ├── draw_git_actions.rs # Git panel modal (centered overlay with git ops + changed files)
+│   │   ├── draw_git_actions.rs # Git panel full-app layout (4 panes: actions, files, viewer, commits + status bar)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~98 variants incl GitPull, GitAutoRebase, BrowseMain), KeyContext, lookup_action() + 6 per-modal lookups (lookup_git_actions_action takes is_on_main), ~17 static arrays (WORKTREES: 15 entries, GIT_ACTIONS: 15 entries), hint generators, help_sections()
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
@@ -1345,6 +1362,7 @@ azureal/
 - [x] Worktree Health Panel (tabbed modal: God Files tab + Documentation coverage tab, Shift+H global)
 - [x] Rebase-before-merge flow with RCR conflict resolution
 - [x] Auto-rebase toggle per worktree (sidebar `R` indicator, 2-second polling, conflict → RCR flow)
+- [x] Git panel full-app layout (4-pane: Actions, Files, Viewer, Commits + status bar; replaces modal overlay)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)

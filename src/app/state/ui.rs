@@ -103,6 +103,16 @@ impl App {
         };
 
         let is_on_main = worktree_name == main_branch;
+
+        // Load commit log — typically <50ms
+        let commits = Git::get_commit_log(&wt_path, 200)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(hash, full_hash, subject, is_pushed)| {
+                crate::app::types::GitCommit { hash, full_hash, subject, is_pushed }
+            })
+            .collect();
+
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
@@ -112,11 +122,16 @@ impl App {
             changed_files,
             selected_file: 0,
             file_scroll: 0,
-            actions_focused: true,
+            focused_pane: 0,
             selected_action: 0,
             result_message: None,
             commit_overlay: None,
             conflict_overlay: None,
+            commits,
+            selected_commit: 0,
+            commit_scroll: 0,
+            viewer_diff: None,
+            viewer_diff_title: None,
         });
     }
 

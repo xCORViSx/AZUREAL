@@ -524,6 +524,51 @@ impl Git {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
+    /// Get recent commit log for the commits pane in the Git panel.
+    /// Returns (short_hash, full_hash, subject, is_pushed) tuples.
+    /// Unpushed commits (ahead of upstream) are marked `is_pushed=false`.
+    pub fn get_commit_log(worktree_path: &Path, max_count: usize) -> Result<Vec<(String, String, String, bool)>> {
+        // How many commits ahead of upstream? (0 if no upstream configured)
+        let ahead = Command::new("git")
+            .args(["rev-list", "--count", "@{u}..HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<usize>().ok())
+            .unwrap_or(0);
+
+        let output = Command::new("git")
+            .args(["log", &format!("--max-count={}", max_count), "--format=%h\t%H\t%s"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get commit log")?;
+
+        let mut commits = Vec::new();
+        for (i, line) in String::from_utf8_lossy(&output.stdout).lines().enumerate() {
+            let parts: Vec<&str> = line.splitn(3, '\t').collect();
+            if parts.len() >= 3 {
+                commits.push((
+                    parts[0].to_string(),
+                    parts[1].to_string(),
+                    parts[2].to_string(),
+                    i >= ahead, // first `ahead` commits are unpushed
+                ));
+            }
+        }
+        Ok(commits)
+    }
+
+    /// Get full diff for a single commit (for the viewer pane in Git panel)
+    pub fn get_commit_diff(worktree_path: &Path, hash: &str) -> Result<String> {
+        let output = Command::new("git")
+            .args(["show", hash, "--stat", "--patch"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get commit diff")?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
     /// Commit staged changes with the given message
     pub fn commit(worktree_path: &Path, message: &str) -> Result<String> {
         let output = Command::new("git")

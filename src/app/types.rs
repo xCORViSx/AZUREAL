@@ -355,6 +355,19 @@ impl ViewerTab {
     }
 }
 
+/// A commit entry for the Git panel's commit log pane
+#[derive(Debug, Clone)]
+pub struct GitCommit {
+    /// Short hash (7 chars)
+    pub hash: String,
+    /// Full hash (for `git show`)
+    pub full_hash: String,
+    /// First line of commit message
+    pub subject: String,
+    /// Whether this commit has been pushed to the remote
+    pub is_pushed: bool,
+}
+
 /// A changed file entry in the Git Actions panel (from `git diff --stat main...HEAD`)
 #[derive(Debug, Clone)]
 pub struct GitChangedFile {
@@ -442,9 +455,9 @@ pub struct PostMergeDialog {
     pub selected: usize,
 }
 
-/// State for the Git Actions panel (Shift+G overlay in Worktrees pane).
+/// State for the Git Actions panel (Shift+G — full-app layout).
 /// Actions are context-aware: main branch gets pull+commit+push,
-/// feature branches get squash-merge+commit+push.
+/// feature branches get squash-merge+rebase+commit+push.
 #[derive(Debug)]
 pub struct GitActionsPanel {
     /// Current worktree name (branch) shown in the title
@@ -463,9 +476,9 @@ pub struct GitActionsPanel {
     pub selected_file: usize,
     /// Scroll offset for the file list
     pub file_scroll: usize,
-    /// true = action list focused, false = file list focused. Tab toggles.
-    pub actions_focused: bool,
-    /// Selected action index when actions_focused is true
+    /// Which pane has focus: 0=Actions, 1=Files, 2=Commits. Tab cycles.
+    pub focused_pane: u8,
+    /// Selected action index when focused_pane==0
     pub selected_action: usize,
     /// Transient status/result message from last git operation: (message, is_error)
     pub result_message: Option<(String, bool)>,
@@ -475,6 +488,16 @@ pub struct GitActionsPanel {
     /// Conflict resolution overlay — shown when rebase hits conflicts.
     /// Offers Claude-assisted resolution or rebase abort.
     pub conflict_overlay: Option<GitConflictOverlay>,
+    /// Recent commits from `git log` (displayed in the commits pane)
+    pub commits: Vec<GitCommit>,
+    /// Selected commit index in the commits pane
+    pub selected_commit: usize,
+    /// Scroll offset for the commits pane
+    pub commit_scroll: usize,
+    /// Diff text shown in the viewer pane (file diff or commit diff)
+    pub viewer_diff: Option<String>,
+    /// Title for the viewer pane diff (e.g. "diff: path" or "commit: abc1234")
+    pub viewer_diff_title: Option<String>,
 }
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization
