@@ -225,6 +225,7 @@ pub enum Action {
     GitRefresh,
     GitCommit,
     GitPush,
+    GitAutoRebase,
 
     // FileTree Options overlay
     FileTreeOptions,
@@ -511,7 +512,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 14] = [
+pub static GIT_ACTIONS: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -526,6 +527,7 @@ pub static GIT_ACTIONS: [Keybinding; 14] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
 ];
 
 /// Projects Panel — browse mode bindings (text input modes stay raw)
@@ -768,8 +770,8 @@ pub fn lookup_git_actions_action(
 ) -> Option<Action> {
     for b in &GIT_ACTIONS {
         let skip = match b.action {
-            // Squash merge + rebase only available on feature branches (not main)
-            Action::GitSquashMerge | Action::GitRebase if is_on_main || !actions_focused => true,
+            // Squash merge + rebase + auto-rebase only available on feature branches (not main)
+            Action::GitSquashMerge | Action::GitRebase | Action::GitAutoRebase if is_on_main || !actions_focused => true,
             // Pull only available on main branch
             Action::GitPull if !is_on_main || !actions_focused => true,
             // Commit + push need actions focus
@@ -851,9 +853,10 @@ pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
 pub fn git_actions_footer() -> String {
     let tab = find_key_for_action(&GIT_ACTIONS, Action::GitToggleFocus).unwrap_or("Tab".into());
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
+    let auto_rebase = find_key_for_action(&GIT_ACTIONS, Action::GitAutoRebase).unwrap_or("a".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:switch  {}:exec/view  {}:refresh  {}:close ", tab, enter, refresh, esc)
+    format!(" {}:switch  {}:exec/view  {}:auto-rebase  {}:refresh  {}:close ", tab, enter, auto_rebase, refresh, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.

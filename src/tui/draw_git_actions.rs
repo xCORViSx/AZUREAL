@@ -67,6 +67,22 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         ]));
     }
 
+    // Auto-rebase toggle (feature branches only)
+    if !panel.is_on_main {
+        let enabled = app.auto_rebase_enabled.contains(&panel.worktree_name);
+        let (indicator, ind_color) = if enabled {
+            ("\u{25cf} ON", Color::Green) // ● ON
+        } else {
+            ("\u{25cb} OFF", Color::DarkGray) // ○ OFF
+        };
+        lines.push(Line::from(vec![
+            Span::styled("    ", Style::default()),
+            Span::styled("[a]", Style::default().fg(GIT_BROWN)),
+            Span::styled(" Auto-rebase  ", Style::default().fg(Color::White)),
+            Span::styled(indicator, Style::default().fg(ind_color).add_modifier(Modifier::BOLD)),
+        ]));
+    }
+
     lines.push(Line::from(""));
 
     // ── Changed files section header ──
@@ -95,9 +111,10 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         Style::default().fg(GIT_BROWN),
     )));
 
-    // How many file rows can we fit? Reserve lines for: actions header(1) + actions(3) +
-    // blank(1) + files header(1) + separator(1) + result(2) + borders(2) = 11 fixed
-    let visible_files = (modal_h as usize).saturating_sub(11);
+    // How many file rows can we fit? Reserve lines for: actions header(1) + actions(3-4) +
+    // auto-rebase toggle(0-1) + blank(1) + files header(1) + separator(1) + result(2) + borders(2)
+    let fixed_lines = if panel.is_on_main { 11 } else { 13 }; // feature: +1 action + +1 toggle
+    let visible_files = (modal_h as usize).saturating_sub(fixed_lines);
 
     // Adjust scroll so selected file is visible
     let scroll = if panel.selected_file < panel.file_scroll {

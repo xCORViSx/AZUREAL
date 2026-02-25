@@ -47,6 +47,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                 KeyCode::Char('n') => {
                     // Abort the rebase on the feature branch worktree,
                     // restoring it to its pre-rebase state
+                    app.sidebar_dirty = true; // Update R indicator color
                     let rcr = app.rcr_session.take().unwrap();
                     if let Some(ref sid) = rcr.session_id {
                         if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {
@@ -107,6 +108,9 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                         // Archive — remove worktree, keep branch
                         if let Some(project) = &app.project {
                             let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
+                            // Clean up auto-rebase config for removed worktree
+                            app.auto_rebase_enabled.remove(&d.branch);
+                            crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
                         }
                         app.set_status(format!("{} — archived", d.display_name));
                     }
@@ -115,6 +119,9 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                         if let Some(project) = &app.project {
                             let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
                             let _ = crate::git::Git::delete_branch(&project.path, &d.branch);
+                            // Clean up auto-rebase config for deleted branch
+                            app.auto_rebase_enabled.remove(&d.branch);
+                            crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
                         }
                         app.set_status(format!("{} — deleted", d.display_name));
                     }
@@ -940,6 +947,7 @@ fn start_or_resume(app: &mut App) {
 /// squash merge, auto-proceed with the merge (the user's original intent).
 fn accept_rcr(app: &mut App) {
     if let Some(rcr) = app.rcr_session.take() {
+        app.sidebar_dirty = true; // Update R indicator color
         // Delete the RCR session file so it doesn't pollute the session list
         if let Some(ref sid) = rcr.session_id {
             if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {
@@ -951,6 +959,13 @@ fn accept_rcr(app: &mut App) {
         app.update_title_session_name();
 
         if rcr.continue_with_merge {
+            // Pop any stash left from the pre-merge stash in squash_merge_into_main().
+            // The merge conflicted, so the stash was never popped. Pop it before
+            // re-calling squash_merge (which would stash again, orphaning the first).
+            let _ = std::process::Command::new("git")
+                .args(["stash", "pop"])
+                .current_dir(&rcr.repo_root)
+                .output();
             // Rebase was part of squash merge — auto-proceed with the merge
             match crate::git::Git::squash_merge_into_main(&rcr.repo_root, &rcr.branch) {
                 Ok(crate::git::SquashMergeResult::Success(msg)) => {

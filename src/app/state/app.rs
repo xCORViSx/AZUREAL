@@ -395,6 +395,12 @@ pub struct App {
     /// Post-merge dialog — shown after successful squash merge or RCR accept.
     /// Asks user to keep (rebase), archive, or delete the worktree/branch.
     pub post_merge_dialog: Option<PostMergeDialog>,
+    /// Branch names with auto-rebase enabled (persisted in project azufig.toml)
+    pub auto_rebase_enabled: HashSet<String>,
+    /// Throttle for periodic auto-rebase checks (every 2 seconds)
+    pub last_auto_rebase_check: std::time::Instant,
+    /// Auto-rebase success dialog: (branch_display_name, dismiss_at). Shown for 2 seconds.
+    pub auto_rebase_success_until: Option<(String, std::time::Instant)>,
     /// True when user is browsing the main/master branch in read-only mode (via 'm').
     /// While active, file mutations, prompt mode, edit mode, and session start are blocked.
     pub browsing_main: bool,
@@ -643,6 +649,9 @@ impl App {
             git_actions_panel: None,
             rcr_session: None,
             post_merge_dialog: None,
+            auto_rebase_enabled: HashSet::new(), // populated from azufig in load()
+            last_auto_rebase_check: std::time::Instant::now(),
+            auto_rebase_success_until: None,
             browsing_main: false,
             pre_main_browse_selection: None,
             main_worktree: None,

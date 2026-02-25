@@ -411,6 +411,17 @@ impl Git {
             _ => "",
         };
 
+        // Collect individual commit messages before squash (they'll be lost after).
+        // `git log main..branch --reverse --format="- %s"` gives each commit as a bullet.
+        let commit_log = Command::new("git")
+            .args(["log", &format!("HEAD..{}", branch_name), "--reverse", "--format=- %s"])
+            .current_dir(repo_root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+
         // Step 2: squash-merge stages all changes without committing
         let merge_out = Command::new("git")
             .args(["merge", "--squash", branch_name])
@@ -452,11 +463,16 @@ impl Git {
             anyhow::bail!("{}", text);
         }
 
-        // Step 3: commit the squashed changes with a clean message.
-        // Strip "azureal/" prefix from branch name for a readable commit.
+        // Step 3: commit the squashed changes with a rich message.
+        // Summary line + individual commit messages as bullet points.
         let display = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
+        let message = if commit_log.is_empty() {
+            format!("feat: merge {} into main", display)
+        } else {
+            format!("feat: merge {} into main\n\n{}", display, commit_log)
+        };
         let commit_out = Command::new("git")
-            .args(["commit", "-m", &format!("feat: merge {} into main", display)])
+            .args(["commit", "-m", &message])
             .current_dir(repo_root)
             .output()
             .context("Failed to commit squash merge")?;

@@ -256,6 +256,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if let Some(ref name) = app.debug_dump_saving {
         draw_debug_dump_saving(f, name);
     }
+    // Auto-rebase success dialog — 2-second toast after successful auto-rebase
+    if let Some((ref branch, _)) = app.auto_rebase_success_until {
+        draw_auto_rebase_dialog(f, branch, true);
+    }
     // Generic loading indicator — highest z-order, shown while a deferred action runs next frame
     if let Some(ref msg) = app.loading_indicator {
         draw_loading_indicator(f, msg);
@@ -453,6 +457,30 @@ fn draw_debug_dump_saving(f: &mut Frame, name: &str) {
 /// Generic loading indicator — centered popup shown while a deferred action
 /// (session load, file open, health scan, project switch, etc.) runs on the
 /// next frame. Reused by all two-phase deferred draw operations.
+/// Auto-rebase dialog — centered popup showing rebase progress or success.
+/// `success` = true shows green border with checkmark, false shows AZURE "in progress".
+fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
+    let area = f.area();
+    let msg = if success {
+        format!(" {} rebased onto main \u{2713} ", branch)
+    } else {
+        format!(" Auto-rebasing {} onto main... ", branch)
+    };
+    let border_color = if success { Color::Green } else { AZURE };
+    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
+        .alignment(Alignment::Center)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color)));
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(dialog, rect);
+}
+
 fn draw_loading_indicator(f: &mut Frame, msg: &str) {
     let area = f.area();
     let padded = format!(" {} ", msg);

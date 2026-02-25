@@ -36,7 +36,21 @@ impl App {
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
+        // Load auto-rebase enabled branches from project azufig
+        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_branches(&repo_root);
+
         self.load_worktrees()?;
+
+        // Clean up orphaned rebase state from app crashes / force-quits.
+        // If a worktree has .git/rebase-merge or .git/rebase-apply but no
+        // active RCR session, the rebase was interrupted — auto-abort it.
+        for wt in &self.worktrees {
+            if let Some(ref wt_path) = wt.worktree_path {
+                if crate::git::Git::is_rebase_in_progress(wt_path) {
+                    let _ = crate::git::Git::rebase_abort(wt_path);
+                }
+            }
+        }
 
         Ok(())
     }

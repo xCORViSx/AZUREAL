@@ -164,6 +164,29 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
     save_project_azufig(project_root, &azufig);
 }
 
+// ── Auto-rebase helpers ──
+
+/// Enable or disable auto-rebase for a branch in the project-local azufig.
+pub fn set_auto_rebase(project_root: &Path, branch: &str, enabled: bool) {
+    let key = format!("auto-rebase/{}", branch);
+    update_project_azufig(project_root, |azufig| {
+        if enabled {
+            azufig.git.insert(key, "true".to_string());
+        } else {
+            azufig.git.remove(&key);
+        }
+    });
+}
+
+/// Load all branches with auto-rebase enabled from the project-local azufig.
+pub fn load_auto_rebase_branches(project_root: &Path) -> std::collections::HashSet<String> {
+    let azufig = load_project_azufig(project_root);
+    azufig.git.iter()
+        .filter(|(k, v)| k.starts_with("auto-rebase/") && v == &"true")
+        .map(|(k, _)| k.strip_prefix("auto-rebase/").unwrap().to_string())
+        .collect()
+}
+
 // ── Internal TOML I/O ──
 
 /// Parse a TOML file into the given type. Returns None on any failure.

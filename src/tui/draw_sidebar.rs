@@ -54,12 +54,47 @@ fn build_sidebar_items(app: &App) -> (Vec<ListItem<'static>>, Vec<SidebarRowActi
             (status.symbol(), status.color(), ns)
         };
 
-        items.push(ListItem::new(Line::from(vec![
+        // Determine R indicator: Blue (RCR approval), Orange (RCR active), Green (auto-rebase on)
+        let r_color = if let Some(ref rcr) = app.rcr_session {
+            if rcr.branch == session.branch_name {
+                if rcr.approval_pending { Some(AZURE) } else { Some(Color::Rgb(255, 165, 0)) } // blue / orange
+            } else { None }
+        } else { None }
+        .or_else(|| {
+            if app.auto_rebase_enabled.contains(&session.branch_name) { Some(Color::Green) } else { None }
+        });
+
+        // inner_width = sidebar_width - 2 (borders). Prefix " ○ " = 4 chars. "R " = 2 chars.
+        let inner_w = app.pane_worktrees.width.saturating_sub(2) as usize;
+        let has_r = r_color.is_some();
+        let name_max = if has_r { inner_w.saturating_sub(6) } else { inner_w.saturating_sub(4) };
+        let name_max = name_max.min(36);
+        let name_str = truncate(session.name(), name_max);
+
+        let mut spans = vec![
             Span::raw(" "),
             Span::styled(status_symbol, Style::default().fg(status_color)),
             Span::raw(" "),
-            Span::styled(truncate(session.name(), 36), name_style),
-        ])));
+            Span::styled(name_str.clone(), name_style),
+        ];
+
+        if let Some(rc) = r_color {
+            // Right-pad name, then append "R "
+            let used = 4 + name_str.len(); // " ○ " + name
+            let pad = inner_w.saturating_sub(used + 2); // 2 for "R "
+            if pad > 0 {
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
+            let r_style = if is_selected {
+                Style::default().bg(Color::Blue).fg(rc).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(rc).add_modifier(Modifier::BOLD)
+            };
+            spans.push(Span::styled("R", r_style));
+            spans.push(Span::raw(" "));
+        }
+
+        items.push(ListItem::new(Line::from(spans)));
         row_map.push(SidebarRowAction::Worktree(sess_idx));
     }
 

@@ -273,6 +273,24 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
+        // Dismiss auto-rebase success dialog after 2 seconds
+        if let Some((_, until)) = &app.auto_rebase_success_until {
+            if now_poll >= *until {
+                app.auto_rebase_success_until = None;
+                needs_redraw = true;
+            }
+        }
+
+        // Periodic auto-rebase check (every 2 seconds)
+        if now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2) {
+            app.last_auto_rebase_check = now_poll;
+            if !app.auto_rebase_enabled.is_empty() {
+                if check_auto_rebase(app, &claude_process) {
+                    needs_redraw = true;
+                }
+            }
+        }
+
         // Apply accumulated scroll using cached terminal size
         let mut scroll_changed = false;
         if scroll_delta != 0 {
@@ -379,4 +397,80 @@ pub async fn run_app(
     }
 
     Ok(())
+}
+
+/// Check all auto-rebase-enabled worktrees and rebase the first eligible one.
+/// Returns true if any state changed (needs redraw).
+fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
+    use super::input_git_actions::{exec_rebase_inner, RebaseOutcome};
+    use crate::app::types::GitConflictOverlay;
+
+    // Skip if RCR active, git panel open, or editing a file
+    if app.rcr_session.is_some() { return false; }
+    if app.git_actions_panel.is_some() { return false; }
+    if app.viewer_edit_mode { return false; }
+
+    let project = match &app.project {
+        Some(p) => p.clone(),
+        None => return false,
+    };
+
+    // Collect eligible worktrees (avoid borrowing app during iteration)
+    let candidates: Vec<(String, std::path::PathBuf)> = app.worktrees.iter()
+        .filter(|wt| {
+            wt.branch_name != project.main_branch
+                && !wt.archived
+                && app.auto_rebase_enabled.contains(&wt.branch_name)
+                && !app.is_session_running(&wt.branch_name)
+                && wt.worktree_path.is_some()
+        })
+        .map(|wt| (wt.branch_name.clone(), wt.worktree_path.clone().unwrap()))
+        .collect();
+
+    for (branch, wt_path) in candidates {
+        let display = branch.strip_prefix("azureal/").unwrap_or(&branch).to_string();
+
+        // Skip worktrees with uncommitted changes — git rebase would fail
+        let dirty = std::process::Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&wt_path)
+            .output()
+            .ok()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false);
+        if dirty { continue; }
+
+        match exec_rebase_inner(&wt_path, &project.main_branch) {
+            RebaseOutcome::UpToDate => continue,
+            RebaseOutcome::Rebased => {
+                app.auto_rebase_success_until = Some((
+                    display,
+                    Instant::now() + Duration::from_secs(2),
+                ));
+                app.sidebar_dirty = true;
+                return true;
+            }
+            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+                // Switch to the conflicted worktree and open Git panel with conflict overlay
+                if let Some(idx) = app.worktrees.iter().position(|w| w.branch_name == branch) {
+                    app.selected_worktree = Some(idx);
+                    app.load_session_output();
+                }
+                app.open_git_actions_panel();
+                if let Some(ref mut panel) = app.git_actions_panel {
+                    panel.conflict_overlay = Some(GitConflictOverlay {
+                        conflicted_files: conflicted,
+                        auto_merged_files: auto_merged,
+                        scroll: 0,
+                        selected: 0,
+                        continue_with_merge: false,
+                    });
+                }
+                app.sidebar_dirty = true;
+                return true;
+            }
+            RebaseOutcome::Failed(_) => continue,
+        }
+    }
+    false
 }

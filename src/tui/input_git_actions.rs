@@ -92,6 +92,26 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::GitPull => { exec_pull(app); }
         Action::GitCommit => { exec_commit_start(app); }
         Action::GitPush => { exec_push(app); }
+        Action::GitAutoRebase => {
+            if let Some(ref p) = app.git_actions_panel {
+                let branch = p.worktree_name.clone();
+                let repo_root = p.repo_root.clone();
+                let enabled = !app.auto_rebase_enabled.contains(&branch);
+                if enabled {
+                    app.auto_rebase_enabled.insert(branch.clone());
+                } else {
+                    app.auto_rebase_enabled.remove(&branch);
+                }
+                crate::azufig::set_auto_rebase(&repo_root, &branch, enabled);
+                app.sidebar_dirty = true;
+                if let Some(ref mut p) = app.git_actions_panel {
+                    p.result_message = Some((
+                        if enabled { "Auto-rebase enabled".into() } else { "Auto-rebase disabled".into() },
+                        false,
+                    ));
+                }
+            }
+        }
 
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
         // Index mapping: main=[pull,commit,push], feature=[squash-merge,rebase,commit,push]
@@ -232,7 +252,7 @@ fn exec_squash_merge(app: &mut App) {
 }
 
 /// Rebase outcome for the UI to display
-enum RebaseOutcome {
+pub(crate) enum RebaseOutcome {
     Rebased,
     UpToDate,
     /// Conflict — rebase is left in progress (NOT aborted) so RCR can resolve.
@@ -244,7 +264,7 @@ enum RebaseOutcome {
 /// Inner rebase logic — used by both manual rebase (r) and pre-merge rebase.
 /// No git fetch — caller is responsible for ensuring main is current.
 /// On conflict, leaves rebase in progress so RCR can resolve it.
-fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &str) -> RebaseOutcome {
+pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &str) -> RebaseOutcome {
     // Check if already up to date
     let base = std::process::Command::new("git")
         .args(["merge-base", "HEAD", main_branch])
