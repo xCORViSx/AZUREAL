@@ -166,10 +166,10 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
 
 // ── Mock test helper (delete after testing) ──
 
-/// This is a mock function to create a git conflict for RCR testing.
-/// It occupies the same location as the auto-rebase helpers on the health branch.
-pub fn mock_conflict_test() -> bool {
-    true
+/// Second mock conflict — tests that the auto-rebase dialog is visible before RCR.
+/// Deliberately conflicts with the auto-rebase helpers on the health branch.
+pub fn mock_conflict_test_v2() -> &'static str {
+    "This is a second mock conflict to test the auto-rebase dialog"
 }
 
 // ── Internal TOML I/O ──
