@@ -270,10 +270,10 @@ impl App {
 
     /// Cache the session display name for the title bar.
     /// Reads session_names TOML once here so draw_title_bar() is zero I/O.
-    /// During MCR, the title is locked to "[MCR] <name>" and won't be overwritten.
+    /// During RCR, the title is locked to "[RCR] <name>" and won't be overwritten.
     pub fn update_title_session_name(&mut self) {
-        // MCR mode locks the title — don't let normal session logic overwrite it
-        if self.mcr_session.is_some() { return; }
+        // RCR mode locks the title — don't let normal session logic overwrite it
+        if self.rcr_session.is_some() { return; }
         let Some(session) = self.current_worktree() else {
             self.title_session_name.clear();
             return;
@@ -634,9 +634,6 @@ impl App {
                 }
                 DisplayEvent::Complete { duration_ms, cost_usd, .. } => {
                     format!("Complete: {}ms, ${:.4}", duration_ms, cost_usd)
-                }
-                DisplayEvent::Error { message } => {
-                    format!("Error: {}", ob.text(&message.chars().take(80).collect::<String>()))
                 }
                 DisplayEvent::Init { model, .. } => format!("Init: model={}", model),
                 DisplayEvent::Command { name } => format!("Command: {}", name),

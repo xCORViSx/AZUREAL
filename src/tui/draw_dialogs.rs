@@ -4,14 +4,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
 
 use crate::app::{App, BranchDialog};
 use crate::app::types::CommandFieldMode;
 use super::keybindings;
-use super::util::{calculate_cursor_position, truncate, AZURE};
+use super::util::{truncate, AZURE};
 
 /// Draw help overlay with auto-sized columns from centralized keybindings
 pub fn draw_help_overlay(f: &mut Frame) {

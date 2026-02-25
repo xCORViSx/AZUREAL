@@ -8,11 +8,10 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, McrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
-use crate::claude::InteractiveSession;
+use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::events::EventParser;
-use crate::models::{Project, RebaseStatus, Worktree};
-use crate::syntax::{DiffHighlighter, SyntaxHighlighter};
+use crate::models::{Project, Worktree};
+use crate::syntax::SyntaxHighlighter;
 use crate::tui::render_thread::RenderThread;
 use super::ClaudeEvent;
 use super::DisplayEvent;
@@ -73,25 +72,14 @@ pub struct App {
     pub claude_exit_codes: HashMap<String, i32>,
     /// Claude API session UUIDs per slot_id (for --resume)
     pub claude_session_ids: HashMap<String, String>,
-    /// Interactive PTY sessions (kept alive between prompts)
-    pub interactive_sessions: HashMap<String, InteractiveSession>,
     /// Maps branch_name → list of active slot_ids (PID strings, spawn order)
     pub branch_slots: HashMap<String, Vec<String>>,
     /// Which slot_id is actively displayed per branch (its output feeds display_events)
     pub active_slot: HashMap<String, String>,
-    pub diff_text: Option<String>,
-    /// Cached colorized diff lines (expensive highlighting done once, not per-frame)
-    pub diff_lines_cache: Vec<Vec<ratatui::text::Span<'static>>>,
-    /// Flag indicating diff cache needs refresh
-    pub diff_lines_dirty: bool,
     pub output_scroll: usize,
-    pub diff_scroll: usize,
-    pub diff_highlighter: DiffHighlighter,
     pub syntax_highlighter: SyntaxHighlighter,
     pub show_help: bool,
     pub branch_dialog: Option<BranchDialog>,
-    pub rebase_status: Option<RebaseStatus>,
-    pub selected_conflict: Option<usize>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
     /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
@@ -252,8 +240,6 @@ pub struct App {
     pub file_tree_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Flag indicating file tree cache needs refresh
     pub file_tree_dirty: bool,
-    /// Cached file tree title string
-    pub file_tree_title_cache: String,
     /// Scroll position used for file tree cache
     pub file_tree_scroll_cached: usize,
     /// Awaiting user response to plan approval (ExitPlanMode was called)
@@ -265,8 +251,6 @@ pub struct App {
     /// Line indices where message bubbles start (for Up/Down navigation)
     /// Each entry is (line_index, is_user_message) - true for UserMessage, false for AssistantText
     pub message_bubble_positions: Vec<(usize, bool)>,
-    /// Edit/Write tool diffs for navigation: (line_idx, tool_name, file_path, diff_text)
-    pub tool_diff_positions: Vec<(usize, String, String, String)>,
     /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
     pub clickable_paths: Vec<(usize, usize, usize, String, String, String, usize)>,
     /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col, wrap_line_count)
@@ -407,8 +391,8 @@ pub struct App {
     pub git_actions_panel: Option<GitActionsPanel>,
     /// Active Merge Conflict Resolution session — when Some, convo pane shows green
     /// borders, routes prompts to repo root, and displays approval dialog after Claude exits
-    pub mcr_session: Option<McrSession>,
-    /// Post-merge dialog — shown after successful squash merge or MCR accept.
+    pub rcr_session: Option<RcrSession>,
+    /// Post-merge dialog — shown after successful squash merge or RCR accept.
     /// Asks user to keep (rebase), archive, or delete the worktree/branch.
     pub post_merge_dialog: Option<PostMergeDialog>,
     /// True when user is browsing the main/master branch in read-only mode (via 'm').
@@ -503,20 +487,12 @@ impl App {
             running_sessions: HashSet::new(),
             claude_exit_codes: HashMap::new(),
             claude_session_ids: HashMap::new(),
-            interactive_sessions: HashMap::new(),
             branch_slots: HashMap::new(),
             active_slot: HashMap::new(),
-            diff_text: None,
-            diff_lines_cache: Vec::new(),
-            diff_lines_dirty: true,
             output_scroll: usize::MAX, // Start at bottom (most recent messages)
-            diff_scroll: 0,
-            diff_highlighter: DiffHighlighter::new(),
             syntax_highlighter: SyntaxHighlighter::new(),
             show_help: false,
             branch_dialog: None,
-            rebase_status: None,
-            selected_conflict: None,
             projects_panel: None,
             pending_session_names: Vec::new(),
             terminal_mode: false,
@@ -599,13 +575,11 @@ impl App {
             sidebar_focus_cached: false,
             file_tree_lines_cache: Vec::new(),
             file_tree_dirty: true,
-            file_tree_title_cache: String::new(),
             file_tree_scroll_cached: usize::MAX,
             awaiting_plan_approval: false,
             viewer_viewport_height: 20,
             output_viewport_height: 20,
             message_bubble_positions: Vec::new(),
-            tool_diff_positions: Vec::new(),
             selected_tool_diff: None,
             clickable_paths: Vec::new(),
             clicked_path_highlight: None,
@@ -667,7 +641,7 @@ impl App {
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,
-            mcr_session: None,
+            rcr_session: None,
             post_merge_dialog: None,
             browsing_main: false,
             pre_main_browse_selection: None,
@@ -780,12 +754,6 @@ impl App {
         self.branch_slots.iter()
             .find(|(_, slots)| slots.contains(&slot_id.to_string()))
             .map(|(branch, _)| branch.clone())
-    }
-
-    /// Get the Claude session UUID for the active slot of a branch (for --resume)
-    pub fn active_claude_session_id(&self, branch_name: &str) -> Option<&String> {
-        self.active_slot.get(branch_name)
-            .and_then(|slot| self.claude_session_ids.get(slot))
     }
 
     /// Check if a Claude session UUID has a running process (for status dots in session list)

@@ -20,8 +20,8 @@ pub enum SquashMergeResult {
         conflicted: Vec<String>,
         /// Files that git auto-merged without issues
         auto_merged: Vec<String>,
-        /// Full raw git output from the merge command
-        raw_output: String,
+        /// Full raw git output from the merge command (populated by deserialization)
+        _raw_output: String,
     },
 }
 
@@ -30,7 +30,7 @@ pub enum SquashMergeResult {
 pub struct WorktreeInfo {
     pub path: std::path::PathBuf,
     pub branch: Option<String>,
-    pub commit: String,
+    pub _commit: String,
     pub is_main: bool,
 }
 
@@ -178,17 +178,6 @@ impl Git {
         }
     }
 
-    /// Check if there are uncommitted changes
-    pub fn has_uncommitted_changes(worktree_path: &Path) -> Result<bool> {
-        let output = Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to check git status")?;
-
-        Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
-    }
-
     /// Get short status
     pub fn status(worktree_path: &Path) -> Result<String> {
         let output = Command::new("git")
@@ -297,20 +286,6 @@ impl Git {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Fetch from all remotes, pruning stale tracking branches
-    pub fn fetch(worktree_path: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["fetch", "--all", "--prune"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to fetch")?;
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        } else {
-            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
-        }
-    }
-
     /// Pull from remote (current branch's upstream)
     pub fn pull(worktree_path: &Path) -> Result<String> {
         let output = Command::new("git")
@@ -344,7 +319,7 @@ impl Git {
     /// Runs from the repo root (main worktree, already on main branch).
     pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<SquashMergeResult> {
         // Pre-flight: clean up any leftover dirty merge state from a previous
-        // MCR that was interrupted (app crash, force-quit, etc.). Without this,
+        // RCR that was interrupted (app crash, force-quit, etc.). Without this,
         // `git pull` and `git stash` both fail with "unmerged files" errors.
         let status = Command::new("git")
             .args(["status", "--porcelain"])
@@ -423,7 +398,7 @@ impl Git {
             // whatever resolves the conflict (or by the user manually).
             if !conflicted.is_empty() {
                 return Ok(SquashMergeResult::Conflict {
-                    conflicted, auto_merged, raw_output: text.to_string(),
+                    conflicted, auto_merged, _raw_output: text.to_string(),
                 });
             }
             // Non-conflict failure — restore stash before bailing
@@ -454,26 +429,6 @@ impl Git {
         let out = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
         let first = out.lines().next().unwrap_or(&out);
         Ok(SquashMergeResult::Success(format!("Merged: {}{}", first, pull_note)))
-    }
-
-    /// Abort an in-progress merge — cleans up the dirty merge state on main.
-    /// Called when user dismisses the conflict overlay or chooses to abort.
-    /// Also pops any stash that squash_merge_into_main() may have pushed.
-    pub fn merge_abort(repo_root: &Path) -> Result<()> {
-        let output = Command::new("git")
-            .args(["merge", "--abort"])
-            .current_dir(repo_root)
-            .output()
-            .context("Failed to abort merge")?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            anyhow::bail!("{}", err);
-        }
-        // Best-effort pop stash — squash_merge_into_main() stashes dirty state
-        // before merging; if the user aborts, we should restore it. Harmless
-        // no-op if there's nothing to pop.
-        let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output();
-        Ok(())
     }
 
     /// Stage all changes (tracked + untracked) via `git add -A`

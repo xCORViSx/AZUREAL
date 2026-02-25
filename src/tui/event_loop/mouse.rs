@@ -75,17 +75,9 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
         }
         app.output_selection = None;
         if delta > 0 {
-            match app.view_mode {
-                crate::app::ViewMode::Output => app.scroll_output_down(delta as usize),
-                crate::app::ViewMode::Diff => app.scroll_diff_down(delta as usize),
-                _ => false
-            }
+            app.scroll_output_down(delta as usize)
         } else {
-            match app.view_mode {
-                crate::app::ViewMode::Output => app.scroll_output_up((-delta) as usize),
-                crate::app::ViewMode::Diff => app.scroll_diff_up((-delta) as usize),
-                _ => false
-            }
+            app.scroll_output_up((-delta) as usize)
         }
     } else {
         false
@@ -139,7 +131,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
             app.focus = Focus::Worktrees;
             let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
             let clicked_idx = app.sidebar_row_map.get(visual_row)
-                .and_then(|a| if let SidebarRowAction::Worktree(i) = a { Some(*i) } else { None });
+                .map(|SidebarRowAction::Worktree(i)| *i);
             if let Some(idx) = clicked_idx {
                 if app.selected_worktree != Some(idx) {
                     app.save_current_terminal();

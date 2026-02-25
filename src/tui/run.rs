@@ -200,12 +200,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     draw_viewer::draw_viewer(f, app, top_h[1]);
     draw_output::draw_output(f, app, convo_area);
 
-    // MCR approval dialog — rendered over convo pane after Claude exits during MCR
-    if app.mcr_session.as_ref().is_some_and(|m| m.approval_pending) {
-        draw_output::draw_mcr_approval(f, convo_area);
+    // RCR approval dialog — rendered over convo pane after Claude exits during RCR
+    if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
+        draw_output::draw_rcr_approval(f, convo_area);
     }
 
-    // Post-merge dialog — rendered over convo pane after successful squash merge or MCR accept
+    // Post-merge dialog — rendered over convo pane after successful squash merge or RCR accept
     if let Some(ref pmd) = app.post_merge_dialog {
         draw_output::draw_post_merge_dialog(f, convo_area, pmd);
     }

@@ -14,7 +14,7 @@ use crate::app::types::{
 use crate::claude::ClaudeProcess;
 
 use super::super::App;
-use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, SKIP_DIRS, load_health_scope, save_health_scope};
+use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, SKIP_DIRS, load_health_scope};
 
 /// Minimum line count for a file to be considered a "god file"
 const GOD_FILE_THRESHOLD: usize = 1000;
@@ -61,37 +61,6 @@ impl App {
             self.god_file_filter_dirs.insert(path);
         }
         self.invalidate_file_tree();
-    }
-
-    /// Exit health scope mode — persist the scope to `[healthscope]` in azufig.toml,
-    /// rescan with the user's custom directory scope, then reopen the health
-    /// panel with updated results on both tabs.
-    pub fn exit_god_file_scope_mode(&mut self) {
-        if let Some(ref project) = self.project {
-            save_health_scope(&project.path, &self.god_file_filter_dirs);
-        }
-        let god_files = self.scan_god_files_with_dirs(&self.god_file_filter_dirs.clone());
-        let (doc_entries, doc_score) = self.scan_documentation();
-        self.god_file_filter_mode = false;
-        self.god_file_filter_dirs.clear();
-
-        self.show_file_tree = false;
-        self.focus = crate::app::Focus::Worktrees;
-        let worktree_name = self.selected_worktree
-            .map(|i| self.worktrees[i].name().to_string())
-            .unwrap_or_default();
-        self.health_panel = Some(HealthPanel {
-            worktree_name,
-            tab: self.last_health_tab,
-            god_files,
-            god_selected: 0,
-            god_scroll: 0,
-            doc_entries,
-            doc_selected: 0,
-            doc_scroll: 0,
-            doc_score,
-            module_style_dialog: None,
-        });
     }
 
     /// Rescan god files + documentation using the given scope directories

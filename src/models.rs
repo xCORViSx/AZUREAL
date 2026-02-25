@@ -49,18 +49,6 @@ impl WorktreeStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "pending" => WorktreeStatus::Pending,
-            "running" => WorktreeStatus::Running,
-            "waiting" => WorktreeStatus::Waiting,
-            "stopped" => WorktreeStatus::Stopped,
-            "completed" => WorktreeStatus::Completed,
-            "failed" => WorktreeStatus::Failed,
-            _ => WorktreeStatus::Pending,
-        }
-    }
-
     pub fn symbol(&self) -> &'static str {
         match self {
             WorktreeStatus::Pending => "○",
@@ -131,19 +119,6 @@ pub enum OutputType {
     Hook,
 }
 
-impl OutputType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            OutputType::Stdout => "stdout",
-            OutputType::Stderr => "stderr",
-            OutputType::System => "system",
-            OutputType::Json => "json",
-            OutputType::Error => "error",
-            OutputType::Hook => "hook",
-        }
-    }
-}
-
 /// Git diff information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffInfo {
@@ -155,101 +130,11 @@ pub struct DiffInfo {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-/// Rebase state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RebaseState {
-    /// No rebase in progress
-    None,
-    /// Rebase is in progress (may have conflicts)
-    InProgress,
-    /// Rebase is paused due to conflicts
-    Conflicts,
-    /// Rebase completed successfully
-    Completed,
-    /// Rebase was aborted
-    Aborted,
-}
-
-impl RebaseState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            RebaseState::None => "none",
-            RebaseState::InProgress => "in_progress",
-            RebaseState::Conflicts => "conflicts",
-            RebaseState::Completed => "completed",
-            RebaseState::Aborted => "aborted",
-        }
-    }
-
-    pub fn symbol(&self) -> &'static str {
-        match self {
-            RebaseState::None => " ",
-            RebaseState::InProgress => "↻",
-            RebaseState::Conflicts => "⚠",
-            RebaseState::Completed => "✓",
-            RebaseState::Aborted => "✗",
-        }
-    }
-
-    pub fn color(&self) -> ratatui::style::Color {
-        use ratatui::style::Color;
-        match self {
-            RebaseState::None => Color::Gray,
-            RebaseState::InProgress => Color::Yellow,
-            RebaseState::Conflicts => Color::Red,
-            RebaseState::Completed => Color::Green,
-            RebaseState::Aborted => Color::Magenta,
-        }
-    }
-}
-
-/// Detailed rebase status information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RebaseStatus {
-    /// Current rebase state
-    pub state: RebaseState,
-    /// Branch being rebased onto (if rebasing)
-    pub onto_branch: Option<String>,
-    /// Original branch name (head being rebased)
-    pub head_name: Option<String>,
-    /// Current step number in rebase (1-indexed)
-    pub current_step: Option<usize>,
-    /// Total number of steps in rebase
-    pub total_steps: Option<usize>,
-    /// Files with conflicts (if any)
-    pub conflicted_files: Vec<String>,
-    /// Current commit being applied (short hash)
-    pub current_commit: Option<String>,
-    /// Current commit message being applied
-    pub current_commit_message: Option<String>,
-}
-
-impl Default for RebaseStatus {
-    fn default() -> Self {
-        Self {
-            state: RebaseState::None,
-            onto_branch: None,
-            head_name: None,
-            current_step: None,
-            total_steps: None,
-            conflicted_files: Vec::new(),
-            current_commit: None,
-            current_commit_message: None,
-        }
-    }
-}
-
 /// Result of a rebase operation
 #[derive(Debug, Clone)]
 pub enum RebaseResult {
-    /// Rebase completed successfully
-    Success,
-    /// Rebase has conflicts that need resolution
-    Conflicts(RebaseStatus),
     /// Rebase was aborted
     Aborted,
-    /// Rebase failed with an error
-    Failed(String),
-    /// Nothing to rebase (already up to date)
-    UpToDate,
+    /// Rebase failed with an error (message for future display)
+    Failed(#[allow(dead_code)] String),
 }

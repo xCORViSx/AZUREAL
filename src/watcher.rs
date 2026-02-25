@@ -20,7 +20,7 @@ pub enum WatchEvent {
     /// A file in the watched worktree was created/modified/deleted/renamed
     WorktreeChanged,
     /// The notify watcher failed — main thread should fall back to polling
-    WatcherFailed(String),
+    WatcherFailed(#[allow(dead_code)] String),
 }
 
 /// Commands sent from main thread → watcher thread

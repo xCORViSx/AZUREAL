@@ -161,12 +161,12 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                 let input = app.input.clone();
                 app.clear_input();
 
-                // MCR mode: route prompts to repo_root (main worktree), resume the
-                // MCR session, dismiss any pending approval dialog (user is interacting)
-                if let Some(ref mcr) = app.mcr_session {
-                    let cwd = mcr.repo_root.clone();
-                    let resume = mcr.session_id.clone();
-                    let branch = mcr.branch.clone();
+                // RCR mode: route prompts to the feature branch worktree where
+                // the rebase is happening, resume the RCR session
+                if let Some(ref rcr) = app.rcr_session {
+                    let cwd = rcr.worktree_path.clone();
+                    let resume = rcr.session_id.clone();
+                    let branch = rcr.branch.clone();
 
                     let prompt_text = format!("You: {}\n", input);
                     app.add_user_message(input.clone());
@@ -176,13 +176,13 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                     match claude_process.spawn(&cwd, &input, resume.as_deref()) {
                         Ok((rx, pid)) => {
                             let slot = pid.to_string();
-                            // Update MCR to track the new process
-                            if let Some(ref mut m) = app.mcr_session {
+                            // Update RCR to track the new process
+                            if let Some(ref mut m) = app.rcr_session {
                                 m.slot_id = slot;
                                 m.approval_pending = false;
                             }
                             app.register_claude(branch, pid, rx);
-                            app.set_status("[MCR] Running...");
+                            app.set_status("[RCR] Running...");
                         }
                         Err(e) => app.set_status(format!("Failed to start: {}", e)),
                     }

@@ -39,39 +39,32 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
 
-    // MCR approval dialog — highest priority modal (conflict resolution decision)
-    if let Some(ref mcr) = app.mcr_session {
-        if mcr.approval_pending {
+    // RCR approval dialog — highest priority modal (conflict resolution decision)
+    if let Some(ref rcr) = app.rcr_session {
+        if rcr.approval_pending {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => { accept_mcr(app); }
+                KeyCode::Char('y') | KeyCode::Enter => { accept_rcr(app); }
                 KeyCode::Char('n') => {
-                    // Abort the merge entirely — reset main to pre-merge HEAD,
-                    // undoing any commits Claude made during resolution
-                    let mcr = app.mcr_session.take().unwrap();
-                    if let Some(ref sid) = mcr.session_id {
-                        if let Some(path) = crate::config::claude_session_file(&mcr.repo_root, sid) {
+                    // Abort the rebase on the feature branch worktree,
+                    // restoring it to its pre-rebase state
+                    let rcr = app.rcr_session.take().unwrap();
+                    if let Some(ref sid) = rcr.session_id {
+                        if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {
                             let _ = std::fs::remove_file(path);
                         }
                     }
-                    if !mcr.pre_merge_head.is_empty() {
-                        let _ = std::process::Command::new("git")
-                            .args(["reset", "--hard", &mcr.pre_merge_head])
-                            .current_dir(&mcr.repo_root)
-                            .output();
-                    }
-                    // Pop any stash that squash_merge_into_main() pushed
                     let _ = std::process::Command::new("git")
-                        .args(["stash", "pop"])
-                        .current_dir(&mcr.repo_root)
+                        .args(["rebase", "--abort"])
+                        .current_dir(&rcr.worktree_path)
                         .output();
                     app.load_session_output();
                     app.update_title_session_name();
-                    app.set_status(format!("MCR cancelled — merge aborted for {}", mcr.display_name));
+                    app.set_status(format!("RCR cancelled — rebase aborted for {}", rcr.display_name));
                 }
                 KeyCode::Esc => {
                     // Dismiss dialog — user wants to review the convo first.
                     // ⌃a re-shows the dialog when they're ready to accept.
-                    if let Some(ref mut m) = app.mcr_session {
+                    if let Some(ref mut m) = app.rcr_session {
                         m.approval_pending = false;
                     }
                 }
@@ -81,12 +74,12 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         }
     }
 
-    // ⌃a re-shows the MCR approval dialog after dismissing with 'n'
-    // Only active when MCR session exists, Claude isn't running, and dialog isn't shown
+    // ⌃a re-shows the RCR approval dialog after dismissing with 'n'
+    // Only active when RCR session exists, Claude isn't running, and dialog isn't shown
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('a') {
-        if let Some(ref mcr) = app.mcr_session {
-            if !mcr.approval_pending && !app.running_sessions.contains(&mcr.slot_id) {
-                if let Some(ref mut m) = app.mcr_session {
+        if let Some(ref rcr) = app.rcr_session {
+            if !rcr.approval_pending && !app.running_sessions.contains(&rcr.slot_id) {
+                if let Some(ref mut m) = app.rcr_session {
                     m.approval_pending = true;
                 }
                 return Ok(());
@@ -107,12 +100,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                 let d = app.post_merge_dialog.take().unwrap();
                 match d.selected {
                     0 => {
-                        // Keep — rebase worktree onto main
-                        let _ = std::process::Command::new("git")
-                            .args(["rebase", "main"])
-                            .current_dir(&d.worktree_path)
-                            .output();
-                        app.set_status(format!("{} — rebased onto main", d.display_name));
+                        // Keep — worktree is already rebased (rebase happens before merge)
+                        app.set_status(format!("{} — kept", d.display_name));
                     }
                     1 => {
                         // Archive — remove worktree, keep branch
@@ -120,7 +109,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                             let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
                         }
                         app.set_status(format!("{} — archived", d.display_name));
-                        let _ = app.refresh_worktrees();
                     }
                     2 => {
                         // Delete — remove worktree + delete branch
@@ -129,10 +117,10 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                             let _ = crate::git::Git::delete_branch(&project.path, &d.branch);
                         }
                         app.set_status(format!("{} — deleted", d.display_name));
-                        let _ = app.refresh_worktrees();
                     }
                     _ => {}
                 }
+                let _ = app.refresh_worktrees();
             }
             _ => {}
         }
@@ -586,11 +574,7 @@ fn dispatch_nav_down(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_down(1); }
         Focus::Output => {
-            match app.view_mode {
-                crate::app::ViewMode::Output => { app.scroll_output_down(1); }
-                crate::app::ViewMode::Diff => { app.scroll_diff_down(1); }
-                _ => {}
-            }
+            app.scroll_output_down(1);
         }
         Focus::Worktrees => app.select_next_session(),
         Focus::FileTree => app.file_tree_next(),
@@ -605,11 +589,7 @@ fn dispatch_nav_up(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_up(1); }
         Focus::Output => {
-            match app.view_mode {
-                crate::app::ViewMode::Output => { app.scroll_output_up(1); }
-                crate::app::ViewMode::Diff => { app.scroll_diff_up(1); }
-                _ => {}
-            }
+            app.scroll_output_up(1);
         }
         Focus::Worktrees => app.select_prev_session(),
         Focus::FileTree => app.file_tree_prev(),
@@ -663,11 +643,7 @@ fn dispatch_page_down(app: &mut App) {
         Focus::Viewer => { app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2)); }
         Focus::Output => {
             let page = app.output_viewport_height.saturating_sub(2);
-            match app.view_mode {
-                crate::app::ViewMode::Output => { app.scroll_output_down(page); }
-                crate::app::ViewMode::Diff => { app.scroll_diff_down(page); }
-                _ => {}
-            }
+            app.scroll_output_down(page);
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_down((app.terminal_height as usize).saturating_sub(2));
@@ -681,11 +657,7 @@ fn dispatch_page_up(app: &mut App) {
         Focus::Viewer => { app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2)); }
         Focus::Output => {
             let page = app.output_viewport_height.saturating_sub(2);
-            match app.view_mode {
-                crate::app::ViewMode::Output => { app.scroll_output_up(page); }
-                crate::app::ViewMode::Diff => { app.scroll_diff_up(page); }
-                _ => {}
-            }
+            app.scroll_output_up(page);
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_up((app.terminal_height as usize).saturating_sub(2));
@@ -697,13 +669,7 @@ fn dispatch_page_up(app: &mut App) {
 fn dispatch_go_to_top(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.viewer_scroll = 0,
-        Focus::Output => {
-            match app.view_mode {
-                crate::app::ViewMode::Output => app.output_scroll = 0,
-                crate::app::ViewMode::Diff => app.diff_scroll = 0,
-                _ => {}
-            }
-        }
+        Focus::Output => { app.output_scroll = 0; }
         Focus::Worktrees => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
@@ -716,13 +682,7 @@ fn dispatch_go_to_top(app: &mut App) {
 fn dispatch_go_to_bottom(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.scroll_viewer_to_bottom(),
-        Focus::Output => {
-            match app.view_mode {
-                crate::app::ViewMode::Output => app.scroll_output_to_bottom(),
-                crate::app::ViewMode::Diff => app.scroll_diff_to_bottom(),
-                _ => {}
-            }
-        }
+        Focus::Output => { app.scroll_output_to_bottom(); }
         Focus::Worktrees => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
@@ -975,30 +935,47 @@ fn start_or_resume(app: &mut App) {
     }
 }
 
-/// Accept the MCR resolution — delete the temporary session file from
-/// `~/.claude/projects/<main-encoded>/<session-id>.jsonl`, clear MCR state,
-/// and restore normal convo pane borders + title.
-fn accept_mcr(app: &mut App) {
-    if let Some(mcr) = app.mcr_session.take() {
-        // Delete the MCR session file so it doesn't pollute main's session list
-        if let Some(ref sid) = mcr.session_id {
-            if let Some(path) = crate::config::claude_session_file(&mcr.repo_root, sid) {
+/// Accept the RCR resolution — delete the temporary session file, clear RCR
+/// state, and restore normal convo pane. If the rebase was triggered by a
+/// squash merge, auto-proceed with the merge (the user's original intent).
+fn accept_rcr(app: &mut App) {
+    if let Some(rcr) = app.rcr_session.take() {
+        // Delete the RCR session file so it doesn't pollute the session list
+        if let Some(ref sid) = rcr.session_id {
+            if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {
                 let _ = std::fs::remove_file(path);
             }
         }
-        // Restore convo pane, then show post-merge dialog
+        // Restore convo pane to the feature branch's normal session
         app.load_session_output();
         app.update_title_session_name();
-        let wt_path = app.current_worktree()
-            .and_then(|w| w.worktree_path.clone())
-            .unwrap_or_else(|| mcr.repo_root.clone());
-        app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
-            branch: mcr.branch.clone(),
-            display_name: mcr.display_name.clone(),
-            worktree_path: wt_path,
-            repo_root: mcr.repo_root,
-            selected: 0,
-        });
-        app.set_status(format!("MCR complete — {} merged", mcr.display_name));
+
+        if rcr.continue_with_merge {
+            // Rebase was part of squash merge — auto-proceed with the merge
+            match crate::git::Git::squash_merge_into_main(&rcr.repo_root, &rcr.branch) {
+                Ok(crate::git::SquashMergeResult::Success(msg)) => {
+                    app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
+                        branch: rcr.branch.clone(),
+                        display_name: rcr.display_name.clone(),
+                        worktree_path: rcr.worktree_path,
+                        selected: 0,
+                    });
+                    app.set_status(msg);
+                }
+                Ok(crate::git::SquashMergeResult::Conflict { .. }) => {
+                    // Shouldn't happen after a clean rebase, but handle gracefully
+                    app.set_status(format!(
+                        "Rebase resolved but merge still has conflicts for {} — try again from Git panel",
+                        rcr.display_name
+                    ));
+                }
+                Err(e) => {
+                    app.set_status(format!("Squash merge failed for {}: {}", rcr.display_name, e));
+                }
+            }
+        } else {
+            app.set_status(format!("Rebase complete — conflicts resolved for {}", rcr.display_name));
+        }
     }
 }
+

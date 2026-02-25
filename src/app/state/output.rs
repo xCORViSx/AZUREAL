@@ -21,13 +21,6 @@ impl App {
         }
     }
 
-    pub fn add_output(&mut self, chunk: String) {
-        let (events, _json) = self.event_parser.parse(&chunk);
-        self.display_events.extend(events);
-        self.invalidate_render_cache();
-        self.process_output_chunk(&chunk);
-    }
-
     /// Add a user message to the convo pane immediately on prompt submit.
     /// Pushes a real DisplayEvent::UserMessage into display_events so it
     /// renders persistently (no disappearing). Also stores the content as
@@ -46,7 +39,7 @@ impl App {
         // so without this the message would be invisible until Claude exits
         // and the session file is re-parsed.
         self.display_events.push(DisplayEvent::UserMessage {
-            uuid: String::new(),
+            _uuid: String::new(),
             content: content.clone(),
         });
         // Dedup marker: full re-parse (on Claude exit) will check this to

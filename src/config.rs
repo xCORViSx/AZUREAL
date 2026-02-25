@@ -57,22 +57,6 @@ impl Config {
         })
     }
 
-    /// Save config to the `[config]` section of global azufig (load-modify-save).
-    pub fn save(&self) -> Result<()> {
-        let mode = match self.default_permission_mode {
-            PermissionMode::Approve => "approve",
-            PermissionMode::Ignore => "ignore",
-            PermissionMode::Ask => "ask",
-        };
-        crate::azufig::update_global_azufig(|az| {
-            az.config.anthropic_api_key = self.anthropic_api_key.clone();
-            az.config.claude_executable = self.claude_executable.clone();
-            az.config.default_permission_mode = mode.to_string();
-            az.config.verbose = self.verbose;
-        });
-        Ok(())
-    }
-
     pub fn claude_executable(&self) -> &str {
         self.claude_executable.as_deref().unwrap_or("claude")
     }
@@ -100,11 +84,6 @@ pub fn project_data_dir() -> Option<PathBuf> {
     } else {
         None
     }
-}
-
-/// Get the config file path (~/.azureal/config)
-pub fn config_file_path() -> PathBuf {
-    config_dir().join("config")
 }
 
 /// Ensure the global config directory exists

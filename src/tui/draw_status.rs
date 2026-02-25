@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus, ViewMode};
+use crate::app::{App, Focus};
 use super::util::{truncate, AZURE};
 
 /// Draw the status bar at the bottom — shows worktree info, contextual help hints, and CPU/PID badge
@@ -62,8 +62,6 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
                     "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
                 }
             }
-            (Focus::Output, ViewMode::Diff) => "?:help  j/k:scroll  Esc:back",
-            (Focus::Output, ViewMode::Rebase) => "?:help  j/k:select  o:ours  t:theirs  c:continue  s:skip  A:abort  Enter:diff  Esc:back",
             (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
             (Focus::WorktreeCreation, _) => "Enter:create  Esc:cancel",

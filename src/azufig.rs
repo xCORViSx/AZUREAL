@@ -164,23 +164,6 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
     save_project_azufig(project_root, &azufig);
 }
 
-// ── Git config helpers (worktree-level) ──
-// Each worktree stores its own `[git]` section in `<worktree_path>/.azureal/azufig.toml`.
-// `auto-rebase = "yes"` enables auto-rebase on Claude exit for that worktree.
-
-/// Check if auto-rebase is enabled for a worktree by reading its local azufig.
-pub fn is_autorebase_enabled(worktree_path: &Path) -> bool {
-    let az = load_project_azufig(worktree_path);
-    az.git.get("auto-rebase").is_some_and(|v| v == "yes")
-}
-
-/// Set auto-rebase to "yes" for a specific worktree.
-pub fn set_autorebase(worktree_path: &Path, enabled: bool) {
-    update_project_azufig(worktree_path, |az| {
-        az.git.insert("auto-rebase".to_string(), if enabled { "yes" } else { "no" }.to_string());
-    });
-}
-
 // ── Internal TOML I/O ──
 
 /// Parse a TOML file into the given type. Returns None on any failure.

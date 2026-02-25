@@ -410,9 +410,9 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
 
         lines.push(Line::from(""));
 
-        // [MCR] naming convention hint — mirrors [DH] and [GFM] hints
+        // [RCR] naming convention hint — mirrors [DH] and [GFM] hints
         lines.push(Line::from(Span::styled(
-            "  Session will be prefixed [MCR] (Merge Conflict Resolution)",
+            "  Session will be prefixed [RCR] (Rebase Conflict Resolution)",
             Style::default().fg(Color::DarkGray),
         )));
         lines.push(Line::from(""));
@@ -427,7 +427,7 @@ pub fn draw_git_actions_panel(f: &mut Frame, app: &App) {
         let arrow_0 = if ov.selected == 0 { " ▸ " } else { "   " };
         let arrow_1 = if ov.selected == 1 { " ▸ " } else { "   " };
         lines.push(Line::from(Span::styled(format!("{}[y] Resolve with Claude", arrow_0), resolve_style)));
-        lines.push(Line::from(Span::styled(format!("{}[n] Abort merge", arrow_1), abort_style)));
+        lines.push(Line::from(Span::styled(format!("{}[n] Abort rebase", arrow_1), abort_style)));
 
         // Render with scroll and block
         let visible_h = dlg_h.saturating_sub(2) as usize;

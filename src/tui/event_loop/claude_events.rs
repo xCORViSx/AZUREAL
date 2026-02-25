@@ -18,7 +18,6 @@ pub fn handle_claude_event(slot_id: &str, event: ClaudeEvent, app: &mut App, cla
         ClaudeEvent::Started { pid } => app.handle_claude_started(slot_id, pid),
         ClaudeEvent::SessionId(claude_session_id) => app.set_claude_session_id(slot_id, claude_session_id),
         ClaudeEvent::Exited { code } => app.handle_claude_exited(slot_id, code),
-        ClaudeEvent::Error(e) => app.handle_claude_error(slot_id, e),
     }
 
     // Auto-send staged prompt after Claude exits

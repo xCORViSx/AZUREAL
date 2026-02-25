@@ -3,7 +3,6 @@
 use crate::git::Git;
 use crate::models::Worktree;
 
-use super::helpers::{generate_session_name, sanitize_for_branch};
 use super::App;
 
 impl App {
@@ -28,14 +27,6 @@ impl App {
             }
         }
         false
-    }
-
-    /// Whether a session at the given index passes the current sidebar filter.
-    fn session_matches_filter(&self, idx: usize) -> bool {
-        if self.sidebar_filter.is_empty() { return true; }
-        let filter = self.sidebar_filter.to_lowercase();
-        let names = self.load_all_session_names();
-        self.session_matches_filter_with_names(idx, &filter, &names)
     }
 
     pub fn select_next_session(&mut self) {
@@ -98,13 +89,6 @@ impl App {
                 self.invalidate_sidebar();
             }
         }
-    }
-
-    /// Create a new git worktree with a Claude session (name auto-generated from prompt)
-    pub fn create_new_worktree(&mut self, prompt: String) -> anyhow::Result<Worktree> {
-        let name = generate_session_name(&prompt);
-        let worktree_name = sanitize_for_branch(&name);
-        self.create_new_worktree_with_name(worktree_name, prompt)
     }
 
     /// Create a new git worktree with a custom name
@@ -182,17 +166,6 @@ impl App {
             self.load_session_output();
         }
         Ok(())
-    }
-
-    /// Load and cache session files for a branch from Claude's project directory
-    pub fn load_session_files(&mut self, branch_name: &str) {
-        let Some(session) = self.worktrees.iter().find(|s| s.branch_name == branch_name) else { return };
-        let Some(ref wt_path) = session.worktree_path else { return };
-        let files = crate::config::list_claude_sessions(wt_path);
-        self.session_files.insert(branch_name.to_string(), files);
-        // Initialize selection to 0 (latest) if not set
-        self.session_selected_file_idx.entry(branch_name.to_string()).or_insert(0);
-        self.invalidate_sidebar();
     }
 
     /// Select a specific session file by index

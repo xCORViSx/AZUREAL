@@ -110,15 +110,6 @@ impl App {
         // PTY stays alive - terminal_pty, terminal_writer, terminal_rx preserved
     }
 
-    /// Fully destroy terminal PTY (use when switching sessions or quitting)
-    pub fn destroy_terminal(&mut self) {
-        self.terminal_writer = None;
-        self.terminal_pty = None;
-        self.terminal_rx = None;
-        self.terminal_mode = false;
-        self.prompt_mode = false;
-    }
-
     /// Write bytes to terminal PTY
     pub fn write_to_terminal(&mut self, data: &[u8]) {
         if let Some(ref mut writer) = self.terminal_writer {
@@ -161,11 +152,6 @@ impl App {
         }
 
         output
-    }
-
-    /// Get total scrollback lines
-    pub fn terminal_scrollback_len(&self) -> usize {
-        self.terminal_parser.screen().scrollback()
     }
 
     /// Get terminal cursor position
@@ -268,14 +254,4 @@ impl App {
         }
     }
 
-    /// Check if current session has a terminal (saved or active)
-    pub fn session_has_terminal(&self) -> bool {
-        if self.terminal_pty.is_some() {
-            return true;
-        }
-        if let Some(session) = self.current_worktree() {
-            return self.worktree_terminals.contains_key(&session.branch_name);
-        }
-        false
-    }
 }

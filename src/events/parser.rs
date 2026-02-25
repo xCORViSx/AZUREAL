@@ -87,7 +87,7 @@ impl EventParser {
 
         if subtype == "init" {
             return Some(DisplayEvent::Init {
-                session_id: json.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                _session_id: json.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 cwd: json.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 model: json.get("model").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
             });
@@ -160,7 +160,7 @@ impl EventParser {
 
             events.extend(Self::extract_hooks_from_content(content));
             events.push(DisplayEvent::UserMessage {
-                uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                _uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 content: content.to_string(),
             });
         } else if let Some(arr) = content_val.as_array() {
@@ -188,7 +188,7 @@ impl EventParser {
                             events.extend(Self::extract_hooks_from_content(text));
                             if !text.is_empty() {
                                 events.push(DisplayEvent::UserMessage {
-                                    uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    _uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                                     content: text.to_string(),
                                 });
                             }
@@ -214,8 +214,8 @@ impl EventParser {
                 "text" => {
                     if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                         events.push(DisplayEvent::AssistantText {
-                            uuid: uuid.clone(),
-                            message_id: message_id.to_string(),
+                            _uuid: uuid.clone(),
+                            _message_id: message_id.to_string(),
                             text: text.to_string(),
                         });
                     }
@@ -230,7 +230,7 @@ impl EventParser {
                             .and_then(|v| v.as_str()).map(|s| s.to_string());
                         self.tool_calls.insert(tool_use_id.to_string(), (tool_name.to_string(), file_path.clone()));
                         events.push(DisplayEvent::ToolCall {
-                            uuid: uuid.clone(),
+                            _uuid: uuid.clone(),
                             tool_use_id: tool_use_id.to_string(),
                             tool_name: tool_name.to_string(),
                             file_path,
@@ -246,7 +246,7 @@ impl EventParser {
 
     fn parse_result_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
         Some(DisplayEvent::Complete {
-            session_id: json.get("session_id")?.as_str()?.to_string(),
+            _session_id: json.get("session_id")?.as_str()?.to_string(),
             success: !json.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false),
             duration_ms: json.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
             cost_usd: json.get("total_cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0),
@@ -313,8 +313,8 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::Init { session_id, cwd, model } => {
-                assert_eq!(session_id, "abc123");
+            DisplayEvent::Init { _session_id, cwd, model } => {
+                assert_eq!(_session_id, "abc123");
                 assert_eq!(cwd, "/test");
                 assert_eq!(model, "claude-3");
             }

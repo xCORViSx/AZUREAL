@@ -196,6 +196,7 @@ pub enum Action {
 
     // Dialogs
     Confirm,
+    #[allow(dead_code)] // Kept for match exhaustiveness in actions.rs dialog handler
     Cancel,
     DeleteSelected,
     EditSelected,
@@ -218,6 +219,7 @@ pub enum Action {
     // Git Actions Panel (modal)
     GitToggleFocus,
     GitSquashMerge,
+    GitRebase,
     GitPull,
     GitViewDiff,
     GitRefresh,
@@ -232,9 +234,6 @@ pub enum Action {
     ProjectsDelete,
     ProjectsRename,
     ProjectsInit,
-
-    // Dialog structural
-    DialogToggleScope,
 
     // Generic
     Escape,
@@ -512,7 +511,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 13] = [
+pub static GIT_ACTIONS: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -520,6 +519,7 @@ pub static GIT_ACTIONS: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Squash merge to main", Action::GitSquashMerge),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase onto main", Action::GitRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push", Action::GitPush),
@@ -768,8 +768,8 @@ pub fn lookup_git_actions_action(
 ) -> Option<Action> {
     for b in &GIT_ACTIONS {
         let skip = match b.action {
-            // Squash merge only available on feature branches (not main)
-            Action::GitSquashMerge if is_on_main || !actions_focused => true,
+            // Squash merge + rebase only available on feature branches (not main)
+            Action::GitSquashMerge | Action::GitRebase if is_on_main || !actions_focused => true,
             // Pull only available on main branch
             Action::GitPull if !is_on_main || !actions_focused => true,
             // Commit + push need actions focus
@@ -835,9 +835,12 @@ pub fn health_docs_hints() -> String {
 /// Git Actions panel — action key+description pairs for the action list labels.
 /// Context-aware: main branch shows pull+commit+push, feature shows squash-merge+commit+push.
 pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
-    let first = if is_on_main { Action::GitPull } else { Action::GitSquashMerge };
-    [first, Action::GitCommit, Action::GitPush]
-        .iter()
+    let actions: &[Action] = if is_on_main {
+        &[Action::GitPull, Action::GitCommit, Action::GitPush]
+    } else {
+        &[Action::GitSquashMerge, Action::GitRebase, Action::GitCommit, Action::GitPush]
+    };
+    actions.iter()
         .filter_map(|&a| {
             GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))
         })

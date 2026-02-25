@@ -10,14 +10,14 @@ use anyhow::Result;
 use crossterm::event;
 
 use crate::app::{App, Focus};
-use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay, McrSession, PostMergeDialog};
+use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog};
 use crate::claude::ClaudeProcess;
 use crate::git::{Git, SquashMergeResult};
 use super::keybindings::{lookup_git_actions_action, Action};
 
-/// Total number of action items in the actions section
-/// (3 git ops: squash-merge, commit, push)
-const ACTION_COUNT: usize = 3;
+/// Action count depends on context: main=3 (pull, commit, push),
+/// feature=4 (squash-merge, rebase, commit, push)
+fn action_count(is_on_main: bool) -> usize { if is_on_main { 3 } else { 4 } }
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
@@ -58,7 +58,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::NavDown => {
             if let Some(ref mut p) = app.git_actions_panel {
                 if p.actions_focused {
-                    if p.selected_action + 1 < ACTION_COUNT { p.selected_action += 1; }
+                    if p.selected_action + 1 < action_count(p.is_on_main) { p.selected_action += 1; }
                 } else if !p.changed_files.is_empty() && p.selected_file + 1 < p.changed_files.len() {
                     p.selected_file += 1;
                 }
@@ -81,30 +81,30 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         }
         Action::GoToBottom => {
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.actions_focused { p.selected_action = ACTION_COUNT.saturating_sub(1); }
+                if p.actions_focused { p.selected_action = action_count(p.is_on_main).saturating_sub(1); }
                 else if !p.changed_files.is_empty() { p.selected_file = p.changed_files.len() - 1; }
             }
         }
 
         // ── Git operations (only fire when actions_focused, enforced by lookup guard) ──
         Action::GitSquashMerge => { exec_squash_merge(app); }
+        Action::GitRebase => { exec_rebase(app); }
         Action::GitPull => { exec_pull(app); }
         Action::GitCommit => { exec_commit_start(app); }
         Action::GitPush => { exec_push(app); }
 
         // ── Enter/d: execute action by index (when focused) or open diff (file list) ──
-        // Index 0 is context-dependent: pull on main, squash-merge on feature branches.
+        // Index mapping: main=[pull,commit,push], feature=[squash-merge,rebase,commit,push]
         Action::Confirm => {
             let (focused, idx, on_main) = match app.git_actions_panel.as_ref() {
                 Some(p) => (p.actions_focused, p.selected_action, p.is_on_main),
                 None => return Ok(()),
             };
             if focused {
-                match idx {
-                    0 => if on_main { exec_pull(app) } else { exec_squash_merge(app) },
-                    1 => exec_commit_start(app),
-                    2 => exec_push(app),
-                    _ => {}
+                if on_main {
+                    match idx { 0 => exec_pull(app), 1 => exec_commit_start(app), 2 => exec_push(app), _ => {} }
+                } else {
+                    match idx { 0 => exec_squash_merge(app), 1 => exec_rebase(app), 2 => exec_commit_start(app), 3 => exec_push(app), _ => {} }
                 }
             } else {
                 open_file_diff(app);
@@ -157,11 +157,12 @@ fn open_file_diff(app: &mut App) {
     }
 }
 
-/// Squash-merge the current worktree's branch into main. On success, shows
-/// result message. On conflict, opens the conflict resolution overlay.
+/// Squash-merge the current worktree's branch into main. Rebases the feature
+/// branch onto main first to ensure a clean, linear merge. On success, shows
+/// result message. On conflict (rebase or merge), opens the conflict overlay.
 fn exec_squash_merge(app: &mut App) {
-    let (repo_root, branch, wt_path) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone()),
+    let (repo_root, branch, wt_path, main_branch) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone(), p.main_branch.clone()),
         None => return,
     };
     // Block squash merge when the feature branch has uncommitted changes —
@@ -172,6 +173,33 @@ fn exec_squash_merge(app: &mut App) {
             return;
         }
     }
+
+    // Rebase feature branch onto main BEFORE merging. This ensures the squash
+    // merge is clean and linear — conflicts are resolved here, not during merge.
+    match exec_rebase_inner(&wt_path, &main_branch) {
+        RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+            // Show conflict overlay — rebase in progress, RCR can resolve.
+            // continue_with_merge=true so squash merge auto-proceeds after resolution.
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = Some(GitConflictOverlay {
+                    conflicted_files: conflicted,
+                    auto_merged_files: auto_merged,
+                    scroll: 0,
+                    selected: 0,
+                    continue_with_merge: true,
+                });
+            }
+            return;
+        }
+        RebaseOutcome::Failed(msg) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("Rebase failed: {}", msg), true));
+            }
+            return;
+        }
+        RebaseOutcome::Rebased | RebaseOutcome::UpToDate => {} // proceed to merge
+    }
+
     match Git::squash_merge_into_main(&repo_root, &branch) {
         Ok(SquashMergeResult::Success(msg)) => {
             let display = branch.strip_prefix("azureal/").unwrap_or(&branch).to_string();
@@ -180,25 +208,139 @@ fn exec_squash_merge(app: &mut App) {
                 branch: branch.clone(),
                 display_name: display,
                 worktree_path: wt_path,
-                repo_root,
                 selected: 0,
             });
             app.set_status(msg);
         }
-        Ok(SquashMergeResult::Conflict { conflicted, auto_merged, raw_output }) => {
+        Ok(SquashMergeResult::Conflict { conflicted, auto_merged, .. }) => {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.conflict_overlay = Some(GitConflictOverlay {
                     conflicted_files: conflicted,
                     auto_merged_files: auto_merged,
-                    raw_output,
                     scroll: 0,
                     selected: 0,
+                    continue_with_merge: true,
                 });
             }
         }
         Err(e) => {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.result_message = Some((format!("{}", e), true));
+            }
+        }
+    }
+}
+
+/// Rebase outcome for the UI to display
+enum RebaseOutcome {
+    Rebased,
+    UpToDate,
+    /// Conflict — rebase is left in progress (NOT aborted) so RCR can resolve.
+    /// Contains (conflicted_files, auto_merged_files, raw_output).
+    Conflict { conflicted: Vec<String>, auto_merged: Vec<String>, _raw_output: String },
+    Failed(String),
+}
+
+/// Inner rebase logic — used by both manual rebase (r) and pre-merge rebase.
+/// No git fetch — caller is responsible for ensuring main is current.
+/// On conflict, leaves rebase in progress so RCR can resolve it.
+fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &str) -> RebaseOutcome {
+    // Check if already up to date
+    let base = std::process::Command::new("git")
+        .args(["merge-base", "HEAD", main_branch])
+        .current_dir(worktree_path)
+        .output();
+    let tip = std::process::Command::new("git")
+        .args(["rev-parse", main_branch])
+        .current_dir(worktree_path)
+        .output();
+    if let (Ok(b), Ok(t)) = (&base, &tip) {
+        if b.stdout == t.stdout { return RebaseOutcome::UpToDate; }
+    }
+
+    let output = match std::process::Command::new("git")
+        .args(["rebase", main_branch])
+        .current_dir(worktree_path)
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => return RebaseOutcome::Failed(e.to_string()),
+    };
+
+    if output.status.success() { return RebaseOutcome::Rebased; }
+
+    let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    let text = combined.trim();
+    if text.contains("CONFLICT") || text.contains("could not apply") {
+        // Parse conflict info — leave rebase in progress for RCR resolution
+        let mut conflicted = Vec::new();
+        let mut auto_merged = Vec::new();
+        for line in text.lines() {
+            if line.starts_with("CONFLICT") {
+                if let Some(path) = line.rsplit("Merge conflict in ").next() {
+                    conflicted.push(path.trim().to_string());
+                } else {
+                    conflicted.push(line.to_string());
+                }
+            } else if let Some(path) = line.strip_prefix("Auto-merging ") {
+                auto_merged.push(path.trim().to_string());
+            }
+        }
+        // If we couldn't parse specific files, get them from git diff
+        if conflicted.is_empty() {
+            if let Ok(diff) = Git::get_conflicted_files(worktree_path) {
+                conflicted = diff;
+            }
+        }
+        return RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output: text.to_string() };
+    }
+
+    RebaseOutcome::Failed(text.to_string())
+}
+
+/// Manual rebase action — rebase this worktree onto main (feature branches only).
+/// On conflict, shows the conflict overlay with RCR option (rebase stays in progress).
+fn exec_rebase(app: &mut App) {
+    let (wt_path, main_branch) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.worktree_path.clone(), p.main_branch.clone()),
+        None => return,
+    };
+    if let Some(ref p) = app.git_actions_panel {
+        if !p.changed_files.is_empty() {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some(("Commit or stash changes first before rebasing".into(), true));
+            }
+            return;
+        }
+    }
+    match exec_rebase_inner(&wt_path, &main_branch) {
+        RebaseOutcome::Rebased => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                refresh_changed_files(p);
+                p.result_message = Some(("Rebased onto main".to_string(), false));
+            }
+        }
+        RebaseOutcome::UpToDate => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some(("Already up to date with main".to_string(), false));
+            }
+        }
+        RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+            // Show conflict overlay — rebase is still in progress, RCR can resolve.
+            // continue_with_merge=false since this was a manual rebase, not squash merge.
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = Some(GitConflictOverlay {
+                    conflicted_files: conflicted,
+                    auto_merged_files: auto_merged,
+                    scroll: 0,
+                    selected: 0,
+                    continue_with_merge: false,
+                });
+            }
+        }
+        RebaseOutcome::Failed(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("Rebase failed: {}", e), true));
             }
         }
     }
@@ -496,17 +638,18 @@ fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
 }
 
 /// Handle input while the conflict resolution overlay is open.
-/// j/k or Up/Down navigate between "Resolve with Claude" and "Abort merge".
-/// Enter/y resolves, n/Esc aborts the merge and closes the overlay.
+/// j/k or Up/Down navigate between "Resolve with Claude" and "Abort rebase".
+/// Enter/y resolves, n/Esc aborts the rebase and closes the overlay.
 fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     // Extract what we need before the mutable borrow dance
-    let (sel, repo_root, branch, main_branch, conflicted, auto_merged) = match app.git_actions_panel.as_ref() {
+    let (sel, wt_path, repo_root, branch, conflicted, auto_merged, continue_merge) = match app.git_actions_panel.as_ref() {
         Some(p) => match p.conflict_overlay.as_ref() {
             Some(ov) => (
-                ov.selected, p.repo_root.clone(), p.worktree_name.clone(),
-                p.main_branch.clone(), ov.conflicted_files.clone(), ov.auto_merged_files.clone(),
+                ov.selected, p.worktree_path.clone(), p.repo_root.clone(),
+                p.worktree_name.clone(), ov.conflicted_files.clone(), ov.auto_merged_files.clone(),
+                ov.continue_with_merge,
             ),
             None => return Ok(()),
         },
@@ -533,20 +676,20 @@ fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: 
         // Enter — execute selected action
         (KeyModifiers::NONE, KeyCode::Enter) => {
             if sel == 0 {
-                spawn_conflict_claude(app, claude_process, &repo_root, &branch, &main_branch, &conflicted, &auto_merged);
+                spawn_conflict_claude(app, claude_process, &wt_path, &repo_root, &branch, &conflicted, &auto_merged, continue_merge);
             } else {
-                abort_merge(app, &repo_root);
+                abort_rebase(app, &wt_path);
             }
         }
 
         // y — quick shortcut to resolve with Claude
         (KeyModifiers::NONE, KeyCode::Char('y')) => {
-            spawn_conflict_claude(app, claude_process, &repo_root, &branch, &main_branch, &conflicted, &auto_merged);
+            spawn_conflict_claude(app, claude_process, &wt_path, &repo_root, &branch, &conflicted, &auto_merged, continue_merge);
         }
 
-        // n or Esc — abort merge and close overlay
+        // n or Esc — abort rebase and close overlay
         (KeyModifiers::NONE, KeyCode::Char('n')) | (KeyModifiers::NONE, KeyCode::Esc) => {
-            abort_merge(app, &repo_root);
+            abort_rebase(app, &wt_path);
         }
 
         _ => {}
@@ -554,33 +697,34 @@ fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: 
     Ok(())
 }
 
-/// Abort an in-progress merge, close the conflict overlay, show status
-fn abort_merge(app: &mut App, repo_root: &std::path::Path) {
-    let _ = Git::merge_abort(repo_root);
+/// Abort an in-progress rebase on the feature branch, close the overlay
+fn abort_rebase(app: &mut App, wt_path: &std::path::Path) {
+    let _ = Git::rebase_abort(wt_path);
     if let Some(ref mut p) = app.git_actions_panel {
         p.conflict_overlay = None;
-        p.result_message = Some(("Merge aborted".into(), false));
+        p.result_message = Some(("Rebase aborted".into(), false));
         refresh_changed_files(p);
     }
 }
 
-/// Spawn a streaming Claude session to resolve merge conflicts on main.
-/// Registers under the feature branch so the user immediately sees the
-/// convo output without navigating away from their current view.
+/// Spawn a streaming Claude session to resolve rebase conflicts on the
+/// feature branch worktree. Claude runs in the worktree directory and uses
+/// `git add` + `git rebase --continue` to complete the rebase.
 fn spawn_conflict_claude(
     app: &mut App,
     claude_process: &ClaudeProcess,
+    wt_path: &std::path::Path,
     repo_root: &std::path::Path,
     branch: &str,
-    _main_branch: &str,
     conflicted: &[String],
     auto_merged: &[String],
+    continue_with_merge: bool,
 ) {
-    // Build a prompt describing the conflict state and what Claude should do
+    // Build a prompt describing the rebase conflict state
     let display = branch.strip_prefix("azureal/").unwrap_or(branch);
     let mut prompt = format!(
-        "A squash merge of branch '{}' into main produced merge conflicts.\n\
-         Git left the working directory in a partially-merged state.\n\n",
+        "Rebasing branch '{}' onto main produced merge conflicts.\n\
+         Git left the working directory in a partially-rebased state.\n\n",
         display
     );
     prompt.push_str(&format!("Conflicted files ({}):\n", conflicted.len()));
@@ -594,41 +738,31 @@ fn spawn_conflict_claude(
          1. Read each conflicted file — look for <<<<<<< / ======= / >>>>>>> markers\n\
          2. Edit each file to keep the correct combined content, removing all markers\n\
          3. Stage resolved files: git add <files>\n\
-         4. Commit: git commit -m \"feat: merge "
-    );
-    prompt.push_str(display);
-    prompt.push_str(
-        " into main\"\n\
-         5. Verify with: git status\n\n\
+         4. Continue the rebase: git rebase --continue\n\
+         5. If more conflicts appear, repeat steps 1-4 until the rebase completes\n\
+         6. Verify with: git status\n\n\
          Ask me if any conflict is ambiguous."
     );
 
-    // Capture HEAD on main before Claude touches anything — needed for abort
-    let pre_merge_head = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    match claude_process.spawn(repo_root, &prompt, None) {
+    match claude_process.spawn(wt_path, &prompt, None) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
-            app.pending_session_names.push((slot.clone(), format!("[MCR] {}", display)));
+            app.pending_session_names.push((slot.clone(), format!("[RCR] {}", display)));
             // Register under feature branch so output appears in the current view
             app.register_claude(branch.to_string(), pid, rx);
-            // Enter MCR mode — green borders, routed prompts, approval dialog on exit
-            app.mcr_session = Some(McrSession {
+            // Enter RCR mode — green borders, routed prompts, approval dialog on exit
+            app.rcr_session = Some(RcrSession {
                 branch: branch.to_string(),
                 display_name: display.to_string(),
+                worktree_path: wt_path.to_path_buf(),
                 repo_root: repo_root.to_path_buf(),
                 slot_id: slot,
                 session_id: None,
                 approval_pending: false,
-                pre_merge_head: pre_merge_head.clone(),
+                continue_with_merge,
             });
-            app.title_session_name = format!("[MCR] {}", display);
-            // Clear convo pane so MCR starts as a visually fresh session
+            app.title_session_name = format!("[RCR] {}", display);
+            // Clear convo pane so RCR starts as a visually fresh session
             app.display_events.clear();
             app.output_lines.clear();
             app.output_buffer.clear();

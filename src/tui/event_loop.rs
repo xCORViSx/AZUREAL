@@ -268,9 +268,8 @@ pub async fn run_app(
             needs_redraw = true;
         }
 
-        // Interactive sessions + timer-based housekeeping
+        // Timer-based housekeeping
         if now_poll.duration_since(last_session_poll) >= min_poll_interval {
-            if app.poll_interactive_sessions() { needs_redraw = true; }
             last_session_poll = now_poll;
         }
 

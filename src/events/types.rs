@@ -1,6 +1,10 @@
 //! Raw Claude Code stream-json event types
 //!
 //! Serde structs for deserializing the JSON events from `claude -p --output-format stream-json`.
+//! Fields are populated by serde deserialization but not all are read yet — allow dead_code
+//! to suppress warnings until we consume more of the parsed structure.
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

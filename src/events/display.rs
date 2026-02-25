@@ -7,7 +7,7 @@
 pub enum DisplayEvent {
     /// System initialization
     Init {
-        session_id: String,
+        _session_id: String,
         cwd: String,
         model: String,
     },
@@ -18,7 +18,7 @@ pub enum DisplayEvent {
     },
     /// User's message
     UserMessage {
-        uuid: String,
+        _uuid: String,
         content: String,
     },
     /// Slash command (e.g., /compact, /crt)
@@ -36,13 +36,13 @@ pub enum DisplayEvent {
     },
     /// Assistant text response
     AssistantText {
-        uuid: String,
-        message_id: String,
+        _uuid: String,
+        _message_id: String,
         text: String,
     },
     /// Tool being called
     ToolCall {
-        uuid: String,
+        _uuid: String,
         tool_use_id: String,
         tool_name: String,
         /// Extracted file path if applicable
@@ -61,14 +61,10 @@ pub enum DisplayEvent {
     },
     /// Session complete
     Complete {
-        session_id: String,
+        _session_id: String,
         success: bool,
         duration_ms: u64,
         cost_usd: f64,
-    },
-    /// Error
-    Error {
-        message: String,
     },
     /// Filtered out (used for rewound/edited messages that were superseded)
     Filtered,

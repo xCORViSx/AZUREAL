@@ -454,7 +454,7 @@ fn parse_user_event(
 
         *last_user_msg = Some((events.len(), timestamp));
         events.push((timestamp, DisplayEvent::UserMessage {
-            uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+            _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
             content: content.to_string(),
         }));
     } else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
@@ -651,8 +651,8 @@ fn parse_assistant_event(
                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
                     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_text_blocks += 1);
                     events.push((timestamp, DisplayEvent::AssistantText {
-                        uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                        message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
+                        _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                        _message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
                         text: text.to_string(),
                     }));
                 }
@@ -668,7 +668,7 @@ fn parse_assistant_event(
                 pending_tools.insert(tool_id.clone());
 
                 events.push((timestamp, DisplayEvent::ToolCall {
-                    uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+                    _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
                     tool_use_id: tool_id,
                     tool_name,
                     file_path,
@@ -689,7 +689,7 @@ fn parse_result_event(
     if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
         let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
         events.push((timestamp, DisplayEvent::Complete {
-            session_id: json.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            _session_id: json.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
             duration_ms: duration as u64,
             cost_usd: cost,
             success: true,

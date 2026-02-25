@@ -35,7 +35,6 @@ impl App {
         // Remove slot from all process-tracking maps
         self.running_sessions.remove(slot_id);
         self.claude_receivers.remove(slot_id);
-        self.interactive_sessions.remove(slot_id);
         if let Some(c) = code {
             self.claude_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -66,20 +65,20 @@ impl App {
 
         self.invalidate_sidebar();
 
-        // MCR exit intercept — when the MCR Claude process exits, show the approval
+        // RCR exit intercept — when the RCR Claude process exits, show the approval
         // dialog instead of re-parsing (which would clobber the streaming output the
         // user is currently viewing). The session file lives under main's path, not
         // the feature branch's, so a normal re-parse would load the wrong data.
-        if let Some(ref mut mcr) = self.mcr_session {
-            if mcr.slot_id == slot_id {
-                mcr.approval_pending = true;
+        if let Some(ref mut rcr) = self.rcr_session {
+            if rcr.slot_id == slot_id {
+                rcr.approval_pending = true;
                 let display = branch.as_deref().unwrap_or(slot_id);
                 let exit_str = match code {
                     Some(0) => "finished".to_string(),
                     Some(c) => format!("exited: {}", c),
                     None => "exited".to_string(),
                 };
-                self.set_status(format!("[MCR] {} — {}", display, exit_str));
+                self.set_status(format!("[RCR] {} — {}", display, exit_str));
                 return;
             }
         }
@@ -330,16 +329,6 @@ impl App {
         }
     }
 
-    pub fn handle_claude_error(&mut self, slot_id: &str, error: String) {
-        // Only display errors from the active slot
-        let is_viewing = self.current_worktree().map(|s| {
-            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
-        }).unwrap_or(false);
-        if is_viewing { self.add_output(format!("Error: {}", error)); }
-        let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
-        self.set_status(format!("{}: {}", branch, error));
-    }
-
     /// Register a newly spawned Claude process. The PID is used as the slot key.
     /// Newest spawn becomes the active slot (its output appears in convo pane).
     pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<ClaudeEvent>) {
@@ -354,13 +343,13 @@ impl App {
     }
 
     /// Store Claude's real session UUID, keyed by slot_id (PID string).
-    /// Also propagates to McrSession if this slot is the active MCR process.
+    /// Also propagates to RcrSession if this slot is the active RCR process.
     pub fn set_claude_session_id(&mut self, slot_id: &str, claude_session_id: String) {
         self.check_pending_session_name(slot_id, &claude_session_id);
-        // Keep MCR session_id in sync so we can --resume and clean up the file
-        if let Some(ref mut mcr) = self.mcr_session {
-            if mcr.slot_id == slot_id {
-                mcr.session_id = Some(claude_session_id.clone());
+        // Keep RCR session_id in sync so we can --resume and clean up the file
+        if let Some(ref mut rcr) = self.rcr_session {
+            if rcr.slot_id == slot_id {
+                rcr.session_id = Some(claude_session_id.clone());
             }
         }
         self.claude_session_ids.insert(slot_id.to_string(), claude_session_id);
@@ -376,44 +365,6 @@ impl App {
             .or_else(|| self.claude_session_ids.get(branch_name))
     }
 
-    pub fn poll_interactive_sessions(&mut self) -> bool {
-        let current_branch = self.current_worktree().map(|s| s.branch_name.clone());
-        let Some(branch_name) = current_branch else { return false };
-
-        let events = if let Some(interactive) = self.interactive_sessions.get_mut(&branch_name) {
-            interactive.poll_events()
-        } else {
-            return false;
-        };
-
-        if events.is_empty() { return false; }
-
-        for event in &events {
-            match event {
-                DisplayEvent::ToolCall { tool_use_id, .. } => {
-                    self.pending_tool_calls.insert(tool_use_id.clone());
-                }
-                DisplayEvent::ToolResult { tool_use_id, content, .. } => {
-                    self.pending_tool_calls.remove(tool_use_id);
-                    let lower = content.to_lowercase();
-                    if lower.contains("error:") || lower.contains("failed")
-                        || lower.starts_with("error") || content.contains("ENOENT")
-                        || content.contains("permission denied") {
-                        self.failed_tool_calls.insert(tool_use_id.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        self.display_events.extend(events);
-        self.invalidate_render_cache();
-        true
-    }
-
-    pub fn cleanup_interactive_session(&mut self, branch_name: &str) {
-        self.interactive_sessions.remove(branch_name);
-    }
 }
 
 /// Parse TodoWrite input JSON into TodoItem vec.

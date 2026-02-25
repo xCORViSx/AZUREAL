@@ -1,9 +1,9 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode};
+use crate::app::types::{BranchDialog, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker};
 use crate::config::load_projects;
 use crate::git::Git;
-use crate::models::{Project, RebaseStatus};
+use crate::models::Project;
 
 use super::App;
 
@@ -65,20 +65,6 @@ impl App {
         self.focus = Focus::Worktrees;
     }
 
-    // Diff view - loads git diff into Viewer pane
-    pub fn load_diff(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_worktree() {
-            if let Some(ref wt_path) = session.worktree_path {
-                if let Some(project) = self.current_project() {
-                    let diff = Git::get_diff(wt_path, &project.main_branch)?;
-                    self.load_diff_into_viewer(&diff.diff_text, Some(session.name().to_string()));
-                    return Ok(());
-                }
-            }
-        }
-        anyhow::bail!("No active session with worktree")
-    }
-
     /// Load diff content into the Viewer pane
     pub fn load_diff_into_viewer(&mut self, diff_text: &str, title: Option<String>) {
         self.viewer_content = Some(diff_text.to_string());
@@ -134,12 +120,12 @@ impl App {
         });
     }
 
-    /// Close the Git Actions panel. If a conflict overlay is open (dirty merge
-    /// state on main), abort the merge first to leave the repo clean.
+    /// Close the Git Actions panel. If a conflict overlay is open (in-progress
+    /// rebase on the feature branch), abort the rebase to leave the branch clean.
     pub fn close_git_actions_panel(&mut self) {
         if let Some(ref panel) = self.git_actions_panel {
             if panel.conflict_overlay.is_some() {
-                let _ = Git::merge_abort(&panel.repo_root);
+                let _ = Git::rebase_abort(&panel.worktree_path);
             }
         }
         self.git_actions_panel = None;
@@ -315,40 +301,6 @@ impl App {
         self.focus = Focus::Worktrees;
         self.load_session_output();
         self.invalidate_sidebar();
-    }
-
-    // Rebase status
-    pub fn set_rebase_status(&mut self, status: RebaseStatus) {
-        self.rebase_status = Some(status);
-        self.selected_conflict = if self.rebase_status.as_ref().is_some_and(|s| !s.conflicted_files.is_empty()) { Some(0) } else { None };
-        self.view_mode = ViewMode::Rebase;
-        self.focus = Focus::Output;
-    }
-
-    pub fn clear_rebase_status(&mut self) {
-        self.rebase_status = None;
-        self.selected_conflict = None;
-        if self.view_mode == ViewMode::Rebase { self.view_mode = ViewMode::Output; }
-    }
-
-    pub fn select_next_conflict(&mut self) {
-        if let Some(ref status) = self.rebase_status {
-            if let Some(idx) = self.selected_conflict {
-                if idx + 1 < status.conflicted_files.len() { self.selected_conflict = Some(idx + 1); }
-            }
-        }
-    }
-
-    pub fn select_prev_conflict(&mut self) {
-        if let Some(idx) = self.selected_conflict {
-            if idx > 0 { self.selected_conflict = Some(idx - 1); }
-        }
-    }
-
-    pub fn current_conflict_file(&self) -> Option<&str> {
-        self.rebase_status.as_ref().and_then(|status| {
-            self.selected_conflict.and_then(|idx| status.conflicted_files.get(idx).map(|s| s.as_str()))
-        })
     }
 
     // Run commands
@@ -669,7 +621,6 @@ impl App {
                 { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
             }
             self.claude_receivers.remove(slot);
-            self.interactive_sessions.remove(slot);
         }
         self.branch_slots.clear();
         self.active_slot.clear();

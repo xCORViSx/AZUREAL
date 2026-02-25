@@ -84,34 +84,6 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
     spans
 }
 
-/// Parse a markdown table row into styled spans with box drawing
-pub fn parse_table_row(line: &str, is_separator: bool) -> Vec<Span<'static>> {
-    if is_separator {
-        let cells: Vec<&str> = line.split('|').filter(|s| !s.is_empty()).collect();
-        let mut result = vec![Span::styled("├", Style::default().fg(Color::DarkGray))];
-        for (i, cell) in cells.iter().enumerate() {
-            let width = cell.len();
-            result.push(Span::styled("─".repeat(width), Style::default().fg(Color::DarkGray)));
-            if i < cells.len() - 1 {
-                result.push(Span::styled("┼", Style::default().fg(Color::DarkGray)));
-            }
-        }
-        result.push(Span::styled("┤", Style::default().fg(Color::DarkGray)));
-        result
-    } else {
-        let cells: Vec<&str> = line.split('|').collect();
-        let mut result = vec![Span::styled("│", Style::default().fg(Color::DarkGray))];
-        for (i, cell) in cells.iter().enumerate() {
-            if i == 0 && cell.is_empty() { continue; }
-            if i == cells.len() - 1 && cell.is_empty() { continue; }
-            let trimmed = cell.trim();
-            result.extend(parse_markdown_spans(trimmed, Style::default().fg(Color::White)));
-            result.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
-        }
-        result
-    }
-}
-
 /// Check if a line is a markdown table separator
 pub fn is_table_separator(line: &str) -> bool {
     let trimmed = line.trim();

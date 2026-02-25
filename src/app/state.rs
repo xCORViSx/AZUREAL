@@ -38,5 +38,3 @@ pub use crate::app::types::FileTreeEntry;
 // Re-export App, todo types, and DeferredAction as public
 pub use app::{App, DeferredAction, TodoItem, TodoStatus};
 
-// Re-export helper functions for external use (used by sessions.rs)
-pub(crate) use helpers::{generate_session_name, sanitize_for_branch};

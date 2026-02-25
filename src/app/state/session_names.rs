@@ -16,13 +16,6 @@ impl App {
         });
     }
 
-    /// Get the custom name for a session ID (if one exists)
-    pub fn get_session_name(&self, session_id: &str) -> Option<String> {
-        let project = self.project.as_ref()?;
-        let az = crate::azufig::load_project_azufig(&project.path);
-        az.sessions.get(session_id).cloned()
-    }
-
     /// Load all custom session name mappings (session_id → custom_name)
     pub fn load_all_session_names(&self) -> HashMap<String, String> {
         let Some(ref project) = self.project else { return HashMap::new() };

@@ -206,9 +206,6 @@ fn render_display_events_with_state(
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
                 render_complete(&mut lines, *duration_ms, *cost_usd, *success);
             }
-            DisplayEvent::Error { message } => {
-                render_error(&mut lines, message);
-            }
             DisplayEvent::Filtered => {}
         }
     }
@@ -412,17 +409,6 @@ fn render_complete(lines: &mut Vec<Line<'static>>, duration_ms: u64, cost_usd: f
         Span::styled(format!(" {:.1}s ", duration_ms as f64 / 1000.0), Style::default().fg(Color::White)),
         Span::styled(format!("${:.4}", cost_usd), Style::default().fg(Color::Yellow)),
     ]).alignment(Alignment::Center));
-    lines.push(Line::from(""));
-}
-
-fn render_error(lines: &mut Vec<Line<'static>>, message: &str) {
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled(" ✗ Error ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD)),
-    ]).alignment(Alignment::Center));
-    for line in message.lines() {
-        lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::Red))).alignment(Alignment::Center));
-    }
     lines.push(Line::from(""));
 }
 

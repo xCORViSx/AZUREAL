@@ -35,28 +35,6 @@ impl Git {
         Ok(branches)
     }
 
-    /// List remote branches (without remote prefix)
-    pub fn list_remote_branches(repo_path: &Path) -> Result<Vec<String>> {
-        let _ = Command::new("git")
-            .args(["fetch", "--all", "--prune"])
-            .current_dir(repo_path)
-            .output();
-
-        let output = Command::new("git")
-            .args(["branch", "-r", "--format=%(refname:short)"])
-            .current_dir(repo_path)
-            .output()
-            .context("Failed to list remote branches")?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let branches: Vec<String> = stdout.lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
-            .collect();
-
-        Ok(branches)
-    }
-
     /// List remote branches from cache (no network fetch — instant, won't block UI)
     pub fn list_remote_branches_cached(repo_path: &Path) -> Result<Vec<String>> {
         let output = Command::new("git")
@@ -84,40 +62,23 @@ impl Git {
             if let Ok(branch) = Self::current_branch(path) { checked_out.push(branch); }
         }
 
-        // Local branches first (checked out ones will be marked in UI)
-        let mut all: Vec<String> = Self::list_local_branches(repo_path)?;
+        // Local branches first, excluding main/master (always the base repo root)
+        let mut all: Vec<String> = Self::list_local_branches(repo_path)?
+            .into_iter()
+            .filter(|b| b != "main" && b != "master")
+            .collect();
 
-        // Append remote branches that don't have a local equivalent
+        // Append remote branches that don't have a local equivalent (skip main/master)
         let remote = Self::list_remote_branches_cached(repo_path)?;
         for remote_branch in remote {
             let local_name = remote_branch.split('/').skip(1).collect::<Vec<_>>().join("/");
+            if local_name == "main" || local_name == "master" { continue; }
             if !all.contains(&local_name) && !all.contains(&remote_branch) {
                 all.push(remote_branch);
             }
         }
 
         Ok((all, checked_out))
-    }
-
-    /// Get number of commits ahead/behind main branch
-    pub fn get_ahead_behind(worktree_path: &Path, main_branch: &str) -> Result<(usize, usize)> {
-        let output = Command::new("git")
-            .args(["rev-list", "--left-right", "--count", &format!("{}...HEAD", main_branch)])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to get ahead/behind count")?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let parts: Vec<&str> = stdout.split_whitespace().collect();
-            if parts.len() == 2 {
-                let behind = parts[0].parse().unwrap_or(0);
-                let ahead = parts[1].parse().unwrap_or(0);
-                return Ok((ahead, behind));
-            }
-        }
-
-        Ok((0, 0))
     }
 
     /// Delete a branch

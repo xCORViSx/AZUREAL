@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 
 use crate::config::ProjectEntry;
-use crate::models::WorktreeStatus;
 
 /// Viewer pane display mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -100,83 +99,9 @@ impl BranchDialog {
     }
 }
 
-/// Context menu for session actions
-#[derive(Debug, Clone)]
-pub struct ContextMenu {
-    pub actions: Vec<WorktreeAction>,
-    pub selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorktreeAction {
-    Start,
-    Stop,
-    Archive,
-    Delete,
-    ViewDiff,
-    OpenInEditor,
-    CopyWorktreePath,
-}
-
-impl WorktreeAction {
-    pub fn label(&self) -> &'static str {
-        match self {
-            WorktreeAction::Start => "Start/Resume Session",
-            WorktreeAction::Stop => "Stop Session",
-            WorktreeAction::Archive => "Archive Session",
-            WorktreeAction::Delete => "Delete Session",
-            WorktreeAction::ViewDiff => "View Diff",
-            WorktreeAction::OpenInEditor => "Open in Editor",
-            WorktreeAction::CopyWorktreePath => "Copy Worktree Path",
-        }
-    }
-
-    pub fn key_hint(&self) -> &'static str {
-        match self {
-            WorktreeAction::Start => "Enter",
-            WorktreeAction::Stop => "s",
-            WorktreeAction::Archive => "a",
-            WorktreeAction::Delete => "D",
-            WorktreeAction::ViewDiff => "d",
-            WorktreeAction::OpenInEditor => "e",
-            WorktreeAction::CopyWorktreePath => "c",
-        }
-    }
-
-    pub fn available_for_status(status: WorktreeStatus) -> Vec<WorktreeAction> {
-        match status {
-            WorktreeStatus::Pending | WorktreeStatus::Stopped | WorktreeStatus::Completed => vec![
-                WorktreeAction::Start,
-                WorktreeAction::ViewDiff,
-                WorktreeAction::OpenInEditor,
-                WorktreeAction::CopyWorktreePath,
-                WorktreeAction::Archive,
-                WorktreeAction::Delete,
-            ],
-            WorktreeStatus::Running | WorktreeStatus::Waiting => vec![
-                WorktreeAction::Stop,
-                WorktreeAction::ViewDiff,
-                WorktreeAction::OpenInEditor,
-                WorktreeAction::CopyWorktreePath,
-            ],
-            WorktreeStatus::Failed => vec![
-                WorktreeAction::Start,
-                WorktreeAction::ViewDiff,
-                WorktreeAction::OpenInEditor,
-                WorktreeAction::CopyWorktreePath,
-                WorktreeAction::Archive,
-                WorktreeAction::Delete,
-            ],
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Output,
-    Diff,
-    Messages,
-    Rebase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -467,34 +392,39 @@ pub struct GitConflictOverlay {
     pub conflicted_files: Vec<String>,
     /// Files that git auto-merged cleanly
     pub auto_merged_files: Vec<String>,
-    /// Full raw git output for reference
-    pub raw_output: String,
     /// Scroll offset for the file list display
     pub scroll: usize,
-    /// Selected action: 0 = "Resolve with Claude", 1 = "Abort merge"
+    /// Selected action: 0 = "Resolve with Claude", 1 = "Abort rebase"
     pub selected: usize,
+    /// When true, auto-proceed with squash merge after conflict resolution.
+    /// Set when the rebase was triggered by exec_squash_merge().
+    pub continue_with_merge: bool,
 }
 
-/// Merge Conflict Resolution session state. Tracks an active MCR flow so the
-/// convo pane routes prompts to the correct working directory (repo root, not
-/// feature branch worktree), shows green borders, and displays the approval
-/// dialog after Claude exits.
+/// Merge Conflict Resolution session state. Tracks an active RCR flow so the
+/// convo pane routes prompts to the correct working directory (feature branch
+/// worktree), shows green borders, and displays the approval dialog after
+/// Claude exits. RCR resolves rebase conflicts on the feature branch — Claude
+/// runs in the worktree directory, not repo root.
 #[derive(Debug)]
-pub struct McrSession {
-    /// Feature branch name this MCR is resolving (e.g. "azureal/health")
+pub struct RcrSession {
+    /// Feature branch name this RCR is resolving (e.g. "azureal/health")
     pub branch: String,
     /// Display name for the title (branch without "azureal/" prefix)
     pub display_name: String,
-    /// Repo root path (main worktree) — Claude's working directory during MCR
+    /// Feature branch worktree path — Claude's working directory during RCR
+    pub worktree_path: std::path::PathBuf,
+    /// Repo root path (main worktree) — for session file cleanup
     pub repo_root: std::path::PathBuf,
-    /// Slot ID (PID string) of the current MCR Claude process
+    /// Slot ID (PID string) of the current RCR Claude process
     pub slot_id: String,
     /// Claude API session UUID (set when SessionId event arrives, used for --resume + cleanup)
     pub session_id: Option<String>,
     /// True when Claude has exited and we're awaiting user approval
     pub approval_pending: bool,
-    /// HEAD commit hash on main BEFORE the merge — used to reset on abort
-    pub pre_merge_head: String,
+    /// When true, auto-proceed with squash merge after rebase RCR completes.
+    /// Set when the rebase was triggered by exec_squash_merge(), not manual rebase.
+    pub continue_with_merge: bool,
 }
 
 /// Post-merge dialog shown after a successful squash merge. Asks the user
@@ -508,8 +438,6 @@ pub struct PostMergeDialog {
     pub display_name: String,
     /// Worktree path on disk (needed for archive/delete)
     pub worktree_path: std::path::PathBuf,
-    /// Repo root (main worktree) for running git commands
-    pub repo_root: std::path::PathBuf,
     /// Currently selected option: 0=Keep, 1=Archive, 2=Delete
     pub selected: usize,
 }
@@ -544,8 +472,8 @@ pub struct GitActionsPanel {
     /// Commit message overlay — shown when `c` is pressed in the actions list.
     /// Claude generates a conventional commit message from `git diff --staged`.
     pub commit_overlay: Option<GitCommitOverlay>,
-    /// Conflict resolution overlay — shown when squash merge hits conflicts.
-    /// Offers Claude-assisted resolution or merge abort.
+    /// Conflict resolution overlay — shown when rebase hits conflicts.
+    /// Offers Claude-assisted resolution or rebase abort.
     pub conflict_overlay: Option<GitConflictOverlay>,
 }
 

@@ -86,7 +86,7 @@ impl Git {
                 if let (Some(path), Some(commit)) = (current_path.take(), current_commit.take()) {
                     let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
                         || path == repo_path;
-                    worktrees.push(WorktreeInfo { path, branch: current_branch.take(), commit, is_main });
+                    worktrees.push(WorktreeInfo { path, branch: current_branch.take(), _commit: commit, is_main });
                 }
                 current_path = Some(std::path::PathBuf::from(path));
             } else if let Some(commit) = line.strip_prefix("HEAD ") {
@@ -99,7 +99,7 @@ impl Git {
         if let (Some(path), Some(commit)) = (current_path, current_commit) {
             let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
                 || path == repo_path;
-            worktrees.push(WorktreeInfo { path, branch: current_branch, commit, is_main });
+            worktrees.push(WorktreeInfo { path, branch: current_branch, _commit: commit, is_main });
         }
 
         Ok(worktrees)
