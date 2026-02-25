@@ -9,7 +9,6 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus};
-use super::keybindings;
 use super::util::{truncate, GIT_BROWN, AZURE};
 
 /// Draw the status bar at the bottom — shows worktree info, contextual help hints, and CPU/PID badge
@@ -17,20 +16,27 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     // Sample CPU usage (~1s interval, cheap getrusage delta)
     app.update_cpu_usage();
 
-    // Git panel mode — show git-specific status bar
+    // Git panel mode — minimal status bar (hints are in the git status box title)
     if let Some(ref panel) = app.git_actions_panel {
-        let mut spans: Vec<Span> = Vec::new();
-        if let Some((ref msg, is_error)) = panel.result_message {
-            let color = if is_error { Color::Red } else { Color::Green };
-            spans.push(Span::styled(format!(" {} ", msg), Style::default().fg(color)));
-        } else {
-            let footer = keybindings::git_actions_footer();
-            spans.push(Span::styled(
-                format!(" Git: {} {}", panel.worktree_name, footer),
-                Style::default().fg(GIT_BROWN),
-            ));
-        }
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
+        let badge_color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
+        let badge_width = badge_text.len() as u16;
+
+        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        let left = Paragraph::new(Line::from(Span::styled(
+            format!(" Git: {} ", panel.worktree_name),
+            Style::default().fg(GIT_BROWN),
+        )));
+        f.render_widget(left, left_area);
+
+        let right_area = Rect {
+            x: area.x + area.width.saturating_sub(badge_width),
+            width: badge_width,
+            ..area
+        };
+        f.render_widget(Paragraph::new(Line::from(
+            Span::styled(badge_text, Style::default().fg(badge_color))
+        )), right_area);
         return;
     }
 

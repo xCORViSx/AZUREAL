@@ -25,7 +25,8 @@ use crate::app::{App, Focus};
 use crate::config::Config;
 
 use super::event_loop;
-use super::util::AZURE;
+use super::keybindings;
+use super::util::{GIT_ORANGE, AZURE};
 use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
 
 /// Run the TUI application
@@ -100,20 +101,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Layout: Convo gets full height, Input/Terminal spans Worktrees + Viewer
-    //
-    // ┌──────────┬──────────────────────────┬──────────────┐
-    // │Worktrees │         Viewer           │              │
-    // │  (15%)   │         (50%)            │  Convo (35%) │
-    // ├──────────┴──────────────────────────┤              │
-    // │     Input / Terminal                │              │
-    // ├─────────────────────────────────────┴──────────────┤
-    // │                  Status Bar                        │
-    // └────────────────────────────────────────────────────┘
-    // Worktrees pane shows FileTree overlay when 'f' is pressed.
-    // Convo pane shows Session list overlay when 's' is pressed.
-
-    // Step 1: Reserve status bar at bottom
+    // Step 1: Reserve status bar at bottom (shared by both layouts)
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(5), Constraint::Length(1)])
@@ -121,100 +109,135 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let content_area = outer[0];
     let status_area = outer[1];
 
-    // Step 2: Split content horizontally — Worktrees (15%) | Viewer (50%) | Convo (35%)
-    let h_split = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(15), // Worktrees (or FileTree overlay)
-            Constraint::Percentage(50), // Viewer
-            Constraint::Percentage(35), // Convo
-        ])
-        .split(content_area);
+    if app.git_actions_panel.is_some() {
+        // ── Git mode layout ──────────────────────────────────────────────
+        // Full-width status box at bottom, 3-column panes above.
+        //
+        // ┌──────────┬──────────────────────────┬──────────────┐
+        // │ Actions  │                          │              │
+        // │          │     Viewer (diff)        │   Commits    │
+        // ├──────────┤                          │              │
+        // │ Changed  │                          │              │
+        // │ Files    │                          │              │
+        // ├──────────┴──────────────────────────┴──────────────┤
+        // │  Git Status Box (full width, hints in title)       │
+        // ├────────────────────────────────────────────────────┤
+        // │                  Status Bar                        │
+        // └────────────────────────────────────────────────────┘
 
-    // Left side = Worktrees + Viewer widths for the input area span
-    let left_width = h_split[0].width + h_split[1].width;
-    let convo_area = h_split[2];
+        let git_box_height = 3u16; // borders + 1 content line
+        let git_v = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(5), Constraint::Length(git_box_height)])
+            .split(content_area);
+        let panes_area = git_v[0];
+        let git_box_area = git_v[1];
 
-    // Step 3: Split left side vertically — top 3 panes + input/terminal at bottom
-    let input_height = if app.git_actions_panel.is_some() {
-        0 // Hide input area in git panel mode — no prompts needed
-    } else if app.terminal_mode {
-        app.terminal_height + 2
+        let git_h = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(40),
+                Constraint::Min(10),
+                Constraint::Percentage(35),
+            ])
+            .split(panes_area);
+
+        app.input_area = git_box_area;
+        app.pane_worktrees = git_h[0];
+        app.pane_viewer = git_h[1];
+        app.pane_convo = git_h[2];
+
+        draw_sidebar::draw_sidebar(f, app, git_h[0]);
+        draw_viewer::draw_viewer(f, app, git_h[1]);
+        draw_output::draw_output(f, app, git_h[2]);
+        draw_git_status_box(f, app, git_box_area);
     } else {
-        // Dynamic input height: count visual lines from newlines + word-wrapping
-        let input_inner_width = left_width.saturating_sub(2) as usize;
-        let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
-            let mut rows = 1usize;
-            let mut col = 0usize;
-            for c in app.input.chars() {
-                if c == '\n' {
-                    rows += 1;
-                    col = 0;
-                } else {
-                    let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                    if col + w > input_inner_width { rows += 1; col = w; }
-                    else { col += w; }
-                }
-            }
-            rows
+        // ── Normal mode layout ───────────────────────────────────────────
+        // Convo gets full height, Input/Terminal spans Worktrees + Viewer.
+        //
+        // ┌──────────┬──────────────────────────┬──────────────┐
+        // │Worktrees │         Viewer           │              │
+        // │  (15%)   │         (50%)            │  Convo (35%) │
+        // ├──────────┴──────────────────────────┤              │
+        // │     Input / Terminal                │              │
+        // ├─────────────────────────────────────┴──────────────┤
+        // │                  Status Bar                        │
+        // └────────────────────────────────────────────────────┘
+
+        let h_split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(15),
+                Constraint::Percentage(50),
+                Constraint::Percentage(35),
+            ])
+            .split(content_area);
+        let left_width = h_split[0].width + h_split[1].width;
+        let convo_area = h_split[2];
+
+        let input_height = if app.terminal_mode {
+            app.terminal_height + 2
         } else {
-            1
+            let input_inner_width = left_width.saturating_sub(2) as usize;
+            let input_lines = if input_inner_width > 0 && !app.input.is_empty() {
+                let mut rows = 1usize;
+                let mut col = 0usize;
+                for c in app.input.chars() {
+                    if c == '\n' { rows += 1; col = 0; }
+                    else {
+                        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                        if col + w > input_inner_width { rows += 1; col = w; }
+                        else { col += w; }
+                    }
+                }
+                rows
+            } else { 1 };
+            let max_input = (content_area.height * 3 / 4).max(3);
+            (input_lines as u16 + 2).min(max_input)
         };
-        // Cap at 3/4 of available height so top panes stay visible
-        let max_input = (content_area.height * 3 / 4).max(3);
-        (input_lines as u16 + 2).min(max_input) // +2 for borders
-    };
 
-    // Build a Rect for the left side manually (covers Sessions + FileTree + Viewer)
-    let left_rect = ratatui::layout::Rect::new(
-        content_area.x, content_area.y, left_width, content_area.height,
-    );
-    let left_v = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(input_height)])
-        .split(left_rect);
-    let top_panes_area = left_v[0];
-    let input_area = left_v[1];
+        let left_rect = Rect::new(content_area.x, content_area.y, left_width, content_area.height);
+        let left_v = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(5), Constraint::Length(input_height)])
+            .split(left_rect);
+        let top_panes_area = left_v[0];
+        let input_area = left_v[1];
 
-    // Step 4: Split top 2 panes horizontally (Worktrees + Viewer)
-    let top_h = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(40),  // Worktrees (or FileTree overlay)
-            Constraint::Min(10),    // Viewer (all remaining left-side width)
-        ])
-        .split(top_panes_area);
+        let top_h = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(40), Constraint::Min(10)])
+            .split(top_panes_area);
 
-    // Cache all pane rects for mouse click hit-testing and fast-path rendering
-    app.input_area = input_area;
-    app.pane_worktrees = top_h[0];
-    app.pane_viewer = top_h[1];
-    app.pane_convo = convo_area;
+        app.input_area = input_area;
+        app.pane_worktrees = top_h[0];
+        app.pane_viewer = top_h[1];
+        app.pane_convo = convo_area;
 
-    // Draw panes — worktrees pane shows file tree overlay when toggled
-    if app.show_file_tree && app.git_actions_panel.is_none() {
-        draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
-    } else {
-        draw_sidebar::draw_sidebar(f, app, top_h[0]);
+        if app.show_file_tree {
+            draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
+        } else {
+            draw_sidebar::draw_sidebar(f, app, top_h[0]);
+        }
+        draw_viewer::draw_viewer(f, app, top_h[1]);
+        draw_output::draw_output(f, app, convo_area);
+
+        if app.terminal_mode {
+            draw_terminal::draw_terminal(f, app, input_area);
+        } else {
+            draw_input::draw_input(f, app, input_area);
+        }
     }
-    draw_viewer::draw_viewer(f, app, top_h[1]);
-    draw_output::draw_output(f, app, convo_area);
 
-    // RCR approval dialog — rendered over convo pane after Claude exits during RCR
+    // RCR approval dialog — rendered over convo pane
     if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
-        draw_output::draw_rcr_approval(f, convo_area);
+        draw_output::draw_rcr_approval(f, app.pane_convo);
     }
-
-    // Post-merge dialog — rendered over convo pane after successful squash merge or RCR accept
+    // Post-merge dialog — rendered over convo pane
     if let Some(ref pmd) = app.post_merge_dialog {
-        draw_output::draw_post_merge_dialog(f, convo_area, pmd);
+        draw_output::draw_post_merge_dialog(f, app.pane_convo, pmd);
     }
 
-    if app.terminal_mode {
-        draw_terminal::draw_terminal(f, app, input_area);
-    } else {
-        draw_input::draw_input(f, app, input_area);
-    }
     draw_status::draw_status(f, app, status_area);
 
     // Draw overlays
@@ -484,6 +507,35 @@ fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
             .border_style(Style::default().fg(border_color)));
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
+}
+
+/// Git status box — full-width bar reusing the input box area.
+/// Title shows keybinding hints; content shows operation result messages.
+fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
+    let panel = match app.git_actions_panel {
+        Some(ref p) => p,
+        None => return,
+    };
+
+    // Title: worktree name + keybinding hints
+    let footer = keybindings::git_actions_footer();
+    let title = format!(" Git: {} {} ", panel.worktree_name, footer);
+
+    // Content: result message or empty
+    let content = if let Some((ref msg, is_error)) = panel.result_message {
+        let color = if is_error { Color::Red } else { Color::Green };
+        vec![Line::from(Span::styled(format!(" {}", msg), Style::default().fg(color)))]
+    } else {
+        vec![]
+    };
+
+    let block = Block::default()
+        .title(Line::from(Span::styled(title, Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD))))
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::QuadrantOutside)
+        .border_style(Style::default().fg(GIT_ORANGE));
+
+    f.render_widget(Paragraph::new(content).block(block), area);
 }
 
 fn draw_loading_indicator(f: &mut Frame, msg: &str) {

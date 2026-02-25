@@ -27,7 +27,7 @@ use ratatui::{
 
 use crate::app::{App, Focus, ViewMode};
 use super::colorize::ORANGE;
-use super::util::{colorize_output, detect_message_type, MessageType, AZURE};
+use super::util::{colorize_output, detect_message_type, MessageType, GIT_BROWN, GIT_ORANGE, AZURE};
 
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
@@ -550,7 +550,7 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
             // Green for unpushed, dim for pushed
             let hash_color = if !commit.is_pushed { Color::Green } else { Color::DarkGray };
             let subject_color = if selected {
-                AZURE
+                GIT_ORANGE
             } else if !commit.is_pushed {
                 Color::Green
             } else {
@@ -577,14 +577,16 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
 
     let title = format!(" Commits ({}) ", panel.commits.len());
     let border_style = if focused {
-        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+        Style::default().fg(GIT_ORANGE)
     } else {
-        Style::default().fg(Color::White)
+        Style::default().fg(GIT_BROWN)
     };
     let block = Block::default()
-        .title(Span::styled(title, border_style))
+        .title(Span::styled(title, Style::default()
+            .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
+            .add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(if focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(BorderType::QuadrantOutside)
         .border_style(border_style);
 
     f.render_widget(Paragraph::new(lines).block(block), area);

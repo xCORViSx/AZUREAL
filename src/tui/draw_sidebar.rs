@@ -248,14 +248,14 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
 
     let actions_block = Block::default()
         .title(Span::styled(" Actions ", Style::default()
-            .fg(if actions_focused { AZURE } else { Color::White })
-            .add_modifier(if actions_focused { Modifier::BOLD } else { Modifier::empty() })))
+            .fg(if actions_focused { GIT_ORANGE } else { GIT_BROWN })
+            .add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(if actions_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(BorderType::QuadrantOutside)
         .border_style(if actions_focused {
-            Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+            Style::default().fg(GIT_ORANGE)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(GIT_BROWN)
         });
     f.render_widget(Paragraph::new(action_lines).block(actions_block), actions_area);
 
@@ -300,13 +300,13 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         let padding = inner_w.saturating_sub(prefix.len() + 2 + path_display.len() + stat_len);
 
         let path_style = if selected {
-            Style::default().fg(AZURE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
         };
-        let add_style = if selected { Style::default().fg(AZURE) } else { Style::default().fg(Color::Green) };
-        let del_style = if selected { Style::default().fg(AZURE) } else { Style::default().fg(Color::Red) };
-        let slash_style = if selected { Style::default().fg(AZURE) } else { Style::default().fg(Color::DarkGray) };
+        let add_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Green) };
+        let del_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Red) };
+        let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(GIT_BROWN) };
 
         file_lines.push(Line::from(vec![
             Span::styled(prefix, Style::default()),
@@ -330,14 +330,14 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
 
     let files_block = Block::default()
         .title(Span::styled(files_title, Style::default()
-            .fg(if files_focused { AZURE } else { Color::White })
-            .add_modifier(if files_focused { Modifier::BOLD } else { Modifier::empty() })))
+            .fg(if files_focused { GIT_ORANGE } else { GIT_BROWN })
+            .add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(if files_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(BorderType::QuadrantOutside)
         .border_style(if files_focused {
-            Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+            Style::default().fg(GIT_ORANGE)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(GIT_BROWN)
         });
     f.render_widget(Paragraph::new(file_lines).block(files_block), files_area);
 }

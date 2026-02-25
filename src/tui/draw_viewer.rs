@@ -992,23 +992,17 @@ fn draw_save_dialog(f: &mut Frame, area: Rect) {
 }
 
 /// Git panel viewer — renders diff content from the git panel state
-fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect, is_focused: bool) {
+fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect, _is_focused: bool) {
     let title = match panel.viewer_diff_title {
         Some(ref t) => format!(" {} ", t),
         None => " Viewer ".to_string(),
     };
 
-    let border_style = if is_focused {
-        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::White)
-    };
-
     let block = Block::default()
-        .title(Span::styled(&title, border_style))
+        .title(Span::styled(&title, Style::default().fg(super::util::GIT_ORANGE).add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-        .border_style(border_style);
+        .border_type(BorderType::QuadrantOutside)
+        .border_style(Style::default().fg(super::util::GIT_ORANGE));
 
     match panel.viewer_diff {
         Some(ref diff) => {
