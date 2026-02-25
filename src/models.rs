@@ -73,11 +73,23 @@ impl WorktreeStatus {
     }
 }
 
+/// Branch prefix for worktree branches (e.g. "azureal" → branches named "azureal/feature").
+/// Used for branch creation, listing, and display name stripping.
+pub const BRANCH_PREFIX: &str = "azureal";
+
+/// Strip the branch prefix from a full branch name for display.
+/// Returns the original string unchanged if it doesn't have the prefix.
+pub fn strip_branch_prefix(branch: &str) -> &str {
+    branch.strip_prefix(BRANCH_PREFIX)
+        .and_then(|s| s.strip_prefix('/'))
+        .unwrap_or(branch)
+}
+
 /// A worktree represents a git worktree paired with an optional Claude session.
 /// Derived from git worktrees + Claude session files (stateless).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Worktree {
-    /// Branch name (e.g., "azureal/tui-help-overlay")
+    /// Full branch name (e.g., "{prefix}/feature-name")
     pub branch_name: String,
     /// Worktree path (None if archived - branch exists but no worktree)
     pub worktree_path: Option<PathBuf>,
@@ -88,9 +100,9 @@ pub struct Worktree {
 }
 
 impl Worktree {
-    /// Display name (branch name without azureal/ prefix)
+    /// Display name (branch name without the prefix)
     pub fn name(&self) -> &str {
-        self.branch_name.strip_prefix("azureal/").unwrap_or(&self.branch_name)
+        strip_branch_prefix(&self.branch_name)
     }
 
     /// Worktree status (derived from runtime state, not stored).

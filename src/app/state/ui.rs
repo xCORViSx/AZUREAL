@@ -114,6 +114,8 @@ impl App {
             })
             .collect();
 
+        let auto_resolve_files = crate::azufig::load_auto_resolve_files(&repo_root);
+
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
@@ -133,6 +135,8 @@ impl App {
             commit_scroll: 0,
             viewer_diff: None,
             viewer_diff_title: None,
+            auto_resolve_files,
+            auto_resolve_overlay: None,
         });
     }
 
@@ -667,8 +671,7 @@ impl App {
     pub fn update_terminal_title(&self) {
         let title = match (&self.project, self.current_worktree()) {
             (Some(project), Some(session)) => {
-                let branch = session.branch_name.strip_prefix("azureal/")
-                    .unwrap_or(&session.branch_name);
+                let branch = crate::models::strip_branch_prefix(&session.branch_name);
                 format!("AZUREAL @ {} : {}", project.name, branch)
             }
             (Some(project), None) => format!("AZUREAL @ {}", project.name),

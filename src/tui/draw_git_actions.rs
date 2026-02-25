@@ -162,6 +162,104 @@ pub(crate) fn draw_commit_editor(f: &mut Frame, overlay: &crate::app::types::Git
     f.render_widget(Paragraph::new(commit_lines).block(block), area);
 }
 
+/// Auto-resolve file settings overlay — lets users configure which files
+/// are auto-resolved during rebase via union merge (keeps both sides' changes).
+pub(crate) fn draw_auto_resolve_overlay(f: &mut Frame, overlay: &crate::app::types::AutoResolveOverlay, area: Rect) {
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let inner_w = area.width.saturating_sub(4) as usize;
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " Files auto-resolved during rebase by",
+        Style::default().fg(GIT_BROWN),
+    )));
+    lines.push(Line::from(Span::styled(
+        " keeping both sides' changes (union merge):",
+        Style::default().fg(GIT_BROWN),
+    )));
+    lines.push(Line::from(""));
+
+    for (i, (name, enabled)) in overlay.files.iter().enumerate() {
+        let selected = i == overlay.selected;
+        let check = if *enabled { "[x]" } else { "[ ]" };
+        let prefix = if selected { " \u{25b8} " } else { "   " };
+        let display = if name.len() > inner_w.saturating_sub(10) {
+            format!("\u{2026}{}", &name[name.len().saturating_sub(inner_w.saturating_sub(11))..])
+        } else {
+            name.clone()
+        };
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+        } else if *enabled {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(prefix, style),
+            Span::styled(check, style),
+            Span::styled(format!(" {}", display), style),
+        ]));
+    }
+
+    if overlay.files.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "   (no files configured)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+
+    if overlay.adding {
+        let cursor_char = overlay.input_buffer.chars().nth(overlay.input_cursor).unwrap_or(' ');
+        let before: String = overlay.input_buffer.chars().take(overlay.input_cursor).collect();
+        let after: String = overlay.input_buffer.chars().skip(overlay.input_cursor + 1).collect();
+        let has_char = overlay.input_cursor < overlay.input_buffer.chars().count();
+        lines.push(Line::from(vec![
+            Span::styled(" > ", Style::default().fg(GIT_ORANGE)),
+            Span::styled(before, Style::default().fg(Color::White)),
+            Span::styled(
+                if has_char { cursor_char.to_string() } else { " ".into() },
+                Style::default().fg(Color::Black).bg(GIT_ORANGE),
+            ),
+            Span::styled(after, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(" Enter", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":add  ", Style::default().fg(GIT_BROWN)),
+            Span::styled("Esc", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":cancel", Style::default().fg(GIT_BROWN)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled(" a", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":add  ", Style::default().fg(GIT_BROWN)),
+            Span::styled("d", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":remove  ", Style::default().fg(GIT_BROWN)),
+            Span::styled("Space", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":toggle  ", Style::default().fg(GIT_BROWN)),
+            Span::styled("Esc", Style::default().fg(GIT_ORANGE)),
+            Span::styled(":save", Style::default().fg(GIT_BROWN)),
+        ]));
+    }
+
+    let visible: Vec<Line> = lines.into_iter().take(inner_h).collect();
+
+    let block = Block::default()
+        .title(Line::from(Span::styled(
+            " Auto-Resolve Files ",
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD),
+        )))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(GIT_ORANGE));
+
+    f.render_widget(Paragraph::new(visible).block(block), area);
+}
+
 /// Conflict resolution UI rendered as an overlay on the viewer pane area
 pub(crate) fn draw_conflict_inline(f: &mut Frame, ov: &crate::app::types::GitConflictOverlay, area: Rect) {
     let inner_w = area.width.saturating_sub(4) as usize;

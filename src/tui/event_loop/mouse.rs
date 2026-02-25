@@ -93,7 +93,17 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
 
     // Overlays first — clicking anywhere dismisses them
     if app.show_help { app.show_help = false; return true; }
-    if app.git_actions_panel.is_some() { app.git_actions_panel = None; return true; }
+    // Git panel is full-app layout — clicks within panes are handled, not dismissed
+    if app.git_actions_panel.is_some() {
+        if app.pane_viewer.contains(pos) {
+            app.viewer_selection = None;
+            if let Some((cl, cc)) = screen_to_cache_pos(col, row, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
+                app.mouse_drag_start = Some((cl, cc, 0));
+            }
+        }
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
     if app.run_command_picker.is_some() { app.run_command_picker = None; return true; }
     if app.run_command_dialog.is_some() { app.run_command_dialog = None; return true; }
     if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
@@ -328,8 +338,10 @@ fn extract_text_from_cache(
 /// so copied text contains only file content — no "  1 │ " prefixes.
 pub fn copy_viewer_selection(app: &mut App) {
     let Some((sl, sc, el, ec)) = app.viewer_selection else { return };
-    // In File mode, first span of each cache line is the line number gutter
-    let gutter = if app.viewer_mode == crate::app::ViewerMode::File {
+    // Git mode diffs have no gutter; File mode strips line number prefix
+    let gutter = if app.git_actions_panel.is_some() {
+        0
+    } else if app.viewer_mode == crate::app::ViewerMode::File {
         app.viewer_lines_cache.first()
             .and_then(|l| l.spans.first())
             .map(|s| s.content.chars().count())

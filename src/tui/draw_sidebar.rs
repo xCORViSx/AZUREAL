@@ -197,7 +197,7 @@ pub fn draw_file_tree_overlay(f: &mut Frame, app: &mut App, area: Rect) {
 /// Git panel sidebar — Actions list (top) + Changed Files (bottom)
 fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActionsPanel, area: Rect) {
     // Split vertically: actions (auto-height) | files (fill)
-    let action_rows = if panel.is_on_main { 6 } else { 8 };
+    let action_rows = if panel.is_on_main { 8 } else { 10 };
     let splits = Layout::vertical([
         ratatui::layout::Constraint::Length(action_rows),
         ratatui::layout::Constraint::Min(4),
@@ -230,8 +230,14 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         ]));
     }
 
-    // Auto-rebase toggle (feature branches only)
+    // Divider + toggles (feature branches get a visual separator)
     if !panel.is_on_main {
+        let inner_w = actions_area.width.saturating_sub(2) as usize;
+        action_lines.push(Line::from(Span::styled(
+            "\u{2500}".repeat(inner_w),
+            Style::default().fg(GIT_BROWN),
+        )));
+
         let enabled = app.auto_rebase_enabled.contains(&panel.worktree_name);
         let (indicator, ind_color) = if enabled {
             ("\u{25cf} ON", Color::Green)
@@ -245,6 +251,23 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
             Span::styled(indicator, Style::default().fg(ind_color).add_modifier(Modifier::BOLD)),
         ]));
     }
+
+    // Main branch also gets a divider before auto-resolve
+    if panel.is_on_main {
+        let inner_w = actions_area.width.saturating_sub(2) as usize;
+        action_lines.push(Line::from(Span::styled(
+            "\u{2500}".repeat(inner_w),
+            Style::default().fg(GIT_BROWN),
+        )));
+    }
+
+    // Auto-resolve files count
+    let ar_count = panel.auto_resolve_files.len();
+    action_lines.push(Line::from(vec![
+        Span::styled("   ", Style::default()),
+        Span::styled("[s]", Style::default().fg(GIT_BROWN)),
+        Span::styled(format!(" Auto-resolve ({})", ar_count), Style::default().fg(Color::White)),
+    ]));
 
     let actions_block = Block::default()
         .title(Span::styled(" Actions ", Style::default()

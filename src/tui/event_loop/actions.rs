@@ -235,6 +235,14 @@ fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess
                 copy_viewer_selection(app);
             } else if app.output_selection.is_some() {
                 copy_output_selection(app);
+            } else if let Some(ref p) = app.git_actions_panel {
+                // Git mode fallback: copy status box result message
+                if let Some((ref msg, _)) = p.result_message {
+                    let text = msg.clone();
+                    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                    app.clipboard = text;
+                    app.set_status("Copied to clipboard");
+                }
             }
         }
         Action::ToggleHelp => { app.toggle_help(); }

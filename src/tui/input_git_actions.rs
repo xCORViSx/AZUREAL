@@ -8,12 +8,14 @@
 
 use anyhow::Result;
 use crossterm::event;
+use crossterm::event::KeyModifiers;
 
 use crate::app::{App, Focus};
 use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog};
 use crate::claude::ClaudeProcess;
 use crate::git::{Git, SquashMergeResult};
 use super::keybindings::{lookup_git_actions_action, Action};
+use super::event_loop::copy_viewer_selection;
 
 /// Action count depends on context: main=3 (pull, commit, push),
 /// feature=4 (squash-merge, rebase, commit, push)
@@ -35,6 +37,60 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
     // Commit overlay intercepts all input when open (text editing + actions)
     if panel.commit_overlay.is_some() {
         return handle_commit_overlay(key, app);
+    }
+
+    // Auto-resolve overlay intercepts all input when open (file list editing)
+    if panel.auto_resolve_overlay.is_some() {
+        return handle_auto_resolve_overlay(key, app);
+    }
+
+    // Cmd+C (copy) and Cmd+A (select all) — global actions that must work in git mode
+    if key.modifiers.contains(KeyModifiers::SUPER) {
+        match key.code {
+            event::KeyCode::Char('c') => {
+                if app.viewer_selection.is_some() {
+                    copy_viewer_selection(app);
+                } else if let Some(ref p) = app.git_actions_panel {
+                    if let Some((ref msg, _)) = p.result_message {
+                        let text = msg.clone();
+                        if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                        app.clipboard = text;
+                        app.set_status("Copied to clipboard");
+                    }
+                }
+                return Ok(());
+            }
+            event::KeyCode::Char('a') => {
+                let last = app.viewer_lines_cache.len().saturating_sub(1);
+                let last_col = app.viewer_lines_cache.last()
+                    .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
+                    .unwrap_or(0);
+                app.viewer_selection = Some((0, 0, last, last_col));
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
+    // Shift+J/K and PageDown/PageUp — scroll the diff viewer
+    match key.code {
+        event::KeyCode::Char('J') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
+            return Ok(());
+        }
+        event::KeyCode::Char('K') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
+            return Ok(());
+        }
+        event::KeyCode::PageDown => {
+            app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
+            return Ok(());
+        }
+        event::KeyCode::PageUp => {
+            app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
+            return Ok(());
+        }
+        _ => {}
     }
 
     // Clear stale result message on any non-nav key
@@ -138,6 +194,21 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                         false,
                     ));
                 }
+            }
+        }
+
+        Action::GitAutoResolveSettings => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let files: Vec<(String, bool)> = p.auto_resolve_files.iter()
+                    .map(|f| (f.clone(), true))
+                    .collect();
+                p.auto_resolve_overlay = Some(crate::app::types::AutoResolveOverlay {
+                    files,
+                    selected: 0,
+                    adding: false,
+                    input_buffer: String::new(),
+                    input_cursor: 0,
+                });
             }
         }
 
@@ -274,8 +345,8 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
 /// branch onto main first to ensure a clean, linear merge. On success, shows
 /// result message. On conflict (rebase or merge), opens the conflict overlay.
 fn exec_squash_merge(app: &mut App) {
-    let (repo_root, branch, wt_path, main_branch) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone(), p.main_branch.clone()),
+    let (repo_root, branch, wt_path, main_branch, ar_files) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone(), p.main_branch.clone(), p.auto_resolve_files.clone()),
         None => return,
     };
     // Block squash merge when the feature branch has uncommitted changes —
@@ -289,7 +360,7 @@ fn exec_squash_merge(app: &mut App) {
 
     // Rebase feature branch onto main BEFORE merging. This ensures the squash
     // merge is clean and linear — conflicts are resolved here, not during merge.
-    match exec_rebase_inner(&wt_path, &main_branch) {
+    match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
         RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
             // Show conflict overlay — rebase in progress, RCR can resolve.
             // continue_with_merge=true so squash merge auto-proceeds after resolution.
@@ -315,7 +386,7 @@ fn exec_squash_merge(app: &mut App) {
 
     match Git::squash_merge_into_main(&repo_root, &branch) {
         Ok(SquashMergeResult::Success(msg)) => {
-            let display = branch.strip_prefix("azureal/").unwrap_or(&branch).to_string();
+            let display = crate::models::strip_branch_prefix(&branch).to_string();
             app.git_actions_panel = None;
             app.post_merge_dialog = Some(PostMergeDialog {
                 branch: branch.clone(),
@@ -354,11 +425,153 @@ pub(crate) enum RebaseOutcome {
     Failed(String),
 }
 
-/// Inner rebase logic — used by both manual rebase (r) and pre-merge rebase.
-/// No git fetch — caller is responsible for ensuring main is current.
-/// On conflict, leaves rebase in progress so RCR can resolve it.
-pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &str) -> RebaseOutcome {
-    // Check if already up to date
+/// Parse conflict and auto-merge file lists from git rebase/merge output.
+fn parse_conflict_files(text: &str, worktree_path: &std::path::Path) -> (Vec<String>, Vec<String>) {
+    let mut conflicted = Vec::new();
+    let mut auto_merged = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("CONFLICT") {
+            if let Some(path) = line.rsplit("Merge conflict in ").next() {
+                conflicted.push(path.trim().to_string());
+            } else {
+                conflicted.push(line.to_string());
+            }
+        } else if let Some(path) = line.strip_prefix("Auto-merging ") {
+            auto_merged.push(path.trim().to_string());
+        }
+    }
+    if conflicted.is_empty() {
+        if let Ok(diff) = Git::get_conflicted_files(worktree_path) {
+            conflicted = diff;
+        }
+    }
+    (conflicted, auto_merged)
+}
+
+/// Resolve a single conflicted file using `git merge-file --union`.
+/// Extracts the 3 index stages (base, ours, theirs), runs union merge which
+/// keeps BOTH sides' changes with no conflict markers, then stages the result.
+fn union_merge_file(worktree_path: &std::path::Path, file: &str) -> bool {
+    let tmp = std::env::temp_dir();
+    let base_p = tmp.join("azureal_base");
+    let ours_p = tmp.join("azureal_ours");
+    let theirs_p = tmp.join("azureal_theirs");
+
+    // Extract the 3 stages: :1 = base, :2 = ours (onto target), :3 = theirs (replayed commit)
+    let base = std::process::Command::new("git")
+        .args(["show", &format!(":1:{}", file)]).current_dir(worktree_path).output();
+    let ours = std::process::Command::new("git")
+        .args(["show", &format!(":2:{}", file)]).current_dir(worktree_path).output();
+    let theirs = std::process::Command::new("git")
+        .args(["show", &format!(":3:{}", file)]).current_dir(worktree_path).output();
+
+    let (Ok(base), Ok(ours), Ok(theirs)) = (base, ours, theirs) else { return false };
+    if !base.status.success() || !ours.status.success() || !theirs.status.success() { return false; }
+
+    if std::fs::write(&base_p, &base.stdout).is_err() { return false; }
+    if std::fs::write(&ours_p, &ours.stdout).is_err() { return false; }
+    if std::fs::write(&theirs_p, &theirs.stdout).is_err() { return false; }
+
+    // Union merge — modifies ours_p in place, exit 0 = clean, 1 = overlaps resolved
+    let merge = std::process::Command::new("git")
+        .args(["merge-file", "--union",
+            ours_p.to_str().unwrap_or(""),
+            base_p.to_str().unwrap_or(""),
+            theirs_p.to_str().unwrap_or("")])
+        .output();
+
+    let ok = match merge {
+        Ok(ref o) => o.status.code().map(|c| c <= 1).unwrap_or(false),
+        Err(_) => false,
+    };
+
+    if ok {
+        if let Ok(result) = std::fs::read(&ours_p) {
+            let file_path = worktree_path.join(file);
+            let _ = std::fs::write(&file_path, result);
+            let _ = std::process::Command::new("git")
+                .args(["add", "--", file]).current_dir(worktree_path).output();
+        }
+    }
+
+    let _ = std::fs::remove_file(&base_p);
+    let _ = std::fs::remove_file(&ours_p);
+    let _ = std::fs::remove_file(&theirs_p);
+    ok
+}
+
+/// Auto-resolve conflicts via union merge for files in the auto-resolve list.
+/// Union merge keeps BOTH sides' changes — no content is lost, no conflict
+/// markers are produced. Loops through subsequent commits that also have
+/// auto-resolvable-only conflicts. Returns `Some(outcome)` if handled,
+/// `None` if conflicts include files not in the auto-resolve list.
+fn try_auto_resolve_conflicts(
+    worktree_path: &std::path::Path,
+    conflicted: &[String],
+    auto_resolve_files: &[String],
+) -> Option<RebaseOutcome> {
+    let all_resolvable = !conflicted.is_empty()
+        && conflicted.iter().all(|f| auto_resolve_files.iter().any(|af| af == f));
+    if !all_resolvable { return None; }
+
+    for file in conflicted {
+        if !union_merge_file(worktree_path, file) { return None; }
+    }
+
+    // Continue rebase — loop in case the next commit also has auto-resolvable conflicts
+    loop {
+        let cont = std::process::Command::new("git")
+            .args(["rebase", "--continue"])
+            .env("GIT_EDITOR", "true")
+            .current_dir(worktree_path)
+            .output();
+        match cont {
+            Ok(o) if o.status.success() => return Some(RebaseOutcome::Rebased),
+            Ok(o) => {
+                let text = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr),
+                );
+                let text = text.trim();
+                if !text.contains("CONFLICT") && !text.contains("could not apply") {
+                    return Some(RebaseOutcome::Failed(text.to_string()));
+                }
+                let (new_conflicts, new_auto) = parse_conflict_files(text, worktree_path);
+                let still_resolvable = !new_conflicts.is_empty()
+                    && new_conflicts.iter().all(|f| auto_resolve_files.iter().any(|af| af == f));
+                if !still_resolvable {
+                    return Some(RebaseOutcome::Conflict {
+                        conflicted: new_conflicts,
+                        auto_merged: new_auto,
+                        _raw_output: text.to_string(),
+                    });
+                }
+                for file in &new_conflicts {
+                    if !union_merge_file(worktree_path, file) {
+                        return Some(RebaseOutcome::Conflict {
+                            conflicted: new_conflicts,
+                            auto_merged: new_auto,
+                            _raw_output: text.to_string(),
+                        });
+                    }
+                }
+            }
+            Err(e) => return Some(RebaseOutcome::Failed(e.to_string())),
+        }
+    }
+}
+
+/// Inner rebase logic — used by both manual rebase (r), pre-merge rebase,
+/// and auto-rebase. No git fetch — caller ensures main is current.
+///
+/// Conflicts in auto-resolve files are resolved via union merge (keeps both
+/// sides' changes). Only non-auto-resolve conflicts require user intervention.
+pub(crate) fn exec_rebase_inner(
+    worktree_path: &std::path::Path,
+    main_branch: &str,
+    auto_resolve_files: &[String],
+) -> RebaseOutcome {
     let base = std::process::Command::new("git")
         .args(["merge-base", "HEAD", main_branch])
         .current_dir(worktree_path)
@@ -371,10 +584,9 @@ pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &s
         if b.stdout == t.stdout { return RebaseOutcome::UpToDate; }
     }
 
-    // Use --onto with explicit fork point to replay ONLY branch-specific
-    // commits. Plain `git rebase main` can try to replay squash merge commits
-    // from other branches that ended up in this branch's history during a
-    // previous rebase, causing spurious conflicts or interactive-rebase hangs.
+    // --onto with explicit fork point replays ONLY branch-specific commits.
+    // Plain `git rebase main` can replay squash merge commits from other
+    // branches that ended up in this branch's history, causing hangs.
     let fork_point = base.as_ref().ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
@@ -388,7 +600,6 @@ pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &s
             Err(e) => return RebaseOutcome::Failed(e.to_string()),
         }
     } else {
-        // Fallback: no merge-base found (orphan branch, etc.)
         match std::process::Command::new("git")
             .args(["rebase", main_branch])
             .current_dir(worktree_path)
@@ -404,26 +615,14 @@ pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &s
     let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     let text = combined.trim();
     if text.contains("CONFLICT") || text.contains("could not apply") {
-        // Parse conflict info — leave rebase in progress for RCR resolution
-        let mut conflicted = Vec::new();
-        let mut auto_merged = Vec::new();
-        for line in text.lines() {
-            if line.starts_with("CONFLICT") {
-                if let Some(path) = line.rsplit("Merge conflict in ").next() {
-                    conflicted.push(path.trim().to_string());
-                } else {
-                    conflicted.push(line.to_string());
-                }
-            } else if let Some(path) = line.strip_prefix("Auto-merging ") {
-                auto_merged.push(path.trim().to_string());
-            }
+        let (conflicted, auto_merged) = parse_conflict_files(text, worktree_path);
+
+        // Auto-resolve via union merge if ALL conflicts are in the auto-resolve list
+        if let Some(outcome) = try_auto_resolve_conflicts(worktree_path, &conflicted, auto_resolve_files) {
+            return outcome;
         }
-        // If we couldn't parse specific files, get them from git diff
-        if conflicted.is_empty() {
-            if let Ok(diff) = Git::get_conflicted_files(worktree_path) {
-                conflicted = diff;
-            }
-        }
+
+        // Non-auto-resolve conflicts — leave rebase in progress for RCR resolution
         return RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output: text.to_string() };
     }
 
@@ -445,7 +644,11 @@ fn exec_rebase(app: &mut App) {
             return;
         }
     }
-    match exec_rebase_inner(&wt_path, &main_branch) {
+    let ar_files = match app.git_actions_panel.as_ref() {
+        Some(p) => p.auto_resolve_files.clone(),
+        None => return,
+    };
+    match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
         RebaseOutcome::Rebased => {
             if let Some(ref mut p) = app.git_actions_panel {
                 refresh_changed_files(p);
@@ -829,6 +1032,116 @@ fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: 
     Ok(())
 }
 
+/// Handle input while the auto-resolve settings overlay is open.
+/// j/k navigate, Space toggles, a enters add mode, d removes, Esc saves and closes.
+fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let panel = match app.git_actions_panel.as_mut() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let overlay = match panel.auto_resolve_overlay.as_mut() {
+        Some(o) => o,
+        None => return Ok(()),
+    };
+
+    // Add mode: typing a new filename
+    if overlay.adding {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                overlay.adding = false;
+                overlay.input_buffer.clear();
+                overlay.input_cursor = 0;
+            }
+            (KeyModifiers::NONE, KeyCode::Enter) => {
+                let name = overlay.input_buffer.trim().to_string();
+                if !name.is_empty() && !overlay.files.iter().any(|(f, _)| f == &name) {
+                    overlay.files.push((name, true));
+                    overlay.selected = overlay.files.len() - 1;
+                }
+                overlay.adding = false;
+                overlay.input_buffer.clear();
+                overlay.input_cursor = 0;
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => {
+                if overlay.input_cursor > 0 {
+                    let idx = overlay.input_buffer.char_indices()
+                        .nth(overlay.input_cursor - 1)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let end = overlay.input_buffer.char_indices()
+                        .nth(overlay.input_cursor)
+                        .map(|(i, _)| i)
+                        .unwrap_or(overlay.input_buffer.len());
+                    overlay.input_buffer.replace_range(idx..end, "");
+                    overlay.input_cursor -= 1;
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Left) => {
+                if overlay.input_cursor > 0 { overlay.input_cursor -= 1; }
+            }
+            (KeyModifiers::NONE, KeyCode::Right) => {
+                let len = overlay.input_buffer.chars().count();
+                if overlay.input_cursor < len { overlay.input_cursor += 1; }
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                let byte_idx = overlay.input_buffer.char_indices()
+                    .nth(overlay.input_cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(overlay.input_buffer.len());
+                overlay.input_buffer.insert(byte_idx, c);
+                overlay.input_cursor += 1;
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
+    // Normal mode: navigate/toggle/add/remove
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            // Save to azufig, update panel cache, close overlay
+            let enabled: Vec<String> = overlay.files.iter()
+                .filter(|(_, on)| *on)
+                .map(|(f, _)| f.clone())
+                .collect();
+            let repo_root = panel.repo_root.clone();
+            crate::azufig::save_auto_resolve_files(&repo_root, &enabled);
+            panel.auto_resolve_files = enabled;
+            panel.auto_resolve_overlay = None;
+        }
+        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+            if !overlay.files.is_empty() && overlay.selected + 1 < overlay.files.len() {
+                overlay.selected += 1;
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+            if overlay.selected > 0 { overlay.selected -= 1; }
+        }
+        (KeyModifiers::NONE, KeyCode::Char(' ')) => {
+            if let Some(entry) = overlay.files.get_mut(overlay.selected) {
+                entry.1 = !entry.1;
+            }
+        }
+        (KeyModifiers::NONE, KeyCode::Char('a')) => {
+            overlay.adding = true;
+            overlay.input_buffer.clear();
+            overlay.input_cursor = 0;
+        }
+        (KeyModifiers::NONE, KeyCode::Char('d')) => {
+            if !overlay.files.is_empty() {
+                overlay.files.remove(overlay.selected);
+                if overlay.selected >= overlay.files.len() && overlay.selected > 0 {
+                    overlay.selected -= 1;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Abort an in-progress rebase on the feature branch, close the overlay
 fn abort_rebase(app: &mut App, wt_path: &std::path::Path) {
     let _ = Git::rebase_abort(wt_path);
@@ -853,7 +1166,7 @@ fn spawn_conflict_claude(
     continue_with_merge: bool,
 ) {
     // Build a prompt describing the rebase conflict state
-    let display = branch.strip_prefix("azureal/").unwrap_or(branch);
+    let display = crate::models::strip_branch_prefix(branch);
     let mut prompt = format!(
         "Rebasing branch '{}' onto main produced merge conflicts.\n\
          Git left the working directory in a partially-rebased state.\n\n",

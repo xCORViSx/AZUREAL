@@ -421,9 +421,9 @@ pub struct GitConflictOverlay {
 /// runs in the worktree directory, not repo root.
 #[derive(Debug)]
 pub struct RcrSession {
-    /// Feature branch name this RCR is resolving (e.g. "azureal/health")
+    /// Feature branch name this RCR is resolving (e.g. "{prefix}/health")
     pub branch: String,
-    /// Display name for the title (branch without "azureal/" prefix)
+    /// Display name for the title (branch without "{prefix}/" prefix)
     pub display_name: String,
     /// Feature branch worktree path — Claude's working directory during RCR
     pub worktree_path: std::path::PathBuf,
@@ -445,9 +445,9 @@ pub struct RcrSession {
 /// delete (remove worktree + delete branch) the feature worktree.
 #[derive(Debug)]
 pub struct PostMergeDialog {
-    /// Branch name being merged (e.g. "azureal/health")
+    /// Branch name being merged (e.g. "{prefix}/health")
     pub branch: String,
-    /// Display name for the dialog (without "azureal/" prefix)
+    /// Display name for the dialog (without "{prefix}/" prefix)
     pub display_name: String,
     /// Worktree path on disk (needed for archive/delete)
     pub worktree_path: std::path::PathBuf,
@@ -498,6 +498,26 @@ pub struct GitActionsPanel {
     pub viewer_diff: Option<String>,
     /// Title for the viewer pane diff (e.g. "diff: path" or "commit: abc1234")
     pub viewer_diff_title: Option<String>,
+    /// Files that are auto-resolved during rebase via union merge (cached from azufig)
+    pub auto_resolve_files: Vec<String>,
+    /// Auto-resolve settings overlay (opened with `s` in actions pane)
+    pub auto_resolve_overlay: Option<AutoResolveOverlay>,
+}
+
+/// Auto-resolve settings overlay — manage which files are auto-resolved during
+/// rebase via union merge (keeps both sides' changes, no conflict markers).
+#[derive(Debug)]
+pub struct AutoResolveOverlay {
+    /// (filename, enabled) — files in the auto-resolve list
+    pub files: Vec<(String, bool)>,
+    /// Selected row index
+    pub selected: usize,
+    /// True when user is typing a new filename to add
+    pub adding: bool,
+    /// Input buffer for the new filename being typed
+    pub input_buffer: String,
+    /// Cursor position within input_buffer
+    pub input_cursor: usize,
 }
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization

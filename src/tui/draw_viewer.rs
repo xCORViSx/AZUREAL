@@ -40,8 +40,8 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Git panel mode — show diff content instead of file viewer
-    if let Some(ref panel) = app.git_actions_panel {
-        draw_git_viewer(f, panel, area, is_focused);
+    if app.git_actions_panel.is_some() {
+        draw_git_viewer_selectable(f, app, area, is_focused, viewport_height);
         return;
     }
 
@@ -992,8 +992,14 @@ fn draw_save_dialog(f: &mut Frame, area: Rect) {
 }
 
 /// Git panel viewer — renders diff content from the git panel state
-fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect, _is_focused: bool) {
-    let title = match panel.viewer_diff_title {
+/// Git panel viewer — populates viewer_lines_cache for selection/copy/scroll support
+fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rect, _is_focused: bool, viewport_height: usize) {
+    let (diff, title_str) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.viewer_diff.clone(), p.viewer_diff_title.clone()),
+        None => return,
+    };
+
+    let title = match title_str {
         Some(ref t) => format!(" {} ", t),
         None => " Viewer ".to_string(),
     };
@@ -1004,9 +1010,10 @@ fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, ar
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(super::util::GIT_ORANGE).add_modifier(Modifier::BOLD));
 
-    match panel.viewer_diff {
-        Some(ref diff) => {
-            let lines: Vec<Line> = diff.lines().map(|l| {
+    match diff {
+        Some(ref diff_text) => {
+            // Build styled lines from diff (no line number gutter — gutter=0)
+            let all_lines: Vec<Line<'static>> = diff_text.lines().map(|l| {
                 let style = if l.starts_with('+') && !l.starts_with("+++") {
                     Style::default().fg(Color::Green)
                 } else if l.starts_with('-') && !l.starts_with("---") {
@@ -1020,14 +1027,34 @@ fn draw_git_viewer(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, ar
                 };
                 Line::from(Span::styled(format!(" {}", l), style))
             }).collect();
-            f.render_widget(
-                Paragraph::new(lines)
-                    .block(block)
-                    .wrap(ratatui::widgets::Wrap { trim: false }),
-                area,
-            );
+
+            // Populate cache for selection/copy infrastructure
+            app.viewer_lines_cache = all_lines;
+            app.clamp_viewer_scroll();
+            let scroll = app.viewer_scroll;
+
+            // Build viewport slice with selection highlighting
+            let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+                .enumerate()
+                .skip(scroll)
+                .take(viewport_height)
+                .map(|(idx, line)| {
+                    if let Some((sl, sc, el, ec)) = app.viewer_selection {
+                        if idx >= sl && idx <= el {
+                            let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                            Line::from(apply_selection_to_line(
+                                line.spans.clone(), &content, idx, sl, sc, el, ec, 0,
+                            ))
+                        } else { line.clone() }
+                    } else { line.clone() }
+                })
+                .collect();
+
+            f.render_widget(Paragraph::new(display_lines).block(block), area);
         }
         None => {
+            // No diff selected — clear cache and show hint
+            app.viewer_lines_cache.clear();
             let hint = vec![
                 Line::from(""),
                 Line::from(Span::styled(

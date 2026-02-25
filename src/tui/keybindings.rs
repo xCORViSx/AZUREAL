@@ -226,6 +226,7 @@ pub enum Action {
     GitCommit,
     GitPush,
     GitAutoRebase,
+    GitAutoResolveSettings,
 
     // FileTree Options overlay
     FileTreeOptions,
@@ -524,7 +525,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 15] = [
+pub static GIT_ACTIONS: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -540,6 +541,7 @@ pub static GIT_ACTIONS: [Keybinding; 15] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Auto-resolve files", Action::GitAutoResolveSettings),
 ];
 
 /// Projects Panel — browse mode bindings (text input modes stay raw)
@@ -846,8 +848,8 @@ pub fn lookup_git_actions_action(
             Action::GitSquashMerge | Action::GitRebase | Action::GitAutoRebase if is_on_main || !actions_focused => true,
             // Pull only available on main branch
             Action::GitPull if !is_on_main || !actions_focused => true,
-            // Commit + push need actions focus
-            Action::GitCommit | Action::GitPush if !actions_focused => true,
+            // Commit + push + auto-resolve settings need actions focus
+            Action::GitCommit | Action::GitPush | Action::GitAutoResolveSettings if !actions_focused => true,
             // Diff only from file list
             Action::GitViewDiff if actions_focused => true,
             _ => false,

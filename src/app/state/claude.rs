@@ -122,7 +122,7 @@ impl App {
 
     /// Send a macOS notification when Claude finishes.
     fn send_completion_notification(&self, branch_name: &str, slot_id: &str, code: Option<i32>) {
-        let worktree = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
+        let worktree = crate::models::strip_branch_prefix(branch_name);
 
         // Resolve session display name
         let is_current = self.current_worktree().map(|s| s.branch_name == branch_name).unwrap_or(false);

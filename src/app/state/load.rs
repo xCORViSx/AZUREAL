@@ -39,18 +39,48 @@ impl App {
         // Load auto-rebase enabled branches from project azufig
         self.auto_rebase_enabled = crate::azufig::load_auto_rebase_branches(&repo_root);
 
-        self.load_worktrees()?;
-
-        // Clean up orphaned rebase state from app crashes / force-quits.
-        // If a worktree has .git/rebase-merge or .git/rebase-apply but no
-        // active RCR session, the rebase was interrupted — auto-abort it.
-        for wt in &self.worktrees {
-            if let Some(ref wt_path) = wt.worktree_path {
-                if crate::git::Git::is_rebase_in_progress(wt_path) {
-                    let _ = crate::git::Git::rebase_abort(wt_path);
+        // Clean up orphaned rebase state and detached HEAD BEFORE loading
+        // worktrees. `git rebase --abort` after an `--onto` rebase can leave
+        // HEAD detached, and a prior crash can leave it detached too. If
+        // load_worktrees runs first, detached worktrees get branch=None and
+        // appear as archived. Fix by scanning raw worktree paths, aborting
+        // any orphaned rebases, and re-attaching detached HEADs.
+        if let Ok(wt_paths) = Git::list_worktrees(&repo_root) {
+            for wt_path in &wt_paths {
+                let p = std::path::Path::new(wt_path);
+                // Abort orphaned rebases
+                if Git::is_rebase_in_progress(p) {
+                    let _ = Git::rebase_abort(p);
+                }
+                // Re-attach HEAD if detached — find which branch points at
+                // HEAD and checkout it (works with any branch naming convention)
+                let head_ok = std::process::Command::new("git")
+                    .args(["symbolic-ref", "--quiet", "HEAD"])
+                    .current_dir(p)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(true);
+                if !head_ok {
+                    if let Ok(out) = std::process::Command::new("git")
+                        .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
+                        .current_dir(p)
+                        .output()
+                    {
+                        let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !branch.is_empty() {
+                            // If multiple branches, take the first
+                            let target = branch.lines().next().unwrap_or(&branch);
+                            let _ = std::process::Command::new("git")
+                                .args(["checkout", target])
+                                .current_dir(p)
+                                .output();
+                        }
+                    }
                 }
             }
         }
+
+        self.load_worktrees()?;
 
         Ok(())
     }

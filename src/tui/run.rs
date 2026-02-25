@@ -275,6 +275,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         if let Some(ref ov) = panel.conflict_overlay {
             draw_git_actions::draw_conflict_inline(f, ov, app.pane_viewer);
         }
+        if let Some(ref ov) = panel.auto_resolve_overlay {
+            draw_git_actions::draw_auto_resolve_overlay(f, ov, app.pane_viewer);
+        }
     }
     // AZUREAL++ developer hub panel (⌃a global)
     if app.azureal_panel.is_some() {

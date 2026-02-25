@@ -68,10 +68,11 @@ impl Git {
         }
     }
 
-    /// List all azureal/* branches (for archived session detection)
+    /// List all prefixed branches (for archived session detection)
     pub fn list_azureal_branches(repo_path: &Path) -> Result<Vec<String>> {
+        let pattern = format!("{}/*", crate::models::BRANCH_PREFIX);
         let output = Command::new("git")
-            .args(["branch", "--list", "azureal/*", "--format=%(refname:short)"])
+            .args(["branch", "--list", &pattern, "--format=%(refname:short)"])
             .current_dir(repo_path)
             .output()
             .context("Failed to list branches")?;
@@ -483,7 +484,7 @@ impl Git {
 
         // Step 3: commit the squashed changes with a rich message.
         // Summary line + individual commit messages as bullet points.
-        let display = branch_name.strip_prefix("azureal/").unwrap_or(branch_name);
+        let display = crate::models::strip_branch_prefix(branch_name);
         let message = if commit_log.is_empty() {
             format!("feat: merge {} into main", display)
         } else {

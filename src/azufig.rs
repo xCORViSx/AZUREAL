@@ -187,6 +187,36 @@ pub fn load_auto_rebase_branches(project_root: &Path) -> std::collections::HashS
         .collect()
 }
 
+// ── Auto-resolve file helpers ──
+
+/// Default files that are auto-resolved during rebase via union merge.
+const DEFAULT_AUTO_RESOLVE: &[&str] = &["AGENTS.md", "CHANGELOG.md", "README.md", "CLAUDE.md"];
+
+/// Load the auto-resolve file list from the project-local azufig.
+/// Returns the default list when no config exists yet.
+pub fn load_auto_resolve_files(project_root: &Path) -> Vec<String> {
+    let azufig = load_project_azufig(project_root);
+    let files: Vec<String> = azufig.git.iter()
+        .filter(|(k, v)| k.starts_with("auto-resolve/") && *v == "true")
+        .map(|(k, _)| k.strip_prefix("auto-resolve/").unwrap().to_string())
+        .collect();
+    if files.is_empty() {
+        DEFAULT_AUTO_RESOLVE.iter().map(|s| s.to_string()).collect()
+    } else {
+        files
+    }
+}
+
+/// Save the auto-resolve file list to the project-local azufig.
+pub fn save_auto_resolve_files(project_root: &Path, files: &[String]) {
+    update_project_azufig(project_root, |azufig| {
+        azufig.git.retain(|k, _| !k.starts_with("auto-resolve/"));
+        for file in files {
+            azufig.git.insert(format!("auto-resolve/{}", file), "true".into());
+        }
+    });
+}
+
 // ── Internal TOML I/O ──
 
 /// Parse a TOML file into the given type. Returns None on any failure.

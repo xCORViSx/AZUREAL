@@ -13,6 +13,8 @@ mod coords;
 mod fast_draw;
 mod mouse;
 
+pub(super) use mouse::copy_viewer_selection;
+
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use std::io;
@@ -464,7 +466,7 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
         .collect();
 
     for (branch, wt_path) in candidates {
-        let display = branch.strip_prefix("azureal/").unwrap_or(&branch).to_string();
+        let display = crate::models::strip_branch_prefix(&branch).to_string();
 
         // Skip worktrees with uncommitted changes — git rebase would fail
         let dirty = std::process::Command::new("git")
@@ -476,7 +478,8 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
             .unwrap_or(false);
         if dirty { continue; }
 
-        match exec_rebase_inner(&wt_path, &project.main_branch) {
+        let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
+        match exec_rebase_inner(&wt_path, &project.main_branch, &ar_files) {
             RebaseOutcome::UpToDate => continue,
             RebaseOutcome::Rebased => {
                 app.auto_rebase_success_until = Some((

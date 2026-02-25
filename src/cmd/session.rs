@@ -136,7 +136,7 @@ pub fn handle_session_new(
     // Generate session name from prompt
     let name = generate_session_name(&prompt);
     let worktree_name = sanitize_for_branch(&name);
-    let branch_name = format!("azureal/{}", worktree_name);
+    let branch_name = format!("{}/{}", crate::models::BRANCH_PREFIX, worktree_name);
     let worktree_path = project.worktrees_dir().join(&worktree_name);
 
     if worktree_path.exists() {
