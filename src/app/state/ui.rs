@@ -104,8 +104,9 @@ impl App {
 
         let is_on_main = worktree_name == main_branch;
 
-        // Load commit log — typically <50ms
-        let commits = Git::get_commit_log(&wt_path, 200)
+        // Load commit log — feature branches show only branch-specific commits
+        let log_main = if is_on_main { None } else { Some(main_branch.as_str()) };
+        let commits = Git::get_commit_log(&wt_path, 200, log_main)
             .unwrap_or_default()
             .into_iter()
             .map(|(hash, full_hash, subject, is_pushed)| {

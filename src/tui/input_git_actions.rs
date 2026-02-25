@@ -256,7 +256,8 @@ fn load_commit_diff_inline(panel: &mut GitActionsPanel) {
 
 /// Re-fetch the commit log from git (called after commit/push operations)
 pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
-    match Git::get_commit_log(&panel.worktree_path, 200) {
+    let log_main = if panel.is_on_main { None } else { Some(panel.main_branch.as_str()) };
+    match Git::get_commit_log(&panel.worktree_path, 200, log_main) {
         Ok(entries) => {
             panel.commits = entries.into_iter().map(|(hash, full_hash, subject, is_pushed)| {
                 crate::app::types::GitCommit { hash, full_hash, subject, is_pushed }

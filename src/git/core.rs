@@ -545,7 +545,7 @@ impl Git {
     /// Get recent commit log for the commits pane in the Git panel.
     /// Returns (short_hash, full_hash, subject, is_pushed) tuples.
     /// Unpushed commits (ahead of upstream) are marked `is_pushed=false`.
-    pub fn get_commit_log(worktree_path: &Path, max_count: usize) -> Result<Vec<(String, String, String, bool)>> {
+    pub fn get_commit_log(worktree_path: &Path, max_count: usize, main_branch: Option<&str>) -> Result<Vec<(String, String, String, bool)>> {
         // How many commits ahead of upstream? (0 if no upstream configured)
         let ahead = Command::new("git")
             .args(["rev-list", "--count", "@{u}..HEAD"])
@@ -556,8 +556,17 @@ impl Git {
             .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<usize>().ok())
             .unwrap_or(0);
 
+        // Feature branches: show only commits unique to this branch (main..HEAD)
+        // Main branch or no main_branch provided: show full log from HEAD
+        let max_arg = format!("--max-count={}", max_count);
+        let range = main_branch.map(|m| format!("{}..HEAD", m));
+        let mut args = vec!["log", &max_arg, "--format=%h\t%H\t%s"];
+        if let Some(ref r) = range {
+            args.push(r);
+        }
+
         let output = Command::new("git")
-            .args(["log", &format!("--max-count={}", max_count), "--format=%h\t%H\t%s"])
+            .args(&args)
             .current_dir(worktree_path)
             .output()
             .context("Failed to get commit log")?;
