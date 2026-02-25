@@ -48,6 +48,9 @@ All notable changes to Azureal will be documented in this file.
 - **Branch dialog created wrong worktree type** — Used `Git::create_worktree` (creates new branch with `-b`) instead of `Git::create_worktree_from_branch` for existing branches.
 - **Commit log showed all worktrees' commits** — `git log` without a range filter followed HEAD's full ancestry, including squash merge commits from other branches that were merged into main. Feature branches now use `git log main..HEAD` to show only branch-specific commits.
 
+### Changed
+- **Git status box hints** — Removed `a:auto-rebase` from status box footer since it's already listed in the Actions pane.
+
 ### Removed
 - **`⌃d` global debug dump shortcut** — Debug dump functionality moved into the AZUREAL++ panel (⌃a → Debug tab). `⌃d` still works as a panel-internal bind inside the Debug tab. Global `debug_dump_naming` and `debug_dump_saving` state fields removed from App.
 - **Auto-rebase of peer worktrees** — Removed automatic rebase of peer worktrees after squash merge. Manual rebase (`r`) replaces it — auto-rebase wastes resources when not needed.

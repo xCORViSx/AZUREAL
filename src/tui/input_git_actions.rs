@@ -371,13 +371,32 @@ pub(crate) fn exec_rebase_inner(worktree_path: &std::path::Path, main_branch: &s
         if b.stdout == t.stdout { return RebaseOutcome::UpToDate; }
     }
 
-    let output = match std::process::Command::new("git")
-        .args(["rebase", main_branch])
-        .current_dir(worktree_path)
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => return RebaseOutcome::Failed(e.to_string()),
+    // Use --onto with explicit fork point to replay ONLY branch-specific
+    // commits. Plain `git rebase main` can try to replay squash merge commits
+    // from other branches that ended up in this branch's history during a
+    // previous rebase, causing spurious conflicts or interactive-rebase hangs.
+    let fork_point = base.as_ref().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let output = if !fork_point.is_empty() {
+        match std::process::Command::new("git")
+            .args(["rebase", "--onto", main_branch, &fork_point])
+            .current_dir(worktree_path)
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => return RebaseOutcome::Failed(e.to_string()),
+        }
+    } else {
+        // Fallback: no merge-base found (orphan branch, etc.)
+        match std::process::Command::new("git")
+            .args(["rebase", main_branch])
+            .current_dir(worktree_path)
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => return RebaseOutcome::Failed(e.to_string()),
+        }
     };
 
     if output.status.success() { return RebaseOutcome::Rebased; }

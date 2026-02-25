@@ -925,10 +925,9 @@ pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
 pub fn git_actions_footer() -> String {
     let tab = find_key_for_action(&GIT_ACTIONS, Action::GitToggleFocus).unwrap_or("Tab".into());
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
-    let auto_rebase = find_key_for_action(&GIT_ACTIONS, Action::GitAutoRebase).unwrap_or("a".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    format!("{}:cycle panes | {}:exec/view | {}:auto-rebase | {}:refresh | {}:close", tab, enter, auto_rebase, refresh, esc)
+    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}:close", tab, enter, refresh, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.
