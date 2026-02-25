@@ -1057,7 +1057,7 @@ Pressing `c` stages all changes (`git add -A`), gets `git diff --staged` + `git 
 - `RebaseOutcome::Conflict { conflicted, auto_merged, raw_output }` — rebase left in progress (NOT aborted) so RCR can resolve. Opens conflict overlay.
 - `RebaseOutcome::Failed(String)` — error, shows message
 
-`exec_rebase_inner()` checks `merge-base HEAD <main>` vs `rev-parse <main>` for up-to-date detection, then runs `git rebase <main>`. On conflict, parses CONFLICT lines from combined stdout+stderr via `rsplit("Merge conflict in ")`, falls back to `Git::get_conflicted_files()` if parsing fails. Leaves rebase in progress (no auto-abort) so the conflict overlay can offer RCR resolution.
+`exec_rebase_inner()` checks `merge-base HEAD <main>` vs `rev-parse <main>` for up-to-date detection, then runs `git rebase --onto <main> <fork-point>` (where fork-point is the merge-base). The `--onto` form replays only branch-specific commits, preventing squash merge commits from other branches (inherited via prior rebases) from being replayed. Falls back to plain `git rebase <main>` if merge-base unavailable. On conflict, parses CONFLICT lines from combined stdout+stderr via `rsplit("Merge conflict in ")`, falls back to `Git::get_conflicted_files()` if parsing fails. Leaves rebase in progress (no auto-abort) so the conflict overlay can offer RCR resolution.
 
 **Data flow (squash-merge-to-main after rebase):** After a successful rebase, `exec_squash_merge()` calls `Git::squash_merge_into_main(repo_root, branch)`. Returns `SquashMergeResult` enum:
 - `SquashMergeResult::Success(String)` — clean merge, commit done, message returned
