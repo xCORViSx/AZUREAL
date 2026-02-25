@@ -607,10 +607,11 @@ Implementation:
 - Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, wizard, projects, health, git, pickers, branch dialog, session list) intercept ALL input first — each modal uses its per-modal lookup function
-2. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
-3. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
-4. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
+1. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
+2. Text input modals (`WorktreeCreation`, `BranchDialog`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel) from stealing keystrokes meant as literal text
+3. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
+4. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
+5. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav, sidebar filter)
 
 **Input handlers only handle unresolved keys:**
 - `input_viewer.rs` — tab dialog, save dialog, discard dialog, edit mode text editing

@@ -181,6 +181,16 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     // instead of being intercepted as JumpNextBubble/JumpPrevBubble
     if app.show_session_list { return handle_output_input(key, app); }
 
+    // Text input modals bypass keybinding resolution entirely — they consume
+    // all keypresses (including Shift+G, etc.) as literal text input.
+    if matches!(app.focus, Focus::WorktreeCreation | Focus::BranchDialog) {
+        match app.focus {
+            Focus::WorktreeCreation => return handle_worktree_creation_input(key, app, claude_process),
+            Focus::BranchDialog => return handle_branch_dialog_input(key, app),
+            _ => unreachable!(),
+        }
+    }
+
     // --- Centralized keybinding resolution ---
     // Build context from app state, resolve key once, dispatch action.
     // Input/terminal handlers and dialog handlers own their own key execution —

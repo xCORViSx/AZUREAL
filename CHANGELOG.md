@@ -21,6 +21,7 @@ All notable changes to Azureal will be documented in this file.
 - **Health panel title shows worktree name** — Panel title changed from static `" Worktree Health "` to `" Health: <worktree> "`, matching the Git panel's naming pattern.
 
 ### Fixed
+- **Worktree creation dialog leaks keybindings** — Typing `G` (Shift+G) in the worktree name input opened the Git panel instead of inserting the character. Fixed by routing `WorktreeCreation` and `BranchDialog` focus modes directly to their handlers before keybinding resolution.
 - **Auto-rebase skips dirty worktrees** — `check_auto_rebase()` now checks `git status --porcelain` before rebasing; worktrees with uncommitted changes are silently skipped instead of failing.
 - **Orphaned rebase state cleaned up on startup** — On launch, all worktrees are scanned for `.git/rebase-merge/` or `.git/rebase-apply/` directories (left by app crashes during rebase) and auto-aborted.
 - **Stash orphaned after merge-triggered RCR** — `accept_rcr()` now pops any stash left on main before re-calling `squash_merge_into_main()`, preventing orphaned stash entries.
