@@ -330,32 +330,65 @@ impl Git {
             .context("Failed to get branch name")?;
         let branch_name = String::from_utf8_lossy(&branch.stdout).trim().to_string();
 
-        // Pull --rebase first to integrate remote changes, avoiding non-fast-forward rejections.
-        // Non-fatal: if offline or no upstream yet, skip silently and let push create it.
-        let pull = Command::new("git")
-            .args(["pull", "--rebase", "origin", &branch_name])
+        // Check if local branch has diverged from remote (e.g. after rebase).
+        // `rev-list --left-right --count` returns "<ahead>\t<behind>".
+        // If behind > 0 AND ahead > 0, the histories have diverged — force-with-lease is needed.
+        let diverged = Command::new("git")
+            .args(["rev-list", "--left-right", "--count", &format!("HEAD...origin/{}", branch_name)])
             .current_dir(worktree_path)
-            .output();
-        if let Ok(ref o) = pull {
-            if !o.status.success() {
-                let msg = String::from_utf8_lossy(&o.stderr);
-                // Fatal only if rebase conflicts — user must resolve manually
-                if msg.contains("CONFLICT") || msg.contains("could not apply") {
-                    anyhow::bail!("Pull rebase failed with conflicts — resolve manually then push");
+            .output()
+            .ok()
+            .and_then(|o| {
+                if !o.status.success() { return None; }
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                let parts: Vec<&str> = s.split('\t').collect();
+                if parts.len() == 2 {
+                    let ahead = parts[0].parse::<u64>().unwrap_or(0);
+                    let behind = parts[1].parse::<u64>().unwrap_or(0);
+                    Some(ahead > 0 && behind > 0)
+                } else {
+                    None
                 }
-                // Otherwise (no remote branch yet, offline, etc.) — continue to push
+            })
+            .unwrap_or(false);
+
+        if !diverged {
+            // Normal case: pull --rebase first to integrate remote changes.
+            // Non-fatal: if offline or no upstream yet, skip silently and let push create it.
+            let pull = Command::new("git")
+                .args(["pull", "--rebase", "origin", &branch_name])
+                .current_dir(worktree_path)
+                .output();
+            if let Ok(ref o) = pull {
+                if !o.status.success() {
+                    let msg = String::from_utf8_lossy(&o.stderr);
+                    if msg.contains("CONFLICT") || msg.contains("could not apply") {
+                        anyhow::bail!("Pull rebase failed with conflicts — resolve manually then push");
+                    }
+                }
             }
         }
 
+        // Use --force-with-lease when diverged (post-rebase), regular push otherwise
+        let push_args = if diverged {
+            vec!["push", "--force-with-lease", "-u", "origin", &branch_name]
+        } else {
+            vec!["push", "-u", "origin", &branch_name]
+        };
+
         let output = Command::new("git")
-            .args(["push", "-u", "origin", &branch_name])
+            .args(&push_args)
             .current_dir(worktree_path)
             .output()
             .context("Failed to push")?;
 
         let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        if output.status.success() { Ok(combined.trim().to_string()) }
-        else { anyhow::bail!("{}", combined.trim()) }
+        if output.status.success() {
+            let suffix = if diverged { " (force-pushed)" } else { "" };
+            Ok(format!("{}{}", combined.trim(), suffix))
+        } else {
+            anyhow::bail!("{}", combined.trim())
+        }
     }
 
     /// Squash-merge a feature branch into main:

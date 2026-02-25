@@ -463,7 +463,11 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
     // Content: result message or empty
     let content = if let Some((ref msg, is_error)) = panel.result_message {
         let color = if is_error { Color::Red } else { Color::Green };
-        vec![Line::from(Span::styled(format!(" {}", msg), Style::default().fg(color)))]
+        let mut style = Style::default().fg(color);
+        if app.git_status_selected {
+            style = style.bg(Color::Rgb(60, 60, 100));
+        }
+        vec![Line::from(Span::styled(format!(" {}", msg), style))]
     } else {
         vec![]
     };

@@ -96,10 +96,18 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     // Git panel is full-app layout — clicks within panes are handled, not dismissed
     if app.git_actions_panel.is_some() {
         if app.pane_viewer.contains(pos) {
+            app.git_status_selected = false;
             app.viewer_selection = None;
             if let Some((cl, cc)) = screen_to_cache_pos(col, row, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
                 app.mouse_drag_start = Some((cl, cc, 0));
             }
+        } else if app.input_area.contains(pos) {
+            // Click on git status box — select the result message text
+            app.viewer_selection = None;
+            app.git_status_selected = app.git_actions_panel.as_ref()
+                .and_then(|p| p.result_message.as_ref()).is_some();
+        } else {
+            app.git_status_selected = false;
         }
         app.last_click = Some((std::time::Instant::now(), col, row));
         return true;

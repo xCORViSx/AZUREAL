@@ -50,6 +50,15 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
             event::KeyCode::Char('c') => {
                 if app.viewer_selection.is_some() {
                     copy_viewer_selection(app);
+                } else if app.git_status_selected {
+                    if let Some(ref p) = app.git_actions_panel {
+                        if let Some((ref msg, _)) = p.result_message {
+                            let text = msg.clone();
+                            if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                            app.clipboard = text;
+                            app.set_status("Copied to clipboard");
+                        }
+                    }
                 } else if let Some(ref p) = app.git_actions_panel {
                     if let Some((ref msg, _)) = p.result_message {
                         let text = msg.clone();
@@ -61,11 +70,18 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 return Ok(());
             }
             event::KeyCode::Char('a') => {
-                let last = app.viewer_lines_cache.len().saturating_sub(1);
-                let last_col = app.viewer_lines_cache.last()
-                    .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
-                    .unwrap_or(0);
-                app.viewer_selection = Some((0, 0, last, last_col));
+                if app.viewer_lines_cache.is_empty() {
+                    // No viewer content — select the status box message
+                    app.git_status_selected = app.git_actions_panel.as_ref()
+                        .and_then(|p| p.result_message.as_ref()).is_some();
+                } else {
+                    app.git_status_selected = false;
+                    let last = app.viewer_lines_cache.len().saturating_sub(1);
+                    let last_col = app.viewer_lines_cache.last()
+                        .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
+                        .unwrap_or(0);
+                    app.viewer_selection = Some((0, 0, last, last_col));
+                }
                 return Ok(());
             }
             _ => {}
@@ -96,7 +112,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
     // Clear stale result message on any non-nav key
     let is_nav = matches!(action_is_nav(key.modifiers, key.code, panel.focused_pane),
         Some(true));
-    if !is_nav { panel.result_message = None; }
+    if !is_nav { panel.result_message = None; app.git_status_selected = false; }
 
     let focused_pane = panel.focused_pane;
     let is_on_main = panel.is_on_main;

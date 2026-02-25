@@ -149,6 +149,7 @@ impl App {
             }
         }
         self.git_actions_panel = None;
+        self.git_status_selected = false;
     }
 
     /// Load a file into the viewer for Read/Write tool clicks (no diff overlay).
