@@ -33,6 +33,7 @@ All notable changes to Azureal will be documented in this file.
 - **Health panel title shows worktree name** — Panel title changed from static `" Worktree Health "` to `" Health: <worktree> "`, matching the Git panel's naming pattern.
 
 ### Fixed
+- **Git viewer placeholder text bleeds through diff content** — Ratatui reuses the previous frame's buffer; `Paragraph` only writes content characters, leaving cells beyond each line's width untouched. When the gray placeholder hint ("Select a file or commit...") was wider than the replacing diff lines, leftover characters stayed visible. Fixed by rendering `Clear` to the viewer area before the `Paragraph+Block`.
 - **Worktree appears archived with detached HEAD on startup** — Orphaned rebase cleanup (`git rebase --abort`) ran AFTER `load_worktrees()`, and `--onto` rebases can leave HEAD detached after abort. Detached worktrees have no `branch` in `git worktree list --porcelain`, so they got empty branch names and appeared as archived duplicates. Fixed by moving cleanup BEFORE `load_worktrees()`, using `git symbolic-ref --quiet HEAD` to detect detached state, and re-attaching via `git for-each-ref --points-at=HEAD` → `git checkout <branch>` (repo-agnostic, no hardcoded branch prefix). This also prevents the working tree reset that was silently discarding uncommitted changes.
 - **Mouse click in Git panel exits the panel** — `handle_mouse_click` had a blanket dismissal (`git_actions_panel = None`) leftover from when the panel was a centered modal overlay. Now clicks anchor viewer selection for drag-to-select; other pane clicks are consumed without closing.
 - **Session start fails in worktrees with `+` or other special characters** — Azureal's path encoding only replaced `/` with `-`, while Claude CLI v2.1+ replaces ALL non-alphanumeric characters with `-` (e.g., `AZUREAL++` → `AZUREAL--`). This mismatch caused Azureal to look for session files in the wrong `~/.claude/projects/` subdirectory, so `--resume` pointed to a session Claude couldn't find. Fixed by matching Claude CLI's exact `OP()` algorithm (`replace(/[^a-zA-Z0-9]/g, "-")`) in `encode_project_path()`. Startup migration (`migrate_project_dirs()`) auto-renames old-encoding directories to the new encoding.
@@ -58,6 +59,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Changed
 - **Centralized branch prefix** — All 9 hardcoded `"azureal/"` branch prefix assumptions replaced with a `BRANCH_PREFIX` constant and `strip_branch_prefix()` helper in `src/models.rs`, making the app fully repo-agnostic. Doc comments updated to use generic `{prefix}/` examples.
+- **azufig confirmed project-scoped** — Removed aspirational worktree-local azufig documentation (never implemented). The project-local `.azureal/azufig.toml` is always at the main worktree root (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees. No per-worktree copies.
 - **Git status box hints** — Removed `a:auto-rebase` from status box footer since it's already listed in the Actions pane.
 
 ### Removed

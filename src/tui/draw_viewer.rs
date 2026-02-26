@@ -1010,6 +1010,10 @@ fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rect, _is_focu
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(super::util::GIT_ORANGE).add_modifier(Modifier::BOLD));
 
+    // Clear previous frame's cells so placeholder text doesn't bleed through
+    // when diff content doesn't fill the full viewport width/height.
+    f.render_widget(Clear, area);
+
     match diff {
         Some(ref diff_text) => {
             // Build styled lines from diff (no line number gutter — gutter=0)

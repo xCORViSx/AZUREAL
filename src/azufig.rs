@@ -73,8 +73,8 @@ pub struct ProjectAzufig {
     /// Project-local preset prompts: name = "prompt text"
     #[serde(default)]
     pub presetprompts: HashMap<String, String>,
-    /// Git settings: auto-rebase = "yes"/"no", future git-related toggles.
-    /// Each worktree can have its own [git] section in its own `.azureal/azufig.toml`.
+    /// Git settings: auto-rebase per branch, auto-resolve file list, future toggles.
+    /// Project-scoped — always at main worktree root, shared by all worktrees.
     #[serde(default)]
     pub git: HashMap<String, String>,
 }

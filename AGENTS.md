@@ -15,8 +15,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 **Persistent State (azufig.toml):**
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
-- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts
-- **Worktree-local** `<worktree_path>/.azureal/azufig.toml` — per-worktree git settings (`[git]` section). Each worktree can have its own azufig for worktree-specific config; created on demand when a worktree-level setting is toggled
+- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts, git settings (auto-rebase per branch, auto-resolve file list). Always at the **main worktree root** (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees — no per-worktree copies.
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -499,6 +498,25 @@ Before merging ANY change to render/event code:
 - [ ] Scroll returns bool, caller checks before redraw
 - [ ] Sidebar and file tree items cached (invalidated only on state change)
 - [ ] Test: scroll aggressively, CPU must stay <5%
+
+---
+
+## RATATUI GOTCHAS
+
+### Paragraph doesn't clear unused cells
+
+Ratatui's `Paragraph` only writes content characters to the buffer — cells beyond each line's width and rows beyond the last content line retain whatever was in the buffer from the **previous frame** (ratatui reuses buffers, it doesn't start fresh). This means switching from placeholder text to shorter content leaves ghost characters visible.
+
+```rust
+// ❌ WRONG — placeholder text bleeds through when diff lines are shorter
+f.render_widget(Paragraph::new(display_lines).block(block), area);
+
+// ✅ CORRECT — Clear first, then render
+f.render_widget(Clear, area);
+f.render_widget(Paragraph::new(display_lines).block(block), area);
+```
+
+**Affected:** Any pane that transitions between different content (placeholder → real content, short → long text). Fixed in `draw_git_viewer_selectable()`.
 
 ---
 
