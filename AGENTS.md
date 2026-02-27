@@ -30,7 +30,7 @@ The core feature enabling multiple concurrent Claude Code CLI instances. Each wo
 - `spawn()` returns `(Receiver<ClaudeEvent>, u32)` — the event channel and the OS PID
 - First prompt: captures `session_id` from init event in stream-json output
 - Follow-up prompts: add `--resume <session_id>` for conversation context
-- Model override: `⌃m` cycles `selected_model` through opus → sonnet → haiku → None (CLI default). `detected_model` is populated from the stream's `assistant` event `message.model` field. Bottom border of Session pane shows `⌃m:model_name` (color-coded: magenta=opus, cyan=sonnet, yellow=haiku, gray=default)
+- Model override: `⌃m` cycles `selected_model` through sonnet → opus → haiku → sonnet. Always set (never None) — the displayed name is exactly what gets passed as `--model` to `spawn()`. Initialized to "sonnet". `detected_model` (separate field, populated from stream's `assistant` event) is used only for context window heuristics, not display. Bottom border of Session pane shows `⌃m:model_name` (color-coded: magenta=opus, cyan=sonnet, yellow=haiku)
 - Process exits after each response; new process for next prompt
 
 **PID-Keyed Session Slots:**
@@ -1522,7 +1522,7 @@ azureal
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
 | `⌃c` | Cancel agent |
-| `⌃m` | Cycle model (opus → sonnet → haiku → default) |
+| `⌃m` | Cycle model (sonnet → opus → haiku) |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
 

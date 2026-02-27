@@ -693,7 +693,7 @@ impl App {
             session_filter: String::new(),
             session_content_search: false,
             session_search_results: Vec::new(),
-            selected_model: None,
+            selected_model: Some("sonnet".to_string()),
             detected_model: None,
         }
     }
@@ -751,28 +751,20 @@ impl App {
         }
     }
 
-    /// Short display name for the active model. Prefers selected_model (user override),
-    /// falls back to detected_model (from stream), then "default".
+    /// Short display name for the active model. Always returns the selected_model
+    /// alias since it's always set (never None).
     pub fn display_model_name(&self) -> &str {
-        let full = self.selected_model.as_deref()
-            .or(self.detected_model.as_deref())
-            .unwrap_or("default");
-        // "claude-opus-4-6" → "opus", "claude-sonnet-4-5-20250929" → "sonnet", etc.
-        if full.contains("opus") { "opus" }
-        else if full.contains("sonnet") { "sonnet" }
-        else if full.contains("haiku") { "haiku" }
-        else { full }
+        self.selected_model.as_deref().unwrap_or("sonnet")
     }
 
-    /// Cycle selected_model through: None → opus → sonnet → haiku → None (default).
-    /// When cycling, we set a short alias that Claude CLI accepts as --model value.
+    /// Cycle selected_model through: sonnet → opus → haiku → sonnet.
+    /// Always set — the displayed model is exactly what gets passed as --model to spawn().
     pub fn cycle_model(&mut self) {
-        self.selected_model = match self.selected_model.as_deref() {
-            None => Some("opus".to_string()),
-            Some("opus") => Some("sonnet".to_string()),
-            Some("sonnet") => Some("haiku".to_string()),
-            _ => None,
-        };
+        self.selected_model = Some(match self.selected_model.as_deref() {
+            Some("sonnet") => "opus",
+            Some("opus") => "haiku",
+            _ => "sonnet",
+        }.to_string());
     }
 
     /// Sample getrusage and update cached CPU% string. Called from draw path;

@@ -37,7 +37,7 @@
 - **Run Commands** — Save and execute shell commands/scripts globally or per-project; Prompt mode lets Claude generate commands from natural-language descriptions; `d` to delete with y/n confirmation; `⌃s` toggles global/project scope in add/edit dialog; picker shows G/P scope badge
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
 - **Token Usage Counter** — Color-coded context window percentage on Session pane border (green/yellow/red) to predict compaction; at 95%+, a 20-second inactivity watcher detects likely auto-compaction and shows a banner so the user knows why the session appears frozen
-- **Model Switcher** — Press `⌃m` to cycle between Claude models (opus/sonnet/haiku/default); Session pane bottom border shows color-coded `⌃m:model` indicator; works from command mode and prompt input
+- **Model Switcher** — Press `⌃m` to cycle between Claude models (sonnet/opus/haiku); Session pane bottom border shows color-coded `⌃m:model` indicator; selected model is always passed as `--model` to the CLI; works from command mode and prompt input
 - **TodoWrite Widget** — Sticky checkbox list at bottom of Session pane showing Claude's task progress (✓/●/○); subagent subtasks shown indented under their parent item with ↳ prefix; caps at 20 visual lines with a proportional scrollbar and mouse wheel scrolling when content overflows
 - **AskUserQuestion Box** — Numbered options box for Claude's questions; respond with a number or custom text
 - **Session Search/Filter** — Press `/` in Worktrees to search across projects, worktrees, and sessions simultaneously; matches shown with parent hierarchy
@@ -106,7 +106,7 @@ azureal
 | `?` | Help |
 | `⌃a` | AZUREAL++ panel (Debug, Issues, PRs) |
 | `⌃c` | Cancel agent |
-| `⌃m` | Cycle model (opus → sonnet → haiku → default) |
+| `⌃m` | Cycle model (sonnet → opus → haiku) |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
 

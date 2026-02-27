@@ -487,7 +487,7 @@ impl App {
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
         // Extract latest TodoWrite and AskUserQuestion state from parsed events
         self.extract_skill_tools_from_events();
-        // Update tokens and context window if the new parse found assistant events
+        // Update tokens, context window, and model if the new parse found assistant events
         let mut tokens_changed = false;
         if parsed.session_tokens.is_some() {
             self.session_tokens = parsed.session_tokens;

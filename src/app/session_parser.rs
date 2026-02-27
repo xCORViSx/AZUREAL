@@ -34,6 +34,8 @@ pub struct ParsedSession {
     pub session_tokens: Option<(u64, u64)>,
     /// Model context window size detected from assistant events' message.model field
     pub context_window: Option<u64>,
+    /// Model string from the last assistant event (e.g. "claude-opus-4-6")
+    pub model: Option<String>,
 }
 
 /// Persistent parser state that survives between incremental parses.
@@ -103,6 +105,7 @@ pub fn parse_session_file_incremental(
             end_offset: start_offset,
             session_tokens: None,
             context_window: None,
+            model: None,
         };
     }
 
@@ -154,9 +157,10 @@ pub fn parse_session_file_incremental(
         assistant_no_content_arr: result.assistant_no_content_arr,
         assistant_text_blocks: result.assistant_text_blocks,
         end_offset: result.end_offset,
-        // Use new parse's tokens if present, otherwise keep None (no assistant events in this batch)
+        // Use new parse's tokens/model if present, otherwise keep None (no assistant events in this batch)
         session_tokens: result.session_tokens,
         context_window: result.context_window,
+        model: result.model,
     }
 }
 
@@ -204,6 +208,7 @@ fn parse_session_file_from(
             end_offset: 0,
             session_tokens: None,
             context_window: None,
+            model: None,
         },
     };
 
@@ -236,6 +241,8 @@ fn parse_session_file_from(
     let mut session_tokens: Option<(u64, u64)> = None;
     // Context window detected from model string (overwritten each assistant event, last wins)
     let mut context_window: Option<u64> = None;
+    // Model string from the last assistant event (e.g. "claude-opus-4-6")
+    let mut model: Option<String> = None;
 
     // Read line-by-line tracking byte offset
     let mut line_buf = String::new();
@@ -279,7 +286,7 @@ fn parse_session_file_from(
             "assistant" => {
                 parse_assistant_event(
                     &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
-                    &mut session_tokens, &mut context_window,
+                    &mut session_tokens, &mut context_window, &mut model,
                 );
             }
             "result" => parse_result_event(&json, timestamp, &mut timed_events, &mut context_window),
@@ -321,6 +328,7 @@ fn parse_session_file_from(
         end_offset: start_offset + bytes_read,
         session_tokens,
         context_window,
+        model,
     }
 }
 
@@ -610,6 +618,7 @@ fn parse_assistant_event(
     pending_tools: &mut HashSet<String>,
     session_tokens: &mut Option<(u64, u64)>,
     context_window: &mut Option<u64>,
+    model_out: &mut Option<String>,
 ) {
     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
 
@@ -632,8 +641,9 @@ fn parse_assistant_event(
     }
 
     // Extract model string → context window size (each assistant event has message.model)
-    if let Some(model) = message.get("model").and_then(|m| m.as_str()) {
-        *context_window = Some(context_window_for_model(model));
+    if let Some(model_str) = message.get("model").and_then(|m| m.as_str()) {
+        *context_window = Some(context_window_for_model(model_str));
+        *model_out = Some(model_str.to_string());
     }
 
     for block in content_arr {
