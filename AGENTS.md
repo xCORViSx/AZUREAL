@@ -7,7 +7,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 - **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Convo pane)
 
 **Mostly Stateless Architecture:** All runtime state is derived from:
-- Git repository info via `git rev-parse --show-toplevel`
+- Git repository info via `git rev-parse --git-common-dir` (resolves to main worktree root, not worktree-local)
 - Git worktrees via `git worktree list` for active worktrees
 - Git branches via `git branch | grep {BRANCH_PREFIX}/` for archived worktrees (prefix defined in `src/models.rs::BRANCH_PREFIX`)
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
@@ -938,7 +938,7 @@ Each session maintains conversation history across prompts using Claude's `--res
 
 **Stateless Data Discovery:**
 Azureal reads all data at runtime without persisting anything:
-- **Project**: Discovered via `git rev-parse --show-toplevel`, main branch detected from git
+- **Project**: Discovered via `git rev-parse --git-common-dir` (parent = repo root), main branch detected from git
 - **Sessions**: Discovered from `git worktree list` (active) + `git branch | grep {BRANCH_PREFIX}/` (archived)
 - **Conversation**: Read from Claude's session files at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
 - **Path encoding**: `encode_project_path()` in `config.rs` — matches Claude CLI's `OP()` function: `replace(/[^a-zA-Z0-9]/g, "-")`. Paths >200 chars get truncated + hash suffix. Startup migration (`migrate_project_dirs()`) renames old-encoding dirs (which only replaced `/` with `-`) to new encoding.

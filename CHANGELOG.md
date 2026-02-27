@@ -73,6 +73,7 @@ All notable changes to Azureal will be documented in this file.
 - **Centralized branch prefix** — All 9 hardcoded `"azureal/"` branch prefix assumptions replaced with a `BRANCH_PREFIX` constant and `strip_branch_prefix()` helper in `src/models.rs`, making the app fully repo-agnostic. Doc comments updated to use generic `{prefix}/` examples.
 - **azufig confirmed project-scoped** — Removed aspirational worktree-local azufig documentation (never implemented). The project-local `.azureal/azufig.toml` is always at the main worktree root (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees. No per-worktree copies.
 - **Git status box hints** — Removed `a:auto-rebase` from status box footer since it's already listed in the Actions pane.
+- **`.DS_Store` untracked from git** — File was in `.gitignore` but already tracked in git history, causing it to appear as a conflict offender during RCR. Removed from tracking via `git rm --cached`.
 
 ### Removed
 - **`⌃d` global debug dump shortcut** — Debug dump functionality moved into the AZUREAL++ panel (⌃a → Debug tab). `⌃d` still works as a panel-internal bind inside the Debug tab. Global `debug_dump_naming` and `debug_dump_saving` state fields removed from App.
