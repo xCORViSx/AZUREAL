@@ -413,6 +413,9 @@ impl Git {
         if has_rebase_state {
             let _ = Command::new("git").args(["rebase", "--abort"]).current_dir(repo_root).output();
         }
+        // Remove stale SQUASH_MSG from a previous failed squash merge —
+        // git leaves this file behind even when there was nothing to commit
+        let _ = std::fs::remove_file(git_dir.join("SQUASH_MSG"));
 
         // Check for unmerged files that block `git merge --squash`
         let status = Command::new("git")
@@ -528,12 +531,16 @@ impl Git {
             .output()
             .context("Failed to commit squash merge")?;
         if !commit_out.status.success() {
-            let err = String::from_utf8_lossy(&commit_out.stderr).trim().to_string();
+            // git commit prints "nothing to commit" to STDOUT, not stderr
+            let out = String::from_utf8_lossy(&commit_out.stdout);
+            let err = String::from_utf8_lossy(&commit_out.stderr);
             if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
-            if err.contains("nothing to commit") {
+            if out.contains("nothing to commit") || err.contains("nothing to commit") {
+                // Clean up the SQUASH_MSG that git leaves behind
+                let _ = std::fs::remove_file(repo_root.join(".git/SQUASH_MSG"));
                 return Ok(SquashMergeResult::Success("Already up to date — nothing to merge".into()));
             }
-            anyhow::bail!("Squash merge staged but commit failed: {}", err);
+            anyhow::bail!("Squash merge staged but commit failed: {}", err.trim());
         }
 
         // Restore any stashed changes now that merge+commit is complete

@@ -1100,12 +1100,13 @@ Non-auto-resolve conflicts: leaves rebase in progress (no auto-abort) so the con
 - `SquashMergeResult::Success(String)` — clean merge, commit done, message returned
 - `SquashMergeResult::Conflict { conflicted, auto_merged, raw_output }` — should rarely occur since rebase ensures linear history, but handled as safety net
 
-Executes a 4-step cycle from the repo root:
-0. `git stash --include-untracked` — stashes any dirty working tree on main; checks both exit code and stdout to determine if stash occurred (prevents silent stash failures from leaving dirty state)
-1. `git pull --ff-only` on main — non-fatal if offline, fatal if main has diverged
-2. `git merge --squash <branch>` — collapses all branch commits into staged changes
-3. `git log HEAD..branch --reverse --format="- %s"` — collects individual commit messages as bullet points (captured before step 2)
-4. `git commit -m "feat: merge <branch> into main\n\n<commit log bullets>"` — commits with rich message preserving individual commit details, then pops stash
+Executes a multi-step cycle from the repo root:
+0. Pre-flight: aborts stale merge/rebase state, removes stale `SQUASH_MSG`, resolves unmerged files with `checkout --ours` + `git add`
+1. `git stash --include-untracked` — stashes any dirty working tree on main; checks both exit code and stdout to determine if stash occurred (prevents silent stash failures from leaving dirty state)
+2. `git pull --ff-only` on main — non-fatal if offline, fatal if main has diverged
+3. `git merge --squash <branch>` — collapses all branch commits into staged changes
+4. `git log HEAD..branch --reverse --format="- %s"` — collects individual commit messages as bullet points (captured before step 3)
+5. `git commit -m "feat: merge <branch> into main\n\n<commit log bullets>"` — commits with rich message preserving individual commit details, then pops stash. Checks BOTH stdout and stderr for "nothing to commit" (git writes this to stdout not stderr)
 
 Push is a separate user-triggered action (`Shift+P`). `get_main_branch()` dynamically detects main/master/HEAD. `exec_squash_merge()` blocks if the feature branch has uncommitted changes (must commit first).
 
