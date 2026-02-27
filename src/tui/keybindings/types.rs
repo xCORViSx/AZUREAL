@@ -226,6 +226,8 @@ pub enum Action {
     GitPush,
     GitAutoRebase,
     GitAutoResolveSettings,
+    GitPrevWorktree,
+    GitNextWorktree,
 
     // FileTree Options overlay
     FileTreeOptions,

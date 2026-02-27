@@ -209,7 +209,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 16] = [
+pub static GIT_ACTIONS: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -226,6 +226,8 @@ pub static GIT_ACTIONS: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Auto-resolve files", Action::GitAutoResolveSettings),
+    Keybinding::new(KeyCombo::shift(KeyCode::Left), "Prev worktree", Action::GitPrevWorktree).paired(),
+    Keybinding::new(KeyCombo::shift(KeyCode::Right), "Next worktree", Action::GitNextWorktree),
 ];
 
 /// Projects Panel — browse mode bindings (text input modes stay raw)

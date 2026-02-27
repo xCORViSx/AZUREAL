@@ -128,10 +128,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let git_box_height = 3u16; // borders + 1 content line
         let git_v = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(5), Constraint::Length(git_box_height)])
+            .constraints([Constraint::Length(1), Constraint::Min(4), Constraint::Length(git_box_height)])
             .split(content_area);
-        let panes_area = git_v[0];
-        let git_box_area = git_v[1];
+        let tab_bar_area = git_v[0];
+        let panes_area = git_v[1];
+        let git_box_area = git_v[2];
+
+        draw_git_worktree_tabs(f, app, tab_bar_area);
 
         let git_h = Layout::default()
             .direction(Direction::Horizontal)
@@ -484,6 +487,53 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(content).block(block), area);
+}
+
+/// Horizontal worktree tab bar — 1 row at the top of the git panel.
+/// Active tab: AZURE bg + black fg + bold. Inactive: DarkGray bg + Gray fg.
+/// Only non-archived worktrees with a real worktree_path are shown.
+fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
+    let panel = match app.git_actions_panel.as_ref() {
+        Some(p) => p,
+        None => return,
+    };
+    let active_name = &panel.worktree_name;
+
+    let tabs: Vec<(&str, bool)> = app.worktrees.iter()
+        .filter(|wt| !wt.archived && wt.worktree_path.is_some())
+        .map(|wt| {
+            let name = wt.name();
+            let is_active = name == active_name.as_str();
+            (name, is_active)
+        })
+        .collect();
+
+    if tabs.len() <= 1 {
+        // Single worktree — draw a plain dim bar so the layout still holds
+        let bar = Paragraph::new(Span::styled(
+            format!(" {} ", active_name),
+            Style::default().fg(Color::DarkGray),
+        ));
+        f.render_widget(bar, area);
+        return;
+    }
+
+    let mut spans: Vec<Span> = Vec::with_capacity(tabs.len() * 2 + 1);
+    for (name, is_active) in &tabs {
+        let label = format!(" {} ", name);
+        let style = if *is_active {
+            Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray).bg(Color::DarkGray)
+        };
+        spans.push(Span::styled(label, style));
+        // Separator between tabs
+        spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+    }
+    // Remove trailing separator
+    spans.pop();
+
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn draw_loading_indicator(f: &mut Frame, msg: &str) {

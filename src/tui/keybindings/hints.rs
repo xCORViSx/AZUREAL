@@ -150,7 +150,8 @@ pub fn git_actions_footer() -> String {
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}:close", tab, enter, refresh, esc)
+    let (prev, next) = find_key_pair(&GIT_ACTIONS, Action::GitPrevWorktree, Action::GitNextWorktree, "⇧←", "⇧→");
+    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}/{}:wt | {}:close", tab, enter, refresh, prev, next, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.

@@ -281,9 +281,49 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 p.result_message = Some(("Refreshed".into(), false));
             }
         }
+        Action::GitPrevWorktree => { switch_git_panel_worktree(app, false); }
+        Action::GitNextWorktree => { switch_git_panel_worktree(app, true); }
         _ => {}
     }
     Ok(())
+}
+
+/// Cycle the git panel to the prev/next active (non-archived) worktree without closing the panel.
+/// Preserves `focused_pane` so the user stays in the same column after switching.
+fn switch_git_panel_worktree(app: &mut App, forward: bool) {
+    // Collect indices of all active worktrees (non-archived, have a real path)
+    let active: Vec<usize> = app.worktrees.iter().enumerate()
+        .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
+        .map(|(i, _)| i)
+        .collect();
+    if active.len() <= 1 { return; }
+
+    // Find current position — match against panel's worktree_name
+    let current_name = match app.git_actions_panel.as_ref() {
+        Some(p) => p.worktree_name.clone(),
+        None => return,
+    };
+    let pos = active.iter().position(|&idx| {
+        app.worktrees[idx].name() == current_name.as_str()
+    }).unwrap_or(0);
+
+    let new_pos = if forward {
+        (pos + 1) % active.len()
+    } else {
+        (pos + active.len() - 1) % active.len()
+    };
+    let new_idx = active[new_pos];
+
+    // Preserve focused pane across the rebuild
+    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+
+    app.selected_worktree = Some(new_idx);
+    app.load_session_output();
+    app.open_git_actions_panel();
+
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.focused_pane = focused_pane;
+    }
 }
 
 /// Quick check if a key is a nav key (used to preserve result_message during scrolling)
