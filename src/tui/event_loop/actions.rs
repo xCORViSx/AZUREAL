@@ -118,6 +118,11 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
             }
             KeyCode::Enter => {
                 let d = app.post_merge_dialog.take().unwrap();
+                // Remember current selection so refresh doesn't reset to index 0
+                let prev_branch = app.selected_worktree
+                    .and_then(|i| app.worktrees.get(i))
+                    .map(|w| w.branch_name.clone());
+                let prev_idx = app.selected_worktree.unwrap_or(0);
                 match d.selected {
                     0 => {
                         // Keep — worktree is already rebased (rebase happens before merge)
@@ -147,6 +152,14 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                     _ => {}
                 }
                 let _ = app.refresh_worktrees();
+                // Restore selection: find the same branch, or clamp to previous index
+                app.selected_worktree = if app.worktrees.is_empty() {
+                    None
+                } else {
+                    let by_branch = prev_branch.and_then(|b|
+                        app.worktrees.iter().position(|w| w.branch_name == b));
+                    Some(by_branch.unwrap_or_else(|| prev_idx.min(app.worktrees.len() - 1)))
+                };
             }
             _ => {}
         }
