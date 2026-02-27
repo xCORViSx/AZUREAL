@@ -615,7 +615,7 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         block = block.title(
             Line::from(Span::styled(
                 format!(" {} behind ", panel.commits_behind_main),
-                Style::default().fg(GIT_BROWN).add_modifier(Modifier::DIM),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )).alignment(Alignment::Right)
         );
     }

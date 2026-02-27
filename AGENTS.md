@@ -1070,7 +1070,7 @@ Actions change based on whether the current worktree is the main/master branch o
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
 - `j/k` — navigate commits (auto-loads `git show <hash>` in viewer via `load_commit_diff_inline()`); `Enter` — also loads diff inline
 - `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after commit/push operations; also refreshes `commits_behind_main` count
-- Right-aligned title shows `" N behind "` (dim GIT_BROWN) when on a feature branch that is behind main (`commits_behind_main > 0`). Computed via `Git::get_commits_behind_main()` using `git rev-list --count HEAD..{main_branch}`
+- Right-aligned title shows `" N behind "` (bold red) when on a feature branch that is behind main (`commits_behind_main > 0`). Computed via `Git::get_commits_behind_main()` using `git rev-list --count HEAD..{main_branch}`
 
 **Global within panel:**
 - `Tab` — cycle focus: Actions → Files → Commits → Actions (`focused_pane = (focused_pane + 1) % 3`)
