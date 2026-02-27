@@ -492,47 +492,92 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
 /// Horizontal worktree tab bar — 1 row at the top of the git panel.
 /// Active tab: GIT_ORANGE bg + white fg + bold. Inactive: GIT_BROWN fg, no bg.
 /// Only non-archived worktrees with a real worktree_path are shown.
-/// Comparison uses full branch_name (panel.worktree_name) to match correctly.
+///
+/// Pagination: when all tabs don't fit in the row, they are packed into pages
+/// greedily — a tab that would overflow the current page is moved wholesale to
+/// the next page so no tab is ever partially visible. The page that contains the
+/// active tab is shown. A dim "N/M" indicator at the right shows current page.
 fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
     let panel = match app.git_actions_panel.as_ref() {
         Some(p) => p,
         None => return,
     };
     let active_branch = &panel.worktree_name;
+    let avail = area.width as usize;
 
     let tabs: Vec<(&str, bool)> = app.worktrees.iter()
         .filter(|wt| !wt.archived && wt.worktree_path.is_some())
-        .map(|wt| {
-            let is_active = wt.branch_name == *active_branch;
-            (wt.name(), is_active)
-        })
+        .map(|wt| (wt.name(), wt.branch_name == *active_branch))
         .collect();
 
     if tabs.len() <= 1 {
-        // Single worktree — draw a plain dim bar so the layout still holds
         let display = crate::models::strip_branch_prefix(active_branch);
-        let bar = Paragraph::new(Span::styled(
+        f.render_widget(Paragraph::new(Span::styled(
             format!(" {} ", display),
             Style::default().fg(GIT_BROWN),
-        ));
-        f.render_widget(bar, area);
+        )), area);
         return;
     }
 
-    let mut spans: Vec<Span> = Vec::with_capacity(tabs.len() * 2 + 1);
-    for (name, is_active) in &tabs {
-        let label = format!(" {} ", name);
-        let style = if *is_active {
+    // Display width of each tab label: " name " = name_cols + 2
+    let tab_widths: Vec<usize> = tabs.iter()
+        .map(|(name, _)| {
+            name.chars()
+                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum::<usize>()
+                + 2
+        })
+        .collect();
+
+    // Pack tabs into pages greedily — a tab that would overflow goes to the next page.
+    // Separator "│" (1 col) is added between adjacent tabs on the same page.
+    let mut pages: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut cur_w: usize = 0;
+    let mut active_page: usize = 0;
+
+    for (i, (&tw, (_, is_active))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+        // Space needed to add this tab to cur: label + separator if not first
+        let cost = if cur.is_empty() { tw } else { tw + 1 };
+        if !cur.is_empty() && cur_w + cost > avail {
+            pages.push(std::mem::take(&mut cur));
+            cur = vec![i];
+            cur_w = tw;
+        } else {
+            cur.push(i);
+            cur_w += cost;
+        }
+        if *is_active { active_page = pages.len(); }
+    }
+    if !cur.is_empty() { pages.push(cur); }
+
+    let total_pages = pages.len();
+    let page_tabs = match pages.get(active_page) {
+        Some(p) => p,
+        None => return,
+    };
+
+    let mut spans: Vec<Span> = Vec::with_capacity(page_tabs.len() * 2 + 1);
+    for (j, &idx) in page_tabs.iter().enumerate() {
+        let (name, is_active) = tabs[idx];
+        let style = if is_active {
             Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(GIT_BROWN)
         };
-        spans.push(Span::styled(label, style));
-        // Separator between tabs
-        spans.push(Span::styled("│", Style::default().fg(GIT_BROWN)));
+        spans.push(Span::styled(format!(" {} ", name), style));
+        if j + 1 < page_tabs.len() {
+            spans.push(Span::styled("│", Style::default().fg(GIT_BROWN)));
+        }
     }
-    // Remove trailing separator
-    spans.pop();
+
+    // Page indicator — dim, only when multiple pages exist
+    if total_pages > 1 {
+        spans.push(Span::styled(
+            format!("  {}/{}", active_page + 1, total_pages),
+            Style::default().fg(GIT_BROWN).add_modifier(Modifier::DIM),
+        ));
+    }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
