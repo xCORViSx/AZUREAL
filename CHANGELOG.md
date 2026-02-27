@@ -74,6 +74,7 @@ All notable changes to Azureal will be documented in this file.
 - **azufig confirmed project-scoped** — Removed aspirational worktree-local azufig documentation (never implemented). The project-local `.azureal/azufig.toml` is always at the main worktree root (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees. No per-worktree copies.
 - **Git status box hints** — Removed `a:auto-rebase` from status box footer since it's already listed in the Actions pane.
 - **`.DS_Store` untracked from git** — File was in `.gitignore` but already tracked in git history, causing it to appear as a conflict offender during RCR. Removed from tracking via `git rm --cached`.
+- **Auto-untrack gitignored files** — `Git::untrack_gitignored_files()` runs `git ls-files -i --exclude-standard` to find tracked files matching `.gitignore`, then `git rm --cached` to remove them from the index without deleting the working-tree copy. Called on startup (`load()`) and after every `stage_all()` (`git add -A`) to prevent gitignored files from being committed or causing rebase/merge conflicts.
 
 ### Removed
 - **`⌃d` global debug dump shortcut** — Debug dump functionality moved into the AZUREAL++ panel (⌃a → Debug tab). `⌃d` still works as a panel-internal bind inside the Debug tab. Global `debug_dump_naming` and `debug_dump_saving` state fields removed from App.

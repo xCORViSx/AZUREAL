@@ -39,6 +39,10 @@ impl App {
         // Load auto-rebase enabled branches from project azufig
         self.auto_rebase_enabled = crate::azufig::load_auto_rebase_branches(&repo_root);
 
+        // Untrack any files that match .gitignore but are still in the index
+        // (e.g. .DS_Store committed before gitignore was added).
+        Git::untrack_gitignored_files(&repo_root);
+
         // Detached HEAD repair and orphaned rebase cleanup now handled
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;

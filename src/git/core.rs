@@ -544,15 +544,47 @@ impl Git {
         Ok(SquashMergeResult::Success(format!("Merged: {}{}", first, pull_note)))
     }
 
-    /// Stage all changes (tracked + untracked) via `git add -A`
+    /// Stage all changes (tracked + untracked) via `git add -A`, then
+    /// untrack any files that match `.gitignore` patterns. `git add -A`
+    /// stages modifications to already-tracked files even if they're in
+    /// `.gitignore` — this guard removes them from the index so they
+    /// never end up in commits.
     pub fn stage_all(worktree_path: &Path) -> Result<()> {
         let output = Command::new("git")
             .args(["add", "-A"])
             .current_dir(worktree_path)
             .output()
             .context("Failed to stage changes")?;
-        if output.status.success() { Ok(()) }
-        else { anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim()) }
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Self::untrack_gitignored_files(worktree_path);
+        Ok(())
+    }
+
+    /// Find tracked files that match `.gitignore` and remove them from the
+    /// index (`git rm --cached`). Does NOT delete the working-tree copy.
+    /// Silently no-ops if nothing matches or if any git command fails.
+    pub fn untrack_gitignored_files(path: &Path) {
+        let ls = Command::new("git")
+            .args(["ls-files", "-i", "--exclude-standard"])
+            .current_dir(path)
+            .output();
+        let files: Vec<String> = match ls {
+            Ok(ref o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(|l| l.to_string())
+                    .collect()
+            }
+            _ => return,
+        };
+        if files.is_empty() { return; }
+        let mut cmd = Command::new("git");
+        cmd.args(["rm", "--cached", "--quiet", "--"]);
+        for f in &files { cmd.arg(f); }
+        let _ = cmd.current_dir(path).output();
     }
 
     /// Get the full diff of staged changes for commit message generation
