@@ -693,7 +693,7 @@ impl App {
             session_filter: String::new(),
             session_content_search: false,
             session_search_results: Vec::new(),
-            selected_model: Some("sonnet".to_string()),
+            selected_model: Some("opus".to_string()),
             detected_model: None,
         }
     }
@@ -754,16 +754,16 @@ impl App {
     /// Short display name for the active model. Always returns the selected_model
     /// alias since it's always set (never None).
     pub fn display_model_name(&self) -> &str {
-        self.selected_model.as_deref().unwrap_or("sonnet")
+        self.selected_model.as_deref().unwrap_or("opus")
     }
 
-    /// Cycle selected_model through: sonnet → opus → haiku → sonnet.
+    /// Cycle selected_model through: opus → sonnet → haiku → opus.
     /// Always set — the displayed model is exactly what gets passed as --model to spawn().
     pub fn cycle_model(&mut self) {
         self.selected_model = Some(match self.selected_model.as_deref() {
-            Some("sonnet") => "opus",
-            Some("opus") => "haiku",
-            _ => "sonnet",
+            Some("opus") => "sonnet",
+            Some("sonnet") => "haiku",
+            _ => "opus",
         }.to_string());
     }
 

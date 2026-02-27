@@ -106,7 +106,7 @@ azureal
 | `?` | Help |
 | `⌃a` | AZUREAL++ panel (Debug, Issues, PRs) |
 | `⌃c` | Cancel agent |
-| `⌃m` | Cycle model (sonnet → opus → haiku) |
+| `⌃m` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
 

@@ -5,7 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Changed
-- **Model switcher always shows specific model** — `selected_model` is now always set (never None), initialized to "sonnet". Cycles through sonnet → opus → haiku → sonnet. The displayed name is exactly what gets passed as `--model` to `spawn()`. No session file detection or stream lookup needed.
+- **Model switcher always shows specific model** — `selected_model` is now always set (never None), initialized to "opus". Cycles through opus → sonnet → haiku → opus. The displayed name is exactly what gets passed as `--model` to `spawn()`. No session file detection or stream lookup needed.
 - **Keybindings module decomposed** — `keybindings.rs` (1007 lines) split into 5 focused submodules: `types.rs` (KeyCombo, Action, Keybinding, HelpSection), `bindings.rs` (~21 static arrays + alt key statics), `lookup.rs` (KeyContext + lookup_action + 7 per-modal lookups), `hints.rs` (help_sections, title/hint generators, find_key_for_action), `platform.rs` (macos_opt_key). Module root re-exports all public items — no import changes needed in consuming files.
 
 ### Fixed
