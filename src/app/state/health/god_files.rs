@@ -25,24 +25,52 @@ impl App {
     /// with Enter, then Esc to rescan and return to the god file panel.
     /// Loads persisted scope from `[healthscope]` in .azureal/azufig.toml; otherwise
     /// falls back to auto-detected SOURCE_ROOTS.
+    ///
+    /// Scope is persisted relative to project.path (main repo root), but the file
+    /// tree shows entries from the current worktree path. This method translates
+    /// project-root paths → worktree paths so highlighting matches the file tree.
     pub fn enter_god_file_scope_mode(&mut self) {
         let Some(ref project) = self.project else { return };
-        let root = &project.path;
+        let project_root = project.path.clone();
 
-        // Try loading persisted scope first
-        let dirs = load_health_scope(root).unwrap_or_else(|| {
+        // The file tree is rooted at the current worktree path, which may differ
+        // from project.path (e.g., /repo/worktrees/health vs /repo). Translate
+        // scope paths so they match the file tree entries.
+        let wt_root = self.current_worktree()
+            .and_then(|wt| wt.worktree_path.clone())
+            .unwrap_or_else(|| project_root.clone());
+
+        // Try loading persisted scope first (stored as project-root-relative)
+        let dirs = load_health_scope(&project_root).unwrap_or_else(|| {
             let found: Vec<PathBuf> = SOURCE_ROOTS.iter()
-                .map(|name| root.join(name))
+                .map(|name| project_root.join(name))
                 .filter(|p| p.is_dir())
                 .collect();
             if found.is_empty() {
                 let mut s = HashSet::new();
-                s.insert(root.clone());
+                s.insert(project_root.clone());
                 s
             } else {
                 found.into_iter().collect()
             }
         });
+
+        // Translate project-root paths → worktree paths for file tree highlighting
+        let dirs = if wt_root != project_root {
+            dirs.into_iter()
+                .map(|p| {
+                    if let Ok(rel) = p.strip_prefix(&project_root) {
+                        let translated = wt_root.join(rel);
+                        if translated.is_dir() { translated } else { p }
+                    } else {
+                        p
+                    }
+                })
+                .collect()
+        } else {
+            dirs
+        };
+
         self.god_file_filter_dirs = dirs;
         self.god_file_filter_mode = true;
 

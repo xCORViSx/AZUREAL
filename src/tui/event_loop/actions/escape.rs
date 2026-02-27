@@ -46,11 +46,34 @@ pub(super) fn dispatch_escape(app: &mut App) {
         }
         Focus::FileTree => {
             if app.god_file_filter_mode {
-                // Exit scope mode — save scope (fast) and defer the expensive rescan
-                if let Some(ref project) = app.project {
-                    crate::app::save_health_scope(&project.path, &app.god_file_filter_dirs);
+                // Exit scope mode — translate worktree paths back to project-root
+                // paths before saving (scope is persisted relative to project root)
+                // and passing to the rescan (which also uses project root).
+                let project_root = app.project.as_ref().map(|p| p.path.clone());
+                let wt_root = app.current_worktree()
+                    .and_then(|wt| wt.worktree_path.clone());
+                let translated: std::collections::HashSet<std::path::PathBuf> =
+                    if let (Some(ref pr), Some(ref wr)) = (&project_root, &wt_root) {
+                        if pr != wr {
+                            app.god_file_filter_dirs.iter()
+                                .map(|p| {
+                                    if let Ok(rel) = p.strip_prefix(wr) {
+                                        pr.join(rel)
+                                    } else {
+                                        p.clone()
+                                    }
+                                })
+                                .collect()
+                        } else {
+                            app.god_file_filter_dirs.clone()
+                        }
+                    } else {
+                        app.god_file_filter_dirs.clone()
+                    };
+                if let Some(ref pr) = project_root {
+                    crate::app::save_health_scope(pr, &translated);
                 }
-                let dirs: Vec<String> = app.god_file_filter_dirs.iter()
+                let dirs: Vec<String> = translated.iter()
                     .map(|p| p.to_string_lossy().to_string()).collect();
                 app.god_file_filter_mode = false;
                 app.god_file_filter_dirs.clear();
