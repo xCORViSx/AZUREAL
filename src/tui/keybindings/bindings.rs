@@ -220,7 +220,7 @@ pub static GIT_ACTIONS: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase onto main", Action::GitRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push", Action::GitPush),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push to remote", Action::GitPush),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),

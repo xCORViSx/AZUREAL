@@ -1033,7 +1033,7 @@ Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybindi
 | Sidebar (left) | Actions list (top) + Changed Files (bottom) — split vertically | "Actions" / "Changed Files (N, +X/-Y)" |
 | Viewer (center) | File/commit diff with diff coloring | "Viewer" (or diff title) |
 | Session (right) | Commit log | "Commits (N)" |
-| Status box (bottom, 3 rows) | Full-width git status box with keybinding hints in title | "Git: <worktree> <footer hints>" |
+| Status box (bottom, 3 rows) | Full-width git status box with keybinding hints in title | " GIT  <footer hints>" |
 | Status bar | Minimal: "Git: <worktree>" + CPU/PID badge | — |
 
 Commit editor and conflict overlays render on top of the viewer pane from `run.rs::ui()` overlay section (not inline in the viewer). Uses GIT_ORANGE (#F05032) for overlay borders (commit editor, conflict resolver) and cursor highlights; GIT_BROWN (#A0522D) for diff header coloring and dim key hints.
@@ -1042,7 +1042,7 @@ Commit editor and conflict overlays render on top of the viewer pane from `run.r
 - **Changed Files section** (sidebar bottom, fills remaining): Working tree changes with status chars, +/-N stats, underlined paths. Selecting a file auto-loads its diff in the viewer. Focus: `panel.focused_pane == 1`.
 - **Viewer pane** (center): Shows file diffs or commit diffs with diff coloring (green additions, red deletions, cyan hunks, GIT_BROWN headers). Empty state shows "Select a file or commit to view its diff". Populates `viewer_lines_cache` so mouse drag selection, `⌘A` (select all), and `⌘C` (copy) work identically to the normal viewer — uses `viewer_scroll` for scrolling and `viewer_selection` for highlighting via `apply_selection_to_line()` with gutter=0. `⌘C` falls back to copying the status box `result_message` when no selection exists.
 - **Commits pane** (right): Branch-scoped commit log — feature branches show only their own commits (`git log main..HEAD`), main shows full history. Unpushed commits show green, pushed show dim. `Git::get_commit_log()` uses `git rev-list --count @{u}..HEAD` for ahead count. Selecting a commit loads `git show <hash>` in the viewer. Auto-refreshes after commit/push operations. Focus: `panel.focused_pane == 2`.
-- **Git status box** (full-width bottom): Title formatted via `split_title_hints()` — label `" GIT: <worktree> "` with keybinding hints in `(key:desc | key:desc)` format (same style as the prompt box). Content shows result messages (green=success, red=error). Always Double + GIT_ORANGE border.
+- **Git status box** (full-width bottom): Title formatted via `split_title_hints()` — label `" GIT "` with keybinding hints in `(key:desc | key:desc)` format (same style as the prompt box). Content shows result messages (green=success, red=error). Always Double + GIT_ORANGE border.
 - **Status bar**: Minimal — shows "Git: <worktree>" on left, CPU/PID badge on right.
 
 **Context-Aware Actions (when actions section focused):**
@@ -1051,13 +1051,13 @@ Actions change based on whether the current worktree is the main/master branch o
 *On main branch:*
 - `l` / Enter on index 0 — Pull (`exec_pull()`) — pulls latest changes from remote
 - `c` / Enter on index 1 — Commit (see below)
-- `Shift+P` / Enter on index 2 — Push current branch to remote
+- `Shift+P` / Enter on index 2 — Push to remote
 
 *On feature branches (4 actions):*
 - `m` / Enter on index 0 — Squash merge to main: rebases onto main first (see rebase-before-merge below), then `Git::squash_merge_into_main()`. Does NOT auto-push; user triggers push separately.
 - `r` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main. On conflict, shows overlay with RCR option.
 - `c` / Enter on index 2 — Commit (see below)
-- `Shift+P` / Enter on index 3 — Push current branch to remote
+- `Shift+P` / Enter on index 3 — Push to remote
 
 **Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
 
@@ -1069,7 +1069,8 @@ Actions change based on whether the current worktree is the main/master branch o
 **Commits list (when commits pane focused, focused_pane==2):**
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
 - `j/k` — navigate commits (auto-loads `git show <hash>` in viewer via `load_commit_diff_inline()`); `Enter` — also loads diff inline
-- `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after commit/push operations
+- `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after commit/push operations; also refreshes `commits_behind_main` count
+- Right-aligned title shows `" N behind "` (dim GIT_BROWN) when on a feature branch that is behind main (`commits_behind_main > 0`). Computed via `Git::get_commits_behind_main()` using `git rev-list --count HEAD..{main_branch}`
 
 **Global within panel:**
 - `Tab` — cycle focus: Actions → Files → Commits → Actions (`focused_pane = (focused_pane + 1) % 3`)

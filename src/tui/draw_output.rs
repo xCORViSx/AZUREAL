@@ -603,13 +603,22 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
     } else {
         Style::default().fg(GIT_BROWN)
     };
-    let block = Block::default()
+    let mut block = Block::default()
         .title(Span::styled(title, Style::default()
             .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
             .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() })))
         .borders(Borders::ALL)
         .border_type(if focused { BorderType::Double } else { BorderType::Plain })
         .border_style(border_style);
+
+    if !panel.is_on_main && panel.commits_behind_main > 0 {
+        block = block.title(
+            Line::from(Span::styled(
+                format!(" {} behind ", panel.commits_behind_main),
+                Style::default().fg(GIT_BROWN).add_modifier(Modifier::DIM),
+            )).alignment(Alignment::Right)
+        );
+    }
 
     f.render_widget(Paragraph::new(lines).block(block), area);
 }

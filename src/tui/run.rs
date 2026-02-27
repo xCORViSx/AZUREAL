@@ -459,7 +459,7 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let hints = keybindings::git_actions_footer();
-    let label = format!(" GIT: {} ", panel.worktree_name);
+    let label = " GIT ".to_string();
     let max_w = area.width.saturating_sub(2) as usize;
     let (top_title, bottom_title) = draw_input::split_title_hints(&label, &hints, max_w);
 

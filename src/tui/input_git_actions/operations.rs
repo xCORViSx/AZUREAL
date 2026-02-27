@@ -482,4 +482,8 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
         }
         Err(_) => { panel.commits.clear(); panel.selected_commit = 0; }
     }
+    if !panel.is_on_main {
+        panel.commits_behind_main =
+            Git::get_commits_behind_main(&panel.worktree_path, &panel.main_branch.clone());
+    }
 }

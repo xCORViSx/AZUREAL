@@ -658,6 +658,19 @@ impl Git {
         Ok(commits)
     }
 
+    /// How many commits on `main_branch` are not yet in HEAD (i.e. branch is behind main by N).
+    /// Returns 0 on main branch, no upstream, or any error — always safe to call.
+    pub fn get_commits_behind_main(worktree_path: &Path, main_branch: &str) -> usize {
+        Command::new("git")
+            .args(["rev-list", "--count", &format!("HEAD..{}", main_branch)])
+            .current_dir(worktree_path)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<usize>().ok())
+            .unwrap_or(0)
+    }
+
     /// Get full diff for a single commit (for the viewer pane in Git panel)
     pub fn get_commit_diff(worktree_path: &Path, hash: &str) -> Result<String> {
         let output = Command::new("git")

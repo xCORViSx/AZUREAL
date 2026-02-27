@@ -498,6 +498,8 @@ pub struct GitActionsPanel {
     pub viewer_diff: Option<String>,
     /// Title for the viewer pane diff (e.g. "diff: path" or "commit: abc1234")
     pub viewer_diff_title: Option<String>,
+    /// How many commits on main are not yet in this branch (shown in commits pane right title)
+    pub commits_behind_main: usize,
     /// Files that are auto-resolved during rebase via union merge (cached from azufig)
     pub auto_resolve_files: Vec<String>,
     /// Auto-resolve settings overlay (opened with `s` in actions pane)

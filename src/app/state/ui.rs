@@ -115,6 +115,9 @@ impl App {
             .collect();
 
         let auto_resolve_files = crate::azufig::load_auto_resolve_files(&repo_root);
+        let commits_behind_main = if is_on_main { 0 } else {
+            Git::get_commits_behind_main(&wt_path, &main_branch)
+        };
 
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
@@ -135,6 +138,7 @@ impl App {
             commit_scroll: 0,
             viewer_diff: None,
             viewer_diff_title: None,
+            commits_behind_main,
             auto_resolve_files,
             auto_resolve_overlay: None,
         });

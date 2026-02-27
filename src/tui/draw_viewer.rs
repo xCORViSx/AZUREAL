@@ -26,7 +26,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, StatefulWidget},
     Frame,
 };
 use ratatui_image::StatefulImage;
@@ -406,6 +406,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
             .border_style(Style::default().fg(border_color).add_modifier(if is_focused || in_edit_diff { Modifier::BOLD } else { Modifier::empty() })),
     );
 
+    f.render_widget(Clear, area);
     f.render_widget(widget, area);
 
     // Draw tab bar if there are tabs
