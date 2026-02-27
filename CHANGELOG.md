@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Post-merge dialog centered on full screen with git colors** — Dialog now renders center-screen (was anchored to session pane) and uses `GIT_ORANGE` border/title (was AZURE) to match the git panel theme.
 - **Git status box title simplified** — Title changed from `" GIT: <branch> "` to just `" GIT "` since the worktree tab bar already shows which branch is active.
 - **Push label updated** — Git panel push action description changed from "Push" to "Push to remote" for clarity.
 - **Model switcher always shows specific model** — `selected_model` is now always set (never None), initialized to "opus". Cycles through opus → sonnet → haiku → opus. The displayed name is exactly what gets passed as `--model` to `spawn()`. No session file detection or stream lookup needed.

@@ -507,7 +507,7 @@ pub fn draw_rcr_approval(f: &mut Frame, area: Rect) {
 }
 
 /// Draw the post-merge dialog — asks whether to keep, archive, or delete the
-/// worktree after a successful squash merge. Centered over the session pane.
+/// worktree after a successful squash merge. Centered on the full screen.
 pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::app::types::PostMergeDialog) {
     let w = 50u16.min(area.width.saturating_sub(2));
     let h = 9u16.min(area.height.saturating_sub(2));
@@ -519,10 +519,10 @@ pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::a
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
+        .border_style(Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD))
         .title(Span::styled(
             format!(" {} merged ", dialog_state.display_name),
-            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD),
         ));
 
     let arrow = |i: usize| if dialog_state.selected == i { "▸ " } else { "  " };

@@ -236,9 +236,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
         draw_output::draw_rcr_approval(f, app.pane_session);
     }
-    // Post-merge dialog — rendered over session pane
+    // Post-merge dialog — rendered center screen
     if let Some(ref pmd) = app.post_merge_dialog {
-        draw_output::draw_post_merge_dialog(f, app.pane_session, pmd);
+        draw_output::draw_post_merge_dialog(f, f.area(), pmd);
     }
 
     draw_status::draw_status(f, app, status_area);
