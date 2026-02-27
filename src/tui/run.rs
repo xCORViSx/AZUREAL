@@ -26,7 +26,7 @@ use crate::config::Config;
 
 use super::event_loop;
 use super::keybindings;
-use super::util::{GIT_ORANGE, AZURE};
+use super::util::{GIT_ORANGE, GIT_BROWN, AZURE};
 use super::{draw_azureal, draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
 
 /// Run the TUI application
@@ -490,29 +490,30 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Horizontal worktree tab bar — 1 row at the top of the git panel.
-/// Active tab: AZURE bg + black fg + bold. Inactive: DarkGray bg + Gray fg.
+/// Active tab: GIT_ORANGE bg + white fg + bold. Inactive: GIT_BROWN fg, no bg.
 /// Only non-archived worktrees with a real worktree_path are shown.
+/// Comparison uses full branch_name (panel.worktree_name) to match correctly.
 fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
     let panel = match app.git_actions_panel.as_ref() {
         Some(p) => p,
         None => return,
     };
-    let active_name = &panel.worktree_name;
+    let active_branch = &panel.worktree_name;
 
     let tabs: Vec<(&str, bool)> = app.worktrees.iter()
         .filter(|wt| !wt.archived && wt.worktree_path.is_some())
         .map(|wt| {
-            let name = wt.name();
-            let is_active = name == active_name.as_str();
-            (name, is_active)
+            let is_active = wt.branch_name == *active_branch;
+            (wt.name(), is_active)
         })
         .collect();
 
     if tabs.len() <= 1 {
         // Single worktree — draw a plain dim bar so the layout still holds
+        let display = crate::models::strip_branch_prefix(active_branch);
         let bar = Paragraph::new(Span::styled(
-            format!(" {} ", active_name),
-            Style::default().fg(Color::DarkGray),
+            format!(" {} ", display),
+            Style::default().fg(GIT_BROWN),
         ));
         f.render_widget(bar, area);
         return;
@@ -522,13 +523,13 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
     for (name, is_active) in &tabs {
         let label = format!(" {} ", name);
         let style = if *is_active {
-            Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Gray).bg(Color::DarkGray)
+            Style::default().fg(GIT_BROWN)
         };
         spans.push(Span::styled(label, style));
         // Separator between tabs
-        spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled("│", Style::default().fg(GIT_BROWN)));
     }
     // Remove trailing separator
     spans.pop();

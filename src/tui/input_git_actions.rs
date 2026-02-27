@@ -304,7 +304,7 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
         None => return,
     };
     let pos = active.iter().position(|&idx| {
-        app.worktrees[idx].name() == current_name.as_str()
+        app.worktrees[idx].branch_name == current_name
     }).unwrap_or(0);
 
     let new_pos = if forward {
