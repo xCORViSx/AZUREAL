@@ -196,9 +196,12 @@ impl App {
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
         // Only display output from the active slot of the currently viewed branch.
         // Also suppress when the user is viewing a different session file (historic).
-        let is_viewing = !self.viewing_historic_session && self.current_worktree().map(|s| {
+        // During RCR, always show output if the slot matches the RCR session — the
+        // worktree's branch_name may be empty (detached HEAD during rebase).
+        let is_rcr_slot = self.rcr_session.as_ref().map(|r| r.slot_id == slot_id).unwrap_or(false);
+        let is_viewing = !self.viewing_historic_session && (is_rcr_slot || self.current_worktree().map(|s| {
             self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
-        }).unwrap_or(false);
+        }).unwrap_or(false));
         if is_viewing {
             // Single JSON parse: EventParser returns both events AND the raw parsed
             // JSON value. We reuse that value for token/model extraction below instead

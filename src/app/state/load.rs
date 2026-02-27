@@ -55,12 +55,49 @@ impl App {
         // Repair detached HEADs — can happen after rebase abort, crash, or
         // interrupted operations. Without this, detached worktrees get
         // branch=None → empty-named active entry + real branch as archived.
+        //
+        // Two cases:
+        // 1. Active rebase (e.g. RCR in progress): read branch from
+        //    rebase-merge/head-name WITHOUT aborting — the rebase is intentional.
+        // 2. Orphaned detached HEAD (no rebase): re-attach via checkout.
         let mut needs_refetch = false;
+        let mut rebase_branches: Vec<(std::path::PathBuf, String)> = Vec::new();
         for wt in &worktrees {
             if wt.branch.is_some() { continue; }
             if Git::is_rebase_in_progress(&wt.path) {
+                // Read the original branch from rebase state — don't abort
+                let git_dir = std::process::Command::new("git")
+                    .args(["rev-parse", "--git-dir"])
+                    .current_dir(&wt.path)
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+                if let Some(ref gd) = git_dir {
+                    let head_name = std::path::Path::new(gd).join("rebase-merge/head-name");
+                    if let Ok(content) = std::fs::read_to_string(&head_name) {
+                        let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                        if !branch.is_empty() {
+                            rebase_branches.push((wt.path.clone(), branch.to_string()));
+                            continue;
+                        }
+                    }
+                    // Also check rebase-apply (for non-interactive rebases)
+                    let head_name = std::path::Path::new(gd).join("rebase-apply/head-name");
+                    if let Ok(content) = std::fs::read_to_string(&head_name) {
+                        let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                        if !branch.is_empty() {
+                            rebase_branches.push((wt.path.clone(), branch.to_string()));
+                            continue;
+                        }
+                    }
+                }
+                // Rebase state exists but can't read branch — orphaned, abort
                 let _ = Git::rebase_abort(&wt.path);
+                needs_refetch = true;
+                continue;
             }
+            // No rebase — plain detached HEAD, re-attach
             let head_ok = std::process::Command::new("git")
                 .args(["symbolic-ref", "--quiet", "HEAD"])
                 .current_dir(&wt.path)
@@ -84,11 +121,19 @@ impl App {
                 }
             }
         }
-        let worktrees = if needs_refetch {
+        let mut worktrees = if needs_refetch {
             Git::list_worktrees_detailed(&project.path)?
         } else {
             worktrees
         };
+        // Patch in branch names recovered from active rebase state
+        for (path, branch) in &rebase_branches {
+            for wt in &mut worktrees {
+                if wt.path == *path && wt.branch.is_none() {
+                    wt.branch = Some(branch.clone());
+                }
+            }
+        }
 
         let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
