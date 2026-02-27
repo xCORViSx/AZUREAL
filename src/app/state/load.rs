@@ -39,47 +39,8 @@ impl App {
         // Load auto-rebase enabled branches from project azufig
         self.auto_rebase_enabled = crate::azufig::load_auto_rebase_branches(&repo_root);
 
-        // Clean up orphaned rebase state and detached HEAD BEFORE loading
-        // worktrees. `git rebase --abort` after an `--onto` rebase can leave
-        // HEAD detached, and a prior crash can leave it detached too. If
-        // load_worktrees runs first, detached worktrees get branch=None and
-        // appear as archived. Fix by scanning raw worktree paths, aborting
-        // any orphaned rebases, and re-attaching detached HEADs.
-        if let Ok(wt_paths) = Git::list_worktrees(&repo_root) {
-            for wt_path in &wt_paths {
-                let p = std::path::Path::new(wt_path);
-                // Abort orphaned rebases
-                if Git::is_rebase_in_progress(p) {
-                    let _ = Git::rebase_abort(p);
-                }
-                // Re-attach HEAD if detached — find which branch points at
-                // HEAD and checkout it (works with any branch naming convention)
-                let head_ok = std::process::Command::new("git")
-                    .args(["symbolic-ref", "--quiet", "HEAD"])
-                    .current_dir(p)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(true);
-                if !head_ok {
-                    if let Ok(out) = std::process::Command::new("git")
-                        .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
-                        .current_dir(p)
-                        .output()
-                    {
-                        let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        if !branch.is_empty() {
-                            // If multiple branches, take the first
-                            let target = branch.lines().next().unwrap_or(&branch);
-                            let _ = std::process::Command::new("git")
-                                .args(["checkout", target])
-                                .current_dir(p)
-                                .output();
-                        }
-                    }
-                }
-            }
-        }
-
+        // Detached HEAD repair and orphaned rebase cleanup now handled
+        // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;
 
         Ok(())
@@ -90,6 +51,45 @@ impl App {
         let Some(project) = &self.project else { return Ok(()) };
 
         let worktrees = Git::list_worktrees_detailed(&project.path)?;
+
+        // Repair detached HEADs — can happen after rebase abort, crash, or
+        // interrupted operations. Without this, detached worktrees get
+        // branch=None → empty-named active entry + real branch as archived.
+        let mut needs_refetch = false;
+        for wt in &worktrees {
+            if wt.branch.is_some() { continue; }
+            if Git::is_rebase_in_progress(&wt.path) {
+                let _ = Git::rebase_abort(&wt.path);
+            }
+            let head_ok = std::process::Command::new("git")
+                .args(["symbolic-ref", "--quiet", "HEAD"])
+                .current_dir(&wt.path)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(true);
+            if !head_ok {
+                if let Ok(out) = std::process::Command::new("git")
+                    .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
+                    .current_dir(&wt.path)
+                    .output()
+                {
+                    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if let Some(target) = branch.lines().next().filter(|b| !b.is_empty()) {
+                        let _ = std::process::Command::new("git")
+                            .args(["checkout", target])
+                            .current_dir(&wt.path)
+                            .output();
+                        needs_refetch = true;
+                    }
+                }
+            }
+        }
+        let worktrees = if needs_refetch {
+            Git::list_worktrees_detailed(&project.path)?
+        } else {
+            worktrees
+        };
+
         let azureal_branches = Git::list_azureal_branches(&project.path)?;
 
         // Migrate old-encoding Claude project dirs (e.g. AZUREAL++ → AZUREAL--)
