@@ -618,21 +618,21 @@ Implementation:
 
 ### Centralized Keybindings
 
-**ALL keybindings are defined once** in `src/tui/keybindings.rs`. The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
+**ALL keybindings are defined once** in `src/tui/keybindings/` (5 submodules, module root re-exports everything). The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
 
-**Architecture:**
-- `Action` enum: All possible keybinding actions (~98 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `PickerQuickDelete`, `BranchDialogOpen`, `BrowseMain`, etc.)
-- `KeyCombo`: Key + modifier combination with display helpers
-- `Keybinding`: Primary key, alternatives (j/↓), description, action, `pair_with_next` (merges with next binding on one help line — for counterpart pairs like up/down, next/prev)
-- `KeyContext`: Captures all guard state from App (focus, prompt_mode, edit_mode, terminal_mode, filter_active, wizard_active, help_open). Built via `KeyContext::from_app(app)`.
-- Static arrays per context: `GLOBAL`, `WORKTREES` (15 entries — includes `m` for BrowseMain), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `WIZARD`, `HEALTH_SHARED` (9 entries — `Tab:tab` top-left and `s:scope` top-right of panel border), `HEALTH_GOD_FILES` (4 entries — god-files-specific keys), `HEALTH_DOCS`, `GIT_ACTIONS` (16 entries — context-aware actions + navigation/focus/refresh/diff/auto-rebase/auto-resolve), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`
-- Guard logic lives **inside** `lookup_action()` — skip conditions prevent globals from firing during text input, edit mode, terminal mode, filter, or wizard. No guard duplication in event_loop.rs.
-- **Per-modal lookup functions:** `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(actions_focused, is_on_main, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)` — each checks its modal's arrays and returns `Option<Action>`
-- **Hint generators:** `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()` — draw functions call these instead of hardcoding footer/hint strings
+**Architecture (5 submodules):**
+- **`types.rs`** — `Action` enum (~109 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL`, `WORKTREES` (14 entries — includes `m` for BrowseMain), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (16 entries — context-aware), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
+- **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
+- **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
+
+The module root (`keybindings.rs`) re-exports all public items so existing `use super::keybindings::*` paths work unchanged.
+
+Other details:
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
 - Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
 - Modal panels with visible footer hints (Health, Git, Projects) are excluded from the help panel — their keys are already self-documenting in the panel UI
-- Title functions return `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining segments on the bottom border wrapped in parentheses via ratatui's `.title_bottom()`. Bottom title uses the same style as the top (border color + bold when focused). No content shifting or padding needed.
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
 1. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
@@ -657,7 +657,7 @@ Implementation:
 
 **Enforcement hooks:** `.claude/scripts/enforce-keybindings.sh` runs as a PreToolUse hook on every Edit/Write. Catches 3 violations: (1) raw `KeyCode::`/`KeyModifiers::` in `input_*.rs` (must use `lookup_*_action()`), (2) hardcoded key label strings in `draw_*.rs` without `keybindings::` import (must use hint generators), (3) new static binding arrays in `keybindings.rs` without companion lookup/hint functions. Configured in `.claude/settings.json`.
 
-Implementation: `src/tui/keybindings.rs` (KeyContext, Action enum (~98 variants incl GitPull, GitAutoRebase, BrowseMain), ~17 static arrays (WORKTREES: 15 entries, GIT_ACTIONS: 15 entries), lookup_action() + 6 per-modal lookup fns (lookup_git_actions_action takes is_on_main), guard logic, help_sections(), title generators, hint generators), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers, BrowseMain handler, read-only guards, Esc browse-mode exit), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `.claude/scripts/enforce-keybindings.sh` (PreToolUse enforcement hook)
+Implementation: `src/tui/keybindings.rs` (module root + re-exports), `src/tui/keybindings/types.rs` (KeyCombo, Action enum ~109 variants, Keybinding, HelpSection), `src/tui/keybindings/bindings.rs` (~21 static arrays), `src/tui/keybindings/lookup.rs` (KeyContext, lookup_action() + 7 per-modal lookup fns), `src/tui/keybindings/hints.rs` (help_sections(), title generators, hint generators, find_key_*), `src/tui/keybindings/platform.rs` (macos_opt_key), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers, BrowseMain handler, read-only guards, Esc browse-mode exit), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `.claude/scripts/enforce-keybindings.sh` (PreToolUse enforcement hook)
 
 ### Wrap-Aware Edit Cursor
 
@@ -1362,7 +1362,13 @@ azureal/
 │   │   ├── draw_git_actions.rs # Git panel overlay renderers only (commit editor + conflict resolution)
 │   │   ├── draw_azureal.rs  # AZUREAL++ developer hub panel (tabbed: Debug, Issues, PRs)
 │   │   ├── draw_*.rs       # Other rendering functions
-│   │   ├── keybindings.rs  # SINGLE SOURCE OF TRUTH: Action enum (~109 variants incl GitPull, GitAutoRebase, GitAutoResolveSettings, BrowseMain, OpenAzurealPanel, AzurealSwitchTab, AzurealDumpDebug, etc.), KeyContext, lookup_action() + 7 per-modal lookups (lookup_git_actions_action, lookup_azureal_action), ~21 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, AZUREAL_SHARED, AZUREAL_DEBUG, AZUREAL_ISSUES, AZUREAL_PRS, etc.), hint generators, help_sections()
+│   │   ├── keybindings.rs  # Module root — re-exports all public items for backwards compatibility
+│   │   ├── keybindings/    # SINGLE SOURCE OF TRUTH for all keybinding definitions
+│   │   │   ├── types.rs    # Core types: KeyCombo, Action (~109 variants), Keybinding, HelpSection
+│   │   │   ├── bindings.rs # ~21 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, AZUREAL_SHARED, etc.) + alt key statics
+│   │   │   ├── lookup.rs   # KeyContext, lookup_action() + 7 per-modal lookups (lookup_git_actions_action, lookup_azureal_action, etc.)
+│   │   │   ├── hints.rs    # UI hint generators: help_sections(), prompt/terminal/health/git/projects title builders, find_key_for_action()
+│   │   │   └── platform.rs # macOS ⌥+letter unicode remapping (macos_opt_key)
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)

@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Keybindings module decomposed** — `keybindings.rs` (1007 lines) split into 5 focused submodules: `types.rs` (KeyCombo, Action, Keybinding, HelpSection), `bindings.rs` (~21 static arrays + alt key statics), `lookup.rs` (KeyContext + lookup_action + 7 per-modal lookups), `hints.rs` (help_sections, title/hint generators, find_key_for_action), `platform.rs` (macos_opt_key). Module root re-exports all public items — no import changes needed in consuming files.
+
 ### Fixed
 - **Session content bleeds across sessions on switch** — Three isolation failures when switching between sessions: (1) `rendered_lines_cache` was only marked dirty, not cleared, so stale rendered lines from the previous session flashed for 1-2 frames until the render thread completed new work; in-flight render results from the old session could also be applied after the switch. Fixed by clearing all render caches immediately and advancing `render_seq_applied` to discard stale render thread results. (2) When viewing a different session file via the session list while a Claude process was running on the same branch, live events from the running process were appended to the viewed session's `display_events` because `handle_claude_output` only gated on branch + active slot, not on which session file was selected. Fixed by adding `viewing_historic_session` flag that suppresses live event routing when the viewed session UUID doesn't match the active slot's session. (3) The PID badge in the convo border showed the active slot's PID regardless of which session file was being viewed, making finished sessions appear active. Fixed by suppressing PID/exit display when `viewing_historic_session` is true.
 

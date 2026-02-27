@@ -127,7 +127,7 @@ No database. All persistent state consolidated into two `azufig.toml` files: `~/
 
 **Rendering:** The convo pane uses a dedicated background thread for expensive rendering (markdown parsing, syntax highlighting, text wrapping). The main event loop sends non-blocking render requests via channels and polls for results. During typing, keystrokes get instant visual feedback via direct crossterm writes (~0.1ms) while the expensive `terminal.draw()` (~18ms) is deferred to quiet frames. This two-tier rendering ensures input is never blocked by screen updates.
 
-**Keybindings:** All keybindings are defined once in `src/tui/keybindings.rs` with `lookup_action()` as the single resolver for main views and 7 per-modal lookup functions (`lookup_health_action()`, `lookup_git_action()`, `lookup_azureal_action()`, `lookup_projects_action()`, `lookup_picker_action()`, `lookup_context_menu_action()`, `lookup_branch_dialog_action()`) for modal panels. Guard logic lives inside lookup functions — never duplicated across input handlers. Draw functions source footer hints and labels from keybinding hint generators, not hardcoded strings. Press `?` for the help overlay.
+**Keybindings:** All keybindings are defined once in `src/tui/keybindings/` (5 submodules: types, bindings, lookup, hints, platform) with `lookup_action()` as the single resolver for main views and 7 per-modal lookup functions for modal panels. Guard logic lives inside lookup functions — never duplicated across input handlers. Draw functions source footer hints and labels from keybinding hint generators, not hardcoded strings. The module root re-exports everything so existing import paths work unchanged. Press `?` for the help overlay.
 
 ## License
 
