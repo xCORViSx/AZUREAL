@@ -1080,7 +1080,7 @@ Pressing `c` stages all changes (`git add -A`), gets `git diff --staged` + `git 
 - `RebaseOutcome::Conflict { conflicted, auto_merged, raw_output }` — rebase left in progress (NOT aborted) so RCR can resolve. Opens conflict overlay.
 - `RebaseOutcome::Failed(String)` — error, shows message
 
-`exec_rebase_inner()` checks `merge-base HEAD <main>` vs `rev-parse <main>` for up-to-date detection, then runs `git rebase --onto <main> <fork-point>` (where fork-point is the merge-base). The `--onto` form replays only branch-specific commits, preventing squash merge commits from other branches (inherited via prior rebases) from being replayed. Falls back to plain `git rebase <main>` if merge-base unavailable.
+`exec_rebase_inner()` checks `merge-base HEAD <main>` vs `rev-parse <main>` for up-to-date detection. Before rebasing, stashes any dirty working tree on the feature branch (`git stash --include-untracked`) so files like `.DS_Store` or editor swap files don't cause "cannot rebase: You have unstaged changes". Stash is popped on all exit paths (success, failure, conflict). Then runs `git rebase --onto <main> <fork-point>` (where fork-point is the merge-base). The `--onto` form replays only branch-specific commits, preventing squash merge commits from other branches (inherited via prior rebases) from being replayed. Falls back to plain `git rebase <main>` if merge-base unavailable.
 
 **Configurable auto-resolve via union merge:** On conflict, `parse_conflict_files()` extracts conflicted file paths. If ALL conflicted files are in the user-configurable auto-resolve list, `try_auto_resolve_conflicts()` resolves each via `union_merge_file()` — extracts 3 index stages (`:1:` base, `:2:` ours/main, `:3:` theirs/branch), runs `git merge-file --union` to produce a merged result keeping BOTH sides' changes (no conflict markers, no content loss), copies the result back to the working tree, and stages with `git add`. Loops through subsequent commits that also have auto-resolvable-only conflicts via `git rebase --continue`. Only stops for non-auto-resolve conflicts (hands off to RCR) or fatal errors.
 
@@ -1093,7 +1093,7 @@ Non-auto-resolve conflicts: leaves rebase in progress (no auto-abort) so the con
 - `SquashMergeResult::Conflict { conflicted, auto_merged, raw_output }` — should rarely occur since rebase ensures linear history, but handled as safety net
 
 Executes a 4-step cycle from the repo root:
-0. `git stash --include-untracked` — stashes any dirty working tree on main
+0. `git stash --include-untracked` — stashes any dirty working tree on main; checks both exit code and stdout to determine if stash occurred (prevents silent stash failures from leaving dirty state)
 1. `git pull --ff-only` on main — non-fatal if offline, fatal if main has diverged
 2. `git merge --squash <branch>` — collapses all branch commits into staged changes
 3. `git log HEAD..branch --reverse --format="- %s"` — collects individual commit messages as bullet points (captured before step 2)

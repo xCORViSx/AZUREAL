@@ -442,10 +442,9 @@ impl Git {
         let stash_out = Command::new("git")
             .args(["stash", "--include-untracked"])
             .current_dir(repo_root)
-            .output()
-            .ok();
-        let did_stash = stash_out.as_ref()
-            .map(|o| !String::from_utf8_lossy(&o.stdout).contains("No local changes"))
+            .output();
+        let did_stash = stash_out.as_ref().ok()
+            .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).contains("No local changes"))
             .unwrap_or(false);
 
         // Step 1: pull main so we're merging onto the latest upstream.
