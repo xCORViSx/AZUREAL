@@ -170,10 +170,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
 
                     let prompt_text = format!("You: {}\n", input);
                     app.add_user_message(input.clone());
-                    app.process_output_chunk(&prompt_text);
+                    app.process_session_chunk(&prompt_text);
                     app.current_todos.clear();
 
-                    match claude_process.spawn(&cwd, &input, resume.as_deref()) {
+                    match claude_process.spawn(&cwd, &input, resume.as_deref(), None) {
                         Ok((rx, pid)) => {
                             let slot = pid.to_string();
                             // Update RCR to track the new process
@@ -194,7 +194,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                         if let Some(wt_path) = worktree_opt {
                             let prompt_text = format!("You: {}\n", input.clone());
                             app.add_user_message(input.clone());
-                            app.process_output_chunk(&prompt_text);
+                            app.process_session_chunk(&prompt_text);
                             app.current_todos.clear();
 
                             // If awaiting plan approval, prepend hidden context explaining the options
@@ -226,7 +226,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                             };
 
                             let resume_id = app.get_claude_session_id(&branch_name).cloned();
-                            match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref()) {
+                            match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
                                 Ok((rx, pid)) => {
                                     app.register_claude(branch_name, pid, rx);
                                     app.set_status("Running...");

@@ -10,7 +10,7 @@ pub enum ViewerMode {
     #[default]
     Empty, // Nothing selected
     File, // Showing file from FileTree
-    Diff, // Showing diff from Output
+    Diff, // Showing diff from Session
     Image, // Showing image from FileTree (rendered via terminal graphics protocol)
 }
 
@@ -101,7 +101,7 @@ impl BranchDialog {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
-    Output,
+    Session,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +109,7 @@ pub enum Focus {
     Worktrees,
     FileTree,
     Viewer,
-    Output,
+    Session,
     Input,
     WorktreeCreation,
     BranchDialog,
@@ -415,7 +415,7 @@ pub struct GitConflictOverlay {
 }
 
 /// Merge Conflict Resolution session state. Tracks an active RCR flow so the
-/// convo pane routes prompts to the correct working directory (feature branch
+/// session pane routes prompts to the correct working directory (feature branch
 /// worktree), shows green borders, and displays the approval dialog after
 /// Claude exits. RCR resolves rebase conflicts on the feature branch — Claude
 /// runs in the worktree directory, not repo root.

@@ -1,4 +1,4 @@
-//! Background render thread for convo pane
+//! Background render thread for session pane
 //!
 //! The expensive work of rendering display events (markdown parsing, syntax
 //! highlighting, text wrapping) runs on a dedicated thread so the main event

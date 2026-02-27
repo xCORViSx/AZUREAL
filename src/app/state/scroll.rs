@@ -1,61 +1,61 @@
-//! Scroll operations for output, diff, and viewer panes
+//! Scroll operations for session, diff, and viewer panes
 
 use super::App;
 
 impl App {
     /// Natural bottom position: last line at bottom of viewport
-    pub(crate) fn output_natural_bottom(&self) -> usize {
-        self.rendered_lines_cache.len().saturating_sub(self.output_viewport_height)
+    pub(crate) fn session_natural_bottom(&self) -> usize {
+        self.rendered_lines_cache.len().saturating_sub(self.session_viewport_height)
     }
 
     /// Max scroll position: allows scrolling so last line can be at top (vim-style)
-    pub(crate) fn output_max_scroll(&self) -> usize {
+    pub(crate) fn session_max_scroll(&self) -> usize {
         self.rendered_lines_cache.len().saturating_sub(1)
     }
 
-    /// Clamp output_scroll to valid range, resolving usize::MAX sentinel to natural bottom
-    pub fn clamp_output_scroll(&mut self) {
-        if self.output_scroll == usize::MAX {
+    /// Clamp session_scroll to valid range, resolving usize::MAX sentinel to natural bottom
+    pub fn clamp_session_scroll(&mut self) {
+        if self.session_scroll == usize::MAX {
             // Sentinel: scroll to natural bottom (last line at bottom of viewport)
-            self.output_scroll = self.output_natural_bottom();
+            self.session_scroll = self.session_natural_bottom();
         } else {
             // Manual scroll: allow up to vim-style max
-            self.output_scroll = self.output_scroll.min(self.output_max_scroll());
+            self.session_scroll = self.session_scroll.min(self.session_max_scroll());
         }
     }
 
     /// Scroll output down, returns true if position changed.
     /// If scrolling reaches the natural bottom, re-engage follow-bottom sentinel
     /// so new content auto-scrolls without needing ⌥↓.
-    pub fn scroll_output_down(&mut self, lines: usize) -> bool {
-        if self.output_scroll == usize::MAX {
-            self.output_scroll = self.output_natural_bottom();
+    pub fn scroll_session_down(&mut self, lines: usize) -> bool {
+        if self.session_scroll == usize::MAX {
+            self.session_scroll = self.session_natural_bottom();
         }
-        let old = self.output_scroll;
-        self.output_scroll = self.output_scroll.saturating_add(lines).min(self.output_max_scroll());
+        let old = self.session_scroll;
+        self.session_scroll = self.session_scroll.saturating_add(lines).min(self.session_max_scroll());
         // Re-engage auto-follow when user scrolls to (or past) the natural bottom
-        if self.output_scroll >= self.output_natural_bottom() {
-            self.output_scroll = usize::MAX;
+        if self.session_scroll >= self.session_natural_bottom() {
+            self.session_scroll = usize::MAX;
         }
-        self.output_scroll != old
+        self.session_scroll != old
     }
 
     /// Scroll output up, returns true if position changed
-    pub fn scroll_output_up(&mut self, lines: usize) -> bool {
-        if self.output_scroll == usize::MAX {
-            self.output_scroll = self.output_natural_bottom();
+    pub fn scroll_session_up(&mut self, lines: usize) -> bool {
+        if self.session_scroll == usize::MAX {
+            self.session_scroll = self.session_natural_bottom();
         }
-        let old = self.output_scroll;
-        self.output_scroll = self.output_scroll.saturating_sub(lines);
+        let old = self.session_scroll;
+        self.session_scroll = self.session_scroll.saturating_sub(lines);
         // If we hit the top and early events were deferred, trigger full render
-        if self.output_scroll == 0 && self.rendered_events_start > 0 {
+        if self.session_scroll == 0 && self.rendered_events_start > 0 {
             self.rendered_lines_dirty = true;
         }
-        self.output_scroll != old
+        self.session_scroll != old
     }
 
-    pub fn scroll_output_to_bottom(&mut self) {
-        self.output_scroll = usize::MAX;
+    pub fn scroll_session_to_bottom(&mut self) {
+        self.session_scroll = usize::MAX;
     }
 
     /// Natural bottom position: last line at bottom of viewport
@@ -104,48 +104,48 @@ impl App {
         self.viewer_scroll = usize::MAX;
     }
 
-    /// Jump to the next message bubble in convo pane.
+    /// Jump to the next message bubble in session pane.
     /// If include_assistant is true, jumps to ALL bubbles (user + assistant).
     /// Otherwise, only jumps to UserMessage bubbles (user prompts).
     /// Positions viewport so the bubble header sits 2 lines from top (showing the spacer).
     pub fn jump_to_next_bubble(&mut self, include_assistant: bool) {
-        if self.output_scroll == usize::MAX {
-            self.output_scroll = self.output_natural_bottom();
+        if self.session_scroll == usize::MAX {
+            self.session_scroll = self.session_natural_bottom();
         }
-        let current = self.output_scroll;
+        let current = self.session_scroll;
         // Bubble positions store the header line index. We display at line_idx - 2
         // (showing the empty spacer lines above). Find next bubble whose display
         // position (line_idx - 2) is strictly after current scroll.
         for &(line_idx, is_user) in &self.message_bubble_positions {
             let display_pos = line_idx.saturating_sub(2);
             if display_pos > current && (include_assistant || is_user) {
-                self.output_scroll = display_pos.min(self.output_max_scroll());
+                self.session_scroll = display_pos.min(self.session_max_scroll());
                 return;
             }
         }
         // No more bubbles — re-engage auto-follow sentinel
-        self.output_scroll = usize::MAX;
+        self.session_scroll = usize::MAX;
     }
 
-    /// Jump to the previous message bubble in convo pane.
+    /// Jump to the previous message bubble in session pane.
     /// If include_assistant is true, jumps to ALL bubbles (user + assistant).
     /// Otherwise, only jumps to UserMessage bubbles (user prompts).
     /// Positions viewport so the bubble header sits 2 lines from top (showing the spacer).
     pub fn jump_to_prev_bubble(&mut self, include_assistant: bool) {
-        if self.output_scroll == usize::MAX {
-            self.output_scroll = self.output_natural_bottom();
+        if self.session_scroll == usize::MAX {
+            self.session_scroll = self.session_natural_bottom();
         }
-        let current = self.output_scroll;
+        let current = self.session_scroll;
         // Find previous bubble whose display position is strictly before current scroll
         for &(line_idx, is_user) in self.message_bubble_positions.iter().rev() {
             let display_pos = line_idx.saturating_sub(2);
             if display_pos < current && (include_assistant || is_user) {
-                self.output_scroll = display_pos;
+                self.session_scroll = display_pos;
                 return;
             }
         }
         // No previous bubbles, scroll to top
-        self.output_scroll = 0;
+        self.session_scroll = 0;
         // If early events were deferred (not yet rendered), trigger a full render
         // so the user can continue navigating upward through the entire conversation.
         // Without this, rendered_lines_dirty stays false and submit_render_request

@@ -145,7 +145,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         app.input_area = git_box_area;
         app.pane_worktrees = git_h[0];
         app.pane_viewer = git_h[1];
-        app.pane_convo = git_h[2];
+        app.pane_session = git_h[2];
 
         draw_sidebar::draw_sidebar(f, app, git_h[0]);
         draw_viewer::draw_viewer(f, app, git_h[1]);
@@ -153,11 +153,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_git_status_box(f, app, git_box_area);
     } else {
         // ── Normal mode layout ───────────────────────────────────────────
-        // Convo gets full height, Input/Terminal spans Worktrees + Viewer.
+        // Session pane gets full height, Input/Terminal spans Worktrees + Viewer.
         //
         // ┌──────────┬──────────────────────────┬──────────────┐
         // │Worktrees │         Viewer           │              │
-        // │  (15%)   │         (50%)            │  Convo (35%) │
+        // │  (15%)   │         (50%)            │  Session (35%) │
         // ├──────────┴──────────────────────────┤              │
         // │     Input / Terminal                │              │
         // ├─────────────────────────────────────┴──────────────┤
@@ -173,7 +173,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ])
             .split(content_area);
         let left_width = h_split[0].width + h_split[1].width;
-        let convo_area = h_split[2];
+        let session_area = h_split[2];
 
         let input_height = if app.terminal_mode {
             app.terminal_height + 2
@@ -212,7 +212,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         app.input_area = input_area;
         app.pane_worktrees = top_h[0];
         app.pane_viewer = top_h[1];
-        app.pane_convo = convo_area;
+        app.pane_session = session_area;
 
         if app.show_file_tree {
             draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
@@ -220,7 +220,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             draw_sidebar::draw_sidebar(f, app, top_h[0]);
         }
         draw_viewer::draw_viewer(f, app, top_h[1]);
-        draw_output::draw_output(f, app, convo_area);
+        draw_output::draw_output(f, app, session_area);
 
         if app.terminal_mode {
             draw_terminal::draw_terminal(f, app, input_area);
@@ -229,13 +229,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // RCR approval dialog — rendered over convo pane
+    // RCR approval dialog — rendered over session pane
     if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
-        draw_output::draw_rcr_approval(f, app.pane_convo);
+        draw_output::draw_rcr_approval(f, app.pane_session);
     }
-    // Post-merge dialog — rendered over convo pane
+    // Post-merge dialog — rendered over session pane
     if let Some(ref pmd) = app.post_merge_dialog {
-        draw_output::draw_post_merge_dialog(f, app.pane_convo, pmd);
+        draw_output::draw_post_merge_dialog(f, app.pane_session, pmd);
     }
 
     draw_status::draw_status(f, app, status_area);

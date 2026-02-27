@@ -9,7 +9,7 @@ use anyhow::Result;
 use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
 use crate::tui::keybindings::Action;
-use super::super::mouse::{copy_viewer_selection, copy_output_selection};
+use super::super::mouse::{copy_viewer_selection, copy_session_selection};
 use super::navigation::{
     dispatch_nav_down, dispatch_nav_up, dispatch_nav_left, dispatch_nav_right,
     dispatch_page_down, dispatch_page_up, dispatch_go_to_top, dispatch_go_to_bottom,
@@ -38,8 +38,8 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 app.input_copy();
             } else if app.viewer_selection.is_some() {
                 copy_viewer_selection(app);
-            } else if app.output_selection.is_some() {
-                copy_output_selection(app);
+            } else if app.session_selection.is_some() {
+                copy_session_selection(app);
             } else if let Some(ref p) = app.git_actions_panel {
                 // Git mode fallback: copy status box result message
                 if let Some((ref msg, _)) = p.result_message {
@@ -71,7 +71,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             }
             app.prompt_mode = false;
             app.viewer_selection = None;
-            app.output_selection = None;
+            app.session_selection = None;
             app.focus_next();
         }
         Action::CycleFocusBackward => {
@@ -82,7 +82,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             }
             app.prompt_mode = false;
             app.viewer_selection = None;
-            app.output_selection = None;
+            app.session_selection = None;
             app.focus_prev();
         }
 
@@ -196,9 +196,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                     app.claude_session_ids.remove(&branch);
                     // Clear display to show fresh conversation
                     app.display_events.clear();
-                    app.output_lines.clear();
-                    app.output_buffer.clear();
-                    app.output_scroll = usize::MAX;
+                    app.session_lines.clear();
+                    app.session_buffer.clear();
+                    app.session_scroll = usize::MAX;
                     app.session_file_parse_offset = 0;
                     app.rendered_events_count = 0;
                     app.rendered_content_line_count = 0;
@@ -337,24 +337,24 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         // --- Output/Convo ---
         // Plain Up/Down: step through ALL bubbles (user + assistant)
         Action::JumpNextBubble => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_next_bubble(true); }
+            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_next_bubble(true); }
         }
         Action::JumpPrevBubble => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_prev_bubble(true); }
+            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_prev_bubble(true); }
         }
         // Shift+Up/Down: jump to user prompts only (skip assistant responses)
         Action::JumpNextMessage => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_next_bubble(false); }
+            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_next_bubble(false); }
         }
         Action::JumpPrevMessage => {
-            if app.view_mode == crate::app::ViewMode::Output { app.jump_to_prev_bubble(false); }
+            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_prev_bubble(false); }
         }
-        Action::SearchConvo => {
-            // Activate the convo search bar — clears previous query and matches
-            app.convo_search_active = true;
-            app.convo_search.clear();
-            app.convo_search_matches.clear();
-            app.convo_search_current = 0;
+        Action::SearchSession => {
+            // Activate the session find bar — clears previous query and matches
+            app.session_find_active = true;
+            app.session_find.clear();
+            app.session_find_matches.clear();
+            app.session_find_current = 0;
         }
 
         // --- Input/Terminal actions: handled by their own handlers (skip here) ---
@@ -364,6 +364,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         | Action::WordLeft | Action::WordRight | Action::DeleteWord
         | Action::HistoryPrev | Action::HistoryNext
         | Action::EnterTerminalType => {}
+
+        // ⌃m: cycle Claude model (opus → sonnet → haiku → default)
+        Action::CycleModel => { app.cycle_model(); }
 
         // STT toggle — works from edit mode (viewer) AND prompt input.
         // Input focus is filtered out above (is_input_action) so the raw handler
@@ -405,9 +408,9 @@ fn jump_edit(app: &mut App, forward: bool) {
     app.selected_tool_diff = Some(idx);
     if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
         app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
-        app.output_viewport_scroll = usize::MAX;
+        app.session_viewport_scroll = usize::MAX;
         app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
-        app.output_scroll = line_idx.saturating_sub(3);
+        app.session_scroll = line_idx.saturating_sub(3);
     }
 }
 

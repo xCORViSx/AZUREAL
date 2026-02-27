@@ -121,7 +121,7 @@ pub async fn run_app(
                             // auto-scroll during drag doesn't shift the anchor.
                             MouseEventKind::Down(MouseButton::Left) => {
                                 app.viewer_selection = None;
-                                app.output_selection = None;
+                                app.session_selection = None;
                                 let (mc, mr) = (mouse.column, mouse.row);
                                 use ratatui::layout::Position;
                                 let mpos = Position::new(mc, mr);
@@ -134,9 +134,9 @@ pub async fn run_app(
                                     } else if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
                                         app.mouse_drag_start = Some((cl, cc, 0));
                                     }
-                                } else if app.pane_convo.contains(mpos) {
-                                    app.clamp_output_scroll();
-                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) {
+                                } else if app.pane_session.contains(mpos) {
+                                    app.clamp_session_scroll();
+                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
                                         app.mouse_drag_start = Some((cl, cc, 1));
                                     }
                                 } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
@@ -304,11 +304,11 @@ pub async fn run_app(
         }
 
         // Compaction inactivity watcher: when context ≥ 95% and no events for 20s,
-        // inject a "may be compacting" banner so the user knows why convo is frozen
+        // inject a "may be compacting" banner so the user knows why session pane is frozen
         if app.context_pct_high
             && !app.compaction_banner_injected
             && !app.claude_receivers.is_empty()
-            && now_poll.duration_since(app.last_convo_event_time) >= Duration::from_secs(20)
+            && now_poll.duration_since(app.last_session_event_time) >= Duration::from_secs(20)
         {
             app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
             app.invalidate_render_cache();
@@ -340,9 +340,9 @@ pub async fn run_app(
             scroll_changed = apply_scroll_cached(app, scroll_delta, scroll_col, scroll_row, cached_width, cached_height);
         }
 
-        // Submit render request to background thread if convo cache is dirty.
+        // Submit render request to background thread if session cache is dirty.
         // This is NON-BLOCKING — the render thread does the expensive work while
-        // we keep processing events. No more frozen input during convo updates!
+        // we keep processing events. No more frozen input during session updates!
         // BACKPRESSURE: skip if a render is already in flight — avoids cloning
         // the entire event array every 16ms while Claude streams, which was the
         // root cause of 100%+ CPU on prompt submit.
@@ -353,11 +353,11 @@ pub async fn run_app(
         if app.rendered_lines_dirty && !app.render_in_flight
             && app.last_render_submit.elapsed() >= Duration::from_millis(50)
         {
-            // Convo pane width is percentage-based (35% in run.rs), so we read the
+            // Session pane width is percentage-based (35% in run.rs), so we read the
             // actual width from the cached pane rect set during the last draw.
             // Falls back to 80 on first frame before any draw has occurred.
-            let convo_w = if app.pane_convo.width > 0 { app.pane_convo.width } else { 80 };
-            submit_render_request(app, convo_w);
+            let session_w = if app.pane_session.width > 0 { app.pane_session.width } else { 80 };
+            submit_render_request(app, session_w);
             app.last_render_submit = Instant::now();
         }
 

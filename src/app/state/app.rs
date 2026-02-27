@@ -42,9 +42,9 @@ pub struct App {
     pub project: Option<Project>,
     pub worktrees: Vec<Worktree>,
     pub selected_worktree: Option<usize>,
-    pub output_lines: VecDeque<String>,
-    pub max_output_lines: usize,
-    pub output_buffer: String,
+    pub session_lines: VecDeque<String>,
+    pub max_session_lines: usize,
+    pub session_buffer: String,
     pub display_events: Vec<DisplayEvent>,
     /// User message sent but not yet in session file (shown until file updates)
     pub pending_user_message: Option<String>,
@@ -68,7 +68,7 @@ pub struct App {
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
     /// Set of currently running slot_ids (PID strings)
     pub running_sessions: HashSet<String>,
-    /// Last exit code per slot_id (shown in convo pane title after Claude exits)
+    /// Last exit code per slot_id (shown in session pane title after Claude exits)
     pub claude_exit_codes: HashMap<String, i32>,
     /// Claude API session UUIDs per slot_id (for --resume)
     pub claude_session_ids: HashMap<String, String>,
@@ -76,7 +76,7 @@ pub struct App {
     pub branch_slots: HashMap<String, Vec<String>>,
     /// Which slot_id is actively displayed per branch (its output feeds display_events)
     pub active_slot: HashMap<String, String>,
-    pub output_scroll: usize,
+    pub session_scroll: usize,
     pub syntax_highlighter: SyntaxHighlighter,
     pub show_help: bool,
     pub branch_dialog: Option<BranchDialog>,
@@ -159,7 +159,7 @@ pub struct App {
     pub viewer_image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     /// Terminal graphics protocol picker — detects capabilities once, reused for all images
     pub image_picker: Option<ratatui_image::picker::Picker>,
-    /// Cached rendered lines for convo pane (expensive to compute)
+    /// Cached rendered lines for session pane (expensive to compute)
     pub rendered_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Width used for cached render (invalidate on resize)
     pub rendered_lines_width: u16,
@@ -175,7 +175,7 @@ pub struct App {
     pub rendered_events_start: usize,
     /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
     pub animation_line_indices: Vec<(usize, usize)>,
-    /// Background render thread — expensive convo rendering runs here, never blocks the event loop
+    /// Background render thread — expensive session pane rendering runs here, never blocks the event loop
     pub render_thread: RenderThread,
     /// Sequence number of the last applied render result (discard results with lower seq)
     pub render_seq_applied: u64,
@@ -199,7 +199,7 @@ pub struct App {
     /// and scroll dispatch without recalculating layout
     pub pane_worktrees: ratatui::layout::Rect,
     pub pane_viewer: ratatui::layout::Rect,
-    pub pane_convo: ratatui::layout::Rect,
+    pub pane_session: ratatui::layout::Rect,
     /// Cached rect for the todo widget area (mouse scroll hit-testing)
     pub pane_todo: ratatui::layout::Rect,
     /// Scroll offset for the todo widget (lines scrolled from top)
@@ -209,14 +209,14 @@ pub struct App {
     /// Maps sidebar visual rows (0-indexed) to clickable actions.
     /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
     pub sidebar_row_map: Vec<SidebarRowAction>,
-    /// Cached viewport slice for convo pane — avoids cloning rendered_lines_cache every frame.
+    /// Cached viewport slice for session pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
-    pub output_viewport_cache: Vec<ratatui::text::Line<'static>>,
+    pub session_viewport_cache: Vec<ratatui::text::Line<'static>>,
     /// Scroll position and animation tick used to build the viewport cache (invalidation key)
-    pub output_viewport_scroll: usize,
-    pub output_viewport_anim_tick: u64,
+    pub session_viewport_scroll: usize,
+    pub session_viewport_anim_tick: u64,
     /// Title string corresponding to the cached viewport
-    pub output_viewport_title: String,
+    pub session_viewport_title: String,
     /// Total lines in last parsed session file
     pub parse_total_lines: usize,
     /// Parse errors in last parsed session file
@@ -246,14 +246,14 @@ pub struct App {
     pub awaiting_plan_approval: bool,
     /// Cached viewport height for viewer pane (set during render, used for scroll)
     pub viewer_viewport_height: usize,
-    /// Cached viewport height for output/convo pane (set during render, used for scroll)
-    pub output_viewport_height: usize,
+    /// Cached viewport height for output/session pane (set during render, used for scroll)
+    pub session_viewport_height: usize,
     /// Line indices where message bubbles start (for Up/Down navigation)
     /// Each entry is (line_index, is_user_message) - true for UserMessage, false for AssistantText
     pub message_bubble_positions: Vec<(usize, bool)>,
     /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
     pub clickable_paths: Vec<(usize, usize, usize, String, String, String, usize)>,
-    /// Currently highlighted (clicked) file path in convo pane: (line_idx, start_col, end_col, wrap_line_count)
+    /// Currently highlighted (clicked) file path in session pane: (line_idx, start_col, end_col, wrap_line_count)
     /// Rendered with inverted colors so the user sees which path they clicked
     pub clicked_path_highlight: Option<(usize, usize, usize, usize)>,
     /// Cached title bar Claude session name (updated on worktree switch, avoids file I/O in render)
@@ -294,14 +294,14 @@ pub struct App {
     pub clipboard: String,
     /// Text selection for read-only viewer: (start_visual_line, start_col, end_visual_line, end_col)
     pub viewer_selection: Option<(usize, usize, usize, usize)>,
-    /// Text selection for output/convo pane: (start_visual_line, start_col, end_visual_line, end_col)
-    pub output_selection: Option<(usize, usize, usize, usize)>,
+    /// Text selection for session pane: (start_visual_line, start_col, end_visual_line, end_col)
+    pub session_selection: Option<(usize, usize, usize, usize)>,
     /// Whether the git status box text is selected (for copy via Cmd+C)
     pub git_status_selected: bool,
     /// Cached output selection for viewport cache invalidation (rebuild viewport when selection changes)
-    pub output_selection_cached: Option<(usize, usize, usize, usize)>,
+    pub session_selection_cached: Option<(usize, usize, usize, usize)>,
     /// Mouse drag anchor in cache coordinates: (cache_line_or_char, cache_col, pane_id)
-    /// pane_id: 0=viewer, 1=convo, 2=input. Stored as cache coords so auto-scroll
+    /// pane_id: 0=viewer, 1=session, 2=input. Stored as cache coords so auto-scroll
     /// during drag doesn't shift the anchor.
     pub mouse_drag_start: Option<(usize, usize, u8)>,
     /// Last click time and position for double-click detection
@@ -345,7 +345,7 @@ pub struct App {
     /// True when computed context usage ≥ 95% (triggers compaction inactivity watcher)
     pub context_pct_high: bool,
     /// Last time display_events were extended (new events parsed from session or stream)
-    pub last_convo_event_time: std::time::Instant,
+    pub last_session_event_time: std::time::Instant,
     /// Whether we've already injected the MayBeCompacting banner for the current high-context period
     pub compaction_banner_injected: bool,
     /// Sidebar search filter text (empty = no filter). Case-insensitive substring match on session names.
@@ -401,7 +401,7 @@ pub struct App {
     pub azureal_panel: Option<AzurealPlusPlusPanel>,
     /// Remembers which tab was last active so the panel reopens on the same tab
     pub last_azureal_tab: AzurealTab,
-    /// Active Merge Conflict Resolution session — when Some, convo pane shows green
+    /// Active Merge Conflict Resolution session — when Some, session pane shows green
     /// borders, routes prompts to repo root, and displays approval dialog after Claude exits
     pub rcr_session: Option<RcrSession>,
     /// Post-merge dialog — shown after successful squash merge or RCR accept.
@@ -421,7 +421,7 @@ pub struct App {
     /// Main worktree data — stored separately from app.worktrees so browse mode
     /// can display main's files/sessions without main polluting the sidebar list
     pub main_worktree: Option<Worktree>,
-    /// Whether the session list overlay is shown in the Convo pane (toggled with 's')
+    /// Whether the session list overlay is shown in the Session pane (toggled with 's')
     pub show_session_list: bool,
     /// True while session list message counts are being computed (shows loading dialog)
     pub session_list_loading: bool,
@@ -437,15 +437,15 @@ pub struct App {
     /// Cached message counts per session_id → (count, file_size) — only recomputed when size changes
     pub session_msg_counts: HashMap<String, (usize, u64)>,
 
-    // ── Convo search (find text in current session's rendered output) ──
+    // ── Session find (find text in current session's rendered output) ──
     /// Whether the search bar is active (accepting keystrokes)
-    pub convo_search_active: bool,
+    pub session_find_active: bool,
     /// Current search query text
-    pub convo_search: String,
+    pub session_find: String,
     /// All matches: (cache_line_idx, start_col, end_col). Recomputed on each keystroke.
-    pub convo_search_matches: Vec<(usize, usize, usize)>,
-    /// Index into convo_search_matches for the "current" highlighted match
-    pub convo_search_current: usize,
+    pub session_find_matches: Vec<(usize, usize, usize)>,
+    /// Index into session_find_matches for the "current" highlighted match
+    pub session_find_current: usize,
 
     // ── Session list filter (name-based, single `/`) ──
     /// Whether the filter bar is active in session list overlay
@@ -458,6 +458,12 @@ pub struct App {
     pub session_content_search: bool,
     /// Results: (flat_row_idx, session_id, matched_line_preview)
     pub session_search_results: Vec<(usize, String, String)>,
+
+    // ── Model selection (⌃m cycle) ──
+    /// User-selected model override (None = use Claude CLI default)
+    pub selected_model: Option<String>,
+    /// Model detected from the live stream's assistant event (e.g. "claude-opus-4-6")
+    pub detected_model: Option<String>,
 }
 
 /// A single todo item from Claude's TodoWrite tool call
@@ -482,9 +488,9 @@ impl App {
             project: None,
             worktrees: Vec::new(),
             selected_worktree: None,
-            output_lines: VecDeque::with_capacity(10000),
-            max_output_lines: 10000,
-            output_buffer: String::new(),
+            session_lines: VecDeque::with_capacity(10000),
+            max_session_lines: 10000,
+            session_buffer: String::new(),
             display_events: Vec::new(),
             pending_user_message: None,
             staged_prompt: None,
@@ -495,7 +501,7 @@ impl App {
             input_selection: None,
             worktree_creation_input: String::new(),
             worktree_creation_cursor: 0,
-            view_mode: ViewMode::Output,
+            view_mode: ViewMode::Session,
             focus: Focus::Worktrees,
             prompt_mode: false,
             should_quit: false,
@@ -507,7 +513,7 @@ impl App {
             claude_session_ids: HashMap::new(),
             branch_slots: HashMap::new(),
             active_slot: HashMap::new(),
-            output_scroll: usize::MAX, // Start at bottom (most recent messages)
+            session_scroll: usize::MAX, // Start at bottom (most recent messages)
             syntax_highlighter: SyntaxHighlighter::new(),
             show_help: false,
             branch_dialog: None,
@@ -570,15 +576,15 @@ impl App {
             input_area: ratatui::layout::Rect::default(),
             pane_worktrees: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
-            pane_convo: ratatui::layout::Rect::default(),
+            pane_session: ratatui::layout::Rect::default(),
             pane_todo: ratatui::layout::Rect::default(),
             todo_scroll: 0,
             todo_total_lines: 0,
             sidebar_row_map: Vec::new(),
-            output_viewport_cache: Vec::new(),
-            output_viewport_scroll: usize::MAX,
-            output_viewport_anim_tick: u64::MAX,
-            output_viewport_title: String::new(),
+            session_viewport_cache: Vec::new(),
+            session_viewport_scroll: usize::MAX,
+            session_viewport_anim_tick: u64::MAX,
+            session_viewport_title: String::new(),
             parse_total_lines: 0,
             parse_errors: 0,
             assistant_total: 0,
@@ -595,7 +601,7 @@ impl App {
             file_tree_scroll_cached: usize::MAX,
             awaiting_plan_approval: false,
             viewer_viewport_height: 20,
-            output_viewport_height: 20,
+            session_viewport_height: 20,
             message_bubble_positions: Vec::new(),
             selected_tool_diff: None,
             clickable_paths: Vec::new(),
@@ -616,9 +622,9 @@ impl App {
             viewer_edit_highlight_ver: usize::MAX,
             clipboard: String::new(),
             viewer_selection: None,
-            output_selection: None,
+            session_selection: None,
             git_status_selected: false,
-            output_selection_cached: None,
+            session_selection_cached: None,
             mouse_drag_start: None,
             last_click: None,
             viewer_edit_diff: None,
@@ -639,7 +645,7 @@ impl App {
             model_context_window: None,
             token_badge_cache: None,
             context_pct_high: false,
-            last_convo_event_time: std::time::Instant::now(),
+            last_session_event_time: std::time::Instant::now(),
             compaction_banner_injected: false,
             sidebar_filter: String::new(),
             sidebar_filter_active: false,
@@ -679,14 +685,16 @@ impl App {
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),
-            convo_search_active: false,
-            convo_search: String::new(),
-            convo_search_matches: Vec::new(),
-            convo_search_current: 0,
+            session_find_active: false,
+            session_find: String::new(),
+            session_find_matches: Vec::new(),
+            session_find_current: 0,
             session_filter_active: false,
             session_filter: String::new(),
             session_content_search: false,
             session_search_results: Vec::new(),
+            selected_model: None,
+            detected_model: None,
         }
     }
 
@@ -741,6 +749,30 @@ impl App {
         if was_high && !self.context_pct_high {
             self.compaction_banner_injected = false;
         }
+    }
+
+    /// Short display name for the active model. Prefers selected_model (user override),
+    /// falls back to detected_model (from stream), then "default".
+    pub fn display_model_name(&self) -> &str {
+        let full = self.selected_model.as_deref()
+            .or(self.detected_model.as_deref())
+            .unwrap_or("default");
+        // "claude-opus-4-6" → "opus", "claude-sonnet-4-5-20250929" → "sonnet", etc.
+        if full.contains("opus") { "opus" }
+        else if full.contains("sonnet") { "sonnet" }
+        else if full.contains("haiku") { "haiku" }
+        else { full }
+    }
+
+    /// Cycle selected_model through: None → opus → sonnet → haiku → None (default).
+    /// When cycling, we set a short alias that Claude CLI accepts as --model value.
+    pub fn cycle_model(&mut self) {
+        self.selected_model = match self.selected_model.as_deref() {
+            None => Some("opus".to_string()),
+            Some("opus") => Some("sonnet".to_string()),
+            Some("sonnet") => Some("haiku".to_string()),
+            _ => None,
+        };
     }
 
     /// Sample getrusage and update cached CPU% string. Called from draw path;

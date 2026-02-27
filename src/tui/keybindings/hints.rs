@@ -15,7 +15,7 @@ pub fn help_sections() -> Vec<HelpSection> {
         HelpSection { title: "Filetree (f)", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
-        HelpSection { title: "Convo", bindings: &OUTPUT },
+        HelpSection { title: "Session", bindings: &SESSION },
     ]
 }
 

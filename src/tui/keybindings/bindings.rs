@@ -40,12 +40,13 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 12] = [
+pub static GLOBAL: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('a')), "AZUREAL++ panel", Action::OpenAzurealPanel),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('m')), "Cycle model", Action::CycleModel),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('T')), "Toggle terminal", Action::ToggleTerminal),
@@ -123,10 +124,10 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 ];
 
 /// Convo/Output bindings
-pub static OUTPUT: [Keybinding; 14] = [
+pub static SESSION: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add session", Action::NewSession),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Session list", Action::ToggleSessionList),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchConvo),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search", Action::SearchSession),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Scroll line", Action::NavDown).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Scroll line", Action::NavUp),
     Keybinding::new(KeyCombo::plain(KeyCode::Down), "Next message", Action::JumpNextBubble).paired(),

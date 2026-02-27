@@ -22,7 +22,7 @@ use super::render_wrap::wrap_text;
 /// (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
 pub type ClickablePath = (usize, usize, usize, String, String, String, usize);
 
-/// Render DisplayEvents into Lines for the output panel with iMessage-style layout
+/// Render DisplayEvents into Lines for the session pane with iMessage-style layout
 /// Returns (lines, animation_indices, bubble_positions, clickable_paths) where:
 /// - animation_indices are (line_idx, span_idx) pairs for pending tool indicators
 /// - bubble_positions are (line_idx, is_user) pairs marking where message bubbles start
@@ -115,7 +115,7 @@ fn render_display_events_with_state(
             DisplayEvent::Compacting => {
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::styled(" ⏳ Compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                    Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
                 ]).alignment(Alignment::Center));
             }
             DisplayEvent::Compacted => {
@@ -127,7 +127,7 @@ fn render_display_events_with_state(
             DisplayEvent::MayBeCompacting => {
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::styled(" ⏳ Session may be compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                    Span::styled(" ⏳ Session may be compacting conversation... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
                 ]).alignment(Alignment::Center));
             }
             DisplayEvent::Plan { name, content } => {
@@ -141,7 +141,7 @@ fn render_display_events_with_state(
                 if content.starts_with("This session is being continued from a previous conversation") {
                     lines.push(Line::from(""));
                     lines.push(Line::from(vec![
-                        Span::styled(" ⏳ Compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                        Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
                     ]).alignment(Alignment::Center));
                     continue;
                 }

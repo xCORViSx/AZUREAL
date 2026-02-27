@@ -1,7 +1,7 @@
 //! Screen-to-content coordinate mapping
 //!
 //! Translates screen pixel/cell coordinates into logical positions within
-//! the various panes (viewer, convo, input, edit). Used by mouse click,
+//! the various panes (viewer, session, input, edit). Used by mouse click,
 //! drag, and input cursor placement.
 
 use crate::app::App;

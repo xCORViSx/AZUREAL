@@ -1,27 +1,27 @@
-//! Output processing and display event handling
+//! Session output processing and display event handling
 
 use crate::app::util::strip_ansi_escapes;
 use crate::events::DisplayEvent;
 use super::App;
 
 impl App {
-    pub fn process_output_chunk(&mut self, chunk: &str) {
+    pub fn process_session_chunk(&mut self, chunk: &str) {
         let cleaned = strip_ansi_escapes(chunk);
         for ch in cleaned.chars() {
             match ch {
                 '\n' => {
                     // Move the buffer into the line vec instead of clone+clear —
                     // take() reuses capacity for the next line (zero allocation).
-                    self.output_lines.push_back(std::mem::take(&mut self.output_buffer));
-                    if self.output_lines.len() > self.max_output_lines { self.output_lines.pop_front(); }
+                    self.session_lines.push_back(std::mem::take(&mut self.session_buffer));
+                    if self.session_lines.len() > self.max_session_lines { self.session_lines.pop_front(); }
                 }
-                '\r' => self.output_buffer.clear(),
-                _ => self.output_buffer.push(ch),
+                '\r' => self.session_buffer.clear(),
+                _ => self.session_buffer.push(ch),
             }
         }
     }
 
-    /// Add a user message to the convo pane immediately on prompt submit.
+    /// Add a user message to the session pane immediately on prompt submit.
     /// Pushes a real DisplayEvent::UserMessage into display_events so it
     /// renders persistently (no disappearing). Also stores the content as
     /// `pending_user_message` — this is ONLY used as a dedup marker so the
@@ -31,7 +31,7 @@ impl App {
         if content.starts_with("This session is being continued from a previous conversation") {
             self.display_events.push(DisplayEvent::Compacting);
             self.invalidate_render_cache();
-            self.output_scroll = usize::MAX;
+            self.session_scroll = usize::MAX;
             return;
         }
         // Push a real event so it renders immediately and persists through
@@ -46,6 +46,6 @@ impl App {
         // avoid creating a second UserMessage for the same content.
         self.pending_user_message = Some(content);
         self.invalidate_render_cache();
-        self.output_scroll = usize::MAX;
+        self.session_scroll = usize::MAX;
     }
 }

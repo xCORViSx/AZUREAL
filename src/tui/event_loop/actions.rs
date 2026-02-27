@@ -31,7 +31,7 @@ use super::super::input_dialogs::{handle_branch_dialog_input, handle_run_command
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
-use super::super::input_output::handle_output_input;
+use super::super::input_output::handle_session_input;
 use super::super::input_worktrees::handle_worktrees_input;
 use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::super::input_viewer::handle_viewer_input;
@@ -82,7 +82,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                     app.set_status(format!("RCR cancelled — rebase aborted for {}", rcr.display_name));
                 }
                 KeyCode::Esc => {
-                    // Dismiss dialog — user wants to review the convo first.
+                    // Dismiss dialog — user wants to review the session output first.
                     // ⌃a re-shows the dialog when they're ready to accept.
                     if let Some(ref mut m) = app.rcr_session {
                         m.approval_pending = false;
@@ -176,12 +176,12 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     // FileTree options overlay: intercept all keys before keybinding resolution
     if app.file_tree_options_mode { return handle_file_tree_input(key, app); }
 
-    // Convo search modal: typing search text bypasses keybinding system
-    if app.convo_search_active { return handle_output_input(key, app); }
+    // Session find modal: typing search text bypasses keybinding system
+    if app.session_find_active { return handle_session_input(key, app); }
 
     // Session list overlay: bypass keybinding system so Up/Down/j/k navigate the list
     // instead of being intercepted as JumpNextBubble/JumpPrevBubble
-    if app.show_session_list { return handle_output_input(key, app); }
+    if app.show_session_list { return handle_session_input(key, app); }
 
     // Text input modals bypass keybinding resolution entirely — they consume
     // all keypresses (including Shift+G, etc.) as literal text input.
@@ -221,7 +221,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         Focus::Worktrees => handle_worktrees_input(key, app)?,
         Focus::FileTree => handle_file_tree_input(key, app)?,
         Focus::Viewer => handle_viewer_input(key, app)?,
-        Focus::Output => handle_output_input(key, app)?,
+        Focus::Session => handle_session_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
         Focus::WorktreeCreation => handle_worktree_creation_input(key, app, claude_process)?,
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
@@ -229,3 +229,4 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     Ok(())
 }
+

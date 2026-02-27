@@ -236,7 +236,7 @@ impl App {
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
 
-            match claude_process.spawn(&wt_path, &prompt, None) {
+            match claude_process.spawn(&wt_path, &prompt, None, None) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
                     self.pending_session_names.push((slot, format!("[GFM] {}", filename)));

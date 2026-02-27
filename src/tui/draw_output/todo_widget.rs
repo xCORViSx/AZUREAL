@@ -1,6 +1,6 @@
 //! Sticky todo widget
 //!
-//! Renders the task progress tracker at the bottom of the convo pane.
+//! Renders the task progress tracker at the bottom of the session pane.
 //! Shows main agent todos (checkmark/bullet icons) and subagent todos
 //! indented with "↳" directly after the parent task.
 
@@ -15,7 +15,7 @@ use ratatui::{
 use crate::app::{TodoItem, TodoStatus};
 use super::super::util::AZURE;
 
-/// Render the sticky todo widget — shows at the bottom of the convo pane.
+/// Render the sticky todo widget — shows at the bottom of the session pane.
 /// Main agent todos show as check/bullet/circle. Subagent todos show indented
 /// with "↳" prefix directly after the parent todo item.
 /// When content exceeds the visible area (20 lines max), a scrollbar column

@@ -36,7 +36,7 @@ pub fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let is_focused = app.focus == Focus::Output;
+    let is_focused = app.focus == Focus::Session;
 
     // Split area: filter bar at top when filter is active or has text
     let has_filter = app.session_filter_active || !app.session_filter.is_empty();

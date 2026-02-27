@@ -1,18 +1,18 @@
-//! Output panel input handling
+//! Session panel input handling
 
 use anyhow::Result;
 use crossterm::event;
 
 use crate::app::App;
 
-/// Handle keyboard input when Output pane is focused.
+/// Handle keyboard input when Session pane is focused.
 /// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
 /// is called. This handler only receives keys that weren't mapped — meaning only
-/// session list overlay, convo search, and rebase mode input reach here.
-pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    // Convo search bar: typing search text bypasses keybinding system
-    if app.convo_search_active {
-        return handle_convo_search_input(key, app);
+/// session list overlay, session find, and rebase mode input reach here.
+pub fn handle_session_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // Session find bar: typing search text bypasses keybinding system
+    if app.session_find_active {
+        return handle_session_find_input(key, app);
     }
 
     // Session list overlay: j/k navigate, Enter selects, s/Esc closes, / filters
@@ -20,82 +20,82 @@ pub fn handle_output_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         return handle_session_list_input(key, app);
     }
 
-    // n/N: cycle through convo search matches (after Enter confirmed search)
-    if !app.convo_search_matches.is_empty() && !app.convo_search_active {
+    // n/N: cycle through session find matches (after Enter confirmed search)
+    if !app.session_find_matches.is_empty() && !app.session_find_active {
         use event::KeyCode;
         match key.code {
             KeyCode::Char('n') => { jump_next_match(app); return Ok(()); }
             KeyCode::Char('N') => { jump_prev_match(app); return Ok(()); }
             // Esc clears residual search matches
             KeyCode::Esc => {
-                app.convo_search.clear();
-                app.convo_search_matches.clear();
-                app.convo_search_current = 0;
-                app.output_viewport_scroll = usize::MAX;
+                app.session_find.clear();
+                app.session_find_matches.clear();
+                app.session_find_current = 0;
+                app.session_viewport_scroll = usize::MAX;
                 return Ok(());
             }
             _ => {}
         }
     }
 
-    // All output keybindings resolved upstream — nothing to handle here
+    // All session keybindings resolved upstream — nothing to handle here
     Ok(())
 }
 
-/// Handle keyboard input for the convo search bar (/ search within current session).
+/// Handle keyboard input for the session find bar (/ search within current session).
 /// Typing updates the query and recomputes matches against rendered_lines_cache.
 /// Enter confirms (keeps matches highlighted for n/N navigation), Esc clears.
-fn handle_convo_search_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+fn handle_session_find_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     use event::KeyCode;
 
     match key.code {
         KeyCode::Char(c) => {
-            app.convo_search.push(c);
-            recompute_convo_matches(app);
+            app.session_find.push(c);
+            recompute_session_find_matches(app);
             // Jump to nearest match after current scroll position
             jump_to_nearest_match(app);
             // Invalidate viewport cache so highlighting redraws
-            app.output_viewport_scroll = usize::MAX;
+            app.session_viewport_scroll = usize::MAX;
         }
         KeyCode::Backspace => {
-            app.convo_search.pop();
-            if app.convo_search.is_empty() {
+            app.session_find.pop();
+            if app.session_find.is_empty() {
                 // Empty search: deactivate and clear
-                app.convo_search_active = false;
-                app.convo_search_matches.clear();
-                app.convo_search_current = 0;
+                app.session_find_active = false;
+                app.session_find_matches.clear();
+                app.session_find_current = 0;
             } else {
-                recompute_convo_matches(app);
+                recompute_session_find_matches(app);
                 jump_to_nearest_match(app);
             }
-            app.output_viewport_scroll = usize::MAX;
+            app.session_viewport_scroll = usize::MAX;
         }
         KeyCode::Enter => {
             // Confirm search: deactivate input but keep matches + highlighting active
             // n/N will cycle through matches (handled in keybindings/actions)
-            app.convo_search_active = false;
+            app.session_find_active = false;
         }
         KeyCode::Esc => {
             // Cancel search: clear everything
-            app.convo_search_active = false;
-            app.convo_search.clear();
-            app.convo_search_matches.clear();
-            app.convo_search_current = 0;
-            app.output_viewport_scroll = usize::MAX;
+            app.session_find_active = false;
+            app.session_find.clear();
+            app.session_find_matches.clear();
+            app.session_find_current = 0;
+            app.session_viewport_scroll = usize::MAX;
         }
         _ => {}
     }
     Ok(())
 }
 
-/// Scan the rendered_lines_cache for all case-insensitive occurrences of convo_search.
+/// Scan the rendered_lines_cache for all case-insensitive occurrences of session_find.
 /// Stores (line_idx, start_col, end_col) for every match found.
-fn recompute_convo_matches(app: &mut App) {
-    app.convo_search_matches.clear();
-    app.convo_search_current = 0;
-    if app.convo_search.is_empty() { return; }
+fn recompute_session_find_matches(app: &mut App) {
+    app.session_find_matches.clear();
+    app.session_find_current = 0;
+    if app.session_find.is_empty() { return; }
 
-    let query = app.convo_search.to_lowercase();
+    let query = app.session_find.to_lowercase();
     let query_chars: Vec<char> = query.chars().collect();
     let qlen = query_chars.len();
     for (line_idx, line) in app.rendered_lines_cache.iter().enumerate() {
@@ -112,55 +112,55 @@ fn recompute_convo_matches(app: &mut App) {
         if lower.len() < qlen { continue; }
         for i in 0..=lower.len() - qlen {
             if lower[i..i + qlen] == query_chars[..] {
-                app.convo_search_matches.push((line_idx, i, i + qlen));
+                app.session_find_matches.push((line_idx, i, i + qlen));
             }
         }
     }
 }
 
 /// Jump to the nearest match at or after the current scroll position.
-/// Sets output_scroll so the matched line sits ~3 lines from the top for context.
+/// Sets session_scroll so the matched line sits ~3 lines from the top for context.
 fn jump_to_nearest_match(app: &mut App) {
-    if app.convo_search_matches.is_empty() { return; }
+    if app.session_find_matches.is_empty() { return; }
 
     // Find the match nearest to current viewport position
-    let current_scroll = if app.output_scroll == usize::MAX {
-        app.output_natural_bottom()
+    let current_scroll = if app.session_scroll == usize::MAX {
+        app.session_natural_bottom()
     } else {
-        app.output_scroll
+        app.session_scroll
     };
 
     // Prefer match at/after current scroll, otherwise wrap to first
-    let idx = app.convo_search_matches.iter()
+    let idx = app.session_find_matches.iter()
         .position(|(line, _, _)| *line >= current_scroll)
         .unwrap_or(0);
 
-    app.convo_search_current = idx;
-    let (match_line, _, _) = app.convo_search_matches[idx];
+    app.session_find_current = idx;
+    let (match_line, _, _) = app.session_find_matches[idx];
     // Position match ~3 lines from top for context
-    app.output_scroll = match_line.saturating_sub(3);
+    app.session_scroll = match_line.saturating_sub(3);
 }
 
-/// Jump to the next convo search match (n key after Enter)
+/// Jump to the next session find match (n key after Enter)
 pub fn jump_next_match(app: &mut App) {
-    if app.convo_search_matches.is_empty() { return; }
-    app.convo_search_current = (app.convo_search_current + 1) % app.convo_search_matches.len();
-    let (match_line, _, _) = app.convo_search_matches[app.convo_search_current];
-    app.output_scroll = match_line.saturating_sub(3);
-    app.output_viewport_scroll = usize::MAX;
+    if app.session_find_matches.is_empty() { return; }
+    app.session_find_current = (app.session_find_current + 1) % app.session_find_matches.len();
+    let (match_line, _, _) = app.session_find_matches[app.session_find_current];
+    app.session_scroll = match_line.saturating_sub(3);
+    app.session_viewport_scroll = usize::MAX;
 }
 
-/// Jump to the previous convo search match (N key after Enter)
+/// Jump to the previous session find match (N key after Enter)
 pub fn jump_prev_match(app: &mut App) {
-    if app.convo_search_matches.is_empty() { return; }
-    if app.convo_search_current == 0 {
-        app.convo_search_current = app.convo_search_matches.len() - 1;
+    if app.session_find_matches.is_empty() { return; }
+    if app.session_find_current == 0 {
+        app.session_find_current = app.session_find_matches.len() - 1;
     } else {
-        app.convo_search_current -= 1;
+        app.session_find_current -= 1;
     }
-    let (match_line, _, _) = app.convo_search_matches[app.convo_search_current];
-    app.output_scroll = match_line.saturating_sub(3);
-    app.output_viewport_scroll = usize::MAX;
+    let (match_line, _, _) = app.session_find_matches[app.session_find_current];
+    app.session_scroll = match_line.saturating_sub(3);
+    app.session_viewport_scroll = usize::MAX;
 }
 
 /// Handle keyboard input for the session list overlay
@@ -198,12 +198,12 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         }
         // J: page down
         (KeyModifiers::NONE, KeyCode::Char('J')) => {
-            let page = app.output_viewport_height.saturating_sub(2);
+            let page = app.session_viewport_height.saturating_sub(2);
             app.session_list_selected = (app.session_list_selected + page).min(total_rows.saturating_sub(1));
         }
         // K: page up
         (KeyModifiers::NONE, KeyCode::Char('K')) => {
-            let page = app.output_viewport_height.saturating_sub(2);
+            let page = app.session_viewport_height.saturating_sub(2);
             app.session_list_selected = app.session_list_selected.saturating_sub(page);
         }
         // Enter: load the selected session file

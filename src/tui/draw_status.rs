@@ -87,7 +87,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
                     "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
                 }
             }
-            (Focus::Output, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
+            (Focus::Session, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
             (Focus::WorktreeCreation, _) => "Enter:create  Esc:cancel",
             (Focus::BranchDialog, _) => "j/k:select  Enter:switch/create  Esc:cancel  type to filter",

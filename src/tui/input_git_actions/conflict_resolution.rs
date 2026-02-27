@@ -112,7 +112,7 @@ fn spawn_conflict_claude(
          Ask me if any conflict is ambiguous."
     );
 
-    match claude_process.spawn(wt_path, &prompt, None) {
+    match claude_process.spawn(wt_path, &prompt, None, None) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
             app.pending_session_names.push((slot.clone(), format!("[RCR] {}", display)));
@@ -129,9 +129,9 @@ fn spawn_conflict_claude(
             });
             app.title_session_name = format!("[RCR] {}", display);
             app.display_events.clear();
-            app.output_lines.clear();
-            app.output_buffer.clear();
-            app.output_scroll = usize::MAX;
+            app.session_lines.clear();
+            app.session_buffer.clear();
+            app.session_scroll = usize::MAX;
             app.session_file_parse_offset = 0;
             app.rendered_events_count = 0;
             app.rendered_content_line_count = 0;
@@ -151,7 +151,7 @@ fn spawn_conflict_claude(
             app.ask_user_questions_cache = None;
             app.invalidate_render_cache();
             app.git_actions_panel = None;
-            app.focus = Focus::Output;
+            app.focus = Focus::Session;
         }
         Err(e) => {
             if let Some(ref mut p) = app.git_actions_panel {

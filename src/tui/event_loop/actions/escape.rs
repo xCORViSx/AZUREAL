@@ -64,7 +64,7 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 app.invalidate_sidebar();
             }
         }
-        Focus::Output => {
+        Focus::Session => {
             if app.show_session_list { app.show_session_list = false; }
             else { app.focus = Focus::Worktrees; }
         }

@@ -2,7 +2,7 @@
 //!
 //! Handles left-click (focus, select, cursor placement), drag (text selection),
 //! and scroll (pane-specific scrolling). Also handles clipboard copy from
-//! viewer and convo selections.
+//! viewer and session selections.
 
 use crate::app::{App, Focus};
 use super::coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char, click_to_input_cursor};
@@ -60,7 +60,7 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
         if delta > 0 { app.todo_scroll = (app.todo_scroll + delta as u16).min(max_scroll); }
         else { app.todo_scroll = app.todo_scroll.saturating_sub((-delta) as u16); }
         true
-    } else if app.pane_convo.contains(pos) {
+    } else if app.pane_session.contains(pos) {
         // Session list overlay: scroll selected item
         if app.show_session_list {
             let total: usize = app.worktrees.iter().map(|s| {
@@ -73,11 +73,11 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
             }
             return true;
         }
-        app.output_selection = None;
+        app.session_selection = None;
         if delta > 0 {
-            app.scroll_output_down(delta as usize)
+            app.scroll_session_down(delta as usize)
         } else {
-            app.scroll_output_up((-delta) as usize)
+            app.scroll_session_up((-delta) as usize)
         }
     } else {
         false
@@ -176,12 +176,12 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         return true;
     }
 
-    // Convo pane — focus + clickable file path detection
-    if app.pane_convo.contains(pos) {
-        app.focus = Focus::Output;
+    // Session pane — focus + clickable file path detection
+    if app.pane_session.contains(pos) {
+        app.focus = Focus::Session;
         // Check if the click landed on an underlined file path link
-        app.clamp_output_scroll();
-        if let Some((cache_line, cache_col)) = screen_to_cache_pos(col, row, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) {
+        app.clamp_session_scroll();
+        if let Some((cache_line, cache_col)) = screen_to_cache_pos(col, row, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
             // Search clickable_paths for a hit: first line checks column range,
             // continuation lines match anywhere within the wrapped path region
             let hit = app.clickable_paths.iter().find(|(li, sc, ec, _, _, _, wlc)| {
@@ -192,7 +192,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 // Set inverted-color highlight on the clicked path (including wrap count)
                 app.clicked_path_highlight = Some((li, sc, ec, wlc));
                 // Invalidate viewport cache so highlight is rendered on next draw
-                app.output_viewport_scroll = usize::MAX;
+                app.session_viewport_scroll = usize::MAX;
                 // Edit tool: open file with diff overlay in Viewer
                 // Read/Write tool: open file plain in Viewer
                 if !old_s.is_empty() || !new_s.is_empty() {
@@ -204,10 +204,10 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                     app.load_file_at_path(&file_path);
                 }
             } else {
-                // Clicked somewhere else in convo — clear any previous highlight
+                // Clicked somewhere else in session pane — clear any previous highlight
                 if app.clicked_path_highlight.is_some() {
                     app.clicked_path_highlight = None;
-                    app.output_viewport_scroll = usize::MAX;
+                    app.session_viewport_scroll = usize::MAX;
                 }
             }
         }
@@ -276,24 +276,24 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
             if app.viewer_selection != new { app.viewer_selection = new; return true; }
             false
         }
-        // --- Convo pane: anchor = (cache_line, cache_col) ---
+        // --- Session pane: anchor = (cache_line, cache_col) ---
         1 => {
-            app.clamp_output_scroll();
+            app.clamp_session_scroll();
             // Auto-scroll when dragging above/below pane
-            if row < app.pane_convo.y + 1 { app.scroll_output_up(1); }
-            else if row >= app.pane_convo.y + app.pane_convo.height.saturating_sub(1) { app.scroll_output_down(1); }
-            let ec = col.max(app.pane_convo.x + 1).min(app.pane_convo.x + app.pane_convo.width.saturating_sub(1));
-            let er = row.max(app.pane_convo.y + 1).min(app.pane_convo.y + app.pane_convo.height.saturating_sub(1));
-            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_convo, app.output_scroll, app.rendered_lines_cache.len()) else { return false };
+            if row < app.pane_session.y + 1 { app.scroll_session_up(1); }
+            else if row >= app.pane_session.y + app.pane_session.height.saturating_sub(1) { app.scroll_session_down(1); }
+            let ec = col.max(app.pane_session.x + 1).min(app.pane_session.x + app.pane_session.width.saturating_sub(1));
+            let er = row.max(app.pane_session.y + 1).min(app.pane_session.y + app.pane_session.height.saturating_sub(1));
+            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) else { return false };
             let sel = if anchor_line < el || (anchor_line == el && anchor_col <= ecc) {
                 (anchor_line, anchor_col, el, ecc)
             } else {
                 (el, ecc, anchor_line, anchor_col)
             };
             let new = Some(sel);
-            if app.output_selection != new {
-                app.output_selection = new;
-                app.output_viewport_scroll = usize::MAX;
+            if app.session_selection != new {
+                app.session_selection = new;
+                app.session_viewport_scroll = usize::MAX;
                 return true;
             }
             false
@@ -362,9 +362,9 @@ pub fn copy_viewer_selection(app: &mut App) {
     app.set_status("Copied to clipboard");
 }
 
-/// Copy text selected in the convo pane to clipboard
-pub fn copy_output_selection(app: &mut App) {
-    let Some((sl, sc, el, ec)) = app.output_selection else { return };
+/// Copy text selected in the session pane to clipboard
+pub fn copy_session_selection(app: &mut App) {
+    let Some((sl, sc, el, ec)) = app.session_selection else { return };
     let text = extract_text_from_cache(&app.rendered_lines_cache, sl, sc, el, ec, 0);
     if text.is_empty() { return; }
     if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }

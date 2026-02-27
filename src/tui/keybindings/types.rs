@@ -117,6 +117,7 @@ pub enum Action {
     EnterPromptMode,
     CycleFocusForward,
     CycleFocusBackward,
+    CycleModel,
 
     // Navigation (shared across contexts)
     NavDown,
@@ -170,7 +171,7 @@ pub enum Action {
     // Output/Convo
     NewSession,
     ToggleSessionList,
-    SearchConvo,
+    SearchSession,
     JumpNextBubble,
     JumpPrevBubble,
     JumpNextMessage,

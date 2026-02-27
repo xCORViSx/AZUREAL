@@ -25,9 +25,9 @@ pub enum DisplayEvent {
     Command {
         name: String,
     },
-    /// Context compaction starting indicator
+    /// Context compacted (detected from compaction summary in session file)
     Compacting,
-    /// Context compaction completed indicator
+    /// Context compacted via /compact command (unreachable in -p mode)
     Compacted,
     /// Suspected compaction (95%+ context, 20s inactivity)
     MayBeCompacting,

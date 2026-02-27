@@ -295,3 +295,4 @@ fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::eve
         | (KeyModifiers::ALT, KeyCode::Up) | (KeyModifiers::ALT, KeyCode::Down)
     ))
 }
+

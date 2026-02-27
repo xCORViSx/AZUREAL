@@ -14,8 +14,8 @@ impl App {
         self.show_session_list = false;
         self.focus = match self.focus {
             Focus::Worktrees => Focus::Viewer,
-            Focus::Viewer => Focus::Output,
-            Focus::Output => Focus::Input,
+            Focus::Viewer => Focus::Session,
+            Focus::Session => Focus::Input,
             Focus::Input => Focus::Worktrees,
             // FileTree focus only active when overlay is open — cycle out to Worktrees
             Focus::FileTree => Focus::Viewer,
@@ -32,8 +32,8 @@ impl App {
             Focus::Worktrees => { self.show_file_tree = false; Focus::Input }
             Focus::Viewer if file_tree_open => Focus::FileTree,
             Focus::Viewer => { self.show_file_tree = false; Focus::Worktrees }
-            Focus::Output => { self.show_file_tree = false; Focus::Viewer }
-            Focus::Input => { self.show_file_tree = false; Focus::Output }
+            Focus::Session => { self.show_file_tree = false; Focus::Viewer }
+            Focus::Input => { self.show_file_tree = false; Focus::Session }
             Focus::FileTree => { self.show_file_tree = false; Focus::Worktrees }
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
@@ -614,9 +614,9 @@ impl App {
         self.worktrees.clear();
         self.selected_worktree = None;
         self.display_events.clear();
-        self.output_lines.clear();
-        self.output_buffer.clear();
-        self.output_scroll = usize::MAX;
+        self.session_lines.clear();
+        self.session_buffer.clear();
+        self.session_scroll = usize::MAX;
         self.pending_user_message = None;
         self.staged_prompt = None;
         self.event_parser = crate::events::EventParser::new();

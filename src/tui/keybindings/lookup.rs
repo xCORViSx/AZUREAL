@@ -72,7 +72,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         Focus::FileTree => &FILE_TREE,
         Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
         Focus::Viewer => &VIEWER,
-        Focus::Output => &OUTPUT,
+        Focus::Session => &SESSION,
         Focus::Input if ctx.terminal_mode && !ctx.prompt_mode => &TERMINAL,
         Focus::Input if ctx.prompt_mode => &INPUT,
         _ => &[],

@@ -513,11 +513,11 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     };
     // Spawn Claude on current worktree (resume existing session if any)
     let resume_id = app.get_claude_session_id(&branch).cloned();
-    match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
+    match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
         Ok((rx, pid)) => {
             app.pending_session_names.push((pid.to_string(), display_name));
             app.register_claude(branch, pid, rx);
-            app.focus = Focus::Output;
+            app.focus = Focus::Session;
             app.set_status(format!("Generating run command: {}...", cmd_name));
         }
         Err(e) => app.set_status(format!("Failed to start Claude: {}", e)),

@@ -39,11 +39,13 @@ impl ClaudeProcess {
 
     /// Spawn Claude Code with the given prompt via PTY
     /// resume_session_id: Claude session ID from previous prompt's init event (for --resume)
+    /// model: optional model override (e.g. "opus", "sonnet", "haiku") — passed as --model flag
     pub fn spawn(
         &self,
         working_dir: &Path,
         prompt: &str,
         resume_session_id: Option<&str>,
+        model: Option<&str>,
     ) -> Result<(mpsc::Receiver<ClaudeEvent>, u32)> {
         if prompt.is_empty() {
             anyhow::bail!("Prompt cannot be empty");
@@ -58,6 +60,12 @@ impl ClaudeProcess {
         if let Some(session_id) = resume_session_id {
             cmd.arg("--resume");
             cmd.arg(session_id);
+        }
+
+        // Model override (⌃m cycle selection)
+        if let Some(m) = model {
+            cmd.arg("--model");
+            cmd.arg(m);
         }
 
         // Prompt and output format

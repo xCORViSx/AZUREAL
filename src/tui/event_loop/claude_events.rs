@@ -30,10 +30,10 @@ pub fn handle_claude_event(slot_id: &str, event: ClaudeEvent, app: &mut App, cla
             if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
                 let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
                 app.add_user_message(prompt.clone());
-                app.process_output_chunk(&format!("You: {}\n", prompt));
+                app.process_session_chunk(&format!("You: {}\n", prompt));
                 app.current_todos.clear();
                 let resume_id = app.get_claude_session_id(&branch).cloned();
-                match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref()) {
+                match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
                     Ok((rx, pid)) => { app.register_claude(branch, pid, rx); app.set_status("Running..."); }
                     Err(e) => app.set_status(format!("Failed to start: {}", e)),
                 }

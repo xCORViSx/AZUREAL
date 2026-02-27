@@ -9,8 +9,8 @@ use crate::app::{App, Focus};
 pub(super) fn dispatch_nav_down(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_down(1); }
-        Focus::Output => {
-            app.scroll_output_down(1);
+        Focus::Session => {
+            app.scroll_session_down(1);
         }
         Focus::Worktrees => app.select_next_session(),
         Focus::FileTree => app.file_tree_next(),
@@ -25,8 +25,8 @@ pub(super) fn dispatch_nav_down(app: &mut App) {
 pub(super) fn dispatch_nav_up(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_up(1); }
-        Focus::Output => {
-            app.scroll_output_up(1);
+        Focus::Session => {
+            app.scroll_session_up(1);
         }
         Focus::Worktrees => app.select_prev_session(),
         Focus::FileTree => app.file_tree_prev(),
@@ -81,9 +81,9 @@ pub(super) fn dispatch_nav_right(app: &mut App) {
 pub(super) fn dispatch_page_down(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2)); }
-        Focus::Output => {
-            let page = app.output_viewport_height.saturating_sub(2);
-            app.scroll_output_down(page);
+        Focus::Session => {
+            let page = app.session_viewport_height.saturating_sub(2);
+            app.scroll_session_down(page);
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_down((app.terminal_height as usize).saturating_sub(2));
@@ -96,9 +96,9 @@ pub(super) fn dispatch_page_down(app: &mut App) {
 pub(super) fn dispatch_page_up(app: &mut App) {
     match app.focus {
         Focus::Viewer => { app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2)); }
-        Focus::Output => {
-            let page = app.output_viewport_height.saturating_sub(2);
-            app.scroll_output_up(page);
+        Focus::Session => {
+            let page = app.session_viewport_height.saturating_sub(2);
+            app.scroll_session_up(page);
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_up((app.terminal_height as usize).saturating_sub(2));
@@ -111,7 +111,7 @@ pub(super) fn dispatch_page_up(app: &mut App) {
 pub(super) fn dispatch_go_to_top(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.viewer_scroll = 0,
-        Focus::Output => { app.output_scroll = 0; }
+        Focus::Session => { app.session_scroll = 0; }
         Focus::Worktrees => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
@@ -125,7 +125,7 @@ pub(super) fn dispatch_go_to_top(app: &mut App) {
 pub(super) fn dispatch_go_to_bottom(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.scroll_viewer_to_bottom(),
-        Focus::Output => { app.scroll_output_to_bottom(); }
+        Focus::Session => { app.scroll_session_to_bottom(); }
         Focus::Worktrees => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {

@@ -191,7 +191,7 @@ impl App {
     }
 
     /// Handle Claude output. Only processes events from the active slot (the one
-    /// displayed in the convo pane). Non-active slots' output is silently drained
+    /// displayed in the session pane). Non-active slots' output is silently drained
     /// by the event loop to prevent channel backup.
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
         // Only display output from the active slot of the currently viewed branch.
@@ -277,8 +277,9 @@ impl App {
                             tokens_changed = true;
                         }
                         // Heuristic fallback — result event will overwrite with exact value
-                        if self.model_context_window.is_none() {
-                            if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
+                        if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
+                            self.detected_model = Some(model.to_string());
+                            if self.model_context_window.is_none() {
                                 self.model_context_window = Some(
                                     crate::app::session_parser::context_window_for_model(model)
                                 );
@@ -315,21 +316,21 @@ impl App {
                 self.display_events.extend(events);
                 self.invalidate_render_cache();
                 // Activity detected — reset compaction inactivity watcher
-                self.last_convo_event_time = std::time::Instant::now();
+                self.last_session_event_time = std::time::Instant::now();
                 self.compaction_banner_injected = false;
             }
 
-            // Feed the fallback output_lines only when the rendered cache is empty
-            // (before first render completes). Once we have rendered content, the convo
-            // pane draws from rendered_lines_cache and output_lines is never read —
-            // skip the display_text_from_json + process_output_chunk work entirely.
+            // Feed the fallback session_lines only when the rendered cache is empty
+            // (before first render completes). Once we have rendered content, the session
+            // pane draws from rendered_lines_cache and session_lines is never read —
+            // skip the display_text_from_json + process_session_chunk work entirely.
             if self.rendered_lines_cache.is_empty() {
                 if let Some(json) = parsed_json {
                     if let Some(display_text) = display_text_from_json(&json) {
-                        self.process_output_chunk(&display_text);
+                        self.process_session_chunk(&display_text);
                     }
                 } else if output_type != OutputType::Stdout && output_type != OutputType::Json {
-                    self.process_output_chunk(&data);
+                    self.process_session_chunk(&data);
                 }
             }
 
@@ -337,14 +338,14 @@ impl App {
     }
 
     /// Register a newly spawned Claude process. The PID is used as the slot key.
-    /// Newest spawn becomes the active slot (its output appears in convo pane).
+    /// Newest spawn becomes the active slot (its output appears in session pane).
     pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<ClaudeEvent>) {
         let slot = pid.to_string();
         self.claude_receivers.insert(slot.clone(), receiver);
         self.running_sessions.insert(slot.clone());
         // Track this slot under its branch (append = spawn order preserved)
         self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
-        // Newest spawn becomes active — its output shows in convo pane
+        // Newest spawn becomes active — its output shows in session pane
         self.active_slot.insert(branch_name, slot);
         // New process = user wants live output, not a historic view
         self.viewing_historic_session = false;

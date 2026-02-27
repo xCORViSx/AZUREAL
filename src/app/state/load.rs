@@ -230,9 +230,9 @@ impl App {
         // Restore terminal for new session (save was done before selection changed)
         self.restore_session_terminal();
 
-        self.output_lines.clear();
-        self.output_buffer.clear();
-        self.output_scroll = usize::MAX; // Start at bottom (most recent messages)
+        self.session_lines.clear();
+        self.session_buffer.clear();
+        self.session_scroll = usize::MAX; // Start at bottom (most recent messages)
         self.display_events.clear();
         self.session_file_path = None;
         self.session_file_modified = None;
@@ -243,7 +243,7 @@ impl App {
         // Immediately clear rendered content so no stale lines from the
         // previous session flash while the new render is in flight.
         self.rendered_lines_cache.clear();
-        self.output_viewport_cache.clear();
+        self.session_viewport_cache.clear();
         self.animation_line_indices.clear();
         self.message_bubble_positions.clear();
         self.clickable_paths.clear();
@@ -465,7 +465,7 @@ impl App {
         let Some(path) = self.session_file_path.clone() else { return };
 
         // Track if we were at bottom before refresh (usize::MAX = follow mode)
-        let was_at_bottom = self.output_scroll == usize::MAX;
+        let was_at_bottom = self.session_scroll == usize::MAX;
 
         // Incremental parse: only read new bytes since last offset
         let parsed = crate::app::session_parser::parse_session_file_incremental(
@@ -517,12 +517,12 @@ impl App {
         self.invalidate_render_cache();
 
         // Activity detected from session file — reset compaction inactivity watcher
-        self.last_convo_event_time = std::time::Instant::now();
+        self.last_session_event_time = std::time::Instant::now();
         self.compaction_banner_injected = false;
 
         // If we were following bottom, stay at bottom after content update
         if was_at_bottom {
-            self.output_scroll = usize::MAX;
+            self.session_scroll = usize::MAX;
         }
     }
 

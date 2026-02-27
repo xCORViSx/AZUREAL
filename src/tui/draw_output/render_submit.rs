@@ -57,14 +57,14 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
 /// The main event loop calls this when `rendered_lines_dirty` is true.
 /// The actual rendering happens on the render thread — the main thread
 /// keeps processing events immediately after this returns.
-pub fn submit_render_request(app: &mut App, convo_width: u16) {
-    if app.display_events.is_empty() || app.view_mode != ViewMode::Output { return; }
+pub fn submit_render_request(app: &mut App, session_width: u16) {
+    if app.display_events.is_empty() || app.view_mode != ViewMode::Session { return; }
 
-    let inner_width = convo_width.saturating_sub(2);
+    let inner_width = session_width.saturating_sub(2);
 
     // Deferred render: if user scrolled to top and there are unrendered early events,
     // expand to full render now (they want to see old messages)
-    if app.rendered_events_start > 0 && app.output_scroll == 0 {
+    if app.rendered_events_start > 0 && app.session_scroll == 0 {
         app.rendered_lines_dirty = true;
         app.rendered_events_start = 0;
         app.rendered_events_count = 0;
@@ -83,7 +83,7 @@ pub fn submit_render_request(app: &mut App, convo_width: u16) {
     // Build the render request with cloned data (the thread works on its own copy).
     // IMPORTANT: we clone (not take) the existing cache so the main thread still has
     // content to display while the render thread works. Taking would empty the cache,
-    // breaking scroll-to-bottom (clamp_output_scroll sees 0 lines → jumps to top).
+    // breaking scroll-to-bottom (clamp_session_scroll sees 0 lines → jumps to top).
     let req = if can_incremental {
         let existing_lines = app.rendered_lines_cache.clone();
         let existing_anim = app.animation_line_indices.clone();
@@ -175,6 +175,6 @@ pub fn poll_render_result(app: &mut App) -> bool {
     app.clicked_path_highlight = None;
 
     // Invalidate viewport cache since underlying content changed
-    app.output_viewport_scroll = usize::MAX;
+    app.session_viewport_scroll = usize::MAX;
     true
 }

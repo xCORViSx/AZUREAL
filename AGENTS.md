@@ -4,7 +4,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 
 **Terminology:**
 - **Worktree**: A git worktree with its own working directory and branch (displayed in left panel)
-- **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Convo pane)
+- **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Session pane)
 
 **Mostly Stateless Architecture:** All runtime state is derived from:
 - Git repository info via `git rev-parse --git-common-dir` (resolves to main worktree root, not worktree-local)
@@ -26,15 +26,17 @@ The core feature enabling multiple concurrent Claude Code CLI instances. Each wo
 
 **Architecture:**
 - Each prompt spawns a new process: `claude -p "prompt" --verbose --output-format stream-json`
+- `spawn()` accepts optional `model: Option<&str>` — when set, adds `--model <name>` to the CLI args
 - `spawn()` returns `(Receiver<ClaudeEvent>, u32)` — the event channel and the OS PID
 - First prompt: captures `session_id` from init event in stream-json output
 - Follow-up prompts: add `--resume <session_id>` for conversation context
+- Model override: `⌃m` cycles `selected_model` through opus → sonnet → haiku → None (CLI default). `detected_model` is populated from the stream's `assistant` event `message.model` field. Bottom border of Session pane shows `⌃m:model_name` (color-coded: magenta=opus, cyan=sonnet, yellow=haiku, gray=default)
 - Process exits after each response; new process for next prompt
 
 **PID-Keyed Session Slots:**
 All session state maps (`claude_receivers`, `running_sessions`, `claude_exit_codes`, `claude_session_ids`) are keyed by **PID string** (not branch name). This enables multiple concurrent Claude processes per worktree. Two additional maps track the relationship:
 - `branch_slots: HashMap<String, Vec<String>>` — branch → list of active PID strings (spawn order)
-- `active_slot: HashMap<String, String>` — branch → which PID's output is displayed in the convo pane
+- `active_slot: HashMap<String, String>` — branch → which PID's output is displayed in the session pane
 
 Only the **active slot's** output feeds `display_events`; other slots' output is silently drained from their receivers. When the active slot exits, the app auto-switches to the last remaining slot on that branch (or clears if none remain). New spawns always become the active slot. `cancel_current_claude()` kills only the active slot's process.
 
@@ -81,7 +83,7 @@ A ratatui-based terminal interface with 3-pane layout, toggle overlays, and stat
 Normal Mode:                              Git Mode (Shift+G):
 ┌──────────┬───────────────┬──────────┐   ╔══════════╦═══════════════╦═════════╗
 │Worktrees │    Viewer     │          │   ║ Actions  ║   Viewer      ║Commits  ║
-│  (15%)   │    (50%)      │Convo(35%)│   ║──────────║               ║         ║
+│  (15%)   │    (50%)      │Session(35%)│   ║──────────║               ║         ║
 ├──────────┴───────────────┤          │   ║ Files    ║               ║         ║
 │  Input / Terminal        │          │   ╠══════════╩═══════════════╩═════════╣
 ├──────────────────────────┴──────────┤   ║ GIT: wt (Tab:cycle | Enter:exec)  ║
@@ -92,7 +94,7 @@ Normal Mode:                              Git Mode (Shift+G):
 **Panes:**
 - **Worktrees** (15%): Worktree list showing all active and archived worktrees (main branch hidden — stored separately, browse with `m`). Press `f` to toggle a **FileTree overlay** in this pane (replaces worktree list with directory tree for the selected worktree). Press `w` or `Esc` to return to worktree list.
 - **Viewer** (50%): File content viewer or diff detail (dual-purpose)
-- **Convo** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces convo with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Convo [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
+- **Session** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces session output with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Session [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
 - **Input/Terminal**: Prompt input or embedded terminal (spans Worktrees + Viewer width only)
 - **Status Bar** (1 row, bottom): Left shows worktree status dot + display name + branch (branch parenthetical hidden when identical to name, e.g. `main` not `main (main)`). Center shows context-sensitive help hints that update per focus/mode. Right shows CPU% + PID badge — rendered in AZURE (`#3399FF`) for debug builds and DarkGray for release builds, providing a quick visual indicator of the active build profile (single `cfg!(debug_assertions)` check in `src/tui/draw_status.rs`). No ViewMode indicator — help hints already change per mode.
 
@@ -102,7 +104,7 @@ Normal Mode:                              Git Mode (Shift+G):
 
 **Overlays:**
 - **FileTree overlay** (`f` in Worktrees pane): Replaces worktree list with directory tree for the selected worktree. Uses **Nerd Font icons** (~60 file types with language-brand colors: Rust orange, Python blue, etc.) with automatic detection via `detect_nerd_font()` — probes a PUA glyph during splash and measures cursor advance via DSR. Falls back to emoji icons if the terminal font lacks Nerd Font glyphs (status bar shows "Nerd Font not detected" message). Icon mapping in `src/tui/file_icons.rs` — checks filename first (Dockerfile, Makefile, LICENSE, etc.), then extension. Border title shows `Filetree (worktree_name)` with optional `[pos/total]` scroll indicator when content overflows. Supports expand/collapse, file opening in Viewer. Focus set to `Focus::FileTree` while active. `f` or `Esc` returns to worktree list. **Options overlay** (`O`): replaces tree content with a checkbox list for toggling visibility — `worktrees`, `.git`, `.claude`, `.azureal`, `.DS_Store` (all hidden by default). QuadrantOutside AZURE border with `" Filetree Options "` title and `" Space:toggle  Esc:close "` footer. `j/k` navigate, `Space`/`Enter` toggle, `Esc`/`O` close. Hidden names stored in `file_tree_hidden_dirs: HashSet<String>` — tree rebuilds immediately on toggle. **Persisted to project azufig.toml** `[filetree].hidden` on every toggle and loaded on startup/project switch. File actions (`a`dd, `d`elete, `r`ename, `c`opy, `m`ove) show an inline action bar at the bottom of the pane. Add/Rename use text input (`⌃u` clears, `Esc` cancels, `Enter` confirms); Add with trailing `/` creates directory; Rename pre-fills with current name. Copy/Move use clipboard-style paste: press `c`/`m` to grab source file (highlighted with `┃name┃` solid border for copy or `╎name╎` dashed border for move, in magenta), navigate tree to target directory, `Enter` to paste, `Esc` to cancel. Delete uses y/N confirmation. Actions operate relative to selected entry's parent dir (or inside selected dir for Add/paste). Recursive dir copy via `copy_dir_recursive()`. State tracked as `file_tree_action: Option<FileTreeAction>` enum — `Add(String)`/`Rename(String)` hold text buffer, `Copy(PathBuf)`/`Move(PathBuf)` hold source path.
-- **Session list overlay** (`s` in Convo pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows a **status dot** (green `●` if a Claude process is actively running that session, dim gray `○` if idle — mirrors the worktree sidebar dots), session name (from `.azureal/sessions`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to convo. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
+- **Session list overlay** (`s` in Session pane): Replaces conversation view with a session file browser scoped to the currently selected worktree. Each row shows a **status dot** (green `●` if a Claude process is actively running that session, dim gray `○` if idle — mirrors the worktree sidebar dots), session name (from `.azureal/sessions`) or full UUID, right-aligned last modified time, and `[N msgs]` badge. Border title shows worktree name + position counter. Message counts computed via fast string scanning (no JSON parsing — `"type":"user"` and `"type":"assistant"` have zero false positives in Claude's compact JSON). Counts user prompt lines (no tool_result, not isMeta, not `<local-command-caveat>`/`<local-command-stdout>`/`<command-name>`/compaction summary) + assistant text blocks (type=text content). Counts cached by file size — only recomputed when a session file grows. Opening the list is two-phase: phase 1 shows the overlay immediately with a centered "Loading sessions…" dialog, phase 2 computes message counts after the dialog frame renders (so the UI never appears frozen). `j/k` navigate, `J/K` page, `Enter` loads session, `s` or `Esc` returns to session. `/` activates name filter (case-insensitive match against session name or UUID); `//` (slash while filter is empty) switches to content search mode (searches current worktree's JSONL files for text matches, min 3 chars, capped at 100 results, skips files >5MB). Filter bar shows at top with yellow border when active. Focus cycling (Tab) closes overlays; Shift+Tab from Viewer lands on FileTree if the overlay is open (preserving it), otherwise on Worktrees.
 
 **Loading Indicators (Deferred Actions):**
 Any user action that triggers blocking I/O (session parse, file read, health scan, project switch, scope rescan) shows a centered AZURE-bordered popup with a descriptive message while the work runs. Uses a generic two-phase pattern: (1) set `loading_indicator: Option<String>` + `deferred_action: Option<DeferredAction>`, (2) event loop draws the popup via `draw_loading_indicator()`, (3) on the next frame after the draw, event loop takes `deferred_action`, clears the indicator, and calls `execute_deferred_action()` which dispatches to the actual handler. Five operations use this system:
@@ -121,7 +123,7 @@ Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers
 - When image selected in FileTree → renders image via terminal graphics protocol (Kitty/Sixel/halfblock fallback) using `ratatui-image` crate. Image auto-fits viewport; no scroll/selection/edit mode. `Picker::from_query_stdio()` lazy-inits once to detect terminal capabilities. `StatefulProtocol` adapts to render area each frame.
-- When diff selected in Convo → shows diff detail (future)
+- When diff selected in Session → shows diff detail (future)
 
 **Viewer Tabs:** Up to 12 tabs across 2 rows (6 per row, fixed-width). `t` saves current file to a tab, `⌥t` opens tab dialog, `[`/`]` navigate, `x` closes. Tab bar renders inside the border at rows 1-2, overlaying empty padding lines so content shifts down. `tab_bar_rows()` returns 0/1/2 based on count; `viewport_height` reduced by tab rows for correct scroll clamping. 12-tab max enforced in `viewer_tab_current()` with status message on overflow.
 
@@ -134,13 +136,13 @@ Other features:
 - Vim-style modal editing
 - Diff viewer with syntax highlighting
 - Help overlay with keybindings
-- Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Convo panes
+- Mouse interaction: scroll panels, click to focus panes, click sidebar/file tree to select, click input to position cursor, double-click to open files/expand dirs, drag to select text in Viewer/Session panes
 - Preset prompts (⌥P): save up to 10 prompt templates; quick-select with 1-9,0 from picker OR directly from prompt mode with ⌥1-⌥9,⌥0 (skips picker); picker footer shows shortcut hint; add/edit/delete from picker (d=delete with y/n confirmation); available only in prompt mode; hint shown in prompt title bar. Dual-scope persistence: presets can be global (`~/.azureal/azufig.toml` `[presetprompts]`, shared across all projects) or project-local (`.azureal/azufig.toml` `[presetprompts]`); toggle scope with ⌃g in add/edit dialog; picker shows G/P badge per preset
 
-Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background convo rendering, `src/app/state/` for state management (split into 10 focused submodules, `health` has 2 sub-submodules). `actions` itself is split into 6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr.
+Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: actions, claude_events, coords, fast_draw, mouse) for event loop, `src/tui/run.rs` for rendering, `src/tui/render_thread.rs` for background session rendering, `src/app/state/` for state management (split into 10 focused submodules, `health` has 2 sub-submodules). `actions` itself is split into 6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr.
 
 **Mouse Click Architecture:**
-- All pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_convo`, `pane_todo`, `input_area`
+- All pane `Rect`s cached on App struct during `ui()` draw: `pane_worktrees`, `pane_viewer`, `pane_session`, `pane_todo`, `input_area`
 - Pane hit-testing via `Rect::contains(Position::new(col, row))` — shared by both click and scroll handlers
 - Sidebar uses `sidebar_row_map: Vec<SidebarRowAction>` built alongside `sidebar_cache` in `build_sidebar_items()` — maps visual row to `ProjectHeader` or `Worktree(idx)`
 - FileTree overlay (when `show_file_tree` is active) uses the `pane_worktrees` rect area for click/scroll handling; entry index = `visual_row + file_tree_scroll`, with double-click detection via `last_click` field (same position within 500ms)
@@ -148,7 +150,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: a
 - Overlays (help, branch_dialog, run_command_picker/dialog, creation_wizard) are dismissed on any click outside
 
 **Text Selection (Mouse Drag):**
-- `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=convo, 2=input, 3=edit-mode-viewer. Clears existing `viewer_selection` / `output_selection`.
+- `MouseDown(Left)` converts screen coords to cache coords immediately, stores as `mouse_drag_start: Option<(usize, usize, u8)>` — `(cache_line_or_char, cache_col, pane_id)`. pane_id: 0=viewer, 1=session, 2=input, 3=edit-mode-viewer. Clears existing `viewer_selection` / `session_selection`.
 - **Edit mode click:** When `viewer_edit_mode` is true and click lands in viewer pane, `screen_to_edit_pos()` maps screen coords → `(source_line, source_col)` by walking source lines and summing wrap counts. Sets `viewer_edit_cursor` and clears `viewer_edit_selection`. Drag anchor stored as pane_id=3.
 - **Edit mode drag (pane_id=3):** Maps current drag position via `screen_to_edit_pos()`, sets `viewer_edit_selection = Some((anchor_line, anchor_col, drag_line, drag_col))` and moves cursor to drag end. Auto-scrolls when dragging above/below pane.
 - `MouseDrag(Left)` calls `handle_mouse_drag()` which uses the cached anchor (pane_id from `mouse_drag_start`) and maps only the current cursor position from screen to cache coords via `screen_to_cache_pos()`. For input pane, uses `screen_to_input_char()` to map to char index.
@@ -156,9 +158,9 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: a
 - Auto-scroll when dragging above/below pane content area
 - Selection stored as `Option<(start_line, start_col, end_line, end_col)>` in cache-line indices (normalized so start <= end)
 - Viewer selection rendered in `draw_viewer/selection.rs` via `apply_selection_to_line()` (already existed)
-- Convo selection rendered in `draw_output.rs` by calling `apply_selection_to_line()` after viewport build — `output_selection_cached` used as viewport cache invalidation key
-- `apply_selection_to_line()` is `pub(crate)` in `draw_viewer/selection.rs` (re-exported from `draw_viewer.rs`) — splits spans at selection boundaries, patches with `Rgb(60,60,100)` bg. Takes `gutter` param to skip line number column from highlighting (File mode computes from first span width; Diff/Convo pass 0). O(spans_in_line) per viewport line, negligible cost.
-- `⌘C` copies from whichever pane has active selection (viewer, convo, or input) via `extract_text_from_cache()` → `arboard::Clipboard`. Viewer copy strips line number gutter (first span per line) so only file content is copied. In git mode, `⌘C` and `⌘A` are intercepted early in `handle_git_actions_input` (before `lookup_git_actions_action()`) since the git panel consumes all input. Git mode copy uses gutter=0 (diffs have no line numbers); falls back to copying `result_message` from the status box when no viewer selection exists.
+- Session selection rendered in `draw_output.rs` by calling `apply_selection_to_line()` after viewport build — `session_selection_cached` used as viewport cache invalidation key
+- `apply_selection_to_line()` is `pub(crate)` in `draw_viewer/selection.rs` (re-exported from `draw_viewer.rs`) — splits spans at selection boundaries, patches with `Rgb(60,60,100)` bg. Takes `gutter` param to skip line number column from highlighting (File mode computes from first span width; Diff/Session pass 0). O(spans_in_line) per viewport line, negligible cost.
+- `⌘C` copies from whichever pane has active selection (viewer, session, or input) via `extract_text_from_cache()` → `arboard::Clipboard`. Viewer copy strips line number gutter (first span per line) so only file content is copied. In git mode, `⌘C` and `⌘A` are intercepted early in `handle_git_actions_input` (before `lookup_git_actions_action()`) since the git panel consumes all input. Git mode copy uses gutter=0 (diffs have no line numbers); falls back to copying `result_message` from the status box when no viewer selection exists.
 - **Git status box selection:** Clicking the git status box sets `git_status_selected: bool` on App, highlighting the result message with `Rgb(60,60,100)` bg. `⌘A` selects the status box when viewer cache is empty. `⌘C` copies when `git_status_selected` is true. Cleared on panel close (`close_git_actions_panel`), non-nav keystrokes, and clicks on other panes.
 - Selections cleared on: click, scroll, Tab, focus change
 - **Fast-path exclusion:** `fast_draw_input()` and draw deferral are both skipped when `has_input_selection()` is true — fast-path writes raw text without selection styling
@@ -257,7 +259,7 @@ let (events, parsed_json) = self.event_parser.parse(&data); // single parse
 
 `EventParser::parse()` returns `(Vec<DisplayEvent>, Option<serde_json::Value>)` — the same JSON value used internally is also passed to the caller. `handle_claude_output` reuses it for token/model/context-window extraction with zero additional parsing.
 
-**output_lines skip:** Once `rendered_lines_cache` has content, `display_text_from_json()` + `process_output_chunk()` are skipped entirely. They only feed the fallback raw output view (used before first render completes).
+**session_lines skip:** Once `rendered_lines_cache` has content, `display_text_from_json()` + `process_session_chunk()` are skipped entirely. They only feed the fallback raw output view (used before first render completes).
 
 **Empty event batch skip:** Many stdout lines (progress, hook_started) produce 0 DisplayEvents. `display_events.extend()` + `invalidate_render_cache()` are skipped for these.
 
@@ -281,7 +283,7 @@ let para = Paragraph::new(pre_wrapped_lines).wrap(Wrap { trim: false });
 let para = Paragraph::new(pre_wrapped_lines);
 ```
 
-Convo pane content is pre-wrapped to `inner_width` by `wrap_text()` and `wrap_spans()` in `render_events.rs`. Adding `.wrap()` causes ratatui's `Paragraph::render()` to iterate every character of every span to compute line breaks that already exist — pure redundant O(viewport_chars) work per frame.
+Session pane content is pre-wrapped to `inner_width` by `wrap_text()` and `wrap_spans()` in `render_events.rs`. Adding `.wrap()` causes ratatui's `Paragraph::render()` to iterate every character of every span to compute line breaks that already exist — pure redundant O(viewport_chars) work per frame.
 
 **Files:** `src/tui/draw_output.rs` renders Paragraph without `.wrap()`. If you add a new Paragraph that displays pre-wrapped content, do NOT add `.wrap()`.
 
@@ -383,7 +385,7 @@ During active Claude streaming, events are added to `display_events` by the live
 
 ### 10. Deferred Initial Render for Large Conversations
 
-For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`output_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when the user reaches scroll position 0 — both `scroll_output_up()` and `jump_to_prev_bubble()` set `rendered_lines_dirty = true` when they hit scroll 0 with `rendered_events_start > 0`, triggering deferred render expansion on the next event loop frame.
+For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`session_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when the user reaches scroll position 0 — both `scroll_session_up()` and `jump_to_prev_bubble()` set `rendered_lines_dirty = true` when they hit scroll 0 with `rendered_events_start > 0`, triggering deferred render expansion on the next event loop frame.
 
 ```rust
 // On initial full render with many events, skip early ones:
@@ -396,7 +398,7 @@ render_display_events(&events[deferred_start..], ...);
 app.rendered_events_start = deferred_start;
 
 // When user scrolls to top and there are unrendered early events:
-if app.rendered_events_start > 0 && app.output_scroll == 0 {
+if app.rendered_events_start > 0 && app.session_scroll == 0 {
     // Expand to full render
     app.rendered_events_start = 0;
     app.rendered_events_count = 0;
@@ -404,7 +406,7 @@ if app.rendered_events_start > 0 && app.output_scroll == 0 {
 }
 ```
 
-**Message count denominator:** The convo title `[x/y]` denominator counts `UserMessage` + `AssistantText` from the **full** `display_events` array — not from `message_bubble_positions` which only covers rendered events. This ensures the denominator shows the true total even when deferred rendering has skipped early events. The numerator uses `unrendered_offset = total - rendered_bubbles` so position numbering is correct before full render triggers.
+**Message count denominator:** The session title `[x/y]` denominator counts `UserMessage` + `AssistantText` from the **full** `display_events` array — not from `message_bubble_positions` which only covers rendered events. This ensures the denominator shows the true total even when deferred rendering has skipped early events. The numerator uses `unrendered_offset = total - rendered_bubbles` so position numbering is correct before full render triggers.
 
 **Files:** `src/tui/draw_output.rs` (DEFERRED_RENDER_TAIL const, deferred render logic, title denominator count)
 
@@ -422,15 +424,15 @@ File I/O in `terminal.draw()` or any function called during frame rendering bloc
 
 ```rust
 // ❌ WRONG - Always returns true, always redraws
-pub fn scroll_output_up(&mut self, lines: usize) {
-    self.output_scroll = self.output_scroll.saturating_sub(lines);
+pub fn scroll_session_up(&mut self, lines: usize) {
+    self.session_scroll = self.session_scroll.saturating_sub(lines);
 }
 
 // ✅ CORRECT - Return whether position actually changed
-pub fn scroll_output_up(&mut self, lines: usize) -> bool {
-    let old = self.output_scroll;
-    self.output_scroll = self.output_scroll.saturating_sub(lines);
-    self.output_scroll != old  // false if already at top
+pub fn scroll_session_up(&mut self, lines: usize) -> bool {
+    let old = self.session_scroll;
+    self.session_scroll = self.session_scroll.saturating_sub(lines);
+    self.session_scroll != old  // false if already at top
 }
 ```
 
@@ -447,8 +449,8 @@ pub fn scroll_output_up(&mut self, lines: usize) -> bool {
 - **Pre-draw event drain with abort:** Right before `terminal.draw()`, drain any key events that arrived since the top-of-loop drain (~0-5ms gap). If a key is found, the draw is ABORTED (loop continues without drawing).
 - **Draw throttle (33ms / ~30fps):** Even quiet-iteration draws are throttled to 33ms minimum interval to avoid burning CPU on rapid background updates.
 - **Adaptive poll timeout:** 16ms when busy (draw pending, render in-flight, or Claude streaming), 100ms when idle. Ensures fast draw after typing stops without burning CPU when nothing is happening.
-- **Viewport cache:** Convo pane caches the cloned viewport slice (`output_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
-- **Background render thread:** Expensive convo rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs on a dedicated background thread (`RenderThread`). The event loop sends render requests via `submit_render_request()` (non-blocking channel send) and polls for results via `poll_render_result()` (non-blocking channel recv). Input is NEVER blocked by rendering — the main thread only does cheap draw operations. Sequence numbers ensure stale results are discarded (latest-wins). The render thread drains to the latest request when multiple are queued, and uses zero CPU when idle (blocks on `mpsc::recv`). `draw_output()` has a width-mismatch fallback that re-renders if the terminal width changed since the request was submitted (rare, only on resize). `poll_render_result()` re-sets `output_scroll = usize::MAX` (follow-bottom sentinel) when the user was at/near the bottom of the OLD cache — this ensures newly appended content (e.g. pending user bubble, streaming events) is visible without requiring manual scroll-down.
+- **Viewport cache:** Session pane caches the cloned viewport slice (`session_viewport_cache`). Only rebuilds when scroll position, content, or animation tick changes. On typing-only frames, serves from cache instead of re-cloning from the full `rendered_lines_cache`.
+- **Background render thread:** Expensive session rendering (markdown parsing, syntax highlighting, text wrapping via `render_display_events`) runs on a dedicated background thread (`RenderThread`). The event loop sends render requests via `submit_render_request()` (non-blocking channel send) and polls for results via `poll_render_result()` (non-blocking channel recv). Input is NEVER blocked by rendering — the main thread only does cheap draw operations. Sequence numbers ensure stale results are discarded (latest-wins). The render thread drains to the latest request when multiple are queued, and uses zero CPU when idle (blocks on `mpsc::recv`). `draw_output()` has a width-mismatch fallback that re-renders if the terminal width changed since the request was submitted (rare, only on resize). `poll_render_result()` re-sets `session_scroll = usize::MAX` (follow-bottom sentinel) when the user was at/near the bottom of the OLD cache — this ensures newly appended content (e.g. pending user bubble, streaming events) is visible without requiring manual scroll-down.
 
 ### 6. Pre-Format Expensive Data at Load Time
 
@@ -528,9 +530,9 @@ f.render_widget(Paragraph::new(display_lines).block(block), area);
 
 ---
 
-### Background Render Thread (Convo Pane)
+### Background Render Thread (Session Pane)
 
-The convo pane's expensive rendering pipeline (markdown parsing, syntax highlighting, text wrapping) runs on a dedicated background thread. This ensures the main event loop is never blocked by rendering, eliminating input freezing and character dropping during convo updates.
+The session pane's expensive rendering pipeline (markdown parsing, syntax highlighting, text wrapping) runs on a dedicated background thread. This ensures the main event loop is never blocked by rendering, eliminating input freezing and character dropping during session updates.
 
 **Architecture:**
 - `RenderThread` owns its own `SyntaxHighlighter` (no cross-thread sharing needed)
@@ -621,8 +623,8 @@ Implementation:
 **ALL keybindings are defined once** in `src/tui/keybindings/` (5 submodules, module root re-exports everything). The `lookup_action()` function is the **SINGLE source of truth** for key → action resolution. Input handlers only receive keys that `lookup_action()` returned `None` for (text input, dialog nav, etc.). **Modal panels** (Health, Git, Projects, pickers, branch dialog) use per-modal lookup functions that resolve keys to the same `Action` enum — draw functions source hint labels from keybinding arrays via hint generators, never hardcoded strings.
 
 **Architecture (5 submodules):**
-- **`types.rs`** — `Action` enum (~109 variants: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL`, `WORKTREES` (14 entries — includes `m` for BrowseMain), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `OUTPUT`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (16 entries — context-aware), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (includes `⌃m` for CycleModel), `WORKTREES` (15 entries — includes `m` for BrowseMain), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (16 entries — context-aware), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
 - **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
@@ -685,7 +687,7 @@ Claude output is received in `stream-json` format and parsed for clean display:
 - Completion info shown as "[Done: Xs, $X.XXXX]"
 - Hook output shown as "[Hook: <name>] <output>"
 - Slash commands (`/compact`, `/crt`, etc.) shown as 3-line magenta banners
-- Context compaction shown as "COMPACTING CONVERSATION" 3-line yellow banner
+- Context compaction shown as "✓ Context compacted" green banner (post-compaction)
 
 **Tool Status Indicators:**
 | Indicator | Color | Meaning |
@@ -714,11 +716,9 @@ Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "
 User messages containing `<command-name>/xxx</command-name>` tags are parsed as slash commands and displayed prominently with centered 3-line banners in magenta.
 
 **Compacting Detection:**
-- "⏳ Compacting context..." (yellow) - shown when `/compact` command is detected (START of manual compaction)
-- "✓ Context compacted" (green) - shown when `system` event with `subtype: "compact_boundary"` is received (compaction complete)
-- "⏳ Session may be compacting context..." (yellow) - shown when context usage ≥ 95% AND 20 seconds pass with no new events parsed from the session. Since there's no way to detect auto-compaction until after it completes, this inactivity heuristic warns the user why the convo pane appears frozen. Banner is injected once per high-context period; cleared when new events arrive or context drops below 95%.
-
-Note: For auto-compaction, there's no visible "starting" event from Claude — we only see the `compact_boundary` after it completes. The `MayBeCompacting` inactivity watcher bridges this gap.
+- "✓ Context compacted" (green, `Compacting` variant) - shown when the compaction summary text ("This session is being continued from a previous conversation...") is detected in a user message. This text appears AFTER compaction finishes — there is no "starting" event for auto-compaction.
+- "✓ Context compacted" (green, `Compacted` variant) - shown when `<local-command-stdout>` contains "Compacted" (from `/compact` slash command output). **Unreachable in practice** since AZUREAL uses `-p` mode which doesn't support slash commands.
+- "⏳ Session may be compacting conversation..." (yellow, `MayBeCompacting` variant) - shown when context usage ≥ 95% AND 20 seconds pass with no new events parsed from the session. Since there's no way to detect auto-compaction until after it completes, this inactivity heuristic warns the user why the session pane appears frozen. Banner is injected once per high-context period; cleared when new events arrive or context drops below 95%.
 
 **Filtered Messages:**
 - Meta messages (`isMeta: true`) are hidden - internal Claude instructions
@@ -792,7 +792,7 @@ Implementation: `extract_hooks_from_content()` in `src/app/session_parser.rs`, `
 
 ### Token Usage Counter
 
-Color-coded context window usage percentage displayed on the Convo pane's right border title. Helps users predict when context compaction will occur.
+Color-coded context window usage percentage displayed on the Session pane's right border title. Helps users predict when context compaction will occur.
 
 **Data source:** Claude's JSONL session files already contain `message.usage` on every assistant event with `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and `cache_creation_input_tokens`. No external tokenization library needed — exact counts from the API.
 
@@ -821,15 +821,15 @@ Stored as `model_context_window: Option<u64>` on App state — `None` until firs
 
 **Reset:** `session_tokens` and `model_context_window` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
 
-**Compaction inactivity watcher:** When context usage ≥ 95%, `update_token_badge()` sets `context_pct_high = true`. The event loop checks: if `context_pct_high && !compaction_banner_injected && claude_receivers non-empty && last_convo_event_time elapsed ≥ 20s`, it injects a `DisplayEvent::MayBeCompacting` banner. When new events arrive (in `handle_claude_output()` or `refresh_session_events()`), both `last_convo_event_time` and `compaction_banner_injected` are reset. When context drops below 95% (e.g. after compaction completes), `compaction_banner_injected` is cleared.
+**Compaction inactivity watcher:** When context usage ≥ 95%, `update_token_badge()` sets `context_pct_high = true`. The event loop checks: if `context_pct_high && !compaction_banner_injected && claude_receivers non-empty && last_session_event_time elapsed ≥ 20s`, it injects a `DisplayEvent::MayBeCompacting` banner. When new events arrive (in `handle_claude_output()` or `refresh_session_events()`), both `last_session_event_time` and `compaction_banner_injected` are reset. When context drops below 95% (e.g. after compaction completes), `compaction_banner_injected` is cleared.
 
-Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Option<u64>`, `token_badge_cache: Option<(String, Color)>`, `context_pct_high: bool`, `last_convo_event_time: Instant`, `compaction_banner_injected: bool` in `src/app/state/app.rs`, `update_token_badge()` method, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`, inactivity check in `src/tui/event_loop.rs`
+Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Option<u64>`, `token_badge_cache: Option<(String, Color)>`, `context_pct_high: bool`, `last_session_event_time: Instant`, `compaction_banner_injected: bool`, `selected_model: Option<String>`, `detected_model: Option<String>` in `src/app/state/app.rs`, `update_token_badge()` / `display_model_name()` / `cycle_model()` methods, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`, inactivity check in `src/tui/event_loop.rs`
 
 ### TodoWrite Sticky Widget
 
-Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Convo pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed. When a subagent (Task tool) is active, its TodoWrite calls render as indented subtasks directly beneath the parent todo item (the in-progress item when the Task spawned), tracked via `subagent_parent_idx`, and prefixed with `↳`. Subagent todos are cleared when the Task tool completes.
+Claude's `TodoWrite` tool calls are parsed from session JSONL and rendered as a persistent checkbox widget at the bottom of the Session pane instead of inline generic tool call JSON. The widget stays visible as the user scrolls through conversation history and hides when all todos are completed. When a subagent (Task tool) is active, its TodoWrite calls render as indented subtasks directly beneath the parent todo item (the in-progress item when the Task spawned), tracked via `subagent_parent_idx`, and prefixed with `↳`. Subagent todos are cleared when the Task tool completes.
 
-**Height cap and scrollbar:** The widget grows to fit its content but caps at 20 visual lines (including wrapped text). When content exceeds 20 lines, a scrollbar column appears on the rightmost border position (AZURE `█` thumb on `│` track) and the widget responds to mouse wheel scrolling. Scroll offset (`todo_scroll`) resets to 0 whenever todos are updated (new TodoWrite tool call). The `pane_todo` rect is cached during draw for mouse hit-testing — checked before `pane_convo` in `apply_scroll_cached()` since the todo widget overlaps the convo area.
+**Height cap and scrollbar:** The widget grows to fit its content but caps at 20 visual lines (including wrapped text). When content exceeds 20 lines, a scrollbar column appears on the rightmost border position (AZURE `█` thumb on `│` track) and the widget responds to mouse wheel scrolling. Scroll offset (`todo_scroll`) resets to 0 whenever todos are updated (new TodoWrite tool call). The `pane_todo` rect is cached during draw for mouse hit-testing — checked before `pane_session` in `apply_scroll_cached()` since the todo widget overlaps the session area.
 
 **Status icons:**
 | Icon | Color | Meaning |
@@ -844,19 +844,19 @@ In-progress items show their `activeForm` text (present tense, e.g., "Building p
 1. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` detects `TodoWrite` ToolCall events and routes them: if a Task tool is active (`active_task_tool_ids` non-empty), todos go to `app.subagent_todos` and `subagent_parent_idx` is set to the index of the current in-progress item; otherwise to `app.current_todos`. Task tool calls are tracked via `active_task_tool_ids` — when the last Task completes, subagent todos are cleared.
 2. **Session load:** `extract_skill_tools_from_events()` in `src/app/state/load.rs` scans all display_events forward to find the latest TodoWrite and restore todo state
 3. **Session switch:** `current_todos` cleared on session switch and rebuilt from new session's events
-4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` splits the convo area with `Layout::vertical()` — scrollable content above, sticky todo box below. Height capped at 22 rows (20 content + 2 borders); when content overflows, accepts `scroll` offset and renders a proportional scrollbar on the rightmost column via direct buffer writes
+4. **Rendering:** `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` splits the session area with `Layout::vertical()` — scrollable content above, sticky todo box below. Height capped at 22 rows (20 content + 2 borders); when content overflows, accepts `scroll` offset and renders a proportional scrollbar on the rightmost column via direct buffer writes
 
 **Lifecycle:** Widget stays visible even after all items are completed (showing all checkmarks). It clears when the user submits their next prompt (`current_todos.clear()` in the Enter handler). This ensures the user sees the final completed state before it disappears.
 
-**Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline convo stream (`render_display_events()` skips them). The sticky widget is the only representation.
+**Inline suppression:** TodoWrite tool calls and their results are suppressed from the inline session stream (`render_display_events()` skips them). The sticky widget is the only representation.
 
-Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs` (includes `subagent_todos`, `active_task_tool_ids`, `pane_todo`, `todo_scroll`, `todo_total_lines` fields), `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` (renders subtasks beneath parent item via `subagent_parent_idx` with `↳` prefix, scroll offset, scrollbar column), mouse scroll routing in `src/tui/event_loop/mouse.rs` (`pane_todo` hit-test before `pane_convo`), suppression in `src/tui/render_events.rs`
+Implementation: `TodoItem` struct + `TodoStatus` enum in `src/app/state/app.rs` (includes `subagent_todos`, `active_task_tool_ids`, `pane_todo`, `todo_scroll`, `todo_total_lines` fields), `parse_todos_from_input()` in `src/app/state/claude.rs`, `draw_todo_widget()` in `src/tui/draw_output/todo_widget.rs` (renders subtasks beneath parent item via `subagent_parent_idx` with `↳` prefix, scroll offset, scrollbar column), mouse scroll routing in `src/tui/event_loop/mouse.rs` (`pane_todo` hit-test before `pane_session`), suppression in `src/tui/render_events.rs`
 
 ### AskUserQuestion Options Box
 
 Claude's `AskUserQuestion` tool calls are parsed from session JSONL and rendered as a numbered options box (similar to plan approval prompts) instead of raw JSON. The user responds by typing a number or custom text.
 
-**Rendering:** A magenta-bordered box per question with the question header, numbered options (label + description), and an implicit "Other" option at the end. Multi-select questions are annotated. Rendered inline in the convo stream when the tool result arrives (positioned after the result, before user response).
+**Rendering:** A magenta-bordered box per question with the question header, numbered options (label + description), and an implicit "Other" option at the end. Multi-select questions are annotated. Rendered inline in the session stream when the tool result arrives (positioned after the result, before user response).
 
 **Input handling:** When `awaiting_ask_user_question` is true, the user's response gets a hidden system context prefix (`build_ask_user_context()` in `src/tui/input_terminal.rs`) listing the questions and numbered options that were shown. This lets Claude interpret "1", "2", etc. as option selections. The context is invisible to the user — they just see their typed response.
 
@@ -1021,7 +1021,7 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybinding) — each pane detects git mode (`app.git_actions_panel.is_some()`) and renders git-specific content instead of its normal content. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Uses standard Double/Plain border types with Git brand colors: GIT_ORANGE (`#F05032`) when focused, GIT_BROWN (`#A0522D`) when unfocused.
 
-**Layout geometry (differs from normal mode):** Git mode uses a completely separate layout branch in `run.rs::ui()`. Normal mode has the input spanning only the left two columns with the convo pane extending full height on the right. Git mode replaces the input with a **full-width git status box** that stretches across the entire window at the bottom, with the 3-column panes filling the space above.
+**Layout geometry (differs from normal mode):** Git mode uses a completely separate layout branch in `run.rs::ui()`. Normal mode has the input spanning only the left two columns with the session pane extending full height on the right. Git mode replaces the input with a **full-width git status box** that stretches across the entire window at the bottom, with the 3-column panes filling the space above.
 
 **Pane mapping (git mode → normal pane):**
 
@@ -1029,7 +1029,7 @@ Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybindi
 |-------------|------------------|-------|
 | Sidebar (left) | Actions list (top) + Changed Files (bottom) — split vertically | "Actions" / "Changed Files (N, +X/-Y)" |
 | Viewer (center) | File/commit diff with diff coloring | "Viewer" (or diff title) |
-| Convo (right) | Commit log | "Commits (N)" |
+| Session (right) | Commit log | "Commits (N)" |
 | Input (bottom) | Full-width git status box with keybinding hints in title | "Git: <worktree> <footer hints>" |
 | Status bar | Minimal: "Git: <worktree>" + CPU/PID badge | — |
 
@@ -1128,10 +1128,10 @@ Input handled by `handle_conflict_overlay()` (intercepted before commit overlay 
 4. `register_claude(branch, pid, rx)` — registers under the feature branch name so output appears in the current view immediately
 5. Creates `RcrSession { branch, display_name, worktree_path, repo_root, slot_id, session_id: None, approval_pending: false, continue_with_merge }` → sets `app.rcr_session`
 6. Sets `app.title_session_name = "[RCR] <display>"` (locked — `update_title_session_name()` early-returns during RCR)
-7. Closes git panel, sets `focus = Focus::Output` so the user sees the convo pane in RCR mode
+7. Closes git panel, sets `focus = Focus::Session` so the user sees the session pane in RCR mode
 
 **RCR (Rebase Conflict Resolution) mode:**
-When `spawn_conflict_claude()` activates RCR, the convo pane switches to green-themed borders and titles. The user can send follow-up prompts to Claude during/after resolution — prompts are routed to `rcr.worktree_path` (feature branch worktree where the rebase is in progress) with `--resume rcr.session_id`. Each follow-up spawns a new Claude process; `rcr.slot_id` is updated to the new PID. When the RCR Claude process exits, `handle_claude_exited()` intercepts: sets `rcr.approval_pending = true`, skips the normal re-parse (preserving streaming output), and returns early. A green-bordered approval dialog renders over the convo pane:
+When `spawn_conflict_claude()` activates RCR, the session pane switches to green-themed borders and titles. The user can send follow-up prompts to Claude during/after resolution — prompts are routed to `rcr.worktree_path` (feature branch worktree where the rebase is in progress) with `--resume rcr.session_id`. Each follow-up spawns a new Claude process; `rcr.slot_id` is updated to the new PID. When the RCR Claude process exits, `handle_claude_exited()` intercepts: sets `rcr.approval_pending = true`, skips the normal re-parse (preserving streaming output), and returns early. A green-bordered approval dialog renders over the session pane:
 - `y` / `Enter` — `accept_rcr()`: deletes session file from `~/.claude/projects/<worktree-encoded>/<session-id>.jsonl`, clears RCR state, restores normal borders and title. If `continue_with_merge` is true (rebase was triggered by squash merge), auto-proceeds with `Git::squash_merge_into_main()` and shows PostMergeDialog on success. If false (manual rebase), just shows "Rebase complete — conflicts resolved for <branch>".
 - `n` — aborts the rebase via `git rebase --abort` on the worktree, deletes session file, restores normal state
 - `Esc` — dismisses dialog, status shows "Review the resolution, then press ⌃a to accept"
@@ -1299,7 +1299,7 @@ azureal/
 │   │   │   ├── app.rs      # App struct definition + new(); includes `screen_height`, `browsing_main`, `pre_main_browse_selection`, `main_worktree: Option<Worktree>` (separate from worktrees vec); `current_worktree()` returns main_worktree when browsing_main is true
 │   │   │   ├── load.rs     # Session loading and discovery; main stored in main_worktree (not worktrees vec)
 │   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive
-│   │   │   ├── output.rs   # Output processing
+│   │   │   ├── output.rs   # Session output processing
 │   │   │   ├── scroll.rs   # Scroll operations
 │   │   │   ├── claude.rs   # Claude session handling
 │   │   │   ├── file_browser.rs # File tree and viewer
@@ -1353,18 +1353,18 @@ azureal/
 │   │   │   ├── dialogs.rs      # Save/discard confirmation dialogs
 │   │   │   ├── tabs.rs         # Tab bar rendering and tab picker dialog
 │   │   │   └── git_viewer.rs   # Git panel diff viewer (draw_git_viewer_selectable)
-│   │   ├── draw_output.rs  # Convo pane module root (re-exports + main draw_output fn)
-│   │   ├── draw_output/    # Convo pane submodules
+│   │   ├── draw_output.rs  # Session pane module root (re-exports + main draw_output fn)
+│   │   ├── draw_output/    # Session pane submodules
 │   │   │   ├── render_submit.rs  # Background render thread submit/poll (submit_render_request, poll_render_result)
 │   │   │   ├── session_list.rs   # Session list overlay (filter, content search, name list)
-│   │   │   └── todo_widget.rs    # Sticky todo/tasks widget at bottom of convo pane (20-line cap, scrollbar, mouse wheel)
+│   │   │   └── todo_widget.rs    # Sticky todo/tasks widget at bottom of session pane (20-line cap, scrollbar, mouse wheel)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
 │   │   ├── draw_git_actions.rs # Git panel overlay renderers only (commit editor + conflict resolution)
 │   │   ├── draw_azureal.rs  # AZUREAL++ developer hub panel (tabbed: Debug, Issues, PRs)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # Module root — re-exports all public items for backwards compatibility
 │   │   ├── keybindings/    # SINGLE SOURCE OF TRUTH for all keybinding definitions
-│   │   │   ├── types.rs    # Core types: KeyCombo, Action (~109 variants), Keybinding, HelpSection
+│   │   │   ├── types.rs    # Core types: KeyCombo, Action (~109 variants incl CycleModel), Keybinding, HelpSection
 │   │   │   ├── bindings.rs # ~21 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, AZUREAL_SHARED, etc.) + alt key statics
 │   │   │   ├── lookup.rs   # KeyContext, lookup_action() + 7 per-modal lookups (lookup_git_actions_action, lookup_azureal_action, etc.)
 │   │   │   ├── hints.rs    # UI hint generators: help_sections(), prompt/terminal/health/git/projects title builders, find_key_for_action()
@@ -1372,7 +1372,7 @@ azureal/
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
 │   │   ├── input_file_tree.rs # FileTree: clipboard mode + text-input actions only (commands resolved upstream)
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
-│   │   ├── input_output.rs # Convo: convo search + session list overlay only (commands resolved upstream)
+│   │   ├── input_output.rs # Session: session find + session list overlay only (commands resolved upstream)
 │   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
 │   │   ├── input_git_actions.rs # Git panel module root (dispatch + re-exports)
 │   │   ├── input_git_actions/  # Git panel input submodules
@@ -1419,7 +1419,7 @@ azureal/
 # ROADMAP
 
 ## Phase 1: Core Functionality (Current)
-- [x] TUI with session/output/input panels
+- [x] TUI with worktrees/viewer/session/input panels
 - [x] Git worktree creation and management
 - [x] Claude CLI spawning with `-p` mode
 - [x] Multi-session concurrent agents
@@ -1431,10 +1431,10 @@ azureal/
 - [x] Embedded terminal pane for shell commands
 
 ## Phase 2: Enhanced UX
-- [x] File viewer pane (3-pane layout: Worktrees, Viewer, Convo; FileTree as overlay)
-- [x] Session list overlay in Convo pane (`s` toggle — browse current worktree's session files with message counts)
-- [x] Token usage percentage on Convo pane title
-- [x] TodoWrite sticky widget (persistent checkbox list at bottom of Convo pane)
+- [x] File viewer pane (3-pane layout: Worktrees, Viewer, Session; FileTree as overlay)
+- [x] Session list overlay in Session pane (`s` toggle — browse current worktree's session files with message counts)
+- [x] Token usage percentage on Session pane title
+- [x] TodoWrite sticky widget (persistent checkbox list at bottom of Session pane)
 - [x] AskUserQuestion options box (numbered options with context-aware response handling)
 - [x] Squash merge to main (collapses all branch commits into single main commit, replaced rebase/merge/auto-rebase)
 - [ ] Session templates
@@ -1442,7 +1442,7 @@ azureal/
 - [ ] Theme customization
 - [x] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
-- [x] Convo search (`/` in Convo pane — find text in current session, `n/N` to cycle matches)
+- [x] Session search (`/` in Session pane — find text in current session, `n/N` to cycle matches)
 - [x] Session list search (`/` name filter, `//` cross-session content search)
 - [x] Speech-to-text input (`⌃s` in prompt mode and file edit mode)
 
@@ -1451,7 +1451,7 @@ azureal/
 - [x] Worktree Health Panel (tabbed modal: God Files tab + Documentation coverage tab, Shift+H global)
 - [x] Rebase-before-merge flow with RCR conflict resolution
 - [x] Auto-rebase toggle per worktree (sidebar `R` indicator, 2-second polling, conflict → RCR flow)
-- [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in convo; full-width status box with prompt-style keybind hints)
+- [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in session pane; full-width status box with prompt-style keybind hints)
 - [x] AZUREAL++ developer hub panel (⌃a: Debug dumps, GitHub Issues browser, PR creation; replaces ⌃d global)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
@@ -1517,11 +1517,12 @@ azureal
 | `T` | Toggle terminal pane |
 | `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
-| `J/K` | Page scroll (Viewer/Convo/Terminal); Select project (Worktrees) |
-| `Tab` | Cycle focus (Worktrees → Viewer → Convo → Input), closes overlays |
+| `J/K` | Page scroll (Viewer/Session/Terminal); Select project (Worktrees) |
+| `Tab` | Cycle focus (Worktrees → Viewer → Session → Input), closes overlays |
 | `Shift+Tab` | Cycle focus reverse |
 | `?` | Help |
 | `⌃c` | Cancel agent |
+| `⌃m` | Cycle model (opus → sonnet → haiku → default) |
 | `⌃q` | Quit |
 | `⌃r` | Restart |
 
@@ -1565,7 +1566,7 @@ azureal
 | `j/k` | Scroll up/down |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` | Jump to top/bottom |
-| `⌥←/⌥→` | Prev/next Edit (syncs Convo scroll) |
+| `⌥←/⌥→` | Prev/next Edit (syncs Session scroll) |
 | `⌘A` | Select all (then `⌘C` to copy) |
 | `t` | Tab current file (save to tab list) |
 | `⌥t` | Open tab dialog (browse/switch tabs) |
@@ -1573,7 +1574,7 @@ azureal
 | `x` | Close current tab |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
-### Convo Pane
+### Session Pane
 | Key | Action |
 |-----|--------|
 | `j/k` | Scroll line |
@@ -1586,7 +1587,7 @@ azureal
 | `n/N` | Next/prev search match (after `/` search confirmed with Enter) |
 | `Esc` | Return to Worktrees |
 
-**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Convo pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Convo scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Convo pane.
+**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Session pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Session scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Session pane.
 
 ### Prompt Mode (Input Focused)
 
