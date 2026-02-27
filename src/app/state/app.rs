@@ -114,6 +114,10 @@ pub struct App {
     pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
+    /// True when the user is viewing a session file that doesn't match the
+    /// active slot's Claude session. Suppresses live event display and PID badge
+    /// so content from a running process doesn't bleed into a historic view.
+    pub viewing_historic_session: bool,
     /// Kernel-level file watcher (replaces stat() polling for change detection).
     /// None if notify failed to initialize — falls back to polling in that case.
     pub file_watcher: Option<crate::watcher::FileWatcher>,
@@ -528,6 +532,7 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
+            viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),
             file_tree_refresh_pending: false,
             worktree_last_notify: std::time::Instant::now(),

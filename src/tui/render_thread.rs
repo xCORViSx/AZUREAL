@@ -115,6 +115,12 @@ impl RenderThread {
         seq
     }
 
+    /// Current sequence counter value. Used to discard in-flight renders
+    /// from a previous session when switching (set render_seq_applied to this).
+    pub fn current_seq(&self) -> u64 {
+        self.seq.load(Ordering::Relaxed)
+    }
+
     /// Check for a completed render result (non-blocking).
     /// May return multiple results if renders completed faster than we poll —
     /// caller should drain and keep only the latest.

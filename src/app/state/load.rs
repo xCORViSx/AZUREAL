@@ -191,6 +191,19 @@ impl App {
         self.session_file_dirty = false;
         self.session_file_parse_offset = 0;
         self.invalidate_render_cache();
+        // Immediately clear rendered content so no stale lines from the
+        // previous session flash while the new render is in flight.
+        self.rendered_lines_cache.clear();
+        self.output_viewport_cache.clear();
+        self.animation_line_indices.clear();
+        self.message_bubble_positions.clear();
+        self.clickable_paths.clear();
+        self.clicked_path_highlight = None;
+        // Discard any in-flight render result from the previous session.
+        // The render thread may still be processing old events — advancing
+        // render_seq_applied ensures poll_render_result rejects stale results.
+        self.render_seq_applied = self.render_thread.current_seq();
+        self.render_in_flight = false;
         // Reset deferred render state so the new session gets fast initial load
         self.rendered_events_count = 0;
         self.rendered_content_line_count = 0;
@@ -290,6 +303,20 @@ impl App {
             }
         }
 
+        // Determine if we're viewing a non-active (historic) session.
+        // When true, live events from the running process are suppressed.
+        self.viewing_historic_session = false;
+        if let Some(session) = self.current_worktree() {
+            let branch = session.branch_name.clone();
+            if let Some(active_slot) = self.active_slot.get(&branch) {
+                if let Some(active_sid) = self.claude_session_ids.get(active_slot) {
+                    if let Some(viewed_sid) = self.viewed_session_id(&branch) {
+                        self.viewing_historic_session = active_sid != &viewed_sid;
+                    }
+                }
+            }
+        }
+
         // Cache the session title for the title bar (avoids file I/O on every draw frame)
         self.update_title_session_name();
 
@@ -301,6 +328,13 @@ impl App {
 
         // Update the OS terminal title to reflect current project and branch
         self.update_terminal_title();
+    }
+
+    /// Get the Claude session UUID of the currently viewed session file for a branch
+    pub fn viewed_session_id(&self, branch: &str) -> Option<String> {
+        self.session_selected_file_idx.get(branch)
+            .and_then(|idx| self.session_files.get(branch).and_then(|f| f.get(*idx)))
+            .map(|(id, _, _)| id.clone())
     }
 
     /// Tell the file watcher thread to watch the current session file and

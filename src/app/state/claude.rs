@@ -194,8 +194,9 @@ impl App {
     /// displayed in the convo pane). Non-active slots' output is silently drained
     /// by the event loop to prevent channel backup.
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
-        // Only display output from the active slot of the currently viewed branch
-        let is_viewing = self.current_worktree().map(|s| {
+        // Only display output from the active slot of the currently viewed branch.
+        // Also suppress when the user is viewing a different session file (historic).
+        let is_viewing = !self.viewing_historic_session && self.current_worktree().map(|s| {
             self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
         }).unwrap_or(false);
         if is_viewing {
@@ -342,6 +343,8 @@ impl App {
         self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
         // Newest spawn becomes active — its output shows in convo pane
         self.active_slot.insert(branch_name, slot);
+        // New process = user wants live output, not a historic view
+        self.viewing_historic_session = false;
         self.invalidate_sidebar();
     }
 

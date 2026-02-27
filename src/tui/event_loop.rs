@@ -1,7 +1,7 @@
 //! Core event loop and event handling
 //!
 //! Split into focused submodules:
-//! - `actions`: Keyboard action dispatch and navigation
+//! - `actions`: Keyboard action dispatch (6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr)
 //! - `claude_events`: Claude process event handling
 //! - `coords`: Screen-to-content coordinate mapping
 //! - `fast_draw`: Fast-path input rendering (~0.1ms bypass)
