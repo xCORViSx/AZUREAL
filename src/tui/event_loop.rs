@@ -443,9 +443,8 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
     use super::input_git_actions::{exec_rebase_inner, RebaseOutcome};
     use crate::app::types::GitConflictOverlay;
 
-    // Skip if RCR active, git panel open, or editing a file
+    // Skip if RCR active or editing a file
     if app.rcr_session.is_some() { return false; }
-    if app.git_actions_panel.is_some() { return false; }
     if app.viewer_edit_mode { return false; }
 
     let project = match &app.project {
@@ -465,7 +464,13 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
         .map(|wt| (wt.branch_name.clone(), wt.worktree_path.clone().unwrap()))
         .collect();
 
+    // If the git panel is open, note which worktree it's viewing
+    let git_panel_branch = app.git_actions_panel.as_ref().map(|p| p.worktree_name.clone());
+
     for (branch, wt_path) in candidates {
+        // Skip the worktree whose git panel is currently open
+        if git_panel_branch.as_ref() == Some(&branch) { continue; }
+
         let display = crate::models::strip_branch_prefix(&branch).to_string();
 
         // Skip worktrees with uncommitted changes — git rebase would fail
