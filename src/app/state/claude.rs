@@ -83,13 +83,24 @@ impl App {
             }
         }
 
+        // Mark as unread if user wasn't watching this session's output
+        // (different branch, or same branch but this wasn't the active display slot)
+        let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
+        if !(is_current && was_active) {
+            if let Some(ref b) = branch {
+                if let Some(uuid) = self.claude_session_ids.get(slot_id) {
+                    self.unread_session_ids.insert(uuid.clone());
+                }
+                self.unread_sessions.insert(b.clone());
+            }
+        }
+
         // Force a full re-parse from the session file now that streaming is done.
         // Skip re-parse if the exiting slot's session file isn't in the current
         // worktree's directory (e.g. merge resolution spawned from main's repo
         // root — its session file lives under main's path, not the feature branch's).
         // Without this guard, the re-parse would reload the OLD session file and
         // clobber the streaming output that the user is viewing.
-        let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
         if is_current && was_active {
             let session_file_exists = self.claude_session_ids.get(slot_id)
                 .and_then(|sid| self.current_worktree().and_then(|wt| wt.worktree_path.as_deref().map(|p| (sid, p))))

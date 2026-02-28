@@ -69,6 +69,10 @@ pub struct App {
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
     /// Set of currently running slot_ids (PID strings)
     pub running_sessions: HashSet<String>,
+    /// Branches with at least one unread finished session (for tab rendering)
+    pub unread_sessions: HashSet<String>,
+    /// Individual session UUIDs that finished while user wasn't viewing them
+    pub unread_session_ids: HashSet<String>,
     /// Last exit code per slot_id (shown in session pane title after Claude exits)
     pub claude_exit_codes: HashMap<String, i32>,
     /// Claude API session UUIDs per slot_id (for --resume)
@@ -500,6 +504,8 @@ impl App {
             status_message: None,
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
+            unread_sessions: HashSet::new(),
+            unread_session_ids: HashSet::new(),
             claude_exit_codes: HashMap::new(),
             claude_session_ids: HashMap::new(),
             branch_slots: HashMap::new(),

@@ -142,6 +142,20 @@ impl App {
         }
         self.git_actions_panel = None;
         self.git_status_selected = false;
+        // Session pane visible again — clear unread for the viewed session, then
+        // recompute branch-level unread (remove branch if no more unread UUIDs)
+        if let Some(wt) = self.current_worktree() {
+            let branch = wt.branch_name.clone();
+            if let Some(viewed_id) = self.viewed_session_id(&branch) {
+                self.unread_session_ids.remove(&viewed_id);
+            }
+            let still_unread = self.session_files.get(&branch)
+                .map(|files| files.iter().any(|(uuid, _, _)| self.unread_session_ids.contains(uuid)))
+                .unwrap_or(false);
+            if !still_unread {
+                self.unread_sessions.remove(&branch);
+            }
+        }
     }
 
     /// Load a file into the viewer for Read/Write tool clicks (no diff overlay).
@@ -576,6 +590,8 @@ impl App {
         self.failed_tool_calls.clear();
         self.claude_session_ids.clear();
         self.claude_exit_codes.clear();
+        self.unread_sessions.clear();
+        self.unread_session_ids.clear();
         self.session_files.clear();
         self.session_selected_file_idx.clear();
         self.file_tree_entries.clear();

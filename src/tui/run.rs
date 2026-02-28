@@ -521,33 +521,36 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let avail = area.width as usize;
     let base_x = area.x;
 
-    // Build tab entries: (display_label, is_active, is_archived, target, rebase_indicator_color)
+    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread)
     // target: None = [M] main browse, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>)> = Vec::new();
+    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
 
     let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
-    tabs.push((format!("★ {}", main_branch), app.browsing_main, false, None, None));
+    tabs.push((format!("★ {}", main_branch), app.browsing_main, false, None, None, false));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !app.browsing_main && app.selected_worktree == Some(idx);
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
+        let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
-            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color));
+            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color, false));
+        } else if unread {
+            tabs.push((format!("◐ {}", wt.name()), active, false, Some(idx), rebase_color, true));
         } else {
             let status = wt.status(app.is_session_running(&wt.branch_name));
-            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color));
+            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color, false));
         }
     }
 
     if tabs.is_empty() { return; }
 
-    // Display width of each tab: " label " = display_width + 2, plus " R" if rebase indicator
+    // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
     let tab_widths: Vec<usize> = tabs.iter()
-        .map(|(label, _, _, _, rebase)| {
+        .map(|(label, _, _, _, rebase, _)| {
             let base: usize = label.chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
-                + 2;
+                + 1;
             if rebase.is_some() { base + 1 } else { base }
         })
         .collect();
@@ -558,7 +561,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -584,21 +587,22 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut x_cursor: u16 = base_x;
 
     for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color) = tabs[idx];
-        let tab_text = format!(" {} ", label);
+        let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
+        let tab_text = format!("{} ", label);
         let mut tab_w: u16 = tab_text.chars()
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
             .sum();
 
         let style = if is_active {
             if target.is_none() {
-                // [M] active: yellow bg + black text + bold
                 Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White).bg(AZURE).add_modifier(Modifier::BOLD)
             }
         } else if is_archived {
             Style::default().fg(Color::DarkGray)
+        } else if is_unread {
+            Style::default().fg(AZURE)
         } else if target.is_none() {
             Style::default().fg(Color::Yellow)
         } else {
@@ -645,34 +649,37 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let avail = area.width as usize;
     let base_x = area.x;
 
-    // Build tab entries matching draw_worktree_tabs: (display_label, is_active, is_archived, target, rebase_indicator_color)
+    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread)
     // target: None = main branch, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>)> = Vec::new();
+    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
 
     let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
     let main_is_active = *active_branch == main_branch;
-    tabs.push((format!("★ {}", main_branch), main_is_active, false, None, None));
+    tabs.push((format!("★ {}", main_branch), main_is_active, false, None, None, false));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !main_is_active && wt.branch_name == *active_branch;
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
+        let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
-            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color));
+            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color, false));
+        } else if unread {
+            tabs.push((format!("◐ {}", wt.name()), active, false, Some(idx), rebase_color, true));
         } else {
             let status = wt.status(app.is_session_running(&wt.branch_name));
-            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color));
+            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color, false));
         }
     }
 
     if tabs.is_empty() { return; }
 
-    // Display width of each tab: " label " = display_width + 2, plus " R" if rebase indicator
+    // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
     let tab_widths: Vec<usize> = tabs.iter()
-        .map(|(label, _, _, _, rebase)| {
+        .map(|(label, _, _, _, rebase, _)| {
             let base: usize = label.chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
-                + 2;
+                + 1;
             if rebase.is_some() { base + 1 } else { base }
         })
         .collect();
@@ -683,7 +690,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -709,8 +716,8 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut x_cursor: u16 = base_x;
 
     for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color) = tabs[idx];
-        let tab_text = format!(" {} ", label);
+        let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
+        let tab_text = format!("{} ", label);
         let mut tab_w: u16 = tab_text.chars()
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
             .sum();
@@ -718,13 +725,14 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         // Same styling logic as draw_worktree_tabs but with git color palette
         let style = if is_active {
             if target.is_none() {
-                // ★ main active: GIT_ORANGE bg + black text + bold
                 Style::default().fg(Color::Black).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
             }
         } else if is_archived {
             Style::default().fg(Color::DarkGray)
+        } else if is_unread {
+            Style::default().fg(AZURE)
         } else if target.is_none() {
             Style::default().fg(GIT_BROWN)
         } else {

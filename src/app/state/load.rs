@@ -274,6 +274,7 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
+            let session_id_from_wt = session.claude_session_id.clone();
 
             // Try to get Claude session ID: check selected file first, then cached, then auto-discover
             let mut claude_session_id = None;
@@ -289,7 +290,7 @@ impl App {
 
             // Fall back to stored session ID or cached ID
             if claude_session_id.is_none() {
-                claude_session_id = session.claude_session_id.clone()
+                claude_session_id = session_id_from_wt
                     .or_else(|| self.claude_session_ids.get(&branch_name).cloned());
             }
 
@@ -300,6 +301,23 @@ impl App {
                         self.claude_session_ids.insert(branch_name.clone(), discovered_id.clone());
                         claude_session_id = Some(discovered_id);
                     }
+                }
+            }
+
+            // Clear unread for the specific session being viewed, but only when the
+            // session pane is visible (not in git mode where commits replace it).
+            // Recompute branch-level unread: remove branch only if no more unread UUIDs
+            // belong to any of its sessions.
+            if self.git_actions_panel.is_none() {
+                if let Some(ref viewed_id) = claude_session_id {
+                    self.unread_session_ids.remove(viewed_id);
+                }
+                // Check if any remaining unread UUIDs belong to this branch's sessions
+                let still_unread = self.session_files.get(&branch_name)
+                    .map(|files| files.iter().any(|(uuid, _, _)| self.unread_session_ids.contains(uuid)))
+                    .unwrap_or(false);
+                if !still_unread {
+                    self.unread_sessions.remove(&branch_name);
                 }
             }
 
