@@ -134,6 +134,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let panes_area = git_v[1];
         let git_box_area = git_v[2];
 
+        app.pane_worktree_tabs = tab_bar_area;
         draw_git_worktree_tabs(f, app, tab_bar_area);
 
         let git_h = Layout::default()
@@ -612,54 +613,55 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Horizontal worktree tab bar — 1 row at the top of the git panel.
-/// Active tab: GIT_ORANGE bg + white fg + bold. Inactive: GIT_BROWN fg, no bg.
-/// Only non-archived worktrees with a real worktree_path are shown.
-///
-/// Pagination: when all tabs don't fit in the row, they are packed into pages
-/// greedily — a tab that would overflow the current page is moved wholesale to
-/// the next page so no tab is ever partially visible. The page that contains the
-/// active tab is shown. A dim "N/M" indicator at the right shows current page.
-fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
+/// Reuses the same design as `draw_worktree_tabs` (★ main tab, status symbols,
+/// archived styling, pagination, hit-test regions) but with GIT_ORANGE/GIT_BROWN
+/// colors instead of AZURE/Yellow/DarkGray.
+fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let panel = match app.git_actions_panel.as_ref() {
         Some(p) => p,
         None => return,
     };
     let active_branch = &panel.worktree_name;
     let avail = area.width as usize;
+    let base_x = area.x;
 
-    let tabs: Vec<(&str, bool)> = app.worktrees.iter()
-        .filter(|wt| !wt.archived && wt.worktree_path.is_some())
-        .map(|wt| (wt.name(), wt.branch_name == *active_branch))
-        .collect();
+    // Build tab entries matching draw_worktree_tabs: (display_label, is_active, is_archived, target)
+    // target: None = main branch, Some(idx) = worktree index
+    let mut tabs: Vec<(String, bool, bool, Option<usize>)> = Vec::new();
 
-    if tabs.len() <= 1 {
-        let display = crate::models::strip_branch_prefix(active_branch);
-        f.render_widget(Paragraph::new(Span::styled(
-            format!(" {} ", display),
-            Style::default().fg(GIT_BROWN),
-        )), area);
-        return;
+    let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
+    let main_is_active = *active_branch == main_branch;
+    tabs.push((format!("★ {}", main_branch), main_is_active, false, None));
+
+    for (idx, wt) in app.worktrees.iter().enumerate() {
+        let active = !main_is_active && wt.branch_name == *active_branch;
+        if wt.archived {
+            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx)));
+        } else {
+            let status = wt.status(app.is_session_running(&wt.branch_name));
+            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx)));
+        }
     }
 
-    // Display width of each tab label: " name " = name_cols + 2
+    if tabs.is_empty() { return; }
+
+    // Display width of each tab: " label " = display_width + 2
     let tab_widths: Vec<usize> = tabs.iter()
-        .map(|(name, _)| {
-            name.chars()
+        .map(|(label, _, _, _)| {
+            label.chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
                 + 2
         })
         .collect();
 
-    // Pack tabs into pages greedily — a tab that would overflow goes to the next page.
-    // Separator "│" (1 col) is added between adjacent tabs on the same page.
+    // Pack tabs into pages greedily
     let mut pages: Vec<Vec<usize>> = Vec::new();
     let mut cur: Vec<usize> = Vec::new();
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
-        // Space needed to add this tab to cur: label + separator if not first
+    for (i, (&tw, (_, is_active, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -679,21 +681,44 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
         None => return,
     };
 
+    // Build spans and hit-test regions
     let mut spans: Vec<Span> = Vec::with_capacity(page_tabs.len() * 2 + 1);
+    let mut hits: Vec<(u16, u16, Option<usize>)> = Vec::with_capacity(page_tabs.len());
+    let mut x_cursor: u16 = base_x;
+
     for (j, &idx) in page_tabs.iter().enumerate() {
-        let (name, is_active) = tabs[idx];
+        let (ref label, is_active, is_archived, target) = tabs[idx];
+        let tab_text = format!(" {} ", label);
+        let tab_w = tab_text.chars()
+            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
+            .sum::<u16>();
+
+        // Same styling logic as draw_worktree_tabs but with git color palette
         let style = if is_active {
-            Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+            if target.is_none() {
+                // ★ main active: GIT_ORANGE bg + black text + bold
+                Style::default().fg(Color::Black).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+            }
+        } else if is_archived {
+            Style::default().fg(Color::DarkGray)
+        } else if target.is_none() {
+            Style::default().fg(GIT_BROWN)
         } else {
             Style::default().fg(GIT_BROWN)
         };
-        spans.push(Span::styled(format!(" {} ", name), style));
+
+        hits.push((x_cursor, x_cursor + tab_w, target));
+        spans.push(Span::styled(tab_text, style));
+        x_cursor += tab_w;
+
         if j + 1 < page_tabs.len() {
             spans.push(Span::styled("│", Style::default().fg(GIT_BROWN)));
+            x_cursor += 1;
         }
     }
 
-    // Page indicator — dim, only when multiple pages exist
     if total_pages > 1 {
         spans.push(Span::styled(
             format!("  {}/{}", active_page + 1, total_pages),
@@ -701,6 +726,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    app.worktree_tab_hits = hits;
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 

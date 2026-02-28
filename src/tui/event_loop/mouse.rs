@@ -92,17 +92,39 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
             .find(|(xs, xe, _)| col >= *xs && col < *xe)
             .map(|(_, _, t)| *t);
         if let Some(tab_target) = target {
-            match tab_target {
-                None => {
-                    if app.browsing_main { app.exit_main_browse(); }
-                    else { app.enter_main_browse(); }
+            if app.git_actions_panel.is_some() {
+                // Git panel mode: switch git panel to clicked worktree
+                let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+                match tab_target {
+                    None => {
+                        // ★ main tab: switch git panel to main branch
+                        app.browsing_main = true;
+                        app.open_git_actions_panel();
+                        app.browsing_main = false;
+                    }
+                    Some(idx) => {
+                        app.selected_worktree = Some(idx);
+                        app.load_session_output();
+                        app.open_git_actions_panel();
+                    }
                 }
-                Some(idx) => {
-                    if app.browsing_main { app.exit_main_browse(); }
-                    app.save_current_terminal();
-                    app.selected_worktree = Some(idx);
-                    app.load_session_output();
-                    app.invalidate_sidebar();
+                if let Some(ref mut p) = app.git_actions_panel {
+                    p.focused_pane = focused_pane;
+                }
+            } else {
+                // Normal mode: select worktree or toggle BrowseMain
+                match tab_target {
+                    None => {
+                        if app.browsing_main { app.exit_main_browse(); }
+                        else { app.enter_main_browse(); }
+                    }
+                    Some(idx) => {
+                        if app.browsing_main { app.exit_main_browse(); }
+                        app.save_current_terminal();
+                        app.selected_worktree = Some(idx);
+                        app.load_session_output();
+                        app.invalidate_sidebar();
+                    }
                 }
             }
         }
