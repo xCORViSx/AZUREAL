@@ -31,13 +31,12 @@ pub use bindings::{
     GLOBAL, WORKTREES, FILE_TREE, VIEWER, EDIT_MODE, SESSION, INPUT, TERMINAL,
     HEALTH_SHARED, HEALTH_GOD_FILES, HEALTH_DOCS,
     GIT_ACTIONS, PROJECTS_BROWSE, PICKER, BRANCH_DIALOG,
-    AZUREAL_SHARED, AZUREAL_DEBUG, AZUREAL_ISSUES, AZUREAL_PRS,
 };
 
 // Lookup functions + KeyContext
 pub use lookup::{
     KeyContext, lookup_action,
-    lookup_azureal_action, lookup_health_action, lookup_git_actions_action,
+    lookup_health_action, lookup_git_actions_action,
     lookup_projects_action, lookup_picker_action, lookup_branch_dialog_action,
 };
 

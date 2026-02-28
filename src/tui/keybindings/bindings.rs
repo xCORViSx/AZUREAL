@@ -43,7 +43,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 pub static GLOBAL: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('a')), "AZUREAL++ panel", Action::OpenAzurealPanel),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('m')), "Cycle model", Action::CycleModel),
@@ -263,39 +263,3 @@ pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
-/// AZUREAL++ Panel — shared bindings across all tabs
-pub static AZUREAL_SHARED: [Keybinding; 4] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch tab", Action::AzurealSwitchTab),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::AzurealRefresh),
-    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('a')), "Close", Action::Escape),
-];
-
-/// AZUREAL++ Panel — Debug tab bindings
-pub static AZUREAL_DEBUG: [Keybinding; 5] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Create dump", Action::AzurealDumpDebug),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('v')), "View dump", Action::AzurealViewDump),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "Delete dump", Action::AzurealDeleteDump),
-];
-
-/// AZUREAL++ Panel — Issues tab bindings
-pub static AZUREAL_ISSUES: [Keybinding; 7] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "View issue", Action::Confirm),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Create issue", Action::AzurealCreateIssue),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Toggle closed", Action::AzurealToggleClosed),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Open in browser", Action::AzurealOpenInBrowser),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Filter", Action::AzurealFilter),
-];
-
-/// AZUREAL++ Panel — PRs tab bindings
-pub static AZUREAL_PRS: [Keybinding; 5] = [
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Create PR", Action::AzurealCreatePR),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open in browser", Action::AzurealOpenInBrowser),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('o')), "Open in browser", Action::AzurealOpenInBrowser),
-];

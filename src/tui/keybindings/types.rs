@@ -109,7 +109,7 @@ pub enum Action {
     // Global
     Quit,
     Restart,
-    OpenAzurealPanel,
+    DumpDebug,
     CancelClaude,
     CopySelection,
     ToggleHelp,
@@ -237,18 +237,6 @@ pub enum Action {
     ProjectsDelete,
     ProjectsRename,
     ProjectsInit,
-
-    // AZUREAL++ Panel (modal)
-    AzurealSwitchTab,
-    AzurealDumpDebug,
-    AzurealViewDump,
-    AzurealDeleteDump,
-    AzurealCreateIssue,
-    AzurealToggleClosed,
-    AzurealOpenInBrowser,
-    AzurealRefresh,
-    AzurealFilter,
-    AzurealCreatePR,
 
     // Generic
     Escape,

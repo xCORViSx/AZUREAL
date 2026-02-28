@@ -35,7 +35,6 @@ use super::super::input_output::handle_session_input;
 use super::super::input_worktrees::handle_worktrees_input;
 use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
 use super::super::input_viewer::handle_viewer_input;
-use super::super::input_azureal::handle_azureal_input;
 use super::super::input_projects::handle_projects_input;
 
 use execute::execute_action;
@@ -179,7 +178,23 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
-    if app.azureal_panel.is_some() { return handle_azureal_input(key, app); }
+
+    // Debug dump naming dialog — text input for the dump file suffix
+    if let Some(ref mut naming) = app.debug_dump_naming {
+        match key.code {
+            KeyCode::Enter => {
+                let name = naming.clone();
+                app.debug_dump_saving = Some(name);
+                app.debug_dump_naming = None;
+            }
+            KeyCode::Esc => { app.debug_dump_naming = None; }
+            KeyCode::Backspace => { naming.pop(); }
+            KeyCode::Char(c) => { naming.push(c); }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
     if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
     // Dialog checked before picker — dialog is spawned on top of picker (e/a keys)

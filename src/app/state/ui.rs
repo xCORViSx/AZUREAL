@@ -553,58 +553,6 @@ impl App {
 
     pub fn is_projects_panel_active(&self) -> bool { self.projects_panel.is_some() }
 
-    // ── AZUREAL++ panel ──
-
-    /// Open the AZUREAL++ developer hub panel. Detects GitHub repo info and
-    /// scans for existing debug dump files.
-    pub fn open_azureal_panel(&mut self) {
-        use crate::app::types::AzurealPlusPlusPanel;
-
-        let project_path = self.project.as_ref()
-            .map(|p| p.path.clone())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-
-        // Detect upstream repo + fork status (non-blocking, fast local call)
-        let (upstream_repo, fork_owner) = crate::github::detect_repo_info(&project_path)
-            .unwrap_or_else(|_| (String::new(), None));
-
-        // Scan existing debug dump files in .azureal/
-        let dump_files = scan_debug_dumps(&project_path);
-
-        self.azureal_panel = Some(AzurealPlusPlusPanel {
-            tab: self.last_azureal_tab,
-            upstream_repo,
-            fork_owner,
-            dump_files,
-            dump_selected: 0,
-            dump_naming: None,
-            dump_saving: false,
-            issues: Vec::new(),
-            issues_loading: false,
-            issues_receiver: None,
-            issue_selected: 0,
-            issue_scroll: 0,
-            issue_detail_view: false,
-            issue_detail_scroll: 0,
-            issue_create: None,
-            show_closed: false,
-            issue_filter: None,
-            prs: Vec::new(),
-            prs_loading: false,
-            prs_receiver: None,
-            pr_selected: 0,
-            pr_create: None,
-        });
-    }
-
-    /// Close the AZUREAL++ panel and remember the active tab
-    pub fn close_azureal_panel(&mut self) {
-        if let Some(ref panel) = self.azureal_panel {
-            self.last_azureal_tab = panel.tab;
-        }
-        self.azureal_panel = None;
-    }
-
     /// Switch to a different project by path. Kills all Claude processes,
     /// clears all session/render state, and reloads everything for the new project.
     pub fn switch_project(&mut self, path: std::path::PathBuf) {
@@ -734,32 +682,3 @@ fn load_ordered_presets(map: &std::collections::HashMap<String, String>, global:
     entries.into_iter().map(|(_, name, prompt)| PresetPrompt::new(name, prompt, global)).collect()
 }
 
-/// Scan .azureal/ for debug dump files, returning (filename, size, modified_time_display)
-pub fn scan_debug_dumps_pub(project_path: &std::path::Path) -> Vec<(String, u64, String)> {
-    scan_debug_dumps(project_path)
-}
-
-fn scan_debug_dumps(project_path: &std::path::Path) -> Vec<(String, u64, String)> {
-    let dir = project_path.join(".azureal");
-    let mut files = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("debug-output") {
-                if let Ok(meta) = entry.metadata() {
-                    let size = meta.len();
-                    let modified = meta.modified()
-                        .ok()
-                        .and_then(|t| {
-                            let dt: chrono::DateTime<chrono::Local> = t.into();
-                            Some(dt.format("%Y-%m-%d %H:%M").to_string())
-                        })
-                        .unwrap_or_default();
-                    files.push((name, size, modified));
-                }
-            }
-        }
-    }
-    files.sort_by(|a, b| b.2.cmp(&a.2)); // newest first
-    files
-}

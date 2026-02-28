@@ -37,5 +37,4 @@ pub use crate::app::types::FileTreeEntry;
 
 // Re-export App, todo types, and DeferredAction as public
 pub use app::{App, DeferredAction, TodoItem, TodoStatus};
-pub(crate) use ui::scan_debug_dumps_pub;
 

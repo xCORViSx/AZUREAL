@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{AzurealPlusPlusPanel, AzurealTab, BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
 use crate::events::EventParser;
 use crate::models::{Project, Worktree};
 use crate::syntax::SyntaxHighlighter;
@@ -397,10 +397,10 @@ pub struct App {
     pub god_file_filter_dirs: std::collections::HashSet<std::path::PathBuf>,
     /// Git Actions panel state (Shift+G overlay for git operations + changed files)
     pub git_actions_panel: Option<GitActionsPanel>,
-    /// AZUREAL++ developer hub panel (⌃a — debug dump, GitHub issues, PRs)
-    pub azureal_panel: Option<AzurealPlusPlusPanel>,
-    /// Remembers which tab was last active so the panel reopens on the same tab
-    pub last_azureal_tab: AzurealTab,
+    /// Debug dump naming dialog — Some(text) means the user is typing a dump name
+    pub debug_dump_naming: Option<String>,
+    /// Debug dump saving — Some(name) triggers the actual dump on next frame
+    pub debug_dump_saving: Option<String>,
     /// Active Merge Conflict Resolution session — when Some, session pane shows green
     /// borders, routes prompts to repo root, and displays approval dialog after Claude exits
     pub rcr_session: Option<RcrSession>,
@@ -668,8 +668,8 @@ impl App {
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),
             git_actions_panel: None,
-            azureal_panel: None,
-            last_azureal_tab: AzurealTab::default(),
+            debug_dump_naming: None,
+            debug_dump_saving: None,
             rcr_session: None,
             post_merge_dialog: None,
             auto_rebase_enabled: HashSet::new(), // populated from azufig in load()

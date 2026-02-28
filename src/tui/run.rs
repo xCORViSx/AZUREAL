@@ -27,7 +27,7 @@ use crate::config::Config;
 use super::event_loop;
 use super::keybindings;
 use super::util::{GIT_ORANGE, GIT_BROWN, AZURE};
-use super::{draw_azureal, draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
+use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -282,9 +282,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             draw_git_actions::draw_auto_resolve_overlay(f, ov, app.pane_viewer);
         }
     }
-    // AZUREAL++ developer hub panel (⌃a global)
-    if app.azureal_panel.is_some() {
-        draw_azureal::draw_azureal_panel(f, app);
+    // Debug dump naming dialog — centered input for entering dump name
+    if app.debug_dump_naming.is_some() {
+        draw_debug_dump_naming(f, app);
+    }
+    // Debug dump saving indicator — flash while dump is being written
+    if app.debug_dump_saving.is_some() {
+        draw_debug_dump_saving(f);
     }
     // Auto-rebase success dialog — 2-second toast after successful auto-rebase
     if let Some((ref branch, _)) = app.auto_rebase_success_until {
@@ -580,6 +584,44 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Debug dump naming dialog — centered input for entering a suffix for the dump file.
+/// ⌃d opens this, user types a name, Enter saves, Esc cancels.
+fn draw_debug_dump_naming(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let input_text = app.debug_dump_naming.as_deref().unwrap_or("");
+    let prompt = format!(" Name: {}▏", input_text);
+    let w = 50u16.min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+    let dialog = Paragraph::new(Span::styled(prompt, Style::default().fg(Color::White)))
+        .block(Block::default()
+            .title(Span::styled(" Debug Dump ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(AZURE)));
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(dialog, rect);
+}
+
+/// Debug dump saving indicator — brief flash shown while the dump file is being written.
+fn draw_debug_dump_saving(f: &mut Frame) {
+    let area = f.area();
+    let msg = " Saving debug dump... ";
+    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
+        .alignment(Alignment::Center)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(AZURE)));
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(dialog, rect);
 }
 
 fn draw_loading_indicator(f: &mut Frame, msg: &str) {

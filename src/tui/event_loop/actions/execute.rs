@@ -24,12 +24,8 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         // --- Global actions ---
         Action::Quit => { app.should_quit = true; }
         Action::Restart => { app.should_restart = true; app.should_quit = true; }
-        Action::OpenAzurealPanel => {
-            if app.azureal_panel.is_some() {
-                app.close_azureal_panel();
-            } else {
-                app.open_azureal_panel();
-            }
+        Action::DumpDebug => {
+            app.debug_dump_naming = Some(String::new());
         }
         Action::CancelClaude => { app.cancel_current_claude(); }
         Action::CopySelection => {

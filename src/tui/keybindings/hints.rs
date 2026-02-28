@@ -52,10 +52,10 @@ pub fn prompt_command_title() -> (String, String, String) {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
-    let azureal = find_key_for_action(&GLOBAL, Action::OpenAzurealPanel).unwrap_or("⌃a".into());
+    let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:AZUREAL++ | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart",
-        p, t, g, h, azureal, help, tab, stab, cancel, quit, restart
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart",
+        p, t, g, h, dump, help, tab, stab, cancel, quit, restart
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);

@@ -7,7 +7,6 @@ mod cmd;
 mod config;
 mod events;
 mod git;
-mod github;
 mod models;
 mod stt;
 mod syntax;

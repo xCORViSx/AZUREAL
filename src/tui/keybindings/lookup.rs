@@ -87,28 +87,6 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     None
 }
 
-/// Resolve a key press in the AZUREAL++ panel to an action.
-pub fn lookup_azureal_action(
-    tab: crate::app::types::AzurealTab,
-    modifiers: KeyModifiers,
-    code: KeyCode,
-) -> Option<Action> {
-    // Shared bindings first (Tab, Esc, R, ⌃a)
-    for b in &AZUREAL_SHARED {
-        if b.matches(modifiers, code) { return Some(b.action); }
-    }
-    // Tab-specific bindings
-    let tab_bindings: &[Keybinding] = match tab {
-        crate::app::types::AzurealTab::Debug => &AZUREAL_DEBUG,
-        crate::app::types::AzurealTab::Issues => &AZUREAL_ISSUES,
-        crate::app::types::AzurealTab::PullRequests => &AZUREAL_PRS,
-    };
-    for b in tab_bindings {
-        if b.matches(modifiers, code) { return Some(b.action); }
-    }
-    None
-}
-
 /// Resolve key → Action for the Health panel.
 /// Checks shared bindings (Tab/nav/Esc) first, then tab-specific bindings.
 pub fn lookup_health_action(
