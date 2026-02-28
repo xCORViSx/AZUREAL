@@ -231,12 +231,10 @@ fn draw_name_list(
         .take(viewport_height)
         .collect();
 
-    // Title includes worktree name since list is scoped to current worktree
-    let wt_label = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
     let title = if filtering {
-        format!(" {} [{}/{} of {}] ", wt_label, app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
+        format!(" Sessions [{}/{} of {}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
     } else {
-        format!(" {} [{}/{}] ", wt_label, app.session_list_selected + 1, total.max(1))
+        format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1))
     };
     let border_style = if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
