@@ -9,7 +9,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -159,6 +159,7 @@ pub(crate) fn draw_commit_editor(f: &mut Frame, overlay: &crate::app::types::Git
         .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(GIT_ORANGE));
 
+    f.render_widget(Clear, area);
     f.render_widget(Paragraph::new(commit_lines).block(block), area);
 }
 
@@ -257,6 +258,7 @@ pub(crate) fn draw_auto_resolve_overlay(f: &mut Frame, overlay: &crate::app::typ
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(GIT_ORANGE));
 
+    f.render_widget(Clear, area);
     f.render_widget(Paragraph::new(visible).block(block), area);
 }
 
@@ -322,5 +324,6 @@ pub(crate) fn draw_conflict_inline(f: &mut Frame, ov: &crate::app::types::GitCon
         .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(Color::Red));
 
+    f.render_widget(Clear, area);
     f.render_widget(Paragraph::new(visible).block(block), area);
 }
