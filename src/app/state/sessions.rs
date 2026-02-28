@@ -7,20 +7,27 @@ use super::App;
 
 impl App {
     pub fn select_next_session(&mut self) {
-        let start = self.selected_worktree.map(|i| i + 1).unwrap_or(0);
-        if start < self.worktrees.len() {
-            self.save_current_terminal();
-            self.selected_worktree = Some(start);
-            self.load_session_output();
-            self.invalidate_sidebar();
-        }
+        if self.worktrees.is_empty() { return; }
+        let next = match self.selected_worktree {
+            Some(i) if i + 1 < self.worktrees.len() => i + 1,
+            Some(_) => 0, // wrap to first
+            None => 0,
+        };
+        self.save_current_terminal();
+        self.selected_worktree = Some(next);
+        self.load_session_output();
+        self.invalidate_sidebar();
     }
 
     pub fn select_prev_session(&mut self) {
-        let Some(current) = self.selected_worktree else { return };
-        if current == 0 { return; }
+        if self.worktrees.is_empty() { return; }
+        let prev = match self.selected_worktree {
+            Some(0) => self.worktrees.len() - 1, // wrap to last
+            Some(i) => i - 1,
+            None => self.worktrees.len() - 1,
+        };
         self.save_current_terminal();
-        self.selected_worktree = Some(current - 1);
+        self.selected_worktree = Some(prev);
         self.load_session_output();
         self.invalidate_sidebar();
     }
