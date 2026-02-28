@@ -22,7 +22,10 @@ use super::session_list::open_session_list;
 pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess) -> Result<()> {
     match action {
         // --- Global actions ---
-        Action::Quit => { app.should_quit = true; }
+        Action::Quit => {
+            if !app.git_action_in_progress() { app.should_quit = true; }
+            else { app.set_status("Cannot quit while a git operation is in progress"); }
+        }
         Action::DumpDebug => {
             app.debug_dump_naming = Some(String::new());
         }

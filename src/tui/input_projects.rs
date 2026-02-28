@@ -38,7 +38,10 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
     };
 
     match action {
-        Action::Quit => { app.should_quit = true; }
+        Action::Quit => {
+            if !app.git_action_in_progress() { app.should_quit = true; }
+            else { app.set_status("Cannot quit while a git operation is in progress"); }
+        }
 
         Action::NavDown => {
             if let Some(ref mut panel) = app.projects_panel { panel.select_next(); }

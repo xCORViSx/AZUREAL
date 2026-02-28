@@ -5,7 +5,7 @@ use crate::config::load_projects;
 use crate::git::Git;
 use crate::models::Project;
 
-use super::App;
+use super::{App, DeferredAction};
 
 impl App {
     pub fn focus_next(&mut self) {
@@ -520,6 +520,32 @@ impl App {
     }
 
     pub fn is_projects_panel_active(&self) -> bool { self.projects_panel.is_some() }
+
+    /// Returns true if any git operation is in progress that could corrupt the
+    /// repo if interrupted (commit, push, rebase, RCR, commit message generation).
+    pub fn git_action_in_progress(&self) -> bool {
+        // Deferred git commit or commit+push about to execute
+        if matches!(self.deferred_action,
+            Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })) {
+            return true;
+        }
+        // RCR session active (Claude resolving rebase conflicts on a worktree)
+        if self.rcr_session.is_some() {
+            return true;
+        }
+        // Commit message being generated (Claude one-shot running)
+        if let Some(ref panel) = self.git_actions_panel {
+            if let Some(ref overlay) = panel.commit_overlay {
+                if overlay.generating { return true; }
+            }
+        }
+        // Loading indicator for a git operation (e.g. "Committing...")
+        if self.loading_indicator.is_some() && matches!(self.deferred_action,
+            Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })) {
+            return true;
+        }
+        false
+    }
 
     /// Switch to a different project by path. Kills all Claude processes,
     /// clears all session/render state, and reloads everything for the new project.

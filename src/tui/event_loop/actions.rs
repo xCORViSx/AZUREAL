@@ -49,8 +49,12 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     // Bare modifier presses (Shift, Ctrl, Alt) arrive via Kitty protocol — ignore globally
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
-    // ⌃q quits from ANYWHERE — no modal should block this
+    // ⌃q quits from ANYWHERE — blocked only when a git operation is in progress
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
+        if app.git_action_in_progress() {
+            app.set_status("Cannot quit while a git operation is in progress");
+            return Ok(());
+        }
         app.should_quit = true;
         return Ok(());
     }
