@@ -110,6 +110,19 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         }
     }
 
+    // Worktree delete confirmation — y confirms, anything else cancels
+    if app.worktree_delete_confirm {
+        app.worktree_delete_confirm = false;
+        if key.code == KeyCode::Char('y') || key.code == KeyCode::Char('Y') {
+            if let Err(e) = app.delete_current_worktree() {
+                app.set_status(format!("Delete failed: {}", e));
+            }
+        } else {
+            app.set_status("Delete cancelled");
+        }
+        return Ok(());
+    }
+
     // Post-merge dialog — keep/archive/delete worktree after squash merge
     if app.post_merge_dialog.is_some() {
         match key.code {

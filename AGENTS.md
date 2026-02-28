@@ -69,6 +69,7 @@ Each worktree provides true branch isolation:
 - Operates on a separate branch from main
 - **Archiving** removes the worktree directory but preserves the git branch (`⌘a` key). Archived worktrees show as `◇` (diamond) with dimmed text in the tab row.
 - **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
+- **Deleting** removes the worktree directory AND deletes the git branch permanently (`⌘d` key). Shows y/N confirmation in the status bar. Also cleans up auto-rebase config.
 - **Read-only main branch isolation:** Main/master branch is stored separately in `app.main_worktree: Option<Worktree>`. Press `Shift+M` globally to enter read-only main browse mode: the file tree shows main's files with a yellow "(read-only)" border suffix, and the `[★ main]` tab highlights in yellow. All file mutations are blocked (add/delete/rename/copy/move), edit mode is blocked, prompt mode is blocked, and session start is blocked. `Esc` or `Shift+M` again exits browse mode. `current_worktree()` transparently returns `main_worktree` when `browsing_main` is true. `enter_main_browse()` and `exit_main_browse()` in `src/app/state/ui.rs` manage state transitions; `switch_project()` clears browse state.
 - **Tab row icons:** `[★ main]` tab always first (yellow when active). Archived worktrees show `◇` (diamond) with dimmed text. Feature branches use standard status circles (`●`/`○`/etc.).
 - CLI: `azureal session archive <name>` / `azureal session unarchive <name>`

@@ -103,6 +103,8 @@ azureal
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Session); Filter/search sessions (Session list) |
 | `?` | Help |
+| `⌘a` | Archive/unarchive worktree (keeps branch) |
+| `⌘d` | Delete worktree + branch (y/N confirm) |
 | `⌃d` | Debug dump (save session state snapshot) |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |

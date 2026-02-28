@@ -109,6 +109,37 @@ impl App {
         Ok(())
     }
 
+    /// Delete the current worktree AND its branch permanently
+    pub fn delete_current_worktree(&mut self) -> anyhow::Result<()> {
+        let wt = self.current_worktree().ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
+        let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        if wt.branch_name == project.main_branch {
+            anyhow::bail!("Cannot delete main branch");
+        }
+        let branch = wt.branch_name.clone();
+        let name = wt.name().to_string();
+        // Remove the worktree directory (if active, not archived)
+        if let Some(ref wt_path) = wt.worktree_path {
+            Git::remove_worktree(&project.path, wt_path)?;
+        }
+        // Delete the git branch
+        let _ = Git::delete_branch(&project.path, &branch);
+        // Clean up auto-rebase config
+        self.auto_rebase_enabled.remove(&branch);
+        crate::azufig::set_auto_rebase(&project.path, &branch, false);
+        self.set_status(format!("Deleted: {}", name));
+        let prev_idx = self.selected_worktree.unwrap_or(0);
+        self.refresh_worktrees()?;
+        // Clamp selection after removal
+        self.selected_worktree = if self.worktrees.is_empty() {
+            None
+        } else {
+            Some(prev_idx.min(self.worktrees.len() - 1))
+        };
+        self.load_session_output();
+        Ok(())
+    }
+
     /// Select a specific session file by index
     pub fn select_session_file(&mut self, branch_name: &str, idx: usize) {
         if let Some(files) = self.session_files.get(branch_name) {

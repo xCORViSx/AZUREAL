@@ -134,6 +134,7 @@ pub enum Action {
     RunCommand,
     AddRunCommand,
     ToggleArchiveWorktree,
+    DeleteWorktree,
     OpenHealth,
     OpenGitActions,
     OpenProjects,

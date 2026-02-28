@@ -58,6 +58,8 @@ pub struct App {
     pub input_selection: Option<(usize, usize)>,
     pub worktree_creation_input: String,
     pub worktree_creation_cursor: usize,
+    /// True while waiting for y/N confirmation to delete the current worktree + branch
+    pub worktree_delete_confirm: bool,
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub prompt_mode: bool,
@@ -490,6 +492,7 @@ impl App {
             input_selection: None,
             worktree_creation_input: String::new(),
             worktree_creation_cursor: 0,
+            worktree_delete_confirm: false,
             view_mode: ViewMode::Session,
             focus: Focus::Worktrees,
             prompt_mode: false,

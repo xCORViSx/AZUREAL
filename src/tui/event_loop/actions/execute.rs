@@ -209,6 +209,19 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 app.set_status(format!("Failed: {}", e));
             }
         }
+        Action::DeleteWorktree => {
+            if let Some(wt) = app.current_worktree() {
+                if let Some(project) = &app.project {
+                    if wt.branch_name == project.main_branch {
+                        app.set_status("Cannot delete main branch");
+                    } else {
+                        let name = wt.name().to_string();
+                        app.set_status(format!("Delete '{}' and its branch? (y/N)", name));
+                        app.worktree_delete_confirm = true;
+                    }
+                }
+            }
+        }
         // Worktree tab switching (global [ / ])
         Action::WorktreeTabPrev => {
             app.select_prev_session();
