@@ -364,16 +364,15 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     /// Green color matching the scoped directory highlights (health scope mode)
     const GF_BORDER_GREEN: Color = Color::Rgb(80, 200, 80);
 
-    let wt_name = app.current_worktree().map(|s| s.name().to_string()).unwrap_or_default();
     let ro_suffix = if app.browsing_main { " (read-only)" } else { "" };
     let title = if in_filter_mode {
         // Filter mode title shows scope count and Enter/Esc hints
         let scope_count = app.god_file_filter_dirs.len();
         format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
     } else if total > viewport_height {
-        format!(" Filetree ({}){} [{}/{}] ", wt_name, ro_suffix, scroll + display_lines.len().min(total - scroll), total)
+        format!(" Filetree{} [{}/{}] ", ro_suffix, scroll + display_lines.len().min(total - scroll), total)
     } else {
-        format!(" Filetree ({}){} ", wt_name, ro_suffix)
+        format!(" Filetree{} ", ro_suffix)
     };
 
     // Append wrapped action bar lines at the bottom

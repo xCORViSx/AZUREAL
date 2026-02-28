@@ -5,6 +5,8 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Worktree name removed from file tree pane title** — Title now shows `Filetree` instead of `Filetree (worktree-name)`. The worktree tab bar already indicates the active worktree, so the redundant label was removed.
+
 - **Worktree sidebar replaced by horizontal tab row** — The vertical worktree sidebar (15% left column) is now a 1-row horizontal tab bar at the top of the normal mode layout. `[★ main]` tab always first (yellow when active, Shift+M toggles main browse). Active worktree tab uses AZURE bg + white fg + bold. Archived worktrees shown dim with `◇` prefix. Supports greedy pagination with `N/M` page indicator. Mouse click on tabs selects worktrees. `[`/`]` switch tabs globally from any pane; `←/→` switch when focused.
 - **FileTree is always visible** — No longer a toggle overlay (`f` key removed). FileTree is a permanent pane in the 15% left column. Included in the focus cycle as a separate pane.
 - **Focus cycle keys changed** — `Tab`/`Shift+Tab` replaced with `{`/`}` (Shift+[/Shift+]). Cycle: Worktrees → FileTree → Viewer → Session → Input → Worktrees.
