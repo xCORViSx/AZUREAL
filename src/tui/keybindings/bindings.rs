@@ -59,8 +59,8 @@ pub static GLOBAL: [Keybinding; 17] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::WorktreeTabNext).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::WorktreeTabPrev),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('}')), &ALT_RBRACE, "Cycle focus forward", Action::CycleFocusForward),
-    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('{')), &ALT_LBRACE, "Cycle focus backward", Action::CycleFocusBackward),
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
+    Keybinding::new(KeyCombo::plain(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
 ];
 
 /// Worktree tab row bindings — actions available when tab row is focused

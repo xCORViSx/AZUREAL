@@ -858,7 +858,7 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Worktree Tab Row
 
-The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse (read-only). `[`/`]` switch tabs globally from any pane; `←/→` switch tabs when the tab row is focused. `{`/`}` cycle focus through all panes.
+The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse (read-only). `[`/`]` switch tabs globally from any pane; `←/→` switch tabs when the tab row is focused. `Tab`/`Shift+Tab` cycle focus through all panes.
 
 **Tab styling:** Active tab uses AZURE bg + white fg + bold; `[M]` active uses yellow bg + black fg + bold; archived tabs use dim gray with `◇` prefix; inactive tabs use gray with status symbol prefix. Pagination via greedy tab packing with `N/M` page indicator.
 
@@ -1487,7 +1487,7 @@ azureal
 | `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
-| `{`/`}` | Cycle focus forward/backward (Worktrees → FileTree → Viewer → Session → Input) |
+| `Tab`/`⇧Tab` | Cycle focus forward/backward (Worktrees → FileTree → Viewer → Session → Input) |
 | `[`/`]` | Switch worktree tab (global — works from any pane) |
 | `M` | Toggle main branch browse (read-only) |
 | `P` | Projects panel |
@@ -1557,7 +1557,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | {/}:focus | [/]:worktree | ⌘r:run | ⌃c:cancel agent | ⌃q:quit)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | Tab/⇧Tab:focus | [/]:worktree | ⌘r:run | ⌃c:cancel agent | ⌃q:quit)`
 
 ### Terminal Mode
 
