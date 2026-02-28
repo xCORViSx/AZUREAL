@@ -111,9 +111,17 @@ impl Git {
             std::fs::create_dir_all(parent).context("Failed to create worktrees directory")?;
         }
 
-        let is_remote = branch_name.contains('/');
+        // Check if branch exists locally (e.g. azureal/foo is local despite containing '/').
+        // Only use the remote-tracking -b path for genuine remote refs (e.g. origin/main).
+        let is_local = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("refs/heads/{}", branch_name)])
+            .current_dir(repo_path)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
-        let output = if is_remote {
+        let output = if !is_local && branch_name.contains('/') {
+            // Remote branch: create a local tracking branch
             let local_branch = branch_name.split('/').skip(1).collect::<Vec<_>>().join("/");
             Command::new("git")
                 .args(["worktree", "add", "--track", "-b", &local_branch, &worktree_path.to_string_lossy(), branch_name])
@@ -121,6 +129,7 @@ impl Git {
                 .output()
                 .context("Failed to execute git worktree add")?
         } else {
+            // Local branch: just check it out directly
             Command::new("git")
                 .args(["worktree", "add", &worktree_path.to_string_lossy(), branch_name])
                 .current_dir(repo_path)

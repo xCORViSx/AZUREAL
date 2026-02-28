@@ -52,7 +52,7 @@
 - **Completion Notifications** — macOS notification with AZUREAL icon when any Claude instance finishes; shows `worktree:session_name` so you know which instance completed, even while in another app. Activity Monitor shows AZUREAL with branded icon. Notification permissions auto-enabled on first launch (zero setup)
 - **Preset Prompts** — Press `⌥P` in prompt mode to open a picker with up to 10 saved prompt templates; quick-select with `1-9` and `0` from the picker, or directly with `⌥1`-`⌥9` and `⌥0` from prompt mode (skips picker); picker footer shows the ⌥+number shortcut hint; add, edit, or delete (`d` with y/n confirmation) presets from the picker; selected prompt populates the input box. Presets can be **global** (shared across all projects) or **project-local**; toggle scope with `⌃g` in the add/edit dialog
 - **Git Panel** — `Shift+G` transforms the existing 3-pane layout into a git operations view: sidebar splits into Actions (top) + Changed Files (bottom), viewer shows file/commit diffs with text selection and copy support (`⌘A`/`⌘C`, `Shift+J/K` scroll), session pane becomes a branch-scoped commit log ("Commits" — feature branches show only their own commits), and a full-width git status box at the bottom displays keybinding hints and operation results. Context-aware actions change based on branch: **main branch** shows pull (`l`), commit (`c`), push (`P`); **feature branches** show squash-merge (`m`), rebase (`r`), commit (`c`), push (`P`); shows changed files with per-file color-coded `+N/-N` stats; navigate with `j/k`, `Enter` to view diff, `Tab` cycles focus through Actions → Files → Commits; **squash-merge** (`m`) rebases onto main first for clean linear merges — configurable auto-resolve files (default: AGENTS.md, CHANGELOG.md, README.md, CLAUDE.md) are union-merged during rebase keeping both sides' changes; press `s` to manage the auto-resolve list interactively; **commit** (`c`) generates a conventional commit message via `claude -p` (~3 sec), shown in an editable overlay — `Enter` commits, `⌘P` commits + pushes; **RCR** — non-auto-resolve rebase conflicts show a red overlay listing conflicted files; `y` enters RCR mode where Claude resolves on the feature branch, with approval dialog after completion
-- **AZUREAL++ Panel** — Press `⌃a` to open the developer hub — a tabbed modal with Debug (dump file management), Issues (GitHub issues browser via `gh` CLI with create/filter/detail view), and PRs (pull request browser and cross-fork PR creation) tabs
+- **Debug Dump** — Press `⌃d` to save a debug snapshot of the current session state to `.azureal/debug-output-{name}.txt`
 - **Loading Indicators** — Centered AZURE-bordered popups for all blocking operations: session loading, file opening, health scanning, project switching, health scope rescanning. Two-phase deferred draw ensures the UI never appears frozen during I/O
 - **Minimal Footprint** — Two `azufig.toml` files consolidate all persistent state (global `~/.azureal/azufig.toml` + project-local `.azureal/azufig.toml`); scans git worktrees and `~/.claude/` at runtime
 
@@ -61,7 +61,6 @@
 - **Rust** (latest stable)
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
-- **GitHub CLI** (`gh`) — Required for AZUREAL++ panel Issues/PRs tabs (`brew install gh`)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons with language-brand colors. Auto-detected on startup; emoji fallback used automatically when Nerd Font not detected
 - **Whisper model** (optional, for speech input): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
 
@@ -104,11 +103,10 @@ azureal
 | `P` | Projects panel |
 | `/` | Search/filter sessions (Worktrees); Search text (Session); Filter/search sessions (Session list) |
 | `?` | Help |
-| `⌃a` | AZUREAL++ panel (Debug, Issues, PRs) |
+| `⌃d` | Debug dump (save session state snapshot) |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` | Quit |
-| `⌃r` | Restart |
 
 **Input Modes:**
 
