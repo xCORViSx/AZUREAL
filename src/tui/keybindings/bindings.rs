@@ -33,6 +33,9 @@ static ALT_MACOS_R: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, c
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
 static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('π') }];
 static ALT_MACOS_T: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('†') }];
+// Shift+[ → '{' — some terminals send (SHIFT, '{'), others (NONE, '{')
+static ALT_LBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('{') }];
+static ALT_RBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('}') }];
 
 // Cmd+Shift modifier combo
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
@@ -40,9 +43,8 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 13] = [
+pub static GLOBAL: [Keybinding; 17] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('r')), "Restart azureal", Action::Restart),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
@@ -52,26 +54,21 @@ pub static GLOBAL: [Keybinding; 13] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('T')), "Toggle terminal", Action::ToggleTerminal),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('G')), "Git actions", Action::OpenGitActions),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('H')), "Worktree health", Action::OpenHealth),
-    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
-    Keybinding::new(KeyCombo::shift(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('M')), "Browse main", Action::BrowseMain),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('r')), "Run command", Action::RunCommand),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::WorktreeTabNext).paired(),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::WorktreeTabPrev),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('}')), &ALT_RBRACE, "Cycle focus forward", Action::CycleFocusForward),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('{')), &ALT_LBRACE, "Cycle focus backward", Action::CycleFocusBackward),
 ];
 
-/// Worktrees context bindings — flat list, no expand/collapse
-pub static WORKTREES: [Keybinding; 14] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('f')), "Browse files", Action::ToggleFileTree),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Browse main", Action::BrowseMain),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('/')), "Search/filter", Action::SearchFilter),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Select worktree", Action::NavDown).paired(),
-    Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Select worktree", Action::NavUp),
-    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
-    Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
-    Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Start/resume", Action::StartResume),
+/// Worktree tab row bindings — actions available when tab row is focused
+pub static WORKTREES: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add worktree", Action::AddWorktree),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Run command", Action::RunCommand),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Toggle archive", Action::ToggleArchiveWorktree),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
 ];
 
 /// FileTree bindings
@@ -95,7 +92,7 @@ pub static FILE_TREE: [Keybinding; 16] = [
 ];
 
 /// Viewer bindings (read-only mode)
-pub static VIEWER: [Keybinding; 16] = [
+pub static VIEWER: [Keybinding; 14] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Scroll line", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Scroll line", Action::NavUp),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('J')), &ALT_PGDN, "Page down", Action::PageDown).paired(),
@@ -109,8 +106,6 @@ pub static VIEWER: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('t')), &ALT_MACOS_T, "Tab dialog", Action::ViewerOpenTabDialog),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next tab", Action::ViewerNextTab).paired(),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev tab", Action::ViewerPrevTab),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
 ];
 
@@ -209,7 +204,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 18] = [
+pub static GIT_ACTIONS: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -226,8 +221,10 @@ pub static GIT_ACTIONS: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Auto-resolve files", Action::GitAutoResolveSettings),
-    Keybinding::new(KeyCombo::shift(KeyCode::Left), "Prev worktree", Action::GitPrevWorktree).paired(),
-    Keybinding::new(KeyCombo::shift(KeyCode::Right), "Next worktree", Action::GitNextWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::GitPrevWorktree).paired(),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::GitNextWorktree),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('{')), &ALT_LBRACE, "Prev page", Action::GitPrevPage).paired(),
+    Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('}')), &ALT_RBRACE, "Next page", Action::GitNextPage),
 ];
 
 /// Projects Panel — browse mode bindings (text input modes stay raw)

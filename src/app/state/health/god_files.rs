@@ -74,7 +74,6 @@ impl App {
         self.god_file_filter_dirs = dirs;
         self.god_file_filter_mode = true;
 
-        self.show_file_tree = true;
         self.focus = crate::app::Focus::FileTree;
         self.load_file_tree();
         self.invalidate_file_tree();

@@ -115,14 +115,6 @@ pub enum Focus {
     BranchDialog,
 }
 
-/// Maps sidebar visual rows to clickable actions for mouse click handling.
-/// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
-#[derive(Debug, Clone)]
-pub enum SidebarRowAction {
-    /// A worktree row — index into app.worktrees
-    Worktree(usize),
-}
-
 /// A saved run command — can be global (~/.azureal/) or project-local (.azureal/)
 #[derive(Debug, Clone)]
 pub struct RunCommand {
@@ -498,8 +490,14 @@ pub struct GitActionsPanel {
     pub viewer_diff: Option<String>,
     /// Title for the viewer pane diff (e.g. "diff: path" or "commit: abc1234")
     pub viewer_diff_title: Option<String>,
-    /// How many commits on main are not yet in this branch (shown in commits pane right title)
+    /// How many commits on main are not yet in this branch
     pub commits_behind_main: usize,
+    /// How many commits this branch has that main doesn't
+    pub commits_ahead_main: usize,
+    /// How many commits the remote tracking branch has that we don't
+    pub commits_behind_remote: usize,
+    /// How many local commits not yet pushed to remote
+    pub commits_ahead_remote: usize,
     /// Files that are auto-resolved during rebase via union merge (cached from azufig)
     pub auto_resolve_files: Vec<String>,
     /// Auto-resolve settings overlay (opened with `s` in actions pane)

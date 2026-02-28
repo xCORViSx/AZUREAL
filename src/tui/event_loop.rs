@@ -469,7 +469,7 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
                     display,
                     Instant::now() + Duration::from_secs(2),
                 ));
-                app.sidebar_dirty = true;
+                app.invalidate_sidebar();
                 return true;
             }
             RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
@@ -488,7 +488,7 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
                         continue_with_merge: false,
                     });
                 }
-                app.sidebar_dirty = true;
+                app.invalidate_sidebar();
                 return true;
             }
             RebaseOutcome::Failed(_) => continue,

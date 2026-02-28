@@ -11,8 +11,8 @@ use super::bindings::*;
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "Worktrees", bindings: &WORKTREES },
-        HelpSection { title: "Filetree (f)", bindings: &FILE_TREE },
+        HelpSection { title: "Worktree Tabs", bindings: &WORKTREES },
+        HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
         HelpSection { title: "Session", bindings: &SESSION },
@@ -51,11 +51,12 @@ pub fn prompt_command_title() -> (String, String, String) {
     let stab = find_key_for_action(&GLOBAL, Action::CycleFocusBackward).unwrap_or("⇧Tab".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
-    let restart = find_key_for_action(&GLOBAL, Action::Restart).unwrap_or("⌃r".into());
     let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
+    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⌘r".into());
+    let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}:cancel agent | {}:quit | {}:restart",
-        p, t, g, h, dump, help, tab, stab, cancel, quit, restart
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:run | {}:cancel | {}:quit",
+        p, t, g, h, dump, help, tab, stab, wt_prev, wt_next, run, cancel, quit
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
@@ -150,8 +151,9 @@ pub fn git_actions_footer() -> String {
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    let (prev, next) = find_key_pair(&GIT_ACTIONS, Action::GitPrevWorktree, Action::GitNextWorktree, "⇧←", "⇧→");
-    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}/{}:wt | {}:close", tab, enter, refresh, prev, next, esc)
+    let (prev, next) = find_key_pair(&GIT_ACTIONS, Action::GitPrevWorktree, Action::GitNextWorktree, "[", "]");
+    let (pprev, pnext) = find_key_pair(&GIT_ACTIONS, Action::GitPrevPage, Action::GitNextPage, "{", "}");
+    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab, enter, refresh, prev, next, pprev, pnext, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.

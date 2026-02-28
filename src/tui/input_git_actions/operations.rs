@@ -483,7 +483,11 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
         Err(_) => { panel.commits.clear(); panel.selected_commit = 0; }
     }
     if !panel.is_on_main {
-        panel.commits_behind_main =
-            Git::get_commits_behind_main(&panel.worktree_path, &panel.main_branch.clone());
+        let (behind, ahead) = Git::get_main_divergence(&panel.worktree_path, &panel.main_branch);
+        panel.commits_behind_main = behind;
+        panel.commits_ahead_main = ahead;
     }
+    let (rb, ra) = Git::get_remote_divergence(&panel.worktree_path);
+    panel.commits_behind_remote = rb;
+    panel.commits_ahead_remote = ra;
 }

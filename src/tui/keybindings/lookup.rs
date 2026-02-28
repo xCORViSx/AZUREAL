@@ -17,7 +17,6 @@ pub struct KeyContext {
     pub prompt_mode: bool,
     pub edit_mode: bool,
     pub terminal_mode: bool,
-    pub filter_active: bool,
     pub help_open: bool,
 }
 
@@ -29,7 +28,6 @@ impl KeyContext {
             prompt_mode: app.prompt_mode,
             edit_mode: app.viewer_edit_mode,
             terminal_mode: app.terminal_mode,
-            filter_active: app.sidebar_filter_active,
             help_open: app.show_help,
         }
     }
@@ -48,8 +46,9 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             // sidebar filter, or wizard — they'd steal keystrokes
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
             | Action::OpenGitActions | Action::OpenHealth
-                if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-                   || ctx.filter_active => true,
+            | Action::BrowseMain | Action::OpenProjects
+            | Action::WorktreeTabPrev | Action::WorktreeTabNext
+                if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard

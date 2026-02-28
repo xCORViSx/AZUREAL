@@ -65,7 +65,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                 KeyCode::Char('n') => {
                     // Abort the rebase on the feature branch worktree,
                     // restoring it to its pre-rebase state
-                    app.sidebar_dirty = true; // Update R indicator color
+                    app.invalidate_sidebar();
                     let rcr = app.rcr_session.take().unwrap();
                     if let Some(ref sid) = rcr.session_id {
                         if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {

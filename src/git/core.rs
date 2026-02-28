@@ -658,17 +658,47 @@ impl Git {
         Ok(commits)
     }
 
-    /// How many commits on `main_branch` are not yet in HEAD (i.e. branch is behind main by N).
-    /// Returns 0 on main branch, no upstream, or any error — always safe to call.
-    pub fn get_commits_behind_main(worktree_path: &Path, main_branch: &str) -> usize {
+    /// Get divergence counts between two refs: (behind, ahead).
+    /// `behind` = commits in `upstream` not in `local`, `ahead` = commits in `local` not in `upstream`.
+    /// Uses `git rev-list --left-right --count upstream...local`.
+    fn rev_list_divergence(worktree_path: &Path, upstream: &str, local: &str) -> (usize, usize) {
         Command::new("git")
-            .args(["rev-list", "--count", &format!("HEAD..{}", main_branch)])
+            .args(["rev-list", "--left-right", "--count", &format!("{}...{}", upstream, local)])
             .current_dir(worktree_path)
             .output()
             .ok()
             .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<usize>().ok())
-            .unwrap_or(0)
+            .and_then(|o| {
+                let s = String::from_utf8_lossy(&o.stdout);
+                let mut parts = s.trim().split('\t');
+                let behind = parts.next()?.parse::<usize>().ok()?;
+                let ahead = parts.next()?.parse::<usize>().ok()?;
+                Some((behind, ahead))
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// Get divergence from main: (behind_main, ahead_of_main).
+    /// Returns (0, 0) on main branch or any error.
+    pub fn get_main_divergence(worktree_path: &Path, main_branch: &str) -> (usize, usize) {
+        Self::rev_list_divergence(worktree_path, main_branch, "HEAD")
+    }
+
+    /// Get divergence from remote tracking branch: (behind_remote, ahead_of_remote).
+    /// Returns (0, 0) when no upstream is configured or any error.
+    pub fn get_remote_divergence(worktree_path: &Path) -> (usize, usize) {
+        // Resolve upstream tracking ref (e.g. "origin/feat-x")
+        let upstream = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+            .current_dir(worktree_path)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        match upstream {
+            Some(u) if !u.is_empty() => Self::rev_list_divergence(worktree_path, &u, "HEAD"),
+            _ => (0, 0),
+        }
     }
 
     /// Get full diff for a single commit (for the viewer pane in Git panel)

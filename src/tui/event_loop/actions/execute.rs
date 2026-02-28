@@ -23,7 +23,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
     match action {
         // --- Global actions ---
         Action::Quit => { app.should_quit = true; }
-        Action::Restart => { app.should_restart = true; app.should_quit = true; }
         Action::DumpDebug => {
             app.debug_dump_naming = Some(String::new());
         }
@@ -59,23 +58,12 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             app.focus = Focus::Input;
         }
         Action::CycleFocusForward => {
-            // Clear sidebar filter on focus change
-            if app.sidebar_filter_active || !app.sidebar_filter.is_empty() {
-                app.sidebar_filter.clear();
-                app.sidebar_filter_active = false;
-                app.invalidate_sidebar();
-            }
             app.prompt_mode = false;
             app.viewer_selection = None;
             app.session_selection = None;
             app.focus_next();
         }
         Action::CycleFocusBackward => {
-            if app.sidebar_filter_active || !app.sidebar_filter.is_empty() {
-                app.sidebar_filter.clear();
-                app.sidebar_filter_active = false;
-                app.invalidate_sidebar();
-            }
             app.prompt_mode = false;
             app.viewer_selection = None;
             app.session_selection = None;
@@ -88,16 +76,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
 
         // --- All other actions are focus-specific; dispatch inline ---
         // Worktrees
-        Action::ToggleFileTree if !app.god_file_filter_mode => {
-            if app.current_worktree().and_then(|s| s.worktree_path.as_ref()).is_some() {
-                app.show_file_tree = true;
-                app.focus = Focus::FileTree;
-                app.load_file_tree();
-                app.invalidate_file_tree();
-            } else {
-                app.set_status("No worktree path available");
-            }
-        }
         Action::BrowseMain => {
             if app.browsing_main { app.exit_main_browse(); }
             else { app.enter_main_browse(); }
@@ -105,7 +83,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         Action::ReturnToWorktrees if !app.god_file_filter_mode => {
             if app.browsing_main { app.exit_main_browse(); }
             else {
-                app.show_file_tree = false;
                 app.focus = Focus::Worktrees;
                 app.invalidate_sidebar();
             }
@@ -120,8 +97,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         Action::ViewerOpenTabDialog => {
             if !app.viewer_tabs.is_empty() { app.toggle_viewer_tab_dialog(); }
         }
-        Action::ViewerNextTab => { app.viewer_next_tab(); }
-        Action::ViewerPrevTab => { app.viewer_prev_tab(); }
         Action::ViewerCloseTab => { app.viewer_close_current_tab(); }
         Action::SelectAll => {
             // Read-only viewer: select entire cache. Edit mode: select all edit content.
@@ -169,11 +144,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         Action::GoToBottom => { dispatch_go_to_bottom(app); }
 
         // --- Worktree-specific ---
-        Action::SearchFilter => {
-            app.sidebar_filter_active = true;
-            app.sidebar_filter.clear();
-            app.invalidate_sidebar();
-        }
         Action::AddWorktree => {
             // Open the lightweight name input modal for creating a new worktree
             app.focus = Focus::WorktreeCreation;
@@ -236,8 +206,12 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 app.set_status(format!("Failed: {}", e));
             }
         }
-        Action::StartResume => {
-            start_or_resume(app);
+        // Worktree tab switching (global [ / ])
+        Action::WorktreeTabPrev => {
+            app.select_prev_session();
+        }
+        Action::WorktreeTabNext => {
+            app.select_next_session();
         }
         Action::OpenHealth => {
             if app.health_panel.is_some() { app.close_health_panel(); }
@@ -410,22 +384,3 @@ fn jump_edit(app: &mut App, forward: bool) {
     }
 }
 
-/// Start or resume a Claude session from worktrees Enter key.
-/// Archived sessions can't be started — user must press `u` to unarchive first.
-fn start_or_resume(app: &mut App) {
-    if app.browsing_main { app.set_status("Read-only: main branch"); return; }
-    use crate::models::WorktreeStatus;
-    let Some(session) = app.current_worktree() else { return };
-    if session.archived {
-        app.set_status("Session is archived — press u to unarchive first");
-        return;
-    }
-    let status = session.status(app.is_session_running(&session.branch_name));
-    if matches!(status, WorktreeStatus::Pending | WorktreeStatus::Stopped
-        | WorktreeStatus::Completed | WorktreeStatus::Failed | WorktreeStatus::Waiting)
-    {
-        app.focus = Focus::Input;
-        app.prompt_mode = true;
-        app.set_status("Type your prompt and press Enter to send");
-    }
-}

@@ -9,32 +9,26 @@ use super::App;
 
 impl App {
     pub fn focus_next(&mut self) {
-        // Close overlays when cycling focus (clean slate)
-        self.show_file_tree = false;
+        // FileTree is always visible — full cycle includes it
         self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => Focus::Viewer,
+            Focus::Worktrees => Focus::FileTree,
+            Focus::FileTree => Focus::Viewer,
             Focus::Viewer => Focus::Session,
             Focus::Session => Focus::Input,
             Focus::Input => Focus::Worktrees,
-            // FileTree focus only active when overlay is open — cycle out to Worktrees
-            Focus::FileTree => Focus::Viewer,
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
 
     pub fn focus_prev(&mut self) {
-        // If file tree is open and we'd land on Worktrees, go to FileTree instead
-        // (keeps the overlay open so you can Shift+Tab back into it)
-        let file_tree_open = self.show_file_tree;
         self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => { self.show_file_tree = false; Focus::Input }
-            Focus::Viewer if file_tree_open => Focus::FileTree,
-            Focus::Viewer => { self.show_file_tree = false; Focus::Worktrees }
-            Focus::Session => { self.show_file_tree = false; Focus::Viewer }
-            Focus::Input => { self.show_file_tree = false; Focus::Session }
-            Focus::FileTree => { self.show_file_tree = false; Focus::Worktrees }
+            Focus::Worktrees => Focus::Input,
+            Focus::Input => Focus::Session,
+            Focus::Session => Focus::Viewer,
+            Focus::Viewer => Focus::FileTree,
+            Focus::FileTree => Focus::Worktrees,
             Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
         };
     }
@@ -63,16 +57,6 @@ impl App {
     pub fn close_branch_dialog(&mut self) {
         self.branch_dialog = None;
         self.focus = Focus::Worktrees;
-    }
-
-    /// Load diff content into the Viewer pane
-    pub fn load_diff_into_viewer(&mut self, diff_text: &str, title: Option<String>) {
-        self.viewer_content = Some(diff_text.to_string());
-        self.viewer_mode = crate::app::ViewerMode::Diff;
-        self.viewer_path = title.map(std::path::PathBuf::from);
-        self.viewer_scroll = 0;
-        self.viewer_lines_dirty = true;
-        self.focus = Focus::Viewer;
     }
 
     /// Open the Git Actions panel for the currently selected worktree.
@@ -115,9 +99,10 @@ impl App {
             .collect();
 
         let auto_resolve_files = crate::azufig::load_auto_resolve_files(&repo_root);
-        let commits_behind_main = if is_on_main { 0 } else {
-            Git::get_commits_behind_main(&wt_path, &main_branch)
+        let (commits_behind_main, commits_ahead_main) = if is_on_main { (0, 0) } else {
+            Git::get_main_divergence(&wt_path, &main_branch)
         };
+        let (commits_behind_remote, commits_ahead_remote) = Git::get_remote_divergence(&wt_path);
 
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
@@ -139,6 +124,9 @@ impl App {
             viewer_diff: None,
             viewer_diff_title: None,
             commits_behind_main,
+            commits_ahead_main,
+            commits_behind_remote,
+            commits_ahead_remote,
             auto_resolve_files,
             auto_resolve_overlay: None,
         });
@@ -313,7 +301,6 @@ impl App {
         self.browsing_main = true;
         // current_worktree() now returns main_worktree — load its session + file tree
         self.load_session_output();
-        self.show_file_tree = true;
         self.focus = Focus::FileTree;
         self.invalidate_sidebar();
     }
@@ -322,7 +309,6 @@ impl App {
     pub fn exit_main_browse(&mut self) {
         self.browsing_main = false;
         self.selected_worktree = self.pre_main_browse_selection.take();
-        self.show_file_tree = false;
         self.focus = Focus::Worktrees;
         self.load_session_output();
         self.invalidate_sidebar();
@@ -491,24 +477,6 @@ impl App {
 
     pub fn toggle_viewer_tab_dialog(&mut self) {
         self.viewer_tab_dialog = !self.viewer_tab_dialog;
-    }
-
-    pub fn viewer_next_tab(&mut self) {
-        if !self.viewer_tabs.is_empty() {
-            self.viewer_active_tab = (self.viewer_active_tab + 1) % self.viewer_tabs.len();
-            self.load_tab_to_viewer();
-        }
-    }
-
-    pub fn viewer_prev_tab(&mut self) {
-        if !self.viewer_tabs.is_empty() {
-            self.viewer_active_tab = if self.viewer_active_tab == 0 {
-                self.viewer_tabs.len() - 1
-            } else {
-                self.viewer_active_tab - 1
-            };
-            self.load_tab_to_viewer();
-        }
     }
 
     pub fn viewer_close_current_tab(&mut self) {

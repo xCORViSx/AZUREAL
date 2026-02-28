@@ -156,16 +156,26 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_git_status_box(f, app, git_box_area);
     } else {
         // ── Normal mode layout ───────────────────────────────────────────
-        // Session pane gets full height, Input/Terminal spans Worktrees + Viewer.
+        // Worktree tab row at top, then 3-column panes below.
         //
-        // ┌──────────┬──────────────────────────┬──────────────┐
-        // │Worktrees │         Viewer           │              │
-        // │  (15%)   │         (50%)            │  Session (35%) │
-        // ├──────────┴──────────────────────────┤              │
-        // │     Input / Terminal                │              │
-        // ├─────────────────────────────────────┴──────────────┤
-        // │                  Status Bar                        │
-        // └────────────────────────────────────────────────────┘
+        // ┌─ [★ main] │ [○ feat-a] │ [● feat-b] ───────────────┐
+        // ├──────────┬──────────────────────────┬───────────────┤
+        // │FileTree  │         Viewer           │               │
+        // │  (15%)   │         (50%)            │  Session (35%)│
+        // ├──────────┴──────────────────────────┤               │
+        // │     Input / Terminal                │               │
+        // ├─────────────────────────────────────┴───────────────┤
+        // │                  Status Bar                         │
+        // └─────────────────────────────────────────────────────┘
+
+        let normal_v = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(5)])
+            .split(content_area);
+        let tab_row_area = normal_v[0];
+        let below_tabs = normal_v[1];
+
+        app.pane_worktree_tabs = tab_row_area;
 
         let h_split = Layout::default()
             .direction(Direction::Horizontal)
@@ -174,7 +184,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 Constraint::Percentage(50),
                 Constraint::Percentage(35),
             ])
-            .split(content_area);
+            .split(below_tabs);
         let left_width = h_split[0].width + h_split[1].width;
         let session_area = h_split[2];
 
@@ -195,11 +205,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 }
                 rows
             } else { 1 };
-            let max_input = (content_area.height * 3 / 4).max(3);
+            let max_input = (below_tabs.height * 3 / 4).max(3);
             (input_lines as u16 + 2).min(max_input)
         };
 
-        let left_rect = Rect::new(content_area.x, content_area.y, left_width, content_area.height);
+        let left_rect = Rect::new(below_tabs.x, below_tabs.y, left_width, below_tabs.height);
         let left_v = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(5), Constraint::Length(input_height)])
@@ -217,11 +227,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         app.pane_viewer = top_h[1];
         app.pane_session = session_area;
 
-        if app.show_file_tree {
-            draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
-        } else {
-            draw_sidebar::draw_sidebar(f, app, top_h[0]);
-        }
+        draw_worktree_tabs(f, app, tab_row_area);
+        draw_sidebar::draw_file_tree_overlay(f, app, top_h[0]);
         draw_viewer::draw_viewer(f, app, top_h[1]);
         draw_output::draw_output(f, app, session_area);
 
@@ -491,6 +498,117 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(content).block(block), area);
+}
+
+/// Horizontal worktree tab bar — 1 row at the top of the normal mode layout.
+/// Active tab: AZURE bg + white fg + bold. Inactive: DarkGray fg.
+/// [★ main] tab always first (main branch browse). Archived worktrees shown dim with ◇.
+/// Pagination: when tabs don't fit, they are packed into pages greedily.
+fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
+    let avail = area.width as usize;
+    let base_x = area.x;
+
+    // Build tab entries: (display_label, is_active, is_archived, target)
+    // target: None = [M] main browse, Some(idx) = worktree index
+    let mut tabs: Vec<(String, bool, bool, Option<usize>)> = Vec::new();
+
+    let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
+    tabs.push((format!("★ {}", main_branch), app.browsing_main, false, None));
+
+    for (idx, wt) in app.worktrees.iter().enumerate() {
+        let active = !app.browsing_main && app.selected_worktree == Some(idx);
+        if wt.archived {
+            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx)));
+        } else {
+            let status = wt.status(app.is_session_running(&wt.branch_name));
+            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx)));
+        }
+    }
+
+    if tabs.is_empty() { return; }
+
+    // Display width of each tab: " label " = display_width + 2
+    let tab_widths: Vec<usize> = tabs.iter()
+        .map(|(label, _, _, _)| {
+            label.chars()
+                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum::<usize>()
+                + 2
+        })
+        .collect();
+
+    // Pack tabs into pages greedily
+    let mut pages: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut cur_w: usize = 0;
+    let mut active_page: usize = 0;
+
+    for (i, (&tw, (_, is_active, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+        let cost = if cur.is_empty() { tw } else { tw + 1 };
+        if !cur.is_empty() && cur_w + cost > avail {
+            pages.push(std::mem::take(&mut cur));
+            cur = vec![i];
+            cur_w = tw;
+        } else {
+            cur.push(i);
+            cur_w += cost;
+        }
+        if *is_active { active_page = pages.len(); }
+    }
+    if !cur.is_empty() { pages.push(cur); }
+
+    let total_pages = pages.len();
+    let page_tabs = match pages.get(active_page) {
+        Some(p) => p,
+        None => return,
+    };
+
+    // Build spans and hit-test regions
+    let mut spans: Vec<Span> = Vec::with_capacity(page_tabs.len() * 2 + 1);
+    let mut hits: Vec<(u16, u16, Option<usize>)> = Vec::with_capacity(page_tabs.len());
+    let mut x_cursor: u16 = base_x;
+
+    for (j, &idx) in page_tabs.iter().enumerate() {
+        let (ref label, is_active, is_archived, target) = tabs[idx];
+        let tab_text = format!(" {} ", label);
+        let tab_w = tab_text.chars()
+            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
+            .sum::<u16>();
+
+        let style = if is_active {
+            if target.is_none() {
+                // [M] active: yellow bg + black text + bold
+                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White).bg(AZURE).add_modifier(Modifier::BOLD)
+            }
+        } else if is_archived {
+            Style::default().fg(Color::DarkGray)
+        } else if target.is_none() {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        hits.push((x_cursor, x_cursor + tab_w, target));
+        spans.push(Span::styled(tab_text, style));
+        x_cursor += tab_w;
+
+        if j + 1 < page_tabs.len() {
+            spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+            x_cursor += 1;
+        }
+    }
+
+    if total_pages > 1 {
+        spans.push(Span::styled(
+            format!("  {}/{}", active_page + 1, total_pages),
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+        ));
+    }
+
+    app.worktree_tab_hits = hits;
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 /// Horizontal worktree tab bar — 1 row at the top of the git panel.

@@ -12,7 +12,8 @@ pub(super) fn dispatch_nav_down(app: &mut App) {
         Focus::Session => {
             app.scroll_session_down(1);
         }
-        Focus::Worktrees => app.select_next_session(),
+        // Worktree tab row is horizontal — Down is a no-op
+        Focus::Worktrees => {}
         Focus::FileTree => app.file_tree_next(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_down(1);
@@ -28,7 +29,8 @@ pub(super) fn dispatch_nav_up(app: &mut App) {
         Focus::Session => {
             app.scroll_session_up(1);
         }
-        Focus::Worktrees => app.select_prev_session(),
+        // Worktree tab row is horizontal — Up is a no-op
+        Focus::Worktrees => {}
         Focus::FileTree => app.file_tree_prev(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_up(1);
@@ -37,9 +39,11 @@ pub(super) fn dispatch_nav_up(app: &mut App) {
     }
 }
 
-/// Route NavLeft — only FileTree uses it (collapse dir / jump to parent)
+/// Route NavLeft — FileTree collapses dirs, Worktrees cycles tabs backward
 pub(super) fn dispatch_nav_left(app: &mut App) {
     match app.focus {
+        // Worktree tab row: Left cycles to previous tab (skip when browsing main)
+        Focus::Worktrees if !app.browsing_main => { app.select_prev_session(); }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -61,9 +65,11 @@ pub(super) fn dispatch_nav_left(app: &mut App) {
     }
 }
 
-/// Route NavRight — only FileTree uses it (expand dir)
+/// Route NavRight — FileTree expands dirs, Worktrees cycles tabs forward
 pub(super) fn dispatch_nav_right(app: &mut App) {
     match app.focus {
+        // Worktree tab row: Right cycles to next tab (skip when browsing main)
+        Focus::Worktrees if !app.browsing_main => { app.select_next_session(); }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -112,7 +118,7 @@ pub(super) fn dispatch_go_to_top(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.viewer_scroll = 0,
         Focus::Session => { app.session_scroll = 0; }
-        Focus::Worktrees => app.select_first_session(),
+        Focus::Worktrees if !app.browsing_main => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.terminal_scroll = 0;
@@ -126,7 +132,7 @@ pub(super) fn dispatch_go_to_bottom(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.scroll_viewer_to_bottom(),
         Focus::Session => { app.scroll_session_to_bottom(); }
-        Focus::Worktrees => app.select_last_session(),
+        Focus::Worktrees if !app.browsing_main => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_to_bottom();

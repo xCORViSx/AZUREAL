@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::MasterPty;
 
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, SidebarRowAction, ViewMode, ViewerMode};
+use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
 use crate::events::EventParser;
 use crate::models::{Project, Worktree};
 use crate::syntax::SyntaxHighlighter;
@@ -62,7 +62,6 @@ pub struct App {
     pub focus: Focus,
     pub prompt_mode: bool,
     pub should_quit: bool,
-    pub should_restart: bool,
     pub status_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
     pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
@@ -200,15 +199,17 @@ pub struct App {
     pub pane_worktrees: ratatui::layout::Rect,
     pub pane_viewer: ratatui::layout::Rect,
     pub pane_session: ratatui::layout::Rect,
+    /// Cached rect for the worktree tab row (mouse click hit-testing)
+    pub pane_worktree_tabs: ratatui::layout::Rect,
+    /// Hit-test regions for worktree tab bar clicks: (x_start, x_end, tab_target)
+    /// None = [M] main branch tab, Some(idx) = worktree index
+    pub worktree_tab_hits: Vec<(u16, u16, Option<usize>)>,
     /// Cached rect for the todo widget area (mouse scroll hit-testing)
     pub pane_todo: ratatui::layout::Rect,
     /// Scroll offset for the todo widget (lines scrolled from top)
     pub todo_scroll: u16,
     /// Total visual lines in the todo widget (for scroll bounds, set during draw)
     pub todo_total_lines: u16,
-    /// Maps sidebar visual rows (0-indexed) to clickable actions.
-    /// Built alongside sidebar_cache in draw_sidebar::build_sidebar_items().
-    pub sidebar_row_map: Vec<SidebarRowAction>,
     /// Cached viewport slice for session pane — avoids cloning rendered_lines_cache every frame.
     /// Only rebuilt when scroll position, content, or animation tick changes.
     pub session_viewport_cache: Vec<ratatui::text::Line<'static>>,
@@ -230,12 +231,6 @@ pub struct App {
     pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
     /// Selected Claude session file index per worktree (0 = latest/newest)
     pub session_selected_file_idx: HashMap<String, usize>,
-    /// Cached sidebar ListItems (avoid rebuilding every frame)
-    pub sidebar_cache: Vec<ratatui::widgets::ListItem<'static>>,
-    /// Flag indicating sidebar cache needs refresh
-    pub sidebar_dirty: bool,
-    /// Last known focus state for sidebar (styling changes on focus)
-    pub sidebar_focus_cached: bool,
     /// Cached file tree lines (avoid rebuilding every frame)
     pub file_tree_lines_cache: Vec<ratatui::text::Line<'static>>,
     /// Flag indicating file tree cache needs refresh
@@ -348,10 +343,6 @@ pub struct App {
     pub last_session_event_time: std::time::Instant,
     /// Whether we've already injected the MayBeCompacting banner for the current high-context period
     pub compaction_banner_injected: bool,
-    /// Sidebar search filter text (empty = no filter). Case-insensitive substring match on session names.
-    pub sidebar_filter: String,
-    /// Whether the sidebar filter input is active (typing goes to filter, not commands)
-    pub sidebar_filter_active: bool,
     /// Current todo list from latest TodoWrite tool call (main agent)
     pub current_todos: Vec<TodoItem>,
     /// Subagent todo list — shown as indented subtasks under the parent todo
@@ -380,8 +371,6 @@ pub struct App {
     pub file_tree_options_mode: bool,
     /// Selected row in the file tree options overlay (0-indexed into OPTIONS list)
     pub file_tree_options_selected: usize,
-    /// Whether the file tree overlay is shown in the Worktrees pane (toggled with 'f')
-    pub show_file_tree: bool,
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
     /// documentation coverage, and future health checks. None when closed.
     pub health_panel: Option<HealthPanel>,
@@ -505,7 +494,6 @@ impl App {
             focus: Focus::Worktrees,
             prompt_mode: false,
             should_quit: false,
-            should_restart: false,
             status_message: None,
             claude_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
@@ -577,10 +565,11 @@ impl App {
             pane_worktrees: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
             pane_session: ratatui::layout::Rect::default(),
+            pane_worktree_tabs: ratatui::layout::Rect::default(),
+            worktree_tab_hits: Vec::new(),
             pane_todo: ratatui::layout::Rect::default(),
             todo_scroll: 0,
             todo_total_lines: 0,
-            sidebar_row_map: Vec::new(),
             session_viewport_cache: Vec::new(),
             session_viewport_scroll: usize::MAX,
             session_viewport_anim_tick: u64::MAX,
@@ -593,9 +582,6 @@ impl App {
             assistant_text_blocks: 0,
             session_files: HashMap::new(),
             session_selected_file_idx: HashMap::new(),
-            sidebar_cache: Vec::new(),
-            sidebar_dirty: true,
-            sidebar_focus_cached: false,
             file_tree_lines_cache: Vec::new(),
             file_tree_dirty: true,
             file_tree_scroll_cached: usize::MAX,
@@ -647,8 +633,6 @@ impl App {
             context_pct_high: false,
             last_session_event_time: std::time::Instant::now(),
             compaction_banner_injected: false,
-            sidebar_filter: String::new(),
-            sidebar_filter_active: false,
             current_todos: Vec::new(),
             subagent_todos: Vec::new(),
             active_task_tool_ids: std::collections::HashSet::new(),
@@ -662,7 +646,6 @@ impl App {
             file_tree_hidden_dirs: HashSet::new(), // populated from azufig in load()
             file_tree_options_mode: false,
             file_tree_options_selected: 0,
-            show_file_tree: false,
             health_panel: None,
             last_health_tab: HealthTab::GodFiles,
             god_file_filter_mode: false,
@@ -705,7 +688,7 @@ impl App {
 
     /// Mark sidebar cache as dirty (call when worktrees/selection/expansion changes)
     pub fn invalidate_sidebar(&mut self) {
-        self.sidebar_dirty = true;
+        // Sidebar replaced by worktree tab row — no cache to invalidate
     }
 
     /// Mark file tree cache as dirty

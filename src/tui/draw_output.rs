@@ -611,12 +611,40 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         .border_type(if focused { BorderType::Double } else { BorderType::Plain })
         .border_style(border_style);
 
-    if !panel.is_on_main && panel.commits_behind_main > 0 {
-        block = block.title(
-            Line::from(Span::styled(
-                format!(" {} behind ", panel.commits_behind_main),
-                Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
-            )).alignment(Alignment::Right)
+    // Bottom border: divergence badges for main and remote
+    let mut bottom_spans: Vec<Span> = Vec::new();
+    // Main divergence (feature branches only)
+    if !panel.is_on_main {
+        let behind = panel.commits_behind_main;
+        let ahead = panel.commits_ahead_main;
+        if behind > 0 || ahead > 0 {
+            let mut parts = Vec::new();
+            if ahead > 0 { parts.push(format!("↑{}", ahead)); }
+            if behind > 0 { parts.push(format!("↓{}", behind)); }
+            let label = format!(" {} main ", parts.join(" "));
+            let color = if behind > 0 { Color::Red } else { Color::Green };
+            bottom_spans.push(Span::styled(label,
+                Style::default().fg(Color::White).bg(color).add_modifier(Modifier::BOLD)));
+        }
+    }
+    // Remote divergence (any branch with upstream)
+    {
+        let behind = panel.commits_behind_remote;
+        let ahead = panel.commits_ahead_remote;
+        if behind > 0 || ahead > 0 {
+            if !bottom_spans.is_empty() { bottom_spans.push(Span::raw(" ")); }
+            let mut parts = Vec::new();
+            if ahead > 0 { parts.push(format!("↑{}", ahead)); }
+            if behind > 0 { parts.push(format!("↓{}", behind)); }
+            let label = format!(" {} remote ", parts.join(" "));
+            let color = if behind > 0 { Color::Yellow } else { Color::Cyan };
+            bottom_spans.push(Span::styled(label,
+                Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)));
+        }
+    }
+    if !bottom_spans.is_empty() {
+        block = block.title_bottom(
+            Line::from(bottom_spans).alignment(Alignment::Right)
         );
     }
 

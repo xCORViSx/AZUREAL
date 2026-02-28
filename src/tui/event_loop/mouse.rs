@@ -32,18 +32,11 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     }
 
     if app.pane_worktrees.contains(pos) {
-        if app.show_file_tree {
-            // File tree overlay is showing — scroll file tree items
-            let old = app.file_tree_selected;
-            if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
-            else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
-            app.file_tree_selected != old
-        } else {
-            let old = app.selected_worktree;
-            if delta > 0 { for _ in 0..delta.abs() { app.select_next_session(); } }
-            else { for _ in 0..delta.abs() { app.select_prev_session(); } }
-            app.selected_worktree != old
-        }
+        // FileTree is always visible in the left pane — scroll file tree items
+        let old = app.file_tree_selected;
+        if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
+        else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
+        app.file_tree_selected != old
     } else if app.pane_viewer.contains(pos) {
         app.viewer_selection = None;
         if delta > 0 { app.scroll_viewer_down(delta as usize) }
@@ -88,11 +81,35 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
 /// Returns true if a redraw is needed.
 pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     use ratatui::layout::Position;
-    use crate::app::SidebarRowAction;
     let pos = Position::new(col, row);
 
     // Overlays first — clicking anywhere dismisses them
     if app.show_help { app.show_help = false; return true; }
+
+    // Worktree tab row click — select worktree or toggle BrowseMain
+    if app.pane_worktree_tabs.contains(pos) {
+        let target = app.worktree_tab_hits.iter()
+            .find(|(xs, xe, _)| col >= *xs && col < *xe)
+            .map(|(_, _, t)| *t);
+        if let Some(tab_target) = target {
+            match tab_target {
+                None => {
+                    if app.browsing_main { app.exit_main_browse(); }
+                    else { app.enter_main_browse(); }
+                }
+                Some(idx) => {
+                    if app.browsing_main { app.exit_main_browse(); }
+                    app.save_current_terminal();
+                    app.selected_worktree = Some(idx);
+                    app.load_session_output();
+                    app.invalidate_sidebar();
+                }
+            }
+        }
+        app.last_click = Some((std::time::Instant::now(), col, row));
+        return true;
+    }
+
     // Git panel is full-app layout — clicks within panes are handled, not dismissed
     if app.git_actions_panel.is_some() {
         if app.pane_viewer.contains(pos) {
@@ -119,43 +136,25 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     // Clicking any pane exits prompt mode (input pane re-enables it below)
     app.prompt_mode = false;
 
-    // Worktrees/FileTree pane — when file tree overlay is active, click selects entries;
-    // otherwise click selects worktrees or their Claude session files
+    // FileTree pane — always visible, click selects entries, double-click opens
     if app.pane_worktrees.contains(pos) {
-        if app.show_file_tree {
-            // File tree overlay: click to select, double-click to open/expand
-            app.focus = Focus::FileTree;
-            let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
-            let entry_idx = visual_row + app.file_tree_scroll;
-            if entry_idx < app.file_tree_entries.len() {
-                app.file_tree_selected = Some(entry_idx);
-                app.invalidate_file_tree();
-                let now = std::time::Instant::now();
-                let is_double = app.last_click.map_or(false, |(t, c, r)| {
-                    c == col && r == row && now.duration_since(t).as_millis() < 500
-                });
-                if is_double {
-                    let entry = &app.file_tree_entries[entry_idx];
-                    if entry.is_dir {
-                        app.toggle_file_tree_dir();
-                    } else {
-                        app.load_file_into_viewer();
-                        app.focus = Focus::Viewer;
-                    }
-                }
-            }
-        } else {
-            // Worktree list: click to select worktree
-            app.focus = Focus::Worktrees;
-            let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
-            let clicked_idx = app.sidebar_row_map.get(visual_row)
-                .map(|SidebarRowAction::Worktree(i)| *i);
-            if let Some(idx) = clicked_idx {
-                if app.selected_worktree != Some(idx) {
-                    app.save_current_terminal();
-                    app.selected_worktree = Some(idx);
-                    app.load_session_output();
-                    app.invalidate_sidebar();
+        app.focus = Focus::FileTree;
+        let visual_row = (row.saturating_sub(app.pane_worktrees.y + 1)) as usize;
+        let entry_idx = visual_row + app.file_tree_scroll;
+        if entry_idx < app.file_tree_entries.len() {
+            app.file_tree_selected = Some(entry_idx);
+            app.invalidate_file_tree();
+            let now = std::time::Instant::now();
+            let is_double = app.last_click.map_or(false, |(t, c, r)| {
+                c == col && r == row && now.duration_since(t).as_millis() < 500
+            });
+            if is_double {
+                let entry = &app.file_tree_entries[entry_idx];
+                if entry.is_dir {
+                    app.toggle_file_tree_dir();
+                } else {
+                    app.load_file_into_viewer();
+                    app.focus = Focus::Viewer;
                 }
             }
         }

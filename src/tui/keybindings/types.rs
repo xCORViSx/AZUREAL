@@ -108,7 +108,6 @@ impl KeyCombo {
 pub enum Action {
     // Global
     Quit,
-    Restart,
     DumpDebug,
     CancelClaude,
     CopySelection,
@@ -130,14 +129,11 @@ pub enum Action {
     GoToBottom,
 
     // Worktrees
-    ToggleFileTree,
-    SearchFilter,
     AddWorktree,
     BrowseBranches,
     RunCommand,
     AddRunCommand,
     ToggleArchiveWorktree,
-    StartResume,
     OpenHealth,
     OpenGitActions,
     OpenProjects,
@@ -159,8 +155,6 @@ pub enum Action {
     SelectAll,
     ViewerTabCurrent,
     ViewerOpenTabDialog,
-    ViewerNextTab,
-    ViewerPrevTab,
     ViewerCloseTab,
 
     // Viewer Edit Mode
@@ -215,6 +209,10 @@ pub enum Action {
     // Main branch browse (read-only inspection of main's files and sessions)
     BrowseMain,
 
+    // Worktree tab row navigation (global)
+    WorktreeTabPrev,
+    WorktreeTabNext,
+
     // Git Actions Panel (modal)
     GitToggleFocus,
     GitSquashMerge,
@@ -228,6 +226,8 @@ pub enum Action {
     GitAutoResolveSettings,
     GitPrevWorktree,
     GitNextWorktree,
+    GitPrevPage,
+    GitNextPage,
 
     // FileTree Options overlay
     FileTreeOptions,

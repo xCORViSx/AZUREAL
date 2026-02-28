@@ -223,7 +223,7 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                     app.auto_rebase_enabled.remove(&branch);
                 }
                 crate::azufig::set_auto_rebase(&repo_root, &branch, enabled);
-                app.sidebar_dirty = true;
+                app.invalidate_sidebar();
                 if let Some(ref mut p) = app.git_actions_panel {
                     p.result_message = Some((
                         if enabled { "Auto-rebase enabled".into() } else { "Auto-rebase disabled".into() },
@@ -283,6 +283,8 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         }
         Action::GitPrevWorktree => { switch_git_panel_worktree(app, false); }
         Action::GitNextWorktree => { switch_git_panel_worktree(app, true); }
+        Action::GitPrevPage => { switch_git_panel_page(app, false); }
+        Action::GitNextPage => { switch_git_panel_page(app, true); }
         _ => {}
     }
     Ok(())
@@ -326,6 +328,77 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
     }
 }
 
+/// Jump to the first worktree on the prev/next tab-bar page.
+/// Replicates the greedy tab packing from `draw_git_worktree_tabs` to find page boundaries,
+/// then switches to the first worktree on the target page.
+fn switch_git_panel_page(app: &mut App, forward: bool) {
+    let panel = match app.git_actions_panel.as_ref() {
+        Some(p) => p,
+        None => return,
+    };
+    let active_branch = panel.worktree_name.clone();
+    let tab_bar_width = app.pane_worktrees.width.saturating_add(
+        app.pane_viewer.width).saturating_add(app.pane_session.width) as usize;
+    if tab_bar_width == 0 { return; }
+
+    // Collect active worktrees (same filter as draw_git_worktree_tabs)
+    let active: Vec<(usize, &str)> = app.worktrees.iter().enumerate()
+        .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
+        .map(|(i, wt)| (i, wt.name()))
+        .collect();
+    if active.len() <= 1 { return; }
+
+    // Tab display widths: " name " = name_cols + 2
+    let tab_widths: Vec<usize> = active.iter()
+        .map(|(_, name)| {
+            name.chars()
+                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum::<usize>() + 2
+        })
+        .collect();
+
+    // Greedy page packing (mirrors draw_git_worktree_tabs logic)
+    let mut pages: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut cur_w: usize = 0;
+    let mut active_page: usize = 0;
+
+    for (i, &tw) in tab_widths.iter().enumerate() {
+        let cost = if cur.is_empty() { tw } else { tw + 1 };
+        if !cur.is_empty() && cur_w + cost > tab_bar_width {
+            pages.push(std::mem::take(&mut cur));
+            cur = vec![i];
+            cur_w = tw;
+        } else {
+            cur.push(i);
+            cur_w += cost;
+        }
+        if active[i].1 == active_branch { active_page = pages.len(); }
+    }
+    if !cur.is_empty() { pages.push(cur); }
+
+    let total_pages = pages.len();
+    if total_pages <= 1 { return; }
+
+    let target_page = if forward {
+        (active_page + 1) % total_pages
+    } else {
+        (active_page + total_pages - 1) % total_pages
+    };
+
+    // Jump to first worktree on the target page
+    let first_on_page = pages[target_page][0];
+    let new_idx = active[first_on_page].0;
+
+    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+    app.selected_worktree = Some(new_idx);
+    app.load_session_output();
+    app.open_git_actions_panel();
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.focused_pane = focused_pane;
+    }
+}
+
 /// Quick check if a key is a nav key (used to preserve result_message during scrolling)
 fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::event::KeyCode, _focused_pane: u8) -> Option<bool> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -333,6 +406,8 @@ fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::eve
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Char('k'))
         | (KeyModifiers::NONE, KeyCode::Down) | (KeyModifiers::NONE, KeyCode::Up)
         | (KeyModifiers::ALT, KeyCode::Up) | (KeyModifiers::ALT, KeyCode::Down)
+        | (KeyModifiers::NONE, KeyCode::Char('[')) | (KeyModifiers::NONE, KeyCode::Char(']'))
+        | (_, KeyCode::Char('{')) | (_, KeyCode::Char('}'))
     ))
 }
 

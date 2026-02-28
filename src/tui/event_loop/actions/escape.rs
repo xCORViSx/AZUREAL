@@ -8,6 +8,9 @@ use crate::app::{App, Focus};
 /// Escape dispatch — context-dependent close/back
 pub(super) fn dispatch_escape(app: &mut App) {
     match app.focus {
+        // Worktree tab row: exit BrowseMain if active, otherwise move focus to FileTree
+        Focus::Worktrees if app.browsing_main => { app.exit_main_browse(); }
+        Focus::Worktrees => { app.focus = Focus::FileTree; }
         Focus::Viewer if app.viewer_edit_mode => {
             if app.viewer_edit_dirty {
                 app.viewer_edit_discard_dialog = true;
@@ -77,12 +80,11 @@ pub(super) fn dispatch_escape(app: &mut App) {
                     .map(|p| p.to_string_lossy().to_string()).collect();
                 app.god_file_filter_mode = false;
                 app.god_file_filter_dirs.clear();
-                app.show_file_tree = false;
                 app.focus = crate::app::Focus::Worktrees;
                 app.loading_indicator = Some("Rescanning health scope…".into());
                 app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });
             } else {
-                app.show_file_tree = false;
+                // FileTree is always visible; Esc just moves focus to Worktrees
                 app.focus = Focus::Worktrees;
                 app.invalidate_sidebar();
             }
