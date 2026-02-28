@@ -991,13 +991,13 @@ Implementation: `src/app/state/health.rs` (module root: shared constants, open/c
 
 Reuses the existing 3-pane layout (`Shift+G` toggles open/close, global keybinding) — each pane detects git mode (`app.git_actions_panel.is_some()`) and renders git-specific content instead of its normal content. Accessible from any pane (skipped in prompt mode, edit mode, terminal mode, filter, wizard). Uses standard Double/Plain border types with Git brand colors: GIT_ORANGE (`#F05032`) when focused, GIT_BROWN (`#A0522D`) when unfocused.
 
-**Layout geometry (differs from normal mode):** Git mode uses a completely separate layout branch in `run.rs::ui()`. Normal mode has the input spanning only the left two columns with the session pane extending full height on the right. Git mode uses a 3-zone vertical layout: a **1-row worktree tab bar** at the top, the **3-column panes** (Min 4 rows) in the middle, and a **full-width git status box** (3 rows) at the bottom. The git tab bar uses the exact same design as the normal tab bar (`draw_worktree_tabs`) — ★ main tab, status symbols (●/◇), archived styling, pagination, hit-test regions for mouse clicks — but with the git color palette: active worktree tab: `GIT_ORANGE` bg + white fg + bold; active ★ main tab: `GIT_ORANGE` bg + black fg + bold; inactive: `GIT_BROWN` fg; separators: `GIT_BROWN │`. Clicking ★ main opens the main branch's git view. `draw_git_worktree_tabs()` in `run.rs` renders it; `switch_git_panel_worktree()` in `input_git_actions.rs` handles single-tab cycling (including main); `switch_git_panel_page()` handles page-level jumping.
+**Layout geometry (differs from normal mode):** Git mode uses a completely separate layout branch in `run.rs::ui()`. Normal mode has the input spanning only the left two columns with the session pane extending full height on the right. Git mode uses a 3-zone vertical layout: a **1-row worktree tab bar** at the top, the **3-column panes** (Min 4 rows) in the middle, and a **full-width git status box** (3 rows) at the bottom. The git tab bar uses the exact same design as the normal tab bar (`draw_worktree_tabs`) — ★ main tab, status symbols (●/◇), archived styling, pagination, hit-test regions for mouse clicks — but with the git color palette: active worktree tab: `GIT_ORANGE` bg + white fg + bold; active ★ main tab: `GIT_ORANGE` bg + black fg + bold; inactive: `GIT_BROWN` fg; separators: `GIT_BROWN │`. Clicking ★ main opens the main branch's git view (also reachable via Shift+M). `[`/`]` cycling skips main, matching normal tab row behavior. `draw_git_worktree_tabs()` in `run.rs` renders it; `switch_git_panel_worktree()` in `input_git_actions.rs` handles single-tab cycling; `switch_git_panel_page()` handles page-level jumping.
 
 **Pane mapping (git mode → normal pane):**
 
 | Layout Zone | Git Mode Content | Notes |
 |-------------|------------------|-------|
-| Tab bar (top, 1 row) | Horizontal worktree tab strip (same design as normal tab row) | ★ main + all worktrees with status symbols; `GIT_ORANGE`/`GIT_BROWN` colors; clickable; `[`/`]` cycles tabs (incl. main), `{`/`}` jumps pages |
+| Tab bar (top, 1 row) | Horizontal worktree tab strip (same design as normal tab row) | ★ main + all worktrees with status symbols; `GIT_ORANGE`/`GIT_BROWN` colors; clickable; `[`/`]` cycles worktrees (skips main, matching normal mode), `{`/`}` jumps pages; ★ main reachable via click or Shift+M |
 | Sidebar (left) | Actions list (top) + Changed Files (bottom) — split vertically | "Actions" / "Changed Files (N, +X/-Y)" |
 | Viewer (center) | File/commit diff with diff coloring | "Viewer" (or diff title) |
 | Session (right) | Commit log | "Commits (N)" |
@@ -1419,7 +1419,7 @@ azureal/
 - [x] Rebase-before-merge flow with RCR conflict resolution
 - [x] Auto-rebase toggle per worktree (sidebar `R` indicator, 2-second polling, conflict → RCR flow)
 - [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in session pane; full-width status box with prompt-style keybind hints)
-- [x] Git panel worktree tab bar (mirrors normal tab row design: ★ main tab, status symbols, archived styling, mouse clicks; GIT_ORANGE/GIT_BROWN theme; paginated; `[`/`]` cycles tabs incl. main, `{`/`}` jumps pages; focused pane preserved)
+- [x] Git panel worktree tab bar (mirrors normal tab row design: ★ main tab, status symbols, archived styling, mouse clicks; GIT_ORANGE/GIT_BROWN theme; paginated; `[`/`]` cycles worktrees (skips main), `{`/`}` jumps pages; ★ main via click/Shift+M; focused pane preserved)
 - [x] Debug dump shortcut (⌃d: creates debug output snapshot with naming dialog)
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing

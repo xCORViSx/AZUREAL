@@ -290,51 +290,39 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
     Ok(())
 }
 
-/// Cycle the git panel to the prev/next worktree (including ★ main) without
-/// closing the panel. Preserves `focused_pane` so the user stays in the same column.
+/// Cycle the git panel to the prev/next active (non-archived) worktree without
+/// closing the panel. Skips ★ main (reachable only via click/Shift+M, matching
+/// normal tab row behavior). Preserves `focused_pane` across the switch.
 fn switch_git_panel_worktree(app: &mut App, forward: bool) {
-    // Build tab targets matching draw_git_worktree_tabs: None = main, Some(idx) = worktree
-    let mut targets: Vec<Option<usize>> = Vec::new();
-    if app.main_worktree.is_some() { targets.push(None); }
-    for (idx, wt) in app.worktrees.iter().enumerate() {
-        if !wt.archived && wt.worktree_path.is_some() {
-            targets.push(Some(idx));
-        }
-    }
-    if targets.len() <= 1 { return; }
+    // Collect indices of all active worktrees (non-archived, have a real path)
+    let active: Vec<usize> = app.worktrees.iter().enumerate()
+        .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
+        .map(|(i, _)| i)
+        .collect();
+    if active.len() <= 1 { return; }
 
     // Find current position — match against panel's worktree_name
     let current_name = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_name.clone(),
         None => return,
     };
-    let main_branch = app.project.as_ref().map(|p| p.main_branch.clone()).unwrap_or_else(|| "main".into());
-    let pos = targets.iter().position(|t| match t {
-        None => current_name == main_branch,
-        Some(idx) => app.worktrees[*idx].branch_name == current_name,
+    let pos = active.iter().position(|&idx| {
+        app.worktrees[idx].branch_name == current_name
     }).unwrap_or(0);
 
     let new_pos = if forward {
-        (pos + 1) % targets.len()
+        (pos + 1) % active.len()
     } else {
-        (pos + targets.len() - 1) % targets.len()
+        (pos + active.len() - 1) % active.len()
     };
+    let new_idx = active[new_pos];
 
+    // Preserve focused pane across the rebuild
     let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
 
-    match targets[new_pos] {
-        None => {
-            // Switch to main branch git view
-            app.browsing_main = true;
-            app.open_git_actions_panel();
-            app.browsing_main = false;
-        }
-        Some(idx) => {
-            app.selected_worktree = Some(idx);
-            app.load_session_output();
-            app.open_git_actions_panel();
-        }
-    }
+    app.selected_worktree = Some(new_idx);
+    app.load_session_output();
+    app.open_git_actions_panel();
 
     if let Some(ref mut p) = app.git_actions_panel {
         p.focused_pane = focused_pane;
@@ -342,36 +330,30 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
 }
 
 /// Jump to the first worktree on the prev/next tab-bar page.
-/// Mirrors the greedy tab packing from `draw_git_worktree_tabs` (including ★ main
-/// tab) to find page boundaries, then switches to the first tab on the target page.
+/// Replicates the greedy tab packing from `draw_git_worktree_tabs` to find page
+/// boundaries, then switches to the first worktree on the target page. Skips
+/// ★ main tab (matching normal tab row page-jump behavior).
 fn switch_git_panel_page(app: &mut App, forward: bool) {
     let panel = match app.git_actions_panel.as_ref() {
         Some(p) => p,
         None => return,
     };
     let active_branch = panel.worktree_name.clone();
-    let tab_bar_width = app.pane_worktree_tabs.width as usize;
+    let tab_bar_width = app.pane_worktrees.width.saturating_add(
+        app.pane_viewer.width).saturating_add(app.pane_session.width) as usize;
     if tab_bar_width == 0 { return; }
 
-    let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
+    // Collect active worktrees (same filter as draw_git_worktree_tabs, minus main)
+    let active: Vec<(usize, &str)> = app.worktrees.iter().enumerate()
+        .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
+        .map(|(i, wt)| (i, wt.name()))
+        .collect();
+    if active.len() <= 1 { return; }
 
-    // Build tab entries matching draw_git_worktree_tabs: (label, target)
-    let mut tabs: Vec<(String, Option<usize>)> = Vec::new();
-    if app.main_worktree.is_some() {
-        tabs.push((format!("★ {}", main_branch), None));
-    }
-    for (idx, wt) in app.worktrees.iter().enumerate() {
-        if wt.archived { continue; }
-        if wt.worktree_path.is_none() { continue; }
-        let status = wt.status(app.is_session_running(&wt.branch_name));
-        tabs.push((format!("{} {}", status.symbol(), wt.name()), Some(idx)));
-    }
-    if tabs.len() <= 1 { return; }
-
-    // Tab display widths: " label " = display_width + 2
-    let tab_widths: Vec<usize> = tabs.iter()
-        .map(|(label, _)| {
-            label.chars()
+    // Tab display widths: " name " = name_cols + 2
+    let tab_widths: Vec<usize> = active.iter()
+        .map(|(_, name)| {
+            name.chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>() + 2
         })
@@ -393,12 +375,7 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
             cur.push(i);
             cur_w += cost;
         }
-        // Check if this tab is the active one
-        let is_active = match tabs[i].1 {
-            None => active_branch == main_branch,
-            Some(idx) => app.worktrees[idx].branch_name == active_branch,
-        };
-        if is_active { active_page = pages.len(); }
+        if active[i].1 == active_branch { active_page = pages.len(); }
     }
     if !cur.is_empty() { pages.push(cur); }
 
@@ -411,22 +388,14 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
         (active_page + total_pages - 1) % total_pages
     };
 
+    // Jump to first worktree on the target page
     let first_on_page = pages[target_page][0];
-    let target = tabs[first_on_page].1;
+    let new_idx = active[first_on_page].0;
 
     let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
-    match target {
-        None => {
-            app.browsing_main = true;
-            app.open_git_actions_panel();
-            app.browsing_main = false;
-        }
-        Some(idx) => {
-            app.selected_worktree = Some(idx);
-            app.load_session_output();
-            app.open_git_actions_panel();
-        }
-    }
+    app.selected_worktree = Some(new_idx);
+    app.load_session_output();
+    app.open_git_actions_panel();
     if let Some(ref mut p) = app.git_actions_panel {
         p.focused_pane = focused_pane;
     }
