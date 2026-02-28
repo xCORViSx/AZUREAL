@@ -548,7 +548,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
                 + 2;
-            if rebase.is_some() { base + 2 } else { base }
+            if rebase.is_some() { base + 1 } else { base }
         })
         .collect();
 
@@ -608,8 +608,8 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled(tab_text, style));
 
         if let Some(color) = rebase_color {
-            spans.push(Span::styled("R ", Style::default().fg(color).add_modifier(Modifier::BOLD)));
-            tab_w += 2;
+            spans.push(Span::styled("R", Style::default().fg(color).add_modifier(Modifier::BOLD)));
+            tab_w += 1;
         }
 
         hits.push((x_cursor, x_cursor + tab_w, target));
@@ -673,7 +673,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
                 + 2;
-            if rebase.is_some() { base + 2 } else { base }
+            if rebase.is_some() { base + 1 } else { base }
         })
         .collect();
 
@@ -734,8 +734,8 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled(tab_text, style));
 
         if let Some(color) = rebase_color {
-            spans.push(Span::styled("R ", Style::default().fg(color).add_modifier(Modifier::BOLD)));
-            tab_w += 2;
+            spans.push(Span::styled("R", Style::default().fg(color).add_modifier(Modifier::BOLD)));
+            tab_w += 1;
         }
 
         hits.push((x_cursor, x_cursor + tab_w, target));
