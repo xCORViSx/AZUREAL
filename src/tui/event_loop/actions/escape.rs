@@ -80,6 +80,7 @@ pub(super) fn dispatch_escape(app: &mut App) {
                     .map(|p| p.to_string_lossy().to_string()).collect();
                 app.god_file_filter_mode = false;
                 app.god_file_filter_dirs.clear();
+                app.invalidate_file_tree();
                 app.focus = crate::app::Focus::Worktrees;
                 app.loading_indicator = Some("Rescanning health scope…".into());
                 app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });

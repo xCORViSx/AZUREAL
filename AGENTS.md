@@ -517,6 +517,27 @@ f.render_widget(Paragraph::new(display_lines).block(block), area);
 
 ---
 
+### Invalidate cached panes when exiting overlay modes
+
+When a modal/overlay mode modifies a pane's visual state (e.g., scope mode adds green highlights to the file tree), exiting that mode must call `invalidate_file_tree()` (or the relevant invalidation) so the pane redraws without the overlay styling. Without it, the cached render persists until the user interacts with the pane.
+
+```rust
+// ❌ WRONG — file tree still shows scope highlights until cursor moves
+app.god_file_filter_mode = false;
+app.god_file_filter_dirs.clear();
+app.focus = Focus::Worktrees;
+
+// ✅ CORRECT — invalidate forces redraw on next frame
+app.god_file_filter_mode = false;
+app.god_file_filter_dirs.clear();
+app.invalidate_file_tree();
+app.focus = Focus::Worktrees;
+```
+
+**Affected:** Any cached pane whose rendering depends on modal state flags. Fixed in scope mode exit (`escape.rs`).
+
+---
+
 ### Background Render Thread (Session Pane)
 
 The session pane's expensive rendering pipeline (markdown parsing, syntax highlighting, text wrapping) runs on a dedicated background thread. This ensures the main event loop is never blocked by rendering, eliminating input freezing and character dropping during session updates.
