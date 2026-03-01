@@ -160,11 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn focus_worktree_creation_eq() {
-        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
-    }
-
-    #[test]
     fn focus_branch_dialog_eq() {
         assert_eq!(Focus::BranchDialog, Focus::BranchDialog);
     }
@@ -183,8 +178,7 @@ mod tests {
     fn focus_all_distinct() {
         let variants = [
             Focus::Worktrees, Focus::Session, Focus::Input,
-            Focus::WorktreeCreation, Focus::BranchDialog,
-            Focus::FileTree, Focus::Viewer,
+            Focus::BranchDialog, Focus::FileTree, Focus::Viewer,
         ];
         for i in 0..variants.len() {
             for j in (i + 1)..variants.len() {

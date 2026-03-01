@@ -1346,13 +1346,8 @@ mod tests {
     }
 
     #[test]
-    fn focus_worktree_creation_equality() {
-        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
-    }
-
-    #[test]
     fn focus_variants_are_distinct() {
-        assert_ne!(Focus::Worktrees, Focus::WorktreeCreation);
+        assert_ne!(Focus::Worktrees, Focus::BranchDialog);
     }
 
     // ── Rect construction ─────────────────────────────────────────────

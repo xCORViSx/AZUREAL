@@ -740,14 +740,6 @@ mod tests {
     }
 
     #[test]
-    fn focus_next_worktree_creation_stays() {
-        let mut app = App::new();
-        app.focus = Focus::WorktreeCreation;
-        app.focus_next();
-        assert_eq!(app.focus, Focus::WorktreeCreation);
-    }
-
-    #[test]
     fn focus_next_branch_dialog_stays() {
         let mut app = App::new();
         app.focus = Focus::BranchDialog;
@@ -818,14 +810,6 @@ mod tests {
     }
 
     #[test]
-    fn focus_prev_worktree_creation_stays() {
-        let mut app = App::new();
-        app.focus = Focus::WorktreeCreation;
-        app.focus_prev();
-        assert_eq!(app.focus, Focus::WorktreeCreation);
-    }
-
-    #[test]
     fn focus_prev_branch_dialog_stays() {
         let mut app = App::new();
         app.focus = Focus::BranchDialog;
@@ -888,31 +872,15 @@ mod tests {
         assert!(!app.show_help);
     }
 
-    // ── exit_worktree_creation_mode ──
-
-    #[test]
-    fn exit_worktree_creation_mode_sets_focus() {
-        let mut app = App::new();
-        app.focus = Focus::WorktreeCreation;
-        app.worktree_creation_input = "some text".to_string();
-        app.worktree_creation_cursor = 9;
-        app.status_message = Some("old status".to_string());
-        app.exit_worktree_creation_mode();
-        assert_eq!(app.focus, Focus::Worktrees);
-        assert!(app.worktree_creation_input.is_empty());
-        assert_eq!(app.worktree_creation_cursor, 0);
-        assert!(app.status_message.is_none());
-    }
-
     // ── open_branch_dialog ──
 
     #[test]
-    fn open_branch_dialog_empty_branches_sets_status() {
+    fn open_branch_dialog_empty_branches_still_opens() {
         let mut app = App::new();
-        app.open_branch_dialog(vec![], vec![]);
-        assert!(app.branch_dialog.is_none());
-        assert!(app.status_message.is_some());
-        assert!(app.status_message.as_deref().unwrap().contains("No branches"));
+        app.open_branch_dialog(vec![], vec![], vec![]);
+        // Dialog opens even with no branches (has "[+] Create new" row)
+        assert!(app.branch_dialog.is_some());
+        assert_eq!(app.focus, Focus::BranchDialog);
     }
 
     #[test]
@@ -921,6 +889,7 @@ mod tests {
         app.open_branch_dialog(
             vec!["main".to_string(), "dev".to_string()],
             vec!["main".to_string()],
+            vec![0, 1],
         );
         assert!(app.branch_dialog.is_some());
         assert_eq!(app.focus, Focus::BranchDialog);
@@ -937,6 +906,7 @@ mod tests {
         app.branch_dialog = Some(BranchDialog::new(
             vec!["branch".to_string()],
             vec![],
+            vec![0],
         ));
         app.focus = Focus::BranchDialog;
         app.close_branch_dialog();

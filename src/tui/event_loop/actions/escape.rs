@@ -496,17 +496,7 @@ mod tests {
         assert!(app.terminal_mode);
     }
 
-    // ── 16. WorktreeCreation focus — fallthrough (no-op) ──
-
-    #[test]
-    fn test_worktree_creation_focus_noop() {
-        let mut app = App::new();
-        app.focus = Focus::WorktreeCreation;
-        dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::WorktreeCreation);
-    }
-
-    // ── 17. BranchDialog focus — fallthrough (no-op) ──
+    // ── 16. BranchDialog focus — fallthrough (no-op) ──
 
     #[test]
     fn test_branch_dialog_focus_noop() {

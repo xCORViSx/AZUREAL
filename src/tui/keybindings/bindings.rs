@@ -296,7 +296,7 @@ mod tests {
     fn global_length() { assert_eq!(GLOBAL.len(), 17); }
 
     #[test]
-    fn worktrees_length() { assert_eq!(WORKTREES.len(), 5); }
+    fn worktrees_length() { assert_eq!(WORKTREES.len(), 4); }
 
     #[test]
     fn file_tree_length() { assert_eq!(FILE_TREE.len(), 16); }

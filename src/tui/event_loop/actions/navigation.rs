@@ -362,16 +362,6 @@ mod tests {
         assert!(!handled);
     }
 
-    #[test]
-    fn test_worktree_creation_not_handled_by_nav() {
-        let f = Focus::WorktreeCreation;
-        let handled = match f {
-            Focus::Viewer | Focus::Session | Focus::Worktrees | Focus::FileTree => true,
-            Focus::Input => true,
-            _ => false,
-        };
-        assert!(!handled);
-    }
 
     // -- Page size saturating_sub edge cases --
 
@@ -451,12 +441,6 @@ mod tests {
         assert!(!is_nav_focus);
     }
 
-    #[test]
-    fn test_focus_worktree_creation_not_nav_focus() {
-        let f = Focus::WorktreeCreation;
-        let is_nav_focus = matches!(f, Focus::Viewer | Focus::Session | Focus::Worktrees | Focus::FileTree | Focus::Input);
-        assert!(!is_nav_focus);
-    }
 
     // -- Worktrees browsing_main guard (NavLeft/NavRight/GoToTop/GoToBottom) --
 

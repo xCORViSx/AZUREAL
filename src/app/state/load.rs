@@ -66,8 +66,11 @@ impl App {
         // 2. Orphaned detached HEAD (no rebase): re-attach via checkout.
         let mut needs_refetch = false;
         let mut rebase_branches: Vec<(std::path::PathBuf, String)> = Vec::new();
+        let wt_dir = project.worktrees_dir();
         for wt in &worktrees {
             if wt.branch.is_some() { continue; }
+            // Only repair our own worktrees (main + worktrees_dir), skip external ones
+            if !wt.is_main && !wt.path.starts_with(&wt_dir) { continue; }
             if Git::is_rebase_in_progress(&wt.path) {
                 // Read the original branch from rebase state — don't abort
                 let git_dir = std::process::Command::new("git")
@@ -171,9 +174,13 @@ impl App {
             }
         }
 
-        // Add feature worktrees (azureal/* branches with active worktrees)
+        // Add feature worktrees (azureal/* branches with active worktrees).
+        // Only include worktrees whose path is under the project's worktrees_dir()
+        // to exclude worktrees created by external tools (e.g. Claude Code subagents
+        // creating worktrees inside .git/worktrees/ or .claude/worktrees/).
+        let worktrees_dir = project.worktrees_dir();
         for wt in &worktrees {
-            if !wt.is_main {
+            if !wt.is_main && wt.path.starts_with(&worktrees_dir) {
                 let branch_name = wt.branch.clone().unwrap_or_default();
                 let claude_id = crate::config::find_latest_claude_session(&wt.path);
                 if let Some(ref id) = claude_id {

@@ -712,8 +712,7 @@ mod tests {
     fn focus_all_variants_distinct() {
         let variants = [
             Focus::Worktrees, Focus::FileTree, Focus::Viewer,
-            Focus::Session, Focus::Input, Focus::WorktreeCreation,
-            Focus::BranchDialog,
+            Focus::Session, Focus::Input, Focus::BranchDialog,
         ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {
@@ -913,7 +912,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_new_empty() {
-        let d = BranchDialog::new(vec![], vec![]);
+        let d = BranchDialog::new(vec![], vec![], vec![]);
         assert!(d.branches.is_empty());
         assert!(d.checked_out.is_empty());
         assert_eq!(d.selected, 0);
@@ -926,6 +925,7 @@ mod tests {
         let d = BranchDialog::new(
             vec!["main".into(), "feat/a".into(), "feat/b".into()],
             vec![],
+            vec![0, 0, 0],
         );
         assert_eq!(d.filtered_indices, vec![0, 1, 2]);
         assert_eq!(d.selected, 0);
@@ -933,7 +933,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_is_checked_out_exact_match() {
-        let d = BranchDialog::new(vec![], vec!["main".into(), "feat/a".into()]);
+        let d = BranchDialog::new(vec![], vec!["main".into(), "feat/a".into()], vec![]);
         assert!(d.is_checked_out("main"));
         assert!(d.is_checked_out("feat/a"));
         assert!(!d.is_checked_out("feat/b"));
@@ -942,51 +942,56 @@ mod tests {
     #[test]
     fn branch_dialog_is_checked_out_remote_prefix_stripped() {
         // "origin/feat" -> local_name = "feat"
-        let d = BranchDialog::new(vec![], vec!["feat".into()]);
+        let d = BranchDialog::new(vec![], vec!["feat".into()], vec![]);
         assert!(d.is_checked_out("origin/feat"));
     }
 
     #[test]
     fn branch_dialog_is_checked_out_multi_slash() {
         // "origin/azureal/health" -> local_name = "azureal/health"
-        let d = BranchDialog::new(vec![], vec!["azureal/health".into()]);
+        let d = BranchDialog::new(vec![], vec!["azureal/health".into()], vec![]);
         assert!(d.is_checked_out("origin/azureal/health"));
     }
 
     #[test]
     fn branch_dialog_is_checked_out_no_slash_no_match() {
-        let d = BranchDialog::new(vec![], vec!["other".into()]);
+        let d = BranchDialog::new(vec![], vec!["other".into()], vec![]);
         assert!(!d.is_checked_out("feat"));
     }
 
     #[test]
     fn branch_dialog_selected_branch_with_entries() {
-        let d = BranchDialog::new(vec!["alpha".into(), "beta".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["alpha".into(), "beta".into()], vec![], vec![0, 0]);
+        // selected==0 is "[+] Create new" row, so move to first branch
+        d.select_next();
         assert_eq!(d.selected_branch(), Some(&"alpha".to_string()));
     }
 
     #[test]
     fn branch_dialog_selected_branch_empty() {
-        let d = BranchDialog::new(vec![], vec![]);
+        let d = BranchDialog::new(vec![], vec![], vec![]);
         assert_eq!(d.selected_branch(), None);
     }
 
     #[test]
     fn branch_dialog_select_next() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![]);
+        // display_len = 1 (Create new) + 3 branches = 4, max selected = 3
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
         assert_eq!(d.selected, 0);
         d.select_next();
         assert_eq!(d.selected, 1);
         d.select_next();
         assert_eq!(d.selected, 2);
+        d.select_next();
+        assert_eq!(d.selected, 3);
         // At the end, should not overflow
         d.select_next();
-        assert_eq!(d.selected, 2);
+        assert_eq!(d.selected, 3);
     }
 
     #[test]
     fn branch_dialog_select_prev() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![], vec![0, 0]);
         d.select_next(); // now at 1
         d.select_prev();
         assert_eq!(d.selected, 0);
@@ -997,7 +1002,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_select_next_on_empty() {
-        let mut d = BranchDialog::new(vec![], vec![]);
+        let mut d = BranchDialog::new(vec![], vec![], vec![]);
         d.select_next();
         assert_eq!(d.selected, 0);
     }
@@ -1007,6 +1012,7 @@ mod tests {
         let mut d = BranchDialog::new(
             vec!["main".into(), "feat/auth".into(), "feat/api".into(), "fix/bug".into()],
             vec![],
+            vec![0, 0, 0, 0],
         );
         d.filter_char('f');
         assert_eq!(d.filtered_indices, vec![1, 2, 3]); // feat/auth, feat/api, fix/bug
@@ -1016,7 +1022,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_filter_case_insensitive() {
-        let mut d = BranchDialog::new(vec!["MAIN".into(), "Feature".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["MAIN".into(), "Feature".into()], vec![], vec![0, 0]);
         d.filter_char('m');
         // "MAIN" contains "m" (case insensitive)
         assert!(d.filtered_indices.contains(&0));
@@ -1027,6 +1033,7 @@ mod tests {
         let mut d = BranchDialog::new(
             vec!["main".into(), "feat/auth".into()],
             vec![],
+            vec![0, 0],
         );
         d.filter_char('f');
         d.filter_char('e');
@@ -1042,7 +1049,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_filter_backspace_on_empty() {
-        let mut d = BranchDialog::new(vec!["a".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into()], vec![], vec![0]);
         d.filter_backspace(); // should not panic
         assert!(d.filter.is_empty());
         assert_eq!(d.filtered_indices, vec![0]);
@@ -1053,6 +1060,7 @@ mod tests {
         let mut d = BranchDialog::new(
             vec!["aaa".into(), "bbb".into(), "ccc".into()],
             vec![],
+            vec![0, 0, 0],
         );
         d.select_next();
         d.select_next();
@@ -1069,20 +1077,25 @@ mod tests {
         let mut d = BranchDialog::new(
             vec!["main".into(), "feat/auth".into(), "feat/api".into()],
             vec![],
+            vec![0, 0, 0],
         );
         d.filter_char('a');
         d.filter_char('p');
         d.filter_char('i');
         // Only "feat/api" matches
         assert_eq!(d.filtered_indices, vec![2]);
+        // selected==0 is "[+] Create new", move to first filtered branch
+        d.select_next();
         assert_eq!(d.selected_branch(), Some(&"feat/api".to_string()));
     }
 
     #[test]
-    fn branch_dialog_unicode_filter() {
-        let mut d = BranchDialog::new(vec!["feat/unicorn-\u{1F984}".into(), "main".into()], vec![]);
+    fn branch_dialog_unicode_filter_rejected_by_git_safe() {
+        // Emoji chars are rejected by is_git_safe_char, so filter stays empty
+        let mut d = BranchDialog::new(vec!["feat/unicorn-\u{1F984}".into(), "main".into()], vec![], vec![0, 0]);
         d.filter_char('\u{1F984}');
-        assert_eq!(d.filtered_indices, vec![0]);
+        // filter is still empty, all branches shown
+        assert_eq!(d.filtered_indices, vec![0, 1]);
     }
 
     // ══════════════════════════════════════════════════════════════════

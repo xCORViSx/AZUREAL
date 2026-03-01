@@ -1002,13 +1002,6 @@ mod tests {
     }
 
     #[test]
-    fn new_worktree_creation_input_empty() {
-        let app = App::new();
-        assert!(app.worktree_creation_input.is_empty());
-        assert_eq!(app.worktree_creation_cursor, 0);
-    }
-
-    #[test]
     fn new_worktree_delete_confirm_false() {
         let app = App::new();
         assert!(!app.worktree_delete_confirm);

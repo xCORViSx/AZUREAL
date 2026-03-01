@@ -387,12 +387,6 @@ mod tests {
     }
 
     #[test]
-    fn worktrees_b_browses_branches() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('b')), Some(Action::BrowseBranches));
-    }
-
-    #[test]
     fn worktrees_cmd_a_archives() {
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('a')), Some(Action::ToggleArchiveWorktree));

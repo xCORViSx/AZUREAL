@@ -8,7 +8,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 
 **Mostly Stateless Architecture:** All runtime state is derived from:
 - Git repository info via `git rev-parse --git-common-dir` (resolves to main worktree root, not worktree-local)
-- Git worktrees via `git worktree list` for active worktrees
+- Git worktrees via `git worktree list`, filtered to only include worktrees under `<repo_root>/worktrees/` (the project's `worktrees_dir()`). External worktrees (e.g. Claude Code subagent worktrees in `.git/worktrees/` or `.claude/worktrees/`) are excluded.
 - Git branches via `git branch | grep {BRANCH_PREFIX}/` for archived worktrees (prefix defined in `src/models.rs::BRANCH_PREFIX`)
 - Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
 

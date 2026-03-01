@@ -470,11 +470,6 @@ mod tests {
     }
 
     #[test]
-    fn test_focus_worktree_creation() {
-        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
-    }
-
-    #[test]
     fn test_focus_branch_dialog() {
         assert_eq!(Focus::BranchDialog, Focus::BranchDialog);
     }
@@ -525,21 +520,15 @@ mod tests {
     // -- Focus pattern matching for text input modals --
 
     #[test]
-    fn test_text_input_modal_worktree_creation() {
-        let focus = Focus::WorktreeCreation;
-        assert!(matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
-    }
-
-    #[test]
     fn test_text_input_modal_branch_dialog() {
         let focus = Focus::BranchDialog;
-        assert!(matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
+        assert!(matches!(focus, Focus::BranchDialog));
     }
 
     #[test]
     fn test_text_input_modal_viewer_is_not_modal() {
         let focus = Focus::Viewer;
-        assert!(!matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
+        assert!(!matches!(focus, Focus::BranchDialog));
     }
 
     // -- Help dialog close keys --

@@ -657,43 +657,43 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_new_populates_filtered_indices() {
-        let d = BranchDialog::new(vec!["main".into(), "dev".into()], vec![]);
+        let d = BranchDialog::new(vec!["main".into(), "dev".into()], vec![], vec![0, 0]);
         assert_eq!(d.filtered_indices, vec![0, 1]);
     }
 
     #[test]
     fn test_branch_dialog_new_selected_starts_zero() {
-        let d = BranchDialog::new(vec!["a".into()], vec![]);
+        let d = BranchDialog::new(vec!["a".into()], vec![], vec![0]);
         assert_eq!(d.selected, 0);
     }
 
     #[test]
     fn test_branch_dialog_new_filter_empty() {
-        let d = BranchDialog::new(vec!["x".into()], vec![]);
+        let d = BranchDialog::new(vec!["x".into()], vec![], vec![0]);
         assert!(d.filter.is_empty());
     }
 
     #[test]
     fn test_branch_dialog_is_checked_out_exact() {
-        let d = BranchDialog::new(vec![], vec!["main".into()]);
+        let d = BranchDialog::new(vec![], vec!["main".into()], vec![]);
         assert!(d.is_checked_out("main"));
     }
 
     #[test]
     fn test_branch_dialog_is_checked_out_remote_prefix() {
-        let d = BranchDialog::new(vec![], vec!["feature".into()]);
+        let d = BranchDialog::new(vec![], vec!["feature".into()], vec![]);
         assert!(d.is_checked_out("origin/feature"));
     }
 
     #[test]
     fn test_branch_dialog_is_checked_out_false() {
-        let d = BranchDialog::new(vec![], vec!["main".into()]);
+        let d = BranchDialog::new(vec![], vec!["main".into()], vec![]);
         assert!(!d.is_checked_out("dev"));
     }
 
     #[test]
     fn test_branch_dialog_apply_filter_narrows() {
-        let mut d = BranchDialog::new(vec!["main".into(), "dev".into(), "feature".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["main".into(), "dev".into(), "feature".into()], vec![], vec![0, 0, 0]);
         d.filter = "dev".into();
         d.apply_filter();
         assert_eq!(d.filtered_indices, vec![1]);
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_apply_filter_case_insensitive() {
-        let mut d = BranchDialog::new(vec!["Main".into(), "DEV".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["Main".into(), "DEV".into()], vec![], vec![0, 0]);
         d.filter = "dev".into();
         d.apply_filter();
         assert_eq!(d.filtered_indices, vec![1]);
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_apply_filter_empty_shows_all() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![], vec![0, 0]);
         d.filter.clear();
         d.apply_filter();
         assert_eq!(d.filtered_indices, vec![0, 1]);
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_apply_filter_resets_selected() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
         d.selected = 2;
         d.filter = "z".into();
         d.apply_filter();
@@ -726,21 +726,25 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_selected_branch() {
-        let d = BranchDialog::new(vec!["a".into(), "b".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![], vec![0, 0]);
+        // selected==0 is "[+] Create new", move to first branch
+        d.select_next();
         assert_eq!(d.selected_branch().unwrap(), "a");
     }
 
     #[test]
     fn test_branch_dialog_selected_branch_after_filter() {
-        let mut d = BranchDialog::new(vec!["alpha".into(), "beta".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["alpha".into(), "beta".into()], vec![], vec![0, 0]);
         d.filter = "bet".into();
         d.apply_filter();
+        // selected==0 is "[+] Create new", move to first filtered branch
+        d.select_next();
         assert_eq!(d.selected_branch().unwrap(), "beta");
     }
 
     #[test]
     fn test_branch_dialog_selected_branch_empty() {
-        let mut d = BranchDialog::new(vec!["a".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into()], vec![], vec![0]);
         d.filter = "zzz".into();
         d.apply_filter();
         assert!(d.selected_branch().is_none());
@@ -748,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_select_next() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
         d.select_next();
         assert_eq!(d.selected, 1);
         d.select_next();
@@ -757,15 +761,16 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_select_next_at_end() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![]);
-        d.selected = 1;
+        // display_len = 1 (Create new) + 2 branches = 3, max selected = 2
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![], vec![0, 0]);
+        d.selected = 2;
         d.select_next();
-        assert_eq!(d.selected, 1); // no change
+        assert_eq!(d.selected, 2); // no change — already at end
     }
 
     #[test]
     fn test_branch_dialog_select_prev() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into(), "b".into()], vec![], vec![0, 0]);
         d.selected = 1;
         d.select_prev();
         assert_eq!(d.selected, 0);
@@ -773,14 +778,14 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_select_prev_at_zero() {
-        let mut d = BranchDialog::new(vec!["a".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["a".into()], vec![], vec![0]);
         d.select_prev();
         assert_eq!(d.selected, 0);
     }
 
     #[test]
     fn test_branch_dialog_filter_char() {
-        let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![], vec![0, 0]);
         d.filter_char('a');
         assert_eq!(d.filter, "a");
         assert_eq!(d.filtered_indices, vec![0]);
@@ -788,7 +793,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_filter_backspace() {
-        let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![], vec![0, 0]);
         d.filter = "ab".into();
         d.filter_backspace();
         assert_eq!(d.filter, "a");
@@ -796,7 +801,7 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_filter_backspace_empty() {
-        let mut d = BranchDialog::new(vec!["abc".into()], vec![]);
+        let mut d = BranchDialog::new(vec!["abc".into()], vec![], vec![0]);
         d.filter_backspace();
         assert!(d.filter.is_empty());
     }
