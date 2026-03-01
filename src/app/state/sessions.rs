@@ -83,6 +83,7 @@ impl App {
             }
             self.set_status("Session archived");
             self.refresh_worktrees()?;
+            self.load_session_output();
         }
         Ok(())
     }

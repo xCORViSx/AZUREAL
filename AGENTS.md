@@ -346,7 +346,10 @@ pub enum WatchEvent {
 while let Some(evt) = watcher.try_recv() {
     match evt {
         SessionFileChanged => app.session_file_dirty = true,
-        WorktreeChanged => { app.file_tree_refresh_pending = true; },
+        WorktreeChanged => {
+            app.file_tree_refresh_pending = true;
+            app.worktree_tabs_refresh_pending = true;
+        },
         WatcherFailed(_) => { app.file_watcher = None; break; },
     }
 }
@@ -375,6 +378,7 @@ During active Claude streaming, events are added to `display_events` by the live
 **App state for incremental tracking:**
 - `file_watcher: Option<FileWatcher>` — background watcher thread handle (None = fallback to polling)
 - `file_tree_refresh_pending: bool` — set by WorktreeChanged, cleared after debounced refresh
+- `worktree_tabs_refresh_pending: bool` — set by WorktreeChanged, cleared after debounced `refresh_worktrees()` call (re-queries `git worktree list` to update tab row)
 - `worktree_last_notify: Instant` — timestamp of last worktree change (for 500ms debounce)
 - `rendered_content_line_count: usize` — total line count of rendered cache (equals `rendered_lines_cache.len()`)
 - `session_file_parse_offset: u64` — byte offset after last successful parse

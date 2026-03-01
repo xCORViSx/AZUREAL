@@ -243,6 +243,7 @@ pub async fn run_app(
                     }
                     crate::watcher::WatchEvent::WorktreeChanged => {
                         app.file_tree_refresh_pending = true;
+                        app.worktree_tabs_refresh_pending = true;
                         if app.health_panel.is_some() {
                             app.health_refresh_pending = true;
                         }
@@ -276,6 +277,17 @@ pub async fn run_app(
         {
             app.load_file_tree();
             app.file_tree_refresh_pending = false;
+            needs_redraw = true;
+        }
+
+        // Debounced worktree tab list refresh: re-query git for added/removed
+        // worktrees when filesystem changes are detected (e.g., external git
+        // commands, embedded terminal operations, other processes)
+        if app.worktree_tabs_refresh_pending
+            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
+        {
+            let _ = app.refresh_worktrees();
+            app.worktree_tabs_refresh_pending = false;
             needs_redraw = true;
         }
 

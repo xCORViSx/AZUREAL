@@ -208,13 +208,23 @@ impl App {
             }
         }
 
+        // Preserve current selection by branch name across refresh so the
+        // active tab doesn't jump when worktrees are added/removed/archived.
+        let prev_branch = self.selected_worktree
+            .and_then(|i| self.worktrees.get(i))
+            .map(|w| w.branch_name.clone());
+
         self.worktrees = sessions;
-        // Pre-select the worktree matching the launch directory (cwd) so the
-        // user lands on the branch they're actually working in.
-        let cwd = std::env::current_dir().ok();
+
         self.selected_worktree = if self.worktrees.is_empty() {
             None
+        } else if let Some(ref branch) = prev_branch {
+            // Restore selection to the same branch (index may have shifted)
+            self.worktrees.iter().position(|w| w.branch_name == *branch)
+                .or(Some(0))
         } else {
+            // First load: select the worktree matching cwd
+            let cwd = std::env::current_dir().ok();
             cwd.and_then(|c| self.worktrees.iter().position(|w| w.worktree_path.as_ref() == Some(&c)))
                 .or(Some(0))
         };
