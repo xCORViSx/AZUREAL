@@ -45,6 +45,14 @@ pub(super) fn accept_rcr(app: &mut App) {
                         Ok(_) => " → pushed".to_string(),
                         Err(e) => format!(" (main push failed: {})", e),
                     };
+                    // Fast-forward feature branch to main so divergence indicators reset
+                    let main_branch = app.project.as_ref()
+                        .map(|p| p.main_branch.as_str())
+                        .unwrap_or("main");
+                    let _ = std::process::Command::new("git")
+                        .args(["reset", "--hard", main_branch])
+                        .current_dir(&rcr.worktree_path)
+                        .output();
                     app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
                         branch: rcr.branch.clone(),
                         display_name: rcr.display_name.clone(),

@@ -465,8 +465,13 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
         match exec_rebase_inner(&wt_path, &project.main_branch, &ar_files) {
             RebaseOutcome::UpToDate => continue,
             RebaseOutcome::Rebased => {
+                // Push the rebased branch to its remote
+                let push_suffix = match crate::git::Git::push(&wt_path) {
+                    Ok(_) => " → pushed",
+                    Err(_) => "",
+                };
                 app.auto_rebase_success_until = Some((
-                    display,
+                    format!("{}{}", display, push_suffix),
                     Instant::now() + Duration::from_secs(2),
                 ));
                 app.invalidate_sidebar();

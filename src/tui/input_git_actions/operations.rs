@@ -328,6 +328,12 @@ pub(super) fn exec_squash_merge(app: &mut App) {
                 Ok(_) => " → pushed".to_string(),
                 Err(e) => format!(" (main push failed: {})", e),
             };
+            // Fast-forward feature branch to main so divergence indicators reset
+            // (squash merge creates a different commit, leaving the branch "ahead")
+            let _ = std::process::Command::new("git")
+                .args(["reset", "--hard", &main_branch])
+                .current_dir(&wt_path)
+                .output();
             let display = crate::models::strip_branch_prefix(&branch).to_string();
             app.git_actions_panel = None;
             app.post_merge_dialog = Some(PostMergeDialog {
