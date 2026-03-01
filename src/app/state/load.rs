@@ -407,6 +407,12 @@ impl App {
         // Load file tree for new session
         self.load_file_tree();
 
+        // Clear viewer if no worktree is active (all deleted) — prevents stale
+        // file content from a previously selected worktree lingering on screen.
+        if self.current_worktree().is_none() {
+            self.clear_viewer();
+        }
+
         // Register file watches for the new session file and worktree
         self.sync_file_watches();
 
@@ -567,8 +573,14 @@ impl App {
         self.file_tree_selected = None;
         self.file_tree_scroll = 0;
 
-        let Some(session) = self.current_worktree() else { return };
-        let Some(ref worktree_path) = session.worktree_path else { return };
+        let Some(session) = self.current_worktree() else {
+            self.invalidate_file_tree();
+            return;
+        };
+        let Some(ref worktree_path) = session.worktree_path else {
+            self.invalidate_file_tree();
+            return;
+        };
 
         self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
         if !self.file_tree_entries.is_empty() {

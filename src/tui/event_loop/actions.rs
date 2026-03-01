@@ -151,6 +151,20 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                     // All worktrees removed — now delete the branch
                     let _ = crate::git::Git::delete_branch(&project.path, &branch);
                 }
+                // Clean up stale session state for the deleted branch
+                app.session_files.remove(&branch);
+                app.session_selected_file_idx.remove(&branch);
+                app.claude_session_ids.retain(|k, _| k != &branch);
+                app.unread_sessions.remove(&branch);
+                if let Some(slots) = app.branch_slots.remove(&branch) {
+                    for slot in &slots {
+                        app.running_sessions.remove(slot);
+                        app.claude_receivers.remove(slot);
+                        app.claude_exit_codes.remove(slot);
+                        app.claude_session_ids.remove(slot);
+                    }
+                }
+                app.active_slot.remove(&branch);
                 let _ = app.refresh_worktrees();
                 // Clamp selection
                 if app.worktrees.is_empty() {
@@ -222,6 +236,20 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                             app.auto_rebase_enabled.remove(&d.branch);
                             crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
                         }
+                        // Clean up stale session state for the deleted branch
+                        app.session_files.remove(&d.branch);
+                        app.session_selected_file_idx.remove(&d.branch);
+                        app.claude_session_ids.retain(|k, _| k != &d.branch);
+                        app.unread_sessions.remove(&d.branch);
+                        if let Some(slots) = app.branch_slots.remove(&d.branch) {
+                            for slot in &slots {
+                                app.running_sessions.remove(slot);
+                                app.claude_receivers.remove(slot);
+                                app.claude_exit_codes.remove(slot);
+                                app.claude_session_ids.remove(slot);
+                            }
+                        }
+                        app.active_slot.remove(&d.branch);
                         app.set_status(format!("{} — deleted", d.display_name));
                     }
                     _ => {}

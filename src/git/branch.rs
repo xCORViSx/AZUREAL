@@ -81,32 +81,42 @@ impl Git {
         Ok((all, checked_out))
     }
 
-    /// Delete a branch
+    /// Delete a branch (local + remote + tracking ref)
     pub fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
+        // Delete local branch (try soft first, then force)
         let output = Command::new("git")
             .args(["branch", "-d", branch_name])
             .current_dir(repo_path)
             .output()
             .context("Failed to execute git branch -d")?;
 
-        if output.status.success() { return Ok(()); }
-
-        let output = Command::new("git")
-            .args(["branch", "-D", branch_name])
-            .current_dir(repo_path)
-            .output()
-            .context("Failed to execute git branch -D")?;
-
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("not found") {
-                bail!("Failed to delete branch {}: {}", branch_name, stderr);
+            let output = Command::new("git")
+                .args(["branch", "-D", branch_name])
+                .current_dir(repo_path)
+                .output()
+                .context("Failed to execute git branch -D")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.contains("not found") {
+                    bail!("Failed to delete branch {}: {}", branch_name, stderr);
+                }
             }
         }
 
-        // Also delete from remote (best-effort, non-blocking)
+        // Delete from remote (best-effort)
         let _ = Command::new("git")
             .args(["push", "origin", "--delete", branch_name])
+            .current_dir(repo_path)
+            .output();
+
+        // Prune the local remote-tracking ref so it doesn't appear in branch
+        // dialogs. git push --delete removes the remote branch but leaves
+        // refs/remotes/origin/<branch> behind until the next fetch --prune.
+        let remote_ref = format!("origin/{}", branch_name);
+        let _ = Command::new("git")
+            .args(["branch", "-r", "-d", &remote_ref])
             .current_dir(repo_path)
             .output();
 

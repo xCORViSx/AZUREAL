@@ -123,11 +123,26 @@ impl App {
         if let Some(ref wt_path) = wt.worktree_path {
             Git::remove_worktree(&project.path, wt_path)?;
         }
-        // Delete the git branch
+        // Delete the git branch (local + remote + tracking ref)
         let _ = Git::delete_branch(&project.path, &branch);
         // Clean up auto-rebase config
         self.auto_rebase_enabled.remove(&branch);
         crate::azufig::set_auto_rebase(&project.path, &branch, false);
+        // Clean up stale session state for the deleted branch so it doesn't
+        // interfere with future worktrees or accumulate dead entries.
+        self.session_files.remove(&branch);
+        self.session_selected_file_idx.remove(&branch);
+        self.claude_session_ids.retain(|k, _| k != &branch);
+        self.unread_sessions.remove(&branch);
+        if let Some(slots) = self.branch_slots.remove(&branch) {
+            for slot in &slots {
+                self.running_sessions.remove(slot);
+                self.claude_receivers.remove(slot);
+                self.claude_exit_codes.remove(slot);
+                self.claude_session_ids.remove(slot);
+            }
+        }
+        self.active_slot.remove(&branch);
         self.set_status(format!("Deleted: {}", name));
         let prev_idx = self.selected_worktree.unwrap_or(0);
         self.refresh_worktrees()?;
