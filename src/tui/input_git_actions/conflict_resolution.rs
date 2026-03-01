@@ -66,12 +66,17 @@ pub(super) fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claud
     Ok(())
 }
 
-/// Abort an in-progress rebase on the feature branch, close the overlay
+/// Abort an in-progress rebase/merge on the feature branch, close the overlay.
+/// Also cleans up squash merge state on main (repo root) if present.
 fn abort_rebase(app: &mut App, wt_path: &std::path::Path) {
     let _ = Git::rebase_abort(wt_path);
+    // Clean up squash merge state on main (no MERGE_HEAD to abort)
+    if let Some(ref p) = app.git_actions_panel {
+        Git::cleanup_squash_merge_state(&p.repo_root);
+    }
     if let Some(ref mut p) = app.git_actions_panel {
         p.conflict_overlay = None;
-        p.result_message = Some(("Rebase aborted".into(), false));
+        p.result_message = Some(("Aborted".into(), false));
         super::refresh_changed_files(p);
     }
 }
@@ -427,7 +432,7 @@ mod tests {
         handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         let (msg, is_err) = panel.result_message.as_ref().unwrap();
-        assert_eq!(msg, "Rebase aborted");
+        assert_eq!(msg, "Aborted");
         assert!(!is_err);
     }
 
@@ -438,7 +443,7 @@ mod tests {
         handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
-        assert_eq!(panel.result_message.as_ref().unwrap().0, "Rebase aborted");
+        assert_eq!(panel.result_message.as_ref().unwrap().0, "Aborted");
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -461,7 +466,7 @@ mod tests {
         handle_conflict_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         let (msg, _) = panel.result_message.as_ref().unwrap();
-        assert_eq!(msg, "Rebase aborted");
+        assert_eq!(msg, "Aborted");
     }
 
     #[test]
@@ -483,7 +488,7 @@ mod tests {
         handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
-        assert_eq!(panel.result_message.as_ref().unwrap().0, "Rebase aborted");
+        assert_eq!(panel.result_message.as_ref().unwrap().0, "Aborted");
     }
 
     #[test]
@@ -882,7 +887,7 @@ mod tests {
         handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
-        assert_eq!(panel.result_message.as_ref().unwrap().0, "Rebase aborted");
+        assert_eq!(panel.result_message.as_ref().unwrap().0, "Aborted");
     }
 
     #[test]

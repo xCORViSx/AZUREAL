@@ -879,6 +879,21 @@ mod tests {
         assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::NONE, KeyCode::Char(']')), Some(Action::GitNextWorktree));
     }
 
+    #[test]
+    fn git_shift_m_browses_main() {
+        assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::SHIFT, KeyCode::Char('M')), Some(Action::BrowseMain));
+    }
+
+    #[test]
+    fn git_shift_m_browses_main_from_file_list() {
+        assert_eq!(lookup_git_actions_action(1, false, KeyModifiers::SHIFT, KeyCode::Char('M')), Some(Action::BrowseMain));
+    }
+
+    #[test]
+    fn git_shift_m_browses_main_on_main() {
+        assert_eq!(lookup_git_actions_action(0, true, KeyModifiers::SHIFT, KeyCode::Char('M')), Some(Action::BrowseMain));
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  lookup_projects_action
     // ══════════════════════════════════════════════════════════════════

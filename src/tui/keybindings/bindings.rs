@@ -204,7 +204,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 20] = [
+pub static GIT_ACTIONS: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -225,6 +225,7 @@ pub static GIT_ACTIONS: [Keybinding; 20] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::GitNextWorktree),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('{')), &ALT_LBRACE, "Prev page", Action::GitPrevPage).paired(),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('}')), &ALT_RBRACE, "Next page", Action::GitNextPage),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('M')), "Browse main", Action::BrowseMain),
 ];
 
 /// Projects Panel — browse mode bindings (text input modes stay raw)
@@ -326,7 +327,7 @@ mod tests {
     fn health_docs_length() { assert_eq!(HEALTH_DOCS.len(), 4); }
 
     #[test]
-    fn git_actions_length() { assert_eq!(GIT_ACTIONS.len(), 20); }
+    fn git_actions_length() { assert_eq!(GIT_ACTIONS.len(), 21); }
 
     #[test]
     fn projects_browse_length() { assert_eq!(PROJECTS_BROWSE.len(), 9); }

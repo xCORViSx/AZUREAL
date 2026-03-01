@@ -417,26 +417,13 @@ impl Git {
         // git leaves this file behind even when there was nothing to commit
         let _ = std::fs::remove_file(git_dir.join("SQUASH_MSG"));
 
-        // Check for unmerged files that block `git merge --squash`
-        let status = Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(repo_root)
-            .output()
-            .ok();
-        let has_unmerged = status.as_ref()
-            .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with("U") || l.starts_with("AA") || l.starts_with("DD")))
-            .unwrap_or(false);
-        if has_unmerged {
-            // Resolve each unmerged file by accepting the current version on main
-            if let Some(ref out) = status {
-                for line in String::from_utf8_lossy(&out.stdout).lines() {
-                    if line.starts_with("U") || line.starts_with("AA") || line.starts_with("DD") {
-                        let path = line[3..].trim();
-                        let _ = Command::new("git").args(["checkout", "--ours", "--", path]).current_dir(repo_root).output();
-                        let _ = Command::new("git").args(["add", "--", path]).current_dir(repo_root).output();
-                    }
-                }
-            }
+        // Check for unmerged files that block `git merge --squash`.
+        // Covers ALL unmerged porcelain patterns: UU, AA, DD, AU, UA, DU, UD.
+        // Uses `git reset --hard HEAD` which is safe because we're about to
+        // overwrite main with the squash merge anyway, and local changes get
+        // stashed in the next step.
+        if Self::has_unmerged_files(repo_root) {
+            let _ = Command::new("git").args(["reset", "--hard", "HEAD"]).current_dir(repo_root).output();
         }
 
         // Step 0: stash any dirty working tree on main (e.g. .DS_Store, editor
@@ -567,6 +554,40 @@ impl Git {
         }
         Self::untrack_gitignored_files(worktree_path);
         Ok(())
+    }
+
+    /// Check if a worktree has unmerged files in the index.
+    /// Detects ALL porcelain v1 unmerged patterns: UU, AA, DD, AU, UA, DU, UD.
+    pub fn has_unmerged_files(path: &Path) -> bool {
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(path)
+            .output()
+            .ok();
+        status.as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| {
+                let b = l.as_bytes();
+                // Unmerged entries have U in either column, or AA/DD
+                matches!(b,
+                    [b'U', _, ..] | [_, b'U', ..] | [b'A', b'A', ..] | [b'D', b'D', ..]
+                )
+            }))
+            .unwrap_or(false)
+    }
+
+    /// Clean up leftover squash merge state on main (or any worktree).
+    /// `git merge --squash` does NOT create MERGE_HEAD, so `merge --abort`
+    /// won't work. Instead, reset the index and working tree to HEAD to
+    /// clear unmerged entries, then pop any stash that was pushed during
+    /// `squash_merge_into_main()`.
+    pub fn cleanup_squash_merge_state(repo_root: &Path) {
+        if Self::has_unmerged_files(repo_root) {
+            let _ = Command::new("git").args(["reset", "--hard", "HEAD"]).current_dir(repo_root).output();
+            // Pop stash that was pushed at the start of squash_merge_into_main()
+            let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output();
+        }
+        // Clean up SQUASH_MSG file that git leaves behind
+        let _ = std::fs::remove_file(repo_root.join(".git/SQUASH_MSG"));
     }
 
     /// Find tracked files that match `.gitignore` and remove them from the

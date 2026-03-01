@@ -126,7 +126,11 @@ impl App {
     pub fn close_git_actions_panel(&mut self) {
         if let Some(ref panel) = self.git_actions_panel {
             if panel.conflict_overlay.is_some() {
+                // Abort rebase on the feature branch (if conflict came from rebase)
                 let _ = Git::rebase_abort(&panel.worktree_path);
+                // Clean up squash merge state on main (if conflict came from
+                // squash merge — no MERGE_HEAD, so merge --abort won't work)
+                Git::cleanup_squash_merge_state(&panel.repo_root);
             }
         }
         self.git_actions_panel = None;

@@ -285,14 +285,15 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::GitNextWorktree => { switch_git_panel_worktree(app, true); }
         Action::GitPrevPage => { switch_git_panel_page(app, false); }
         Action::GitNextPage => { switch_git_panel_page(app, true); }
+        Action::BrowseMain => { switch_git_panel_to_main(app); }
         _ => {}
     }
     Ok(())
 }
 
 /// Cycle the git panel to the prev/next active (non-archived) worktree without
-/// closing the panel. Skips ★ main (reachable only via click/Shift+M, matching
-/// normal tab row behavior). Preserves `focused_pane` across the switch.
+/// closing the panel. Skips ★ main (reachable via click or Shift+M via
+/// `switch_git_panel_to_main`). Preserves `focused_pane` across the switch.
 fn switch_git_panel_worktree(app: &mut App, forward: bool) {
     // Collect indices of all active worktrees (non-archived, have a real path)
     let active: Vec<usize> = app.worktrees.iter().enumerate()
@@ -323,6 +324,27 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
     app.selected_worktree = Some(new_idx);
     app.load_session_output();
     app.open_git_actions_panel();
+
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.focused_pane = focused_pane;
+    }
+}
+
+/// Switch the git panel to show main branch status (mirrors the ★ main tab click).
+/// If already viewing main, switches back to the previously selected worktree.
+fn switch_git_panel_to_main(app: &mut App) {
+    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+    let already_on_main = app.git_actions_panel.as_ref().map(|p| p.is_on_main).unwrap_or(false);
+
+    if already_on_main {
+        // Already on main — switch back to the selected worktree
+        app.open_git_actions_panel();
+    } else {
+        // Switch to main via browsing_main flag (same as mouse click)
+        app.browsing_main = true;
+        app.open_git_actions_panel();
+        app.browsing_main = false;
+    }
 
     if let Some(ref mut p) = app.git_actions_panel {
         p.focused_pane = focused_pane;
@@ -537,6 +559,8 @@ mod tests {
     fn action_git_prev_page_eq() { assert_eq!(Action::GitPrevPage, Action::GitPrevPage); }
     #[test]
     fn action_git_next_page_eq() { assert_eq!(Action::GitNextPage, Action::GitNextPage); }
+    #[test]
+    fn action_browse_main_eq() { assert_eq!(Action::BrowseMain, Action::BrowseMain); }
 
     // ══════════════════════════════════════════════════════════════════
     //  focused_pane cycling arithmetic (toggle focus)
