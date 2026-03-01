@@ -1123,7 +1123,7 @@ When a rebase produces conflicts (either from manual `r` or pre-merge rebase in 
 Input handled by `handle_conflict_overlay()` (intercepted before commit overlay and normal panel dispatch):
 - `j/k` or `↑/↓` — navigate between two options
 - `Enter` or `y` — if selected=0: calls `spawn_conflict_claude()` to spawn a streaming Claude session
-- `n` or `Esc` — calls `abort_rebase()` which runs `Git::rebase_abort()` on the worktree + `Git::cleanup_squash_merge_state()` on main, closes overlay, shows "Aborted" status
+- `n` or `Esc` — calls `abort_rebase()` which runs `Git::rebase_abort()` on the worktree, pops the pre-rebase stash, calls `Git::cleanup_squash_merge_state()` on main, closes overlay, shows "Aborted" status
 
 `spawn_conflict_claude()` follows the GFM/DH streaming session pattern (NOT one-shot):
 1. Builds a rebase-specific prompt listing conflicted and auto-merged files with resolution instructions (read markers, edit files, `git add`, `git rebase --continue`, repeat if more conflicts, verify with `git status`)
@@ -1136,7 +1136,7 @@ Input handled by `handle_conflict_overlay()` (intercepted before commit overlay 
 
 **RCR (Rebase Conflict Resolution) mode:**
 When `spawn_conflict_claude()` activates RCR, the session pane switches to green-themed borders and titles. The user can send follow-up prompts to Claude during/after resolution — prompts are routed to `rcr.worktree_path` (feature branch worktree where the rebase is in progress) with `--resume rcr.session_id`. Each follow-up spawns a new Claude process; `rcr.slot_id` is updated to the new PID. When the RCR Claude process exits, `handle_claude_exited()` intercepts: sets `rcr.approval_pending = true`, skips the normal re-parse (preserving streaming output), and returns early. A green-bordered approval dialog renders over the session pane:
-- `y` / `Enter` — `accept_rcr()`: deletes session file from `~/.claude/projects/<worktree-encoded>/<session-id>.jsonl`, clears RCR state, restores normal borders and title. If `continue_with_merge` is true (rebase was triggered by squash merge), auto-proceeds with `Git::squash_merge_into_main()` and shows PostMergeDialog on success. If false (manual rebase), just shows "Rebase complete — conflicts resolved for <branch>".
+- `y` / `Enter` — `accept_rcr()`: deletes session file from `~/.claude/projects/<worktree-encoded>/<session-id>.jsonl`, pops the pre-rebase stash on the worktree, clears RCR state, restores normal borders and title. If `continue_with_merge` is true (rebase was triggered by squash merge), also pops the main stash, auto-proceeds with `Git::squash_merge_into_main()` and shows PostMergeDialog on success. If false (manual rebase), just shows "Rebase complete — conflicts resolved for <branch>".
 - `n` — aborts the rebase via `git rebase --abort` on the worktree, deletes session file, restores normal state
 - `Esc` — dismisses dialog, status shows "Review the resolution, then press ⌃a to accept"
 - `⌃a` — re-shows the approval dialog (available when RCR active, Claude not running, dialog not shown)

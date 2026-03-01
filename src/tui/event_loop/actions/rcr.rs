@@ -22,6 +22,12 @@ pub(super) fn accept_rcr(app: &mut App) {
         app.load_session_output();
         app.update_title_session_name();
 
+        // Pop any stash left by exec_rebase_inner's pre-rebase stash on the worktree
+        let _ = std::process::Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(&rcr.worktree_path)
+            .output();
+
         if rcr.continue_with_merge {
             // Pop any stash left from the pre-merge stash in squash_merge_into_main().
             // The merge conflicted, so the stash was never popped. Pop it before

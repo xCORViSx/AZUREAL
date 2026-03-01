@@ -70,6 +70,11 @@ pub(super) fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claud
 /// Also cleans up squash merge state on main (repo root) if present.
 fn abort_rebase(app: &mut App, wt_path: &std::path::Path) {
     let _ = Git::rebase_abort(wt_path);
+    // Pop any stash left by exec_rebase_inner's pre-rebase stash
+    let _ = std::process::Command::new("git")
+        .args(["stash", "pop"])
+        .current_dir(wt_path)
+        .output();
     // Clean up squash merge state on main (no MERGE_HEAD to abort)
     if let Some(ref p) = app.git_actions_panel {
         Git::cleanup_squash_merge_state(&p.repo_root);

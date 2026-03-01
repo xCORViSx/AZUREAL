@@ -177,6 +177,19 @@ pub(crate) fn exec_rebase_inner(
         if b.stdout == t.stdout { return RebaseOutcome::UpToDate; }
     }
 
+    // Stash any dirty working tree (.DS_Store, swap files, etc.) so rebase
+    // doesn't fail with "You have unstaged changes".
+    let stashed = std::process::Command::new("git")
+        .args(["stash", "--include-untracked"])
+        .current_dir(worktree_path)
+        .output()
+        .ok()
+        .map(|o| {
+            let msg = String::from_utf8_lossy(&o.stdout);
+            o.status.success() && !msg.contains("No local changes")
+        })
+        .unwrap_or(false);
+
     // --onto with explicit fork point replays ONLY branch-specific commits.
     // Plain `git rebase main` can replay squash merge commits from other
     // branches that ended up in this branch's history, causing hangs.
@@ -190,7 +203,10 @@ pub(crate) fn exec_rebase_inner(
             .output()
         {
             Ok(o) => o,
-            Err(e) => return RebaseOutcome::Failed(e.to_string()),
+            Err(e) => {
+                if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+                return RebaseOutcome::Failed(e.to_string());
+            }
         }
     } else {
         match std::process::Command::new("git")
@@ -199,11 +215,17 @@ pub(crate) fn exec_rebase_inner(
             .output()
         {
             Ok(o) => o,
-            Err(e) => return RebaseOutcome::Failed(e.to_string()),
+            Err(e) => {
+                if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+                return RebaseOutcome::Failed(e.to_string());
+            }
         }
     };
 
-    if output.status.success() { return RebaseOutcome::Rebased; }
+    if output.status.success() {
+        if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+        return RebaseOutcome::Rebased;
+    }
 
     let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     let text = combined.trim();
@@ -212,13 +234,16 @@ pub(crate) fn exec_rebase_inner(
 
         // Auto-resolve via union merge if ALL conflicts are in the auto-resolve list
         if let Some(outcome) = try_auto_resolve_conflicts(worktree_path, &conflicted, auto_resolve_files) {
+            if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
             return outcome;
         }
 
-        // Non-auto-resolve conflicts — leave rebase in progress for RCR resolution
+        // Non-auto-resolve conflicts — leave rebase in progress for RCR resolution.
+        // Stash stays; popped after RCR accept/abort.
         return RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output: text.to_string() };
     }
 
+    if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
     RebaseOutcome::Failed(text.to_string())
 }
 
