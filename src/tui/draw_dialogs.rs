@@ -186,7 +186,7 @@ pub fn draw_help_overlay(f: &mut Frame) {
     }
 }
 
-/// Draw branch selection dialog
+/// Draw unified Add Worktree dialog — "[+] Create new" row at top, branches below with [N WT] indicators
 pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
     let dialog_width = 60.min(area.width.saturating_sub(4));
     let dialog_height = 20.min(area.height.saturating_sub(4));
@@ -202,10 +202,9 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(dialog_area);
 
-    // Filter input
-    let filter_title = if dialog.filter.is_empty() { " Filter (type to search) " } else { " Filter " };
-    let filter_text = if dialog.filter.is_empty() { String::new() } else { dialog.filter.clone() };
-    let filter = Paragraph::new(filter_text)
+    // Filter / new name input with cursor
+    let filter_title = if dialog.filter.is_empty() { " Filter / New Name " } else { " Filter / New Name " };
+    let filter = Paragraph::new(dialog.filter.as_str())
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -214,14 +213,43 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         );
     f.render_widget(filter, dialog_chunks[0]);
 
-    // Branch list — checked-out branches shown dimmed with indicator
-    let items: Vec<ListItem> = dialog.filtered_indices.iter().enumerate().map(|(display_idx, &branch_idx)| {
+    // Show cursor in filter input
+    let cursor_x = dialog_chunks[0].x + 1 + dialog.filter.chars().count() as u16;
+    let cursor_y = dialog_chunks[0].y + 1;
+    if cursor_x < dialog_chunks[0].x + dialog_chunks[0].width - 1 {
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
+
+    // Build list: "[+] Create new" row first, then branch rows
+    let mut items: Vec<ListItem> = Vec::with_capacity(1 + dialog.filtered_indices.len());
+
+    // "Create new" row (always first, index 0)
+    let create_selected = dialog.on_create_new();
+    let create_label = if dialog.filter.is_empty() {
+        "[+] Create new".to_string()
+    } else {
+        format!("[+] Create new: {}", dialog.filter)
+    };
+    let create_style = if create_selected {
+        Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled(if create_selected { "▸ " } else { "  " }, create_style),
+        Span::styled(truncate(&create_label, dialog_width as usize - 4), create_style),
+    ])));
+
+    // Branch rows (index 1+)
+    for (display_idx, &branch_idx) in dialog.filtered_indices.iter().enumerate() {
         let branch = &dialog.branches[branch_idx];
-        let is_selected = display_idx == dialog.selected;
+        let is_selected = display_idx + 1 == dialog.selected; // +1 because "Create new" is 0
+        let wt_count = dialog.worktree_count(branch_idx);
         let is_active = dialog.is_checked_out(branch);
 
         let prefix = if is_selected { "▸ " } else { "  " };
-        let max_name_width = dialog_width as usize - 4 - if is_active { 10 } else { 0 };
+        let tag = if wt_count > 0 { format!(" [{} WT]", wt_count) } else { String::new() };
+        let max_name_width = (dialog_width as usize).saturating_sub(4 + tag.len());
 
         let style = if is_selected {
             Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
@@ -237,65 +265,32 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
             Span::raw(prefix),
             Span::styled(truncate(branch, max_name_width), style),
         ];
-        // Active worktree indicator (dim suffix)
-        if is_active {
+        if wt_count > 0 {
             let tag_style = if is_selected {
                 Style::default().bg(Color::Blue).fg(Color::Cyan)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
-            spans.push(Span::styled(" [active]", tag_style));
+            spans.push(Span::styled(tag, tag_style));
         }
-        ListItem::new(Line::from(spans))
-    }).collect();
+        items.push(ListItem::new(Line::from(spans)));
+    }
 
-    let title = format!(" Branches ({}/{}) ", dialog.filtered_indices.len(), dialog.branches.len());
+    let title = format!(" Add Worktree ({} branches) ", dialog.branches.len());
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(AZURE))
-            .title(title),
+            .title(title)
+            .title_bottom(Line::from(vec![
+                Span::styled(" Enter ", Style::default().fg(Color::Green)),
+                Span::styled("create/switch  ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Esc ", Style::default().fg(Color::Yellow)),
+                Span::styled("cancel ", Style::default().fg(Color::DarkGray)),
+            ]).alignment(Alignment::Center)),
     );
 
     f.render_widget(list, dialog_chunks[1]);
-}
-
-/// Draw worktree creation modal
-/// Compact single-line name input for creating a new worktree.
-/// Centered 50-wide, 3-tall dialog with AZURE border.
-pub fn draw_worktree_creation_modal(f: &mut Frame, app: &App) {
-    let area = f.area();
-    let modal_width = 50u16.min(area.width.saturating_sub(4));
-    let modal_height = 3u16;
-    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
-    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
-    let modal_area = Rect { x: modal_x, y: modal_y, width: modal_width, height: modal_height };
-
-    // Single-line input with border, title, and hint
-    let input_text = &app.worktree_creation_input;
-    let input_widget = Paragraph::new(Line::from(input_text.as_str()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(AZURE))
-                .title(Line::from(vec![
-                    Span::styled(" New Worktree ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                ]))
-                .title_bottom(Line::from(vec![
-                    Span::styled(" Enter ", Style::default().fg(Color::Green)),
-                    Span::styled("create  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("Esc ", Style::default().fg(Color::Yellow)),
-                    Span::styled("cancel ", Style::default().fg(Color::DarkGray)),
-                ]).alignment(Alignment::Center))
-        );
-    f.render_widget(input_widget, modal_area);
-
-    // Cursor position: single line, just offset by cursor pos
-    let cursor_x = modal_area.x + 1 + app.worktree_creation_cursor as u16;
-    let cursor_y = modal_area.y + 1;
-    if cursor_x < modal_area.x + modal_area.width - 1 {
-        f.set_cursor_position((cursor_x, cursor_y));
-    }
 }
 
 /// Draw run command picker overlay (select from saved commands)

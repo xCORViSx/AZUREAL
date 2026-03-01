@@ -249,49 +249,6 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     Ok(())
 }
 
-/// Handle keyboard input when worktree creation modal is focused.
-/// Single-line name input — Enter submits, Esc cancels.
-/// Allows all git-safe characters (rejects git-invalid: space ~ ^ : ? * [ \ ..).
-pub fn handle_worktree_creation_input(key: event::KeyEvent, app: &mut App, _claude_process: &ClaudeProcess) -> Result<()> {
-    match (key.modifiers, key.code) {
-        // Submit: create worktree with the entered name (no auto-spawn)
-        (_, KeyCode::Enter) => {
-            let name = app.worktree_creation_input.trim().to_string();
-            if !name.is_empty() {
-                app.exit_worktree_creation_mode();
-                match app.create_new_worktree_with_name(name.clone(), String::new()) {
-                    Ok(_worktree) => {
-                        app.set_status(format!("Created worktree: {}", name));
-                    }
-                    Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
-                }
-            }
-        }
-        // Allow git-safe worktree name chars (reject git-invalid: space ~ ^ : ? * [ \ ..)
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
-            if c.is_alphanumeric()
-                || c == '-'
-                || c == '_'
-                || c == '.'
-                || c == '+'
-                || c == '@'
-                || c == '/'
-                || c == '!' =>
-        {
-            app.worktree_creation_char(c);
-        }
-        (_, KeyCode::Backspace) => app.worktree_creation_backspace(),
-        (_, KeyCode::Delete) => app.worktree_creation_delete(),
-        (_, KeyCode::Left) => app.worktree_creation_left(),
-        (_, KeyCode::Right) => app.worktree_creation_right(),
-        (_, KeyCode::Home) => app.worktree_creation_home(),
-        (_, KeyCode::End) => app.worktree_creation_end(),
-        (_, KeyCode::Esc) => app.exit_worktree_creation_mode(),
-        _ => {}
-    }
-    Ok(())
-}
-
 /// Build a hidden system context string from the cached AskUserQuestion JSON.
 /// This gets prepended to the user's response so Claude knows which numbered
 /// options were displayed and can interpret "1", "2", etc. correctly.

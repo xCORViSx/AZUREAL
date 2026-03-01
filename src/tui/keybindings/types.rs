@@ -130,7 +130,6 @@ pub enum Action {
 
     // Worktrees
     AddWorktree,
-    BrowseBranches,
     RunCommand,
     AddRunCommand,
     ToggleArchiveWorktree,

@@ -104,6 +104,12 @@ impl Git {
             }
         }
 
+        // Also delete from remote (best-effort, non-blocking)
+        let _ = Command::new("git")
+            .args(["push", "origin", "--delete", branch_name])
+            .current_dir(repo_path)
+            .output();
+
         Ok(())
     }
 }

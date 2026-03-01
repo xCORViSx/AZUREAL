@@ -42,17 +42,31 @@ pub enum FileTreeAction {
 /// State for the branch selection dialog
 pub struct BranchDialog {
     pub branches: Vec<String>,
-    /// Branches already checked out in a worktree
+    /// Per-branch worktree count (active + archived)
+    pub worktree_counts: Vec<usize>,
+    /// Branches already checked out in an active worktree
     pub checked_out: Vec<String>,
+    /// 0 = "Create new" row, 1..=N = branch rows
     pub selected: usize,
     pub filter: String,
     pub filtered_indices: Vec<usize>,
 }
 
 impl BranchDialog {
-    pub fn new(branches: Vec<String>, checked_out: Vec<String>) -> Self {
+    pub fn new(branches: Vec<String>, checked_out: Vec<String>, worktree_counts: Vec<usize>) -> Self {
         let filtered_indices: Vec<usize> = (0..branches.len()).collect();
-        Self { branches, checked_out, selected: 0, filter: String::new(), filtered_indices }
+        Self { branches, worktree_counts, checked_out, selected: 0, filter: String::new(), filtered_indices }
+    }
+
+    /// True if "Create new" row is selected
+    pub fn on_create_new(&self) -> bool { self.selected == 0 }
+
+    /// Total display rows: 1 ("Create new") + filtered branches
+    pub fn display_len(&self) -> usize { 1 + self.filtered_indices.len() }
+
+    /// Worktree count for a branch index
+    pub fn worktree_count(&self, branch_idx: usize) -> usize {
+        self.worktree_counts.get(branch_idx).copied().unwrap_or(0)
     }
 
     /// True if the branch is already checked out in a worktree
@@ -71,15 +85,18 @@ impl BranchDialog {
             .filter(|(_, b)| b.to_lowercase().contains(&filter_lower))
             .map(|(i, _)| i)
             .collect();
-        if self.selected >= self.filtered_indices.len() { self.selected = 0; }
+        if self.selected >= self.display_len() { self.selected = 0; }
     }
 
+    /// Get the selected branch (None if on "Create new" row)
     pub fn selected_branch(&self) -> Option<&String> {
-        self.filtered_indices.get(self.selected).and_then(|&idx| self.branches.get(idx))
+        if self.selected == 0 { return None; }
+        let branch_idx = self.selected - 1;
+        self.filtered_indices.get(branch_idx).and_then(|&idx| self.branches.get(idx))
     }
 
     pub fn select_next(&mut self) {
-        if !self.filtered_indices.is_empty() && self.selected + 1 < self.filtered_indices.len() {
+        if self.selected + 1 < self.display_len() {
             self.selected += 1;
         }
     }
@@ -89,14 +106,21 @@ impl BranchDialog {
     }
 
     pub fn filter_char(&mut self, c: char) {
-        self.filter.push(c);
-        self.apply_filter();
+        if is_git_safe_char(c) {
+            self.filter.push(c);
+            self.apply_filter();
+        }
     }
 
     pub fn filter_backspace(&mut self) {
         self.filter.pop();
         self.apply_filter();
     }
+}
+
+/// Check if a character is valid in a git branch/worktree name
+pub fn is_git_safe_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | '+' | '@' | '/' | '!')
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,7 +135,6 @@ pub enum Focus {
     Viewer,
     Session,
     Input,
-    WorktreeCreation,
     BranchDialog,
 }
 

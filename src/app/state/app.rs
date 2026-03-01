@@ -56,10 +56,11 @@ pub struct App {
     pub input_cursor: usize,
     /// Selection range in prompt input: (start, end) as char indices
     pub input_selection: Option<(usize, usize)>,
-    pub worktree_creation_input: String,
-    pub worktree_creation_cursor: usize,
-    /// True while waiting for y/N confirmation to delete the current worktree + branch
+    /// Simple y/N delete confirmation (sole worktree on branch)
     pub worktree_delete_confirm: bool,
+    /// Pending sibling-delete confirmation: (branch_name, sibling_indices including self)
+    /// y = delete all worktrees + branch, a = archive this one only, else cancel
+    pub worktree_delete_siblings: Option<(String, Vec<usize>)>,
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub prompt_mode: bool,
@@ -494,9 +495,8 @@ impl App {
             input: String::new(),
             input_cursor: 0,
             input_selection: None,
-            worktree_creation_input: String::new(),
-            worktree_creation_cursor: 0,
             worktree_delete_confirm: false,
+            worktree_delete_siblings: None,
             view_mode: ViewMode::Session,
             focus: Focus::Worktrees,
             prompt_mode: false,

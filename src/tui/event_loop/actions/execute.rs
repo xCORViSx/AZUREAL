@@ -148,11 +148,26 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
 
         // --- Worktree-specific ---
         Action::AddWorktree => {
-            // Open the lightweight name input modal for creating a new worktree
-            app.focus = Focus::WorktreeCreation;
-            app.worktree_creation_input.clear();
-            app.worktree_creation_cursor = 0;
-            app.set_status("Enter worktree name");
+            // Unified Add Worktree dialog: fetch branches, compute per-branch worktree counts
+            if let Some(project) = app.current_project().cloned() {
+                match crate::git::Git::list_all_branches_with_status(&project.path) {
+                    Ok((branches, checked_out)) => {
+                        // Per-branch worktree count: how many worktrees (active + archived) use each branch
+                        let worktree_counts: Vec<usize> = branches.iter().map(|branch| {
+                            let local = if branch.contains('/') {
+                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                            } else {
+                                branch.clone()
+                            };
+                            app.worktrees.iter().filter(|wt| wt.branch_name == *branch || wt.branch_name == local).count()
+                        }).collect();
+                        app.open_branch_dialog(branches, checked_out, worktree_counts);
+                    }
+                    Err(e) => app.set_status(format!("Failed to list branches: {}", e)),
+                }
+            } else {
+                app.set_status("No project loaded — open a project first");
+            }
         }
         Action::NewSession => {
             // Start a fresh Claude session in the current worktree (don't resume)
@@ -186,16 +201,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 }
             }
         }
-        Action::BrowseBranches => {
-            if let Some(project) = app.current_project() {
-                match crate::git::Git::list_all_branches_with_status(&project.path) {
-                    Ok((branches, checked_out)) => app.open_branch_dialog(branches, checked_out),
-                    Err(e) => app.set_status(format!("Failed to list branches: {}", e)),
-                }
-            } else {
-                app.set_status("No project loaded — open a project first");
-            }
-        }
         Action::RunCommand => { app.open_run_command_picker(); }
         Action::AddRunCommand => { app.open_run_command_dialog(); }
         Action::ToggleArchiveWorktree => {
@@ -210,14 +215,31 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             }
         }
         Action::DeleteWorktree => {
-            if let Some(wt) = app.current_worktree() {
+            if let Some(wt) = app.current_worktree().cloned() {
                 if let Some(project) = &app.project {
                     if wt.branch_name == project.main_branch {
                         app.set_status("Cannot delete main branch");
                     } else {
-                        let name = wt.name().to_string();
-                        app.set_status(format!("Delete '{}' and its branch? (y/N)", name));
-                        app.worktree_delete_confirm = true;
+                        // Sibling guard: find other worktrees on the same branch
+                        let current_idx = app.selected_worktree.unwrap_or(0);
+                        let sibling_indices: Vec<usize> = app.worktrees.iter().enumerate()
+                            .filter(|(i, w)| *i != current_idx && w.branch_name == wt.branch_name)
+                            .map(|(i, _)| i)
+                            .collect();
+                        if sibling_indices.is_empty() {
+                            // Sole worktree on this branch — normal delete flow
+                            let name = wt.name().to_string();
+                            app.set_status(format!("Delete '{}' and its branch? (y/N)", name));
+                            app.worktree_delete_confirm = true;
+                        } else {
+                            // Has siblings — can't delete branch until all worktrees are gone
+                            let count = sibling_indices.len();
+                            app.set_status(format!(
+                                "{} other worktree{} on this branch. Delete all? (y) Archive only? (a)",
+                                count, if count == 1 { "" } else { "s" }
+                            ));
+                            app.worktree_delete_siblings = Some((wt.branch_name.clone(), sibling_indices));
+                        }
                     }
                 }
             }

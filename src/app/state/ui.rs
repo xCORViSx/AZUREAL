@@ -17,7 +17,7 @@ impl App {
             Focus::Viewer => Focus::Session,
             Focus::Session => Focus::Input,
             Focus::Input => Focus::Worktrees,
-            Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
+            Focus::BranchDialog => self.focus,
         };
     }
 
@@ -29,7 +29,7 @@ impl App {
             Focus::Session => Focus::Viewer,
             Focus::Viewer => Focus::FileTree,
             Focus::FileTree => Focus::Worktrees,
-            Focus::WorktreeCreation | Focus::BranchDialog => self.focus,
+            Focus::BranchDialog => self.focus,
         };
     }
 
@@ -38,19 +38,8 @@ impl App {
         if self.terminal_mode { self.close_terminal(); } else { self.open_terminal(); }
     }
 
-    pub fn exit_worktree_creation_mode(&mut self) {
-        self.focus = Focus::Worktrees;
-        self.clear_worktree_creation_input();
-        self.clear_status();
-    }
-
-    // Branch dialog
-    pub fn open_branch_dialog(&mut self, branches: Vec<String>, checked_out: Vec<String>) {
-        if branches.is_empty() {
-            self.set_status("No branches found");
-            return;
-        }
-        self.branch_dialog = Some(BranchDialog::new(branches, checked_out));
+    pub fn open_branch_dialog(&mut self, branches: Vec<String>, checked_out: Vec<String>, worktree_counts: Vec<usize>) {
+        self.branch_dialog = Some(BranchDialog::new(branches, checked_out, worktree_counts));
         self.focus = Focus::BranchDialog;
     }
 

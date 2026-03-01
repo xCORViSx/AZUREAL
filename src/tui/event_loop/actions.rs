@@ -33,7 +33,7 @@ use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
 use super::super::input_output::handle_session_input;
 use super::super::input_worktrees::handle_worktrees_input;
-use super::super::input_terminal::{handle_input_mode, handle_worktree_creation_input};
+use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
 use super::super::input_projects::handle_projects_input;
 
@@ -119,6 +119,65 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
             }
         } else {
             app.set_status("Delete cancelled");
+        }
+        return Ok(());
+    }
+
+    // Sibling worktree delete: y = delete all siblings + current + branch, a = archive current only
+    if let Some((ref _branch, ref _siblings)) = app.worktree_delete_siblings {
+        let siblings_data = app.worktree_delete_siblings.take().unwrap();
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let (branch, mut sibling_indices) = siblings_data;
+                // Include current worktree index
+                if let Some(current) = app.selected_worktree {
+                    sibling_indices.push(current);
+                }
+                // Sort descending so we remove from the end first (indices stay valid)
+                sibling_indices.sort_unstable();
+                sibling_indices.dedup();
+                sibling_indices.reverse();
+                let project = app.project.clone();
+                if let Some(project) = project {
+                    for &idx in &sibling_indices {
+                        if let Some(wt) = app.worktrees.get(idx) {
+                            if let Some(ref wt_path) = wt.worktree_path {
+                                let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                            }
+                            app.auto_rebase_enabled.remove(&wt.branch_name);
+                            crate::azufig::set_auto_rebase(&project.path, &wt.branch_name, false);
+                        }
+                    }
+                    // All worktrees removed — now delete the branch
+                    let _ = crate::git::Git::delete_branch(&project.path, &branch);
+                }
+                let _ = app.refresh_worktrees();
+                // Clamp selection
+                if app.worktrees.is_empty() {
+                    app.selected_worktree = None;
+                } else if let Some(sel) = app.selected_worktree {
+                    if sel >= app.worktrees.len() {
+                        app.selected_worktree = Some(app.worktrees.len() - 1);
+                    }
+                }
+                app.set_status(format!("Deleted all worktrees on {} and branch", branch));
+            }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                // Archive current only — remove worktree dir, keep branch
+                if let Some(project) = &app.project {
+                    if let Some(wt) = app.current_worktree() {
+                        if let Some(ref wt_path) = wt.worktree_path {
+                            let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                        }
+                        let name = wt.name().to_string();
+                        let _ = app.refresh_worktrees();
+                        app.set_status(format!("Archived '{}' — branch kept (other worktrees still active)", name));
+                    }
+                }
+            }
+            _ => {
+                app.set_status("Delete cancelled");
+            }
         }
         return Ok(());
     }
@@ -230,12 +289,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
 
     // Text input modals bypass keybinding resolution entirely — they consume
     // all keypresses (including Shift+G, etc.) as literal text input.
-    if matches!(app.focus, Focus::WorktreeCreation | Focus::BranchDialog) {
-        match app.focus {
-            Focus::WorktreeCreation => return handle_worktree_creation_input(key, app, claude_process),
-            Focus::BranchDialog => return handle_branch_dialog_input(key, app),
-            _ => unreachable!(),
-        }
+    if app.focus == Focus::BranchDialog {
+        return handle_branch_dialog_input(key, app);
     }
 
     // --- Centralized keybinding resolution ---
@@ -268,7 +323,6 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         Focus::Viewer => handle_viewer_input(key, app)?,
         Focus::Session => handle_session_input(key, app)?,
         Focus::Input => handle_input_mode(key, app, claude_process)?,
-        Focus::WorktreeCreation => handle_worktree_creation_input(key, app, claude_process)?,
         Focus::BranchDialog => handle_branch_dialog_input(key, app)?,
     }
 

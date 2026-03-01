@@ -82,15 +82,14 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         match (app.focus, app.view_mode) {
             (Focus::Worktrees, _) => {
                 if app.is_current_session_running() {
-                    "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  ⌃c:cancel  Tab:switch"
+                    "?:help  f:files  n:new  a:add  r:run  g:godfiles  G:git  P:projects  ⌃c:cancel  Tab:switch"
                 } else {
-                    "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
+                    "?:help  f:files  n:new  a:add  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
                 }
             }
             (Focus::Session, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
             (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
-            (Focus::WorktreeCreation, _) => "Enter:create  Esc:cancel",
-            (Focus::BranchDialog, _) => "j/k:select  Enter:switch/create  Esc:cancel  type to filter",
+            (Focus::BranchDialog, _) => "j/k:select  Enter:create/switch  Esc:cancel  type to filter/name",
             (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back",
             (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  e:edit  Esc:close  Tab:switch",
         }.to_string()

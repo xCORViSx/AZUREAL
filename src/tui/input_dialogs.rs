@@ -11,11 +11,12 @@ use crossterm::event::{self, KeyCode};
 use crate::app::{App, Focus, RunCommand};
 use crate::claude::ClaudeProcess;
 use crate::git::Git;
-use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog};
+use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog, is_git_safe_char};
 use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
 
 /// Handle keyboard input when Branch dialog is focused.
 /// Nav/Enter/Esc through keybindings; filter chars (Backspace, Char) stay raw.
+/// selected==0 is "Create new" row, selected>=1 is branch rows.
 pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     if let Some(ref mut dialog) = app.branch_dialog {
         // Try centralized bindings first for structural keys
@@ -24,11 +25,28 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                 Action::NavDown => dialog.select_next(),
                 Action::NavUp => dialog.select_prev(),
                 Action::Confirm => {
-                    if let Some(branch) = dialog.selected_branch().cloned() {
+                    if dialog.on_create_new() {
+                        // "Create new" row — use filter text as worktree name
+                        let name = dialog.filter.trim().to_string();
+                        if name.is_empty() {
+                            app.set_status("Enter a name for the new worktree");
+                            return Ok(());
+                        }
+                        app.close_branch_dialog();
+                        match app.create_new_worktree_with_name(name.clone(), String::new()) {
+                            Ok(_wt) => app.set_status(format!("Created worktree: {}", name)),
+                            Err(e) => app.set_status(format!("Failed: {}", e)),
+                        }
+                    } else if let Some(branch) = dialog.selected_branch().cloned() {
                         let is_active = dialog.is_checked_out(&branch);
                         if is_active {
                             // Branch already has a worktree — switch focus to it
-                            let target_idx = app.worktrees.iter().position(|wt| wt.branch_name == branch);
+                            let local_name = if branch.contains('/') {
+                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                            } else {
+                                branch.clone()
+                            };
+                            let target_idx = app.worktrees.iter().position(|wt| wt.branch_name == branch || wt.branch_name == local_name);
                             if let Some(idx) = target_idx {
                                 app.selected_worktree = Some(idx);
                                 app.set_status(format!("Switched to {}", branch));
@@ -58,10 +76,10 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
             return Ok(());
         }
 
-        // Raw text input for filter (not rebindable)
+        // Raw text input for filter — only git-safe chars allowed
         match key.code {
             KeyCode::Backspace => dialog.filter_backspace(),
-            KeyCode::Char(c) => dialog.filter_char(c),
+            KeyCode::Char(c) if is_git_safe_char(c) => dialog.filter_char(c),
             _ => {}
         }
     } else {

@@ -159,65 +159,6 @@ impl App {
         }
     }
 
-    // Worktree creation input methods
-
-    /// Handle character input for worktree creation
-    pub fn worktree_creation_char(&mut self, c: char) {
-        self.worktree_creation_input.insert(self.worktree_creation_cursor, c);
-        self.worktree_creation_cursor += c.len_utf8();
-    }
-
-    /// Handle backspace for worktree creation
-    pub fn worktree_creation_backspace(&mut self) {
-        if self.worktree_creation_cursor > 0 {
-            let mut idx = self.worktree_creation_cursor - 1;
-            while idx > 0 && !self.worktree_creation_input.is_char_boundary(idx) { idx -= 1; }
-            self.worktree_creation_input.remove(idx);
-            self.worktree_creation_cursor = idx;
-        }
-    }
-
-    /// Handle delete for worktree creation
-    pub fn worktree_creation_delete(&mut self) {
-        if self.worktree_creation_cursor < self.worktree_creation_input.len() {
-            self.worktree_creation_input.remove(self.worktree_creation_cursor);
-        }
-    }
-
-    /// Move cursor left in worktree creation
-    pub fn worktree_creation_left(&mut self) {
-        if self.worktree_creation_cursor > 0 {
-            let mut idx = self.worktree_creation_cursor - 1;
-            while idx > 0 && !self.worktree_creation_input.is_char_boundary(idx) { idx -= 1; }
-            self.worktree_creation_cursor = idx;
-        }
-    }
-
-    /// Move cursor right in worktree creation
-    pub fn worktree_creation_right(&mut self) {
-        if self.worktree_creation_cursor < self.worktree_creation_input.len() {
-            let mut idx = self.worktree_creation_cursor + 1;
-            while idx < self.worktree_creation_input.len() && !self.worktree_creation_input.is_char_boundary(idx) { idx += 1; }
-            self.worktree_creation_cursor = idx;
-        }
-    }
-
-    /// Move cursor to start of worktree creation input
-    pub fn worktree_creation_home(&mut self) {
-        self.worktree_creation_cursor = 0;
-    }
-
-    /// Move cursor to end of worktree creation input
-    pub fn worktree_creation_end(&mut self) {
-        self.worktree_creation_cursor = self.worktree_creation_input.len();
-    }
-
-    /// Clear worktree creation input
-    pub fn clear_worktree_creation_input(&mut self) {
-        self.worktree_creation_input.clear();
-        self.worktree_creation_cursor = 0;
-    }
-
     // ========== PROMPT INPUT SELECTION METHODS ==========
 
     /// Start a new selection at cursor position

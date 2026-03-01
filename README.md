@@ -33,7 +33,7 @@
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)
 - **Mouse Support** — Click to focus panes, select sessions/files, position cursor; drag to select text; scroll by cursor position; Cmd+C to copy selection. In file edit mode: click to position edit cursor (including on wrapped lines), drag to create selections
 - **Diff Viewer** — Syntax-highlighted git diffs per worktree; inline diff viewing in the Git panel for changed files and commits
-- **Creation Wizard** — Tabbed dialog for creating worktrees and sessions
+- **Add Worktree Dialog** — Unified dialog (`a` key) with "[+] Create new" row and branch list with `[N WT]` worktree count indicators; filter input doubles as new worktree name with git-safe character validation
 - **Run Commands** — Save and execute shell commands/scripts globally or per-project; Prompt mode lets Claude generate commands from natural-language descriptions; `d` to delete with y/n confirmation; `⌃s` toggles global/project scope in add/edit dialog; picker shows G/P scope badge
 - **Hook Display** — All Claude Code hook types displayed inline in conversation
 - **Token Usage Counter** — Color-coded context window percentage on Session pane border (green/yellow/red) to predict compaction; at 95%+, a 20-second inactivity watcher detects likely auto-compaction and shows a banner so the user knows why the session appears frozen
@@ -104,7 +104,7 @@ azureal
 | `/` | Search/filter sessions (Worktrees); Search text (Session); Filter/search sessions (Session list) |
 | `?` | Help |
 | `⌘a` | Archive/unarchive worktree (keeps branch) |
-| `⌘d` | Delete worktree + branch (y/N confirm) |
+| `⌘d` | Delete worktree + branch (sibling guard: y=delete all, a=archive only) |
 | `⌃d` | Debug dump (save session state snapshot) |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |

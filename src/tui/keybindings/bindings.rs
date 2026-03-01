@@ -64,9 +64,8 @@ pub static GLOBAL: [Keybinding; 17] = [
 ];
 
 /// Worktree tab row bindings — actions available when tab row is focused
-pub static WORKTREES: [Keybinding; 5] = [
+pub static WORKTREES: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add worktree", Action::AddWorktree),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('b')), "Browse branches", Action::BrowseBranches),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Toggle archive", Action::ToggleArchiveWorktree),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('d')), "Delete worktree", Action::DeleteWorktree),
