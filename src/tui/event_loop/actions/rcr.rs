@@ -30,16 +30,28 @@ pub(super) fn accept_rcr(app: &mut App) {
                 .args(["stash", "pop"])
                 .current_dir(&rcr.repo_root)
                 .output();
+
+            // Push the rebased feature branch to its remote before merging
+            let branch_push_note = match crate::git::Git::push(&rcr.worktree_path) {
+                Ok(_) => String::new(),
+                Err(e) => format!(" (branch push failed: {})", e),
+            };
+
             // Rebase was part of squash merge — auto-proceed with the merge
             match crate::git::Git::squash_merge_into_main(&rcr.repo_root, &rcr.branch) {
                 Ok(crate::git::SquashMergeResult::Success(msg)) => {
+                    // Auto-push main to remote after successful squash merge
+                    let main_push_note = match crate::git::Git::push(&rcr.repo_root) {
+                        Ok(_) => " → pushed".to_string(),
+                        Err(e) => format!(" (main push failed: {})", e),
+                    };
                     app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
                         branch: rcr.branch.clone(),
                         display_name: rcr.display_name.clone(),
                         worktree_path: rcr.worktree_path,
                         selected: 0,
                     });
-                    app.set_status(msg);
+                    app.set_status(format!("{}{}{}", msg, main_push_note, branch_push_note));
                 }
                 Ok(crate::git::SquashMergeResult::Conflict { .. }) => {
                     // Shouldn't happen after a clean rebase, but handle gracefully
@@ -53,7 +65,12 @@ pub(super) fn accept_rcr(app: &mut App) {
                 }
             }
         } else {
-            app.set_status(format!("Rebase complete — conflicts resolved for {}", rcr.display_name));
+            // Push the rebased branch to its remote
+            let push_note = match crate::git::Git::push(&rcr.worktree_path) {
+                Ok(_) => " → pushed".to_string(),
+                Err(e) => format!(" (push failed: {})", e),
+            };
+            app.set_status(format!("Rebase complete — conflicts resolved for {}{}", rcr.display_name, push_note));
         }
     }
 }

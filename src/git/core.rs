@@ -396,7 +396,7 @@ impl Git {
     /// 2. Squash-merge the branch (collapses all commits into one staged changeset)
     /// 3. On success: commit with a clean message → `SquashMergeResult::Success`
     /// 4. On conflict: return structured conflict info → `SquashMergeResult::Conflict`
-    /// Push is separate — user triggers it manually via the Push action.
+    /// Push happens automatically after success (callers call `Git::push()`).
     /// Runs from the repo root (main worktree, already on main branch).
     pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<SquashMergeResult> {
         // Pre-flight: clean up any leftover merge/rebase state on main from

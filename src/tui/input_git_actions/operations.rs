@@ -243,9 +243,15 @@ pub(super) fn exec_rebase(app: &mut App) {
     };
     match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
         RebaseOutcome::Rebased => {
+            // Push the rebased branch to its remote
+            let push_note = match Git::push(&wt_path) {
+                Ok(_) => " → pushed".to_string(),
+                Err(e) => format!(" (push failed: {})", e),
+            };
             if let Some(ref mut p) = app.git_actions_panel {
                 super::refresh_changed_files(p);
-                p.result_message = Some(("Rebased onto main".to_string(), false));
+                super::refresh_commit_log(p);
+                p.result_message = Some((format!("Rebased onto main{}", push_note), false));
             }
         }
         RebaseOutcome::UpToDate => {
@@ -309,8 +315,19 @@ pub(super) fn exec_squash_merge(app: &mut App) {
         RebaseOutcome::Rebased | RebaseOutcome::UpToDate => {}
     }
 
+    // Push the rebased feature branch to its remote before merging
+    let branch_push_note = match Git::push(&wt_path) {
+        Ok(_) => String::new(),
+        Err(e) => format!(" (branch push failed: {})", e),
+    };
+
     match Git::squash_merge_into_main(&repo_root, &branch) {
         Ok(SquashMergeResult::Success(msg)) => {
+            // Auto-push main to remote after successful squash merge
+            let main_push_note = match Git::push(&repo_root) {
+                Ok(_) => " → pushed".to_string(),
+                Err(e) => format!(" (main push failed: {})", e),
+            };
             let display = crate::models::strip_branch_prefix(&branch).to_string();
             app.git_actions_panel = None;
             app.post_merge_dialog = Some(PostMergeDialog {
@@ -319,7 +336,7 @@ pub(super) fn exec_squash_merge(app: &mut App) {
                 worktree_path: wt_path,
                 selected: 0,
             });
-            app.set_status(msg);
+            app.set_status(format!("{}{}{}", msg, main_push_note, branch_push_note));
         }
         Ok(SquashMergeResult::Conflict { conflicted, auto_merged, .. }) => {
             if let Some(ref mut p) = app.git_actions_panel {

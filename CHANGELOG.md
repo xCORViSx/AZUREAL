@@ -15,6 +15,7 @@ All notable changes to Azureal will be documented in this file.
 - **Removed keybindings** — `⌃r` (Restart), `f` (ToggleFileTree), `Enter` (StartResume in worktrees), `/` (SearchFilter in worktrees). Sidebar filter removed entirely.
 
 ### Changed
+- **Auto-push after rebase and squash merge** — All rebase and squash merge paths now auto-push to remote. Standalone rebase (`r`) pushes the rebased branch. Squash merge (`m`) pushes both the rebased feature branch and main. RCR acceptance pushes in both cases. Status shows `"→ pushed"` on success or `"(push failed: ...)"` / `"(branch push failed: ...)"` / `"(main push failed: ...)"` on error. No longer requires manual push steps.
 - **Worktree tab leading space removed** — Tab labels no longer have a leading space before the icon/symbol. Format changed from `" ● name "` to `"● name "` (trailing space only for separator padding). Tightens tab rendering and saves 1 char per tab.
 - **Post-merge dialog centered on full screen with git colors** — Dialog now renders center-screen (was anchored to session pane) and uses `GIT_ORANGE` border/title (was AZURE) to match the git panel theme.
 - **Git status box title simplified** — Title changed from `" GIT: <branch> "` to just `" GIT "` since the worktree tab bar already shows which branch is active.

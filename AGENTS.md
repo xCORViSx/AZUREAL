@@ -1023,8 +1023,8 @@ Actions change based on whether the current worktree is the main/master branch o
 - `Shift+P` / Enter on index 2 — Push to remote
 
 *On feature branches (4 actions):*
-- `m` / Enter on index 0 — Squash merge to main: rebases onto main first (see rebase-before-merge below), then `Git::squash_merge_into_main()`. Does NOT auto-push; user triggers push separately.
-- `r` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main. On conflict, shows overlay with RCR option.
+- `m` / Enter on index 0 — Squash merge to main: rebases onto main first (see rebase-before-merge below), pushes the rebased feature branch to its remote via `Git::push(&wt_path)`, then `Git::squash_merge_into_main()`, then auto-pushes main to remote via `Git::push(&repo_root)`. Status shows `"→ pushed"` on success or `"(main push failed: ...)"` / `"(branch push failed: ...)"` on error. RCR auto-continue path follows the same two-push flow.
+- `r` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main, then auto-pushes the rebased branch to its remote via `Git::push(&wt_path)`. On conflict, shows overlay with RCR option; after RCR acceptance the branch is also pushed.
 - `c` / Enter on index 2 — Commit (see below)
 - `Shift+P` / Enter on index 3 — Push to remote
 
