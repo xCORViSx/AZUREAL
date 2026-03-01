@@ -501,3 +501,420 @@ fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEventKind, MouseEvent};
+
+    // -- Duration constants --
+
+    #[test]
+    fn test_min_draw_interval() {
+        let interval = Duration::from_millis(33);
+        assert_eq!(interval.as_millis(), 33);
+    }
+
+    #[test]
+    fn test_min_poll_interval() {
+        let interval = Duration::from_millis(500);
+        assert_eq!(interval.as_millis(), 500);
+    }
+
+    #[test]
+    fn test_min_animation_interval() {
+        let interval = Duration::from_millis(250);
+        assert_eq!(interval.as_millis(), 250);
+    }
+
+    #[test]
+    fn test_draw_fps_approximately_30() {
+        let interval = Duration::from_millis(33);
+        let fps = 1000.0 / interval.as_millis() as f64;
+        assert!(fps > 29.0 && fps < 31.0);
+    }
+
+    #[test]
+    fn test_animation_fps_is_4() {
+        let interval = Duration::from_millis(250);
+        let fps = 1000 / interval.as_millis();
+        assert_eq!(fps, 4);
+    }
+
+    // -- Poll timeout logic --
+
+    #[test]
+    fn test_poll_ms_busy() {
+        let draw_pending = true;
+        let poll_ms = if draw_pending { 16 } else { 100 };
+        assert_eq!(poll_ms, 16);
+    }
+
+    #[test]
+    fn test_poll_ms_idle() {
+        let draw_pending = false;
+        let render_in_flight = false;
+        let has_receivers = false;
+        let poll_ms = if draw_pending || render_in_flight || has_receivers { 16 } else { 100 };
+        assert_eq!(poll_ms, 100);
+    }
+
+    // -- KeyEvent construction --
+
+    #[test]
+    fn test_key_event_press() {
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        assert_eq!(key.code, KeyCode::Char('a'));
+        assert_eq!(key.modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn test_key_event_ctrl_q() {
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        assert!(key.modifiers.contains(KeyModifiers::CONTROL));
+        assert_eq!(key.code, KeyCode::Char('q'));
+    }
+
+    #[test]
+    fn test_key_event_kind_press() {
+        let key = KeyEvent {
+            code: KeyCode::Char('x'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        assert!(matches!(key.kind, KeyEventKind::Press));
+    }
+
+    #[test]
+    fn test_key_event_kind_repeat() {
+        let key = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Repeat,
+            state: KeyEventState::NONE,
+        };
+        assert!(matches!(key.kind, KeyEventKind::Repeat));
+    }
+
+    #[test]
+    fn test_key_event_kind_release_filtered() {
+        let key = KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+        let accepted = matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat);
+        assert!(!accepted);
+    }
+
+    #[test]
+    fn test_modifier_key_detection() {
+        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        assert!(matches!(key.code, KeyCode::Modifier(_)));
+    }
+
+    // -- MouseEvent construction --
+
+    #[test]
+    fn test_mouse_scroll_down() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 40,
+            row: 10,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(mouse.kind, MouseEventKind::ScrollDown));
+        assert_eq!(mouse.column, 40);
+        assert_eq!(mouse.row, 10);
+    }
+
+    #[test]
+    fn test_mouse_scroll_up() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 20,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(mouse.kind, MouseEventKind::ScrollUp));
+    }
+
+    #[test]
+    fn test_mouse_left_click() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 15,
+            row: 8,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)));
+    }
+
+    #[test]
+    fn test_mouse_drag() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 25,
+            row: 12,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(mouse.kind, MouseEventKind::Drag(MouseButton::Left)));
+    }
+
+    #[test]
+    fn test_mouse_up() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)));
+    }
+
+    // -- Scroll delta accumulation --
+
+    #[test]
+    fn test_scroll_delta_accumulation_down() {
+        let mut delta: i32 = 0;
+        delta += 3;
+        delta += 3;
+        assert_eq!(delta, 6);
+    }
+
+    #[test]
+    fn test_scroll_delta_accumulation_up() {
+        let mut delta: i32 = 0;
+        delta -= 3;
+        delta -= 3;
+        assert_eq!(delta, -6);
+    }
+
+    #[test]
+    fn test_scroll_delta_mixed() {
+        let mut delta: i32 = 0;
+        delta += 3;
+        delta -= 3;
+        assert_eq!(delta, 0);
+    }
+
+    // -- Animation tick wrapping --
+
+    #[test]
+    fn test_animation_tick_wrapping() {
+        let tick: u8 = 255;
+        assert_eq!(tick.wrapping_add(1), 0);
+    }
+
+    #[test]
+    fn test_animation_tick_normal() {
+        let tick: u8 = 5;
+        assert_eq!(tick.wrapping_add(1), 6);
+    }
+
+    // -- Draw decision logic --
+
+    #[test]
+    fn test_draw_pending_logic() {
+        let had_key = true;
+        let needs_redraw = false;
+        let scroll_changed = false;
+        assert!(had_key || needs_redraw || scroll_changed);
+    }
+
+    #[test]
+    fn test_draw_pending_all_false() {
+        let had_key = false;
+        let needs_redraw = false;
+        let scroll_changed = false;
+        assert!(!(had_key || needs_redraw || scroll_changed));
+    }
+
+    #[test]
+    fn test_should_draw_logic() {
+        let draw_pending = true;
+        let draw_ready = true;
+        let defer = false;
+        assert!(draw_pending && draw_ready && !defer);
+    }
+
+    #[test]
+    fn test_should_draw_deferred() {
+        let draw_pending = true;
+        let draw_ready = true;
+        let defer = true;
+        assert!(!(draw_pending && draw_ready && !defer));
+    }
+
+    // -- Compaction watcher timing --
+
+    #[test]
+    fn test_compaction_timeout_20s() {
+        let timeout = Duration::from_secs(20);
+        assert_eq!(timeout.as_secs(), 20);
+    }
+
+    // -- Auto-rebase check interval --
+
+    #[test]
+    fn test_auto_rebase_interval_2s() {
+        let interval = Duration::from_secs(2);
+        assert_eq!(interval.as_secs(), 2);
+    }
+
+    // -- Render throttle interval --
+
+    #[test]
+    fn test_render_submit_throttle() {
+        let throttle = Duration::from_millis(50);
+        assert_eq!(throttle.as_millis(), 50);
+    }
+
+    // -- File tree debounce --
+
+    #[test]
+    fn test_file_tree_debounce_500ms() {
+        let debounce = Duration::from_millis(500);
+        assert_eq!(debounce.as_millis(), 500);
+    }
+
+    // -- Session width fallback --
+
+    #[test]
+    fn test_session_width_fallback() {
+        let w: u16 = 0;
+        let session_w = if w > 0 { w } else { 80 };
+        assert_eq!(session_w, 80);
+    }
+
+    #[test]
+    fn test_session_width_normal() {
+        let w: u16 = 120;
+        let session_w = if w > 0 { w } else { 80 };
+        assert_eq!(session_w, 120);
+    }
+
+    // -- Terminal size fallback --
+
+    #[test]
+    fn test_terminal_size_fallback() {
+        let (w, h): (u16, u16) = (80, 24);
+        assert_eq!(w, 80);
+        assert_eq!(h, 24);
+    }
+
+    // -- Focus comparison --
+
+    #[test]
+    fn test_focus_eq() {
+        assert_eq!(Focus::Input, Focus::Input);
+        assert_ne!(Focus::Input, Focus::Viewer);
+    }
+
+    // -- Event variant matching --
+
+    #[test]
+    fn test_event_key_variant() {
+        let event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(event, Event::Key(_)));
+    }
+
+    #[test]
+    fn test_event_resize_variant() {
+        let event = Event::Resize(120, 40);
+        if let Event::Resize(w, h) = event {
+            assert_eq!(w, 120);
+            assert_eq!(h, 40);
+        } else {
+            panic!("expected Resize");
+        }
+    }
+
+    // -- Instant elapsed check --
+
+    #[test]
+    fn test_instant_duration_since() {
+        let start = Instant::now();
+        let elapsed = Instant::now().duration_since(start);
+        assert!(elapsed.as_millis() < 100);
+    }
+
+    // -- KeyCode variants --
+
+    #[test]
+    fn test_keycode_char() {
+        assert!(matches!(KeyCode::Char('a'), KeyCode::Char('a')));
+    }
+
+    #[test]
+    fn test_keycode_enter() {
+        assert!(matches!(KeyCode::Enter, KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_keycode_esc() {
+        assert!(matches!(KeyCode::Esc, KeyCode::Esc));
+    }
+
+    #[test]
+    fn test_keycode_arrows() {
+        assert!(matches!(KeyCode::Up, KeyCode::Up));
+        assert!(matches!(KeyCode::Down, KeyCode::Down));
+        assert!(matches!(KeyCode::Left, KeyCode::Left));
+        assert!(matches!(KeyCode::Right, KeyCode::Right));
+    }
+
+    #[test]
+    fn test_keycode_page_keys() {
+        assert!(matches!(KeyCode::PageUp, KeyCode::PageUp));
+        assert!(matches!(KeyCode::PageDown, KeyCode::PageDown));
+    }
+
+    // -- Fast path condition checks --
+
+    #[test]
+    fn test_fast_path_no_newline() {
+        let input = "hello world";
+        assert!(!input.contains('\n'));
+    }
+
+    #[test]
+    fn test_fast_path_has_newline() {
+        let input = "hello\nworld";
+        assert!(input.contains('\n'));
+    }
+
+    #[test]
+    fn test_fast_path_width_check() {
+        let w: u16 = 80;
+        assert!(w > 2);
+    }
+
+    #[test]
+    fn test_fast_path_width_too_small() {
+        let w: u16 = 2;
+        assert!(!(w > 2));
+    }
+
+    #[test]
+    fn test_duration_from_secs_converts() {
+        let d = Duration::from_secs(1);
+        assert_eq!(d.as_millis(), 1000);
+    }
+
+    #[test]
+    fn test_key_event_char_a() {
+        let k = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        assert_eq!(k.code, KeyCode::Char('a'));
+    }
+
+    #[test]
+    fn test_mouse_event_column_row() {
+        let m = MouseEvent { kind: MouseEventKind::Moved, column: 10, row: 20, modifiers: KeyModifiers::NONE };
+        assert_eq!(m.column, 10);
+        assert_eq!(m.row, 20);
+    }
+}

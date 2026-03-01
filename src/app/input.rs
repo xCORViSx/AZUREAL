@@ -295,3 +295,787 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::App;
+
+    // ── char_to_byte (tested indirectly via input methods) ──
+
+    #[test]
+    fn test_input_char_ascii() {
+        let mut app = App::new();
+        app.input_char('a');
+        assert_eq!(app.input, "a");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn test_input_char_multiple() {
+        let mut app = App::new();
+        app.input_char('h');
+        app.input_char('i');
+        assert_eq!(app.input, "hi");
+        assert_eq!(app.input_cursor, 2);
+    }
+
+    #[test]
+    fn test_input_char_unicode() {
+        let mut app = App::new();
+        app.input_char('ç');
+        assert_eq!(app.input, "ç");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn test_input_char_emoji() {
+        let mut app = App::new();
+        app.input_char('🚀');
+        assert_eq!(app.input, "🚀");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn test_input_char_at_middle() {
+        let mut app = App::new();
+        app.input = "ac".to_string();
+        app.input_cursor = 1;
+        app.input_char('b');
+        assert_eq!(app.input, "abc");
+        assert_eq!(app.input_cursor, 2);
+    }
+
+    #[test]
+    fn test_input_char_at_start() {
+        let mut app = App::new();
+        app.input = "bc".to_string();
+        app.input_cursor = 0;
+        app.input_char('a');
+        assert_eq!(app.input, "abc");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    // ── input_backspace ──
+
+    #[test]
+    fn test_backspace_empty() {
+        let mut app = App::new();
+        app.input_backspace();
+        assert_eq!(app.input, "");
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_backspace_single_char() {
+        let mut app = App::new();
+        app.input = "a".to_string();
+        app.input_cursor = 1;
+        app.input_backspace();
+        assert_eq!(app.input, "");
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_backspace_at_cursor_zero() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 0;
+        app.input_backspace();
+        assert_eq!(app.input, "abc");
+    }
+
+    #[test]
+    fn test_backspace_middle() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 2;
+        app.input_backspace();
+        assert_eq!(app.input, "ac");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn test_backspace_unicode() {
+        let mut app = App::new();
+        app.input = "aç".to_string();
+        app.input_cursor = 2;
+        app.input_backspace();
+        assert_eq!(app.input, "a");
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    // ── input_delete ──
+
+    #[test]
+    fn test_delete_at_end() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 3;
+        app.input_delete();
+        assert_eq!(app.input, "abc");
+    }
+
+    #[test]
+    fn test_delete_at_start() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 0;
+        app.input_delete();
+        assert_eq!(app.input, "bc");
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_delete_middle() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 1;
+        app.input_delete();
+        assert_eq!(app.input, "ac");
+    }
+
+    #[test]
+    fn test_delete_empty() {
+        let mut app = App::new();
+        app.input_delete();
+        assert_eq!(app.input, "");
+    }
+
+    // ── input_left / input_right ──
+
+    #[test]
+    fn test_left_from_middle() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 2;
+        app.input_left();
+        assert_eq!(app.input_cursor, 1);
+    }
+
+    #[test]
+    fn test_left_from_zero() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 0;
+        app.input_left();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_right_from_middle() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 1;
+        app.input_right();
+        assert_eq!(app.input_cursor, 2);
+    }
+
+    #[test]
+    fn test_right_at_end() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 3;
+        app.input_right();
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn test_right_empty() {
+        let mut app = App::new();
+        app.input_right();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    // ── input_home / input_end ──
+
+    #[test]
+    fn test_home() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 2;
+        app.input_home();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_home_already_at_start() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 0;
+        app.input_home();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_end() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 0;
+        app.input_end();
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn test_end_already_at_end() {
+        let mut app = App::new();
+        app.input = "abc".to_string();
+        app.input_cursor = 3;
+        app.input_end();
+        assert_eq!(app.input_cursor, 3);
+    }
+
+    #[test]
+    fn test_end_unicode() {
+        let mut app = App::new();
+        app.input = "aç🚀".to_string();
+        app.input_end();
+        assert_eq!(app.input_cursor, 3); // 3 chars
+    }
+
+    // ── input_word_left ──
+
+    #[test]
+    fn test_word_left_single_word() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 5;
+        app.input_word_left();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_word_left_two_words() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_cursor = 11;
+        app.input_word_left();
+        assert_eq!(app.input_cursor, 6);
+    }
+
+    #[test]
+    fn test_word_left_at_zero() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 0;
+        app.input_word_left();
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_word_left_multiple_spaces() {
+        let mut app = App::new();
+        app.input = "hello   world".to_string();
+        app.input_cursor = 13;
+        app.input_word_left();
+        assert_eq!(app.input_cursor, 8);
+    }
+
+    // ── input_word_right ──
+
+    #[test]
+    fn test_word_right_single_word() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 0;
+        app.input_word_right();
+        assert_eq!(app.input_cursor, 5);
+    }
+
+    #[test]
+    fn test_word_right_two_words() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_cursor = 0;
+        app.input_word_right();
+        assert_eq!(app.input_cursor, 6);
+    }
+
+    #[test]
+    fn test_word_right_at_end() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 5;
+        app.input_word_right();
+        assert_eq!(app.input_cursor, 5);
+    }
+
+    // ── input_delete_word ──
+
+    #[test]
+    fn test_delete_word_single_word() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 5;
+        app.input_delete_word();
+        assert_eq!(app.input, "");
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn test_delete_word_last_word() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_cursor = 11;
+        app.input_delete_word();
+        assert_eq!(app.input, "hello ");
+        assert_eq!(app.input_cursor, 6);
+    }
+
+    #[test]
+    fn test_delete_word_at_zero() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 0;
+        app.input_delete_word();
+        assert_eq!(app.input, "hello");
+    }
+
+    #[test]
+    fn test_delete_word_middle() {
+        let mut app = App::new();
+        app.input = "aaa bbb ccc".to_string();
+        app.input_cursor = 7; // end of "bbb"
+        app.input_delete_word();
+        assert_eq!(app.input, "aaa  ccc");
+        assert_eq!(app.input_cursor, 4);
+    }
+
+    // ── clear_input ──
+
+    #[test]
+    fn test_clear_input() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 3;
+        app.input_selection = Some((1, 3));
+        app.prompt_history_idx = Some(2);
+        app.prompt_history_temp = Some("temp".to_string());
+        app.clear_input();
+        assert_eq!(app.input, "");
+        assert_eq!(app.input_cursor, 0);
+        assert!(app.input_selection.is_none());
+        assert!(app.prompt_history_idx.is_none());
+        assert!(app.prompt_history_temp.is_none());
+    }
+
+    #[test]
+    fn test_clear_input_already_empty() {
+        let mut app = App::new();
+        app.clear_input();
+        assert_eq!(app.input, "");
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    // ── worktree_creation input ──
+
+    #[test]
+    fn test_worktree_creation_char() {
+        let mut app = App::new();
+        app.worktree_creation_char('a');
+        assert_eq!(app.worktree_creation_input, "a");
+        assert_eq!(app.worktree_creation_cursor, 1);
+    }
+
+    #[test]
+    fn test_worktree_creation_multiple_chars() {
+        let mut app = App::new();
+        app.worktree_creation_char('a');
+        app.worktree_creation_char('b');
+        app.worktree_creation_char('c');
+        assert_eq!(app.worktree_creation_input, "abc");
+        assert_eq!(app.worktree_creation_cursor, 3);
+    }
+
+    #[test]
+    fn test_worktree_creation_backspace() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 3;
+        app.worktree_creation_backspace();
+        assert_eq!(app.worktree_creation_input, "ab");
+        assert_eq!(app.worktree_creation_cursor, 2);
+    }
+
+    #[test]
+    fn test_worktree_creation_backspace_empty() {
+        let mut app = App::new();
+        app.worktree_creation_backspace();
+        assert_eq!(app.worktree_creation_input, "");
+        assert_eq!(app.worktree_creation_cursor, 0);
+    }
+
+    #[test]
+    fn test_worktree_creation_delete() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 0;
+        app.worktree_creation_delete();
+        assert_eq!(app.worktree_creation_input, "bc");
+    }
+
+    #[test]
+    fn test_worktree_creation_delete_at_end() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 3;
+        app.worktree_creation_delete();
+        assert_eq!(app.worktree_creation_input, "abc");
+    }
+
+    #[test]
+    fn test_worktree_creation_left() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 2;
+        app.worktree_creation_left();
+        assert_eq!(app.worktree_creation_cursor, 1);
+    }
+
+    #[test]
+    fn test_worktree_creation_left_at_zero() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 0;
+        app.worktree_creation_left();
+        assert_eq!(app.worktree_creation_cursor, 0);
+    }
+
+    #[test]
+    fn test_worktree_creation_right() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 1;
+        app.worktree_creation_right();
+        assert_eq!(app.worktree_creation_cursor, 2);
+    }
+
+    #[test]
+    fn test_worktree_creation_right_at_end() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 3;
+        app.worktree_creation_right();
+        assert_eq!(app.worktree_creation_cursor, 3);
+    }
+
+    #[test]
+    fn test_worktree_creation_home() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 3;
+        app.worktree_creation_home();
+        assert_eq!(app.worktree_creation_cursor, 0);
+    }
+
+    #[test]
+    fn test_worktree_creation_end() {
+        let mut app = App::new();
+        app.worktree_creation_input = "abc".to_string();
+        app.worktree_creation_cursor = 0;
+        app.worktree_creation_end();
+        assert_eq!(app.worktree_creation_cursor, 3);
+    }
+
+    #[test]
+    fn test_clear_worktree_creation_input() {
+        let mut app = App::new();
+        app.worktree_creation_input = "test".to_string();
+        app.worktree_creation_cursor = 4;
+        app.clear_worktree_creation_input();
+        assert_eq!(app.worktree_creation_input, "");
+        assert_eq!(app.worktree_creation_cursor, 0);
+    }
+
+    // ── selection methods ──
+
+    #[test]
+    fn test_start_selection() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 2;
+        app.input_start_selection();
+        assert_eq!(app.input_selection, Some((2, 2)));
+    }
+
+    #[test]
+    fn test_extend_selection() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 2;
+        app.input_selection = Some((1, 2));
+        app.input_cursor = 4;
+        app.input_extend_selection();
+        assert_eq!(app.input_selection, Some((1, 4)));
+    }
+
+    #[test]
+    fn test_extend_selection_no_active() {
+        let mut app = App::new();
+        app.input_cursor = 3;
+        app.input_extend_selection();
+        assert!(app.input_selection.is_none());
+    }
+
+    #[test]
+    fn test_clear_selection() {
+        let mut app = App::new();
+        app.input_selection = Some((0, 5));
+        app.input_clear_selection();
+        assert!(app.input_selection.is_none());
+    }
+
+    #[test]
+    fn test_has_selection_true() {
+        let mut app = App::new();
+        app.input_selection = Some((1, 3));
+        assert!(app.has_input_selection());
+    }
+
+    #[test]
+    fn test_has_selection_false_same_pos() {
+        let mut app = App::new();
+        app.input_selection = Some((2, 2));
+        assert!(!app.has_input_selection());
+    }
+
+    #[test]
+    fn test_has_selection_false_none() {
+        let app = App::new();
+        assert!(!app.has_input_selection());
+    }
+
+    #[test]
+    fn test_get_selected_text() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_selection = Some((0, 5));
+        assert_eq!(app.get_input_selected_text(), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_get_selected_text_reversed() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_selection = Some((5, 0));
+        assert_eq!(app.get_input_selected_text(), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_get_selected_text_same_pos() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_selection = Some((2, 2));
+        assert!(app.get_input_selected_text().is_none());
+    }
+
+    #[test]
+    fn test_get_selected_text_none_selection() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        assert!(app.get_input_selected_text().is_none());
+    }
+
+    // ── select_all ──
+
+    #[test]
+    fn test_select_all() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_cursor = 3;
+        app.input_select_all();
+        assert_eq!(app.input_selection, Some((0, 11)));
+        assert_eq!(app.input_cursor, 11);
+    }
+
+    #[test]
+    fn test_select_all_empty() {
+        let mut app = App::new();
+        app.input_select_all();
+        assert_eq!(app.input_selection, Some((0, 0)));
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    // ── input_delete_selection ──
+
+    #[test]
+    fn test_delete_selection() {
+        let mut app = App::new();
+        app.input = "hello world".to_string();
+        app.input_selection = Some((5, 11));
+        app.input_delete_selection();
+        assert_eq!(app.input, "hello");
+        assert_eq!(app.input_cursor, 5);
+        assert!(app.input_selection.is_none());
+    }
+
+    #[test]
+    fn test_delete_selection_no_selection() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_delete_selection();
+        assert_eq!(app.input, "hello");
+    }
+
+    // ── input_left_select / input_right_select ──
+
+    #[test]
+    fn test_left_select_extend() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 3;
+        app.input_left_select(true);
+        assert_eq!(app.input_cursor, 2);
+        assert!(app.input_selection.is_some());
+    }
+
+    #[test]
+    fn test_left_select_no_extend() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 3;
+        app.input_selection = Some((1, 3));
+        app.input_left_select(false);
+        assert_eq!(app.input_cursor, 2);
+        assert!(app.input_selection.is_none());
+    }
+
+    #[test]
+    fn test_right_select_extend() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 2;
+        app.input_right_select(true);
+        assert_eq!(app.input_cursor, 3);
+        assert!(app.input_selection.is_some());
+    }
+
+    #[test]
+    fn test_right_select_no_extend() {
+        let mut app = App::new();
+        app.input = "hello".to_string();
+        app.input_cursor = 2;
+        app.input_selection = Some((1, 3));
+        app.input_right_select(false);
+        assert_eq!(app.input_cursor, 3);
+        assert!(app.input_selection.is_none());
+    }
+
+    // ── prompt history ──
+
+    #[test]
+    fn test_prompt_history_prev_no_history() {
+        let mut app = App::new();
+        app.prompt_history_prev();
+        assert!(app.prompt_history_idx.is_none());
+    }
+
+    #[test]
+    fn test_prompt_history_next_no_history() {
+        let mut app = App::new();
+        app.prompt_history_next();
+        assert!(app.prompt_history_idx.is_none());
+    }
+
+    #[test]
+    fn test_prompt_history_prev_with_history() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u1".to_string(),
+            content: "first prompt".to_string(),
+        });
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u2".to_string(),
+            content: "second prompt".to_string(),
+        });
+        app.input = "current".to_string();
+        app.prompt_history_prev();
+        assert_eq!(app.input, "second prompt");
+        assert_eq!(app.prompt_history_idx, Some(1));
+        assert_eq!(app.prompt_history_temp, Some("current".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_history_prev_twice() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u1".to_string(),
+            content: "first".to_string(),
+        });
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u2".to_string(),
+            content: "second".to_string(),
+        });
+        app.prompt_history_prev();
+        app.prompt_history_prev();
+        assert_eq!(app.input, "first");
+        assert_eq!(app.prompt_history_idx, Some(0));
+    }
+
+    #[test]
+    fn test_prompt_history_next_restores() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u1".to_string(),
+            content: "prompt".to_string(),
+        });
+        app.input = "typing...".to_string();
+        app.prompt_history_prev();
+        assert_eq!(app.input, "prompt");
+        app.prompt_history_next();
+        assert_eq!(app.input, "typing...");
+        assert!(app.prompt_history_idx.is_none());
+    }
+
+    #[test]
+    fn test_prompt_history_prev_at_oldest_stays() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u1".to_string(),
+            content: "only".to_string(),
+        });
+        app.prompt_history_prev();
+        app.prompt_history_prev(); // already at oldest
+        assert_eq!(app.input, "only");
+        assert_eq!(app.prompt_history_idx, Some(0));
+    }
+
+    // ── collect_prompt_history ──
+
+    #[test]
+    fn test_collect_prompt_history_empty() {
+        let app = App::new();
+        assert!(app.collect_prompt_history().is_empty());
+    }
+
+    #[test]
+    fn test_collect_prompt_history_filters_non_user() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::AssistantText {
+            _uuid: "u".to_string(),
+            _message_id: "m".to_string(),
+            text: "response".to_string(),
+        });
+        assert!(app.collect_prompt_history().is_empty());
+    }
+
+    #[test]
+    fn test_collect_prompt_history_filters_empty_content() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u".to_string(),
+            content: "   ".to_string(),
+        });
+        assert!(app.collect_prompt_history().is_empty());
+    }
+
+    #[test]
+    fn test_collect_prompt_history_trims() {
+        let mut app = App::new();
+        app.display_events.push(crate::events::DisplayEvent::UserMessage {
+            _uuid: "u".to_string(),
+            content: "  hello  ".to_string(),
+        });
+        let h = app.collect_prompt_history();
+        assert_eq!(h, vec!["hello"]);
+    }
+}

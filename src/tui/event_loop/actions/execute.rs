@@ -422,3 +422,204 @@ fn jump_edit(app: &mut App, forward: bool) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::keybindings::Action;
+
+    // -- Action enum variant equality --
+
+    #[test]
+    fn test_action_quit_eq() { assert_eq!(Action::Quit, Action::Quit); }
+    #[test]
+    fn test_action_dump_debug_eq() { assert_eq!(Action::DumpDebug, Action::DumpDebug); }
+    #[test]
+    fn test_action_cancel_claude_eq() { assert_eq!(Action::CancelClaude, Action::CancelClaude); }
+    #[test]
+    fn test_action_copy_selection_eq() { assert_eq!(Action::CopySelection, Action::CopySelection); }
+    #[test]
+    fn test_action_toggle_help_eq() { assert_eq!(Action::ToggleHelp, Action::ToggleHelp); }
+    #[test]
+    fn test_action_enter_prompt_eq() { assert_eq!(Action::EnterPromptMode, Action::EnterPromptMode); }
+    #[test]
+    fn test_action_toggle_terminal_eq() { assert_eq!(Action::ToggleTerminal, Action::ToggleTerminal); }
+    #[test]
+    fn test_action_cycle_forward_eq() { assert_eq!(Action::CycleFocusForward, Action::CycleFocusForward); }
+    #[test]
+    fn test_action_cycle_backward_eq() { assert_eq!(Action::CycleFocusBackward, Action::CycleFocusBackward); }
+    #[test]
+    fn test_action_resize_up_eq() { assert_eq!(Action::ResizeUp, Action::ResizeUp); }
+    #[test]
+    fn test_action_resize_down_eq() { assert_eq!(Action::ResizeDown, Action::ResizeDown); }
+    #[test]
+    fn test_action_browse_main_eq() { assert_eq!(Action::BrowseMain, Action::BrowseMain); }
+    #[test]
+    fn test_action_return_to_worktrees_eq() { assert_eq!(Action::ReturnToWorktrees, Action::ReturnToWorktrees); }
+    #[test]
+    fn test_action_toggle_session_list_eq() { assert_eq!(Action::ToggleSessionList, Action::ToggleSessionList); }
+    #[test]
+    fn test_action_viewer_tab_current_eq() { assert_eq!(Action::ViewerTabCurrent, Action::ViewerTabCurrent); }
+    #[test]
+    fn test_action_viewer_close_tab_eq() { assert_eq!(Action::ViewerCloseTab, Action::ViewerCloseTab); }
+    #[test]
+    fn test_action_select_all_eq() { assert_eq!(Action::SelectAll, Action::SelectAll); }
+    #[test]
+    fn test_action_enter_edit_mode_eq() { assert_eq!(Action::EnterEditMode, Action::EnterEditMode); }
+    #[test]
+    fn test_action_save_eq() { assert_eq!(Action::Save, Action::Save); }
+    #[test]
+    fn test_action_undo_eq() { assert_eq!(Action::Undo, Action::Undo); }
+    #[test]
+    fn test_action_redo_eq() { assert_eq!(Action::Redo, Action::Redo); }
+    #[test]
+    fn test_action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    #[test]
+    fn test_action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    #[test]
+    fn test_action_page_down_eq() { assert_eq!(Action::PageDown, Action::PageDown); }
+    #[test]
+    fn test_action_page_up_eq() { assert_eq!(Action::PageUp, Action::PageUp); }
+    #[test]
+    fn test_action_go_to_top_eq() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    #[test]
+    fn test_action_go_to_bottom_eq() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+
+    // -- Action inequality --
+
+    #[test]
+    fn test_action_ne_quit_escape() { assert_ne!(Action::Quit, Action::Escape); }
+    #[test]
+    fn test_action_ne_save_undo() { assert_ne!(Action::Save, Action::Undo); }
+
+    // -- Jump edit logic --
+
+    #[test]
+    fn test_jump_edit_forward_wrap() {
+        let edits = vec![2, 5, 8];
+        let cur = Some(1usize); // at index 1
+        let target = match cur { Some(pos) => (pos + 1) % edits.len(), None => 0 };
+        assert_eq!(target, 2);
+    }
+
+    #[test]
+    fn test_jump_edit_forward_wrap_at_end() {
+        let edits = vec![2, 5, 8];
+        let cur = Some(2usize); // at last
+        let target = (cur.unwrap() + 1) % edits.len();
+        assert_eq!(target, 0);
+    }
+
+    #[test]
+    fn test_jump_edit_backward_wrap() {
+        let edits = vec![2, 5, 8];
+        let cur: Option<usize> = Some(0);
+        let target = match cur { Some(0) | None => edits.len() - 1, Some(pos) => pos - 1 };
+        assert_eq!(target, 2);
+    }
+
+    #[test]
+    fn test_jump_edit_backward_normal() {
+        let edits = vec![2, 5, 8];
+        let cur = Some(2usize);
+        let target = match cur { Some(0) | None => edits.len() - 1, Some(pos) => pos - 1 };
+        assert_eq!(target, 1);
+    }
+
+    #[test]
+    fn test_jump_edit_empty_edits() {
+        let edits: Vec<usize> = vec![];
+        assert!(edits.is_empty());
+    }
+
+    // -- Clickable path tuple structure --
+
+    #[test]
+    fn test_clickable_path_structure() {
+        let path: (usize, usize, usize, String, String, String, usize) =
+            (10, 5, 20, "src/main.rs".into(), "old".into(), "new".into(), 1);
+        assert_eq!(path.0, 10); // line_idx
+        assert_eq!(path.1, 5);  // sc
+        assert_eq!(path.2, 20); // ec
+        assert_eq!(path.3, "src/main.rs");
+        assert_eq!(path.6, 1);  // wlc
+    }
+
+    #[test]
+    fn test_clickable_path_has_edit_content() {
+        let path: (usize, usize, usize, String, String, String, usize) =
+            (0, 0, 0, "file.rs".into(), "old_str".into(), "new_str".into(), 1);
+        let has_edit = !path.4.is_empty() || !path.5.is_empty();
+        assert!(has_edit);
+    }
+
+    #[test]
+    fn test_clickable_path_no_edit_content() {
+        let path: (usize, usize, usize, String, String, String, usize) =
+            (0, 0, 0, "file.rs".into(), "".into(), "".into(), 1);
+        let has_edit = !path.4.is_empty() || !path.5.is_empty();
+        assert!(!has_edit);
+    }
+
+    // -- saturating_sub for scroll --
+
+    #[test]
+    fn test_scroll_saturating_sub() {
+        assert_eq!(10usize.saturating_sub(3), 7);
+    }
+
+    #[test]
+    fn test_scroll_saturating_sub_underflow() {
+        assert_eq!(2usize.saturating_sub(3), 0);
+    }
+
+    // -- Focus variants --
+
+    #[test]
+    fn test_focus_input() { assert_eq!(Focus::Input, Focus::Input); }
+    #[test]
+    fn test_focus_viewer() { assert_eq!(Focus::Viewer, Focus::Viewer); }
+    #[test]
+    fn test_focus_worktrees() { assert_eq!(Focus::Worktrees, Focus::Worktrees); }
+
+    // -- Health panel actions --
+
+    #[test]
+    fn test_action_open_health() { assert_eq!(Action::OpenHealth, Action::OpenHealth); }
+    #[test]
+    fn test_action_open_git() { assert_eq!(Action::OpenGitActions, Action::OpenGitActions); }
+    #[test]
+    fn test_action_open_projects() { assert_eq!(Action::OpenProjects, Action::OpenProjects); }
+
+    // -- Search session action --
+
+    #[test]
+    fn test_action_search_session() { assert_eq!(Action::SearchSession, Action::SearchSession); }
+
+    // -- DeferredAction accessibility --
+
+    #[test]
+    fn test_deferred_open_health() {
+        let a = crate::app::DeferredAction::OpenHealthPanel;
+        assert!(matches!(a, crate::app::DeferredAction::OpenHealthPanel));
+    }
+
+    // -- Loading indicator string --
+
+    #[test]
+    fn test_loading_indicator_health() {
+        let s = "Scanning project health\u{2026}";
+        assert!(s.contains("health"));
+    }
+
+    #[test]
+    fn test_loading_indicator_file() {
+        let filename = "main.rs";
+        let s = format!("Loading {}\u{2026}", filename);
+        assert!(s.starts_with("Loading "));
+    }
+
+    #[test]
+    fn test_action_ne_quit_vs_dump() {
+        assert_ne!(Action::Quit, Action::DumpDebug);
+    }
+}

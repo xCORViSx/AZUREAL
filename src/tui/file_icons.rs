@@ -237,3 +237,863 @@ fn emoji_icon_by_ext(path: &Path) -> (&'static str, Color) {
         _ => ("  ", Color::White),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Directory icons ──
+
+    #[test]
+    fn dir_expanded_nerd() {
+        let (icon, color) = file_icon(Path::new("src"), true, true, true);
+        assert_eq!(icon, "\u{e5fe} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn dir_collapsed_nerd() {
+        let (icon, color) = file_icon(Path::new("src"), true, false, true);
+        assert_eq!(icon, "\u{e5ff} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn dir_expanded_emoji() {
+        let (icon, color) = file_icon(Path::new("src"), true, true, false);
+        assert_eq!(icon, "▼ ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn dir_collapsed_emoji() {
+        let (icon, color) = file_icon(Path::new("src"), true, false, false);
+        assert_eq!(icon, "▶ ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn dir_with_dots_in_name() {
+        let (icon, _) = file_icon(Path::new("my.dir.name"), true, false, true);
+        assert_eq!(icon, "\u{e5ff} ");
+    }
+
+    // ── Filename-based matches (nerd mode) ──
+
+    #[test]
+    fn nerd_dockerfile() {
+        let (icon, color) = file_icon(Path::new("Dockerfile"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+        assert_eq!(color, Color::Rgb(13, 183, 237));
+    }
+
+    #[test]
+    fn nerd_dockerfile_case_insensitive() {
+        let (icon, _) = file_icon(Path::new("DOCKERFILE"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    #[test]
+    fn nerd_containerfile() {
+        let (icon, _) = file_icon(Path::new("Containerfile"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    #[test]
+    fn nerd_docker_compose_yml() {
+        let (icon, _) = file_icon(Path::new("docker-compose.yml"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    #[test]
+    fn nerd_docker_compose_yaml() {
+        let (icon, _) = file_icon(Path::new("docker-compose.yaml"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    #[test]
+    fn nerd_compose_yml() {
+        let (icon, _) = file_icon(Path::new("compose.yml"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    #[test]
+    fn nerd_makefile() {
+        let (icon, color) = file_icon(Path::new("Makefile"), false, false, true);
+        assert_eq!(icon, "\u{e673} ");
+        assert_eq!(color, Color::Rgb(224, 148, 64));
+    }
+
+    #[test]
+    fn nerd_gnumakefile() {
+        let (icon, _) = file_icon(Path::new("GNUmakefile"), false, false, true);
+        assert_eq!(icon, "\u{e673} ");
+    }
+
+    #[test]
+    fn nerd_cmakelists() {
+        let (icon, color) = file_icon(Path::new("CMakeLists.txt"), false, false, true);
+        assert_eq!(icon, "\u{e794} ");
+        assert_eq!(color, Color::Rgb(64, 148, 224));
+    }
+
+    #[test]
+    fn nerd_license() {
+        let (icon, color) = file_icon(Path::new("LICENSE"), false, false, true);
+        assert_eq!(icon, "\u{e60a} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_licence_british() {
+        let (icon, _) = file_icon(Path::new("LICENCE"), false, false, true);
+        assert_eq!(icon, "\u{e60a} ");
+    }
+
+    #[test]
+    fn nerd_license_md() {
+        let (icon, _) = file_icon(Path::new("LICENSE.md"), false, false, true);
+        assert_eq!(icon, "\u{e60a} ");
+    }
+
+    #[test]
+    fn nerd_license_txt() {
+        let (icon, _) = file_icon(Path::new("LICENSE.txt"), false, false, true);
+        assert_eq!(icon, "\u{e60a} ");
+    }
+
+    #[test]
+    fn nerd_cargo_toml() {
+        let (icon, color) = file_icon(Path::new("Cargo.toml"), false, false, true);
+        assert_eq!(icon, "\u{e7a8} ");
+        assert_eq!(color, Color::Rgb(222, 165, 132));
+    }
+
+    #[test]
+    fn nerd_cargo_toml_case_insensitive() {
+        let (icon, _) = file_icon(Path::new("CARGO.TOML"), false, false, true);
+        assert_eq!(icon, "\u{e7a8} ");
+    }
+
+    #[test]
+    fn nerd_cargo_lock() {
+        let (icon, color) = file_icon(Path::new("Cargo.lock"), false, false, true);
+        assert_eq!(icon, "\u{e672} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_package_json() {
+        let (icon, color) = file_icon(Path::new("package.json"), false, false, true);
+        assert_eq!(icon, "\u{e616} ");
+        assert_eq!(color, Color::Rgb(203, 56, 55));
+    }
+
+    #[test]
+    fn nerd_package_lock_json() {
+        let (icon, color) = file_icon(Path::new("package-lock.json"), false, false, true);
+        assert_eq!(icon, "\u{e672} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_yarn_lock() {
+        let (icon, _) = file_icon(Path::new("yarn.lock"), false, false, true);
+        assert_eq!(icon, "\u{e672} ");
+    }
+
+    #[test]
+    fn nerd_pnpm_lock_yaml() {
+        let (icon, _) = file_icon(Path::new("pnpm-lock.yaml"), false, false, true);
+        assert_eq!(icon, "\u{e672} ");
+    }
+
+    #[test]
+    fn nerd_gitignore() {
+        let (icon, color) = file_icon(Path::new(".gitignore"), false, false, true);
+        assert_eq!(icon, "\u{e65d} ");
+        assert_eq!(color, Color::Rgb(240, 80, 50));
+    }
+
+    #[test]
+    fn nerd_gitmodules() {
+        let (icon, _) = file_icon(Path::new(".gitmodules"), false, false, true);
+        assert_eq!(icon, "\u{e65d} ");
+    }
+
+    #[test]
+    fn nerd_gitattributes() {
+        let (icon, _) = file_icon(Path::new(".gitattributes"), false, false, true);
+        assert_eq!(icon, "\u{e65d} ");
+    }
+
+    #[test]
+    fn nerd_env() {
+        let (icon, color) = file_icon(Path::new(".env"), false, false, true);
+        assert_eq!(icon, "\u{e615} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_env_local() {
+        let (icon, _) = file_icon(Path::new(".env.local"), false, false, true);
+        assert_eq!(icon, "\u{e615} ");
+    }
+
+    #[test]
+    fn nerd_env_production() {
+        let (icon, _) = file_icon(Path::new(".env.production"), false, false, true);
+        assert_eq!(icon, "\u{e615} ");
+    }
+
+    // ── Extension-based matches (nerd mode) ──
+
+    #[test]
+    fn nerd_ext_rs() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("main.rs"));
+        assert_eq!(icon, "\u{e7a8} ");
+        assert_eq!(color, Color::Rgb(222, 165, 132));
+    }
+
+    #[test]
+    fn nerd_ext_py() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("app.py"));
+        assert_eq!(icon, "\u{e606} ");
+        assert_eq!(color, Color::Rgb(53, 114, 165));
+    }
+
+    #[test]
+    fn nerd_ext_pyi() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("stub.pyi"));
+        assert_eq!(icon, "\u{e606} ");
+    }
+
+    #[test]
+    fn nerd_ext_js() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("index.js"));
+        assert_eq!(icon, "\u{e60c} ");
+        assert_eq!(color, Color::Rgb(247, 223, 30));
+    }
+
+    #[test]
+    fn nerd_ext_mjs() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("module.mjs"));
+        assert_eq!(icon, "\u{e60c} ");
+    }
+
+    #[test]
+    fn nerd_ext_ts() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("index.ts"));
+        assert_eq!(icon, "\u{e628} ");
+        assert_eq!(color, Color::Rgb(49, 120, 198));
+    }
+
+    #[test]
+    fn nerd_ext_jsx() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("App.jsx"));
+        assert_eq!(icon, "\u{e625} ");
+        assert_eq!(color, Color::Rgb(97, 218, 251));
+    }
+
+    #[test]
+    fn nerd_ext_tsx() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("App.tsx"));
+        assert_eq!(icon, "\u{e625} ");
+        assert_eq!(color, Color::Rgb(49, 120, 198));
+    }
+
+    #[test]
+    fn nerd_ext_go() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("main.go"));
+        assert_eq!(icon, "\u{e627} ");
+        assert_eq!(color, Color::Rgb(0, 173, 216));
+    }
+
+    #[test]
+    fn nerd_ext_java() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("Main.java"));
+        assert_eq!(icon, "\u{e66d} ");
+        assert_eq!(color, Color::Rgb(176, 114, 25));
+    }
+
+    #[test]
+    fn nerd_ext_c() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("main.c"));
+        assert_eq!(icon, "\u{e649} ");
+        assert_eq!(color, Color::Rgb(85, 141, 200));
+    }
+
+    #[test]
+    fn nerd_ext_h() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("header.h"));
+        assert_eq!(icon, "\u{e649} ");
+    }
+
+    #[test]
+    fn nerd_ext_cpp() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("main.cpp"));
+        assert_eq!(icon, "\u{e61d} ");
+        assert_eq!(color, Color::Rgb(85, 141, 200));
+    }
+
+    #[test]
+    fn nerd_ext_hpp() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("header.hpp"));
+        assert_eq!(icon, "\u{e61d} ");
+    }
+
+    #[test]
+    fn nerd_ext_cs() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("Program.cs"));
+        assert_eq!(icon, "\u{e648} ");
+        assert_eq!(color, Color::Rgb(23, 134, 0));
+    }
+
+    #[test]
+    fn nerd_ext_swift() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("App.swift"));
+        assert_eq!(icon, "\u{e699} ");
+        assert_eq!(color, Color::Rgb(240, 81, 56));
+    }
+
+    #[test]
+    fn nerd_ext_rb() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("app.rb"));
+        assert_eq!(icon, "\u{e605} ");
+        assert_eq!(color, Color::Rgb(204, 52, 45));
+    }
+
+    #[test]
+    fn nerd_ext_php() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("index.php"));
+        assert_eq!(icon, "\u{e608} ");
+        assert_eq!(color, Color::Rgb(79, 93, 149));
+    }
+
+    #[test]
+    fn nerd_ext_sh() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("run.sh"));
+        assert_eq!(icon, "\u{e691} ");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn nerd_ext_bash() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("script.bash"));
+        assert_eq!(icon, "\u{e691} ");
+    }
+
+    #[test]
+    fn nerd_ext_html() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("index.html"));
+        assert_eq!(icon, "\u{e60e} ");
+        assert_eq!(color, Color::Rgb(227, 76, 38));
+    }
+
+    #[test]
+    fn nerd_ext_css() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("style.css"));
+        assert_eq!(icon, "\u{e614} ");
+        assert_eq!(color, Color::Rgb(86, 61, 124));
+    }
+
+    #[test]
+    fn nerd_ext_scss() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("style.scss"));
+        assert_eq!(icon, "\u{e603} ");
+        assert_eq!(color, Color::Rgb(207, 100, 154));
+    }
+
+    #[test]
+    fn nerd_ext_vue() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("App.vue"));
+        assert_eq!(icon, "\u{e6a0} ");
+        assert_eq!(color, Color::Rgb(79, 192, 141));
+    }
+
+    #[test]
+    fn nerd_ext_json() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("data.json"));
+        assert_eq!(icon, "\u{e60b} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_ext_yaml() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("config.yaml"));
+        assert_eq!(icon, "\u{e6a8} ");
+        assert_eq!(color, Color::Rgb(203, 56, 55));
+    }
+
+    #[test]
+    fn nerd_ext_yml() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("config.yml"));
+        assert_eq!(icon, "\u{e6a8} ");
+    }
+
+    #[test]
+    fn nerd_ext_toml() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("config.toml"));
+        assert_eq!(icon, "\u{e6b2} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_ext_xml() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("data.xml"));
+        assert_eq!(icon, "\u{e619} ");
+        assert_eq!(color, Color::Rgb(224, 148, 64));
+    }
+
+    #[test]
+    fn nerd_ext_csv() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("data.csv"));
+        assert_eq!(icon, "\u{e64a} ");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn nerd_ext_sql() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("schema.sql"));
+        assert_eq!(icon, "\u{e64d} ");
+        assert_eq!(color, Color::Rgb(85, 141, 200));
+    }
+
+    #[test]
+    fn nerd_ext_md() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("README.md"));
+        assert_eq!(icon, "\u{e609} ");
+        assert_eq!(color, Color::Rgb(83, 141, 213));
+    }
+
+    #[test]
+    fn nerd_ext_txt() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("notes.txt"));
+        assert_eq!(icon, "\u{e64e} ");
+        assert_eq!(color, Color::White);
+    }
+
+    #[test]
+    fn nerd_ext_pdf() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("doc.pdf"));
+        assert_eq!(icon, "\u{e67d} ");
+        assert_eq!(color, Color::Rgb(210, 46, 46));
+    }
+
+    #[test]
+    fn nerd_ext_png() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("image.png"));
+        assert_eq!(icon, "\u{e60d} ");
+        assert_eq!(color, Color::Rgb(160, 100, 200));
+    }
+
+    #[test]
+    fn nerd_ext_svg() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("logo.svg"));
+        assert_eq!(icon, "\u{e698} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_ext_mp3() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("song.mp3"));
+        assert_eq!(icon, "\u{e638} ");
+        assert_eq!(color, Color::Rgb(160, 100, 200));
+    }
+
+    #[test]
+    fn nerd_ext_mp4() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("video.mp4"));
+        assert_eq!(icon, "\u{e69f} ");
+        assert_eq!(color, Color::Rgb(224, 148, 64));
+    }
+
+    #[test]
+    fn nerd_ext_zip() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("archive.zip"));
+        assert_eq!(icon, "\u{e6aa} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_ext_lock() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("Gemfile.lock"));
+        assert_eq!(icon, "\u{e672} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_ext_log() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("app.log"));
+        assert_eq!(icon, "\u{e68f} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_ext_wasm() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("module.wasm"));
+        assert_eq!(icon, "\u{e6a1} ");
+        assert_eq!(color, Color::Rgb(101, 79, 240));
+    }
+
+    #[test]
+    fn nerd_ext_db() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("data.db"));
+        assert_eq!(icon, "\u{e64d} ");
+        assert_eq!(color, Color::Rgb(85, 141, 200));
+    }
+
+    #[test]
+    fn nerd_ext_sqlite() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("data.sqlite"));
+        assert_eq!(icon, "\u{e64d} ");
+    }
+
+    #[test]
+    fn nerd_ext_pem() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("cert.pem"));
+        assert_eq!(icon, "\u{f084} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_ext_key() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("private.key"));
+        assert_eq!(icon, "\u{f084} ");
+    }
+
+    // ── Emoji fallback mode ──
+
+    #[test]
+    fn emoji_ext_rs() {
+        let (icon, color) = emoji_icon_by_ext(Path::new("main.rs"));
+        assert_eq!(icon, "🦀");
+        assert_eq!(color, Color::White);
+    }
+
+    #[test]
+    fn emoji_ext_toml() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("config.toml"));
+        assert_eq!(icon, "⚙ ");
+    }
+
+    #[test]
+    fn emoji_ext_md() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("README.md"));
+        assert_eq!(icon, "📝");
+    }
+
+    #[test]
+    fn emoji_ext_json() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("data.json"));
+        assert_eq!(icon, "{}");
+    }
+
+    #[test]
+    fn emoji_ext_yaml() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("config.yaml"));
+        assert_eq!(icon, "📋");
+    }
+
+    #[test]
+    fn emoji_ext_yml() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("config.yml"));
+        assert_eq!(icon, "📋");
+    }
+
+    #[test]
+    fn emoji_ext_lock() {
+        let (icon, _) = emoji_icon_by_ext(Path::new("Cargo.lock"));
+        assert_eq!(icon, "🔒");
+    }
+
+    #[test]
+    fn emoji_ext_unknown() {
+        let (icon, color) = emoji_icon_by_ext(Path::new("file.xyz"));
+        assert_eq!(icon, "  ");
+        assert_eq!(color, Color::White);
+    }
+
+    // ── Unknown / default extensions ──
+
+    #[test]
+    fn nerd_unknown_ext_returns_default() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("file.xyzabc"));
+        assert_eq!(icon, "\u{e64e} ");
+        assert_eq!(color, Color::White);
+    }
+
+    #[test]
+    fn nerd_no_extension_returns_default() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("noextension"));
+        assert_eq!(icon, "\u{e64e} ");
+        assert_eq!(color, Color::White);
+    }
+
+    // ── Paths with directories ──
+
+    #[test]
+    fn nerd_nested_path_rs() {
+        let (icon, _) = file_icon(Path::new("src/app/main.rs"), false, false, true);
+        assert_eq!(icon, "\u{e7a8} ");
+    }
+
+    #[test]
+    fn nerd_nested_dockerfile() {
+        let (icon, _) = file_icon(Path::new("docker/Dockerfile"), false, false, true);
+        assert_eq!(icon, "\u{e650} ");
+    }
+
+    // ── file_icon integrating nerd ext via the public API ──
+
+    #[test]
+    fn file_icon_nerd_rs_file() {
+        let (icon, color) = file_icon(Path::new("lib.rs"), false, false, true);
+        assert_eq!(icon, "\u{e7a8} ");
+        assert_eq!(color, Color::Rgb(222, 165, 132));
+    }
+
+    #[test]
+    fn file_icon_emoji_fallback_file() {
+        let (icon, _) = file_icon(Path::new("lib.rs"), false, false, false);
+        assert_eq!(icon, "🦀");
+    }
+
+    // ── Additional nerd extension coverage ──
+
+    #[test]
+    fn nerd_ext_lua() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("init.lua"));
+        assert_eq!(icon, "\u{e620} ");
+        assert_eq!(color, Color::Rgb(0, 0, 128));
+    }
+
+    #[test]
+    fn nerd_ext_zig() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("main.zig"));
+        assert_eq!(icon, "\u{e6a9} ");
+    }
+
+    #[test]
+    fn nerd_ext_kt() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("Main.kt"));
+        assert_eq!(icon, "\u{e634} ");
+        assert_eq!(color, Color::Rgb(169, 123, 255));
+    }
+
+    #[test]
+    fn nerd_ext_ex() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("app.ex"));
+        assert_eq!(icon, "\u{e62d} ");
+    }
+
+    #[test]
+    fn nerd_ext_hs() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("Main.hs"));
+        assert_eq!(icon, "\u{e61f} ");
+    }
+
+    #[test]
+    fn nerd_ext_scala() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("App.scala"));
+        assert_eq!(icon, "\u{e68e} ");
+    }
+
+    #[test]
+    fn nerd_ext_r() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("analysis.r"));
+        assert_eq!(icon, "\u{e68a} ");
+    }
+
+    #[test]
+    fn nerd_ext_svelte() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("App.svelte"));
+        assert_eq!(icon, "\u{e697} ");
+    }
+
+    #[test]
+    fn nerd_ext_graphql() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("schema.graphql"));
+        assert_eq!(icon, "\u{e662} ");
+    }
+
+    #[test]
+    fn nerd_ext_tar() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("archive.tar"));
+        assert_eq!(icon, "\u{e6aa} ");
+    }
+
+    #[test]
+    fn nerd_ext_gz() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("data.gz"));
+        assert_eq!(icon, "\u{e6aa} ");
+    }
+
+    #[test]
+    fn nerd_ext_exe() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("prog.exe"));
+        assert_eq!(icon, "\u{eae8} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_ext_dll() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("lib.dll"));
+        assert_eq!(icon, "\u{eae8} ");
+    }
+
+    #[test]
+    fn nerd_ext_ttf() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("font.ttf"));
+        assert_eq!(icon, "\u{e659} ");
+        assert_eq!(color, Color::Rgb(210, 46, 46));
+    }
+
+    #[test]
+    fn nerd_ext_woff2() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("font.woff2"));
+        assert_eq!(icon, "\u{e659} ");
+    }
+
+    #[test]
+    fn nerd_ext_jpg() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("photo.jpg"));
+        assert_eq!(icon, "\u{e60d} ");
+    }
+
+    #[test]
+    fn nerd_ext_gif() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("anim.gif"));
+        assert_eq!(icon, "\u{e60d} ");
+    }
+
+    #[test]
+    fn nerd_ext_wav() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("audio.wav"));
+        assert_eq!(icon, "\u{e638} ");
+    }
+
+    #[test]
+    fn nerd_ext_mkv() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("movie.mkv"));
+        assert_eq!(icon, "\u{e69f} ");
+    }
+
+    #[test]
+    fn nerd_ext_ico() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("favicon.ico"));
+        assert_eq!(icon, "\u{e623} ");
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn nerd_ext_less() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("vars.less"));
+        assert_eq!(icon, "\u{e614} ");
+    }
+
+    #[test]
+    fn nerd_ext_ini() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("config.ini"));
+        assert_eq!(icon, "\u{e615} ");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    #[test]
+    fn nerd_ext_tex() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("paper.tex"));
+        assert_eq!(icon, "\u{e69b} ");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn nerd_ext_ps1() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("script.ps1"));
+        assert_eq!(icon, "\u{e683} ");
+    }
+
+    #[test]
+    fn nerd_ext_zsh() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("profile.zsh"));
+        assert_eq!(icon, "\u{e691} ");
+    }
+
+    #[test]
+    fn nerd_ext_fish() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("config.fish"));
+        assert_eq!(icon, "\u{e691} ");
+    }
+
+    // ── Edge case: dir flag overrides filename match ──
+
+    #[test]
+    fn dir_flag_overrides_rs_extension() {
+        // Even if the path looks like a file, is_dir=true should give directory icon
+        let (icon, _) = file_icon(Path::new("main.rs"), true, false, true);
+        assert_eq!(icon, "\u{e5ff} ");
+    }
+
+    #[test]
+    fn dir_flag_overrides_dockerfile_name() {
+        let (icon, _) = file_icon(Path::new("Dockerfile"), true, true, true);
+        assert_eq!(icon, "\u{e5fe} ");
+    }
+
+    // ── Emoji mode doesn't crash on special filenames ──
+
+    #[test]
+    fn emoji_mode_dockerfile() {
+        let (icon, color) = file_icon(Path::new("Dockerfile"), false, false, false);
+        // No special emoji for Dockerfile — falls through to default
+        assert_eq!(icon, "  ");
+        assert_eq!(color, Color::White);
+    }
+
+    #[test]
+    fn emoji_mode_no_extension() {
+        let (icon, color) = file_icon(Path::new("README"), false, false, false);
+        assert_eq!(icon, "  ");
+        assert_eq!(color, Color::White);
+    }
+
+    // ── Unicode / special character filenames ──
+
+    #[test]
+    fn unicode_filename_with_rs_ext() {
+        let (icon, _) = file_icon(Path::new("модуль.rs"), false, false, true);
+        assert_eq!(icon, "\u{e7a8} ");
+    }
+
+    #[test]
+    fn dot_hidden_file_nerd() {
+        // A dot-file without matching filename falls to extension check
+        let (icon, _) = file_icon(Path::new(".hidden"), false, false, true);
+        // No extension, not a known filename -> default
+        assert_eq!(icon, "\u{e64e} ");
+    }
+
+    #[test]
+    fn nerd_ext_nix() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("default.nix"));
+        assert_eq!(icon, "\u{f1105} ");
+    }
+
+    #[test]
+    fn nerd_ext_tf() {
+        let (icon, color) = nerd_icon_by_ext(Path::new("main.tf"));
+        assert_eq!(icon, "\u{e69a} ");
+        assert_eq!(color, Color::Rgb(92, 78, 229));
+    }
+
+    #[test]
+    fn nerd_ext_proto() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("service.proto"));
+        assert_eq!(icon, "\u{e615} ");
+    }
+
+    #[test]
+    fn nerd_ext_rst() {
+        let (icon, _) = nerd_icon_by_ext(Path::new("docs.rst"));
+        assert_eq!(icon, "\u{e64e} ");
+    }
+}

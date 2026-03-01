@@ -250,3 +250,559 @@ fn classify_event(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify::event::{CreateKind, ModifyKind, RemoveKind, AccessKind};
+
+    // ── Helper to build a notify::Event with paths ──────────────────────
+    fn make_event(kind: EventKind, paths: Vec<PathBuf>) -> Event {
+        let mut e = Event::new(kind);
+        e.paths = paths;
+        e
+    }
+
+    // =====================================================================
+    // is_noisy_path — NOISY_SEGMENTS
+    // =====================================================================
+
+    #[test]
+    fn noisy_target_dir() {
+        assert!(is_noisy_path(Path::new("/project/target/debug/build")));
+    }
+
+    #[test]
+    fn noisy_target_as_only_segment() {
+        assert!(is_noisy_path(Path::new("target")));
+    }
+
+    #[test]
+    fn noisy_git_dir() {
+        assert!(is_noisy_path(Path::new("/repo/.git/objects/pack")));
+    }
+
+    #[test]
+    fn noisy_git_root_segment() {
+        assert!(is_noisy_path(Path::new(".git")));
+    }
+
+    #[test]
+    fn noisy_node_modules() {
+        assert!(is_noisy_path(Path::new("/app/node_modules/lodash/index.js")));
+    }
+
+    #[test]
+    fn noisy_ds_store_segment() {
+        assert!(is_noisy_path(Path::new("/folder/.DS_Store")));
+    }
+
+    #[test]
+    fn noisy_ds_store_bare() {
+        assert!(is_noisy_path(Path::new(".DS_Store")));
+    }
+
+    #[test]
+    fn noisy_target_nested_deep() {
+        assert!(is_noisy_path(Path::new("/a/b/c/target/d/e/f.rs")));
+    }
+
+    #[test]
+    fn noisy_node_modules_nested() {
+        assert!(is_noisy_path(Path::new("src/node_modules/.package-lock.json")));
+    }
+
+    // =====================================================================
+    // is_noisy_path — NOISY_EXTENSIONS
+    // =====================================================================
+
+    #[test]
+    fn noisy_swp_extension() {
+        assert!(is_noisy_path(Path::new("/src/main.rs.swp")));
+    }
+
+    #[test]
+    fn noisy_swo_extension() {
+        assert!(is_noisy_path(Path::new("/src/lib.rs.swo")));
+    }
+
+    #[test]
+    fn noisy_swn_extension() {
+        assert!(is_noisy_path(Path::new("config.toml.swn")));
+    }
+
+    #[test]
+    fn noisy_swap_bare_filename() {
+        assert!(is_noisy_path(Path::new("file.swp")));
+    }
+
+    // =====================================================================
+    // is_noisy_path — backup files ending with ~
+    // =====================================================================
+
+    #[test]
+    fn noisy_backup_tilde() {
+        assert!(is_noisy_path(Path::new("/src/main.rs~")));
+    }
+
+    #[test]
+    fn noisy_backup_tilde_bare() {
+        assert!(is_noisy_path(Path::new("file~")));
+    }
+
+    #[test]
+    fn noisy_backup_tilde_deep_path() {
+        assert!(is_noisy_path(Path::new("/a/b/c/d.txt~")));
+    }
+
+    // =====================================================================
+    // is_noisy_path — clean paths (should NOT be noisy)
+    // =====================================================================
+
+    #[test]
+    fn clean_rust_source() {
+        assert!(!is_noisy_path(Path::new("/src/main.rs")));
+    }
+
+    #[test]
+    fn clean_toml_config() {
+        assert!(!is_noisy_path(Path::new("Cargo.toml")));
+    }
+
+    #[test]
+    fn clean_json_file() {
+        assert!(!is_noisy_path(Path::new("/project/package.json")));
+    }
+
+    #[test]
+    fn clean_nested_source() {
+        assert!(!is_noisy_path(Path::new("/workspace/src/app/mod.rs")));
+    }
+
+    #[test]
+    fn clean_readme() {
+        assert!(!is_noisy_path(Path::new("README.md")));
+    }
+
+    #[test]
+    fn clean_lock_file() {
+        assert!(!is_noisy_path(Path::new("Cargo.lock")));
+    }
+
+    #[test]
+    fn clean_hidden_non_git() {
+        assert!(!is_noisy_path(Path::new("/home/.bashrc")));
+    }
+
+    #[test]
+    fn clean_txt_file() {
+        assert!(!is_noisy_path(Path::new("/docs/notes.txt")));
+    }
+
+    #[test]
+    fn clean_empty_path() {
+        assert!(!is_noisy_path(Path::new("")));
+    }
+
+    #[test]
+    fn clean_root_path() {
+        assert!(!is_noisy_path(Path::new("/")));
+    }
+
+    #[test]
+    fn clean_relative_source() {
+        assert!(!is_noisy_path(Path::new("src/lib.rs")));
+    }
+
+    #[test]
+    fn clean_path_with_target_substring_not_segment() {
+        // "targeted" contains "target" but is not the segment "target"
+        assert!(!is_noisy_path(Path::new("/project/targeted/file.rs")));
+    }
+
+    #[test]
+    fn clean_path_with_git_substring_not_segment() {
+        // ".github" is not ".git"
+        assert!(!is_noisy_path(Path::new("/project/.github/workflows/ci.yml")));
+    }
+
+    #[test]
+    fn clean_path_with_gitignore() {
+        assert!(!is_noisy_path(Path::new("/project/.gitignore")));
+    }
+
+    #[test]
+    fn clean_unicode_filename() {
+        assert!(!is_noisy_path(Path::new("/docs/日本語.txt")));
+    }
+
+    #[test]
+    fn clean_spaces_in_path() {
+        assert!(!is_noisy_path(Path::new("/my project/src/main.rs")));
+    }
+
+    #[test]
+    fn clean_dots_in_filename() {
+        assert!(!is_noisy_path(Path::new("/src/file.test.rs")));
+    }
+
+    #[test]
+    fn clean_no_extension() {
+        assert!(!is_noisy_path(Path::new("/bin/myapp")));
+    }
+
+    // =====================================================================
+    // classify_event — error results
+    // =====================================================================
+
+    #[test]
+    fn classify_error_result_sets_nothing() {
+        let err: notify::Result<Event> = Err(notify::Error::generic("test error"));
+        let session: Option<PathBuf> = None;
+        let (mut saw_session, mut saw_worktree) = (false, false);
+        classify_event(&err, &session, &mut saw_session, &mut saw_worktree);
+        assert!(!saw_session);
+        assert!(!saw_worktree);
+    }
+
+    // =====================================================================
+    // classify_event — ignored EventKind variants (Access, Any, Other)
+    // =====================================================================
+
+    #[test]
+    fn classify_access_event_ignored() {
+        let event = make_event(
+            EventKind::Access(AccessKind::Any),
+            vec![PathBuf::from("/src/main.rs")],
+        );
+        let session: Option<PathBuf> = None;
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &session, &mut s, &mut w);
+        assert!(!s);
+        assert!(!w);
+    }
+
+    #[test]
+    fn classify_any_event_ignored() {
+        let event = make_event(EventKind::Any, vec![PathBuf::from("/src/main.rs")]);
+        let session: Option<PathBuf> = None;
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &session, &mut s, &mut w);
+        assert!(!s);
+        assert!(!w);
+    }
+
+    #[test]
+    fn classify_other_event_ignored() {
+        let event = make_event(EventKind::Other, vec![PathBuf::from("/src/main.rs")]);
+        let session: Option<PathBuf> = None;
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &session, &mut s, &mut w);
+        assert!(!s);
+        assert!(!w);
+    }
+
+    // =====================================================================
+    // classify_event — session file detection
+    // =====================================================================
+
+    #[test]
+    fn classify_session_file_create() {
+        let sp = PathBuf::from("/tmp/session.jsonl");
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![sp.clone()],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
+        assert!(s, "should detect session file");
+        assert!(!w, "session file should not be counted as worktree");
+    }
+
+    #[test]
+    fn classify_session_file_modify() {
+        let sp = PathBuf::from("/sessions/abc.jsonl");
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![sp.clone()],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
+        assert!(s);
+        assert!(!w);
+    }
+
+    #[test]
+    fn classify_session_file_remove() {
+        let sp = PathBuf::from("/data/session.jsonl");
+        let event = make_event(
+            EventKind::Remove(RemoveKind::File),
+            vec![sp.clone()],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
+        assert!(s);
+        assert!(!w);
+    }
+
+    #[test]
+    fn classify_session_no_watch_set() {
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![PathBuf::from("/tmp/session.jsonl")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!s, "no session path set means no session match");
+        assert!(w, "clean path should be seen as worktree change");
+    }
+
+    // =====================================================================
+    // classify_event — worktree changes (clean paths)
+    // =====================================================================
+
+    #[test]
+    fn classify_worktree_clean_file_create() {
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/project/src/lib.rs")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!s);
+        assert!(w);
+    }
+
+    #[test]
+    fn classify_worktree_clean_file_modify() {
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![PathBuf::from("/project/Cargo.toml")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(w);
+    }
+
+    #[test]
+    fn classify_worktree_clean_file_remove() {
+        let event = make_event(
+            EventKind::Remove(RemoveKind::File),
+            vec![PathBuf::from("/project/old.rs")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(w);
+    }
+
+    // =====================================================================
+    // classify_event — worktree changes filtered by noisy paths
+    // =====================================================================
+
+    #[test]
+    fn classify_noisy_target_filtered() {
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/project/target/debug/deps/foo.d")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!w, "target dir should be filtered");
+    }
+
+    #[test]
+    fn classify_noisy_git_filtered() {
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![PathBuf::from("/project/.git/index")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!w, ".git dir should be filtered");
+    }
+
+    #[test]
+    fn classify_noisy_swap_filtered() {
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/project/src/.main.rs.swp")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!w, ".swp should be filtered");
+    }
+
+    #[test]
+    fn classify_noisy_backup_filtered() {
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![PathBuf::from("/project/src/main.rs~")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!w, "backup files (~) should be filtered");
+    }
+
+    #[test]
+    fn classify_noisy_node_modules_filtered() {
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/app/node_modules/react/index.js")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!w, "node_modules should be filtered");
+    }
+
+    // =====================================================================
+    // classify_event — multi-path events
+    // =====================================================================
+
+    #[test]
+    fn classify_multi_path_session_and_worktree() {
+        let sp = PathBuf::from("/tmp/session.jsonl");
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![sp.clone(), PathBuf::from("/project/src/lib.rs")],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
+        assert!(s, "session file should be detected");
+        assert!(w, "clean worktree file should be detected");
+    }
+
+    #[test]
+    fn classify_multi_path_all_noisy() {
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![
+                PathBuf::from("/project/target/foo"),
+                PathBuf::from("/project/.git/index"),
+                PathBuf::from("/project/node_modules/x"),
+            ],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!s);
+        assert!(!w, "all paths are noisy, worktree should be false");
+    }
+
+    #[test]
+    fn classify_multi_path_mixed_noisy_and_clean() {
+        let event = make_event(
+            EventKind::Create(CreateKind::Any),
+            vec![
+                PathBuf::from("/project/target/debug/foo"),
+                PathBuf::from("/project/src/clean.rs"),
+            ],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(w, "at least one clean path should set worktree");
+    }
+
+    #[test]
+    fn classify_duplicate_paths_deduplicated() {
+        let path = PathBuf::from("/project/src/main.rs");
+        let event = make_event(
+            EventKind::Modify(ModifyKind::Any),
+            vec![path.clone(), path.clone()],
+        );
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        // Should still work — dedup doesn't break anything
+        assert!(w);
+    }
+
+    #[test]
+    fn classify_empty_paths() {
+        let event = make_event(EventKind::Create(CreateKind::Any), vec![]);
+        let (mut s, mut w) = (false, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(!s);
+        assert!(!w, "empty paths means no events");
+    }
+
+    // =====================================================================
+    // classify_event — preserves existing flag values
+    // =====================================================================
+
+    #[test]
+    fn classify_preserves_saw_session_true() {
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/project/src/lib.rs")],
+        );
+        let (mut s, mut w) = (true, false);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(s, "saw_session should remain true");
+        assert!(w);
+    }
+
+    #[test]
+    fn classify_preserves_saw_worktree_true() {
+        // A noisy event should not reset an already-true saw_worktree
+        let event = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/project/target/debug/foo")],
+        );
+        let (mut s, mut w) = (false, true);
+        classify_event(&Ok(event), &None, &mut s, &mut w);
+        assert!(w, "saw_worktree should remain true");
+    }
+
+    // =====================================================================
+    // is_noisy_path — edge cases with similar names
+    // =====================================================================
+
+    #[test]
+    fn noisy_ds_store_not_partial_match() {
+        // ".DS_Store_backup" is NOT the segment ".DS_Store", but the
+        // extension test doesn't match either (extension = "DS_Store_backup")
+        // Actually the segment IS ".DS_Store_backup" which != ".DS_Store"
+        assert!(!is_noisy_path(Path::new("/project/.DS_Store_backup")));
+    }
+
+    #[test]
+    fn noisy_target_exact_segment_only() {
+        // "my-target" has segment "my-target" which is not "target"
+        assert!(!is_noisy_path(Path::new("/project/my-target/file")));
+    }
+
+    #[test]
+    fn noisy_swp_only_as_extension() {
+        // "file.swp" is noisy; "swp" without extension is not
+        assert!(!is_noisy_path(Path::new("/project/swp")));
+    }
+
+    #[test]
+    fn clean_tilde_in_middle_of_path() {
+        // Tilde only matters at the end; ~/ in the middle is just a dir name
+        assert!(!is_noisy_path(Path::new("/home/user~/project/main.rs")));
+    }
+
+    #[test]
+    fn noisy_deeply_nested_git() {
+        assert!(is_noisy_path(Path::new("/a/b/c/d/e/.git/HEAD")));
+    }
+
+    #[test]
+    fn clean_path_with_special_chars() {
+        assert!(!is_noisy_path(Path::new("/project/src/file-with-dashes.rs")));
+    }
+
+    #[test]
+    fn clean_path_with_underscores() {
+        assert!(!is_noisy_path(Path::new("/project/src/my_module.rs")));
+    }
+
+    #[test]
+    fn clean_path_emoji_in_name() {
+        assert!(!is_noisy_path(Path::new("/docs/notes_\u{1F600}.md")));
+    }
+
+    #[test]
+    fn noisy_git_worktree_hook() {
+        assert!(is_noisy_path(Path::new("/repo/.git/hooks/pre-commit")));
+    }
+}

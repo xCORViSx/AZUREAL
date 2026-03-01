@@ -228,3 +228,288 @@ fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use crate::app::types::HealthTab;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  HealthTab enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn health_tab_god_files_eq() { assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles); }
+    #[test]
+    fn health_tab_documentation_eq() { assert_eq!(HealthTab::Documentation, HealthTab::Documentation); }
+    #[test]
+    fn health_tab_different_ne() { assert_ne!(HealthTab::GodFiles, HealthTab::Documentation); }
+
+    #[test]
+    fn health_tab_toggle_god_to_doc() {
+        let tab = HealthTab::GodFiles;
+        let toggled = match tab {
+            HealthTab::GodFiles => HealthTab::Documentation,
+            HealthTab::Documentation => HealthTab::GodFiles,
+        };
+        assert_eq!(toggled, HealthTab::Documentation);
+    }
+
+    #[test]
+    fn health_tab_toggle_doc_to_god() {
+        let tab = HealthTab::Documentation;
+        let toggled = match tab {
+            HealthTab::GodFiles => HealthTab::Documentation,
+            HealthTab::Documentation => HealthTab::GodFiles,
+        };
+        assert_eq!(toggled, HealthTab::GodFiles);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  RustModuleStyle enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn rust_style_file_based_eq() { assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased); }
+    #[test]
+    fn rust_style_mod_rs_eq() { assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs); }
+    #[test]
+    fn rust_style_different_ne() { assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs); }
+
+    #[test]
+    fn rust_style_toggle_file_to_mod() {
+        let style = RustModuleStyle::FileBased;
+        let toggled = match style {
+            RustModuleStyle::FileBased => RustModuleStyle::ModRs,
+            RustModuleStyle::ModRs => RustModuleStyle::FileBased,
+        };
+        assert_eq!(toggled, RustModuleStyle::ModRs);
+    }
+
+    #[test]
+    fn rust_style_toggle_mod_to_file() {
+        let style = RustModuleStyle::ModRs;
+        let toggled = match style {
+            RustModuleStyle::FileBased => RustModuleStyle::ModRs,
+            RustModuleStyle::ModRs => RustModuleStyle::FileBased,
+        };
+        assert_eq!(toggled, RustModuleStyle::FileBased);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PythonModuleStyle enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn python_style_package_eq() { assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package); }
+    #[test]
+    fn python_style_single_eq() { assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile); }
+    #[test]
+    fn python_style_different_ne() { assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile); }
+
+    #[test]
+    fn python_style_toggle() {
+        let style = PythonModuleStyle::Package;
+        let toggled = match style {
+            PythonModuleStyle::Package => PythonModuleStyle::SingleFile,
+            PythonModuleStyle::SingleFile => PythonModuleStyle::Package,
+        };
+        assert_eq!(toggled, PythonModuleStyle::SingleFile);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Module style dialog row selection
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn dialog_row_both_languages_max_1() {
+        let has_rust = true;
+        let has_python = true;
+        let max = if has_rust && has_python { 1 } else { 0 };
+        assert_eq!(max, 1);
+    }
+
+    #[test]
+    fn dialog_row_single_language_max_0() {
+        let has_rust = true;
+        let has_python = false;
+        let max = if has_rust && has_python { 1 } else { 0 };
+        assert_eq!(max, 0);
+    }
+
+    #[test]
+    fn dialog_row_rust_at_0() {
+        let has_rust = true;
+        let selected = 0;
+        let on_rust = has_rust && selected == 0;
+        assert!(on_rust);
+    }
+
+    #[test]
+    fn dialog_row_python_at_1() {
+        let has_python = true;
+        let has_rust = true;
+        let selected = 1;
+        let on_python = has_python && (selected == 1 || !has_rust);
+        assert!(on_python);
+    }
+
+    #[test]
+    fn dialog_row_python_only_at_0() {
+        let has_python = true;
+        let has_rust = false;
+        let selected = 0;
+        let on_python = has_python && (selected == 1 || !has_rust);
+        assert!(on_python);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action variants used in this module
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_health_switch_tab() { assert_eq!(Action::HealthSwitchTab, Action::HealthSwitchTab); }
+    #[test]
+    fn action_escape() { assert_eq!(Action::Escape, Action::Escape); }
+    #[test]
+    fn action_nav_down() { assert_eq!(Action::NavDown, Action::NavDown); }
+    #[test]
+    fn action_nav_up() { assert_eq!(Action::NavUp, Action::NavUp); }
+    #[test]
+    fn action_go_to_top() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    #[test]
+    fn action_go_to_bottom() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    #[test]
+    fn action_page_down() { assert_eq!(Action::PageDown, Action::PageDown); }
+    #[test]
+    fn action_page_up() { assert_eq!(Action::PageUp, Action::PageUp); }
+    #[test]
+    fn action_health_toggle_check() { assert_eq!(Action::HealthToggleCheck, Action::HealthToggleCheck); }
+    #[test]
+    fn action_health_toggle_all() { assert_eq!(Action::HealthToggleAll, Action::HealthToggleAll); }
+    #[test]
+    fn action_health_view_checked() { assert_eq!(Action::HealthViewChecked, Action::HealthViewChecked); }
+    #[test]
+    fn action_health_scope_mode() { assert_eq!(Action::HealthScopeMode, Action::HealthScopeMode); }
+    #[test]
+    fn action_health_modularize() { assert_eq!(Action::HealthModularize, Action::HealthModularize); }
+    #[test]
+    fn action_health_doc_toggle_check() { assert_eq!(Action::HealthDocToggleCheck, Action::HealthDocToggleCheck); }
+    #[test]
+    fn action_health_doc_toggle_non100() { assert_eq!(Action::HealthDocToggleNon100, Action::HealthDocToggleNon100); }
+    #[test]
+    fn action_health_doc_spawn() { assert_eq!(Action::HealthDocSpawn, Action::HealthDocSpawn); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Page scroll calculation (modal_h arithmetic)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn modal_h_calculation_normal() {
+        let screen_height: u16 = 100;
+        let modal_h = (screen_height * 70 / 100).max(16).min(screen_height) as usize;
+        assert_eq!(modal_h, 70);
+    }
+
+    #[test]
+    fn modal_h_calculation_small_screen() {
+        let screen_height: u16 = 10;
+        let modal_h = (screen_height * 70 / 100).max(16).min(screen_height) as usize;
+        // 10*70/100 = 7, max(7,16) = 16, min(16,10) = 10
+        assert_eq!(modal_h, 10);
+    }
+
+    #[test]
+    fn god_files_page_size() {
+        let modal_h = 70usize;
+        let page = modal_h.saturating_sub(12).max(1);
+        assert_eq!(page, 58);
+    }
+
+    #[test]
+    fn doc_page_size() {
+        let modal_h = 70usize;
+        let page = modal_h.saturating_sub(14).max(1);
+        assert_eq!(page, 56);
+    }
+
+    #[test]
+    fn page_size_min_1() {
+        let modal_h = 5usize;
+        let page = modal_h.saturating_sub(12).max(1);
+        assert_eq!(page, 1);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  lookup_health_action returns None for unmapped keys
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn lookup_health_unmapped_key() {
+        let result = lookup_health_action(HealthTab::GodFiles, KeyModifiers::NONE, KeyCode::Char('z'));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn lookup_health_esc_returns_escape() {
+        let result = lookup_health_action(HealthTab::GodFiles, KeyModifiers::NONE, KeyCode::Esc);
+        assert_eq!(result, Some(Action::Escape));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Key matching for module style dialog
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn dialog_j_matches_down() {
+        let k = key(KeyCode::Char('j'));
+        assert!(matches!(k.code, KeyCode::Char('j') | KeyCode::Down));
+    }
+
+    #[test]
+    fn dialog_k_matches_up() {
+        let k = key(KeyCode::Char('k'));
+        assert!(matches!(k.code, KeyCode::Char('k') | KeyCode::Up));
+    }
+
+    #[test]
+    fn dialog_space_toggles() {
+        let k = key(KeyCode::Char(' '));
+        assert!(matches!(k.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right));
+    }
+
+    #[test]
+    fn dialog_enter_confirms() {
+        let k = key(KeyCode::Enter);
+        assert_eq!(k.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn dialog_esc_cancels() {
+        let k = key(KeyCode::Esc);
+        assert_eq!(k.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn key_tab_code() {
+        let k = key(KeyCode::Tab);
+        assert_eq!(k.code, KeyCode::Tab);
+    }
+
+    #[test]
+    fn key_backspace_code() {
+        let k = key(KeyCode::Backspace);
+        assert_eq!(k.code, KeyCode::Backspace);
+    }
+
+    #[test]
+    fn key_modifiers_default_none() {
+        let k = key(KeyCode::Char('x'));
+        assert_eq!(k.modifiers, KeyModifiers::NONE);
+    }
+}

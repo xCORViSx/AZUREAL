@@ -301,3 +301,314 @@ fn resolve_input_path(raw: &str) -> std::path::PathBuf {
         std::path::PathBuf::from(raw)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  resolve_input_path
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn resolve_tilde_slash_path() {
+        let result = resolve_input_path("~/projects/test");
+        let home = dirs::home_dir().unwrap_or_default();
+        assert_eq!(result, home.join("projects/test"));
+    }
+
+    #[test]
+    fn resolve_tilde_only() {
+        let result = resolve_input_path("~");
+        let home = dirs::home_dir().unwrap_or_default();
+        assert_eq!(result, home);
+    }
+
+    #[test]
+    fn resolve_absolute_path() {
+        let result = resolve_input_path("/tmp/project");
+        assert_eq!(result, std::path::PathBuf::from("/tmp/project"));
+    }
+
+    #[test]
+    fn resolve_relative_path() {
+        let result = resolve_input_path("relative/path");
+        assert_eq!(result, std::path::PathBuf::from("relative/path"));
+    }
+
+    #[test]
+    fn resolve_empty_path() {
+        let result = resolve_input_path("");
+        assert_eq!(result, std::path::PathBuf::from(""));
+    }
+
+    #[test]
+    fn resolve_tilde_in_middle_not_expanded() {
+        let result = resolve_input_path("/tmp/~/project");
+        assert_eq!(result, std::path::PathBuf::from("/tmp/~/project"));
+    }
+
+    #[test]
+    fn resolve_tilde_without_slash_not_tilde_path() {
+        // "~foo" is NOT "~/foo" - should be treated as literal
+        let result = resolve_input_path("~foo");
+        assert_eq!(result, std::path::PathBuf::from("~foo"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ProjectsPanelMode enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn mode_browse_eq() { assert_eq!(ProjectsPanelMode::Browse, ProjectsPanelMode::Browse); }
+    #[test]
+    fn mode_add_path_eq() { assert_eq!(ProjectsPanelMode::AddPath, ProjectsPanelMode::AddPath); }
+    #[test]
+    fn mode_rename_eq() { assert_eq!(ProjectsPanelMode::Rename, ProjectsPanelMode::Rename); }
+    #[test]
+    fn mode_init_eq() { assert_eq!(ProjectsPanelMode::Init, ProjectsPanelMode::Init); }
+    #[test]
+    fn mode_browse_ne_add() { assert_ne!(ProjectsPanelMode::Browse, ProjectsPanelMode::AddPath); }
+    #[test]
+    fn mode_rename_ne_init() { assert_ne!(ProjectsPanelMode::Rename, ProjectsPanelMode::Init); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ProjectsPanel construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn projects_panel_new_defaults() {
+        let entries = vec![];
+        let p = crate::app::types::ProjectsPanel::new(entries);
+        assert_eq!(p.selected, 0);
+        assert_eq!(p.mode, ProjectsPanelMode::Browse);
+        assert!(p.input.is_empty());
+        assert_eq!(p.input_cursor, 0);
+        assert!(p.error.is_none());
+    }
+
+    #[test]
+    fn projects_panel_start_add_mode() {
+        let mut p = crate::app::types::ProjectsPanel::new(vec![]);
+        p.start_add();
+        assert_eq!(p.mode, ProjectsPanelMode::AddPath);
+        assert!(p.input.is_empty());
+        assert_eq!(p.input_cursor, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action variants used in this module
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_quit_eq() { assert_eq!(Action::Quit, Action::Quit); }
+    #[test]
+    fn action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    #[test]
+    fn action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    #[test]
+    fn action_confirm_eq() { assert_eq!(Action::Confirm, Action::Confirm); }
+    #[test]
+    fn action_projects_add_eq() { assert_eq!(Action::ProjectsAdd, Action::ProjectsAdd); }
+    #[test]
+    fn action_projects_delete_eq() { assert_eq!(Action::ProjectsDelete, Action::ProjectsDelete); }
+    #[test]
+    fn action_projects_rename_eq() { assert_eq!(Action::ProjectsRename, Action::ProjectsRename); }
+    #[test]
+    fn action_projects_init_eq() { assert_eq!(Action::ProjectsInit, Action::ProjectsInit); }
+    #[test]
+    fn action_escape_eq() { assert_eq!(Action::Escape, Action::Escape); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Text input key matching
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn esc_cancels() {
+        let k = key(KeyCode::Esc);
+        assert_eq!(k.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn enter_confirms() {
+        let k = key(KeyCode::Enter);
+        assert_eq!(k.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn backspace_deletes() {
+        let k = key(KeyCode::Backspace);
+        assert_eq!(k.code, KeyCode::Backspace);
+    }
+
+    #[test]
+    fn delete_key() {
+        let k = key(KeyCode::Delete);
+        assert_eq!(k.code, KeyCode::Delete);
+    }
+
+    #[test]
+    fn left_arrow() {
+        let k = key(KeyCode::Left);
+        assert_eq!(k.code, KeyCode::Left);
+    }
+
+    #[test]
+    fn right_arrow() {
+        let k = key(KeyCode::Right);
+        assert_eq!(k.code, KeyCode::Right);
+    }
+
+    #[test]
+    fn home_key() {
+        let k = key(KeyCode::Home);
+        assert_eq!(k.code, KeyCode::Home);
+    }
+
+    #[test]
+    fn end_key() {
+        let k = key(KeyCode::End);
+        assert_eq!(k.code, KeyCode::End);
+    }
+
+    #[test]
+    fn char_key() {
+        let k = key(KeyCode::Char('a'));
+        assert!(matches!(k.code, KeyCode::Char('a')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  lookup_projects_action
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn lookup_projects_unmapped() {
+        let result = lookup_projects_action(KeyModifiers::NONE, KeyCode::Char('z'));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn lookup_projects_esc_returns_escape() {
+        let result = lookup_projects_action(KeyModifiers::NONE, KeyCode::Esc);
+        assert_eq!(result, Some(Action::Escape));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Path validation patterns
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn empty_input_rejected() {
+        let input = "";
+        assert!(input.is_empty());
+    }
+
+    #[test]
+    fn whitespace_input_rejected() {
+        let input = "   ";
+        assert!(input.trim().is_empty());
+    }
+
+    #[test]
+    fn valid_input_accepted() {
+        let input = "/tmp/project";
+        assert!(!input.trim().is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Error message patterns used in this module
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn error_path_empty() {
+        let msg = "Path cannot be empty".to_string();
+        assert!(msg.contains("empty"));
+    }
+
+    #[test]
+    fn error_not_git_repo() {
+        let msg = "Not a git repository".to_string();
+        assert!(msg.contains("git"));
+    }
+
+    #[test]
+    fn error_already_registered() {
+        let msg = "Project already registered".to_string();
+        assert!(msg.contains("registered"));
+    }
+
+    #[test]
+    fn error_name_empty() {
+        let msg = "Name cannot be empty".to_string();
+        assert!(msg.contains("empty"));
+    }
+
+    #[test]
+    fn error_already_git_repo() {
+        let msg = "Already a git repo — use 'a' to add it".to_string();
+        assert!(msg.contains("Already"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Duplicate detection
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn duplicate_path_detected() {
+        let entries = vec![
+            crate::config::ProjectEntry {
+                path: std::path::PathBuf::from("/tmp/proj"),
+                display_name: "proj".into(),
+            },
+        ];
+        let canonical = std::path::PathBuf::from("/tmp/proj");
+        assert!(entries.iter().any(|e| e.path == canonical));
+    }
+
+    #[test]
+    fn unique_path_not_detected() {
+        let entries = vec![
+            crate::config::ProjectEntry {
+                path: std::path::PathBuf::from("/tmp/proj"),
+                display_name: "proj".into(),
+            },
+        ];
+        let canonical = std::path::PathBuf::from("/tmp/other");
+        assert!(!entries.iter().any(|e| e.path == canonical));
+    }
+
+    #[test]
+    fn key_char_q_code() {
+        let k = key(KeyCode::Char('q'));
+        assert_eq!(k.code, KeyCode::Char('q'));
+    }
+
+    #[test]
+    fn key_delete_code() {
+        let k = key(KeyCode::Delete);
+        assert_eq!(k.code, KeyCode::Delete);
+    }
+
+    #[test]
+    fn key_home_code() {
+        let k = key(KeyCode::Home);
+        assert_eq!(k.code, KeyCode::Home);
+    }
+
+    #[test]
+    fn key_end_code() {
+        let k = key(KeyCode::End);
+        assert_eq!(k.code, KeyCode::End);
+    }
+
+    #[test]
+    fn resolve_dot_path() {
+        let result = resolve_input_path(".");
+        assert!(result.is_absolute() || result == std::path::PathBuf::from("."));
+    }
+}

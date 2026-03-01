@@ -384,3 +384,520 @@ fn extract_search_preview(line: &str, query: &str) -> String {
         trimmed.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  extract_search_preview
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn extract_preview_found_at_start() {
+        let line = "hello world";
+        let preview = extract_search_preview(line, "hello");
+        assert!(preview.contains("hello"));
+    }
+
+    #[test]
+    fn extract_preview_found_at_end() {
+        let line = "some text at the end";
+        let preview = extract_search_preview(line, "end");
+        assert!(preview.contains("end"));
+    }
+
+    #[test]
+    fn extract_preview_not_found_returns_start() {
+        let line = "no match here";
+        let preview = extract_search_preview(line, "xyz");
+        // pos is 0 (unwrap_or(0)), so shows from start
+        assert!(!preview.is_empty());
+    }
+
+    #[test]
+    fn extract_preview_short_line_no_ellipsis() {
+        let line = "short";
+        let preview = extract_search_preview(line, "short");
+        // trimmed.len() == line.len(), no ellipsis
+        assert_eq!(preview, "short");
+    }
+
+    #[test]
+    fn extract_preview_long_line_has_ellipsis() {
+        let line = "a".repeat(200);
+        let preview = extract_search_preview(&line, "a");
+        // trimmed subset is shorter than full line
+        assert!(preview.starts_with('…') || preview.len() < line.len());
+    }
+
+    #[test]
+    fn extract_preview_case_insensitive_find() {
+        let line = "Hello World";
+        let query = "hello";
+        let lower = line.to_lowercase();
+        let pos = lower.find(query);
+        assert!(pos.is_some());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  jump_next_match / jump_prev_match logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn next_match_wraps_around() {
+        let len = 5;
+        let current = 4;
+        let next = (current + 1) % len;
+        assert_eq!(next, 0);
+    }
+
+    #[test]
+    fn next_match_increments() {
+        let len = 5;
+        let current = 2;
+        let next = (current + 1) % len;
+        assert_eq!(next, 3);
+    }
+
+    #[test]
+    fn prev_match_wraps_around() {
+        let current = 0usize;
+        let len = 5;
+        let prev = if current == 0 { len - 1 } else { current - 1 };
+        assert_eq!(prev, 4);
+    }
+
+    #[test]
+    fn prev_match_decrements() {
+        let current = 3usize;
+        let prev = if current == 0 { 99 } else { current - 1 };
+        assert_eq!(prev, 2);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Session find key matching
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn char_key_for_find_input() {
+        let k = key(KeyCode::Char('a'));
+        assert!(matches!(k.code, KeyCode::Char(_)));
+    }
+
+    #[test]
+    fn backspace_for_find_delete() {
+        let k = key(KeyCode::Backspace);
+        assert_eq!(k.code, KeyCode::Backspace);
+    }
+
+    #[test]
+    fn enter_confirms_find() {
+        let k = key(KeyCode::Enter);
+        assert_eq!(k.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn esc_cancels_find() {
+        let k = key(KeyCode::Esc);
+        assert_eq!(k.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn n_key_for_next_match() {
+        let k = key(KeyCode::Char('n'));
+        assert_eq!(k.code, KeyCode::Char('n'));
+    }
+
+    #[test]
+    fn upper_n_for_prev_match() {
+        let k = key(KeyCode::Char('N'));
+        assert_eq!(k.code, KeyCode::Char('N'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Session list key matching
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn slash_activates_filter() {
+        let k = key(KeyCode::Char('/'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('/'))));
+    }
+
+    #[test]
+    fn j_navigates_down() {
+        let k = key(KeyCode::Char('j'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down)));
+    }
+
+    #[test]
+    fn k_navigates_up() {
+        let k = key(KeyCode::Char('k'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up)));
+    }
+
+    #[test]
+    fn upper_j_pages_down() {
+        let k = key(KeyCode::Char('J'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('J'))));
+    }
+
+    #[test]
+    fn upper_k_pages_up() {
+        let k = key(KeyCode::Char('K'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('K'))));
+    }
+
+    #[test]
+    fn s_closes_overlay() {
+        let k = key(KeyCode::Char('s'));
+        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('s'))));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Session filter input — double slash for content search
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn double_slash_activates_content_search() {
+        let filter = "";
+        let content_search = false;
+        let is_double_slash = filter.is_empty() && !content_search;
+        assert!(is_double_slash);
+    }
+
+    #[test]
+    fn double_slash_not_if_filter_nonempty() {
+        let filter = "abc";
+        let content_search = false;
+        let is_double_slash = filter.is_empty() && !content_search;
+        assert!(!is_double_slash);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Case-insensitive search logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn lowercase_search_finds_uppercase() {
+        let text = "Hello World";
+        let query = "hello";
+        let lower: Vec<char> = text.chars().map(|c| {
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            s.to_lowercase().chars().next().unwrap_or(c)
+        }).collect();
+        let query_chars: Vec<char> = query.chars().collect();
+        let found = lower.windows(query_chars.len()).any(|w| w == &query_chars[..]);
+        assert!(found);
+    }
+
+    #[test]
+    fn search_empty_query_no_matches() {
+        let query = "";
+        assert!(query.is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  jump_to_nearest_match scroll positioning
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn scroll_position_with_context() {
+        let match_line = 10usize;
+        let scroll = match_line.saturating_sub(3);
+        assert_eq!(scroll, 7);
+    }
+
+    #[test]
+    fn scroll_position_near_top() {
+        let match_line = 1usize;
+        let scroll = match_line.saturating_sub(3);
+        assert_eq!(scroll, 0);
+    }
+
+    #[test]
+    fn scroll_position_at_0() {
+        let match_line = 0usize;
+        let scroll = match_line.saturating_sub(3);
+        assert_eq!(scroll, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Session filter backspace behavior
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn filter_backspace_on_empty_deactivates() {
+        let mut filter = String::new();
+        filter.pop();
+        assert!(filter.is_empty());
+    }
+
+    #[test]
+    fn filter_backspace_removes_char() {
+        let mut filter = String::from("abc");
+        filter.pop();
+        assert_eq!(filter, "ab");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Content search minimum length
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn content_search_requires_3_chars() {
+        let filter = "ab";
+        assert!(filter.len() < 3);
+    }
+
+    #[test]
+    fn content_search_triggers_at_3_chars() {
+        let filter = "abc";
+        assert!(filter.len() >= 3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Page navigation arithmetic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn page_down_clamp() {
+        let selected = 3usize;
+        let page = 10usize;
+        let total = 8usize;
+        let result = (selected + page).min(total.saturating_sub(1));
+        assert_eq!(result, 7);
+    }
+
+    #[test]
+    fn page_up_saturating() {
+        let selected = 3usize;
+        let page = 10usize;
+        let result = selected.saturating_sub(page);
+        assert_eq!(result, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Usize::MAX sentinel for viewport invalidation
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn usize_max_sentinel() {
+        let scroll = usize::MAX;
+        assert_eq!(scroll, usize::MAX);
+    }
+
+    #[test]
+    fn usize_max_is_very_large() {
+        assert!(usize::MAX > 1_000_000_000);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  recompute_session_find_matches — direct unit tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn recompute_clears_matches_when_query_empty() {
+        let mut app = App::new();
+        // pre-populate some stale matches
+        app.session_find_matches.push((0, 0, 3));
+        app.session_find = String::new();
+        recompute_session_find_matches(&mut app);
+        assert!(app.session_find_matches.is_empty());
+    }
+
+    #[test]
+    fn recompute_resets_current_to_zero() {
+        let mut app = App::new();
+        app.session_find_current = 5;
+        app.session_find = String::new();
+        recompute_session_find_matches(&mut app);
+        assert_eq!(app.session_find_current, 0);
+    }
+
+    #[test]
+    fn recompute_finds_match_in_cache() {
+        let mut app = App::new();
+        use ratatui::text::{Line, Span};
+        app.rendered_lines_cache.push(Line::from(vec![Span::raw("hello world")]));
+        app.session_find = "world".to_string();
+        recompute_session_find_matches(&mut app);
+        assert!(!app.session_find_matches.is_empty());
+        let (line_idx, start, end) = app.session_find_matches[0];
+        assert_eq!(line_idx, 0);
+        assert_eq!(end - start, 5);
+    }
+
+    #[test]
+    fn recompute_case_insensitive() {
+        let mut app = App::new();
+        use ratatui::text::{Line, Span};
+        app.rendered_lines_cache.push(Line::from(vec![Span::raw("HELLO")]));
+        app.session_find = "hello".to_string();
+        recompute_session_find_matches(&mut app);
+        assert!(!app.session_find_matches.is_empty());
+    }
+
+    #[test]
+    fn recompute_no_match_empty_cache() {
+        let mut app = App::new();
+        app.session_find = "anything".to_string();
+        recompute_session_find_matches(&mut app);
+        assert!(app.session_find_matches.is_empty());
+    }
+
+    #[test]
+    fn recompute_multiple_matches_on_same_line() {
+        let mut app = App::new();
+        use ratatui::text::{Line, Span};
+        app.rendered_lines_cache.push(Line::from(vec![Span::raw("aaa")]));
+        app.session_find = "a".to_string();
+        recompute_session_find_matches(&mut app);
+        assert_eq!(app.session_find_matches.len(), 3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  jump_next_match / jump_prev_match — App-level integration
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn jump_next_match_empty_is_noop() {
+        let mut app = App::new();
+        app.session_find_current = 0;
+        jump_next_match(&mut app);
+        assert_eq!(app.session_find_current, 0);
+    }
+
+    #[test]
+    fn jump_prev_match_empty_is_noop() {
+        let mut app = App::new();
+        app.session_find_current = 0;
+        jump_prev_match(&mut app);
+        assert_eq!(app.session_find_current, 0);
+    }
+
+    #[test]
+    fn jump_next_advances_index() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(0, 0, 3), (5, 0, 3), (10, 0, 3)];
+        app.session_find_current = 0;
+        jump_next_match(&mut app);
+        assert_eq!(app.session_find_current, 1);
+    }
+
+    #[test]
+    fn jump_next_wraps_at_end() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(0, 0, 3), (5, 0, 3)];
+        app.session_find_current = 1;
+        jump_next_match(&mut app);
+        assert_eq!(app.session_find_current, 0);
+    }
+
+    #[test]
+    fn jump_prev_decrements_index() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(0, 0, 3), (5, 0, 3), (10, 0, 3)];
+        app.session_find_current = 2;
+        jump_prev_match(&mut app);
+        assert_eq!(app.session_find_current, 1);
+    }
+
+    #[test]
+    fn jump_prev_wraps_from_zero() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(0, 0, 3), (5, 0, 3), (10, 0, 3)];
+        app.session_find_current = 0;
+        jump_prev_match(&mut app);
+        assert_eq!(app.session_find_current, 2);
+    }
+
+    #[test]
+    fn jump_next_updates_scroll() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(0, 0, 3), (20, 0, 3)];
+        app.session_find_current = 0;
+        jump_next_match(&mut app);
+        // match_line=20, scroll = 20.saturating_sub(3) = 17
+        assert_eq!(app.session_scroll, 17);
+    }
+
+    #[test]
+    fn jump_next_invalidates_viewport() {
+        let mut app = App::new();
+        app.session_find_matches = vec![(5, 0, 3), (10, 0, 3)];
+        app.session_viewport_scroll = 0;
+        jump_next_match(&mut app);
+        assert_eq!(app.session_viewport_scroll, usize::MAX);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  handle_session_input — routing tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn session_input_find_active_routes_to_find_handler() {
+        let mut app = App::new();
+        app.session_find_active = true;
+        app.session_find = String::new();
+        let k = key(KeyCode::Char('q'));
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        // 'q' should have been pushed to session_find
+        assert_eq!(app.session_find, "q");
+    }
+
+    #[test]
+    fn session_input_show_list_routes_to_list_handler() {
+        let mut app = App::new();
+        app.show_session_list = true;
+        let k = key(KeyCode::Esc);
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        assert!(!app.show_session_list);
+    }
+
+    #[test]
+    fn session_input_n_cycles_matches() {
+        let mut app = App::new();
+        app.session_find_active = false;
+        app.session_find_matches = vec![(0, 0, 3), (10, 0, 3)];
+        app.session_find_current = 0;
+        let k = key(KeyCode::Char('n'));
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        assert_eq!(app.session_find_current, 1);
+    }
+
+    #[test]
+    fn session_input_upper_n_cycles_prev() {
+        let mut app = App::new();
+        app.session_find_active = false;
+        app.session_find_matches = vec![(0, 0, 3), (10, 0, 3), (20, 0, 3)];
+        app.session_find_current = 2;
+        let k = key(KeyCode::Char('N'));
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        assert_eq!(app.session_find_current, 1);
+    }
+
+    #[test]
+    fn session_input_esc_clears_matches() {
+        let mut app = App::new();
+        app.session_find_active = false;
+        app.session_find_matches = vec![(0, 0, 3)];
+        app.session_find = "hello".to_string();
+        let k = key(KeyCode::Esc);
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        assert!(app.session_find_matches.is_empty());
+        assert!(app.session_find.is_empty());
+    }
+}

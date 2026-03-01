@@ -923,3 +923,1009 @@ fn get_cpu_time_micros() -> u64 {
         user + sys
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── App::new() constructor defaults ──
+
+    #[test]
+    fn new_project_is_none() {
+        let app = App::new();
+        assert!(app.project.is_none());
+    }
+
+    #[test]
+    fn new_worktrees_empty() {
+        let app = App::new();
+        assert!(app.worktrees.is_empty());
+    }
+
+    #[test]
+    fn new_selected_worktree_none() {
+        let app = App::new();
+        assert!(app.selected_worktree.is_none());
+    }
+
+    #[test]
+    fn new_session_lines_empty_with_capacity() {
+        let app = App::new();
+        assert!(app.session_lines.is_empty());
+        assert_eq!(app.max_session_lines, 10000);
+    }
+
+    #[test]
+    fn new_session_buffer_empty() {
+        let app = App::new();
+        assert!(app.session_buffer.is_empty());
+    }
+
+    #[test]
+    fn new_display_events_empty() {
+        let app = App::new();
+        assert!(app.display_events.is_empty());
+    }
+
+    #[test]
+    fn new_pending_user_message_none() {
+        let app = App::new();
+        assert!(app.pending_user_message.is_none());
+    }
+
+    #[test]
+    fn new_staged_prompt_none() {
+        let app = App::new();
+        assert!(app.staged_prompt.is_none());
+    }
+
+    #[test]
+    fn new_selected_event_none() {
+        let app = App::new();
+        assert!(app.selected_event.is_none());
+    }
+
+    #[test]
+    fn new_input_empty() {
+        let app = App::new();
+        assert!(app.input.is_empty());
+        assert_eq!(app.input_cursor, 0);
+    }
+
+    #[test]
+    fn new_input_selection_none() {
+        let app = App::new();
+        assert!(app.input_selection.is_none());
+    }
+
+    #[test]
+    fn new_worktree_creation_input_empty() {
+        let app = App::new();
+        assert!(app.worktree_creation_input.is_empty());
+        assert_eq!(app.worktree_creation_cursor, 0);
+    }
+
+    #[test]
+    fn new_worktree_delete_confirm_false() {
+        let app = App::new();
+        assert!(!app.worktree_delete_confirm);
+    }
+
+    #[test]
+    fn new_view_mode_session() {
+        let app = App::new();
+        assert_eq!(app.view_mode, ViewMode::Session);
+    }
+
+    #[test]
+    fn new_focus_worktrees() {
+        let app = App::new();
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    #[test]
+    fn new_prompt_mode_false() {
+        let app = App::new();
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn new_should_quit_false() {
+        let app = App::new();
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn new_status_message_none() {
+        let app = App::new();
+        assert!(app.status_message.is_none());
+    }
+
+    #[test]
+    fn new_claude_receivers_empty() {
+        let app = App::new();
+        assert!(app.claude_receivers.is_empty());
+    }
+
+    #[test]
+    fn new_running_sessions_empty() {
+        let app = App::new();
+        assert!(app.running_sessions.is_empty());
+    }
+
+    #[test]
+    fn new_unread_sessions_empty() {
+        let app = App::new();
+        assert!(app.unread_sessions.is_empty());
+        assert!(app.unread_session_ids.is_empty());
+    }
+
+    #[test]
+    fn new_claude_exit_codes_empty() {
+        let app = App::new();
+        assert!(app.claude_exit_codes.is_empty());
+    }
+
+    #[test]
+    fn new_claude_session_ids_empty() {
+        let app = App::new();
+        assert!(app.claude_session_ids.is_empty());
+    }
+
+    #[test]
+    fn new_branch_slots_empty() {
+        let app = App::new();
+        assert!(app.branch_slots.is_empty());
+        assert!(app.active_slot.is_empty());
+    }
+
+    #[test]
+    fn new_session_scroll_at_max() {
+        let app = App::new();
+        assert_eq!(app.session_scroll, usize::MAX);
+    }
+
+    #[test]
+    fn new_show_help_false() {
+        let app = App::new();
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn new_branch_dialog_none() {
+        let app = App::new();
+        assert!(app.branch_dialog.is_none());
+    }
+
+    #[test]
+    fn new_projects_panel_none() {
+        let app = App::new();
+        assert!(app.projects_panel.is_none());
+    }
+
+    #[test]
+    fn new_terminal_mode_false() {
+        let app = App::new();
+        assert!(!app.terminal_mode);
+    }
+
+    #[test]
+    fn new_terminal_pty_none() {
+        let app = App::new();
+        assert!(app.terminal_pty.is_none());
+        assert!(app.terminal_writer.is_none());
+        assert!(app.terminal_rx.is_none());
+    }
+
+    #[test]
+    fn new_terminal_scroll_zero() {
+        let app = App::new();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    #[test]
+    fn new_terminal_height_defaults() {
+        let app = App::new();
+        assert_eq!(app.terminal_height, 12);
+        assert_eq!(app.terminal_rows, 24);
+        assert_eq!(app.terminal_cols, 120);
+    }
+
+    #[test]
+    fn new_pending_tool_calls_empty() {
+        let app = App::new();
+        assert!(app.pending_tool_calls.is_empty());
+        assert!(app.failed_tool_calls.is_empty());
+    }
+
+    #[test]
+    fn new_animation_tick_zero() {
+        let app = App::new();
+        assert_eq!(app.animation_tick, 0);
+    }
+
+    #[test]
+    fn new_session_file_defaults() {
+        let app = App::new();
+        assert!(app.session_file_path.is_none());
+        assert!(app.session_file_modified.is_none());
+        assert_eq!(app.session_file_size, 0);
+        assert_eq!(app.session_file_parse_offset, 0);
+        assert!(!app.session_file_dirty);
+    }
+
+    #[test]
+    fn new_viewing_historic_session_false() {
+        let app = App::new();
+        assert!(!app.viewing_historic_session);
+    }
+
+    #[test]
+    fn new_file_tree_empty() {
+        let app = App::new();
+        assert!(app.file_tree_entries.is_empty());
+        assert!(app.file_tree_selected.is_none());
+        assert_eq!(app.file_tree_scroll, 0);
+        assert!(app.file_tree_expanded.is_empty());
+    }
+
+    #[test]
+    fn new_viewer_defaults() {
+        let app = App::new();
+        assert!(app.viewer_content.is_none());
+        assert!(app.viewer_path.is_none());
+        assert_eq!(app.viewer_scroll, 0);
+        assert_eq!(app.viewer_mode, ViewerMode::Empty);
+    }
+
+    #[test]
+    fn new_viewer_lines_dirty() {
+        let app = App::new();
+        assert!(app.viewer_lines_dirty);
+    }
+
+    #[test]
+    fn new_rendered_lines_dirty() {
+        let app = App::new();
+        assert!(app.rendered_lines_dirty);
+    }
+
+    #[test]
+    fn new_render_state() {
+        let app = App::new();
+        assert_eq!(app.render_seq_applied, 0);
+        assert!(!app.render_in_flight);
+        assert!(!app.draw_pending);
+    }
+
+    #[test]
+    fn new_parse_stats_zero() {
+        let app = App::new();
+        assert_eq!(app.parse_total_lines, 0);
+        assert_eq!(app.parse_errors, 0);
+        assert_eq!(app.assistant_total, 0);
+        assert_eq!(app.assistant_no_message, 0);
+        assert_eq!(app.assistant_no_content_arr, 0);
+        assert_eq!(app.assistant_text_blocks, 0);
+    }
+
+    #[test]
+    fn new_session_files_empty() {
+        let app = App::new();
+        assert!(app.session_files.is_empty());
+        assert!(app.session_selected_file_idx.is_empty());
+    }
+
+    #[test]
+    fn new_viewer_edit_defaults() {
+        let app = App::new();
+        assert!(!app.viewer_edit_mode);
+        assert!(app.viewer_edit_content.is_empty());
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+        assert!(app.viewer_edit_undo.is_empty());
+        assert!(app.viewer_edit_redo.is_empty());
+        assert!(!app.viewer_edit_dirty);
+    }
+
+    #[test]
+    fn new_clipboard_empty() {
+        let app = App::new();
+        assert!(app.clipboard.is_empty());
+    }
+
+    #[test]
+    fn new_viewer_tabs_empty() {
+        let app = App::new();
+        assert!(app.viewer_tabs.is_empty());
+        assert_eq!(app.viewer_active_tab, 0);
+        assert!(!app.viewer_tab_dialog);
+    }
+
+    #[test]
+    fn new_run_commands_empty() {
+        let app = App::new();
+        assert!(app.run_commands.is_empty());
+        assert!(app.run_command_dialog.is_none());
+        assert!(app.run_command_picker.is_none());
+    }
+
+    #[test]
+    fn new_preset_prompts_empty() {
+        let app = App::new();
+        assert!(app.preset_prompts.is_empty());
+        assert!(app.preset_prompt_picker.is_none());
+        assert!(app.preset_prompt_dialog.is_none());
+    }
+
+    #[test]
+    fn new_token_state() {
+        let app = App::new();
+        assert!(app.session_tokens.is_none());
+        assert!(app.model_context_window.is_none());
+        assert!(app.token_badge_cache.is_none());
+        assert!(!app.context_pct_high);
+    }
+
+    #[test]
+    fn new_todo_state() {
+        let app = App::new();
+        assert!(app.current_todos.is_empty());
+        assert!(app.subagent_todos.is_empty());
+        assert!(app.active_task_tool_ids.is_empty());
+        assert!(app.subagent_parent_idx.is_none());
+    }
+
+    #[test]
+    fn new_stt_state() {
+        let app = App::new();
+        assert!(app.stt_handle.is_none());
+        assert!(!app.stt_recording);
+        assert!(!app.stt_transcribing);
+    }
+
+    #[test]
+    fn new_nerd_fonts_true() {
+        let app = App::new();
+        assert!(app.nerd_fonts);
+    }
+
+    #[test]
+    fn new_file_tree_options() {
+        let app = App::new();
+        assert!(!app.file_tree_options_mode);
+        assert_eq!(app.file_tree_options_selected, 0);
+    }
+
+    #[test]
+    fn new_health_panel_none() {
+        let app = App::new();
+        assert!(app.health_panel.is_none());
+        assert_eq!(app.last_health_tab, HealthTab::GodFiles);
+    }
+
+    #[test]
+    fn new_git_actions_panel_none() {
+        let app = App::new();
+        assert!(app.git_actions_panel.is_none());
+    }
+
+    #[test]
+    fn new_browsing_main_false() {
+        let app = App::new();
+        assert!(!app.browsing_main);
+        assert!(app.pre_main_browse_selection.is_none());
+        assert!(app.main_worktree.is_none());
+    }
+
+    #[test]
+    fn new_session_list_defaults() {
+        let app = App::new();
+        assert!(!app.show_session_list);
+        assert!(!app.session_list_loading);
+        assert!(app.loading_indicator.is_none());
+        assert!(app.deferred_action.is_none());
+        assert_eq!(app.session_list_selected, 0);
+        assert_eq!(app.session_list_scroll, 0);
+    }
+
+    #[test]
+    fn new_session_find_defaults() {
+        let app = App::new();
+        assert!(!app.session_find_active);
+        assert!(app.session_find.is_empty());
+        assert!(app.session_find_matches.is_empty());
+        assert_eq!(app.session_find_current, 0);
+    }
+
+    #[test]
+    fn new_session_filter_defaults() {
+        let app = App::new();
+        assert!(!app.session_filter_active);
+        assert!(app.session_filter.is_empty());
+        assert!(!app.session_content_search);
+        assert!(app.session_search_results.is_empty());
+    }
+
+    #[test]
+    fn new_selected_model_opus() {
+        let app = App::new();
+        assert_eq!(app.selected_model, Some("opus".to_string()));
+        assert!(app.detected_model.is_none());
+    }
+
+    // ── invalidate_render_cache ──
+
+    #[test]
+    fn invalidate_render_cache_sets_dirty() {
+        let mut app = App::new();
+        app.rendered_lines_dirty = false;
+        app.invalidate_render_cache();
+        assert!(app.rendered_lines_dirty);
+    }
+
+    #[test]
+    fn invalidate_render_cache_idempotent() {
+        let mut app = App::new();
+        app.invalidate_render_cache();
+        app.invalidate_render_cache();
+        assert!(app.rendered_lines_dirty);
+    }
+
+    // ── invalidate_file_tree ──
+
+    #[test]
+    fn invalidate_file_tree_sets_dirty() {
+        let mut app = App::new();
+        app.file_tree_dirty = false;
+        app.invalidate_file_tree();
+        assert!(app.file_tree_dirty);
+    }
+
+    // ── set_status / clear_status ──
+
+    #[test]
+    fn set_status_stores_message() {
+        let mut app = App::new();
+        app.set_status("hello world");
+        assert_eq!(app.status_message.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn set_status_overwrites_previous() {
+        let mut app = App::new();
+        app.set_status("first");
+        app.set_status("second");
+        assert_eq!(app.status_message.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn set_status_accepts_string() {
+        let mut app = App::new();
+        app.set_status(String::from("owned string"));
+        assert_eq!(app.status_message.as_deref(), Some("owned string"));
+    }
+
+    #[test]
+    fn set_status_accepts_format() {
+        let mut app = App::new();
+        app.set_status(format!("count: {}", 42));
+        assert_eq!(app.status_message.as_deref(), Some("count: 42"));
+    }
+
+    #[test]
+    fn clear_status_removes_message() {
+        let mut app = App::new();
+        app.set_status("something");
+        app.clear_status();
+        assert!(app.status_message.is_none());
+    }
+
+    #[test]
+    fn clear_status_noop_when_none() {
+        let mut app = App::new();
+        app.clear_status();
+        assert!(app.status_message.is_none());
+    }
+
+    // ── current_project / current_worktree ──
+
+    #[test]
+    fn current_project_none_by_default() {
+        let app = App::new();
+        assert!(app.current_project().is_none());
+    }
+
+    #[test]
+    fn current_worktree_none_by_default() {
+        let app = App::new();
+        assert!(app.current_worktree().is_none());
+    }
+
+    #[test]
+    fn current_worktree_returns_selected() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/feat-a".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/a")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/feat-b".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/b")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(1);
+        let wt = app.current_worktree().unwrap();
+        assert_eq!(wt.branch_name, "azureal/feat-b");
+    }
+
+    #[test]
+    fn current_worktree_browsing_main_returns_main() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/feat".to_string(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.main_worktree = Some(Worktree {
+            branch_name: "main".to_string(),
+            worktree_path: Some(PathBuf::from("/repo")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.browsing_main = true;
+        let wt = app.current_worktree().unwrap();
+        assert_eq!(wt.branch_name, "main");
+    }
+
+    #[test]
+    fn current_worktree_out_of_bounds() {
+        let mut app = App::new();
+        app.selected_worktree = Some(5);
+        assert!(app.current_worktree().is_none());
+    }
+
+    // ── is_session_running ──
+
+    #[test]
+    fn is_session_running_no_slots() {
+        let app = App::new();
+        assert!(!app.is_session_running("any-branch"));
+    }
+
+    #[test]
+    fn is_session_running_with_running_slot() {
+        let mut app = App::new();
+        app.branch_slots.insert("branch-a".to_string(), vec!["pid-123".to_string()]);
+        app.running_sessions.insert("pid-123".to_string());
+        assert!(app.is_session_running("branch-a"));
+    }
+
+    #[test]
+    fn is_session_running_slot_not_running() {
+        let mut app = App::new();
+        app.branch_slots.insert("branch-a".to_string(), vec!["pid-123".to_string()]);
+        // pid-123 not in running_sessions
+        assert!(!app.is_session_running("branch-a"));
+    }
+
+    // ── is_current_session_running ──
+
+    #[test]
+    fn is_current_session_running_no_worktree() {
+        let app = App::new();
+        assert!(!app.is_current_session_running());
+    }
+
+    #[test]
+    fn is_current_session_running_true() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.branch_slots.insert("azureal/test".to_string(), vec!["pid-1".to_string()]);
+        app.running_sessions.insert("pid-1".to_string());
+        assert!(app.is_current_session_running());
+    }
+
+    // ── is_active_slot_running ──
+
+    #[test]
+    fn is_active_slot_running_no_worktree() {
+        let app = App::new();
+        assert!(!app.is_active_slot_running());
+    }
+
+    #[test]
+    fn is_active_slot_running_slot_running() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/feat".to_string(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("azureal/feat".to_string(), "pid-5".to_string());
+        app.running_sessions.insert("pid-5".to_string());
+        assert!(app.is_active_slot_running());
+    }
+
+    #[test]
+    fn is_active_slot_running_slot_stopped() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/feat".to_string(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("azureal/feat".to_string(), "pid-5".to_string());
+        // pid-5 not in running_sessions
+        assert!(!app.is_active_slot_running());
+    }
+
+    // ── branch_for_slot ──
+
+    #[test]
+    fn branch_for_slot_found() {
+        let mut app = App::new();
+        app.branch_slots.insert("branch-x".to_string(), vec!["pid-10".to_string(), "pid-11".to_string()]);
+        assert_eq!(app.branch_for_slot("pid-11"), Some("branch-x".to_string()));
+    }
+
+    #[test]
+    fn branch_for_slot_not_found() {
+        let mut app = App::new();
+        app.branch_slots.insert("branch-x".to_string(), vec!["pid-10".to_string()]);
+        assert!(app.branch_for_slot("pid-999").is_none());
+    }
+
+    #[test]
+    fn branch_for_slot_empty_slots() {
+        let app = App::new();
+        assert!(app.branch_for_slot("anything").is_none());
+    }
+
+    // ── is_claude_session_running ──
+
+    #[test]
+    fn is_claude_session_running_true() {
+        let mut app = App::new();
+        app.claude_session_ids.insert("pid-1".to_string(), "uuid-abc".to_string());
+        app.running_sessions.insert("pid-1".to_string());
+        assert!(app.is_claude_session_running("uuid-abc"));
+    }
+
+    #[test]
+    fn is_claude_session_running_false_not_running() {
+        let mut app = App::new();
+        app.claude_session_ids.insert("pid-1".to_string(), "uuid-abc".to_string());
+        // pid-1 not in running_sessions
+        assert!(!app.is_claude_session_running("uuid-abc"));
+    }
+
+    #[test]
+    fn is_claude_session_running_false_no_match() {
+        let mut app = App::new();
+        app.claude_session_ids.insert("pid-1".to_string(), "uuid-abc".to_string());
+        app.running_sessions.insert("pid-1".to_string());
+        assert!(!app.is_claude_session_running("uuid-xyz"));
+    }
+
+    // ── display_model_name ──
+
+    #[test]
+    fn display_model_name_default() {
+        let app = App::new();
+        assert_eq!(app.display_model_name(), "opus");
+    }
+
+    #[test]
+    fn display_model_name_custom() {
+        let mut app = App::new();
+        app.selected_model = Some("sonnet".to_string());
+        assert_eq!(app.display_model_name(), "sonnet");
+    }
+
+    #[test]
+    fn display_model_name_none_fallback() {
+        let mut app = App::new();
+        app.selected_model = None;
+        assert_eq!(app.display_model_name(), "opus");
+    }
+
+    // ── cycle_model ──
+
+    #[test]
+    fn cycle_model_opus_to_sonnet() {
+        let mut app = App::new();
+        app.selected_model = Some("opus".to_string());
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn cycle_model_sonnet_to_haiku() {
+        let mut app = App::new();
+        app.selected_model = Some("sonnet".to_string());
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn cycle_model_haiku_to_opus() {
+        let mut app = App::new();
+        app.selected_model = Some("haiku".to_string());
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("opus"));
+    }
+
+    #[test]
+    fn cycle_model_unknown_to_opus() {
+        let mut app = App::new();
+        app.selected_model = Some("unknown-model".to_string());
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("opus"));
+    }
+
+    #[test]
+    fn cycle_model_none_to_opus() {
+        let mut app = App::new();
+        app.selected_model = None;
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("opus"));
+    }
+
+    #[test]
+    fn cycle_model_full_cycle() {
+        let mut app = App::new();
+        assert_eq!(app.selected_model.as_deref(), Some("opus"));
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("sonnet"));
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("haiku"));
+        app.cycle_model();
+        assert_eq!(app.selected_model.as_deref(), Some("opus"));
+    }
+
+    // ── update_token_badge ──
+
+    #[test]
+    fn update_token_badge_no_tokens() {
+        let mut app = App::new();
+        app.update_token_badge();
+        assert!(app.token_badge_cache.is_none());
+        assert!(!app.context_pct_high);
+    }
+
+    #[test]
+    fn update_token_badge_low_usage() {
+        let mut app = App::new();
+        app.session_tokens = Some((50_000, 1000));
+        app.model_context_window = Some(200_000);
+        app.update_token_badge();
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert!(text.contains('%'));
+        assert_eq!(color, ratatui::style::Color::Green);
+        assert!(!app.context_pct_high);
+    }
+
+    #[test]
+    fn update_token_badge_medium_usage() {
+        let mut app = App::new();
+        // 120k out of (200k - 33k = 167k usable) ≈ 71.8%
+        app.session_tokens = Some((120_000, 1000));
+        app.model_context_window = Some(200_000);
+        app.update_token_badge();
+        let (_, color) = app.token_badge_cache.unwrap();
+        assert_eq!(color, ratatui::style::Color::Yellow);
+    }
+
+    #[test]
+    fn update_token_badge_high_usage() {
+        let mut app = App::new();
+        // 160k out of (200k - 33k = 167k usable) ≈ 95.8%
+        app.session_tokens = Some((160_000, 1000));
+        app.model_context_window = Some(200_000);
+        app.update_token_badge();
+        let (_, color) = app.token_badge_cache.unwrap();
+        assert_eq!(color, ratatui::style::Color::Red);
+        assert!(app.context_pct_high);
+    }
+
+    #[test]
+    fn update_token_badge_defaults_to_200k_window() {
+        let mut app = App::new();
+        app.session_tokens = Some((50_000, 500));
+        app.model_context_window = None;
+        app.update_token_badge();
+        assert!(app.token_badge_cache.is_some());
+    }
+
+    #[test]
+    fn update_token_badge_context_drops_below_threshold() {
+        let mut app = App::new();
+        // First set high
+        app.session_tokens = Some((160_000, 1000));
+        app.model_context_window = Some(200_000);
+        app.update_token_badge();
+        assert!(app.context_pct_high);
+        app.compaction_banner_injected = true;
+        // Now drop below
+        app.session_tokens = Some((50_000, 1000));
+        app.update_token_badge();
+        assert!(!app.context_pct_high);
+        assert!(!app.compaction_banner_injected);
+    }
+
+    // ── TodoItem / TodoStatus ──
+
+    #[test]
+    fn todo_status_pending() {
+        assert_eq!(TodoStatus::Pending, TodoStatus::Pending);
+        assert_ne!(TodoStatus::Pending, TodoStatus::InProgress);
+        assert_ne!(TodoStatus::Pending, TodoStatus::Completed);
+    }
+
+    #[test]
+    fn todo_status_in_progress() {
+        assert_eq!(TodoStatus::InProgress, TodoStatus::InProgress);
+    }
+
+    #[test]
+    fn todo_status_completed() {
+        assert_eq!(TodoStatus::Completed, TodoStatus::Completed);
+    }
+
+    #[test]
+    fn todo_item_construction() {
+        let item = TodoItem {
+            content: "Implement feature".to_string(),
+            status: TodoStatus::InProgress,
+            active_form: "Implementing feature".to_string(),
+        };
+        assert_eq!(item.content, "Implement feature");
+        assert_eq!(item.status, TodoStatus::InProgress);
+        assert_eq!(item.active_form, "Implementing feature");
+    }
+
+    #[test]
+    fn todo_item_clone() {
+        let item = TodoItem {
+            content: "test".to_string(),
+            status: TodoStatus::Pending,
+            active_form: "testing".to_string(),
+        };
+        let cloned = item.clone();
+        assert_eq!(cloned.content, "test");
+        assert_eq!(cloned.status, TodoStatus::Pending);
+    }
+
+    #[test]
+    fn todo_status_debug() {
+        assert_eq!(format!("{:?}", TodoStatus::Pending), "Pending");
+        assert_eq!(format!("{:?}", TodoStatus::InProgress), "InProgress");
+        assert_eq!(format!("{:?}", TodoStatus::Completed), "Completed");
+    }
+
+    // ── DeferredAction ──
+
+    #[test]
+    fn deferred_action_load_session() {
+        let action = DeferredAction::LoadSession { branch: "main".to_string(), idx: 0 };
+        assert!(matches!(action, DeferredAction::LoadSession { branch, idx } if branch == "main" && idx == 0));
+    }
+
+    #[test]
+    fn deferred_action_load_file() {
+        let action = DeferredAction::LoadFile { path: PathBuf::from("/tmp/file.rs") };
+        assert!(matches!(action, DeferredAction::LoadFile { .. }));
+    }
+
+    #[test]
+    fn deferred_action_switch_project() {
+        let action = DeferredAction::SwitchProject { path: PathBuf::from("/new/project") };
+        assert!(matches!(action, DeferredAction::SwitchProject { .. }));
+    }
+
+    #[test]
+    fn deferred_action_git_commit() {
+        let action = DeferredAction::GitCommit {
+            worktree: PathBuf::from("/wt"),
+            message: "fix bug".to_string(),
+        };
+        assert!(matches!(action, DeferredAction::GitCommit { .. }));
+    }
+
+    #[test]
+    fn deferred_action_git_commit_and_push() {
+        let action = DeferredAction::GitCommitAndPush {
+            worktree: PathBuf::from("/wt"),
+            message: "feat: new".to_string(),
+        };
+        assert!(matches!(action, DeferredAction::GitCommitAndPush { .. }));
+    }
+
+    #[test]
+    fn deferred_action_open_health_panel() {
+        let action = DeferredAction::OpenHealthPanel;
+        assert!(matches!(action, DeferredAction::OpenHealthPanel));
+    }
+
+    #[test]
+    fn deferred_action_rescan_health_scope() {
+        let action = DeferredAction::RescanHealthScope { dirs: vec!["src".to_string()] };
+        assert!(matches!(action, DeferredAction::RescanHealthScope { .. }));
+    }
+
+    // ── cancel_all_claude ──
+
+    #[test]
+    fn cancel_all_claude_clears_state() {
+        let mut app = App::new();
+        app.running_sessions.insert("pid-1".to_string());
+        app.running_sessions.insert("pid-2".to_string());
+        app.branch_slots.insert("b".to_string(), vec!["pid-1".to_string()]);
+        app.active_slot.insert("b".to_string(), "pid-1".to_string());
+        app.cancel_all_claude();
+        assert!(app.running_sessions.is_empty());
+        assert!(app.branch_slots.is_empty());
+        assert!(app.active_slot.is_empty());
+    }
+
+    // ── git_action_in_progress ──
+
+    #[test]
+    fn git_action_in_progress_default_false() {
+        let app = App::new();
+        assert!(!app.git_action_in_progress());
+    }
+
+    #[test]
+    fn git_action_in_progress_deferred_commit() {
+        let mut app = App::new();
+        app.deferred_action = Some(DeferredAction::GitCommit {
+            worktree: PathBuf::from("/wt"),
+            message: "msg".to_string(),
+        });
+        assert!(app.git_action_in_progress());
+    }
+
+    #[test]
+    fn git_action_in_progress_deferred_commit_push() {
+        let mut app = App::new();
+        app.deferred_action = Some(DeferredAction::GitCommitAndPush {
+            worktree: PathBuf::from("/wt"),
+            message: "msg".to_string(),
+        });
+        assert!(app.git_action_in_progress());
+    }
+
+    #[test]
+    fn git_action_not_in_progress_load_session() {
+        let mut app = App::new();
+        app.deferred_action = Some(DeferredAction::LoadSession {
+            branch: "b".to_string(),
+            idx: 0,
+        });
+        assert!(!app.git_action_in_progress());
+    }
+
+    // ── get_cpu_time_micros ──
+
+    #[test]
+    fn get_cpu_time_micros_returns_nonzero() {
+        let cpu = get_cpu_time_micros();
+        assert!(cpu > 0, "CPU time should be non-zero for a running process");
+    }
+}

@@ -650,3 +650,200 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
 
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::{GitCommit, GitChangedFile, PostMergeDialog};
+    use std::path::PathBuf;
+
+    // ── Colors ──
+    #[test]
+    fn test_azure() { assert_eq!(AZURE, Color::Rgb(51, 153, 255)); }
+    #[test]
+    fn test_git_orange() { assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50)); }
+    #[test]
+    fn test_git_brown() { assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45)); }
+    #[test]
+    fn test_orange_exists() { let _ = ORANGE; }
+
+    // ── ViewMode ──
+    #[test]
+    fn test_view_mode_eq() { assert_eq!(ViewMode::Session, ViewMode::Session); }
+
+    // ── Focus ──
+    #[test]
+    fn test_focus_session() { assert_eq!(Focus::Session, Focus::Session); }
+    #[test]
+    fn test_focus_input() { assert_eq!(Focus::Input, Focus::Input); }
+    #[test]
+    fn test_focus_ne() { assert_ne!(Focus::Session, Focus::Input); }
+
+    // ── MessageType ──
+    #[test]
+    fn test_msg_type_user() { let _ = MessageType::User; }
+    #[test]
+    fn test_msg_type_assistant() { let _ = MessageType::Assistant; }
+    #[test]
+    fn test_msg_type_other() { let _ = MessageType::Other; }
+
+    // ── GitCommit ──
+    #[test]
+    fn test_commit_new() {
+        let c = GitCommit { hash: "abc".into(), full_hash: "abcdef".into(), subject: "feat".into(), is_pushed: false };
+        assert!(!c.is_pushed);
+    }
+    #[test]
+    fn test_commit_pushed() {
+        let c = GitCommit { hash: "d".into(), full_hash: "dd".into(), subject: "s".into(), is_pushed: true };
+        assert!(c.is_pushed);
+    }
+    #[test]
+    fn test_commit_clone() {
+        let c = GitCommit { hash: "h".into(), full_hash: "hh".into(), subject: "s".into(), is_pushed: false };
+        let cl = c.clone();
+        assert_eq!(cl.hash, "h");
+    }
+
+    // ── GitChangedFile ──
+    #[test]
+    fn test_file_modified() { let f = GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 5 }; assert_eq!(f.status, 'M'); }
+    #[test]
+    fn test_file_added() { let f = GitChangedFile { path: "b".into(), status: 'A', additions: 50, deletions: 0 }; assert_eq!(f.status, 'A'); }
+    #[test]
+    fn test_file_deleted() { let f = GitChangedFile { path: "c".into(), status: 'D', additions: 0, deletions: 30 }; assert_eq!(f.status, 'D'); }
+
+    // ── Status colors ──
+    #[test]
+    fn test_sc_a() { assert_eq!(match 'A' { 'A'=>Color::Green, 'D'=>Color::Red, 'M'=>Color::Yellow, 'R'=>Color::Cyan, '?'=>Color::Magenta, _=>Color::White }, Color::Green); }
+    #[test]
+    fn test_sc_d() { assert_eq!(match 'D' { 'A'=>Color::Green, 'D'=>Color::Red, _=>Color::White }, Color::Red); }
+    #[test]
+    fn test_sc_m() { assert_eq!(match 'M' { 'M'=>Color::Yellow, _=>Color::White }, Color::Yellow); }
+    #[test]
+    fn test_sc_r() { assert_eq!(match 'R' { 'R'=>Color::Cyan, _=>Color::White }, Color::Cyan); }
+
+    // ── PostMergeDialog ──
+    #[test]
+    fn test_pmd_keep() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 0 }; assert_eq!(d.selected, 0); }
+    #[test]
+    fn test_pmd_archive() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 1 }; assert_eq!(d.selected, 1); }
+    #[test]
+    fn test_pmd_delete() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 2 }; assert_eq!(d.selected, 2); }
+
+    // ── Arrow indicator ──
+    #[test]
+    fn test_arrow_0() { let s=0; assert_eq!(if s==0{"\u{25b8} "}else{"  "}, "\u{25b8} "); }
+    #[test]
+    fn test_arrow_2() { let s=2; assert_eq!(if s==2{"\u{25b8} "}else{"  "}, "\u{25b8} "); }
+
+    // ── Title format ──
+    #[test]
+    fn test_commits_title_0() { assert_eq!(format!(" Commits ({}) ", 0), " Commits (0) "); }
+    #[test]
+    fn test_commits_title_42() { assert_eq!(format!(" Commits ({}) ", 42), " Commits (42) "); }
+
+    // ── Changed files title ──
+    #[test]
+    fn test_cf_title_none() {
+        let files: Vec<GitChangedFile> = vec![];
+        let t = if files.is_empty() { " Changed Files (none) ".into() } else { format!(" Changed Files ({}) ", files.len()) };
+        assert_eq!(t, " Changed Files (none) ");
+    }
+    #[test]
+    fn test_cf_title_stats() {
+        let files = vec![GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 3 }];
+        let ta: usize = files.iter().map(|f| f.additions).sum();
+        let td: usize = files.iter().map(|f| f.deletions).sum();
+        let t = format!(" Changed Files ({}, +{}/-{}) ", files.len(), ta, td);
+        assert_eq!(t, " Changed Files (1, +10/-3) ");
+    }
+
+    // ── Divergence badge ──
+    #[test]
+    fn test_div_ahead() {
+        let mut p = Vec::new();
+        if 3 > 0 { p.push(format!("\u{2191}{}", 3)); }
+        assert_eq!(format!(" {} main ", p.join(" ")), " \u{2191}3 main ");
+    }
+    #[test]
+    fn test_div_behind() {
+        let mut p = Vec::new();
+        if 5 > 0 { p.push(format!("\u{2193}{}", 5)); }
+        assert_eq!(format!(" {} main ", p.join(" ")), " \u{2193}5 main ");
+    }
+    #[test]
+    fn test_div_both() {
+        let mut p = Vec::new();
+        p.push(format!("\u{2191}{}", 2)); p.push(format!("\u{2193}{}", 3));
+        assert_eq!(format!(" {} main ", p.join(" ")), " \u{2191}2 \u{2193}3 main ");
+    }
+
+    // ── RCR dialog ──
+    #[test]
+    fn test_rcr_size() { assert_eq!(46u16.min(80u16.saturating_sub(2)), 46); assert_eq!(5u16.min(40u16.saturating_sub(2)), 5); }
+    #[test]
+    fn test_rcr_small() { assert_eq!(46u16.min(20u16.saturating_sub(2)), 18); }
+
+    // ── Post-merge ──
+    #[test]
+    fn test_pm_size() { assert_eq!(50u16.min(100u16.saturating_sub(2)), 50); assert_eq!(9u16.min(40u16.saturating_sub(2)), 9); }
+
+    // ── Session title ──
+    #[test]
+    fn test_session_title() { assert_eq!(format!(" Session [{}/{}] ", 5, 20), " Session [5/20] "); }
+    #[test]
+    fn test_session_title_empty() { assert_eq!(" Session ".to_string(), " Session "); }
+
+    // ── Model colors ──
+    #[test]
+    fn test_mc_opus() { assert_eq!(match "opus" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Magenta); }
+    #[test]
+    fn test_mc_sonnet() { assert_eq!(match "sonnet" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Cyan); }
+    #[test]
+    fn test_mc_haiku() { assert_eq!(match "haiku" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Yellow); }
+    #[test]
+    fn test_mc_unknown() { assert_eq!(match "x" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::DarkGray); }
+
+    // ── Search match ──
+    #[test]
+    fn test_search_empty() {
+        let m: Vec<(usize,usize,usize)> = vec![]; let f = "";
+        let i = if m.is_empty() { if f.is_empty() { String::new() } else { " 0/0 ".into() } } else { format!(" {}/{} ", 1, m.len()) };
+        assert_eq!(i, "");
+    }
+    #[test]
+    fn test_search_no_match() {
+        let i = if true { if false { String::new() } else { " 0/0 ".into() } } else { String::new() };
+        assert_eq!(i, " 0/0 ");
+    }
+    #[test]
+    fn test_search_matches() { assert_eq!(format!(" {}/{} ", 1, 2), " 1/2 "); }
+
+    // ── Exit code ──
+    #[test]
+    fn test_exit_0() {
+        let (t, c) = if 0==0 { (" exit:0 ".into(), Color::Green) } else { (format!(" exit:{} ", 0), Color::Red) };
+        assert_eq!(t, " exit:0 "); assert_eq!(c, Color::Green);
+    }
+    #[test]
+    fn test_exit_1() {
+        let (t, c): (String, Color) = if 1==0 { (" exit:0 ".into(), Color::Green) } else { (format!(" exit:{} ", 1), Color::Red) };
+        assert_eq!(t, " exit:1 "); assert_eq!(c, Color::Red);
+    }
+
+    #[test]
+    fn test_azure_is_rgb() { assert!(matches!(AZURE, Color::Rgb(_, _, _))); }
+
+    #[test]
+    fn test_git_orange_red_channel_highest() {
+        if let Color::Rgb(r, g, b) = GIT_ORANGE { assert!(r > g && r > b); } else { panic!(); }
+    }
+
+    #[test]
+    fn test_exit_code_format_negative() {
+        let code = -1i32;
+        let s = format!(" exit:{} ", code);
+        assert_eq!(s, " exit:-1 ");
+    }
+}

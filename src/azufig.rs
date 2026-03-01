@@ -285,3 +285,664 @@ fn migrate_old_azufig(dir: &Path) {
         let _ = std::fs::rename(&old_path, &new_path);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_bare_key ──
+
+    #[test]
+    fn test_bare_key_simple() {
+        assert!(is_bare_key("hello"));
+        assert!(is_bare_key("HELLO"));
+        assert!(is_bare_key("hello123"));
+    }
+
+    #[test]
+    fn test_bare_key_with_underscores_dashes() {
+        assert!(is_bare_key("my_key"));
+        assert!(is_bare_key("my-key"));
+        assert!(is_bare_key("my_key-123"));
+    }
+
+    #[test]
+    fn test_bare_key_empty() {
+        assert!(!is_bare_key(""));
+    }
+
+    #[test]
+    fn test_bare_key_with_spaces() {
+        assert!(!is_bare_key("hello world"));
+        assert!(!is_bare_key(" hello"));
+    }
+
+    #[test]
+    fn test_bare_key_with_special_chars() {
+        assert!(!is_bare_key("key.name"));
+        assert!(!is_bare_key("key=value"));
+        assert!(!is_bare_key("key/path"));
+        assert!(!is_bare_key("key@host"));
+        assert!(!is_bare_key("key(1)"));
+    }
+
+    #[test]
+    fn test_bare_key_single_chars() {
+        assert!(is_bare_key("a"));
+        assert!(is_bare_key("Z"));
+        assert!(is_bare_key("0"));
+        assert!(is_bare_key("_"));
+        assert!(is_bare_key("-"));
+    }
+
+    // ── strip_unnecessary_key_quotes ──
+
+    #[test]
+    fn test_strip_quotes_bare_key() {
+        let input = "\"SomeKey\" = \"value\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "SomeKey = \"value\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_preserves_needed_quotes() {
+        let input = "\"Key With Spaces\" = \"value\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "\"Key With Spaces\" = \"value\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_section_headers() {
+        let input = "[config]\n\"api_key\" = \"sk-123\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "[config]\napi_key = \"sk-123\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_mixed() {
+        let input = "\"bare_ok\" = \"val1\"\n\"has spaces\" = \"val2\"\n\"also-ok\" = \"val3\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "bare_ok = \"val1\"\n\"has spaces\" = \"val2\"\nalso-ok = \"val3\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_no_quotes() {
+        let input = "already_unquoted = \"value\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "already_unquoted = \"value\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_with_indent() {
+        let input = "  \"indented\" = \"value\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "  indented = \"value\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_special_key_preserved() {
+        let input = "\"key/with/slashes\" = \"value\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "\"key/with/slashes\" = \"value\"\n");
+    }
+
+    // ── default_hidden ──
+
+    #[test]
+    fn test_default_hidden_contents() {
+        let hidden = default_hidden();
+        assert!(hidden.contains(&"worktrees".to_string()));
+        assert!(hidden.contains(&".git".to_string()));
+        assert!(hidden.contains(&".claude".to_string()));
+        assert!(hidden.contains(&".azureal".to_string()));
+        assert!(hidden.contains(&".DS_Store".to_string()));
+        assert_eq!(hidden.len(), 5);
+    }
+
+    // ── AzufigFiletree default ──
+
+    #[test]
+    fn test_filetree_default() {
+        let ft = AzufigFiletree::default();
+        assert_eq!(ft.hidden.len(), 5);
+    }
+
+    // ── GlobalAzufig default ──
+
+    #[test]
+    fn test_global_azufig_default() {
+        let az = GlobalAzufig::default();
+        assert!(az.projects.is_empty());
+        assert!(az.runcmds.is_empty());
+        assert!(az.presetprompts.is_empty());
+    }
+
+    // ── ProjectAzufig default ──
+
+    #[test]
+    fn test_project_azufig_default() {
+        let az = ProjectAzufig::default();
+        assert!(az.sessions.is_empty());
+        assert!(az.runcmds.is_empty());
+        assert!(az.presetprompts.is_empty());
+        assert!(az.git.is_empty());
+    }
+
+    // ── AzufigConfig default ──
+
+    #[test]
+    fn test_azufig_config_default() {
+        let cfg = AzufigConfig::default();
+        assert!(cfg.anthropic_api_key.is_none());
+        assert!(cfg.claude_executable.is_none());
+        assert_eq!(cfg.default_permission_mode, "");
+        assert!(!cfg.verbose);
+    }
+
+    // ── TOML round-trip ──
+
+    #[test]
+    fn test_global_azufig_toml_roundtrip() {
+        let mut az = GlobalAzufig::default();
+        az.projects.insert("MyProject".to_string(), "~/dev/myproject".to_string());
+        az.runcmds.insert("1_Build".to_string(), "cargo build".to_string());
+
+        let toml_str = toml::to_string_pretty(&az).unwrap();
+        let parsed: GlobalAzufig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.projects.get("MyProject").unwrap(), "~/dev/myproject");
+        assert_eq!(parsed.runcmds.get("1_Build").unwrap(), "cargo build");
+    }
+
+    #[test]
+    fn test_project_azufig_toml_roundtrip() {
+        let mut az = ProjectAzufig::default();
+        az.sessions.insert("uuid-123".to_string(), "my-session".to_string());
+        az.git.insert("auto-rebase/feature".to_string(), "true".to_string());
+
+        let toml_str = toml::to_string_pretty(&az).unwrap();
+        let parsed: ProjectAzufig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.sessions.get("uuid-123").unwrap(), "my-session");
+        assert_eq!(parsed.git.get("auto-rebase/feature").unwrap(), "true");
+    }
+
+    // ── DEFAULT_AUTO_RESOLVE ──
+
+    #[test]
+    fn test_default_auto_resolve_files() {
+        assert!(DEFAULT_AUTO_RESOLVE.contains(&"AGENTS.md"));
+        assert!(DEFAULT_AUTO_RESOLVE.contains(&"CHANGELOG.md"));
+        assert!(DEFAULT_AUTO_RESOLVE.contains(&"README.md"));
+        assert!(DEFAULT_AUTO_RESOLVE.contains(&"CLAUDE.md"));
+        assert_eq!(DEFAULT_AUTO_RESOLVE.len(), 4);
+    }
+
+    // ── AZUFIG_FILENAME ──
+
+    #[test]
+    fn test_azufig_filename() {
+        assert_eq!(AZUFIG_FILENAME, "azufig.toml");
+    }
+
+    // ── is_bare_key: exhaustive ASCII checks ──
+
+    #[test]
+    fn test_bare_key_all_lowercase_letters() {
+        for c in 'a'..='z' {
+            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+        }
+    }
+
+    #[test]
+    fn test_bare_key_all_uppercase_letters() {
+        for c in 'A'..='Z' {
+            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+        }
+    }
+
+    #[test]
+    fn test_bare_key_all_digits() {
+        for c in '0'..='9' {
+            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+        }
+    }
+
+    #[test]
+    fn test_bare_key_numbers_only() {
+        assert!(is_bare_key("12345"));
+        assert!(is_bare_key("007"));
+    }
+
+    #[test]
+    fn test_bare_key_underscores_only() {
+        assert!(is_bare_key("_"));
+        assert!(is_bare_key("___"));
+    }
+
+    #[test]
+    fn test_bare_key_dashes_only() {
+        assert!(is_bare_key("-"));
+        assert!(is_bare_key("---"));
+    }
+
+    #[test]
+    fn test_bare_key_invalid_ascii_printable() {
+        let invalid = "!\"#$%&'()*+,./:;<>?@[\\]^`{|}~";
+        for c in invalid.chars() {
+            assert!(!is_bare_key(&c.to_string()), "'{}' should NOT be a valid bare key char", c);
+        }
+    }
+
+    #[test]
+    fn test_bare_key_multi_byte_unicode() {
+        assert!(!is_bare_key("ñ"));
+        assert!(!is_bare_key("日本語"));
+        assert!(!is_bare_key("über"));
+        assert!(!is_bare_key("café"));
+    }
+
+    #[test]
+    fn test_bare_key_mixed_valid_invalid() {
+        assert!(!is_bare_key("hello world"));
+        assert!(!is_bare_key("key.name"));
+        assert!(!is_bare_key("path/to/thing"));
+        assert!(is_bare_key("valid-key_123"));
+    }
+
+    #[test]
+    fn test_bare_key_tab_and_newline() {
+        assert!(!is_bare_key("key\ttab"));
+        assert!(!is_bare_key("key\nnewline"));
+    }
+
+    // ── strip_unnecessary_key_quotes: more edge cases ──
+
+    #[test]
+    fn test_strip_quotes_empty_string() {
+        assert_eq!(strip_unnecessary_key_quotes(""), "");
+    }
+
+    #[test]
+    fn test_strip_quotes_no_newline_at_end() {
+        // Input without trailing newline: function adds newline per line
+        let input = "\"key\" = \"value\"";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "key = \"value\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_multiple_equals_in_value() {
+        let input = "\"key\" = \"a=b=c\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "key = \"a=b=c\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_value_containing_quotes() {
+        let input = "\"key\" = \"value with \\\"quotes\\\"\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "key = \"value with \\\"quotes\\\"\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_nested_sections() {
+        let input = "[section]\n\"key1\" = \"val1\"\n\n[other]\n\"key2\" = \"val2\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "[section]\nkey1 = \"val1\"\n\n[other]\nkey2 = \"val2\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_array_values() {
+        // Array value: should not strip since after the closing quote we don't have " = "
+        let input = "\"array_key\" = [\"a\", \"b\"]\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "array_key = [\"a\", \"b\"]\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_key_only_digits() {
+        let input = "\"123\" = \"numeric key\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        assert_eq!(result, "123 = \"numeric key\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_key_with_dot_stays_quoted() {
+        let input = "\"auto-resolve/AGENTS.md\" = \"true\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        // '/' is not allowed in bare keys, so stays quoted
+        assert_eq!(result, "\"auto-resolve/AGENTS.md\" = \"true\"\n");
+    }
+
+    #[test]
+    fn test_strip_quotes_empty_key_stays_quoted() {
+        let input = "\"\" = \"empty key\"\n";
+        let result = strip_unnecessary_key_quotes(input);
+        // Empty string is not a valid bare key
+        assert_eq!(result, "\"\" = \"empty key\"\n");
+    }
+
+    // ── TOML round-trips with all fields ──
+
+    #[test]
+    fn test_global_azufig_all_fields_roundtrip() {
+        let az = GlobalAzufig {
+            config: AzufigConfig {
+                anthropic_api_key: Some("sk-test-123".to_string()),
+                claude_executable: Some("/usr/bin/claude".to_string()),
+                default_permission_mode: "approve".to_string(),
+                verbose: true,
+            },
+            projects: {
+                let mut m = HashMap::new();
+                m.insert("proj1".to_string(), "~/dev/proj1".to_string());
+                m.insert("proj2".to_string(), "~/work/proj2".to_string());
+                m
+            },
+            runcmds: {
+                let mut m = HashMap::new();
+                m.insert("1_Build".to_string(), "cargo build".to_string());
+                m.insert("2_Test".to_string(), "cargo test".to_string());
+                m
+            },
+            presetprompts: {
+                let mut m = HashMap::new();
+                m.insert("review".to_string(), "Review this PR".to_string());
+                m
+            },
+        };
+
+        let toml_str = toml::to_string_pretty(&az).unwrap();
+        let parsed: GlobalAzufig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.config.anthropic_api_key, az.config.anthropic_api_key);
+        assert_eq!(parsed.config.claude_executable, az.config.claude_executable);
+        assert_eq!(parsed.config.default_permission_mode, "approve");
+        assert!(parsed.config.verbose);
+        assert_eq!(parsed.projects.len(), 2);
+        assert_eq!(parsed.runcmds.len(), 2);
+        assert_eq!(parsed.presetprompts.len(), 1);
+    }
+
+    #[test]
+    fn test_project_azufig_all_fields_roundtrip() {
+        let az = ProjectAzufig {
+            filetree: AzufigFiletree {
+                hidden: vec!["target".into(), ".git".into(), "node_modules".into()],
+            },
+            healthscope: AzufigHealthScope {
+                dirs: vec!["/src".into(), "/lib".into()],
+            },
+            sessions: {
+                let mut m = HashMap::new();
+                m.insert("uuid-1".to_string(), "Session A".to_string());
+                m
+            },
+            runcmds: {
+                let mut m = HashMap::new();
+                m.insert("lint".to_string(), "cargo clippy".to_string());
+                m
+            },
+            presetprompts: {
+                let mut m = HashMap::new();
+                m.insert("fix".to_string(), "Fix this bug".to_string());
+                m
+            },
+            git: {
+                let mut m = HashMap::new();
+                m.insert("auto-rebase/feature".to_string(), "true".to_string());
+                m.insert("auto-resolve/AGENTS.md".to_string(), "true".to_string());
+                m
+            },
+        };
+
+        let toml_str = toml::to_string_pretty(&az).unwrap();
+        let parsed: ProjectAzufig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.filetree.hidden.len(), 3);
+        assert_eq!(parsed.healthscope.dirs.len(), 2);
+        assert_eq!(parsed.sessions.len(), 1);
+        assert_eq!(parsed.runcmds.len(), 1);
+        assert_eq!(parsed.presetprompts.len(), 1);
+        assert_eq!(parsed.git.len(), 2);
+    }
+
+    #[test]
+    fn test_azufig_config_all_fields_roundtrip() {
+        let cfg = AzufigConfig {
+            anthropic_api_key: Some("key".to_string()),
+            claude_executable: Some("/bin/claude".to_string()),
+            default_permission_mode: "ask".to_string(),
+            verbose: true,
+        };
+        let toml_str = toml::to_string_pretty(&cfg).unwrap();
+        let parsed: AzufigConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.anthropic_api_key.as_deref(), Some("key"));
+        assert_eq!(parsed.claude_executable.as_deref(), Some("/bin/claude"));
+        assert_eq!(parsed.default_permission_mode, "ask");
+        assert!(parsed.verbose);
+    }
+
+    // ── AzufigHealthScope default ──
+
+    #[test]
+    fn test_health_scope_default() {
+        let scope = AzufigHealthScope::default();
+        assert!(scope.dirs.is_empty());
+    }
+
+    #[test]
+    fn test_health_scope_with_dirs() {
+        let scope = AzufigHealthScope {
+            dirs: vec!["/src".into(), "/tests".into()],
+        };
+        assert_eq!(scope.dirs.len(), 2);
+        assert!(scope.dirs.contains(&"/src".to_string()));
+    }
+
+    // ── Deserialization from partial TOML ──
+
+    #[test]
+    fn test_global_azufig_from_empty_toml() {
+        let parsed: GlobalAzufig = toml::from_str("").unwrap();
+        assert!(parsed.projects.is_empty());
+        assert!(parsed.runcmds.is_empty());
+        assert!(parsed.presetprompts.is_empty());
+        assert!(parsed.config.anthropic_api_key.is_none());
+    }
+
+    #[test]
+    fn test_global_azufig_from_partial_toml() {
+        let toml_str = r#"
+[projects]
+MyProj = "~/dev/myproj"
+"#;
+        let parsed: GlobalAzufig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.projects.get("MyProj").unwrap(), "~/dev/myproj");
+        assert!(parsed.runcmds.is_empty());
+        assert!(parsed.config.anthropic_api_key.is_none());
+    }
+
+    #[test]
+    fn test_project_azufig_from_partial_toml() {
+        let toml_str = r#"
+[sessions]
+"abc-123" = "my session"
+"#;
+        let parsed: ProjectAzufig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.sessions.get("abc-123").unwrap(), "my session");
+        assert_eq!(parsed.filetree.hidden.len(), 5); // defaults
+        assert!(parsed.git.is_empty());
+    }
+
+    #[test]
+    fn test_project_azufig_filetree_only() {
+        let toml_str = r#"
+[filetree]
+hidden = ["target", ".git"]
+"#;
+        let parsed: ProjectAzufig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.filetree.hidden.len(), 2);
+        assert!(parsed.filetree.hidden.contains(&"target".to_string()));
+    }
+
+    #[test]
+    fn test_config_from_partial_toml() {
+        let toml_str = r#"
+verbose = true
+"#;
+        let parsed: AzufigConfig = toml::from_str(toml_str).unwrap();
+        assert!(parsed.verbose);
+        assert!(parsed.anthropic_api_key.is_none());
+        assert!(parsed.claude_executable.is_none());
+        assert_eq!(parsed.default_permission_mode, "");
+    }
+
+    // ── DEFAULT_AUTO_RESOLVE specific entries ──
+
+    #[test]
+    fn test_default_auto_resolve_specific_entries() {
+        assert_eq!(DEFAULT_AUTO_RESOLVE[0], "AGENTS.md");
+        assert_eq!(DEFAULT_AUTO_RESOLVE[1], "CHANGELOG.md");
+        assert_eq!(DEFAULT_AUTO_RESOLVE[2], "README.md");
+        assert_eq!(DEFAULT_AUTO_RESOLVE[3], "CLAUDE.md");
+    }
+
+    #[test]
+    fn test_default_auto_resolve_order() {
+        // Verify alphabetical-ish order (AGENTS, CHANGELOG, README, CLAUDE)
+        // Actually the order is as defined, not alphabetical
+        let files: Vec<&str> = DEFAULT_AUTO_RESOLVE.to_vec();
+        assert_eq!(files, vec!["AGENTS.md", "CHANGELOG.md", "README.md", "CLAUDE.md"]);
+    }
+
+    #[test]
+    fn test_default_auto_resolve_all_markdown() {
+        for file in DEFAULT_AUTO_RESOLVE {
+            assert!(file.ends_with(".md"), "auto-resolve file '{}' should end with .md", file);
+        }
+    }
+
+    // ── AzufigFiletree ──
+
+    #[test]
+    fn test_filetree_custom_hidden() {
+        let ft = AzufigFiletree {
+            hidden: vec!["target".into(), "node_modules".into()],
+        };
+        assert_eq!(ft.hidden.len(), 2);
+    }
+
+    #[test]
+    fn test_filetree_empty_hidden() {
+        let ft = AzufigFiletree { hidden: vec![] };
+        assert!(ft.hidden.is_empty());
+    }
+
+    #[test]
+    fn test_filetree_serialize_roundtrip() {
+        let ft = AzufigFiletree {
+            hidden: vec!["a".into(), "b".into(), "c".into()],
+        };
+        let toml_str = toml::to_string_pretty(&ft).unwrap();
+        let parsed: AzufigFiletree = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.hidden, ft.hidden);
+    }
+
+    #[test]
+    fn test_filetree_clone() {
+        let ft = AzufigFiletree::default();
+        let cloned = ft.clone();
+        assert_eq!(ft.hidden, cloned.hidden);
+    }
+
+    // ── GlobalAzufig ──
+
+    #[test]
+    fn test_global_azufig_clone() {
+        let mut az = GlobalAzufig::default();
+        az.projects.insert("A".into(), "~/a".into());
+        let cloned = az.clone();
+        assert_eq!(cloned.projects.get("A").unwrap(), "~/a");
+    }
+
+    #[test]
+    fn test_global_azufig_debug() {
+        let az = GlobalAzufig::default();
+        let dbg = format!("{:?}", az);
+        assert!(dbg.contains("GlobalAzufig"));
+    }
+
+    // ── ProjectAzufig ──
+
+    #[test]
+    fn test_project_azufig_clone() {
+        let mut az = ProjectAzufig::default();
+        az.sessions.insert("s1".into(), "Session 1".into());
+        let cloned = az.clone();
+        assert_eq!(cloned.sessions.get("s1").unwrap(), "Session 1");
+    }
+
+    #[test]
+    fn test_project_azufig_debug() {
+        let az = ProjectAzufig::default();
+        let dbg = format!("{:?}", az);
+        assert!(dbg.contains("ProjectAzufig"));
+    }
+
+    // ── AzufigConfig ──
+
+    #[test]
+    fn test_azufig_config_clone() {
+        let cfg = AzufigConfig {
+            anthropic_api_key: Some("key".into()),
+            claude_executable: None,
+            default_permission_mode: "ignore".into(),
+            verbose: false,
+        };
+        let cloned = cfg.clone();
+        assert_eq!(cloned.anthropic_api_key, cfg.anthropic_api_key);
+        assert_eq!(cloned.default_permission_mode, "ignore");
+    }
+
+    #[test]
+    fn test_azufig_config_debug() {
+        let cfg = AzufigConfig::default();
+        let dbg = format!("{:?}", cfg);
+        assert!(dbg.contains("AzufigConfig"));
+    }
+
+    // ── AzufigHealthScope ──
+
+    #[test]
+    fn test_health_scope_clone() {
+        let scope = AzufigHealthScope {
+            dirs: vec!["/src".into()],
+        };
+        let cloned = scope.clone();
+        assert_eq!(cloned.dirs, scope.dirs);
+    }
+
+    #[test]
+    fn test_health_scope_serialize_roundtrip() {
+        let scope = AzufigHealthScope {
+            dirs: vec!["/a".into(), "/b".into()],
+        };
+        let toml_str = toml::to_string_pretty(&scope).unwrap();
+        let parsed: AzufigHealthScope = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.dirs, scope.dirs);
+    }
+
+    // ── godfilescope alias ──
+
+    #[test]
+    fn test_project_azufig_godfilescope_alias() {
+        let toml_str = r#"
+[godfilescope]
+dirs = ["/legacy"]
+"#;
+        let parsed: ProjectAzufig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.healthscope.dirs, vec!["/legacy"]);
+    }
+}

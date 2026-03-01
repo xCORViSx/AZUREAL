@@ -279,3 +279,534 @@ fn build_doc_health_prompt(rel_path: &str, documented: usize, total: usize) -> S
         if total > 0 { documented as f64 / total as f64 * 100.0 } else { 100.0 }
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Helper: write source content to a temp file and scan for doc coverage
+    fn scan_content(content: &str) -> (usize, usize) {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("test.rs");
+        fs::write(&path, content).unwrap();
+        scan_file_doc_coverage(&path)
+    }
+
+    // ── scan_file_doc_coverage: basic ──
+
+    #[test]
+    fn test_scan_empty_file() {
+        let (total, documented) = scan_content("");
+        assert_eq!(total, 0);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_single_documented_fn() {
+        let (total, documented) = scan_content("/// Does something\nfn foo() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_single_undocumented_fn() {
+        let (total, documented) = scan_content("fn foo() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_pub_fn() {
+        let (total, documented) = scan_content("/// Documented\npub fn bar() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_fn_undocumented() {
+        let (total, documented) = scan_content("pub fn bar() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    // ── scan_file_doc_coverage: struct/enum/trait ──
+
+    #[test]
+    fn test_scan_struct_documented() {
+        let (total, documented) = scan_content("/// A struct\nstruct Foo {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_struct_undocumented() {
+        let (total, documented) = scan_content("struct Foo {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_pub_struct() {
+        let (total, documented) = scan_content("/// Public struct\npub struct Bar {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_enum_documented() {
+        let (total, documented) = scan_content("/// An enum\nenum Color { Red, Blue }");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_enum_undocumented() {
+        let (total, documented) = scan_content("pub enum Color { Red }");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_trait_documented() {
+        let (total, documented) = scan_content("/// A trait\ntrait Drawable {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_trait() {
+        let (total, documented) = scan_content("/// Public trait\npub trait Drawable {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    // ── scan_file_doc_coverage: const/static/type/impl/mod ──
+
+    #[test]
+    fn test_scan_const_documented() {
+        let (total, documented) = scan_content("/// A constant\nconst MAX: u32 = 100;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_const_undocumented() {
+        let (total, documented) = scan_content("const MAX: u32 = 100;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_static_documented() {
+        let (total, documented) = scan_content("/// A static\nstatic COUNT: u32 = 0;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_type_alias_documented() {
+        let (total, documented) = scan_content("/// A type alias\ntype Result<T> = std::result::Result<T, Error>;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_impl_block() {
+        let (total, documented) = scan_content("/// Impl block\nimpl Foo {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_mod_declaration() {
+        let (total, documented) = scan_content("/// A module\nmod utils;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_mod() {
+        let (total, documented) = scan_content("pub mod utils;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    // ── scan_file_doc_coverage: async/unsafe ──
+
+    #[test]
+    fn test_scan_async_fn() {
+        let (total, documented) = scan_content("/// Async function\nasync fn fetch() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_async_fn() {
+        let (total, documented) = scan_content("pub async fn fetch() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_unsafe_fn() {
+        let (total, documented) = scan_content("/// Unsafe function\nunsafe fn danger() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_unsafe_fn() {
+        let (total, documented) = scan_content("pub unsafe fn danger() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    // ── scan_file_doc_coverage: multiple items ──
+
+    #[test]
+    fn test_scan_mixed_documented_and_not() {
+        let content = "\
+/// Documented
+fn foo() {}
+
+fn bar() {}
+
+/// Also documented
+struct Baz {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 3);
+        assert_eq!(documented, 2);
+    }
+
+    #[test]
+    fn test_scan_all_documented() {
+        let content = "\
+/// Fn
+fn a() {}
+/// Struct
+struct B {}
+/// Enum
+enum C {}
+/// Trait
+trait D {}
+/// Const
+const E: i32 = 0;
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 5);
+        assert_eq!(documented, 5);
+    }
+
+    #[test]
+    fn test_scan_none_documented() {
+        let content = "\
+fn a() {}
+struct B {}
+enum C {}
+trait D {}
+const E: i32 = 0;
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 5);
+        assert_eq!(documented, 0);
+    }
+
+    // ── scan_file_doc_coverage: doc comment variants ──
+
+    #[test]
+    fn test_scan_module_doc_comment_counts() {
+        let content = "\
+//! Module-level doc
+fn foo() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        // //! on line before fn counts as documented
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_multiline_doc_comment() {
+        let content = "\
+/// First line of doc
+/// Second line of doc
+/// Third line of doc
+fn well_documented() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_attribute_between_doc_and_fn() {
+        let content = "\
+/// Documented with attribute
+#[inline]
+fn optimized() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_blank_line_between_doc_and_fn() {
+        let content = "\
+/// Doc comment
+
+fn separated() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        // blank line between doc and fn — the walkback skips blanks
+        assert_eq!(documented, 1);
+    }
+
+    // ── scan_file_doc_coverage: skipped lines ──
+
+    #[test]
+    fn test_scan_skips_use_statements() {
+        let content = "\
+use std::io;
+fn actual() {}
+";
+        let (total, _documented) = scan_content(content);
+        assert_eq!(total, 1); // only fn, not use
+    }
+
+    #[test]
+    fn test_scan_skips_extern() {
+        let content = "\
+extern crate foo;
+fn actual() {}
+";
+        let (total, _documented) = scan_content(content);
+        assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn test_scan_skips_regular_comments() {
+        let content = "\
+// regular comment
+fn foo() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        // Regular // comment is not a doc comment
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_skips_closing_braces() {
+        let content = "\
+fn foo() {
+}
+fn bar() {}
+";
+        let (total, _documented) = scan_content(content);
+        assert_eq!(total, 2); // both fns counted
+    }
+
+    // ── scan_file_doc_coverage: edge cases ──
+
+    #[test]
+    fn test_scan_nonexistent_file() {
+        let (total, documented) = scan_file_doc_coverage(Path::new("/nonexistent/file.rs"));
+        assert_eq!(total, 0);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_file_only_comments() {
+        let content = "\
+// Just comments
+// Nothing documentable
+/// Orphan doc comment
+";
+        let (total, _documented) = scan_content(content);
+        assert_eq!(total, 0);
+    }
+
+    #[test]
+    fn test_scan_file_only_use_statements() {
+        let content = "\
+use std::io;
+use std::path::Path;
+";
+        let (total, _documented) = scan_content(content);
+        assert_eq!(total, 0);
+    }
+
+    #[test]
+    fn test_scan_indented_fn() {
+        let content = "\
+    /// Indented doc
+    fn indented() {}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_static_undocumented() {
+        let (total, documented) = scan_content("pub static GLOBAL: i32 = 42;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_pub_const_documented() {
+        let (total, documented) = scan_content("/// A public const\npub const SIZE: usize = 10;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_pub_type_alias() {
+        let (total, documented) = scan_content("pub type MyResult<T> = Result<T, MyError>;");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 0);
+    }
+
+    // ── build_doc_health_prompt ──
+
+    #[test]
+    fn test_doc_prompt_contains_file_path() {
+        let prompt = build_doc_health_prompt("src/app.rs", 5, 10);
+        assert!(prompt.contains("src/app.rs"));
+    }
+
+    #[test]
+    fn test_doc_prompt_contains_coverage_counts() {
+        let prompt = build_doc_health_prompt("lib.rs", 3, 10);
+        assert!(prompt.contains("3/10 items documented"));
+    }
+
+    #[test]
+    fn test_doc_prompt_contains_percentage() {
+        let prompt = build_doc_health_prompt("lib.rs", 5, 10);
+        assert!(prompt.contains("50.0%"));
+    }
+
+    #[test]
+    fn test_doc_prompt_zero_total() {
+        let prompt = build_doc_health_prompt("empty.rs", 0, 0);
+        assert!(prompt.contains("100.0%"));
+    }
+
+    #[test]
+    fn test_doc_prompt_all_documented() {
+        let prompt = build_doc_health_prompt("good.rs", 10, 10);
+        assert!(prompt.contains("100.0%"));
+    }
+
+    #[test]
+    fn test_doc_prompt_none_documented() {
+        let prompt = build_doc_health_prompt("bad.rs", 0, 10);
+        assert!(prompt.contains("0.0%"));
+    }
+
+    #[test]
+    fn test_doc_prompt_mentions_doc_comments() {
+        let prompt = build_doc_health_prompt("lib.rs", 0, 5);
+        assert!(prompt.contains("///"));
+        assert!(prompt.contains("//!"));
+    }
+
+    #[test]
+    fn test_doc_prompt_mentions_no_code_modification() {
+        let prompt = build_doc_health_prompt("lib.rs", 0, 5);
+        assert!(prompt.contains("Do NOT modify any executable code"));
+    }
+
+    #[test]
+    fn test_doc_prompt_mentions_no_reformatting() {
+        let prompt = build_doc_health_prompt("lib.rs", 0, 5);
+        assert!(prompt.contains("Do NOT reformat"));
+    }
+
+    #[test]
+    fn test_doc_prompt_mentions_read_file() {
+        let prompt = build_doc_health_prompt("lib.rs", 0, 5);
+        assert!(prompt.contains("Read the entire file"));
+    }
+
+    // ── DocEntry struct ──
+
+    #[test]
+    fn test_doc_entry_construction() {
+        let entry = DocEntry {
+            path: PathBuf::from("/src/lib.rs"),
+            rel_path: "src/lib.rs".to_string(),
+            total_items: 10,
+            documented_items: 7,
+            coverage_pct: 70.0,
+            checked: false,
+        };
+        assert_eq!(entry.total_items, 10);
+        assert_eq!(entry.documented_items, 7);
+        assert!((entry.coverage_pct - 70.0).abs() < f32::EPSILON);
+        assert!(!entry.checked);
+    }
+
+    #[test]
+    fn test_doc_entry_checked_toggle() {
+        let mut entry = DocEntry {
+            path: PathBuf::from("/a.rs"),
+            rel_path: "a.rs".to_string(),
+            total_items: 5,
+            documented_items: 2,
+            coverage_pct: 40.0,
+            checked: false,
+        };
+        entry.checked = true;
+        assert!(entry.checked);
+    }
+
+    #[test]
+    fn test_doc_entry_zero_coverage() {
+        let entry = DocEntry {
+            path: PathBuf::from("/bad.rs"),
+            rel_path: "bad.rs".to_string(),
+            total_items: 20,
+            documented_items: 0,
+            coverage_pct: 0.0,
+            checked: false,
+        };
+        assert_eq!(entry.coverage_pct, 0.0);
+    }
+
+    #[test]
+    fn test_doc_entry_full_coverage() {
+        let entry = DocEntry {
+            path: PathBuf::from("/good.rs"),
+            rel_path: "good.rs".to_string(),
+            total_items: 15,
+            documented_items: 15,
+            coverage_pct: 100.0,
+            checked: false,
+        };
+        assert_eq!(entry.coverage_pct, 100.0);
+    }
+
+    #[test]
+    fn test_doc_entry_clone() {
+        let entry = DocEntry {
+            path: PathBuf::from("/x.rs"),
+            rel_path: "x.rs".to_string(),
+            total_items: 3,
+            documented_items: 1,
+            coverage_pct: 33.3,
+            checked: true,
+        };
+        let cloned = entry.clone();
+        assert_eq!(entry.path, cloned.path);
+        assert_eq!(entry.total_items, cloned.total_items);
+        assert_eq!(entry.checked, cloned.checked);
+    }
+}

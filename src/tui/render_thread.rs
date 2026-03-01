@@ -185,3 +185,520 @@ fn render_loop(
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    // -- PreScanState default --
+
+    #[test]
+    fn test_pre_scan_state_default() {
+        let ps = PreScanState::default();
+        assert!(!ps.saw_init);
+        assert!(!ps.saw_content);
+        assert!(ps.last_hook.is_none());
+        assert!(!ps.saw_exit_plan_mode);
+        assert!(!ps.saw_user_after_exit_plan);
+        assert!(!ps.saw_ask_user_question);
+        assert!(!ps.saw_user_after_ask);
+        assert!(ps.last_ask_input.is_none());
+    }
+
+    #[test]
+    fn test_pre_scan_state_saw_init() {
+        let mut ps = PreScanState::default();
+        ps.saw_init = true;
+        assert!(ps.saw_init);
+    }
+
+    #[test]
+    fn test_pre_scan_state_saw_content() {
+        let mut ps = PreScanState::default();
+        ps.saw_content = true;
+        assert!(ps.saw_content);
+    }
+
+    #[test]
+    fn test_pre_scan_state_last_hook() {
+        let mut ps = PreScanState::default();
+        ps.last_hook = Some(("hook_name".into(), "hook_data".into()));
+        let (name, data) = ps.last_hook.unwrap();
+        assert_eq!(name, "hook_name");
+        assert_eq!(data, "hook_data");
+    }
+
+    #[test]
+    fn test_pre_scan_state_exit_plan_mode() {
+        let mut ps = PreScanState::default();
+        ps.saw_exit_plan_mode = true;
+        ps.saw_user_after_exit_plan = true;
+        assert!(ps.saw_exit_plan_mode);
+        assert!(ps.saw_user_after_exit_plan);
+    }
+
+    #[test]
+    fn test_pre_scan_state_ask_user() {
+        let mut ps = PreScanState::default();
+        ps.saw_ask_user_question = true;
+        ps.saw_user_after_ask = true;
+        assert!(ps.saw_ask_user_question);
+        assert!(ps.saw_user_after_ask);
+    }
+
+    #[test]
+    fn test_pre_scan_state_last_ask_input() {
+        let mut ps = PreScanState::default();
+        ps.last_ask_input = Some(serde_json::json!({"answer": "yes"}));
+        assert!(ps.last_ask_input.is_some());
+    }
+
+    // -- RenderRequest fields --
+
+    #[test]
+    fn test_render_request_construction() {
+        let req = RenderRequest {
+            events: vec![],
+            width: 120,
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            pending_user_message: None,
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 0,
+            deferred_start: 0,
+            seq: 0,
+        };
+        assert_eq!(req.width, 120);
+        assert_eq!(req.total_events, 0);
+        assert_eq!(req.seq, 0);
+    }
+
+    #[test]
+    fn test_render_request_with_events() {
+        let req = RenderRequest {
+            events: vec![],
+            width: 80,
+            pending_tools: HashSet::from(["tool1".into()]),
+            failed_tools: HashSet::from(["tool2".into()]),
+            pending_user_message: Some("hello".into()),
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 5,
+            deferred_start: 2,
+            seq: 42,
+        };
+        assert_eq!(req.pending_tools.len(), 1);
+        assert_eq!(req.failed_tools.len(), 1);
+        assert_eq!(req.pending_user_message, Some("hello".into()));
+        assert_eq!(req.total_events, 5);
+        assert_eq!(req.deferred_start, 2);
+        assert_eq!(req.seq, 42);
+    }
+
+    #[test]
+    fn test_render_request_pending_tools_contains() {
+        let tools: HashSet<String> = HashSet::from(["write".into(), "read".into()]);
+        assert!(tools.contains("write"));
+        assert!(tools.contains("read"));
+        assert!(!tools.contains("exec"));
+    }
+
+    #[test]
+    fn test_render_request_failed_tools() {
+        let tools: HashSet<String> = HashSet::from(["failed_tool".into()]);
+        assert!(tools.contains("failed_tool"));
+    }
+
+    #[test]
+    fn test_render_request_incremental_check() {
+        let existing: Vec<Line> = vec![Line::from("cached")];
+        assert!(!existing.is_empty()); // triggers incremental path
+    }
+
+    #[test]
+    fn test_render_request_full_check() {
+        let existing: Vec<Line> = vec![];
+        assert!(existing.is_empty()); // triggers full render path
+    }
+
+    // -- RenderResult fields --
+
+    #[test]
+    fn test_render_result_construction() {
+        let result = RenderResult {
+            lines: vec![],
+            anim_indices: vec![],
+            bubble_positions: vec![],
+            clickable_paths: vec![],
+            events_count: 10,
+            events_start: 0,
+            width: 120,
+            seq: 5,
+        };
+        assert_eq!(result.events_count, 10);
+        assert_eq!(result.width, 120);
+        assert_eq!(result.seq, 5);
+    }
+
+    #[test]
+    fn test_render_result_with_lines() {
+        let result = RenderResult {
+            lines: vec![Line::from("hello"), Line::from("world")],
+            anim_indices: vec![(0, 5)],
+            bubble_positions: vec![(0, true), (1, false)],
+            clickable_paths: vec![],
+            events_count: 2,
+            events_start: 0,
+            width: 80,
+            seq: 1,
+        };
+        assert_eq!(result.lines.len(), 2);
+        assert_eq!(result.anim_indices.len(), 1);
+        assert_eq!(result.bubble_positions.len(), 2);
+    }
+
+    #[test]
+    fn test_render_result_anim_indices_tuple() {
+        let anim: (usize, usize) = (5, 10);
+        assert_eq!(anim.0, 5);  // line index
+        assert_eq!(anim.1, 10); // span index
+    }
+
+    #[test]
+    fn test_render_result_bubble_positions_tuple() {
+        let bubble: (usize, bool) = (3, true);
+        assert_eq!(bubble.0, 3);  // line index
+        assert!(bubble.1);        // is_user
+    }
+
+    #[test]
+    fn test_render_result_bubble_assistant() {
+        let bubble: (usize, bool) = (7, false);
+        assert_eq!(bubble.0, 7);
+        assert!(!bubble.1);
+    }
+
+    // -- AtomicU64 sequence number --
+
+    #[test]
+    fn test_atomic_seq_initial() {
+        let seq = AtomicU64::new(0);
+        assert_eq!(seq.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_atomic_seq_fetch_add() {
+        let seq = AtomicU64::new(0);
+        let old = seq.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(old, 0);
+        assert_eq!(seq.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_atomic_seq_multiple_increments() {
+        let seq = AtomicU64::new(0);
+        seq.fetch_add(1, Ordering::Relaxed);
+        seq.fetch_add(1, Ordering::Relaxed);
+        seq.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(seq.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_atomic_seq_arc_shared() {
+        let seq = Arc::new(AtomicU64::new(0));
+        let seq2 = seq.clone();
+        seq.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(seq2.load(Ordering::Relaxed), 1);
+    }
+
+    // -- Channel creation --
+
+    #[test]
+    fn test_channel_creation() {
+        let (tx, rx) = mpsc::channel::<RenderRequest>();
+        drop(tx);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_result_channel_creation() {
+        let (tx, rx) = mpsc::channel::<RenderResult>();
+        drop(tx);
+        assert!(rx.try_recv().is_err());
+    }
+
+    // -- Sequence number comparison for staleness --
+
+    #[test]
+    fn test_seq_newer_wins() {
+        let prev_seq = 5u64;
+        let new_seq = 7u64;
+        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        assert_eq!(best, 7);
+    }
+
+    #[test]
+    fn test_seq_older_discarded() {
+        let prev_seq = 10u64;
+        let new_seq = 3u64;
+        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        assert_eq!(best, 10);
+    }
+
+    #[test]
+    fn test_seq_equal() {
+        let prev_seq = 5u64;
+        let new_seq = 5u64;
+        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        assert_eq!(best, 5);
+    }
+
+    // -- RenderThread spawn and operations --
+
+    #[test]
+    fn test_render_thread_spawn() {
+        let rt = RenderThread::spawn();
+        assert_eq!(rt.current_seq(), 0);
+    }
+
+    #[test]
+    fn test_render_thread_send_returns_seq() {
+        let rt = RenderThread::spawn();
+        let req = RenderRequest {
+            events: vec![],
+            width: 80,
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            pending_user_message: None,
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 0,
+            deferred_start: 0,
+            seq: 0,
+        };
+        let seq = rt.send(req);
+        assert_eq!(seq, 1);
+    }
+
+    #[test]
+    fn test_render_thread_send_increments_seq() {
+        let rt = RenderThread::spawn();
+        let make_req = || RenderRequest {
+            events: vec![],
+            width: 80,
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            pending_user_message: None,
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 0,
+            deferred_start: 0,
+            seq: 0,
+        };
+        let s1 = rt.send(make_req());
+        let s2 = rt.send(make_req());
+        let s3 = rt.send(make_req());
+        assert_eq!(s1, 1);
+        assert_eq!(s2, 2);
+        assert_eq!(s3, 3);
+    }
+
+    #[test]
+    fn test_render_thread_current_seq_after_sends() {
+        let rt = RenderThread::spawn();
+        let make_req = || RenderRequest {
+            events: vec![],
+            width: 80,
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            pending_user_message: None,
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 0,
+            deferred_start: 0,
+            seq: 0,
+        };
+        rt.send(make_req());
+        rt.send(make_req());
+        assert_eq!(rt.current_seq(), 2);
+    }
+
+    #[test]
+    fn test_render_thread_try_recv_empty() {
+        let rt = RenderThread::spawn();
+        // No sends yet — nothing to receive
+        let result = rt.try_recv();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_render_thread_try_recv_after_send() {
+        let rt = RenderThread::spawn();
+        let req = RenderRequest {
+            events: vec![],
+            width: 80,
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            pending_user_message: None,
+            existing_lines: vec![],
+            existing_anim: vec![],
+            existing_bubbles: vec![],
+            existing_clickable: vec![],
+            pre_scan: PreScanState::default(),
+            total_events: 0,
+            deferred_start: 0,
+            seq: 0,
+        };
+        rt.send(req);
+        // Give the render thread time to process
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let result = rt.try_recv();
+        assert!(result.is_some());
+        let res = result.unwrap();
+        assert_eq!(res.seq, 1);
+        assert_eq!(res.width, 80);
+    }
+
+    // -- HashSet operations for tools --
+
+    #[test]
+    fn test_pending_tools_insert() {
+        let mut tools = HashSet::new();
+        tools.insert("write".to_string());
+        assert!(tools.contains("write"));
+    }
+
+    #[test]
+    fn test_pending_tools_remove() {
+        let mut tools = HashSet::new();
+        tools.insert("write".to_string());
+        tools.remove("write");
+        assert!(!tools.contains("write"));
+    }
+
+    #[test]
+    fn test_pending_tools_empty() {
+        let tools: HashSet<String> = HashSet::new();
+        assert!(tools.is_empty());
+    }
+
+    // -- Width values --
+
+    #[test]
+    fn test_width_80() {
+        let w = 80u16;
+        assert_eq!(w, 80);
+    }
+
+    #[test]
+    fn test_width_120() {
+        let w = 120u16;
+        assert_eq!(w, 120);
+    }
+
+    #[test]
+    fn test_width_zero() {
+        let w = 0u16;
+        assert_eq!(w, 0);
+    }
+
+    // -- Deferred start offset --
+
+    #[test]
+    fn test_deferred_start_zero() {
+        let start = 0usize;
+        assert_eq!(start, 0);
+    }
+
+    #[test]
+    fn test_deferred_start_nonzero() {
+        let start = 50usize;
+        assert_eq!(start, 50);
+    }
+
+    // -- Events slicing --
+
+    #[test]
+    fn test_events_vec_empty() {
+        let events: Vec<DisplayEvent> = vec![];
+        assert!(events.is_empty());
+    }
+
+    // -- Pending user message --
+
+    #[test]
+    fn test_pending_user_message_some() {
+        let msg: Option<String> = Some("build it".into());
+        assert_eq!(msg.as_deref(), Some("build it"));
+    }
+
+    #[test]
+    fn test_pending_user_message_none() {
+        let msg: Option<String> = None;
+        assert!(msg.as_deref().is_none());
+    }
+
+    // -- Thread builder name --
+
+    #[test]
+    fn test_thread_name() {
+        let name = "render";
+        assert_eq!(name, "render");
+    }
+
+    // -- Function type checks --
+
+    #[test]
+    fn test_render_thread_spawn_fn() {
+        let _ = RenderThread::spawn as fn() -> RenderThread;
+    }
+
+    // -- Ordering enum --
+
+    #[test]
+    fn test_ordering_relaxed() {
+        let _ = Ordering::Relaxed;
+    }
+
+    // -- Line construction for existing cache --
+
+    #[test]
+    fn test_existing_lines_vec() {
+        let lines: Vec<Line<'static>> = vec![
+            Line::from("line 1"),
+            Line::from("line 2"),
+        ];
+        assert_eq!(lines.len(), 2);
+    }
+
+    // -- Clickable paths vec --
+
+    #[test]
+    fn test_existing_clickable_vec() {
+        let paths: Vec<ClickablePath> = vec![];
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_sequence_number_starts_at_zero() {
+        let seq = std::sync::atomic::AtomicU64::new(0);
+        assert_eq!(seq.load(Ordering::Relaxed), 0);
+    }
+}

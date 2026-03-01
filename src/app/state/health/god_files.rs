@@ -3,8 +3,7 @@
 //! mode for user-customizable directory filtering with persistence.
 
 use std::collections::HashSet;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::app::types::{
@@ -18,6 +17,74 @@ use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, SKIP_DIRS, load_health_scope};
 
 /// Minimum line count for a file to be considered a "god file"
 const GOD_FILE_THRESHOLD: usize = 1000;
+
+/// Count source lines in a file, excluding `#[cfg(test)]` module blocks for Rust files.
+///
+/// For `.rs` files, detects `#[cfg(test)]` lines and tracks brace depth to skip
+/// the entire test module. For all other languages, counts all lines.
+fn count_source_lines(path: &Path) -> Option<usize> {
+    let content = fs::read_to_string(path).ok()?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext != "rs" {
+        return Some(content.lines().count());
+    }
+
+    let mut count = 0usize;
+    let mut in_test_block = false;
+    let mut brace_depth = 0i32;
+    let mut saw_cfg_test = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Look for #[cfg(test)] on its own line (or with mod tests)
+        if !in_test_block && trimmed.contains("#[cfg(test)]") {
+            saw_cfg_test = true;
+        }
+
+        if saw_cfg_test && !in_test_block {
+            // Count opening/closing braces to find where the test module starts
+            for ch in trimmed.chars() {
+                if ch == '{' {
+                    if !in_test_block {
+                        in_test_block = true;
+                        brace_depth = 1;
+                    } else {
+                        brace_depth += 1;
+                    }
+                }
+            }
+            if in_test_block {
+                // This line is part of the test block — skip it
+                continue;
+            }
+            // Haven't found the opening brace yet (e.g. #[cfg(test)] on its own line)
+            // Don't count lines between #[cfg(test)] and the opening brace
+            continue;
+        }
+
+        if in_test_block {
+            for ch in trimmed.chars() {
+                match ch {
+                    '{' => brace_depth += 1,
+                    '}' => {
+                        brace_depth -= 1;
+                        if brace_depth == 0 {
+                            in_test_block = false;
+                            saw_cfg_test = false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            continue; // skip test block lines
+        }
+
+        count += 1;
+    }
+
+    Some(count)
+}
 
 impl App {
     /// Enter god file scope mode — opens the FileTree overlay with green highlights
@@ -336,9 +403,9 @@ fn scan_top_level_files(root: &Path, results: &mut Vec<GodFileEntry>) {
         if !path.is_file() { continue; }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !SOURCE_EXTENSIONS.contains(&ext) { continue; }
-        let line_count = match File::open(&path) {
-            Ok(f) => BufReader::new(f).lines().count(),
-            Err(_) => continue,
+        let line_count = match count_source_lines(&path) {
+            Some(c) => c,
+            None => continue,
         };
         if line_count > GOD_FILE_THRESHOLD {
             let rel_path = path.strip_prefix(root).unwrap_or(&path).display().to_string();
@@ -366,9 +433,9 @@ fn scan_dir_recursive(root: &Path, dir: &Path, results: &mut Vec<GodFileEntry>) 
         } else if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if !SOURCE_EXTENSIONS.contains(&ext) { continue; }
-            let line_count = match File::open(&path) {
-                Ok(f) => BufReader::new(f).lines().count(),
-                Err(_) => continue,
+            let line_count = match count_source_lines(&path) {
+                Some(c) => c,
+                None => continue,
             };
             if line_count > GOD_FILE_THRESHOLD {
                 let rel_path = path.strip_prefix(root).unwrap_or(&path).display().to_string();
@@ -446,4 +513,687 @@ fn build_modularize_prompt(
     }
 
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // ── GOD_FILE_THRESHOLD constant ──
+
+    #[test]
+    fn test_god_file_threshold_is_1000() {
+        assert_eq!(GOD_FILE_THRESHOLD, 1000);
+    }
+
+    // ── build_modularize_prompt: basic ──
+
+    #[test]
+    fn test_prompt_contains_file_path() {
+        let prompt = build_modularize_prompt("src/main.rs", 1500, None, None);
+        assert!(prompt.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn test_prompt_contains_line_count() {
+        let prompt = build_modularize_prompt("src/main.rs", 1500, None, None);
+        assert!(prompt.contains("1500 lines"));
+    }
+
+    #[test]
+    fn test_prompt_contains_modularizing_instructions() {
+        let prompt = build_modularize_prompt("src/lib.rs", 2000, None, None);
+        assert!(prompt.contains("modularizing"));
+        assert!(prompt.contains("god file"));
+    }
+
+    #[test]
+    fn test_prompt_contains_step_instructions() {
+        let prompt = build_modularize_prompt("app.py", 1200, None, None);
+        assert!(prompt.contains("read the entire file"));
+        assert!(prompt.contains("decomposition strategy"));
+    }
+
+    // ── build_modularize_prompt: Rust styles ──
+
+    #[test]
+    fn test_prompt_rust_file_based() {
+        let prompt = build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::FileBased), None);
+        assert!(prompt.contains("file-based module roots"));
+        assert!(prompt.contains("Do NOT use `mod.rs`"));
+    }
+
+    #[test]
+    fn test_prompt_rust_mod_rs() {
+        let prompt = build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::ModRs), None);
+        assert!(prompt.contains("mod.rs"));
+        assert!(prompt.contains("legacy Rust convention"));
+    }
+
+    #[test]
+    fn test_prompt_rust_no_style() {
+        let prompt = build_modularize_prompt("src/state.rs", 1500, None, None);
+        assert!(!prompt.contains("file-based module roots"));
+        assert!(!prompt.contains("legacy Rust convention"));
+    }
+
+    #[test]
+    fn test_prompt_rust_style_ignored_for_non_rs() {
+        let prompt = build_modularize_prompt("app.js", 1500, Some(RustModuleStyle::FileBased), None);
+        assert!(!prompt.contains("file-based module roots"));
+    }
+
+    // ── build_modularize_prompt: Python styles ──
+
+    #[test]
+    fn test_prompt_python_package() {
+        let prompt = build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::Package));
+        assert!(prompt.contains("Python packages"));
+        assert!(prompt.contains("__init__.py"));
+    }
+
+    #[test]
+    fn test_prompt_python_single_file() {
+        let prompt = build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::SingleFile));
+        assert!(prompt.contains("single-file Python modules"));
+        assert!(prompt.contains("standalone"));
+    }
+
+    #[test]
+    fn test_prompt_python_no_style() {
+        let prompt = build_modularize_prompt("app.py", 1500, None, None);
+        assert!(!prompt.contains("Python packages"));
+        assert!(!prompt.contains("single-file Python modules"));
+    }
+
+    #[test]
+    fn test_prompt_python_style_ignored_for_non_py() {
+        let prompt = build_modularize_prompt("app.rs", 1500, None, Some(PythonModuleStyle::Package));
+        assert!(!prompt.contains("Python packages"));
+    }
+
+    // ── build_modularize_prompt: both styles ──
+
+    #[test]
+    fn test_prompt_rs_with_both_styles_only_uses_rust() {
+        let prompt = build_modularize_prompt(
+            "src/app.rs", 2000,
+            Some(RustModuleStyle::FileBased),
+            Some(PythonModuleStyle::Package),
+        );
+        assert!(prompt.contains("file-based module roots"));
+        assert!(!prompt.contains("Python packages"));
+    }
+
+    #[test]
+    fn test_prompt_py_with_both_styles_only_uses_python() {
+        let prompt = build_modularize_prompt(
+            "app.py", 2000,
+            Some(RustModuleStyle::FileBased),
+            Some(PythonModuleStyle::Package),
+        );
+        assert!(!prompt.contains("file-based module roots"));
+        assert!(prompt.contains("Python packages"));
+    }
+
+    #[test]
+    fn test_prompt_generic_file_no_style_section() {
+        let prompt = build_modularize_prompt(
+            "app.go", 2000,
+            Some(RustModuleStyle::FileBased),
+            Some(PythonModuleStyle::Package),
+        );
+        assert!(!prompt.contains("Module structure:"));
+    }
+
+    // ── build_modularize_prompt: edge cases ──
+
+    #[test]
+    fn test_prompt_zero_lines() {
+        let prompt = build_modularize_prompt("empty.rs", 0, None, None);
+        assert!(prompt.contains("0 lines"));
+    }
+
+    #[test]
+    fn test_prompt_very_large_line_count() {
+        let prompt = build_modularize_prompt("huge.rs", 999999, Some(RustModuleStyle::ModRs), None);
+        assert!(prompt.contains("999999 lines"));
+    }
+
+    #[test]
+    fn test_prompt_nested_path() {
+        let prompt = build_modularize_prompt("src/app/state/health.rs", 1200, None, None);
+        assert!(prompt.contains("src/app/state/health.rs"));
+    }
+
+    // ── scan_dir_recursive ──
+
+    fn make_source_file(dir: &Path, name: &str, lines: usize) {
+        let content: String = (0..lines).map(|i| format!("line {}\n", i)).collect();
+        fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_finds_god_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "big.rs", 1500);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line_count, 1500);
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_ignores_small_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "small.rs", 100);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_threshold_boundary() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "exact.rs", 1000); // exactly 1000 — NOT a god file
+        make_source_file(root, "over.rs", 1001);  // 1001 — IS a god file
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].rel_path.contains("over.rs"));
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_rel_path() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("src")).unwrap();
+        make_source_file(&root.join("src"), "big.rs", 1500);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results[0].rel_path, "src/big.rs");
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_skips_hidden() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join(".hidden")).unwrap();
+        make_source_file(&root.join(".hidden"), "big.rs", 2000);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_skips_target() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("target")).unwrap();
+        make_source_file(&root.join("target"), "gen.rs", 5000);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_skips_node_modules() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("node_modules")).unwrap();
+        make_source_file(&root.join("node_modules"), "huge.js", 5000);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_ignores_non_source_ext() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let content: String = (0..2000).map(|i| format!("line {}\n", i)).collect();
+        fs::write(root.join("data.json"), &content).unwrap();
+        fs::write(root.join("readme.md"), &content).unwrap();
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_checked_defaults_false() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "big.rs", 1500);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(!results[0].checked);
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_multiple_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "a.rs", 1500);
+        make_source_file(root, "b.py", 2000);
+        make_source_file(root, "c.go", 3000);
+        make_source_file(root, "small.js", 50);
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let mut results = Vec::new();
+        scan_dir_recursive(tmp.path(), tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_nonexistent() {
+        let mut results = Vec::new();
+        scan_dir_recursive(Path::new("/nope"), Path::new("/nope"), &mut results);
+        assert!(results.is_empty());
+    }
+
+    // ── scan_top_level_files ──
+
+    #[test]
+    fn test_scan_top_level_finds_god_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "main.rs", 1500);
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_scan_top_level_ignores_small() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "small.rs", 500);
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_top_level_does_not_recurse() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("sub")).unwrap();
+        make_source_file(&root.join("sub"), "big.rs", 2000);
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_top_level_skips_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("src")).unwrap();
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_top_level_skips_non_source() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let content: String = (0..2000).map(|i| format!("line {}\n", i)).collect();
+        fs::write(root.join("data.json"), &content).unwrap();
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_top_level_nonexistent() {
+        let mut results = Vec::new();
+        scan_top_level_files(Path::new("/nonexistent"), &mut results);
+        assert!(results.is_empty());
+    }
+
+    // ── GodFileEntry struct ──
+
+    #[test]
+    fn test_god_file_entry_construction() {
+        let entry = GodFileEntry {
+            path: PathBuf::from("/src/main.rs"),
+            rel_path: "src/main.rs".to_string(),
+            line_count: 2500,
+            checked: false,
+        };
+        assert_eq!(entry.path, PathBuf::from("/src/main.rs"));
+        assert_eq!(entry.rel_path, "src/main.rs");
+        assert_eq!(entry.line_count, 2500);
+        assert!(!entry.checked);
+    }
+
+    #[test]
+    fn test_god_file_entry_checked_toggle() {
+        let mut entry = GodFileEntry {
+            path: PathBuf::from("/a.rs"),
+            rel_path: "a.rs".to_string(),
+            line_count: 1500,
+            checked: false,
+        };
+        entry.checked = true;
+        assert!(entry.checked);
+        entry.checked = false;
+        assert!(!entry.checked);
+    }
+
+    #[test]
+    fn test_god_file_entry_clone() {
+        let entry = GodFileEntry {
+            path: PathBuf::from("/x.rs"),
+            rel_path: "x.rs".to_string(),
+            line_count: 3000,
+            checked: true,
+        };
+        let cloned = entry.clone();
+        assert_eq!(entry.path, cloned.path);
+        assert_eq!(entry.line_count, cloned.line_count);
+        assert_eq!(entry.checked, cloned.checked);
+    }
+
+    // ── RustModuleStyle enum ──
+
+    #[test]
+    fn test_rust_module_style_eq() {
+        assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased);
+        assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs);
+        assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs);
+    }
+
+    #[test]
+    fn test_rust_module_style_copy() {
+        let s = RustModuleStyle::FileBased;
+        let s2 = s;
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn test_rust_module_style_debug() {
+        assert_eq!(format!("{:?}", RustModuleStyle::FileBased), "FileBased");
+        assert_eq!(format!("{:?}", RustModuleStyle::ModRs), "ModRs");
+    }
+
+    // ── PythonModuleStyle enum ──
+
+    #[test]
+    fn test_python_module_style_eq() {
+        assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package);
+        assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile);
+        assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile);
+    }
+
+    #[test]
+    fn test_python_module_style_copy() {
+        let s = PythonModuleStyle::Package;
+        let s2 = s;
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn test_python_module_style_debug() {
+        assert_eq!(format!("{:?}", PythonModuleStyle::Package), "Package");
+        assert_eq!(format!("{:?}", PythonModuleStyle::SingleFile), "SingleFile");
+    }
+
+    // ── ModuleStyleDialog ──
+
+    #[test]
+    fn test_module_style_dialog_construction() {
+        let dialog = ModuleStyleDialog {
+            has_rust: true,
+            has_python: false,
+            rust_style: RustModuleStyle::FileBased,
+            python_style: PythonModuleStyle::Package,
+            selected: 0,
+        };
+        assert!(dialog.has_rust);
+        assert!(!dialog.has_python);
+        assert_eq!(dialog.rust_style, RustModuleStyle::FileBased);
+        assert_eq!(dialog.selected, 0);
+    }
+
+    #[test]
+    fn test_module_style_dialog_both_languages() {
+        let dialog = ModuleStyleDialog {
+            has_rust: true,
+            has_python: true,
+            rust_style: RustModuleStyle::ModRs,
+            python_style: PythonModuleStyle::SingleFile,
+            selected: 1,
+        };
+        assert!(dialog.has_rust && dialog.has_python);
+        assert_eq!(dialog.selected, 1);
+    }
+
+    // ── Prompt content verification ──
+
+    #[test]
+    fn test_prompt_mentions_re_export() {
+        let prompt = build_modularize_prompt("lib.rs", 1500, None, None);
+        assert!(prompt.contains("Re-export") || prompt.contains("re-export"));
+    }
+
+    #[test]
+    fn test_prompt_mentions_backwards_compatibility() {
+        let prompt = build_modularize_prompt("lib.rs", 1500, None, None);
+        assert!(prompt.contains("backwards compatibility"));
+    }
+
+    #[test]
+    fn test_prompt_mentions_single_responsibility() {
+        let prompt = build_modularize_prompt("lib.rs", 1500, None, None);
+        assert!(prompt.contains("single, clear responsibility"));
+    }
+
+    #[test]
+    fn test_prompt_mentions_not_util_or_helpers() {
+        let prompt = build_modularize_prompt("lib.rs", 1500, None, None);
+        assert!(prompt.contains("not util.rs or helpers.rs"));
+    }
+
+    // ── scan_dir_recursive with different root ──
+
+    // ── count_source_lines ──
+
+    #[test]
+    fn test_count_source_lines_no_test_module() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("clean.rs");
+        fs::write(&path, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
+        assert_eq!(count_source_lines(&path), Some(3));
+    }
+
+    #[test]
+    fn test_count_source_lines_with_test_module_at_end() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("with_tests.rs");
+        let content = "\
+fn add(a: i32, b: i32) -> i32 { a + b }
+fn sub(a: i32, b: i32) -> i32 { a - b }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add() {
+        assert_eq!(add(1, 2), 3);
+    }
+
+    #[test]
+    fn test_sub() {
+        assert_eq!(sub(3, 1), 2);
+    }
+}
+";
+        fs::write(&path, content).unwrap();
+        // Only 3 source lines (2 fns + 1 blank), test block excluded
+        assert_eq!(count_source_lines(&path), Some(3));
+    }
+
+    #[test]
+    fn test_count_source_lines_nested_braces_in_test() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("nested.rs");
+        let content = "\
+fn prod() {}
+
+#[cfg(test)]
+mod tests {
+    fn helper() {
+        if true {
+            let v = vec![1, 2, 3];
+            for x in v {
+                println!(\"{}\", x);
+            }
+        }
+    }
+
+    #[test]
+    fn test_it() { assert!(true); }
+}
+";
+        fs::write(&path, content).unwrap();
+        // 2 source lines: fn prod() {} and blank line
+        assert_eq!(count_source_lines(&path), Some(2));
+    }
+
+    #[test]
+    fn test_count_source_lines_non_rust_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("app.py");
+        let content = "def main():\n    pass\n\n# test stuff\ndef test_main():\n    assert True\n";
+        fs::write(&path, content).unwrap();
+        // Non-Rust files count all lines
+        assert_eq!(count_source_lines(&path), Some(6));
+    }
+
+    #[test]
+    fn test_count_source_lines_cfg_test_on_same_line_as_mod() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("inline.rs");
+        let content = "\
+fn foo() {}
+#[cfg(test)] mod tests {
+    #[test]
+    fn t() {}
+}
+";
+        fs::write(&path, content).unwrap();
+        assert_eq!(count_source_lines(&path), Some(1));
+    }
+
+    #[test]
+    fn test_count_source_lines_no_test_block_all_counted() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("all.rs");
+        let content: String = (0..500).map(|i| format!("// line {}\n", i)).collect();
+        fs::write(&path, &content).unwrap();
+        assert_eq!(count_source_lines(&path), Some(500));
+    }
+
+    #[test]
+    fn test_count_source_lines_empty_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("empty.rs");
+        fs::write(&path, "").unwrap();
+        assert_eq!(count_source_lines(&path), Some(0));
+    }
+
+    #[test]
+    fn test_count_source_lines_nonexistent() {
+        assert_eq!(count_source_lines(Path::new("/no/such/file.rs")), None);
+    }
+
+    #[test]
+    fn test_count_source_lines_excludes_large_test_block() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("big_tests.rs");
+        let mut content = String::new();
+        // 200 lines of production code
+        for i in 0..200 {
+            content.push_str(&format!("fn func_{}() {{}}\n", i));
+        }
+        // 900 lines of test code
+        content.push_str("#[cfg(test)]\nmod tests {\n");
+        for i in 0..896 {
+            content.push_str(&format!("    // test line {}\n", i));
+        }
+        content.push_str("    #[test]\n    fn t() {}\n}\n");
+        fs::write(&path, &content).unwrap();
+        // Only 200 production lines should be counted
+        assert_eq!(count_source_lines(&path), Some(200));
+    }
+
+    #[test]
+    fn test_count_source_lines_scan_integration() {
+        // A file with 600 source + 500 test lines = 1100 total.
+        // Without exclusion it would be flagged as god file (>1000).
+        // With exclusion, 600 source lines < 1000 — not a god file.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let mut content = String::new();
+        for i in 0..600 {
+            content.push_str(&format!("fn func_{}() {{}}\n", i));
+        }
+        content.push_str("#[cfg(test)]\nmod tests {\n");
+        for i in 0..498 {
+            content.push_str(&format!("    // test {}\n", i));
+        }
+        content.push_str("}\n");
+        fs::write(root.join("almost.rs"), &content).unwrap();
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty(), "600 source lines should not be flagged");
+    }
+
+    #[test]
+    fn test_count_source_lines_scan_still_flags_large_source() {
+        // 1100 source lines + 200 test lines = file still a god file
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let mut content = String::new();
+        for i in 0..1100 {
+            content.push_str(&format!("fn func_{}() {{}}\n", i));
+        }
+        content.push_str("#[cfg(test)]\nmod tests {\n");
+        for i in 0..198 {
+            content.push_str(&format!("    // test {}\n", i));
+        }
+        content.push_str("}\n");
+        fs::write(root.join("big.rs"), &content).unwrap();
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line_count, 1100);
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_subdir_scan() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("src")).unwrap();
+        make_source_file(&root.join("src"), "big.rs", 2000);
+        // Scan only src/ but with root as root for rel_path
+        let mut results = Vec::new();
+        scan_dir_recursive(root, &root.join("src"), &mut results);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rel_path, "src/big.rs");
+    }
 }

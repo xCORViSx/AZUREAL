@@ -562,3 +562,1076 @@ impl App {
         self.viewer_edit_cursor = (last_line, last_col);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========== HELPER ==========
+
+    /// Build an App with viewer_edit_content pre-populated and edit mode on
+    fn app_with_lines(lines: &[&str]) -> App {
+        let mut app = App::new();
+        app.viewer_edit_content = lines.iter().map(|s| s.to_string()).collect();
+        app.viewer_edit_mode = true;
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_content_width = 80;
+        app
+    }
+
+    // ========== word_wrap_breaks (pure function) ==========
+
+    /// Empty string always returns vec![0]
+    #[test]
+    fn word_wrap_breaks_empty_string() {
+        assert_eq!(word_wrap_breaks("", 80), vec![0]);
+    }
+
+    /// Zero width always returns vec![0]
+    #[test]
+    fn word_wrap_breaks_zero_width() {
+        assert_eq!(word_wrap_breaks("hello world", 0), vec![0]);
+    }
+
+    /// Short text that fits within width returns a single break at 0
+    #[test]
+    fn word_wrap_breaks_fits_no_wrap() {
+        assert_eq!(word_wrap_breaks("hello", 10), vec![0]);
+    }
+
+    /// Text exactly at width boundary should not wrap
+    #[test]
+    fn word_wrap_breaks_exact_width() {
+        assert_eq!(word_wrap_breaks("abcde", 5), vec![0]);
+    }
+
+    /// Text one char over width should wrap
+    #[test]
+    fn word_wrap_breaks_one_over_width() {
+        let breaks = word_wrap_breaks("abcdef", 5);
+        assert!(breaks.len() >= 2, "Should wrap: {:?}", breaks);
+        assert_eq!(breaks[0], 0);
+    }
+
+    /// Long text wraps at word boundaries
+    #[test]
+    fn word_wrap_breaks_word_boundary() {
+        let breaks = word_wrap_breaks("hello world", 6);
+        // "hello " fits in 6 chars, "world" on next line
+        assert_eq!(breaks.len(), 2);
+        assert_eq!(breaks[0], 0);
+        assert_eq!(breaks[1], 6); // "world" starts at char index 6
+    }
+
+    /// Very narrow width (1 char) wraps every character
+    #[test]
+    fn word_wrap_breaks_width_one() {
+        let breaks = word_wrap_breaks("abc", 1);
+        assert_eq!(breaks.len(), 3);
+        assert_eq!(breaks, vec![0, 1, 2]);
+    }
+
+    /// Width of 2 on a 6-char string
+    #[test]
+    fn word_wrap_breaks_width_two() {
+        let breaks = word_wrap_breaks("abcdef", 2);
+        assert_eq!(breaks.len(), 3);
+        assert_eq!(breaks[0], 0);
+        assert_eq!(breaks[1], 2);
+        assert_eq!(breaks[2], 4);
+    }
+
+    /// Single character never wraps
+    #[test]
+    fn word_wrap_breaks_single_char() {
+        assert_eq!(word_wrap_breaks("a", 1), vec![0]);
+    }
+
+    /// Unicode text wraps by char count, not byte count
+    #[test]
+    fn word_wrap_breaks_unicode() {
+        // Each emoji is 1 char but multiple bytes
+        let text = "aaaa bbbb";
+        let breaks = word_wrap_breaks(text, 5);
+        assert!(breaks.len() >= 2, "Should wrap: {:?}", breaks);
+    }
+
+    /// Long continuous word is broken when break_words is true
+    #[test]
+    fn word_wrap_breaks_long_word_forced() {
+        let breaks = word_wrap_breaks("abcdefghij", 3);
+        // 10 chars at width 3 = 4 rows (3+3+3+1)
+        assert_eq!(breaks.len(), 4);
+    }
+
+    /// Multiple spaces between words
+    #[test]
+    fn word_wrap_breaks_multiple_spaces() {
+        let breaks = word_wrap_breaks("ab cd", 10);
+        // fits within 10 chars
+        assert_eq!(breaks, vec![0]);
+    }
+
+    /// First break is always 0
+    #[test]
+    fn word_wrap_breaks_first_always_zero() {
+        for width in 1..20 {
+            let breaks = word_wrap_breaks("this is a test string for wrapping", width);
+            assert_eq!(breaks[0], 0, "First break must be 0 at width {}", width);
+        }
+    }
+
+    /// Breaks are monotonically increasing
+    #[test]
+    fn word_wrap_breaks_monotonically_increasing() {
+        let text = "the quick brown fox jumps over the lazy dog";
+        for width in 1..20 {
+            let breaks = word_wrap_breaks(text, width);
+            for i in 1..breaks.len() {
+                assert!(breaks[i] > breaks[i - 1],
+                    "Breaks not increasing at width {}: {:?}", width, breaks);
+            }
+        }
+    }
+
+    /// Width larger than text produces single break
+    #[test]
+    fn word_wrap_breaks_huge_width() {
+        assert_eq!(word_wrap_breaks("short", 1000), vec![0]);
+    }
+
+    // ========== viewer_edit_char (insert character) ==========
+
+    /// Insert char at start of empty line
+    #[test]
+    fn edit_char_empty_line() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_char('a');
+        assert_eq!(app.viewer_edit_content[0], "a");
+        assert_eq!(app.viewer_edit_cursor, (0, 1));
+    }
+
+    /// Insert char at end of line
+    #[test]
+    fn edit_char_end_of_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_char('d');
+        assert_eq!(app.viewer_edit_content[0], "abcd");
+        assert_eq!(app.viewer_edit_cursor, (0, 4));
+    }
+
+    /// Insert char in middle of line
+    #[test]
+    fn edit_char_middle() {
+        let mut app = app_with_lines(&["ac"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_char('b');
+        assert_eq!(app.viewer_edit_content[0], "abc");
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Insert unicode char
+    #[test]
+    fn edit_char_unicode() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 5);
+        app.viewer_edit_char('\u{00e9}'); // e-acute
+        assert_eq!(app.viewer_edit_content[0], "hello\u{00e9}");
+        assert_eq!(app.viewer_edit_cursor, (0, 6));
+    }
+
+    /// Insert sets dirty flag
+    #[test]
+    fn edit_char_sets_dirty() {
+        let mut app = app_with_lines(&["hi"]);
+        assert!(!app.viewer_edit_dirty);
+        app.viewer_edit_char('!');
+        assert!(app.viewer_edit_dirty);
+    }
+
+    /// Insert pushes undo state
+    #[test]
+    fn edit_char_pushes_undo() {
+        let mut app = app_with_lines(&["hi"]);
+        assert!(app.viewer_edit_undo.is_empty());
+        app.viewer_edit_char('!');
+        assert_eq!(app.viewer_edit_undo.len(), 1);
+    }
+
+    /// Insert into a line with multi-byte characters at correct position
+    #[test]
+    fn edit_char_multibyte_position() {
+        let mut app = app_with_lines(&["\u{00e9}\u{00e9}"]); // "éé"
+        app.viewer_edit_cursor = (0, 1); // between the two é characters
+        app.viewer_edit_char('x');
+        assert_eq!(app.viewer_edit_content[0], "\u{00e9}x\u{00e9}");
+    }
+
+    // ========== viewer_edit_backspace ==========
+
+    /// Backspace at start of first line does nothing
+    #[test]
+    fn backspace_start_first_line() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "hello");
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    /// Backspace removes character before cursor
+    #[test]
+    fn backspace_middle_of_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "ac");
+        assert_eq!(app.viewer_edit_cursor, (0, 1));
+    }
+
+    /// Backspace at end of line removes last char
+    #[test]
+    fn backspace_end_of_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "ab");
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Backspace at start of line joins with previous line
+    #[test]
+    fn backspace_joins_lines() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (1, 0);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content.len(), 1);
+        assert_eq!(app.viewer_edit_content[0], "helloworld");
+        assert_eq!(app.viewer_edit_cursor, (0, 5));
+    }
+
+    /// Backspace join preserves char-count cursor position with unicode
+    #[test]
+    fn backspace_join_unicode_cursor() {
+        let mut app = app_with_lines(&["\u{00e9}\u{00e9}", "ab"]);
+        app.viewer_edit_cursor = (1, 0);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "\u{00e9}\u{00e9}ab");
+        // Cursor should be at char index 2 (the two é chars)
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Backspace on single-char line leaves empty line
+    #[test]
+    fn backspace_single_char() {
+        let mut app = app_with_lines(&["a"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "");
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    // ========== viewer_edit_delete ==========
+
+    /// Delete at end of last line does nothing
+    #[test]
+    fn delete_end_of_last_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content[0], "abc");
+    }
+
+    /// Delete removes character at cursor
+    #[test]
+    fn delete_middle_of_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content[0], "ac");
+        assert_eq!(app.viewer_edit_cursor, (0, 1)); // cursor stays
+    }
+
+    /// Delete at start removes first character
+    #[test]
+    fn delete_start_of_line() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content[0], "bc");
+    }
+
+    /// Delete at end of line joins with next line
+    #[test]
+    fn delete_joins_with_next_line() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (0, 5);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content.len(), 1);
+        assert_eq!(app.viewer_edit_content[0], "helloworld");
+        assert_eq!(app.viewer_edit_cursor, (0, 5));
+    }
+
+    /// Delete on empty line joins with next
+    #[test]
+    fn delete_empty_line_joins() {
+        let mut app = app_with_lines(&["", "world"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content.len(), 1);
+        assert_eq!(app.viewer_edit_content[0], "world");
+    }
+
+    // ========== viewer_edit_enter ==========
+
+    /// Enter at end of line creates new empty line below
+    #[test]
+    fn enter_end_of_line() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 5);
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content, vec!["hello", ""]);
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+    }
+
+    /// Enter at start of line pushes content down
+    #[test]
+    fn enter_start_of_line() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content, vec!["", "hello"]);
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+    }
+
+    /// Enter in middle splits line
+    #[test]
+    fn enter_splits_line() {
+        let mut app = app_with_lines(&["helloworld"]);
+        app.viewer_edit_cursor = (0, 5);
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content, vec!["hello", "world"]);
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+    }
+
+    /// Enter on empty line creates another empty line
+    #[test]
+    fn enter_empty_line() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content, vec!["", ""]);
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+    }
+
+    /// Enter sets dirty flag
+    #[test]
+    fn enter_sets_dirty() {
+        let mut app = app_with_lines(&["hi"]);
+        app.viewer_edit_enter();
+        assert!(app.viewer_edit_dirty);
+    }
+
+    /// Enter with unicode splits correctly by char index
+    #[test]
+    fn enter_unicode_split() {
+        let mut app = app_with_lines(&["\u{00e9}x\u{00e9}"]);
+        app.viewer_edit_cursor = (0, 1); // after first é
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content[0], "\u{00e9}");
+        assert_eq!(app.viewer_edit_content[1], "x\u{00e9}");
+    }
+
+    // ========== cursor movement (left/right/home/end) ==========
+
+    /// Left at start of first line stays put
+    #[test]
+    fn left_start_stays() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_left();
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    /// Left moves cursor one position left
+    #[test]
+    fn left_normal() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_left();
+        assert_eq!(app.viewer_edit_cursor, (0, 1));
+    }
+
+    /// Left at start of line wraps to end of previous line
+    #[test]
+    fn left_wraps_to_prev_line() {
+        let mut app = app_with_lines(&["abc", "def"]);
+        app.viewer_edit_cursor = (1, 0);
+        app.viewer_edit_left();
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    /// Right at end of last line stays put
+    #[test]
+    fn right_end_stays() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_right();
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    /// Right moves cursor one position right
+    #[test]
+    fn right_normal() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_right();
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Right at end of line wraps to start of next line
+    #[test]
+    fn right_wraps_to_next_line() {
+        let mut app = app_with_lines(&["abc", "def"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_right();
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+    }
+
+    /// Home moves cursor to column 0
+    #[test]
+    fn home_moves_to_start() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_home();
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    /// Home when already at start stays
+    #[test]
+    fn home_already_at_start() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_home();
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    /// End moves cursor to end of line
+    #[test]
+    fn end_moves_to_end() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_end();
+        assert_eq!(app.viewer_edit_cursor, (0, 5));
+    }
+
+    /// End on empty line stays at 0
+    #[test]
+    fn end_empty_line() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_end();
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    /// End with unicode counts chars not bytes
+    #[test]
+    fn end_unicode() {
+        let mut app = app_with_lines(&["\u{00e9}\u{00e9}\u{00e9}"]); // "ééé"
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_end();
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    // ========== up/down movement ==========
+
+    /// Up at first line stays
+    #[test]
+    fn up_first_line_stays() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_up();
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Up moves to previous line
+    #[test]
+    fn up_simple() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (1, 3);
+        app.viewer_edit_up();
+        assert_eq!(app.viewer_edit_cursor.0, 0);
+    }
+
+    /// Down at last line stays
+    #[test]
+    fn down_last_line_stays() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_down();
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Down moves to next line
+    #[test]
+    fn down_simple() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_down();
+        assert_eq!(app.viewer_edit_cursor.0, 1);
+    }
+
+    /// Down clamps column to shorter next line
+    #[test]
+    fn down_clamps_column() {
+        let mut app = app_with_lines(&["hello world", "hi"]);
+        app.viewer_edit_cursor = (0, 10);
+        app.viewer_edit_down();
+        assert_eq!(app.viewer_edit_cursor, (1, 2));
+    }
+
+    // ========== clamp_edit_cursor ==========
+
+    /// Clamp cursor beyond last line
+    #[test]
+    fn clamp_cursor_beyond_lines() {
+        let mut app = app_with_lines(&["abc", "def"]);
+        app.viewer_edit_cursor = (10, 5);
+        app.clamp_edit_cursor();
+        assert_eq!(app.viewer_edit_cursor.0, 1); // last line
+    }
+
+    /// Clamp cursor beyond line length
+    #[test]
+    fn clamp_cursor_beyond_col() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 100);
+        app.clamp_edit_cursor();
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    /// Clamp cursor within valid range stays unchanged
+    #[test]
+    fn clamp_cursor_valid_unchanged() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.clamp_edit_cursor();
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    /// Clamp with single empty line
+    #[test]
+    fn clamp_cursor_single_empty_line() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_cursor = (5, 5);
+        app.clamp_edit_cursor();
+        assert_eq!(app.viewer_edit_cursor, (0, 0));
+    }
+
+    // ========== undo / redo ==========
+
+    /// Undo after inserting restores previous state
+    #[test]
+    fn undo_restore() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_char('d');
+        assert_eq!(app.viewer_edit_content[0], "dabc");
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "abc");
+    }
+
+    /// Redo after undo re-applies the change
+    #[test]
+    fn redo_reapply() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_char('d');
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "abc");
+        app.viewer_edit_redo();
+        assert_eq!(app.viewer_edit_content[0], "dabc");
+    }
+
+    /// Undo on empty stack does nothing
+    #[test]
+    fn undo_empty_noop() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_undo(); // should not panic
+        assert_eq!(app.viewer_edit_content[0], "abc");
+    }
+
+    /// Redo on empty stack does nothing
+    #[test]
+    fn redo_empty_noop() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_redo(); // should not panic
+        assert_eq!(app.viewer_edit_content[0], "abc");
+    }
+
+    /// New edit clears redo stack
+    #[test]
+    fn edit_clears_redo() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_char('x');
+        app.viewer_edit_undo();
+        assert!(!app.viewer_edit_redo.is_empty());
+        app.viewer_edit_char('y');
+        assert!(app.viewer_edit_redo.is_empty());
+    }
+
+    /// Multiple undos work sequentially
+    #[test]
+    fn multiple_undo() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_char('a');
+        app.viewer_edit_char('b');
+        app.viewer_edit_char('c');
+        assert_eq!(app.viewer_edit_content[0], "abc");
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "ab");
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "a");
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "");
+    }
+
+    // ========== selection ==========
+
+    /// Start selection sets anchor at cursor
+    #[test]
+    fn start_selection_at_cursor() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_start_selection();
+        assert_eq!(app.viewer_edit_selection, Some((0, 2, 0, 2)));
+    }
+
+    /// Extend selection moves end to cursor
+    #[test]
+    fn extend_selection() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_start_selection();
+        app.viewer_edit_cursor = (0, 4);
+        app.viewer_edit_extend_selection();
+        assert_eq!(app.viewer_edit_selection, Some((0, 1, 0, 4)));
+    }
+
+    /// Clear selection sets to None
+    #[test]
+    fn clear_selection() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 1, 0, 4));
+        app.viewer_edit_clear_selection();
+        assert_eq!(app.viewer_edit_selection, None);
+    }
+
+    /// has_edit_selection returns false when None
+    #[test]
+    fn has_selection_none() {
+        let app = app_with_lines(&["hello"]);
+        assert!(!app.has_edit_selection());
+    }
+
+    /// has_edit_selection returns false when start == end (zero-width)
+    #[test]
+    fn has_selection_zero_width() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 2, 0, 2));
+        assert!(!app.has_edit_selection());
+    }
+
+    /// has_edit_selection returns true for real selection
+    #[test]
+    fn has_selection_true() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 1, 0, 4));
+        assert!(app.has_edit_selection());
+    }
+
+    /// get_normalized_selection normalizes backward selection
+    #[test]
+    fn normalized_selection_backward() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_selection = Some((1, 3, 0, 1));
+        let norm = app.get_normalized_selection();
+        assert_eq!(norm, Some((0, 1, 1, 3)));
+    }
+
+    /// get_normalized_selection keeps forward selection as-is
+    #[test]
+    fn normalized_selection_forward() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_selection = Some((0, 1, 1, 3));
+        let norm = app.get_normalized_selection();
+        assert_eq!(norm, Some((0, 1, 1, 3)));
+    }
+
+    /// get_selected_text single line
+    #[test]
+    fn selected_text_single_line() {
+        let mut app = app_with_lines(&["hello world"]);
+        app.viewer_edit_selection = Some((0, 6, 0, 11));
+        assert_eq!(app.get_selected_text(), Some("world".to_string()));
+    }
+
+    /// get_selected_text multi-line
+    #[test]
+    fn selected_text_multi_line() {
+        let mut app = app_with_lines(&["hello", "world", "test"]);
+        app.viewer_edit_selection = Some((0, 3, 1, 3));
+        let text = app.get_selected_text().unwrap();
+        assert_eq!(text, "lo\nwor");
+    }
+
+    /// get_selected_text returns None for zero-width selection
+    #[test]
+    fn selected_text_zero_width() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 2, 0, 2));
+        assert_eq!(app.get_selected_text(), None);
+    }
+
+    /// get_selected_text returns None when no selection
+    #[test]
+    fn selected_text_no_selection() {
+        let app = app_with_lines(&["hello"]);
+        assert_eq!(app.get_selected_text(), None);
+    }
+
+    /// get_selected_text entire first line
+    #[test]
+    fn selected_text_entire_line() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_selection = Some((0, 0, 0, 5));
+        assert_eq!(app.get_selected_text(), Some("hello".to_string()));
+    }
+
+    /// get_selected_text with backward selection still works
+    #[test]
+    fn selected_text_backward() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 4, 0, 1));
+        assert_eq!(app.get_selected_text(), Some("ell".to_string()));
+    }
+
+    // ========== select all ==========
+
+    /// Select all on multi-line content
+    #[test]
+    fn select_all_multiline() {
+        let mut app = app_with_lines(&["hello", "world", "test"]);
+        app.viewer_edit_select_all();
+        assert_eq!(app.viewer_edit_selection, Some((0, 0, 2, 4)));
+        assert_eq!(app.viewer_edit_cursor, (2, 4));
+    }
+
+    /// Select all on single line
+    #[test]
+    fn select_all_single_line() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_select_all();
+        assert_eq!(app.viewer_edit_selection, Some((0, 0, 0, 5)));
+    }
+
+    /// Select all on empty content does nothing
+    #[test]
+    fn select_all_empty() {
+        let mut app = App::new();
+        app.viewer_edit_content.clear();
+        app.viewer_edit_select_all();
+        assert_eq!(app.viewer_edit_selection, None);
+    }
+
+    /// Select all with unicode
+    #[test]
+    fn select_all_unicode() {
+        let mut app = app_with_lines(&["\u{00e9}\u{00e9}\u{00e9}"]);
+        app.viewer_edit_select_all();
+        assert_eq!(app.viewer_edit_selection, Some((0, 0, 0, 3)));
+    }
+
+    // ========== delete_selection_text ==========
+
+    /// Delete single-line selection
+    #[test]
+    fn delete_selection_single_line() {
+        let mut app = app_with_lines(&["hello world"]);
+        app.viewer_edit_selection = Some((0, 5, 0, 11));
+        app.viewer_edit_delete_selection();
+        assert_eq!(app.viewer_edit_content[0], "hello");
+        assert_eq!(app.viewer_edit_cursor, (0, 5));
+    }
+
+    /// Delete multi-line selection
+    #[test]
+    fn delete_selection_multi_line() {
+        let mut app = app_with_lines(&["hello", "middle", "world"]);
+        app.viewer_edit_selection = Some((0, 3, 2, 2));
+        app.viewer_edit_delete_selection();
+        assert_eq!(app.viewer_edit_content.len(), 1);
+        assert_eq!(app.viewer_edit_content[0], "helrld");
+        assert_eq!(app.viewer_edit_cursor, (0, 3));
+    }
+
+    /// Delete selection clears the selection
+    #[test]
+    fn delete_selection_clears() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 1, 0, 4));
+        app.viewer_edit_delete_selection();
+        assert_eq!(app.viewer_edit_selection, None);
+    }
+
+    /// Delete zero-width selection does nothing
+    #[test]
+    fn delete_selection_zero_width_noop() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_selection = Some((0, 2, 0, 2));
+        app.viewer_edit_delete_selection();
+        assert_eq!(app.viewer_edit_content[0], "hello");
+    }
+
+    // ========== viewer_edit_scroll_to_cursor ==========
+
+    /// Scroll to cursor at top of viewport stays
+    #[test]
+    fn scroll_to_cursor_at_top() {
+        let mut app = app_with_lines(&["a", "b", "c", "d", "e"]);
+        app.viewer_viewport_height = 3;
+        app.viewer_scroll = 0;
+        app.viewer_edit_cursor = (0, 0);
+        app.viewer_edit_scroll_to_cursor();
+        assert_eq!(app.viewer_scroll, 0);
+    }
+
+    /// Scroll to cursor below viewport scrolls down
+    #[test]
+    fn scroll_to_cursor_below_viewport() {
+        let mut app = app_with_lines(&["a", "b", "c", "d", "e", "f", "g", "h"]);
+        app.viewer_viewport_height = 3;
+        app.viewer_scroll = 0;
+        app.viewer_edit_cursor = (5, 0);
+        app.viewer_edit_scroll_to_cursor();
+        // Visual line 5 should be visible within viewport of 3
+        assert!(app.viewer_scroll <= 5);
+        assert!(app.viewer_scroll + 3 > 5);
+    }
+
+    /// Scroll to cursor above viewport scrolls up
+    #[test]
+    fn scroll_to_cursor_above_viewport() {
+        let mut app = app_with_lines(&["a", "b", "c", "d", "e", "f", "g", "h"]);
+        app.viewer_viewport_height = 3;
+        app.viewer_scroll = 5;
+        app.viewer_edit_cursor = (1, 0);
+        app.viewer_edit_scroll_to_cursor();
+        assert_eq!(app.viewer_scroll, 1);
+    }
+
+    // ========== selection-aware movement ==========
+
+    /// Left without extend clears selection
+    #[test]
+    fn left_select_no_extend_clears() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_selection = Some((0, 1, 0, 3));
+        app.viewer_edit_left_select(false);
+        assert_eq!(app.viewer_edit_selection, None);
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Left with extend creates and extends selection
+    #[test]
+    fn left_select_extend() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_left_select(true);
+        assert_eq!(app.viewer_edit_selection, Some((0, 3, 0, 2)));
+    }
+
+    /// Right without extend clears selection
+    #[test]
+    fn right_select_no_extend_clears() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_selection = Some((0, 1, 0, 3));
+        app.viewer_edit_right_select(false);
+        assert_eq!(app.viewer_edit_selection, None);
+    }
+
+    /// Right with extend creates and extends selection
+    #[test]
+    fn right_select_extend() {
+        let mut app = app_with_lines(&["hello"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_right_select(true);
+        assert_eq!(app.viewer_edit_selection, Some((0, 2, 0, 3)));
+    }
+
+    /// Up with extend creates selection
+    #[test]
+    fn up_select_extend() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (1, 3);
+        app.viewer_edit_up_select(true);
+        assert!(app.viewer_edit_selection.is_some());
+    }
+
+    /// Down with extend creates selection
+    #[test]
+    fn down_select_extend() {
+        let mut app = app_with_lines(&["hello", "world"]);
+        app.viewer_edit_cursor = (0, 3);
+        app.viewer_edit_down_select(true);
+        assert!(app.viewer_edit_selection.is_some());
+    }
+
+    // ========== Comprehensive / edge case tests ==========
+
+    /// Multiple inserts then undo all restores original
+    #[test]
+    fn insert_sequence_undo_all() {
+        let mut app = app_with_lines(&[""]);
+        for c in "hello".chars() {
+            app.viewer_edit_char(c);
+        }
+        assert_eq!(app.viewer_edit_content[0], "hello");
+        for _ in 0..5 {
+            app.viewer_edit_undo();
+        }
+        assert_eq!(app.viewer_edit_content[0], "");
+    }
+
+    /// Enter then backspace restores original single line
+    #[test]
+    fn enter_backspace_roundtrip() {
+        let mut app = app_with_lines(&["helloworld"]);
+        app.viewer_edit_cursor = (0, 5);
+        app.viewer_edit_enter();
+        assert_eq!(app.viewer_edit_content.len(), 2);
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content.len(), 1);
+        assert_eq!(app.viewer_edit_content[0], "helloworld");
+    }
+
+    /// Delete then undo restores
+    #[test]
+    fn delete_undo_restores() {
+        let mut app = app_with_lines(&["abc"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content[0], "ac");
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_content[0], "abc");
+    }
+
+    /// Backspace on unicode removes correct character
+    #[test]
+    fn backspace_unicode() {
+        let mut app = app_with_lines(&["a\u{00e9}b"]); // "aéb"
+        app.viewer_edit_cursor = (0, 2); // after é
+        app.viewer_edit_backspace();
+        assert_eq!(app.viewer_edit_content[0], "ab");
+    }
+
+    /// Delete on unicode removes correct character
+    #[test]
+    fn delete_unicode() {
+        let mut app = app_with_lines(&["a\u{00e9}b"]); // "aéb"
+        app.viewer_edit_cursor = (0, 1); // on é
+        app.viewer_edit_delete();
+        assert_eq!(app.viewer_edit_content[0], "ab");
+    }
+
+    /// Left wraps correctly from start of third line
+    #[test]
+    fn left_wrap_multi_lines() {
+        let mut app = app_with_lines(&["ab", "cd", "ef"]);
+        app.viewer_edit_cursor = (2, 0);
+        app.viewer_edit_left();
+        assert_eq!(app.viewer_edit_cursor, (1, 2));
+        app.viewer_edit_left();
+        assert_eq!(app.viewer_edit_cursor, (1, 1));
+    }
+
+    /// Right wraps correctly through multiple lines
+    #[test]
+    fn right_wrap_multi_lines() {
+        let mut app = app_with_lines(&["ab", "cd", "ef"]);
+        app.viewer_edit_cursor = (0, 2);
+        app.viewer_edit_right();
+        assert_eq!(app.viewer_edit_cursor, (1, 0));
+        app.viewer_edit_right();
+        assert_eq!(app.viewer_edit_cursor, (1, 1));
+    }
+
+    /// CJK characters (multi-byte) insert correctly
+    #[test]
+    fn edit_char_cjk() {
+        let mut app = app_with_lines(&["ab"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_char('\u{4e16}'); // 世
+        assert_eq!(app.viewer_edit_content[0], "a\u{4e16}b");
+        assert_eq!(app.viewer_edit_cursor, (0, 2));
+    }
+
+    /// Tab character inserts normally
+    #[test]
+    fn edit_char_tab() {
+        let mut app = app_with_lines(&["ab"]);
+        app.viewer_edit_cursor = (0, 1);
+        app.viewer_edit_char('\t');
+        assert_eq!(app.viewer_edit_content[0], "a\tb");
+    }
+
+    /// Selection across three full lines
+    #[test]
+    fn selected_text_three_lines() {
+        let mut app = app_with_lines(&["line1", "line2", "line3"]);
+        app.viewer_edit_selection = Some((0, 0, 2, 5));
+        let text = app.get_selected_text().unwrap();
+        assert_eq!(text, "line1\nline2\nline3");
+    }
+
+    /// Undo stack caps at 100 entries
+    #[test]
+    fn undo_stack_cap() {
+        let mut app = app_with_lines(&[""]);
+        for i in 0..110 {
+            app.viewer_edit_char(char::from(b'a' + (i % 26) as u8));
+        }
+        assert!(app.viewer_edit_undo.len() <= 100);
+    }
+
+    /// Version counter increments on edit
+    #[test]
+    fn version_increments_on_edit() {
+        let mut app = app_with_lines(&[""]);
+        let v0 = app.viewer_edit_version;
+        app.viewer_edit_char('a');
+        assert_eq!(app.viewer_edit_version, v0 + 1);
+    }
+
+    /// Version counter increments on undo
+    #[test]
+    fn version_increments_on_undo() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_char('a');
+        let v_before_undo = app.viewer_edit_version;
+        app.viewer_edit_undo();
+        assert_eq!(app.viewer_edit_version, v_before_undo + 1);
+    }
+
+    /// Version counter increments on redo
+    #[test]
+    fn version_increments_on_redo() {
+        let mut app = app_with_lines(&[""]);
+        app.viewer_edit_char('a');
+        app.viewer_edit_undo();
+        let v_before_redo = app.viewer_edit_version;
+        app.viewer_edit_redo();
+        assert_eq!(app.viewer_edit_version, v_before_redo + 1);
+    }
+}

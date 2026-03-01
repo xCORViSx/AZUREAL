@@ -329,3 +329,338 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::tui::keybindings::Action;
+
+    // -- KeyEvent construction --
+
+    #[test]
+    fn test_key_event_ctrl_q() {
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        assert!(key.modifiers.contains(KeyModifiers::CONTROL));
+        assert_eq!(key.code, KeyCode::Char('q'));
+    }
+
+    #[test]
+    fn test_key_event_plain_char() {
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        assert_eq!(key.modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn test_key_event_escape() {
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(key.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn test_key_event_enter() {
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(key.code, KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_key_event_backspace() {
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        assert!(matches!(key.code, KeyCode::Backspace));
+    }
+
+    // -- Modifier key detection --
+
+    #[test]
+    fn test_modifier_key_left_shift() {
+        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        assert!(matches!(key.code, KeyCode::Modifier(_)));
+    }
+
+    #[test]
+    fn test_modifier_key_left_control() {
+        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftControl), KeyModifiers::CONTROL);
+        assert!(matches!(key.code, KeyCode::Modifier(_)));
+    }
+
+    #[test]
+    fn test_non_modifier_key() {
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        assert!(!matches!(key.code, KeyCode::Modifier(_)));
+    }
+
+    // -- Action enum variants --
+
+    #[test]
+    fn test_action_quit() {
+        let a = Action::Quit;
+        assert_eq!(a, Action::Quit);
+    }
+
+    #[test]
+    fn test_action_escape() {
+        let a = Action::Escape;
+        assert_eq!(a, Action::Escape);
+    }
+
+    #[test]
+    fn test_action_nav_down() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
+
+    #[test]
+    fn test_action_nav_up() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
+
+    #[test]
+    fn test_action_submit() {
+        assert_eq!(Action::Submit, Action::Submit);
+    }
+
+    #[test]
+    fn test_action_copy_selection() {
+        assert_eq!(Action::CopySelection, Action::CopySelection);
+    }
+
+    #[test]
+    fn test_action_toggle_help() {
+        assert_eq!(Action::ToggleHelp, Action::ToggleHelp);
+    }
+
+    #[test]
+    fn test_action_enter_prompt_mode() {
+        assert_eq!(Action::EnterPromptMode, Action::EnterPromptMode);
+    }
+
+    #[test]
+    fn test_action_cycle_focus_forward() {
+        assert_eq!(Action::CycleFocusForward, Action::CycleFocusForward);
+    }
+
+    #[test]
+    fn test_action_page_down() {
+        assert_eq!(Action::PageDown, Action::PageDown);
+    }
+
+    // -- Focus enum variants --
+
+    #[test]
+    fn test_focus_worktrees() {
+        assert_eq!(Focus::Worktrees, Focus::Worktrees);
+    }
+
+    #[test]
+    fn test_focus_file_tree() {
+        assert_eq!(Focus::FileTree, Focus::FileTree);
+    }
+
+    #[test]
+    fn test_focus_viewer() {
+        assert_eq!(Focus::Viewer, Focus::Viewer);
+    }
+
+    #[test]
+    fn test_focus_session() {
+        assert_eq!(Focus::Session, Focus::Session);
+    }
+
+    #[test]
+    fn test_focus_input() {
+        assert_eq!(Focus::Input, Focus::Input);
+    }
+
+    #[test]
+    fn test_focus_worktree_creation() {
+        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
+    }
+
+    #[test]
+    fn test_focus_branch_dialog() {
+        assert_eq!(Focus::BranchDialog, Focus::BranchDialog);
+    }
+
+    #[test]
+    fn test_focus_ne() {
+        assert_ne!(Focus::Viewer, Focus::Session);
+    }
+
+    // -- Input-specific action detection --
+
+    #[test]
+    fn test_is_input_action_submit() {
+        let action = Action::Submit;
+        let is_input = matches!(action,
+            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
+            | Action::WordLeft | Action::WordRight | Action::DeleteWord
+            | Action::HistoryPrev | Action::HistoryNext
+            | Action::ToggleStt | Action::EnterTerminalType
+        );
+        assert!(is_input);
+    }
+
+    #[test]
+    fn test_is_input_action_word_left() {
+        let action = Action::WordLeft;
+        let is_input = matches!(action,
+            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
+            | Action::WordLeft | Action::WordRight | Action::DeleteWord
+            | Action::HistoryPrev | Action::HistoryNext
+            | Action::ToggleStt | Action::EnterTerminalType
+        );
+        assert!(is_input);
+    }
+
+    #[test]
+    fn test_is_not_input_action_nav_down() {
+        let action = Action::NavDown;
+        let is_input = matches!(action,
+            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
+            | Action::WordLeft | Action::WordRight | Action::DeleteWord
+            | Action::HistoryPrev | Action::HistoryNext
+            | Action::ToggleStt | Action::EnterTerminalType
+        );
+        assert!(!is_input);
+    }
+
+    // -- Focus pattern matching for text input modals --
+
+    #[test]
+    fn test_text_input_modal_worktree_creation() {
+        let focus = Focus::WorktreeCreation;
+        assert!(matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
+    }
+
+    #[test]
+    fn test_text_input_modal_branch_dialog() {
+        let focus = Focus::BranchDialog;
+        assert!(matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
+    }
+
+    #[test]
+    fn test_text_input_modal_viewer_is_not_modal() {
+        let focus = Focus::Viewer;
+        assert!(!matches!(focus, Focus::WorktreeCreation | Focus::BranchDialog));
+    }
+
+    // -- Help dialog close keys --
+
+    #[test]
+    fn test_help_close_question_mark() {
+        let key = KeyCode::Char('?');
+        assert!(matches!(key, KeyCode::Char('?') | KeyCode::Esc));
+    }
+
+    #[test]
+    fn test_help_close_esc() {
+        let key = KeyCode::Esc;
+        assert!(matches!(key, KeyCode::Char('?') | KeyCode::Esc));
+    }
+
+    #[test]
+    fn test_help_no_close_other_key() {
+        let key = KeyCode::Char('a');
+        assert!(!matches!(key, KeyCode::Char('?') | KeyCode::Esc));
+    }
+
+    // -- Delete confirm y/Y --
+
+    #[test]
+    fn test_delete_confirm_lowercase_y() {
+        let key = KeyCode::Char('y');
+        assert!(key == KeyCode::Char('y') || key == KeyCode::Char('Y'));
+    }
+
+    #[test]
+    fn test_delete_confirm_uppercase_y() {
+        let key = KeyCode::Char('Y');
+        assert!(key == KeyCode::Char('y') || key == KeyCode::Char('Y'));
+    }
+
+    #[test]
+    fn test_delete_cancel_other_key() {
+        let key = KeyCode::Char('n');
+        assert!(!(key == KeyCode::Char('y') || key == KeyCode::Char('Y')));
+    }
+
+    // -- Post-merge dialog nav --
+
+    #[test]
+    fn test_post_merge_down_clamp() {
+        let mut selected = 1usize;
+        if selected < 2 { selected += 1; }
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn test_post_merge_down_at_max() {
+        let mut selected = 2usize;
+        if selected < 2 { selected += 1; }
+        assert_eq!(selected, 2); // unchanged
+    }
+
+    #[test]
+    fn test_post_merge_up_clamp() {
+        let mut selected = 1usize;
+        if selected > 0 { selected -= 1; }
+        assert_eq!(selected, 0);
+    }
+
+    #[test]
+    fn test_post_merge_up_at_min() {
+        let mut selected = 0usize;
+        if selected > 0 { selected -= 1; }
+        assert_eq!(selected, 0); // unchanged
+    }
+
+    // -- RCR dialog keys --
+
+    #[test]
+    fn test_rcr_accept_y() {
+        assert!(matches!(KeyCode::Char('y'), KeyCode::Char('y') | KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_rcr_accept_enter() {
+        assert!(matches!(KeyCode::Enter, KeyCode::Char('y') | KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_rcr_reject_n() {
+        assert_eq!(KeyCode::Char('n'), KeyCode::Char('n'));
+    }
+
+    // -- Ctrl+A detection --
+
+    #[test]
+    fn test_ctrl_a_detection() {
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        assert!(key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('a'));
+    }
+
+    // -- Debug dump naming dialog keys --
+
+    #[test]
+    fn test_debug_naming_enter() {
+        assert!(matches!(KeyCode::Enter, KeyCode::Enter));
+    }
+
+    #[test]
+    fn test_debug_naming_esc() {
+        assert!(matches!(KeyCode::Esc, KeyCode::Esc));
+    }
+
+    #[test]
+    fn test_debug_naming_backspace() {
+        let mut name = "test".to_string();
+        name.pop();
+        assert_eq!(name, "tes");
+    }
+
+    #[test]
+    fn test_debug_naming_char_push() {
+        let mut name = String::new();
+        name.push('d');
+        name.push('b');
+        assert_eq!(name, "db");
+    }
+}

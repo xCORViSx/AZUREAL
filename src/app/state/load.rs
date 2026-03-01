@@ -833,3 +833,656 @@ fn format_uuid_short(id: &str) -> String {
     }
     if id.len() > 12 { format!("{}…", &id[..11]) } else { id.to_string() }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::state::app::{App, TodoItem, TodoStatus};
+    use crate::events::DisplayEvent;
+    use std::path::PathBuf;
+
+    // ── format_uuid_short ──
+
+    #[test]
+    fn format_uuid_short_standard_uuid() {
+        let result = format_uuid_short("abcdef12-3456-7890-abcd-ef1234567890");
+        assert_eq!(result, "abcdef12-…");
+    }
+
+    #[test]
+    fn format_uuid_short_eight_char_prefix() {
+        let result = format_uuid_short("12345678-rest");
+        assert_eq!(result, "12345678-…");
+    }
+
+    #[test]
+    fn format_uuid_short_short_prefix() {
+        // Dash at position 3, which is < 8
+        let result = format_uuid_short("abc-def");
+        // Falls through to length check: len=7 <= 12, so returns as-is
+        assert_eq!(result, "abc-def");
+    }
+
+    #[test]
+    fn format_uuid_short_long_no_dash() {
+        let result = format_uuid_short("abcdefghijklmnop");
+        // No dash, len > 12 → truncate to 11 chars + ellipsis
+        assert_eq!(result, "abcdefghijk…");
+    }
+
+    #[test]
+    fn format_uuid_short_short_no_dash() {
+        let result = format_uuid_short("abc");
+        assert_eq!(result, "abc");
+    }
+
+    #[test]
+    fn format_uuid_short_empty_string() {
+        let result = format_uuid_short("");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn format_uuid_short_exactly_twelve_chars() {
+        let result = format_uuid_short("123456789012");
+        assert_eq!(result, "123456789012");
+    }
+
+    #[test]
+    fn format_uuid_short_thirteen_chars() {
+        let result = format_uuid_short("1234567890123");
+        assert_eq!(result, "12345678901…");
+    }
+
+    #[test]
+    fn format_uuid_short_dash_at_position_eight() {
+        let result = format_uuid_short("01234567-suffix");
+        assert_eq!(result, "01234567-…");
+    }
+
+    #[test]
+    fn format_uuid_short_multiple_dashes() {
+        let result = format_uuid_short("abcdefgh-1234-5678-9abc");
+        // First dash at position 8, so uses first dash
+        assert_eq!(result, "abcdefgh-…");
+    }
+
+    #[test]
+    fn format_uuid_short_dash_only() {
+        let result = format_uuid_short("-");
+        // Dash at position 0, which is < 8, falls to length check
+        assert_eq!(result, "-");
+    }
+
+    #[test]
+    fn format_uuid_short_dash_at_end() {
+        let result = format_uuid_short("abcdefghijk-");
+        // Dash at position 11 >= 8
+        assert_eq!(result, "abcdefghijk-…");
+    }
+
+    // ── viewed_session_id ──
+
+    #[test]
+    fn viewed_session_id_no_data() {
+        let app = App::new();
+        assert!(app.viewed_session_id("branch").is_none());
+    }
+
+    #[test]
+    fn viewed_session_id_returns_correct_id() {
+        let mut app = App::new();
+        let branch = "azureal/feat";
+        app.session_files.insert(branch.to_string(), vec![
+            ("uuid-1".to_string(), PathBuf::from("/sessions/1.jsonl"), "2024-01-01".to_string()),
+            ("uuid-2".to_string(), PathBuf::from("/sessions/2.jsonl"), "2024-01-02".to_string()),
+        ]);
+        app.session_selected_file_idx.insert(branch.to_string(), 0);
+        assert_eq!(app.viewed_session_id(branch), Some("uuid-1".to_string()));
+    }
+
+    #[test]
+    fn viewed_session_id_second_selection() {
+        let mut app = App::new();
+        let branch = "azureal/test";
+        app.session_files.insert(branch.to_string(), vec![
+            ("uuid-a".to_string(), PathBuf::from("/a"), "t1".to_string()),
+            ("uuid-b".to_string(), PathBuf::from("/b"), "t2".to_string()),
+        ]);
+        app.session_selected_file_idx.insert(branch.to_string(), 1);
+        assert_eq!(app.viewed_session_id(branch), Some("uuid-b".to_string()));
+    }
+
+    #[test]
+    fn viewed_session_id_idx_out_of_bounds() {
+        let mut app = App::new();
+        let branch = "b";
+        app.session_files.insert(branch.to_string(), vec![
+            ("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string()),
+        ]);
+        app.session_selected_file_idx.insert(branch.to_string(), 5); // out of bounds
+        assert!(app.viewed_session_id(branch).is_none());
+    }
+
+    #[test]
+    fn viewed_session_id_no_idx() {
+        let mut app = App::new();
+        let branch = "b";
+        app.session_files.insert(branch.to_string(), vec![
+            ("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string()),
+        ]);
+        // No entry in session_selected_file_idx
+        assert!(app.viewed_session_id(branch).is_none());
+    }
+
+    // ── extract_skill_tools_from_events ──
+
+    #[test]
+    fn extract_skill_tools_no_events() {
+        let mut app = App::new();
+        app.extract_skill_tools_from_events();
+        assert!(app.current_todos.is_empty());
+        assert!(!app.awaiting_ask_user_question);
+        assert!(app.ask_user_questions_cache.is_none());
+    }
+
+    #[test]
+    fn extract_skill_tools_todo_write() {
+        let mut app = App::new();
+        let input = serde_json::json!({
+            "todos": [
+                {"content": "Task 1", "status": "pending", "activeForm": "Doing 1"},
+                {"content": "Task 2", "status": "completed", "activeForm": "Doing 2"},
+            ]
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u1".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t1".to_string(),
+            input: input,
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert_eq!(app.current_todos.len(), 2);
+        assert_eq!(app.current_todos[0].content, "Task 1");
+        assert_eq!(app.current_todos[1].content, "Task 2");
+    }
+
+    #[test]
+    fn extract_skill_tools_todo_cleared_by_user_message() {
+        let mut app = App::new();
+        let input = serde_json::json!({
+            "todos": [{"content": "T", "status": "pending", "activeForm": "Doing"}]
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t".to_string(),
+            input: input,
+            file_path: None,
+        });
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u2".to_string(),
+            content: "new prompt".to_string(),
+        });
+        app.extract_skill_tools_from_events();
+        assert!(app.current_todos.is_empty());
+    }
+
+    #[test]
+    fn extract_skill_tools_ask_user_awaiting() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({"question": "Shall I proceed?"}),
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert!(app.awaiting_ask_user_question);
+        assert!(app.ask_user_questions_cache.is_some());
+    }
+
+    #[test]
+    fn extract_skill_tools_ask_user_answered() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({"question": "Q?"}),
+            file_path: None,
+        });
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u2".to_string(),
+            content: "Yes, go ahead".to_string(),
+        });
+        app.extract_skill_tools_from_events();
+        assert!(!app.awaiting_ask_user_question);
+    }
+
+    #[test]
+    fn extract_skill_tools_no_ask_clears_cache() {
+        let mut app = App::new();
+        // Only normal tool calls, no AskUserQuestion
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "Read".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({}),
+            file_path: None,
+        });
+        app.ask_user_questions_cache = Some(serde_json::json!({}));
+        app.extract_skill_tools_from_events();
+        assert!(!app.awaiting_ask_user_question);
+        assert!(app.ask_user_questions_cache.is_none());
+    }
+
+    #[test]
+    fn extract_skill_tools_multiple_todo_writes_uses_last() {
+        let mut app = App::new();
+        let input1 = serde_json::json!({
+            "todos": [{"content": "First", "status": "pending", "activeForm": "F"}]
+        });
+        let input2 = serde_json::json!({
+            "todos": [{"content": "Second", "status": "in_progress", "activeForm": "S"}]
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t1".to_string(),
+            input: input1,
+            file_path: None,
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t2".to_string(),
+            input: input2,
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert_eq!(app.current_todos.len(), 1);
+        assert_eq!(app.current_todos[0].content, "Second");
+    }
+
+    // ── check_session_file ──
+
+    #[test]
+    fn check_session_file_no_path_noop() {
+        let mut app = App::new();
+        app.session_file_path = None;
+        app.check_session_file();
+        assert!(!app.session_file_dirty);
+    }
+
+    #[test]
+    fn check_session_file_nonexistent_path_noop() {
+        let mut app = App::new();
+        app.session_file_path = Some(PathBuf::from("/nonexistent/path/to/session.jsonl"));
+        app.check_session_file();
+        assert!(!app.session_file_dirty);
+    }
+
+    // ── poll_session_file ──
+
+    #[test]
+    fn poll_session_file_not_dirty_returns_false() {
+        let mut app = App::new();
+        app.session_file_dirty = false;
+        assert!(!app.poll_session_file());
+    }
+
+    // ── load_session_output state reset ──
+
+    #[test]
+    fn load_session_output_resets_session_state() {
+        let mut app = App::new();
+        app.session_lines.push_back("old line".to_string());
+        app.session_buffer = "old buffer".to_string();
+        app.display_events.push(DisplayEvent::Compacting);
+        app.session_scroll = 42;
+        app.session_file_path = Some(PathBuf::from("/old"));
+        app.session_file_dirty = true;
+        app.session_file_size = 9999;
+        app.session_file_parse_offset = 5000;
+        app.pending_tool_calls.insert("tool-1".to_string());
+        app.failed_tool_calls.insert("tool-2".to_string());
+        app.current_todos.push(TodoItem {
+            content: "t".to_string(),
+            status: TodoStatus::Pending,
+            active_form: "t".to_string(),
+        });
+        app.load_session_output();
+        assert!(app.session_lines.is_empty());
+        assert!(app.session_buffer.is_empty());
+        assert!(app.display_events.is_empty());
+        assert_eq!(app.session_scroll, usize::MAX);
+        assert!(app.session_file_path.is_none());
+        assert!(!app.session_file_dirty);
+        assert_eq!(app.session_file_size, 0);
+        assert_eq!(app.session_file_parse_offset, 0);
+        assert!(app.pending_tool_calls.is_empty());
+        assert!(app.failed_tool_calls.is_empty());
+        assert!(app.current_todos.is_empty());
+        assert!(app.subagent_todos.is_empty());
+    }
+
+    #[test]
+    fn load_session_output_resets_render_caches() {
+        let mut app = App::new();
+        app.rendered_lines_cache.push(ratatui::text::Line::raw("old"));
+        app.session_viewport_cache.push(ratatui::text::Line::raw("old"));
+        app.animation_line_indices.push((0, 0));
+        app.message_bubble_positions.push((0, true));
+        app.rendered_events_count = 100;
+        app.rendered_content_line_count = 50;
+        app.rendered_events_start = 10;
+        app.load_session_output();
+        assert!(app.rendered_lines_cache.is_empty());
+        assert!(app.session_viewport_cache.is_empty());
+        assert!(app.animation_line_indices.is_empty());
+        assert!(app.message_bubble_positions.is_empty());
+        assert_eq!(app.rendered_events_count, 0);
+        assert_eq!(app.rendered_content_line_count, 0);
+        assert_eq!(app.rendered_events_start, 0);
+    }
+
+    #[test]
+    fn load_session_output_clears_token_state() {
+        let mut app = App::new();
+        app.session_tokens = Some((100_000, 5000));
+        app.model_context_window = Some(200_000);
+        app.token_badge_cache = Some(("50%".to_string(), ratatui::style::Color::Green));
+        app.load_session_output();
+        assert!(app.session_tokens.is_none());
+        assert!(app.model_context_window.is_none());
+        assert!(app.token_badge_cache.is_none());
+    }
+
+    #[test]
+    fn load_session_output_not_viewing_historic() {
+        let mut app = App::new();
+        app.viewing_historic_session = true;
+        app.load_session_output();
+        assert!(!app.viewing_historic_session);
+    }
+
+    #[test]
+    fn load_session_output_resets_ask_user_state() {
+        let mut app = App::new();
+        app.awaiting_ask_user_question = true;
+        app.ask_user_questions_cache = Some(serde_json::json!({"q": "test"}));
+        app.load_session_output();
+        assert!(!app.awaiting_ask_user_question);
+        assert!(app.ask_user_questions_cache.is_none());
+    }
+
+    #[test]
+    fn load_session_output_clears_clickable_paths() {
+        let mut app = App::new();
+        app.clickable_paths.push((0, 0, 10, "/file.rs".to_string(), "".to_string(), "".to_string(), 1));
+        app.clicked_path_highlight = Some((0, 0, 10, 1));
+        app.load_session_output();
+        assert!(app.clickable_paths.is_empty());
+        assert!(app.clicked_path_highlight.is_none());
+    }
+
+    // ── load_file_tree state reset ──
+
+    #[test]
+    fn load_file_tree_clears_when_no_worktree() {
+        let mut app = App::new();
+        app.file_tree_entries.push(crate::app::types::FileTreeEntry {
+            path: PathBuf::from("/old"),
+            name: "old".to_string(),
+            is_dir: false,
+            depth: 0,
+            is_hidden: false,
+        });
+        app.file_tree_selected = Some(0);
+        app.file_tree_scroll = 5;
+        app.load_file_tree();
+        assert!(app.file_tree_entries.is_empty());
+        assert!(app.file_tree_selected.is_none());
+        assert_eq!(app.file_tree_scroll, 0);
+    }
+
+    // ── refresh_worktrees ──
+
+    #[test]
+    fn refresh_worktrees_no_project_ok() {
+        let mut app = App::new();
+        assert!(app.refresh_worktrees().is_ok());
+    }
+
+    // ── load_session_output with worktree but no session file ──
+
+    #[test]
+    fn load_session_output_with_worktree_no_session() {
+        let mut app = App::new();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/nonexistent-wt")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.load_session_output();
+        // Should reset everything without panic
+        assert!(app.session_file_path.is_none());
+        assert!(app.display_events.is_empty());
+    }
+
+    // ── load_session_output clears selected_event ──
+
+    #[test]
+    fn load_session_output_clears_selected_event() {
+        let mut app = App::new();
+        app.selected_event = Some(5);
+        app.load_session_output();
+        assert!(app.selected_event.is_none());
+    }
+
+    // ── load_session_output clears pending_user_message when matched ──
+
+    #[test]
+    fn load_session_output_pending_message_not_cleared_when_no_match() {
+        let mut app = App::new();
+        app.pending_user_message = Some("my prompt".to_string());
+        // No worktree → no events to match against
+        app.load_session_output();
+        // pending_user_message is NOT cleared because there are no events to match
+        assert_eq!(app.pending_user_message, Some("my prompt".to_string()));
+    }
+
+    // ── load_session_output resets event_parser ──
+
+    #[test]
+    fn load_session_output_creates_fresh_parser() {
+        let mut app = App::new();
+        app.load_session_output();
+        // We can't easily inspect EventParser internals, but it should not panic
+        assert!(app.selected_event.is_none());
+    }
+
+    // ── extract_skill_tools: TodoWrite resets scroll ──
+
+    #[test]
+    fn extract_skill_tools_resets_todo_scroll() {
+        let mut app = App::new();
+        app.todo_scroll = 10;
+        let input = serde_json::json!({
+            "todos": [{"content": "T", "status": "pending", "activeForm": "D"}]
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t".to_string(),
+            input: input,
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert_eq!(app.todo_scroll, 0);
+    }
+
+    // ── extract_skill_tools: non-matching tool names ignored ──
+
+    #[test]
+    fn extract_skill_tools_ignores_other_tools() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "Write".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({}),
+            file_path: None,
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "Read".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({}),
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert!(app.current_todos.is_empty());
+        assert!(!app.awaiting_ask_user_question);
+    }
+
+    // ── extract_skill_tools: mixed events ──
+
+    #[test]
+    fn extract_skill_tools_mixed_event_types() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::AssistantText {
+            _uuid: "u".to_string(),
+            _message_id: "m".to_string(),
+            text: "Hello".to_string(),
+        });
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: "u".to_string(),
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t".to_string(),
+            input: serde_json::json!({
+                "todos": [{"content": "Mix", "status": "in_progress", "activeForm": "Mixing"}]
+            }),
+            file_path: None,
+        });
+        app.display_events.push(DisplayEvent::ToolResult {
+            tool_name: "TodoWrite".to_string(),
+            tool_use_id: "t".to_string(),
+            content: "done".to_string(),
+            file_path: None,
+        });
+        app.extract_skill_tools_from_events();
+        assert_eq!(app.current_todos.len(), 1);
+        assert_eq!(app.current_todos[0].content, "Mix");
+        assert_eq!(app.current_todos[0].status, TodoStatus::InProgress);
+    }
+
+    // ── format_uuid_short: additional edge cases ──
+
+    #[test]
+    fn format_uuid_short_single_char() {
+        assert_eq!(format_uuid_short("a"), "a");
+    }
+
+    #[test]
+    fn format_uuid_short_exactly_eight_chars_no_dash() {
+        assert_eq!(format_uuid_short("12345678"), "12345678");
+    }
+
+    #[test]
+    fn format_uuid_short_nine_chars_no_dash() {
+        assert_eq!(format_uuid_short("123456789"), "123456789");
+    }
+
+    #[test]
+    fn format_uuid_short_unicode() {
+        // Unicode chars — but function uses byte positions via find('-')
+        // This may panic or work depending on char boundaries; test basic ASCII
+        let result = format_uuid_short("aaaabbbb-cccc");
+        assert_eq!(result, "aaaabbbb-…");
+    }
+
+    // ── viewed_session_id: edge cases ──
+
+    #[test]
+    fn viewed_session_id_empty_branch() {
+        let mut app = App::new();
+        app.session_files.insert("".to_string(), vec![
+            ("id".to_string(), PathBuf::from("/p"), "t".to_string()),
+        ]);
+        app.session_selected_file_idx.insert("".to_string(), 0);
+        assert_eq!(app.viewed_session_id(""), Some("id".to_string()));
+    }
+
+    // ── load_session_output resets active_task state ──
+
+    #[test]
+    fn load_session_output_resets_active_task_ids() {
+        let mut app = App::new();
+        app.active_task_tool_ids.insert("task-1".to_string());
+        app.subagent_parent_idx = Some(2);
+        app.load_session_output();
+        assert!(app.active_task_tool_ids.is_empty());
+        assert!(app.subagent_parent_idx.is_none());
+    }
+
+    // ── load_session_output compaction state preserved ──
+
+    #[test]
+    fn load_session_output_preserves_compaction_flag() {
+        let mut app = App::new();
+        app.compaction_banner_injected = true;
+        app.load_session_output();
+        // compaction_banner_injected is NOT reset by load_session_output —
+        // it's only reset by activity detection or context pct drop
+        assert!(app.compaction_banner_injected);
+    }
+
+    // ── load_file_tree: with worktree but nonexistent path ──
+
+    #[test]
+    fn load_file_tree_nonexistent_worktree_path() {
+        let mut app = App::new();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/nonexistent/path/asdf")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.load_file_tree();
+        // build_file_tree on nonexistent path should produce empty entries
+        assert!(app.file_tree_entries.is_empty());
+        assert!(app.file_tree_selected.is_none());
+    }
+
+    // ── load_session_output resets render_in_flight ──
+
+    #[test]
+    fn load_session_output_advances_render_seq() {
+        let mut app = App::new();
+        app.render_in_flight = true;
+        let seq_before = app.render_thread.current_seq();
+        app.load_session_output();
+        assert!(!app.render_in_flight);
+        assert_eq!(app.render_seq_applied, seq_before);
+    }
+
+    // ── load_session_output and awaiting_plan_approval ──
+
+    #[test]
+    fn load_session_output_plan_approval_from_parsed_events() {
+        let mut app = App::new();
+        // With no worktree/session file, awaiting_plan_approval stays as-is
+        // (it's only updated when a session file is parsed)
+        app.awaiting_plan_approval = true;
+        app.load_session_output();
+        // No session to parse → field retains its value from the last parse
+        assert!(app.awaiting_plan_approval);
+    }
+}

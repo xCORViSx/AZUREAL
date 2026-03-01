@@ -681,3 +681,725 @@ fn load_ordered_presets(map: &std::collections::HashMap<String, String>, global:
     entries.into_iter().map(|(_, name, prompt)| PresetPrompt::new(name, prompt, global)).collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // ── focus_next ──
+
+    #[test]
+    fn focus_next_worktrees_to_filetree() {
+        let mut app = App::new();
+        app.focus = Focus::Worktrees;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::FileTree);
+    }
+
+    #[test]
+    fn focus_next_filetree_to_viewer() {
+        let mut app = App::new();
+        app.focus = Focus::FileTree;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::Viewer);
+    }
+
+    #[test]
+    fn focus_next_viewer_to_session() {
+        let mut app = App::new();
+        app.focus = Focus::Viewer;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::Session);
+    }
+
+    #[test]
+    fn focus_next_session_to_input() {
+        let mut app = App::new();
+        app.focus = Focus::Session;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn focus_next_input_to_worktrees() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    #[test]
+    fn focus_next_full_cycle() {
+        let mut app = App::new();
+        app.focus = Focus::Worktrees;
+        let expected = [Focus::FileTree, Focus::Viewer, Focus::Session, Focus::Input, Focus::Worktrees];
+        for &exp in &expected {
+            app.focus_next();
+            assert_eq!(app.focus, exp);
+        }
+    }
+
+    #[test]
+    fn focus_next_worktree_creation_stays() {
+        let mut app = App::new();
+        app.focus = Focus::WorktreeCreation;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::WorktreeCreation);
+    }
+
+    #[test]
+    fn focus_next_branch_dialog_stays() {
+        let mut app = App::new();
+        app.focus = Focus::BranchDialog;
+        app.focus_next();
+        assert_eq!(app.focus, Focus::BranchDialog);
+    }
+
+    #[test]
+    fn focus_next_clears_session_list() {
+        let mut app = App::new();
+        app.show_session_list = true;
+        app.focus = Focus::Worktrees;
+        app.focus_next();
+        assert!(!app.show_session_list);
+    }
+
+    // ── focus_prev ──
+
+    #[test]
+    fn focus_prev_worktrees_to_input() {
+        let mut app = App::new();
+        app.focus = Focus::Worktrees;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::Input);
+    }
+
+    #[test]
+    fn focus_prev_input_to_session() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::Session);
+    }
+
+    #[test]
+    fn focus_prev_session_to_viewer() {
+        let mut app = App::new();
+        app.focus = Focus::Session;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::Viewer);
+    }
+
+    #[test]
+    fn focus_prev_viewer_to_filetree() {
+        let mut app = App::new();
+        app.focus = Focus::Viewer;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::FileTree);
+    }
+
+    #[test]
+    fn focus_prev_filetree_to_worktrees() {
+        let mut app = App::new();
+        app.focus = Focus::FileTree;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    #[test]
+    fn focus_prev_full_cycle() {
+        let mut app = App::new();
+        app.focus = Focus::Worktrees;
+        let expected = [Focus::Input, Focus::Session, Focus::Viewer, Focus::FileTree, Focus::Worktrees];
+        for &exp in &expected {
+            app.focus_prev();
+            assert_eq!(app.focus, exp);
+        }
+    }
+
+    #[test]
+    fn focus_prev_worktree_creation_stays() {
+        let mut app = App::new();
+        app.focus = Focus::WorktreeCreation;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::WorktreeCreation);
+    }
+
+    #[test]
+    fn focus_prev_branch_dialog_stays() {
+        let mut app = App::new();
+        app.focus = Focus::BranchDialog;
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::BranchDialog);
+    }
+
+    #[test]
+    fn focus_prev_clears_session_list() {
+        let mut app = App::new();
+        app.show_session_list = true;
+        app.focus = Focus::Session;
+        app.focus_prev();
+        assert!(!app.show_session_list);
+    }
+
+    // ── focus_next and focus_prev are inverses ──
+
+    #[test]
+    fn focus_next_prev_roundtrip() {
+        let mut app = App::new();
+        app.focus = Focus::Worktrees;
+        app.focus_next();
+        app.focus_prev();
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    #[test]
+    fn focus_prev_next_roundtrip() {
+        let mut app = App::new();
+        app.focus = Focus::Session;
+        app.focus_prev();
+        app.focus_next();
+        assert_eq!(app.focus, Focus::Session);
+    }
+
+    // ── toggle_help ──
+
+    #[test]
+    fn toggle_help_on() {
+        let mut app = App::new();
+        assert!(!app.show_help);
+        app.toggle_help();
+        assert!(app.show_help);
+    }
+
+    #[test]
+    fn toggle_help_off() {
+        let mut app = App::new();
+        app.show_help = true;
+        app.toggle_help();
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn toggle_help_double_toggle() {
+        let mut app = App::new();
+        app.toggle_help();
+        app.toggle_help();
+        assert!(!app.show_help);
+    }
+
+    // ── exit_worktree_creation_mode ──
+
+    #[test]
+    fn exit_worktree_creation_mode_sets_focus() {
+        let mut app = App::new();
+        app.focus = Focus::WorktreeCreation;
+        app.worktree_creation_input = "some text".to_string();
+        app.worktree_creation_cursor = 9;
+        app.status_message = Some("old status".to_string());
+        app.exit_worktree_creation_mode();
+        assert_eq!(app.focus, Focus::Worktrees);
+        assert!(app.worktree_creation_input.is_empty());
+        assert_eq!(app.worktree_creation_cursor, 0);
+        assert!(app.status_message.is_none());
+    }
+
+    // ── open_branch_dialog ──
+
+    #[test]
+    fn open_branch_dialog_empty_branches_sets_status() {
+        let mut app = App::new();
+        app.open_branch_dialog(vec![], vec![]);
+        assert!(app.branch_dialog.is_none());
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_deref().unwrap().contains("No branches"));
+    }
+
+    #[test]
+    fn open_branch_dialog_with_branches() {
+        let mut app = App::new();
+        app.open_branch_dialog(
+            vec!["main".to_string(), "dev".to_string()],
+            vec!["main".to_string()],
+        );
+        assert!(app.branch_dialog.is_some());
+        assert_eq!(app.focus, Focus::BranchDialog);
+        let dialog = app.branch_dialog.as_ref().unwrap();
+        assert_eq!(dialog.branches.len(), 2);
+        assert_eq!(dialog.checked_out.len(), 1);
+    }
+
+    // ── close_branch_dialog ──
+
+    #[test]
+    fn close_branch_dialog_clears_and_refocuses() {
+        let mut app = App::new();
+        app.branch_dialog = Some(BranchDialog::new(
+            vec!["branch".to_string()],
+            vec![],
+        ));
+        app.focus = Focus::BranchDialog;
+        app.close_branch_dialog();
+        assert!(app.branch_dialog.is_none());
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    // ── close_projects_panel ──
+
+    #[test]
+    fn close_projects_panel_clears() {
+        let mut app = App::new();
+        app.projects_panel = Some(ProjectsPanel::new(vec![]));
+        app.focus = Focus::Input;
+        app.close_projects_panel();
+        assert!(app.projects_panel.is_none());
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    // ── is_projects_panel_active ──
+
+    #[test]
+    fn is_projects_panel_active_false_default() {
+        let app = App::new();
+        assert!(!app.is_projects_panel_active());
+    }
+
+    #[test]
+    fn is_projects_panel_active_true() {
+        let mut app = App::new();
+        app.projects_panel = Some(ProjectsPanel::new(vec![]));
+        assert!(app.is_projects_panel_active());
+    }
+
+    // ── open_run_command_dialog ──
+
+    #[test]
+    fn open_run_command_dialog_creates_dialog() {
+        let mut app = App::new();
+        assert!(app.run_command_dialog.is_none());
+        app.open_run_command_dialog();
+        assert!(app.run_command_dialog.is_some());
+    }
+
+    // ── open_run_command_picker ──
+
+    #[test]
+    fn open_run_command_picker_empty_commands_sets_status() {
+        let mut app = App::new();
+        app.open_run_command_picker();
+        assert!(app.run_command_picker.is_none());
+        assert!(app.status_message.is_some());
+    }
+
+    #[test]
+    fn open_run_command_picker_single_command_executes() {
+        let mut app = App::new();
+        app.run_commands.push(RunCommand::new("test", "cargo test", false));
+        app.open_run_command_picker();
+        // With a single command, no picker is opened — it executes directly
+        assert!(app.run_command_picker.is_none());
+    }
+
+    #[test]
+    fn open_run_command_picker_multiple_commands_opens_picker() {
+        let mut app = App::new();
+        app.run_commands.push(RunCommand::new("build", "cargo build", false));
+        app.run_commands.push(RunCommand::new("test", "cargo test", false));
+        app.open_run_command_picker();
+        assert!(app.run_command_picker.is_some());
+    }
+
+    // ── open_preset_prompt_picker ──
+
+    #[test]
+    fn open_preset_prompt_picker_no_presets_opens_dialog() {
+        let mut app = App::new();
+        app.open_preset_prompt_picker();
+        assert!(app.preset_prompt_dialog.is_some());
+        assert!(app.preset_prompt_picker.is_none());
+    }
+
+    #[test]
+    fn open_preset_prompt_picker_with_presets_opens_picker() {
+        let mut app = App::new();
+        app.preset_prompts.push(PresetPrompt::new("quick", "do it fast", true));
+        app.open_preset_prompt_picker();
+        assert!(app.preset_prompt_picker.is_some());
+        assert!(app.preset_prompt_dialog.is_none());
+    }
+
+    // ── select_preset_prompt ──
+
+    #[test]
+    fn select_preset_prompt_valid_index() {
+        let mut app = App::new();
+        app.preset_prompts.push(PresetPrompt::new("fix", "Fix the bug in main.rs", false));
+        app.select_preset_prompt(0);
+        assert_eq!(app.input, "Fix the bug in main.rs");
+        assert_eq!(app.input_cursor, "Fix the bug in main.rs".chars().count());
+        assert!(app.prompt_mode);
+        assert_eq!(app.focus, Focus::Input);
+        assert!(app.preset_prompt_picker.is_none());
+    }
+
+    #[test]
+    fn select_preset_prompt_invalid_index_noop() {
+        let mut app = App::new();
+        app.preset_prompts.push(PresetPrompt::new("a", "b", false));
+        let old_input = app.input.clone();
+        app.select_preset_prompt(5); // out of bounds
+        assert_eq!(app.input, old_input);
+    }
+
+    #[test]
+    fn select_preset_prompt_sets_status() {
+        let mut app = App::new();
+        app.preset_prompts.push(PresetPrompt::new("my-preset", "prompt text", true));
+        app.select_preset_prompt(0);
+        let status = app.status_message.as_deref().unwrap();
+        assert!(status.contains("my-preset"));
+    }
+
+    // ── viewer_tab_current ──
+
+    #[test]
+    fn viewer_tab_current_no_content_noop() {
+        let mut app = App::new();
+        app.viewer_content = None;
+        app.viewer_path = None;
+        app.viewer_tab_current();
+        assert!(app.viewer_tabs.is_empty());
+    }
+
+    #[test]
+    fn viewer_tab_current_adds_tab() {
+        let mut app = App::new();
+        app.viewer_content = Some("file content".to_string());
+        app.viewer_path = Some(std::path::PathBuf::from("/tmp/test.rs"));
+        app.viewer_scroll = 10;
+        app.viewer_mode = crate::app::types::ViewerMode::File;
+        app.viewer_tab_current();
+        assert_eq!(app.viewer_tabs.len(), 1);
+        assert_eq!(app.viewer_active_tab, 0);
+        let tab = &app.viewer_tabs[0];
+        assert_eq!(tab.title, "test.rs");
+        assert_eq!(tab.scroll, 10);
+    }
+
+    #[test]
+    fn viewer_tab_current_max_tabs() {
+        let mut app = App::new();
+        for i in 0..12 {
+            app.viewer_content = Some(format!("content {}", i));
+            app.viewer_path = Some(std::path::PathBuf::from(format!("/tmp/file{}.rs", i)));
+            app.viewer_tab_current();
+        }
+        assert_eq!(app.viewer_tabs.len(), 12);
+        // Try adding a 13th — should be rejected
+        app.viewer_content = Some("extra".to_string());
+        app.viewer_path = Some(std::path::PathBuf::from("/tmp/extra.rs"));
+        app.viewer_tab_current();
+        assert_eq!(app.viewer_tabs.len(), 12);
+        assert!(app.status_message.as_deref().unwrap().contains("Max"));
+    }
+
+    // ── toggle_viewer_tab_dialog ──
+
+    #[test]
+    fn toggle_viewer_tab_dialog() {
+        let mut app = App::new();
+        assert!(!app.viewer_tab_dialog);
+        app.toggle_viewer_tab_dialog();
+        assert!(app.viewer_tab_dialog);
+        app.toggle_viewer_tab_dialog();
+        assert!(!app.viewer_tab_dialog);
+    }
+
+    // ── viewer_close_current_tab ──
+
+    #[test]
+    fn viewer_close_current_tab_empty_noop() {
+        let mut app = App::new();
+        app.viewer_close_current_tab(); // should not panic
+        assert!(app.viewer_tabs.is_empty());
+    }
+
+    #[test]
+    fn viewer_close_current_tab_clears_viewer_when_last() {
+        let mut app = App::new();
+        app.viewer_content = Some("content".to_string());
+        app.viewer_path = Some(std::path::PathBuf::from("/tmp/f.rs"));
+        app.viewer_tab_current();
+        assert_eq!(app.viewer_tabs.len(), 1);
+        app.viewer_close_current_tab();
+        assert!(app.viewer_tabs.is_empty());
+        assert!(app.viewer_content.is_none());
+        assert!(app.viewer_path.is_none());
+        assert_eq!(app.viewer_mode, crate::app::types::ViewerMode::Empty);
+    }
+
+    // ── load_tab_to_viewer ──
+
+    #[test]
+    fn load_tab_to_viewer_restores_state() {
+        let mut app = App::new();
+        // Create two tabs
+        app.viewer_content = Some("content A".to_string());
+        app.viewer_path = Some(std::path::PathBuf::from("/a.rs"));
+        app.viewer_scroll = 5;
+        app.viewer_mode = crate::app::types::ViewerMode::File;
+        app.viewer_tab_current();
+        app.viewer_content = Some("content B".to_string());
+        app.viewer_path = Some(std::path::PathBuf::from("/b.rs"));
+        app.viewer_scroll = 20;
+        app.viewer_tab_current();
+        // Switch to tab 0
+        app.viewer_active_tab = 0;
+        app.load_tab_to_viewer();
+        assert_eq!(app.viewer_content.as_deref(), Some("content A"));
+        assert_eq!(app.viewer_scroll, 5);
+    }
+
+    // ── enter_main_browse / exit_main_browse ──
+
+    #[test]
+    fn enter_main_browse_no_main_worktree_sets_status() {
+        let mut app = App::new();
+        app.main_worktree = None;
+        app.enter_main_browse();
+        assert!(!app.browsing_main);
+        assert!(app.status_message.as_deref().unwrap().contains("No main worktree"));
+    }
+
+    #[test]
+    fn exit_main_browse_restores_selection() {
+        let mut app = App::new();
+        app.browsing_main = true;
+        app.pre_main_browse_selection = Some(2);
+        app.exit_main_browse();
+        assert!(!app.browsing_main);
+        assert_eq!(app.selected_worktree, Some(2));
+        assert_eq!(app.focus, Focus::Worktrees);
+    }
+
+    // ── git_action_in_progress (from ui.rs context) ──
+
+    #[test]
+    fn git_action_in_progress_rcr_session() {
+        let mut app = App::new();
+        app.rcr_session = Some(crate::app::types::RcrSession {
+            branch: "feature/test".to_string(),
+            display_name: "test".to_string(),
+            worktree_path: std::path::PathBuf::from("/wt"),
+            repo_root: std::path::PathBuf::from("/repo"),
+            slot_id: "pid-1".to_string(),
+            session_id: None,
+            approval_pending: false,
+            continue_with_merge: false,
+        });
+        assert!(app.git_action_in_progress());
+    }
+
+    // ── parse_ordered_key ──
+
+    #[test]
+    fn parse_ordered_key_valid() {
+        let (n, name) = parse_ordered_key("1_build");
+        assert_eq!(n, 1);
+        assert_eq!(name, "build");
+    }
+
+    #[test]
+    fn parse_ordered_key_large_number() {
+        let (n, name) = parse_ordered_key("42_deploy");
+        assert_eq!(n, 42);
+        assert_eq!(name, "deploy");
+    }
+
+    #[test]
+    fn parse_ordered_key_no_underscore() {
+        let (n, name) = parse_ordered_key("justname");
+        assert_eq!(n, usize::MAX);
+        assert_eq!(name, "justname");
+    }
+
+    #[test]
+    fn parse_ordered_key_non_numeric_prefix() {
+        let (n, name) = parse_ordered_key("abc_test");
+        assert_eq!(n, usize::MAX);
+        assert_eq!(name, "abc_test");
+    }
+
+    #[test]
+    fn parse_ordered_key_zero_prefix() {
+        let (n, name) = parse_ordered_key("0_first");
+        assert_eq!(n, 0);
+        assert_eq!(name, "first");
+    }
+
+    #[test]
+    fn parse_ordered_key_multiple_underscores() {
+        let (n, name) = parse_ordered_key("3_my_cool_cmd");
+        assert_eq!(n, 3);
+        assert_eq!(name, "my_cool_cmd");
+    }
+
+    #[test]
+    fn parse_ordered_key_empty_name_after_prefix() {
+        let (n, name) = parse_ordered_key("5_");
+        assert_eq!(n, 5);
+        assert_eq!(name, "");
+    }
+
+    #[test]
+    fn parse_ordered_key_empty_string() {
+        let (n, name) = parse_ordered_key("");
+        assert_eq!(n, usize::MAX);
+        assert_eq!(name, "");
+    }
+
+    // ── load_ordered_map ──
+
+    #[test]
+    fn load_ordered_map_empty() {
+        let map = HashMap::new();
+        let result = load_ordered_map(&map, true);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn load_ordered_map_single_entry() {
+        let mut map = HashMap::new();
+        map.insert("1_build".to_string(), "cargo build".to_string());
+        let result = load_ordered_map(&map, true);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "build");
+        assert_eq!(result[0].command, "cargo build");
+        assert!(result[0].global);
+    }
+
+    #[test]
+    fn load_ordered_map_preserves_order() {
+        let mut map = HashMap::new();
+        map.insert("3_third".to_string(), "cmd3".to_string());
+        map.insert("1_first".to_string(), "cmd1".to_string());
+        map.insert("2_second".to_string(), "cmd2".to_string());
+        let result = load_ordered_map(&map, false);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].name, "first");
+        assert_eq!(result[1].name, "second");
+        assert_eq!(result[2].name, "third");
+        assert!(!result[0].global);
+    }
+
+    #[test]
+    fn load_ordered_map_no_prefix() {
+        let mut map = HashMap::new();
+        map.insert("raw_cmd".to_string(), "echo hi".to_string());
+        let result = load_ordered_map(&map, true);
+        assert_eq!(result.len(), 1);
+        // "raw" is not numeric, so name stays "raw_cmd"
+        assert_eq!(result[0].name, "raw_cmd");
+    }
+
+    // ── load_ordered_presets ──
+
+    #[test]
+    fn load_ordered_presets_empty() {
+        let map = HashMap::new();
+        let result = load_ordered_presets(&map, false);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn load_ordered_presets_sorted() {
+        let mut map = HashMap::new();
+        map.insert("2_fix".to_string(), "Fix this bug".to_string());
+        map.insert("1_review".to_string(), "Review this code".to_string());
+        let result = load_ordered_presets(&map, true);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "review");
+        assert_eq!(result[0].prompt, "Review this code");
+        assert!(result[0].global);
+        assert_eq!(result[1].name, "fix");
+        assert_eq!(result[1].prompt, "Fix this bug");
+    }
+
+    // ── find_edit_line (static method on App) ──
+
+    #[test]
+    fn find_edit_line_new_string_found() {
+        let content = "line 0\nline 1\nthe target line\nline 3\n";
+        let line = App::find_edit_line(content, "", "the target line");
+        assert_eq!(line, 2);
+    }
+
+    #[test]
+    fn find_edit_line_old_string_found() {
+        let content = "line 0\nold code here\nline 2\n";
+        let line = App::find_edit_line(content, "old code here", "");
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn find_edit_line_both_empty_returns_zero() {
+        let content = "anything\nhere\n";
+        let line = App::find_edit_line(content, "", "");
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn find_edit_line_new_preferred_over_old() {
+        let content = "line 0\nnew stuff\nold stuff\nline 3\n";
+        let line = App::find_edit_line(content, "old stuff", "new stuff");
+        // new_string is checked first, so should find "new stuff" at line 1
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn find_edit_line_significant_lines_fallback() {
+        let content = "line 0\nfn important_function() {\nline 2\nline 3\n";
+        // new_string not found as a whole, but contains a significant line
+        let line = App::find_edit_line(content, "", "something\nfn important_function() {\nsomething else");
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn find_edit_line_trimmed_match() {
+        let content = "    fn hello() {\n        world();\n    }\n";
+        // Exact match won't work because of different indentation
+        let line = App::find_edit_line(content, "", "fn hello_world() {\n  fn hello() {");
+        // Should find "fn hello() {" via trimmed matching (strategy 5)
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn find_edit_line_identifier_fallback() {
+        let content = "some code\nfn calculate_total_price() {\n  return 0;\n}\n";
+        // Search for identifier that exists in the content
+        let line = App::find_edit_line(content, "", "x = calculate_total_price() + y");
+        // "calculate_total_price" is a long identifier — should be found at line 1
+        assert_eq!(line, 1);
+    }
+
+    #[test]
+    fn find_edit_line_no_match_returns_zero() {
+        let content = "aaa\nbbb\nccc\n";
+        let line = App::find_edit_line(content, "zzz", "yyy");
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn find_edit_line_empty_content() {
+        let line = App::find_edit_line("", "old", "new");
+        assert_eq!(line, 0);
+    }
+
+    #[test]
+    fn find_edit_line_first_line() {
+        let content = "target\nother\n";
+        let line = App::find_edit_line(content, "", "target");
+        assert_eq!(line, 0);
+    }
+}
+

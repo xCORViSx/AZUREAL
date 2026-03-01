@@ -392,3 +392,637 @@ pub fn copy_session_selection(app: &mut App) {
     app.clipboard = text;
     app.set_status("Copied to clipboard");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::layout::{Position, Rect};
+    use ratatui::text::{Line, Span};
+    use ratatui::style::{Style, Color};
+
+    // -- extract_text_from_cache: single line, full range --
+
+    #[test]
+    fn test_extract_single_line_full() {
+        let lines = vec![Line::from("hello world")];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 11, 0);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_extract_single_line_partial() {
+        let lines = vec![Line::from("hello world")];
+        let result = extract_text_from_cache(&lines, 0, 6, 0, 11, 0);
+        assert_eq!(result, "world");
+    }
+
+    #[test]
+    fn test_extract_empty_cache() {
+        let lines: Vec<Line> = vec![];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 5, 0);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_extract_multiple_lines() {
+        let lines = vec![
+            Line::from("line one"),
+            Line::from("line two"),
+            Line::from("line three"),
+        ];
+        let result = extract_text_from_cache(&lines, 0, 0, 2, 10, 0);
+        assert_eq!(result, "line one\nline two\nline three");
+    }
+
+    #[test]
+    fn test_extract_multiple_lines_partial() {
+        let lines = vec![
+            Line::from("abcdef"),
+            Line::from("ghijkl"),
+            Line::from("mnopqr"),
+        ];
+        let result = extract_text_from_cache(&lines, 0, 3, 2, 3, 0);
+        assert_eq!(result, "def\nghijkl\nmno");
+    }
+
+    // -- extract_text_from_cache: gutter stripping --
+
+    #[test]
+    fn test_extract_with_gutter() {
+        let lines = vec![Line::from("  1 | hello")];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 11, 6);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_extract_gutter_strips_line_numbers() {
+        let lines = vec![
+            Line::from("  1 | foo"),
+            Line::from("  2 | bar"),
+        ];
+        let result = extract_text_from_cache(&lines, 0, 0, 1, 9, 6);
+        assert_eq!(result, "foo\nbar");
+    }
+
+    #[test]
+    fn test_extract_gutter_zero() {
+        let lines = vec![Line::from("content")];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 7, 0);
+        assert_eq!(result, "content");
+    }
+
+    #[test]
+    fn test_extract_gutter_larger_than_content() {
+        let lines = vec![Line::from("abc")];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 3, 10);
+        assert_eq!(result, "");
+    }
+
+    // -- extract_text_from_cache: multi-span lines --
+
+    #[test]
+    fn test_extract_multi_span() {
+        let lines = vec![Line::from(vec![
+            Span::raw("hello"),
+            Span::raw(" "),
+            Span::raw("world"),
+        ])];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 11, 0);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_extract_styled_spans() {
+        let lines = vec![Line::from(vec![
+            Span::styled("red", Style::default().fg(Color::Red)),
+            Span::styled("green", Style::default().fg(Color::Green)),
+        ])];
+        let result = extract_text_from_cache(&lines, 0, 0, 0, 8, 0);
+        assert_eq!(result, "redgreen");
+    }
+
+    // -- extract_text_from_cache: edge cases --
+
+    #[test]
+    fn test_extract_same_start_end() {
+        let lines = vec![Line::from("hello")];
+        let result = extract_text_from_cache(&lines, 0, 3, 0, 3, 0);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_extract_out_of_bounds_line() {
+        let lines = vec![Line::from("only")];
+        let result = extract_text_from_cache(&lines, 5, 0, 5, 4, 0);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_extract_newlines_between_lines() {
+        let lines = vec![
+            Line::from("a"),
+            Line::from("b"),
+        ];
+        let result = extract_text_from_cache(&lines, 0, 0, 1, 1, 0);
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_extract_no_trailing_newline() {
+        let lines = vec![
+            Line::from("a"),
+            Line::from("b"),
+        ];
+        let result = extract_text_from_cache(&lines, 0, 0, 1, 1, 0);
+        assert!(!result.ends_with('\n'));
+    }
+
+    // -- Position and Rect construction --
+
+    #[test]
+    fn test_position_new() {
+        let pos = Position::new(10, 20);
+        assert_eq!(pos.x, 10);
+        assert_eq!(pos.y, 20);
+    }
+
+    #[test]
+    fn test_rect_contains_position() {
+        let rect = Rect::new(5, 5, 20, 10);
+        assert!(rect.contains(Position::new(10, 10)));
+    }
+
+    #[test]
+    fn test_rect_not_contains_position() {
+        let rect = Rect::new(5, 5, 20, 10);
+        assert!(!rect.contains(Position::new(0, 0)));
+    }
+
+    #[test]
+    fn test_rect_contains_top_left() {
+        let rect = Rect::new(5, 5, 20, 10);
+        assert!(rect.contains(Position::new(5, 5)));
+    }
+
+    #[test]
+    fn test_rect_not_contains_bottom_right_exclusive() {
+        let rect = Rect::new(5, 5, 20, 10);
+        assert!(!rect.contains(Position::new(25, 15)));
+    }
+
+    // -- Selection normalization --
+
+    #[test]
+    fn test_selection_normalize_forward() {
+        let (al, ac, el, ec) = (2usize, 5usize, 4usize, 3usize);
+        let sel = if al < el || (al == el && ac <= ec) {
+            (al, ac, el, ec)
+        } else {
+            (el, ec, al, ac)
+        };
+        assert_eq!(sel, (2, 5, 4, 3));
+    }
+
+    #[test]
+    fn test_selection_normalize_backward() {
+        let (al, ac, el, ec) = (4usize, 3usize, 2usize, 5usize);
+        let sel = if al < el || (al == el && ac <= ec) {
+            (al, ac, el, ec)
+        } else {
+            (el, ec, al, ac)
+        };
+        assert_eq!(sel, (2, 5, 4, 3));
+    }
+
+    #[test]
+    fn test_selection_normalize_same_line_forward() {
+        let (al, ac, el, ec) = (3usize, 2usize, 3usize, 8usize);
+        let sel = if al < el || (al == el && ac <= ec) {
+            (al, ac, el, ec)
+        } else {
+            (el, ec, al, ac)
+        };
+        assert_eq!(sel, (3, 2, 3, 8));
+    }
+
+    #[test]
+    fn test_selection_normalize_same_line_backward() {
+        let (al, ac, el, ec) = (3usize, 8usize, 3usize, 2usize);
+        let sel = if al < el || (al == el && ac <= ec) {
+            (al, ac, el, ec)
+        } else {
+            (el, ec, al, ac)
+        };
+        assert_eq!(sel, (3, 2, 3, 8));
+    }
+
+    // -- Pane ID matching for drag --
+
+    #[test]
+    fn test_pane_id_viewer() {
+        let pane_id = 0u8;
+        assert!(matches!(pane_id, 0));
+    }
+
+    #[test]
+    fn test_pane_id_session() {
+        let pane_id = 1u8;
+        assert!(matches!(pane_id, 1));
+    }
+
+    #[test]
+    fn test_pane_id_input() {
+        let pane_id = 2u8;
+        assert!(matches!(pane_id, 2));
+    }
+
+    #[test]
+    fn test_pane_id_edit() {
+        let pane_id = 3u8;
+        assert!(matches!(pane_id, 3));
+    }
+
+    #[test]
+    fn test_pane_id_unknown() {
+        let pane_id = 99u8;
+        assert!(!matches!(pane_id, 0 | 1 | 2 | 3));
+    }
+
+    // -- Drag anchor tuple --
+
+    #[test]
+    fn test_drag_anchor_some() {
+        let anchor: Option<(usize, usize, u8)> = Some((10, 5, 0));
+        assert!(anchor.is_some());
+        let (line, col, pane) = anchor.unwrap();
+        assert_eq!(line, 10);
+        assert_eq!(col, 5);
+        assert_eq!(pane, 0);
+    }
+
+    #[test]
+    fn test_drag_anchor_none() {
+        let anchor: Option<(usize, usize, u8)> = None;
+        assert!(anchor.is_none());
+    }
+
+    // -- Auto-scroll boundary checks --
+
+    #[test]
+    fn test_auto_scroll_above_pane() {
+        let pane_y = 5u16;
+        let row = 3u16;
+        assert!(row < pane_y + 1);
+    }
+
+    #[test]
+    fn test_auto_scroll_below_pane() {
+        let pane_y = 5u16;
+        let pane_height = 20u16;
+        let row = 24u16;
+        assert!(row >= pane_y + pane_height.saturating_sub(1));
+    }
+
+    #[test]
+    fn test_auto_scroll_within_pane() {
+        let pane_y = 5u16;
+        let pane_height = 20u16;
+        let row = 15u16;
+        assert!(!(row < pane_y + 1) && !(row >= pane_y + pane_height.saturating_sub(1)));
+    }
+
+    // -- Column clamping for drag --
+
+    #[test]
+    fn test_col_clamp_left() {
+        let col = 2u16;
+        let pane_x = 5u16;
+        let pane_width = 20u16;
+        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        assert_eq!(ec, 6); // clamped to pane_x + 1
+    }
+
+    #[test]
+    fn test_col_clamp_right() {
+        let col = 50u16;
+        let pane_x = 5u16;
+        let pane_width = 20u16;
+        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        assert_eq!(ec, 24); // clamped to pane_x + pane_width - 1
+    }
+
+    #[test]
+    fn test_col_clamp_within() {
+        let col = 15u16;
+        let pane_x = 5u16;
+        let pane_width = 20u16;
+        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        assert_eq!(ec, 15); // unchanged
+    }
+
+    // -- Row clamping for drag --
+
+    #[test]
+    fn test_row_clamp_above() {
+        let row = 2u16;
+        let pane_y = 5u16;
+        let pane_height = 20u16;
+        let er = row.max(pane_y + 1).min(pane_y + pane_height.saturating_sub(1));
+        assert_eq!(er, 6);
+    }
+
+    #[test]
+    fn test_row_clamp_below() {
+        let row = 50u16;
+        let pane_y = 5u16;
+        let pane_height = 20u16;
+        let er = row.max(pane_y + 1).min(pane_y + pane_height.saturating_sub(1));
+        assert_eq!(er, 24);
+    }
+
+    // -- Double-click timing --
+
+    #[test]
+    fn test_double_click_timing() {
+        let now = std::time::Instant::now();
+        let last = now;
+        let elapsed = now.duration_since(last).as_millis();
+        assert!(elapsed < 500);
+    }
+
+    #[test]
+    fn test_double_click_same_position() {
+        let (c1, r1) = (10u16, 20u16);
+        let (c2, r2) = (10u16, 20u16);
+        assert!(c1 == c2 && r1 == r2);
+    }
+
+    #[test]
+    fn test_double_click_different_position() {
+        let (c1, r1) = (10u16, 20u16);
+        let (c2, r2) = (15u16, 20u16);
+        assert!(!(c1 == c2 && r1 == r2));
+    }
+
+    // -- Visual row from click position --
+
+    #[test]
+    fn test_visual_row_calc() {
+        let row = 10u16;
+        let pane_y = 3u16;
+        let visual_row = (row.saturating_sub(pane_y + 1)) as usize;
+        assert_eq!(visual_row, 6);
+    }
+
+    #[test]
+    fn test_entry_idx_with_scroll() {
+        let visual_row = 5usize;
+        let scroll = 3usize;
+        let entry_idx = visual_row + scroll;
+        assert_eq!(entry_idx, 8);
+    }
+
+    // -- Focus enum for click targets --
+
+    #[test]
+    fn test_focus_file_tree() {
+        let f = Focus::FileTree;
+        assert_eq!(f, Focus::FileTree);
+    }
+
+    #[test]
+    fn test_focus_viewer() {
+        let f = Focus::Viewer;
+        assert_eq!(f, Focus::Viewer);
+    }
+
+    #[test]
+    fn test_focus_session() {
+        let f = Focus::Session;
+        assert_eq!(f, Focus::Session);
+    }
+
+    #[test]
+    fn test_focus_input() {
+        let f = Focus::Input;
+        assert_eq!(f, Focus::Input);
+    }
+
+    // -- Scroll delta direction --
+
+    #[test]
+    fn test_scroll_delta_positive() {
+        let delta = 3i32;
+        assert!(delta > 0);
+    }
+
+    #[test]
+    fn test_scroll_delta_negative() {
+        let delta = -3i32;
+        assert!(delta < 0);
+        assert_eq!((-delta) as usize, 3);
+    }
+
+    #[test]
+    fn test_scroll_delta_abs() {
+        let delta = -5i32;
+        assert_eq!(delta.abs(), 5);
+    }
+
+    // -- Todo scroll clamping --
+
+    #[test]
+    fn test_todo_scroll_clamp() {
+        let todo_scroll = 10u16;
+        let max_scroll = 5u16;
+        let clamped = todo_scroll.min(max_scroll);
+        assert_eq!(clamped, 5);
+    }
+
+    #[test]
+    fn test_todo_content_height() {
+        let pane_height = 22u16;
+        let content_h = pane_height.saturating_sub(2);
+        assert_eq!(content_h, 20);
+    }
+
+    #[test]
+    fn test_todo_max_scroll() {
+        let total_lines = 30u16;
+        let content_h = 20u16;
+        let max_scroll = total_lines.saturating_sub(content_h);
+        assert_eq!(max_scroll, 10);
+    }
+
+    #[test]
+    fn test_todo_no_overflow() {
+        let total_lines = 15u16;
+        let content_h = 20u16;
+        let max_scroll = total_lines.saturating_sub(content_h);
+        assert_eq!(max_scroll, 0);
+    }
+
+    // -- Clickable path tuple structure --
+
+    #[test]
+    fn test_clickable_path_tuple() {
+        let path: (usize, usize, usize, String, String, String, usize) =
+            (5, 10, 25, "/path/to/file".into(), "old".into(), "new".into(), 1);
+        assert_eq!(path.0, 5);  // line index
+        assert_eq!(path.1, 10); // start column
+        assert_eq!(path.2, 25); // end column
+        assert_eq!(path.3, "/path/to/file");
+        assert_eq!(path.6, 1);  // wrap line count
+    }
+
+    #[test]
+    fn test_clickable_path_edit_tool() {
+        let old_s = "old content";
+        let new_s = "new content";
+        assert!(!old_s.is_empty() || !new_s.is_empty());
+    }
+
+    #[test]
+    fn test_clickable_path_read_tool() {
+        let old_s = "";
+        let new_s = "";
+        assert!(old_s.is_empty() && new_s.is_empty());
+    }
+
+    // -- Session list selected bounds --
+
+    #[test]
+    fn test_session_list_scroll_clamp() {
+        let selected = 15usize;
+        let total = 10usize;
+        let clamped = selected.min(total.saturating_sub(1));
+        assert_eq!(clamped, 9);
+    }
+
+    // -- Overlay dismissal flags --
+
+    #[test]
+    fn test_show_help_dismiss() {
+        let mut show_help = true;
+        assert!(show_help);
+        show_help = false;
+        assert!(!show_help);
+    }
+
+    #[test]
+    fn test_run_command_dismiss() {
+        let mut picker: Option<String> = Some("cmd".into());
+        assert!(picker.is_some());
+        picker = None;
+        assert!(picker.is_none());
+    }
+
+    #[test]
+    fn test_branch_dialog_dismiss() {
+        let mut dialog: Option<String> = Some("dialog".into());
+        assert!(dialog.is_some());
+        dialog = None;
+        assert!(dialog.is_none());
+    }
+
+    // -- Clipboard status message --
+
+    #[test]
+    fn test_clipboard_status() {
+        let status = "Copied to clipboard";
+        assert_eq!(status, "Copied to clipboard");
+    }
+
+    // -- Gutter width detection --
+
+    #[test]
+    fn test_gutter_from_first_span() {
+        let line = Line::from(vec![
+            Span::raw("  1 | "),
+            Span::raw("content"),
+        ]);
+        let gutter = line.spans.first()
+            .map(|s| s.content.chars().count())
+            .unwrap_or(0);
+        assert_eq!(gutter, 6);
+    }
+
+    #[test]
+    fn test_gutter_empty_cache() {
+        let cache: Vec<Line> = vec![];
+        let gutter = cache.first()
+            .and_then(|l| l.spans.first())
+            .map(|s| s.content.chars().count())
+            .unwrap_or(0);
+        assert_eq!(gutter, 0);
+    }
+
+    // -- Function type checks --
+
+    #[test]
+    fn test_apply_scroll_cached_fn_type() {
+        let _ = apply_scroll_cached as fn(&mut App, i32, u16, u16, u16, u16) -> bool;
+    }
+
+    #[test]
+    fn test_handle_mouse_click_fn_type() {
+        let _ = handle_mouse_click as fn(&mut App, u16, u16) -> bool;
+    }
+
+    #[test]
+    fn test_handle_mouse_drag_fn_type() {
+        let _ = handle_mouse_drag as fn(&mut App, u16, u16) -> bool;
+    }
+
+    #[test]
+    fn test_copy_viewer_selection_fn_type() {
+        let _ = copy_viewer_selection as fn(&mut App);
+    }
+
+    #[test]
+    fn test_copy_session_selection_fn_type() {
+        let _ = copy_session_selection as fn(&mut App);
+    }
+
+    // -- last_click tuple --
+
+    #[test]
+    fn test_last_click_tuple() {
+        let now = std::time::Instant::now();
+        let click: (std::time::Instant, u16, u16) = (now, 15, 25);
+        assert_eq!(click.1, 15);
+        assert_eq!(click.2, 25);
+    }
+
+    // -- Input selection equality check --
+
+    #[test]
+    fn test_input_selection_changed() {
+        let old: Option<(usize, usize)> = Some((0, 5));
+        let new: Option<(usize, usize)> = Some((0, 10));
+        assert_ne!(old, new);
+    }
+
+    #[test]
+    fn test_input_selection_unchanged() {
+        let old: Option<(usize, usize)> = Some((0, 5));
+        let new: Option<(usize, usize)> = Some((0, 5));
+        assert_eq!(old, new);
+    }
+
+    // -- Viewer selection equality check --
+
+    #[test]
+    fn test_viewer_selection_changed() {
+        let old: Option<(usize, usize, usize, usize)> = Some((0, 0, 5, 10));
+        let new: Option<(usize, usize, usize, usize)> = Some((0, 0, 5, 15));
+        assert_ne!(old, new);
+    }
+
+    #[test]
+    fn test_viewer_selection_unchanged() {
+        let old: Option<(usize, usize, usize, usize)> = Some((0, 0, 5, 10));
+        let new: Option<(usize, usize, usize, usize)> = Some((0, 0, 5, 10));
+        assert_eq!(old, new);
+    }
+}

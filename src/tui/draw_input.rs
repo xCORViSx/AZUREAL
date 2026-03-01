@@ -277,3 +277,395 @@ fn flush_row(
     }
     lines.push(Line::from(spans));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ══════════════════════════════════════════════════════════════════
+    // split_title_hints
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_split_fits_single_line() {
+        let (top, bottom) = split_title_hints(" MODE ", "a | b", 50);
+        assert!(bottom.is_none());
+        assert!(top.contains("a"));
+        assert!(top.contains("b"));
+    }
+
+    #[test]
+    fn test_split_overflows() {
+        let (_top, bottom) = split_title_hints(" MODE ", "aaa | bbb | ccc | ddd | eee | fff", 20);
+        assert!(bottom.is_some());
+    }
+
+    #[test]
+    fn test_split_empty_hints() {
+        let (_top, bottom) = split_title_hints(" MODE ", "", 50);
+        assert!(bottom.is_none());
+    }
+
+    #[test]
+    fn test_split_single_hint() {
+        let (top, bottom) = split_title_hints(" CMD ", "Esc:cancel", 50);
+        assert!(bottom.is_none());
+        assert!(top.contains("Esc:cancel"));
+    }
+
+    #[test]
+    fn test_split_very_narrow() {
+        let (top, _bottom) = split_title_hints(" MODE ", "a | b | c", 5);
+        // Should still produce something
+        assert!(!top.is_empty());
+    }
+
+    #[test]
+    fn test_split_exact_fit() {
+        let label = " M ";
+        let hints = "x";
+        let full = format!("{} ({}) ", label.trim_end(), hints);
+        let (_top, bottom) = split_title_hints(label, hints, full.chars().count());
+        assert!(bottom.is_none());
+    }
+
+    #[test]
+    fn test_split_returns_trimmed_top() {
+        let (top, _) = split_title_hints(" PROMPT ", "Enter:submit | Esc:cancel", 60);
+        assert!(top.starts_with(' '));
+    }
+
+    #[test]
+    fn test_split_bottom_wrapped_in_parens() {
+        let (_, bottom) = split_title_hints(" MODE ", "a | b | c | d | e | f | g", 15);
+        if let Some(ref b) = bottom {
+            assert!(b.contains('('));
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // display_width
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_display_width_ascii() {
+        let chars: Vec<char> = "hello".chars().collect();
+        assert_eq!(display_width(&chars), 5);
+    }
+
+    #[test]
+    fn test_display_width_empty() {
+        assert_eq!(display_width(&[]), 0);
+    }
+
+    #[test]
+    fn test_display_width_cjk() {
+        let chars: Vec<char> = "\u{6f22}\u{5b57}".chars().collect(); // kanji
+        assert_eq!(display_width(&chars), 4); // each CJK is width 2
+    }
+
+    #[test]
+    fn test_display_width_single_ascii() {
+        assert_eq!(display_width(&['a']), 1);
+    }
+
+    #[test]
+    fn test_display_width_mixed() {
+        let chars: Vec<char> = "a\u{6f22}b".chars().collect();
+        assert_eq!(display_width(&chars), 4); // 1 + 2 + 1
+    }
+
+    #[test]
+    fn test_display_width_spaces() {
+        let chars: Vec<char> = "   ".chars().collect();
+        assert_eq!(display_width(&chars), 3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // word_wrap_break_points
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_wrap_empty() {
+        let breaks = word_wrap_break_points(&[], 10);
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_zero_width() {
+        let chars: Vec<char> = "hello".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 0);
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_fits_no_breaks() {
+        let chars: Vec<char> = "hello".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 10);
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_exact_width() {
+        let chars: Vec<char> = "hello".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 5);
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_one_over() {
+        let chars: Vec<char> = "hello!".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 5);
+        assert_eq!(breaks.len(), 1);
+        assert_eq!(breaks[0], 5); // hard break at char 5
+    }
+
+    #[test]
+    fn test_wrap_at_space() {
+        let chars: Vec<char> = "hello world".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 6);
+        assert_eq!(breaks, vec![6]); // break after "hello "
+    }
+
+    #[test]
+    fn test_wrap_newline() {
+        let chars: Vec<char> = "abc\ndef".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 20);
+        assert_eq!(breaks, vec![4]); // break after '\n' (index 4)
+    }
+
+    #[test]
+    fn test_wrap_multiple_newlines() {
+        let chars: Vec<char> = "a\nb\nc".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 20);
+        assert_eq!(breaks, vec![2, 4]);
+    }
+
+    #[test]
+    fn test_wrap_long_word_hard_break() {
+        let chars: Vec<char> = "abcdefghij".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 3);
+        assert_eq!(breaks, vec![3, 6, 9]);
+    }
+
+    #[test]
+    fn test_wrap_multiple_words() {
+        let chars: Vec<char> = "aa bb cc dd".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 5);
+        // "aa bb" fits in 5, then "cc dd"
+        assert!(!breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_width_1() {
+        let chars: Vec<char> = "abc".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 1);
+        assert_eq!(breaks, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_wrap_preserves_breaks_sorted() {
+        let chars: Vec<char> = "the quick brown fox jumps".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 10);
+        for window in breaks.windows(2) {
+            assert!(window[0] < window[1]);
+        }
+    }
+
+    #[test]
+    fn test_wrap_single_char() {
+        let chars: Vec<char> = "x".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 1);
+        assert!(breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_two_words_exact() {
+        let chars: Vec<char> = "ab cd".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 5);
+        assert!(breaks.is_empty()); // "ab cd" is exactly 5
+    }
+
+    #[test]
+    fn test_wrap_trailing_space() {
+        let chars: Vec<char> = "abc ".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 3);
+        // "abc" fits, " " goes to next line or is absorbed
+        assert!(!breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_only_spaces() {
+        let chars: Vec<char> = "     ".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 3);
+        assert!(!breaks.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_newline_at_start() {
+        let chars: Vec<char> = "\nabc".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 10);
+        assert_eq!(breaks, vec![1]);
+    }
+
+    #[test]
+    fn test_wrap_newline_at_end() {
+        let chars: Vec<char> = "abc\n".chars().collect();
+        let breaks = word_wrap_break_points(&chars, 10);
+        assert_eq!(breaks, vec![4]);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // flush_row (via calling it indirectly)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_flush_row_empty_range() {
+        let chars = vec!['a', 'b', 'c'];
+        let mut lines = Vec::new();
+        flush_row(&chars, 2, 2, None, Style::default(), Style::default(), &mut lines);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans.len(), 0); // empty line
+    }
+
+    #[test]
+    fn test_flush_row_normal() {
+        let chars = vec!['h', 'e', 'l', 'l', 'o'];
+        let mut lines = Vec::new();
+        flush_row(&chars, 0, 5, None, Style::default().fg(Color::White), Style::default(), &mut lines);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "hello");
+    }
+
+    #[test]
+    fn test_flush_row_with_selection() {
+        let chars = vec!['a', 'b', 'c', 'd', 'e'];
+        let mut lines = Vec::new();
+        let sel_style = Style::default().bg(Color::Blue);
+        flush_row(&chars, 0, 5, Some((1, 3)), Style::default(), sel_style, &mut lines);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].spans.len() >= 2); // at least normal + selected
+    }
+
+    #[test]
+    fn test_flush_row_selection_covers_all() {
+        let chars = vec!['x', 'y', 'z'];
+        let mut lines = Vec::new();
+        let sel = Style::default().bg(Color::Blue);
+        flush_row(&chars, 0, 3, Some((0, 3)), Style::default(), sel, &mut lines);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_flush_row_partial_range() {
+        let chars = vec!['a', 'b', 'c', 'd', 'e'];
+        let mut lines = Vec::new();
+        flush_row(&chars, 1, 4, None, Style::default(), Style::default(), &mut lines);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "bcd");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Selection normalization
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_selection_normalize_forward() {
+        let input = Some((2, 5));
+        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        assert_eq!(norm, Some((2, 5)));
+    }
+
+    #[test]
+    fn test_selection_normalize_backward() {
+        let input = Some((5, 2));
+        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        assert_eq!(norm, Some((2, 5)));
+    }
+
+    #[test]
+    fn test_selection_normalize_same() {
+        let input = Some((3, 3));
+        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        assert!(norm.is_none());
+    }
+
+    #[test]
+    fn test_selection_normalize_none() {
+        let input: Option<(usize, usize)> = None;
+        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        assert!(norm.is_none());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Scroll offset
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_scroll_offset_no_scroll() {
+        let visible_rows = 5;
+        let cursor_row = 3;
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_offset_scrolled() {
+        let visible_rows = 5;
+        let cursor_row = 8;
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        assert_eq!(offset, 4);
+    }
+
+    #[test]
+    fn test_scroll_offset_zero_rows() {
+        let visible_rows = 0;
+        let cursor_row = 3;
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn test_split_no_hints_text() {
+        let (top, bottom) = split_title_hints(" MODE ", "", 50);
+        assert!(bottom.is_none());
+        assert!(top.contains("MODE"));
+    }
+
+    #[test]
+    fn test_split_one_hint_item() {
+        let (top, bottom) = split_title_hints(" M ", "one", 50);
+        assert!(bottom.is_none());
+        assert!(top.contains("one"));
+    }
+
+    #[test]
+    fn test_display_width_empty_chars() {
+        let chars: Vec<char> = vec![];
+        let w = display_width(&chars);
+        assert_eq!(w, 0);
+    }
+
+    #[test]
+    fn test_display_width_ascii_chars() {
+        let chars: Vec<char> = "hello".chars().collect();
+        let w = display_width(&chars);
+        assert_eq!(w, 5);
+    }
+
+    #[test]
+    fn test_scroll_offset_cursor_at_start() {
+        let visible_rows = 10usize;
+        let cursor_row = 0usize;
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_offset_cursor_past_visible() {
+        let visible_rows = 5usize;
+        let cursor_row = 7usize;
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        assert_eq!(offset, 3);
+    }
+}

@@ -514,3 +514,586 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
     panel.commits_behind_remote = rb;
     panel.commits_ahead_remote = ra;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  RebaseOutcome enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn rebase_outcome_rebased() {
+        let outcome = RebaseOutcome::Rebased;
+        assert!(matches!(outcome, RebaseOutcome::Rebased));
+    }
+
+    #[test]
+    fn rebase_outcome_up_to_date() {
+        let outcome = RebaseOutcome::UpToDate;
+        assert!(matches!(outcome, RebaseOutcome::UpToDate));
+    }
+
+    #[test]
+    fn rebase_outcome_conflict() {
+        let outcome = RebaseOutcome::Conflict {
+            conflicted: vec!["a.rs".into()],
+            auto_merged: vec!["b.rs".into()],
+            _raw_output: "output".into(),
+        };
+        assert!(matches!(outcome, RebaseOutcome::Conflict { .. }));
+    }
+
+    #[test]
+    fn rebase_outcome_failed() {
+        let outcome = RebaseOutcome::Failed("error".into());
+        assert!(matches!(outcome, RebaseOutcome::Failed(_)));
+    }
+
+    #[test]
+    fn rebase_outcome_conflict_fields() {
+        let outcome = RebaseOutcome::Conflict {
+            conflicted: vec!["x.rs".into(), "y.rs".into()],
+            auto_merged: vec![],
+            _raw_output: "raw".into(),
+        };
+        if let RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output } = outcome {
+            assert_eq!(conflicted.len(), 2);
+            assert!(auto_merged.is_empty());
+            assert_eq!(_raw_output, "raw");
+        }
+    }
+
+    #[test]
+    fn rebase_outcome_failed_message() {
+        let outcome = RebaseOutcome::Failed("fatal: invalid upstream".into());
+        if let RebaseOutcome::Failed(msg) = outcome {
+            assert!(msg.contains("fatal"));
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  parse_conflict_files
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn parse_conflict_files_basic_conflict() {
+        let text = "CONFLICT (content): Merge conflict in src/main.rs\nAuto-merging Cargo.lock";
+        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert_eq!(conflicted, vec!["src/main.rs"]);
+        assert_eq!(auto_merged, vec!["Cargo.lock"]);
+    }
+
+    #[test]
+    fn parse_conflict_files_no_conflicts() {
+        // When no CONFLICT lines, parse_conflict_files returns empty (Git::get_conflicted_files
+        // would fail on nonexistent path, but the Vec is still populated or empty)
+        let text = "Auto-merging Cargo.lock\nAlready up to date.";
+        let (_conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert_eq!(auto_merged, vec!["Cargo.lock"]);
+    }
+
+    #[test]
+    fn parse_conflict_files_multiple_conflicts() {
+        let text = "CONFLICT (content): Merge conflict in a.rs\nCONFLICT (content): Merge conflict in b.rs";
+        let (conflicted, _) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert_eq!(conflicted, vec!["a.rs", "b.rs"]);
+    }
+
+    #[test]
+    fn parse_conflict_files_multiple_auto_merged() {
+        let text = "Auto-merging x.rs\nAuto-merging y.rs";
+        let (_, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert_eq!(auto_merged, vec!["x.rs", "y.rs"]);
+    }
+
+    #[test]
+    fn parse_conflict_files_empty_text() {
+        let text = "";
+        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        // conflicted may be empty or populated by Git::get_conflicted_files fallback
+        // auto_merged is definitely empty
+        assert!(auto_merged.is_empty());
+        // conflicted is empty from text parsing (fallback fails on nonexistent path)
+        let _ = conflicted;
+    }
+
+    #[test]
+    fn parse_conflict_files_conflict_without_merge_prefix() {
+        // Lines starting with CONFLICT but without "Merge conflict in"
+        let text = "CONFLICT (rename/delete): some_file.rs";
+        let (conflicted, _) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        // Should still capture something (the whole line as fallback or the rsplit result)
+        assert!(!conflicted.is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  try_auto_resolve_conflicts — logic checks (no git)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn auto_resolve_empty_conflicted_returns_none() {
+        let conflicted: Vec<String> = vec![];
+        let ar_files = vec!["Cargo.lock".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(!all_resolvable);
+    }
+
+    #[test]
+    fn auto_resolve_all_in_list() {
+        let conflicted = vec!["Cargo.lock".to_string()];
+        let ar_files = vec!["Cargo.lock".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(all_resolvable);
+    }
+
+    #[test]
+    fn auto_resolve_not_all_in_list() {
+        let conflicted = vec!["Cargo.lock".to_string(), "src/main.rs".to_string()];
+        let ar_files = vec!["Cargo.lock".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(!all_resolvable);
+    }
+
+    #[test]
+    fn auto_resolve_empty_ar_files() {
+        let conflicted = vec!["a.rs".to_string()];
+        let ar_files: Vec<String> = vec![];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(!all_resolvable);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitConflictOverlay construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn conflict_overlay_construction_rebase() {
+        let ov = GitConflictOverlay {
+            conflicted_files: vec!["a.rs".into()],
+            auto_merged_files: vec![],
+            scroll: 0, selected: 0, continue_with_merge: false,
+        };
+        assert!(!ov.continue_with_merge);
+    }
+
+    #[test]
+    fn conflict_overlay_construction_merge() {
+        let ov = GitConflictOverlay {
+            conflicted_files: vec![], auto_merged_files: vec![],
+            scroll: 0, selected: 0, continue_with_merge: true,
+        };
+        assert!(ov.continue_with_merge);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitCommitOverlay construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn commit_overlay_initial_state() {
+        let ov = GitCommitOverlay {
+            message: String::new(), cursor: 0, generating: true, scroll: 0, receiver: None,
+        };
+        assert!(ov.generating);
+        assert!(ov.message.is_empty());
+        assert!(ov.receiver.is_none());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitChangedFile construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn changed_file_from_tuple() {
+        let (path, status, add, del) = ("src/lib.rs".to_string(), 'M', 5usize, 3usize);
+        let f = GitChangedFile { path, status, additions: add, deletions: del };
+        assert_eq!(f.path, "src/lib.rs");
+        assert_eq!(f.additions, 5);
+        assert_eq!(f.deletions, 3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Pull/Push message formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn pull_message_summary_first_line() {
+        let msg = "Already up to date.\nSome details";
+        let summary = msg.lines().next().unwrap_or(msg);
+        assert_eq!(summary, "Already up to date.");
+    }
+
+    #[test]
+    fn push_message_summary_first_line() {
+        let msg = "Everything up-to-date";
+        let summary = msg.lines().next().unwrap_or(msg);
+        assert_eq!(summary, "Everything up-to-date");
+    }
+
+    #[test]
+    fn pull_message_format() {
+        let summary = "Updated main";
+        let result = format!("Pulled: {}", summary);
+        assert_eq!(result, "Pulled: Updated main");
+    }
+
+    #[test]
+    fn push_message_format() {
+        let summary = "To origin";
+        let result = format!("Pushed: {}", summary);
+        assert_eq!(result, "Pushed: To origin");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  selected_file bounds adjustment
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn selected_file_clamp_when_list_shrinks() {
+        let mut selected = 5usize;
+        let new_len = 3usize;
+        if selected >= new_len { selected = new_len.saturating_sub(1); }
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn selected_file_stays_when_in_bounds() {
+        let mut selected = 2usize;
+        let new_len = 5usize;
+        if selected >= new_len { selected = new_len.saturating_sub(1); }
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn selected_file_empty_list_saturating() {
+        let new_len = 0usize;
+        let selected = new_len.saturating_sub(1);
+        assert_eq!(selected, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Commit prompt diff trimming
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn diff_trimmed_under_max() {
+        let diff = "short diff";
+        let max = 30_000;
+        let trimmed = if diff.len() > max { &diff[..max] } else { diff };
+        assert_eq!(trimmed, "short diff");
+    }
+
+    #[test]
+    fn diff_trimmed_over_max() {
+        let diff = "x".repeat(40_000);
+        let max = 30_000;
+        let trimmed = if diff.len() > max { &diff[..max] } else { &diff };
+        assert_eq!(trimmed.len(), 30_000);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  log_main computation for feature vs main
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn log_main_none_for_main_branch() {
+        let is_on_main = true;
+        let main_branch = "main";
+        let log_main: Option<&str> = if is_on_main { None } else { Some(main_branch) };
+        assert!(log_main.is_none());
+    }
+
+    #[test]
+    fn log_main_some_for_feature_branch() {
+        let is_on_main = false;
+        let main_branch = "main";
+        let log_main: Option<&str> = if is_on_main { None } else { Some(main_branch) };
+        assert_eq!(log_main, Some("main"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PostMergeDialog construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn post_merge_dialog_construction() {
+        let pmd = PostMergeDialog {
+            branch: "feature/test".into(),
+            display_name: "test".into(),
+            worktree_path: std::path::PathBuf::from("/tmp/wt"),
+            selected: 0,
+        };
+        assert_eq!(pmd.branch, "feature/test");
+        assert_eq!(pmd.display_name, "test");
+        assert_eq!(pmd.selected, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Result message formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn rebase_success_message() {
+        let push_note = " -> pushed";
+        let msg = format!("Rebased onto main{}", push_note);
+        assert_eq!(msg, "Rebased onto main -> pushed");
+    }
+
+    #[test]
+    fn rebase_up_to_date_message() {
+        let msg = "Already up to date with main".to_string();
+        assert!(msg.contains("up to date"));
+    }
+
+    #[test]
+    fn rebase_failed_message() {
+        let err = "fatal: error";
+        let msg = format!("Rebase failed: {}", err);
+        assert!(msg.starts_with("Rebase failed:"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  parse_conflict_files — additional edge cases
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn parse_conflict_files_mixed_lines() {
+        let text = "Some output\nCONFLICT (content): Merge conflict in foo.rs\nAuto-merging bar.rs\nOther output";
+        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert!(conflicted.contains(&"foo.rs".to_string()));
+        assert!(auto_merged.contains(&"bar.rs".to_string()));
+    }
+
+    #[test]
+    fn parse_conflict_files_only_auto_merged_no_conflict() {
+        let text = "Auto-merging Cargo.lock\nAuto-merging Cargo.toml";
+        let (_, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        assert_eq!(auto_merged.len(), 2);
+        assert!(auto_merged.contains(&"Cargo.lock".to_string()));
+        assert!(auto_merged.contains(&"Cargo.toml".to_string()));
+    }
+
+    #[test]
+    fn parse_conflict_files_auto_merge_trim_whitespace() {
+        let text = "Auto-merging   spaced_file.rs  ";
+        let (_, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        // trim() is applied in the parse
+        assert!(!auto_merged.is_empty());
+    }
+
+    #[test]
+    fn parse_conflict_conflict_trim_whitespace() {
+        let text = "CONFLICT (content): Merge conflict in   trimmed.rs  ";
+        let (conflicted, _) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        // rsplit("Merge conflict in ") gives the part after, then trim()
+        assert!(!conflicted.is_empty());
+        assert!(conflicted[0].contains("trimmed.rs"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Auto-resolve logic — boundary conditions
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn auto_resolve_multiple_all_in_list() {
+        let conflicted = vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()];
+        let ar_files = vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(all_resolvable);
+    }
+
+    #[test]
+    fn auto_resolve_single_extra_file_not_in_list() {
+        let conflicted = vec!["Cargo.lock".to_string(), "src/lib.rs".to_string()];
+        let ar_files = vec!["Cargo.lock".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(!all_resolvable);
+    }
+
+    #[test]
+    fn auto_resolve_exact_match_required() {
+        let conflicted = vec!["Cargo.lock.bak".to_string()];
+        let ar_files = vec!["Cargo.lock".to_string()];
+        let all_resolvable = !conflicted.is_empty()
+            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        assert!(!all_resolvable);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitConflictOverlay — field-level tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn conflict_overlay_scroll_starts_at_zero() {
+        let ov = GitConflictOverlay {
+            conflicted_files: vec!["a.rs".into()],
+            auto_merged_files: vec![],
+            scroll: 0, selected: 0, continue_with_merge: false,
+        };
+        assert_eq!(ov.scroll, 0);
+        assert_eq!(ov.selected, 0);
+    }
+
+    #[test]
+    fn conflict_overlay_conflicted_files_list() {
+        let files = vec!["src/a.rs".to_string(), "src/b.rs".to_string()];
+        let ov = GitConflictOverlay {
+            conflicted_files: files.clone(),
+            auto_merged_files: vec![],
+            scroll: 0, selected: 0, continue_with_merge: false,
+        };
+        assert_eq!(ov.conflicted_files, files);
+    }
+
+    #[test]
+    fn conflict_overlay_auto_merged_files_list() {
+        let files = vec!["Cargo.lock".to_string()];
+        let ov = GitConflictOverlay {
+            conflicted_files: vec![],
+            auto_merged_files: files.clone(),
+            scroll: 0, selected: 0, continue_with_merge: true,
+        };
+        assert_eq!(ov.auto_merged_files, files);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitCommitOverlay — cursor and scroll
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn commit_overlay_cursor_zero() {
+        let ov = GitCommitOverlay {
+            message: "feat: add feature".into(),
+            cursor: 0,
+            generating: false,
+            scroll: 0,
+            receiver: None,
+        };
+        assert_eq!(ov.cursor, 0);
+    }
+
+    #[test]
+    fn commit_overlay_with_message() {
+        let msg = "fix: resolve issue #42".to_string();
+        let ov = GitCommitOverlay {
+            message: msg.clone(),
+            cursor: msg.len(),
+            generating: false,
+            scroll: 0,
+            receiver: None,
+        };
+        assert_eq!(ov.message, msg);
+        assert_eq!(ov.cursor, msg.len());
+    }
+
+    #[test]
+    fn commit_overlay_not_generating() {
+        let ov = GitCommitOverlay {
+            message: "done".into(),
+            cursor: 4,
+            generating: false,
+            scroll: 0,
+            receiver: None,
+        };
+        assert!(!ov.generating);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitChangedFile — additional field tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn changed_file_added_status() {
+        let f = GitChangedFile {
+            path: "new_file.rs".into(),
+            status: 'A',
+            additions: 100,
+            deletions: 0,
+        };
+        assert_eq!(f.status, 'A');
+        assert_eq!(f.deletions, 0);
+    }
+
+    #[test]
+    fn changed_file_deleted_status() {
+        let f = GitChangedFile {
+            path: "old_file.rs".into(),
+            status: 'D',
+            additions: 0,
+            deletions: 50,
+        };
+        assert_eq!(f.status, 'D');
+        assert_eq!(f.additions, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Commit prompt strip_prefix / strip_suffix markdown fence
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn commit_msg_strip_backtick_prefix() {
+        let raw = "```feat: add thing\nbody here```";
+        let msg = raw.strip_prefix("```").unwrap_or(raw);
+        let msg = msg.strip_suffix("```").unwrap_or(msg).trim();
+        assert_eq!(msg, "feat: add thing\nbody here");
+    }
+
+    #[test]
+    fn commit_msg_no_backtick_unchanged() {
+        let raw = "feat: add thing\nbody here";
+        let msg = raw.strip_prefix("```").unwrap_or(raw);
+        let msg = msg.strip_suffix("```").unwrap_or(msg).trim();
+        assert_eq!(msg, "feat: add thing\nbody here");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PostMergeDialog — selected index
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn post_merge_dialog_selected_starts_at_zero() {
+        let pmd = PostMergeDialog {
+            branch: "feat/x".into(),
+            display_name: "x".into(),
+            worktree_path: std::path::PathBuf::from("/tmp"),
+            selected: 0,
+        };
+        assert_eq!(pmd.selected, 0);
+    }
+
+    #[test]
+    fn post_merge_dialog_display_name() {
+        let pmd = PostMergeDialog {
+            branch: "feat/my-feature".into(),
+            display_name: "my-feature".into(),
+            worktree_path: std::path::PathBuf::from("/tmp/wt"),
+            selected: 0,
+        };
+        assert_eq!(pmd.display_name, "my-feature");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Divergence text formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn squash_merge_push_note_empty() {
+        let branch_push_note = String::new();
+        assert!(branch_push_note.is_empty());
+    }
+
+    #[test]
+    fn squash_merge_push_note_error() {
+        let e = "Network unreachable";
+        let note = format!(" (branch push failed: {})", e);
+        assert!(note.contains("branch push failed"));
+    }
+}

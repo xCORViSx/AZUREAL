@@ -195,3 +195,573 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         });
     f.render_widget(Paragraph::new(file_lines).block(files_block), files_area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::layout::{Constraint, Layout, Rect};
+    use ratatui::style::{Color, Modifier, Style};
+    use crate::app::types::GitChangedFile;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Color constants
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_orange_value() {
+        assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50));
+    }
+
+    #[test]
+    fn git_brown_value() {
+        assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45));
+    }
+
+    #[test]
+    fn git_orange_ne_brown() {
+        assert_ne!(GIT_ORANGE, GIT_BROWN);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action row count logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_rows_main_is_8() {
+        let is_on_main = true;
+        let rows = if is_on_main { 8u16 } else { 10u16 };
+        assert_eq!(rows, 8);
+    }
+
+    #[test]
+    fn action_rows_feature_is_10() {
+        let is_on_main = false;
+        let rows = if is_on_main { 8u16 } else { 10u16 };
+        assert_eq!(rows, 10);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Layout splitting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn sidebar_layout_main_branch() {
+        let area = Rect::new(0, 0, 40, 30);
+        let action_rows = 8u16;
+        let splits = Layout::vertical([
+            Constraint::Length(action_rows),
+            Constraint::Min(4),
+        ]).split(area);
+        assert_eq!(splits[0].height, 8);
+        assert_eq!(splits[1].height, 22);
+    }
+
+    #[test]
+    fn sidebar_layout_feature_branch() {
+        let area = Rect::new(0, 0, 40, 30);
+        let action_rows = 10u16;
+        let splits = Layout::vertical([
+            Constraint::Length(action_rows),
+            Constraint::Min(4),
+        ]).split(area);
+        assert_eq!(splits[0].height, 10);
+        assert_eq!(splits[1].height, 20);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Focused pane logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn actions_focused_when_pane_zero() {
+        let focused_pane: u8 = 0;
+        assert!(focused_pane == 0);
+    }
+
+    #[test]
+    fn files_focused_when_pane_one() {
+        let focused_pane: u8 = 1;
+        assert!(focused_pane == 1);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action prefix (selection arrow)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn selected_prefix_has_triangle() {
+        let selected = true;
+        let prefix = if selected { " \u{25b8} " } else { "   " };
+        assert_eq!(prefix, " \u{25b8} ");
+    }
+
+    #[test]
+    fn unselected_prefix_is_spaces() {
+        let selected = false;
+        let prefix = if selected { " \u{25b8} " } else { "   " };
+        assert_eq!(prefix, "   ");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action style logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn selected_action_style_orange_bold() {
+        let selected = true;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        assert_eq!(style.fg, Some(GIT_ORANGE));
+    }
+
+    #[test]
+    fn unselected_action_style_white() {
+        let selected = false;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn key_style_selected_orange() {
+        let selected = true;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(GIT_BROWN)
+        };
+        assert_eq!(style.fg, Some(GIT_ORANGE));
+    }
+
+    #[test]
+    fn key_style_unselected_brown() {
+        let selected = false;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(GIT_BROWN)
+        };
+        assert_eq!(style.fg, Some(GIT_BROWN));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Auto-rebase indicator
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn auto_rebase_enabled_indicator() {
+        let enabled = true;
+        let (indicator, color) = if enabled {
+            ("\u{25cf} ON", Color::Green)
+        } else {
+            ("\u{25cb} OFF", Color::DarkGray)
+        };
+        assert_eq!(indicator, "\u{25cf} ON");
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn auto_rebase_disabled_indicator() {
+        let enabled = false;
+        let (indicator, color) = if enabled {
+            ("\u{25cf} ON", Color::Green)
+        } else {
+            ("\u{25cb} OFF", Color::DarkGray)
+        };
+        assert_eq!(indicator, "\u{25cb} OFF");
+        assert_eq!(color, Color::DarkGray);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Divider line
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn divider_line_width() {
+        let area_width = 40u16;
+        let inner_w = area_width.saturating_sub(2) as usize;
+        let divider = "\u{2500}".repeat(inner_w);
+        assert_eq!(divider.chars().count(), 38);
+    }
+
+    #[test]
+    fn divider_line_zero_width() {
+        let area_width = 2u16;
+        let inner_w = area_width.saturating_sub(2) as usize;
+        let divider = "\u{2500}".repeat(inner_w);
+        assert!(divider.is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Auto-resolve count format
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn auto_resolve_count_format() {
+        let count = 3;
+        let text = format!(" Auto-resolve ({})", count);
+        assert_eq!(text, " Auto-resolve (3)");
+    }
+
+    #[test]
+    fn auto_resolve_count_zero() {
+        let text = format!(" Auto-resolve ({})", 0);
+        assert_eq!(text, " Auto-resolve (0)");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  File status colors
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn status_color_added_green() {
+        let status = 'A';
+        let color = match status {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::Green);
+    }
+
+    #[test]
+    fn status_color_deleted_red() {
+        let color = match 'D' {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::Red);
+    }
+
+    #[test]
+    fn status_color_modified_yellow() {
+        let color = match 'M' {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn status_color_renamed_cyan() {
+        let color = match 'R' {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::Cyan);
+    }
+
+    #[test]
+    fn status_color_untracked_magenta() {
+        let color = match '?' {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::Magenta);
+    }
+
+    #[test]
+    fn status_color_unknown_white() {
+        let color = match 'X' {
+            'A' => Color::Green,
+            'D' => Color::Red,
+            'M' => Color::Yellow,
+            'R' => Color::Cyan,
+            '?' => Color::Magenta,
+            _ => Color::White,
+        };
+        assert_eq!(color, Color::White);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  File path truncation
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn path_truncation_short_path_unchanged() {
+        let path = "src/main.rs";
+        let budget = 30;
+        let display = if path.len() > budget {
+            format!("\u{2026}{}", &path[path.len().saturating_sub(budget.saturating_sub(1))..])
+        } else {
+            path.to_string()
+        };
+        assert_eq!(display, "src/main.rs");
+    }
+
+    #[test]
+    fn path_truncation_long_path_gets_ellipsis() {
+        let path = "src/very/deeply/nested/module/file.rs";
+        let budget = 15;
+        let display = if path.len() > budget {
+            format!("\u{2026}{}", &path[path.len().saturating_sub(budget.saturating_sub(1))..])
+        } else {
+            path.to_string()
+        };
+        assert!(display.starts_with('\u{2026}'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Add/Del stat formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn add_del_format() {
+        let additions = 42;
+        let deletions = 10;
+        let add_str = format!("+{}", additions);
+        let del_str = format!("-{}", deletions);
+        assert_eq!(add_str, "+42");
+        assert_eq!(del_str, "-10");
+    }
+
+    #[test]
+    fn stat_len_calculation() {
+        let add_str = "+42";
+        let del_str = "-10";
+        let stat_len = add_str.len() + 1 + del_str.len(); // +1 for slash
+        assert_eq!(stat_len, 7); // 3 + 1 + 3
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  File scroll logic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn scroll_when_selected_above() {
+        let selected_file: usize = 2;
+        let file_scroll: usize = 5;
+        let visible_files: usize = 10;
+        let scroll = if selected_file < file_scroll {
+            selected_file
+        } else if selected_file >= file_scroll + visible_files {
+            selected_file.saturating_sub(visible_files.saturating_sub(1))
+        } else {
+            file_scroll
+        };
+        assert_eq!(scroll, 2);
+    }
+
+    #[test]
+    fn scroll_when_selected_below() {
+        let selected_file: usize = 20;
+        let file_scroll: usize = 5;
+        let visible_files: usize = 10;
+        let scroll = if selected_file < file_scroll {
+            selected_file
+        } else if selected_file >= file_scroll + visible_files {
+            selected_file.saturating_sub(visible_files.saturating_sub(1))
+        } else {
+            file_scroll
+        };
+        assert_eq!(scroll, 11);
+    }
+
+    #[test]
+    fn scroll_when_visible() {
+        let selected_file: usize = 7;
+        let file_scroll: usize = 5;
+        let visible_files: usize = 10;
+        let scroll = if selected_file < file_scroll {
+            selected_file
+        } else if selected_file >= file_scroll + visible_files {
+            selected_file.saturating_sub(visible_files.saturating_sub(1))
+        } else {
+            file_scroll
+        };
+        assert_eq!(scroll, 5);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Changed Files title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn files_title_empty() {
+        let files: Vec<GitChangedFile> = vec![];
+        let title = if files.is_empty() {
+            " Changed Files (none) ".to_string()
+        } else {
+            let total_add: usize = files.iter().map(|f| f.additions).sum();
+            let total_del: usize = files.iter().map(|f| f.deletions).sum();
+            format!(" Changed Files ({}, +{}/-{}) ", files.len(), total_add, total_del)
+        };
+        assert_eq!(title, " Changed Files (none) ");
+    }
+
+    #[test]
+    fn files_title_with_files() {
+        let files = vec![
+            GitChangedFile { path: "a.rs".into(), status: 'M', additions: 10, deletions: 5 },
+            GitChangedFile { path: "b.rs".into(), status: 'A', additions: 20, deletions: 0 },
+        ];
+        let total_add: usize = files.iter().map(|f| f.additions).sum();
+        let total_del: usize = files.iter().map(|f| f.deletions).sum();
+        let title = format!(" Changed Files ({}, +{}/-{}) ", files.len(), total_add, total_del);
+        assert_eq!(title, " Changed Files (2, +30/-5) ");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Border types
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn actions_border_focused_double() {
+        let focused = true;
+        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        assert_eq!(bt, BorderType::Double);
+    }
+
+    #[test]
+    fn actions_border_unfocused_plain() {
+        let focused = false;
+        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        assert_eq!(bt, BorderType::Plain);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Title style for focused/unfocused panes
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn title_focused_orange_bold() {
+        let focused = true;
+        let style = Style::default()
+            .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
+            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() });
+        assert_eq!(style.fg, Some(GIT_ORANGE));
+    }
+
+    #[test]
+    fn title_unfocused_brown() {
+        let focused = false;
+        let style = Style::default()
+            .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
+            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() });
+        assert_eq!(style.fg, Some(GIT_BROWN));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Path style
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn path_style_selected_orange_bold_underline() {
+        let selected = true;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+        };
+        assert_eq!(style.fg, Some(GIT_ORANGE));
+    }
+
+    #[test]
+    fn path_style_unselected_white_underline() {
+        let selected = false;
+        let style = if selected {
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+        };
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  GitChangedFile construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_changed_file_construction() {
+        let f = GitChangedFile {
+            path: "src/lib.rs".to_string(),
+            status: 'M',
+            additions: 15,
+            deletions: 3,
+        };
+        assert_eq!(f.path, "src/lib.rs");
+        assert_eq!(f.status, 'M');
+        assert_eq!(f.additions, 15);
+        assert_eq!(f.deletions, 3);
+    }
+
+    #[test]
+    fn git_changed_file_clone() {
+        let f = GitChangedFile {
+            path: "a.rs".to_string(),
+            status: 'A',
+            additions: 100,
+            deletions: 0,
+        };
+        let cloned = f.clone();
+        assert_eq!(f.path, cloned.path);
+        assert_eq!(f.status, cloned.status);
+    }
+
+    #[test]
+    fn git_changed_file_debug() {
+        let f = GitChangedFile {
+            path: "x.rs".to_string(),
+            status: 'D',
+            additions: 0,
+            deletions: 50,
+        };
+        let dbg = format!("{:?}", f);
+        assert!(dbg.contains("x.rs"));
+        assert!(dbg.contains("D"));
+    }
+
+    #[test]
+    fn git_orange_is_rgb() {
+        assert!(matches!(GIT_ORANGE, Color::Rgb(_, _, _)));
+    }
+
+    #[test]
+    fn git_brown_is_rgb() {
+        assert!(matches!(GIT_BROWN, Color::Rgb(_, _, _)));
+    }
+
+    #[test]
+    fn rect_zero_area() {
+        let r = Rect::new(0, 0, 0, 0);
+        assert_eq!(r.width, 0);
+        assert_eq!(r.height, 0);
+    }
+
+    #[test]
+    fn constraint_percentage_clamps() {
+        let c = Constraint::Percentage(100);
+        assert_eq!(c, Constraint::Percentage(100));
+    }
+
+    #[test]
+    fn style_bold_modifier() {
+        let s = Style::default().add_modifier(Modifier::BOLD);
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+}

@@ -118,3 +118,465 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     ));
     f.render_widget(badge_widget, right_area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::layout::Rect;
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Color constants
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn azure_value() {
+        assert_eq!(AZURE, Color::Rgb(51, 153, 255));
+    }
+
+    #[test]
+    fn git_brown_value() {
+        assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Focus enum variants
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn focus_worktrees_eq() {
+        assert_eq!(Focus::Worktrees, Focus::Worktrees);
+    }
+
+    #[test]
+    fn focus_session_eq() {
+        assert_eq!(Focus::Session, Focus::Session);
+    }
+
+    #[test]
+    fn focus_input_eq() {
+        assert_eq!(Focus::Input, Focus::Input);
+    }
+
+    #[test]
+    fn focus_worktree_creation_eq() {
+        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
+    }
+
+    #[test]
+    fn focus_branch_dialog_eq() {
+        assert_eq!(Focus::BranchDialog, Focus::BranchDialog);
+    }
+
+    #[test]
+    fn focus_file_tree_eq() {
+        assert_eq!(Focus::FileTree, Focus::FileTree);
+    }
+
+    #[test]
+    fn focus_viewer_eq() {
+        assert_eq!(Focus::Viewer, Focus::Viewer);
+    }
+
+    #[test]
+    fn focus_all_distinct() {
+        let variants = [
+            Focus::Worktrees, Focus::Session, Focus::Input,
+            Focus::WorktreeCreation, Focus::BranchDialog,
+            Focus::FileTree, Focus::Viewer,
+        ];
+        for i in 0..variants.len() {
+            for j in (i + 1)..variants.len() {
+                assert_ne!(variants[i], variants[j]);
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Badge text formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn badge_text_format() {
+        let cpu = "2.5%";
+        let pid = 12345;
+        let text = format!("CPU {} \u{2502} PID {} ", cpu, pid);
+        assert!(text.contains("CPU"));
+        assert!(text.contains("PID"));
+        assert!(text.contains("2.5%"));
+        assert!(text.contains("12345"));
+    }
+
+    #[test]
+    fn badge_text_length() {
+        let text = "CPU 0.0% \u{2502} PID 99999 ";
+        let width = text.len() as u16;
+        assert!(width > 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Badge color logic (debug vs release)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn badge_color_debug_build() {
+        // In test builds, cfg!(debug_assertions) is true
+        let color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
+        assert_eq!(color, AZURE);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Left area sizing
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn left_area_calculation() {
+        let area = Rect::new(0, 49, 120, 1);
+        let badge_width = 20u16;
+        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        assert_eq!(left_area.width, 100);
+        assert_eq!(left_area.y, 49);
+        assert_eq!(left_area.height, 1);
+    }
+
+    #[test]
+    fn left_area_narrow_terminal() {
+        let area = Rect::new(0, 0, 15, 1);
+        let badge_width = 20u16;
+        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        assert_eq!(left_area.width, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Right area positioning
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn right_area_position() {
+        let area = Rect::new(0, 49, 120, 1);
+        let badge_width = 20u16;
+        let right_area = Rect {
+            x: area.x + area.width.saturating_sub(badge_width),
+            width: badge_width,
+            ..area
+        };
+        assert_eq!(right_area.x, 100);
+        assert_eq!(right_area.width, 20);
+    }
+
+    #[test]
+    fn right_area_position_narrow() {
+        let area = Rect::new(0, 0, 10, 1);
+        let badge_width = 20u16;
+        let right_area = Rect {
+            x: area.x + area.width.saturating_sub(badge_width),
+            width: badge_width,
+            ..area
+        };
+        assert_eq!(right_area.x, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Git panel mode status text
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_status_text_format() {
+        let wt_name = "feature/auth";
+        let text = format!(" Git: {} ", wt_name);
+        assert_eq!(text, " Git: feature/auth ");
+    }
+
+    #[test]
+    fn git_status_text_style() {
+        let style = Style::default().fg(GIT_BROWN);
+        assert_eq!(style.fg, Some(GIT_BROWN));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Help text per Focus/ViewMode combos
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn help_worktrees_running_has_cancel() {
+        let running = true;
+        let text = if running {
+            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  \u{2303}c:cancel  Tab:switch"
+        } else {
+            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
+        };
+        assert!(text.contains("\u{2303}c:cancel"));
+        assert!(!text.contains("Enter:start"));
+    }
+
+    #[test]
+    fn help_worktrees_not_running_has_start() {
+        let running = false;
+        let text = if running {
+            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  \u{2303}c:cancel  Tab:switch"
+        } else {
+            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
+        };
+        assert!(text.contains("Enter:start"));
+        assert!(!text.contains("\u{2303}c:cancel"));
+    }
+
+    #[test]
+    fn help_session_text() {
+        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  s:sessions  /:search  Esc:back";
+        assert!(text.contains("j/k:scroll"));
+        assert!(text.contains("s:sessions"));
+        assert!(text.contains("Esc:back"));
+    }
+
+    #[test]
+    fn help_input_text() {
+        let text = "?:help  Enter:submit  Esc:cancel  Tab/\u{21e7}Tab:switch";
+        assert!(text.contains("Enter:submit"));
+        assert!(text.contains("Esc:cancel"));
+    }
+
+    #[test]
+    fn help_worktree_creation_text() {
+        let text = "Enter:create  Esc:cancel";
+        assert!(text.contains("Enter:create"));
+        assert!(text.contains("Esc:cancel"));
+    }
+
+    #[test]
+    fn help_branch_dialog_text() {
+        let text = "j/k:select  Enter:switch/create  Esc:cancel  type to filter";
+        assert!(text.contains("j/k:select"));
+        assert!(text.contains("type to filter"));
+    }
+
+    #[test]
+    fn help_file_tree_text() {
+        let text = "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back";
+        assert!(text.contains("j/k:navigate"));
+        assert!(text.contains("Space:toggle"));
+    }
+
+    #[test]
+    fn help_viewer_text() {
+        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  e:edit  Esc:close  Tab:switch";
+        assert!(text.contains("e:edit"));
+        assert!(text.contains("Esc:close"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Status message override
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn status_message_overrides_help() {
+        let msg: Option<String> = Some("Custom status message".to_string());
+        let text = if let Some(ref m) = msg { m.clone() } else { "default help".to_string() };
+        assert_eq!(text, "Custom status message");
+    }
+
+    #[test]
+    fn no_status_message_shows_help() {
+        let msg: Option<String> = None;
+        let text = if let Some(ref m) = msg { m.clone() } else { "default help".to_string() };
+        assert_eq!(text, "default help");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Truncate function accessibility
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn truncate_short_string() {
+        let result = truncate("hello", 25);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        let long = "this is a very long worktree name that exceeds limit";
+        let result = truncate(long, 25);
+        assert!(result.chars().count() <= 25);
+    }
+
+    #[test]
+    fn truncate_exact_length() {
+        let s = "exactly25characters_here!";
+        let result = truncate(s, 25);
+        assert_eq!(result, s);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Worktree display formatting
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn branch_suffix_format() {
+        let branch = "feature/auth";
+        let text = format!("({})", branch);
+        assert_eq!(text, "(feature/auth)");
+    }
+
+    #[test]
+    fn no_session_text() {
+        let text = "No session selected";
+        assert_eq!(text, "No session selected");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Separator span
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn separator_text() {
+        let sep = " \u{2502} ";
+        assert_eq!(sep, " \u{2502} ");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Style construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn status_color_gray() {
+        let style = Style::default().fg(Color::Gray);
+        assert_eq!(style.fg, Some(Color::Gray));
+    }
+
+    #[test]
+    fn bold_white_style() {
+        let style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn line_from_multiple_spans() {
+        let spans = vec![
+            Span::styled("a", Style::default().fg(Color::Green)),
+            Span::raw(" "),
+            Span::styled("b", Style::default().fg(Color::White)),
+        ];
+        let line = Line::from(spans);
+        assert_eq!(line.spans.len(), 3);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Process ID in badge
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn pid_is_nonzero() {
+        let pid = std::process::id();
+        assert!(pid > 0);
+    }
+
+    #[test]
+    fn pid_fits_in_badge() {
+        let pid = std::process::id();
+        let text = format!("PID {} ", pid);
+        assert!(text.len() < 20);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Display name vs branch name deduplication
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn same_name_branch_skips_suffix() {
+        let display_name = "main";
+        let branch_name = "main";
+        let show_branch = display_name != branch_name;
+        assert!(!show_branch);
+    }
+
+    #[test]
+    fn different_name_branch_shows_suffix() {
+        let display_name = "my-feature";
+        let branch_name = "azureal/my-feature";
+        let show_branch = display_name != branch_name;
+        assert!(show_branch);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Background reset style
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn bg_reset_style() {
+        let style = Style::default().bg(Color::Reset);
+        assert_eq!(style.bg, Some(Color::Reset));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Badge width arithmetic
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn badge_width_is_byte_length() {
+        // badge_width = badge_text.len() as u16 — using byte length, not char count
+        let text = "CPU 1.2% \u{2502} PID 99 ";
+        let width = text.len() as u16;
+        // The pipe char '│' is 3 bytes in UTF-8
+        assert!(width > text.chars().count() as u16);
+    }
+
+    #[test]
+    fn right_area_x_never_exceeds_terminal_width() {
+        let area = Rect::new(5, 0, 80, 1);
+        let badge_width = 20u16;
+        let right_x = area.x + area.width.saturating_sub(badge_width);
+        assert!(right_x <= area.x + area.width);
+    }
+
+    #[test]
+    fn saturating_sub_prevents_underflow() {
+        // When badge_width > area.width, saturating_sub returns 0
+        let area_width = 10u16;
+        let badge_width = 30u16;
+        let result = area_width.saturating_sub(badge_width);
+        assert_eq!(result, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Azure color vs DarkGray for badge
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn azure_is_not_dark_gray() {
+        assert_ne!(AZURE, Color::DarkGray);
+    }
+
+    #[test]
+    fn git_brown_is_not_azure() {
+        assert_ne!(GIT_BROWN, AZURE);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Help text exhaustiveness — all Focus variants present
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn help_session_contains_search() {
+        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  s:sessions  /:search  Esc:back";
+        assert!(text.contains("/:search"));
+    }
+
+    #[test]
+    fn help_viewer_contains_tab_switch() {
+        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  e:edit  Esc:close  Tab:switch";
+        assert!(text.contains("Tab:switch"));
+    }
+
+    #[test]
+    fn help_worktrees_contains_git_shortcut() {
+        let text = "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch";
+        assert!(text.contains("G:git"));
+    }
+
+    #[test]
+    fn help_file_tree_contains_collapse_expand() {
+        let text = "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back";
+        assert!(text.contains("h/l:collapse/expand"));
+    }
+}

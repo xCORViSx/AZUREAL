@@ -797,3 +797,1256 @@ fn load_plan_file(slug: &str) -> Option<DisplayEvent> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── check_plan_approval ──
+
+    #[test]
+    fn test_plan_approval_no_events() {
+        assert!(!check_plan_approval(&[]));
+    }
+
+    #[test]
+    fn test_plan_approval_exit_plan_no_user() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_exit_plan_then_user() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "approved".into(),
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_no_exit_plan() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "hello".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "u2".into(),
+                _message_id: "m1".into(),
+                text: "response".into(),
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_multiple_exit_plans() {
+        // First ExitPlanMode followed by user msg (resolved),
+        // then second ExitPlanMode with no user msg (still pending)
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "ok".into(),
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u3".into(),
+                tool_use_id: "t2".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_other_tool_not_exit_plan() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/test.rs".into()),
+                input: serde_json::Value::Null,
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    // ── extract_hooks_from_content ──
+
+    #[test]
+    fn test_extract_hooks_success() {
+        let content = "<system-reminder>\nMyHook hook success: All checks passed\n</system-reminder>";
+        let ts = Utc::now();
+        let hooks = extract_hooks_from_content(content, ts);
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, output } = &hooks[0].1 {
+            assert_eq!(name, "MyHook");
+            assert_eq!(output, "All checks passed");
+        } else {
+            panic!("expected Hook event");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_failed() {
+        let content = "<system-reminder>\nBuildCheck hook failed: compilation error\n</system-reminder>";
+        let ts = Utc::now();
+        let hooks = extract_hooks_from_content(content, ts);
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, output } = &hooks[0].1 {
+            assert_eq!(name, "BuildCheck");
+            assert!(output.starts_with("FAILED:"));
+        } else {
+            panic!("expected Hook event");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_ellipsis_output() {
+        let content = "<system-reminder>\nStartup hook success: ...\n</system-reminder>";
+        let ts = Utc::now();
+        let hooks = extract_hooks_from_content(content, ts);
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, output } = &hooks[0].1 {
+            assert_eq!(name, "Startup");
+            assert_eq!(output, "[Startup]");
+        } else {
+            panic!("expected Hook event");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_empty_content() {
+        let hooks = extract_hooks_from_content("no hooks here", Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_multiple() {
+        let content = "<system-reminder>\nA hook success: ok\n</system-reminder>\
+                       <system-reminder>\nB hook success: done\n</system-reminder>";
+        let ts = Utc::now();
+        let hooks = extract_hooks_from_content(content, ts);
+        assert_eq!(hooks.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_hooks_unclosed_tag() {
+        let content = "<system-reminder>\nTest hook success: data";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_empty_name_skipped() {
+        let content = "<system-reminder>\n hook success: data\n</system-reminder>";
+        let ts = Utc::now();
+        let hooks = extract_hooks_from_content(content, ts);
+        // The name would be empty after trimming, so the hook should be skipped
+        // Actually " " trimmed is empty
+        assert!(hooks.is_empty());
+    }
+
+    // ── context_window_for_model ──
+
+    #[test]
+    fn test_context_window_opus() {
+        assert_eq!(context_window_for_model("claude-opus-4-6"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_sonnet() {
+        assert_eq!(context_window_for_model("claude-sonnet-4-5-20250929"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_haiku() {
+        assert_eq!(context_window_for_model("claude-haiku-4-5-20251001"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_claude3() {
+        assert_eq!(context_window_for_model("claude-3-5-sonnet-20241022"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_unknown() {
+        assert_eq!(context_window_for_model("some-future-model"), 200_000);
+    }
+
+    // ── IncrementalParserState::from_events ──
+
+    #[test]
+    fn test_incremental_state_empty() {
+        let state = IncrementalParserState::from_events(&[], None);
+        assert!(state.tool_calls.is_empty());
+        assert!(state.user_msg_by_parent.is_empty());
+        assert!(state.session_slug.is_none());
+    }
+
+    #[test]
+    fn test_incremental_state_captures_tool_calls() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "tc-1".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/file.rs".into()),
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "u2".into(),
+                _message_id: "m1".into(),
+                text: "text".into(),
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u3".into(),
+                tool_use_id: "tc-2".into(),
+                tool_name: "Write".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, Some("slug".into()));
+        assert_eq!(state.tool_calls.len(), 2);
+        assert_eq!(state.tool_calls.get("tc-1").unwrap().0, "Read");
+        assert_eq!(state.tool_calls.get("tc-1").unwrap().1, Some("/file.rs".to_string()));
+        assert_eq!(state.tool_calls.get("tc-2").unwrap().0, "Write");
+        assert_eq!(state.tool_calls.get("tc-2").unwrap().1, None);
+        assert_eq!(state.session_slug, Some("slug".to_string()));
+    }
+
+    // ── context_window_for_model: more edge cases ──
+
+    #[test]
+    fn test_context_window_sonnet_4_generic() {
+        // "sonnet-4-" matches any sonnet-4 variant
+        assert_eq!(context_window_for_model("claude-sonnet-4-0"), 200_000);
+        assert_eq!(context_window_for_model("claude-sonnet-4-1-20260101"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_opus_4_generic() {
+        // "opus-4-" matches any opus-4 variant
+        assert_eq!(context_window_for_model("claude-opus-4-0"), 200_000);
+        assert_eq!(context_window_for_model("claude-opus-4-1-20260301"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_empty_string() {
+        assert_eq!(context_window_for_model(""), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_partial_match_not_model_name() {
+        // Contains "opus-4-6" as substring, still matches
+        assert_eq!(context_window_for_model("prefix-opus-4-6-suffix"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_case_sensitive() {
+        // Uppercase should NOT match the contains checks
+        assert_eq!(context_window_for_model("CLAUDE-OPUS-4-6"), 200_000); // falls through to default
+    }
+
+    #[test]
+    fn test_context_window_claude_3_variants() {
+        assert_eq!(context_window_for_model("claude-3-5-sonnet-20241022"), 200_000);
+        assert_eq!(context_window_for_model("claude-3-opus-20240229"), 200_000);
+        assert_eq!(context_window_for_model("claude-3-haiku-20240307"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_haiku_4_5_with_date() {
+        assert_eq!(context_window_for_model("claude-haiku-4-5-20260101"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_random_future_model() {
+        assert_eq!(context_window_for_model("claude-wizard-9-0"), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_whitespace_model() {
+        assert_eq!(context_window_for_model("  "), 200_000);
+    }
+
+    #[test]
+    fn test_context_window_numeric_only() {
+        assert_eq!(context_window_for_model("12345"), 200_000);
+    }
+
+    // ── extract_hooks_from_content: more edge cases ──
+
+    #[test]
+    fn test_extract_hooks_no_space_before_hook() {
+        // "SomeName hook success:" - name is "SomeName"
+        let content = "<system-reminder>\nSomeName hook success: output data\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, output } = &hooks[0].1 {
+            assert_eq!(name, "SomeName");
+            assert_eq!(output, "output data");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_with_newline_escape_in_name() {
+        // Name with leading \\n should be trimmed
+        let content = "<system-reminder>\n\\nMyHook hook success: data\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, .. } = &hooks[0].1 {
+            assert_eq!(name, "MyHook");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_failed_empty_output() {
+        let content = "<system-reminder>\nTestHook hook failed: \n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, output } = &hooks[0].1 {
+            assert_eq!(name, "TestHook");
+            assert!(output.starts_with("FAILED:"));
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_success_empty_output_skipped() {
+        // Empty output after "hook success:" should be skipped
+        let content = "<system-reminder>\nTestHook hook success: \n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        // Empty output after trimming is empty string, which is_empty() => skipped
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_no_closing_tag() {
+        let content = "<system-reminder>\nTestHook hook success: data";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_nested_tags() {
+        // Only the first system-reminder/close pair should match
+        let content = "<system-reminder>\nOuter hook success: data1\n</system-reminder>text<system-reminder>\nInner hook success: data2\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_hooks_content_between_tags() {
+        // Content with no "hook success:" or "hook failed:" keyword
+        let content = "<system-reminder>\nJust some random text\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_multiline_content() {
+        let content = "<system-reminder>\nPreToolUse:Bash hook success: line1\nline2\nline3\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { output, .. } = &hooks[0].1 {
+            assert!(output.contains("line1"));
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_unicode_name() {
+        let content = "<system-reminder>\n日本語Hook hook success: ok\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, .. } = &hooks[0].1 {
+            assert!(name.contains("日本語"));
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_colon_in_name() {
+        let content = "<system-reminder>\nPreToolUse:Bash hook success: allowed\n</system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert_eq!(hooks.len(), 1);
+        if let DisplayEvent::Hook { name, .. } = &hooks[0].1 {
+            assert_eq!(name, "PreToolUse:Bash");
+        }
+    }
+
+    #[test]
+    fn test_extract_hooks_only_opening_tag() {
+        let content = "<system-reminder>some text but no close";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_empty_string() {
+        let hooks = extract_hooks_from_content("", Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    #[test]
+    fn test_extract_hooks_tag_without_content() {
+        let content = "<system-reminder></system-reminder>";
+        let hooks = extract_hooks_from_content(content, Utc::now());
+        assert!(hooks.is_empty());
+    }
+
+    // ── check_plan_approval: more scenarios ──
+
+    #[test]
+    fn test_plan_approval_exit_plan_then_tool_result_no_user() {
+        // ToolResult is not a UserMessage, so plan should still be awaiting
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "t2".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/test".into()),
+                content: "data".into(),
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_exit_plan_then_assistant_text_no_user() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "u2".into(),
+                _message_id: "m1".into(),
+                text: "Here is the plan".into(),
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_two_exit_plans_both_resolved() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "approved".into(),
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u3".into(),
+                tool_use_id: "t2".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u4".into(),
+                content: "approved again".into(),
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_only_user_messages() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "hello".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "world".into(),
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_other_tool_between_exit_and_user() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u2".into(),
+                tool_use_id: "t2".into(),
+                tool_name: "Read".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u3".into(),
+                content: "approved".into(),
+            },
+        ];
+        assert!(!check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_hook_event_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Hook {
+                name: "test".into(),
+                output: "data".into(),
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_command_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Command {
+                name: "compact".into(),
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_compacting_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Compacting,
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_init_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/".into(),
+                model: "m".into(),
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_complete_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Complete {
+                _session_id: "s".into(),
+                success: true,
+                duration_ms: 1000,
+                cost_usd: 0.01,
+            },
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    #[test]
+    fn test_plan_approval_filtered_does_not_resolve() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "t1".into(),
+                tool_name: "ExitPlanMode".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::Filtered,
+        ];
+        assert!(check_plan_approval(&events));
+    }
+
+    // ── IncrementalParserState: more edge cases ──
+
+    #[test]
+    fn test_incremental_state_ignores_non_tool_call_events() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "hello".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "u2".into(),
+                _message_id: "m1".into(),
+                text: "text".into(),
+            },
+            DisplayEvent::Hook {
+                name: "hook".into(),
+                output: "out".into(),
+            },
+            DisplayEvent::Command {
+                name: "compact".into(),
+            },
+            DisplayEvent::Compacting,
+            DisplayEvent::Compacted,
+            DisplayEvent::MayBeCompacting,
+            DisplayEvent::Filtered,
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_with_slug() {
+        let state = IncrementalParserState::from_events(&[], Some("my-slug".into()));
+        assert_eq!(state.session_slug, Some("my-slug".to_string()));
+    }
+
+    #[test]
+    fn test_incremental_state_none_slug() {
+        let state = IncrementalParserState::from_events(&[], None);
+        assert!(state.session_slug.is_none());
+    }
+
+    #[test]
+    fn test_incremental_state_overwrites_duplicate_tool_ids() {
+        let events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: "u1".into(),
+                tool_use_id: "same-id".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/a.rs".into()),
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u2".into(),
+                tool_use_id: "same-id".into(),
+                tool_name: "Write".into(),
+                file_path: Some("/b.rs".into()),
+                input: serde_json::Value::Null,
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert_eq!(state.tool_calls.len(), 1);
+        // Last one wins since HashMap::insert overwrites
+        assert_eq!(state.tool_calls.get("same-id").unwrap().0, "Write");
+        assert_eq!(state.tool_calls.get("same-id").unwrap().1, Some("/b.rs".to_string()));
+    }
+
+    #[test]
+    fn test_incremental_state_many_tool_calls() {
+        let events: Vec<DisplayEvent> = (0..100).map(|i| {
+            DisplayEvent::ToolCall {
+                _uuid: format!("u{}", i),
+                tool_use_id: format!("tc-{}", i),
+                tool_name: "Bash".into(),
+                file_path: None,
+                input: serde_json::Value::Null,
+            }
+        }).collect();
+        let state = IncrementalParserState::from_events(&events, None);
+        assert_eq!(state.tool_calls.len(), 100);
+    }
+
+    #[test]
+    fn test_incremental_state_tool_result_not_captured() {
+        // ToolResult events should NOT be captured in tool_calls map
+        let events = vec![
+            DisplayEvent::ToolResult {
+                tool_use_id: "tc-1".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/file.rs".into()),
+                content: "data".into(),
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_complete_not_captured() {
+        let events = vec![
+            DisplayEvent::Complete {
+                _session_id: "s1".into(),
+                success: true,
+                duration_ms: 5000,
+                cost_usd: 0.05,
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_init_not_captured() {
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/home".into(),
+                model: "claude".into(),
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_plan_not_captured() {
+        let events = vec![
+            DisplayEvent::Plan {
+                name: "plan".into(),
+                content: "content".into(),
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_user_msg_by_parent_always_empty() {
+        // from_events never populates user_msg_by_parent
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "test".into(),
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, None);
+        assert!(state.user_msg_by_parent.is_empty());
+    }
+
+    #[test]
+    fn test_incremental_state_mixed_events() {
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/".into(),
+                model: "m".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "hi".into(),
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u2".into(),
+                tool_use_id: "tc-1".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/main.rs".into()),
+                input: serde_json::Value::Null,
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "tc-1".into(),
+                tool_name: "Read".into(),
+                file_path: Some("/main.rs".into()),
+                content: "fn main() {}".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "u3".into(),
+                _message_id: "m1".into(),
+                text: "done".into(),
+            },
+            DisplayEvent::ToolCall {
+                _uuid: "u4".into(),
+                tool_use_id: "tc-2".into(),
+                tool_name: "Write".into(),
+                file_path: Some("/out.rs".into()),
+                input: serde_json::Value::Null,
+            },
+        ];
+        let state = IncrementalParserState::from_events(&events, Some("test-slug".into()));
+        assert_eq!(state.tool_calls.len(), 2);
+        assert_eq!(state.tool_calls.get("tc-1").unwrap().0, "Read");
+        assert_eq!(state.tool_calls.get("tc-2").unwrap().0, "Write");
+        assert_eq!(state.session_slug, Some("test-slug".to_string()));
+        assert!(state.user_msg_by_parent.is_empty());
+    }
+
+    // ── ParsedSession defaults (parse_session_file on nonexistent file) ──
+
+    #[test]
+    fn test_parse_session_file_nonexistent() {
+        let result = parse_session_file(std::path::Path::new("/nonexistent/path/session.jsonl"));
+        assert!(result.events.is_empty());
+        assert!(result.pending_tools.is_empty());
+        assert!(result.failed_tools.is_empty());
+        assert_eq!(result.total_lines, 0);
+        assert_eq!(result.parse_errors, 0);
+        assert!(!result.awaiting_plan_approval);
+        assert_eq!(result.end_offset, 0);
+        assert!(result.session_tokens.is_none());
+        assert!(result.context_window.is_none());
+        assert!(result.model.is_none());
+    }
+
+    // ── Helper for temp file creation ──
+
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    fn test_file(name: &str) -> std::path::PathBuf {
+        let n = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("azureal_test_{}_{}.jsonl", name, n))
+    }
+
+    // ── parse_session_file with temp files ──
+
+    #[test]
+    fn test_parse_session_file_empty_file() {
+        let file_path = test_file("empty");
+        std::fs::write(&file_path, "").unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        assert_eq!(result.total_lines, 0);
+        assert_eq!(result.parse_errors, 0);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_invalid_json_lines() {
+        let file_path = test_file("invalid_json");
+        std::fs::write(&file_path, "not json\nalso not json\n").unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        assert_eq!(result.total_lines, 2);
+        assert_eq!(result.parse_errors, 2);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_mixed_valid_invalid() {
+        let file_path = test_file("mixed");
+        let content = "not json\n{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>compact</command-name>\"}\n";
+        std::fs::write(&file_path, content).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.total_lines, 2);
+        assert_eq!(result.parse_errors, 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_system_command_event() {
+        let file_path = test_file("sys_cmd");
+        let line = r#"{"type":"system","subtype":"local_command","content":"<command-name>compact</command-name>","timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Command { name } => assert_eq!(name, "compact"),
+            other => panic!("expected Command, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_user_message() {
+        let file_path = test_file("user_msg");
+        let line = r#"{"type":"user","message":{"content":"Hello world"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "Hello world"),
+            other => panic!("expected UserMessage, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_assistant_text() {
+        let file_path = test_file("asst_text");
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Response text"}],"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50}},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "Response text"),
+            other => panic!("expected AssistantText, got {:?}", other),
+        }
+        assert!(result.session_tokens.is_some());
+        assert_eq!(result.context_window, Some(200_000));
+        assert_eq!(result.model, Some("claude-opus-4-6".to_string()));
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_result_event() {
+        let file_path = test_file("result");
+        let line = r#"{"type":"result","durationMs":5000,"costUsd":0.05,"sessionId":"s1","timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
+                assert_eq!(*duration_ms, 5000);
+                assert!((*cost_usd - 0.05).abs() < f64::EPSILON);
+                assert!(*success);
+            }
+            other => panic!("expected Complete, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_compaction_summary() {
+        let file_path = test_file("compaction");
+        let line = r#"{"type":"user","message":{"content":"This session is being continued from a previous conversation..."},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        assert!(matches!(&result.events[0], DisplayEvent::Compacting));
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_is_meta_skipped() {
+        let file_path = test_file("meta");
+        let line = r#"{"type":"user","message":{"content":"meta content"},"isMeta":true,"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_local_command_caveat_filtered() {
+        let file_path = test_file("caveat");
+        let line = r#"{"type":"user","message":{"content":"<local-command-caveat>blah</local-command-caveat>"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_local_command_stdout_compacted() {
+        let file_path = test_file("stdout_compact");
+        let line = r#"{"type":"user","message":{"content":"<local-command-stdout>Compacted successfully</local-command-stdout>"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        assert!(matches!(&result.events[0], DisplayEvent::Compacted));
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_command_name_tag() {
+        let file_path = test_file("cmd_tag");
+        let line = r#"{"type":"user","message":{"content":"<command-name>crt</command-name>"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Command { name } => assert_eq!(name, "crt"),
+            other => panic!("expected Command, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_tool_call_and_result() {
+        let file_path = test_file("tool_call_result");
+        let call_line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu-1","name":"Read","input":{"file_path":"/test.rs"}}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        let result_line = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu-1","content":"fn main() {}"}]},"timestamp":"2026-01-01T00:00:01Z","uuid":"u2"}"#;
+        std::fs::write(&file_path, format!("{}\n{}\n", call_line, result_line)).unwrap();
+        let result = parse_session_file(&file_path);
+        let tool_calls: Vec<_> = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolCall { .. })).collect();
+        let tool_results: Vec<_> = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolResult { .. })).collect();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_results.len(), 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_unknown_event_type_ignored() {
+        let file_path = test_file("unknown_type");
+        let line = r#"{"type":"unknown_type","data":"whatever","timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        assert_eq!(result.total_lines, 1);
+        assert_eq!(result.parse_errors, 0);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_end_offset() {
+        let file_path = test_file("end_offset");
+        let line = r#"{"type":"system","subtype":"local_command","content":"<command-name>test</command-name>"}"#;
+        let content = format!("{}\n", line);
+        let expected_len = content.len() as u64;
+        std::fs::write(&file_path, &content).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.end_offset, expected_len);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_blank_lines_ignored() {
+        let file_path = test_file("blank_lines");
+        let content = "\n\n\n{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"<command-name>test</command-name>\"}\n\n";
+        std::fs::write(&file_path, content).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.total_lines, 1);
+        assert_eq!(result.parse_errors, 0);
+        assert_eq!(result.events.len(), 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_token_usage_extraction() {
+        let file_path = test_file("token_usage");
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}],"model":"claude-opus-4-6","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":200,"cache_creation_input_tokens":100}},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        let (context, output) = result.session_tokens.unwrap();
+        assert_eq!(context, 1300);
+        assert_eq!(output, 500);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_model_usage_context_window() {
+        let file_path = test_file("model_usage");
+        let line = r#"{"type":"result","durationMs":1000,"costUsd":0.01,"sessionId":"s1","modelUsage":{"claude-opus-4-6":{"contextWindow":1000000}},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.context_window, Some(1_000_000));
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    // ── ParseDiagnostics ──
+
+    #[test]
+    fn test_parse_diagnostics_default() {
+        let d = ParseDiagnostics::default();
+        assert_eq!(d.assistant_events_total, 0);
+        assert_eq!(d.assistant_events_no_message, 0);
+        assert_eq!(d.assistant_events_no_content_arr, 0);
+        assert_eq!(d.assistant_text_blocks, 0);
+    }
+
+    #[test]
+    fn test_parse_diagnostics_counts_assistant() {
+        let file_path = test_file("diag_counts");
+        let line1 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"a"}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        let line2 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"b"}],"model":"claude"},"timestamp":"2026-01-01T00:00:01Z"}"#;
+        std::fs::write(&file_path, format!("{}\n{}\n", line1, line2)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.assistant_total, 2);
+        assert_eq!(result.assistant_text_blocks, 2);
+        assert_eq!(result.assistant_no_message, 0);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_diagnostics_assistant_no_message() {
+        let file_path = test_file("diag_no_msg");
+        let line = r#"{"type":"assistant","timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.assistant_total, 1);
+        assert_eq!(result.assistant_no_message, 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_diagnostics_assistant_no_content_array() {
+        let file_path = test_file("diag_no_arr");
+        let line = r#"{"type":"assistant","message":{"content":"not an array","model":"claude"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.assistant_total, 1);
+        assert_eq!(result.assistant_no_content_arr, 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    // ── Incremental parse ──
+
+    #[test]
+    fn test_incremental_parse_no_new_data() {
+        let file_path = test_file("incr_no_new");
+        let line = r#"{"type":"system","subtype":"local_command","content":"<command-name>test</command-name>"}"#;
+        let content = format!("{}\n", line);
+        std::fs::write(&file_path, &content).unwrap();
+
+        let initial = parse_session_file(&file_path);
+        let offset = initial.end_offset;
+
+        let result = parse_session_file_incremental(
+            &file_path,
+            offset,
+            &initial.events,
+            &initial.pending_tools,
+            &initial.failed_tools,
+        );
+        assert_eq!(result.events.len(), initial.events.len());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_incremental_parse_zero_offset_does_full_parse() {
+        let file_path = test_file("incr_zero");
+        let line = r#"{"type":"system","subtype":"local_command","content":"<command-name>test</command-name>"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+
+        let result = parse_session_file_incremental(
+            &file_path,
+            0,
+            &[],
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        assert_eq!(result.events.len(), 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    // ── progress event parsing ──
+
+    #[test]
+    fn test_parse_progress_echo_single_quote() {
+        let file_path = test_file("prog_sq");
+        let line = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"PreToolUse:Bash","command":"echo 'Check CLAUDE.md'"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "PreToolUse:Bash");
+                assert_eq!(output, "Check CLAUDE.md");
+            }
+            other => panic!("expected Hook, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_progress_echo_double_quote() {
+        let file_path = test_file("prog_dq");
+        let line = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"PreToolUse:Write","command":"echo \"Validating\""},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Hook { name, output } => {
+                assert_eq!(name, "PreToolUse:Write");
+                assert_eq!(output, "Validating");
+            }
+            other => panic!("expected Hook, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_progress_empty_hook_name_ignored() {
+        let file_path = test_file("prog_empty_name");
+        let line = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"","hookName":"","command":"echo 'test'"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_progress_non_hook_progress_ignored() {
+        let file_path = test_file("prog_non_hook");
+        let line = r#"{"type":"progress","data":{"type":"other_type","hookName":"test","command":"echo 'x'"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_progress_no_data_field() {
+        let file_path = test_file("prog_no_data");
+        let line = r#"{"type":"progress","timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_progress_fallback_output() {
+        let file_path = test_file("prog_fallback");
+        let line = r#"{"type":"progress","data":{"type":"hook_progress","hookEvent":"PreToolUse","hookName":"MyHook","command":"cargo test"},"timestamp":"2026-01-01T00:00:00Z"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Hook { output, .. } => assert_eq!(output, "[MyHook]"),
+            other => panic!("expected Hook, got {:?}", other),
+        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+}

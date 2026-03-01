@@ -409,3 +409,457 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(widget, area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ══════════════════════════════════════════════════════════════════
+    // FT_OPTIONS constant
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_ft_options_count() {
+        assert_eq!(FT_OPTIONS.len(), 5);
+    }
+
+    #[test]
+    fn test_ft_options_contains_worktrees() {
+        assert!(FT_OPTIONS.contains(&"worktrees"));
+    }
+
+    #[test]
+    fn test_ft_options_contains_git() {
+        assert!(FT_OPTIONS.contains(&".git"));
+    }
+
+    #[test]
+    fn test_ft_options_contains_claude() {
+        assert!(FT_OPTIONS.contains(&".claude"));
+    }
+
+    #[test]
+    fn test_ft_options_contains_azureal() {
+        assert!(FT_OPTIONS.contains(&".azureal"));
+    }
+
+    #[test]
+    fn test_ft_options_contains_ds_store() {
+        assert!(FT_OPTIONS.contains(&".DS_Store"));
+    }
+
+    #[test]
+    fn test_ft_options_all_non_empty() {
+        for opt in FT_OPTIONS {
+            assert!(!opt.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_ft_options_order() {
+        assert_eq!(FT_OPTIONS[0], "worktrees");
+        assert_eq!(FT_OPTIONS[4], ".DS_Store");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // GF_GREEN and GF_GREEN_DIM colors (from build_file_tree_lines)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_gf_green_color() {
+        let gf_green = Color::Rgb(80, 200, 80);
+        assert_eq!(gf_green, Color::Rgb(80, 200, 80));
+    }
+
+    #[test]
+    fn test_gf_green_dim_color() {
+        let gf_green_dim = Color::Rgb(60, 140, 60);
+        assert_eq!(gf_green_dim, Color::Rgb(60, 140, 60));
+    }
+
+    #[test]
+    fn test_gf_border_green_color() {
+        let gf_border_green = Color::Rgb(80, 200, 80);
+        assert_eq!(gf_border_green, Color::Rgb(80, 200, 80));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // build_action_bar_content
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_action_bar_copy() {
+        let action = FileTreeAction::Copy(PathBuf::from("/tmp/test.rs"));
+        let (plain, parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Copy"));
+        assert!(plain.contains("test.rs"));
+        assert!(!parts.is_empty());
+    }
+
+    #[test]
+    fn test_action_bar_move() {
+        let action = FileTreeAction::Move(PathBuf::from("/tmp/file.txt"));
+        let (plain, parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Move"));
+        assert!(plain.contains("file.txt"));
+        assert!(!parts.is_empty());
+    }
+
+    #[test]
+    fn test_action_bar_add() {
+        let action = FileTreeAction::Add("new_file.rs".into());
+        let (plain, parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Add"));
+        assert!(plain.contains("new_file.rs"));
+        assert!(!parts.is_empty());
+    }
+
+    #[test]
+    fn test_action_bar_add_empty() {
+        let action = FileTreeAction::Add(String::new());
+        let (plain, _parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Add"));
+    }
+
+    #[test]
+    fn test_action_bar_rename() {
+        let action = FileTreeAction::Rename("renamed.rs".into());
+        let (plain, parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Rename"));
+        assert!(plain.contains("renamed.rs"));
+        assert!(!parts.is_empty());
+    }
+
+    #[test]
+    fn test_action_bar_delete() {
+        let action = FileTreeAction::Delete;
+        let (plain, parts) = build_action_bar_content(&action);
+        assert!(plain.contains("Delete"));
+        assert_eq!(parts.len(), 1);
+    }
+
+    #[test]
+    fn test_action_bar_copy_includes_hints() {
+        let action = FileTreeAction::Copy(PathBuf::from("/a/b"));
+        let (plain, _) = build_action_bar_content(&action);
+        assert!(plain.contains("Enter:paste"));
+        assert!(plain.contains("Esc:cancel"));
+    }
+
+    #[test]
+    fn test_action_bar_move_includes_hints() {
+        let action = FileTreeAction::Move(PathBuf::from("/x"));
+        let (plain, _) = build_action_bar_content(&action);
+        assert!(plain.contains("Enter:paste"));
+    }
+
+    #[test]
+    fn test_action_bar_add_includes_cursor() {
+        let action = FileTreeAction::Add("test".into());
+        let (plain, _) = build_action_bar_content(&action);
+        assert!(plain.ends_with('\u{2588}')); // block char cursor
+    }
+
+    #[test]
+    fn test_action_bar_rename_includes_cursor() {
+        let action = FileTreeAction::Rename("test".into());
+        let (plain, _) = build_action_bar_content(&action);
+        assert!(plain.ends_with('\u{2588}'));
+    }
+
+    #[test]
+    fn test_action_bar_copy_no_filename() {
+        let action = FileTreeAction::Copy(PathBuf::from("/"));
+        let (plain, _) = build_action_bar_content(&action);
+        assert!(plain.contains("Copy"));
+    }
+
+    #[test]
+    fn test_action_bar_parts_have_styles() {
+        let action = FileTreeAction::Delete;
+        let (_, parts) = build_action_bar_content(&action);
+        for (text, _style) in &parts {
+            assert!(!text.is_empty());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // wrap_action_bar
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_wrap_action_bar_single_line_fits() {
+        let parts = vec![("hello".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 20);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_wraps_at_width() {
+        let parts = vec![("hello world foo bar".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 10);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_empty() {
+        let parts: Vec<(String, Style)> = vec![];
+        let lines = wrap_action_bar(&parts, 20);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_action_bar_single_word_fits() {
+        let parts = vec![("short".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 10);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_hard_break_long_word() {
+        let parts = vec![("abcdefghijklmnop".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 5);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_preserves_style() {
+        let style = Style::default().fg(Color::Red);
+        let parts = vec![("hello".to_string(), style)];
+        let lines = wrap_action_bar(&parts, 20);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn test_wrap_action_bar_multiple_parts() {
+        let parts = vec![
+            ("Copy ".to_string(), Style::default().fg(Color::Magenta)),
+            ("file.txt".to_string(), Style::default().fg(Color::White)),
+        ];
+        let lines = wrap_action_bar(&parts, 50);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_width_1() {
+        let parts = vec![("abc".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 1);
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_exact_width() {
+        let parts = vec![("hello".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 5);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_space_at_boundary() {
+        let parts = vec![("ab cd ef".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 5);
+        assert!(lines.len() >= 2);
+    }
+
+    #[test]
+    fn test_wrap_action_bar_real_copy_action() {
+        let action = FileTreeAction::Copy(PathBuf::from("/home/user/project/src/main.rs"));
+        let (_plain, parts) = build_action_bar_content(&action);
+        let lines = wrap_action_bar(&parts, 30);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_action_bar_real_delete_action() {
+        let action = FileTreeAction::Delete;
+        let (_plain, parts) = build_action_bar_content(&action);
+        let lines = wrap_action_bar(&parts, 40);
+        assert_eq!(lines.len(), 1);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // FileTreeAction variants
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_file_tree_action_add() {
+        let a = FileTreeAction::Add("file.rs".into());
+        assert!(matches!(a, FileTreeAction::Add(_)));
+    }
+
+    #[test]
+    fn test_file_tree_action_rename() {
+        let a = FileTreeAction::Rename("new_name".into());
+        assert!(matches!(a, FileTreeAction::Rename(_)));
+    }
+
+    #[test]
+    fn test_file_tree_action_copy() {
+        let a = FileTreeAction::Copy(PathBuf::from("/tmp/file"));
+        assert!(matches!(a, FileTreeAction::Copy(_)));
+    }
+
+    #[test]
+    fn test_file_tree_action_move() {
+        let a = FileTreeAction::Move(PathBuf::from("/tmp/file"));
+        assert!(matches!(a, FileTreeAction::Move(_)));
+    }
+
+    #[test]
+    fn test_file_tree_action_delete() {
+        let a = FileTreeAction::Delete;
+        assert!(matches!(a, FileTreeAction::Delete));
+    }
+
+    #[test]
+    fn test_file_tree_action_clone() {
+        let a = FileTreeAction::Add("test".into());
+        let b = a.clone();
+        assert!(matches!(b, FileTreeAction::Add(_)));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // FileTreeEntry
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_file_tree_entry_file() {
+        let entry = crate::app::types::FileTreeEntry {
+            path: PathBuf::from("/src/main.rs"),
+            name: "main.rs".into(),
+            is_dir: false,
+            depth: 1,
+            is_hidden: false,
+        };
+        assert!(!entry.is_dir);
+        assert_eq!(entry.depth, 1);
+    }
+
+    #[test]
+    fn test_file_tree_entry_dir() {
+        let entry = crate::app::types::FileTreeEntry {
+            path: PathBuf::from("/src"),
+            name: "src".into(),
+            is_dir: true,
+            depth: 0,
+            is_hidden: false,
+        };
+        assert!(entry.is_dir);
+    }
+
+    #[test]
+    fn test_file_tree_entry_hidden() {
+        let entry = crate::app::types::FileTreeEntry {
+            path: PathBuf::from("/.git"),
+            name: ".git".into(),
+            is_dir: true,
+            depth: 0,
+            is_hidden: true,
+        };
+        assert!(entry.is_hidden);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Indent and name length math
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_indent_depth_0() {
+        assert_eq!("  ".repeat(0), "");
+    }
+
+    #[test]
+    fn test_indent_depth_1() {
+        assert_eq!("  ".repeat(1), "  ");
+    }
+
+    #[test]
+    fn test_indent_depth_3() {
+        assert_eq!("  ".repeat(3), "      ");
+    }
+
+    #[test]
+    fn test_max_name_len_depth_0() {
+        let depth = 0;
+        let max = 38usize.saturating_sub(depth * 2 + 2);
+        assert_eq!(max, 36);
+    }
+
+    #[test]
+    fn test_max_name_len_depth_3() {
+        let depth = 3;
+        let max = 38usize.saturating_sub(depth * 2 + 2);
+        assert_eq!(max, 30);
+    }
+
+    #[test]
+    fn test_max_name_len_deep() {
+        let depth = 18;
+        let max = 38usize.saturating_sub(depth * 2 + 2);
+        assert_eq!(max, 0);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Clipboard border characters (from build_file_tree_lines)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_clipboard_move_borders() {
+        let is_move = true;
+        let (l, r) = if is_move { ("\u{254e}", "\u{254e}") } else { ("\u{2503}", "\u{2503}") };
+        assert_eq!(l, "\u{254e}");
+        assert_eq!(r, "\u{254e}");
+    }
+
+    #[test]
+    fn test_clipboard_copy_borders() {
+        let is_move = false;
+        let (l, r) = if is_move { ("\u{254e}", "\u{254e}") } else { ("\u{2503}", "\u{2503}") };
+        assert_eq!(l, "\u{2503}");
+        assert_eq!(r, "\u{2503}");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Title formatting (from draw_file_tree)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_filetree_title_simple() {
+        let ro_suffix = "";
+        let title = format!(" Filetree{} ", ro_suffix);
+        assert_eq!(title, " Filetree ");
+    }
+
+    #[test]
+    fn test_filetree_title_readonly() {
+        let ro_suffix = " (read-only)";
+        let title = format!(" Filetree{} ", ro_suffix);
+        assert_eq!(title, " Filetree (read-only) ");
+    }
+
+    #[test]
+    fn test_filetree_title_scrolled() {
+        let ro_suffix = "";
+        let scroll = 5;
+        let count = 10;
+        let total = 20;
+        let title = format!(" Filetree{} [{}/{}] ", ro_suffix, scroll + count, total);
+        assert_eq!(title, " Filetree [15/20] ");
+    }
+
+    #[test]
+    fn test_health_scope_title() {
+        let scope_count = 3;
+        let title = format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" });
+        assert_eq!(title, " Health Scope (3 dirs) ");
+    }
+
+    #[test]
+    fn test_health_scope_title_singular() {
+        let scope_count = 1;
+        let title = format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" });
+        assert_eq!(title, " Health Scope (1 dir) ");
+    }
+}

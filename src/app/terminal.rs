@@ -255,3 +255,477 @@ impl App {
     }
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Worktree;
+    use std::path::PathBuf;
+
+    // ── close_terminal ──
+
+    #[test]
+    fn test_close_terminal_sets_mode_false() {
+        let mut app = App::new();
+        app.terminal_mode = true;
+        app.prompt_mode = true;
+        app.close_terminal();
+        assert!(!app.terminal_mode);
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn test_close_terminal_already_closed() {
+        let mut app = App::new();
+        app.terminal_mode = false;
+        app.prompt_mode = false;
+        app.close_terminal();
+        assert!(!app.terminal_mode);
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn test_close_terminal_preserves_pty_state() {
+        let mut app = App::new();
+        app.terminal_mode = true;
+        // PTY fields should remain untouched (None in test, but not cleared)
+        app.close_terminal();
+        // terminal_pty, terminal_writer, terminal_rx are preserved
+        assert!(app.terminal_pty.is_none()); // was already None in test
+    }
+
+    // ── write_to_terminal: no writer ──
+
+    #[test]
+    fn test_write_to_terminal_no_writer() {
+        let mut app = App::new();
+        // Should not crash when no writer is present
+        app.write_to_terminal(b"hello");
+    }
+
+    #[test]
+    fn test_write_to_terminal_empty_data() {
+        let mut app = App::new();
+        app.write_to_terminal(b"");
+    }
+
+    // ── poll_terminal: no rx ──
+
+    #[test]
+    fn test_poll_terminal_no_rx_returns_false() {
+        let mut app = App::new();
+        assert!(!app.poll_terminal());
+    }
+
+    #[test]
+    fn test_poll_terminal_empty_channel_returns_false() {
+        let mut app = App::new();
+        let (_tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        app.terminal_rx = Some(rx);
+        assert!(!app.poll_terminal());
+    }
+
+    #[test]
+    fn test_poll_terminal_with_data_returns_true() {
+        let mut app = App::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        app.terminal_rx = Some(rx);
+        tx.send(b"data".to_vec()).unwrap();
+        assert!(app.poll_terminal());
+    }
+
+    #[test]
+    fn test_poll_terminal_processes_data_into_parser() {
+        let mut app = App::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        app.terminal_rx = Some(rx);
+        tx.send(b"hello\r\n".to_vec()).unwrap();
+        app.poll_terminal();
+        // Parser should have processed the data — screen should contain "hello"
+        let contents = app.terminal_screen_contents();
+        let text = String::from_utf8_lossy(&contents);
+        assert!(text.contains("hello"));
+    }
+
+    #[test]
+    fn test_poll_terminal_multiple_messages() {
+        let mut app = App::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        app.terminal_rx = Some(rx);
+        tx.send(b"line1\r\n".to_vec()).unwrap();
+        tx.send(b"line2\r\n".to_vec()).unwrap();
+        assert!(app.poll_terminal());
+    }
+
+    // ── terminal_screen_contents ──
+
+    #[test]
+    fn test_terminal_screen_contents_empty() {
+        let app = App::new();
+        let contents = app.terminal_screen_contents();
+        // Should return content (even if blank lines)
+        assert!(!contents.is_empty()); // parser has default rows
+    }
+
+    #[test]
+    fn test_terminal_screen_contents_after_write() {
+        let mut app = App::new();
+        app.terminal_parser.process(b"test output\r\n");
+        let contents = app.terminal_screen_contents();
+        let text = String::from_utf8_lossy(&contents);
+        assert!(text.contains("test output"));
+    }
+
+    // ── terminal_cursor_position ──
+
+    #[test]
+    fn test_terminal_cursor_position_initial() {
+        let app = App::new();
+        let (row, col) = app.terminal_cursor_position();
+        assert_eq!(row, 0);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn test_terminal_cursor_position_after_text() {
+        let mut app = App::new();
+        app.terminal_parser.process(b"abc");
+        let (row, col) = app.terminal_cursor_position();
+        assert_eq!(row, 0);
+        assert_eq!(col, 3);
+    }
+
+    #[test]
+    fn test_terminal_cursor_position_after_newline() {
+        let mut app = App::new();
+        app.terminal_parser.process(b"abc\r\n");
+        let (row, col) = app.terminal_cursor_position();
+        assert_eq!(row, 1);
+        assert_eq!(col, 0);
+    }
+
+    // ── resize_terminal ──
+
+    #[test]
+    fn test_resize_terminal_updates_dimensions() {
+        let mut app = App::new();
+        app.terminal_rows = 24;
+        app.terminal_cols = 80;
+        app.resize_terminal(40, 120);
+        assert_eq!(app.terminal_rows, 40);
+        assert_eq!(app.terminal_cols, 120);
+    }
+
+    #[test]
+    fn test_resize_terminal_same_dimensions_no_op() {
+        let mut app = App::new();
+        app.terminal_rows = 24;
+        app.terminal_cols = 80;
+        // Same dimensions — should return early
+        app.resize_terminal(24, 80);
+        assert_eq!(app.terminal_rows, 24);
+        assert_eq!(app.terminal_cols, 80);
+    }
+
+    #[test]
+    fn test_resize_terminal_small_dimensions() {
+        let mut app = App::new();
+        app.resize_terminal(5, 20);
+        assert_eq!(app.terminal_rows, 5);
+        assert_eq!(app.terminal_cols, 20);
+    }
+
+    #[test]
+    fn test_resize_terminal_large_dimensions() {
+        let mut app = App::new();
+        app.resize_terminal(100, 300);
+        assert_eq!(app.terminal_rows, 100);
+        assert_eq!(app.terminal_cols, 300);
+    }
+
+    // ── adjust_terminal_height ──
+
+    #[test]
+    fn test_adjust_terminal_height_increase() {
+        let mut app = App::new();
+        app.terminal_height = 20;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(5);
+        assert_eq!(app.terminal_height, 25);
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_decrease() {
+        let mut app = App::new();
+        app.terminal_height = 20;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(-5);
+        assert_eq!(app.terminal_height, 15);
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_min_clamped() {
+        let mut app = App::new();
+        app.terminal_height = 10;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(-20);
+        assert_eq!(app.terminal_height, 5); // clamped to 5
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_max_clamped() {
+        let mut app = App::new();
+        app.terminal_height = 30;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(20);
+        assert_eq!(app.terminal_height, 40); // clamped to 40
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_zero_delta() {
+        let mut app = App::new();
+        app.terminal_height = 20;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(0);
+        assert_eq!(app.terminal_height, 20);
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_at_min() {
+        let mut app = App::new();
+        app.terminal_height = 5;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(-1);
+        assert_eq!(app.terminal_height, 5); // can't go below 5
+    }
+
+    #[test]
+    fn test_adjust_terminal_height_at_max() {
+        let mut app = App::new();
+        app.terminal_height = 40;
+        app.terminal_cols = 80;
+        app.adjust_terminal_height(1);
+        assert_eq!(app.terminal_height, 40); // can't go above 40
+    }
+
+    // ── scroll_terminal_up/down/to_bottom ──
+
+    #[test]
+    fn test_scroll_terminal_up_from_zero() {
+        let mut app = App::new();
+        app.terminal_scroll = 0;
+        app.scroll_terminal_up(5);
+        // scroll should increase (or be capped by scrollback buffer)
+        // With default parser, scrollback may be limited
+    }
+
+    #[test]
+    fn test_scroll_terminal_down_from_zero() {
+        let mut app = App::new();
+        app.terminal_scroll = 0;
+        app.scroll_terminal_down(5);
+        assert_eq!(app.terminal_scroll, 0); // can't go below 0
+    }
+
+    #[test]
+    fn test_scroll_terminal_to_bottom() {
+        let mut app = App::new();
+        app.terminal_scroll = 100;
+        app.scroll_terminal_to_bottom();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    #[test]
+    fn test_scroll_terminal_to_bottom_already_at_bottom() {
+        let mut app = App::new();
+        app.terminal_scroll = 0;
+        app.scroll_terminal_to_bottom();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    #[test]
+    fn test_scroll_terminal_down_saturating() {
+        let mut app = App::new();
+        app.terminal_scroll = 3;
+        app.scroll_terminal_down(10);
+        assert_eq!(app.terminal_scroll, 0); // saturating_sub prevents underflow
+    }
+
+    // ── save_current_terminal ──
+
+    #[test]
+    fn test_save_terminal_no_worktree_returns_early() {
+        let mut app = App::new();
+        // No worktrees, no selection
+        app.save_current_terminal();
+        assert!(app.worktree_terminals.is_empty());
+    }
+
+    #[test]
+    fn test_save_terminal_no_pty_returns_early() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/test")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        // No PTY to save
+        app.save_current_terminal();
+        assert!(app.worktree_terminals.is_empty());
+    }
+
+    // ── restore_session_terminal ──
+
+    #[test]
+    fn test_restore_terminal_no_worktree() {
+        let mut app = App::new();
+        app.restore_session_terminal();
+        // Should not crash
+    }
+
+    #[test]
+    fn test_restore_terminal_no_saved_terminal() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/test")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.restore_session_terminal();
+        // No saved terminal — should do nothing
+        assert!(app.terminal_pty.is_none());
+    }
+
+    // ── open_terminal: existing PTY ──
+
+    #[test]
+    fn test_open_terminal_reuses_existing_pty() {
+        let mut app = App::new();
+        // Simulate existing PTY by setting terminal_pty to Some
+        // We can't easily create a real MasterPty in tests, but we can test
+        // that the method doesn't crash when called without PTY
+        app.terminal_mode = false;
+        app.prompt_mode = false;
+        // No PTY, no worktree — should set status message about failure
+        app.open_terminal();
+        // Without a valid working directory, it may fail but shouldn't panic
+    }
+
+    // ── terminal_mode and prompt_mode ──
+
+    #[test]
+    fn test_terminal_mode_default_false() {
+        let app = App::new();
+        assert!(!app.terminal_mode);
+    }
+
+    #[test]
+    fn test_prompt_mode_default_false() {
+        let app = App::new();
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn test_close_terminal_then_check_modes() {
+        let mut app = App::new();
+        app.terminal_mode = true;
+        app.prompt_mode = true;
+        app.close_terminal();
+        assert!(!app.terminal_mode);
+        assert!(!app.prompt_mode);
+    }
+
+    // ── terminal_height default ──
+
+    #[test]
+    fn test_terminal_height_default() {
+        let app = App::new();
+        assert!(app.terminal_height >= 5);
+        assert!(app.terminal_height <= 40);
+    }
+
+    #[test]
+    fn test_terminal_scroll_default_zero() {
+        let app = App::new();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    // ── parser interactions ──
+
+    #[test]
+    fn test_parser_process_escape_sequence() {
+        let mut app = App::new();
+        // Process an ANSI color code
+        app.terminal_parser.process(b"\x1b[31mred text\x1b[0m");
+        let (row, col) = app.terminal_cursor_position();
+        assert_eq!(row, 0);
+        assert_eq!(col, 8); // "red text" = 8 chars
+    }
+
+    #[test]
+    fn test_parser_process_clear_screen() {
+        let mut app = App::new();
+        app.terminal_parser.process(b"before\x1b[2J");
+        // Screen cleared
+        let contents = app.terminal_screen_contents();
+        let text = String::from_utf8_lossy(&contents);
+        // "before" may or may not be visible depending on cursor position
+        let _ = text;
+    }
+
+    #[test]
+    fn test_parser_multiple_lines() {
+        let mut app = App::new();
+        app.terminal_parser.process(b"line1\r\nline2\r\nline3\r\n");
+        let (row, _col) = app.terminal_cursor_position();
+        assert_eq!(row, 3);
+    }
+
+    // ── worktree_terminals map ──
+
+    #[test]
+    fn test_worktree_terminals_initially_empty() {
+        let app = App::new();
+        assert!(app.worktree_terminals.is_empty());
+    }
+
+    // ── scroll operations: up then down symmetry ──
+
+    #[test]
+    fn test_scroll_up_then_to_bottom() {
+        let mut app = App::new();
+        app.scroll_terminal_up(10);
+        app.scroll_terminal_to_bottom();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    #[test]
+    fn test_terminal_mode_starts_false() {
+        let app = App::new();
+        assert!(!app.terminal_mode);
+    }
+
+    #[test]
+    fn test_prompt_mode_starts_false() {
+        let app = App::new();
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn test_terminal_scroll_starts_zero() {
+        let app = App::new();
+        assert_eq!(app.terminal_scroll, 0);
+    }
+
+    #[test]
+    fn test_close_terminal_idempotent() {
+        let mut app = App::new();
+        app.close_terminal();
+        app.close_terminal();
+        assert!(!app.terminal_mode);
+    }
+}

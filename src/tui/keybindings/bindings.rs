@@ -260,3 +260,912 @@ pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Collect all (modifier_bits, code_debug) pairs from a binding array to detect dupes.
+    /// Includes primary + all alternatives.
+    fn all_combos(bindings: &[Keybinding]) -> Vec<(u8, String)> {
+        let mut combos = Vec::new();
+        for b in bindings {
+            combos.push((b.primary.modifiers.bits(), format!("{:?}", b.primary.code)));
+            for alt in b.alternatives {
+                combos.push((alt.modifiers.bits(), format!("{:?}", alt.code)));
+            }
+        }
+        combos
+    }
+
+    /// Assert no duplicate PRIMARY key combos in a single array.
+    /// (Alternatives across different bindings may intentionally overlap with primaries.)
+    fn assert_no_duplicate_primaries(name: &str, bindings: &[Keybinding]) {
+        let mut seen = HashSet::new();
+        for b in bindings {
+            let key = (b.primary.modifiers.bits(), format!("{:?}", b.primary.code));
+            assert!(seen.insert(key.clone()), "duplicate primary key in {}: {:?}", name, key);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Array lengths
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_length() { assert_eq!(GLOBAL.len(), 17); }
+
+    #[test]
+    fn worktrees_length() { assert_eq!(WORKTREES.len(), 5); }
+
+    #[test]
+    fn file_tree_length() { assert_eq!(FILE_TREE.len(), 16); }
+
+    #[test]
+    fn viewer_length() { assert_eq!(VIEWER.len(), 14); }
+
+    #[test]
+    fn edit_mode_length() { assert_eq!(EDIT_MODE.len(), 5); }
+
+    #[test]
+    fn session_length() { assert_eq!(SESSION.len(), 14); }
+
+    #[test]
+    fn input_length() { assert_eq!(INPUT.len(), 10); }
+
+    #[test]
+    fn terminal_length() { assert_eq!(TERMINAL.len(), 11); }
+
+    #[test]
+    fn health_shared_length() { assert_eq!(HEALTH_SHARED.len(), 9); }
+
+    #[test]
+    fn health_god_files_length() { assert_eq!(HEALTH_GOD_FILES.len(), 4); }
+
+    #[test]
+    fn health_docs_length() { assert_eq!(HEALTH_DOCS.len(), 4); }
+
+    #[test]
+    fn git_actions_length() { assert_eq!(GIT_ACTIONS.len(), 20); }
+
+    #[test]
+    fn projects_browse_length() { assert_eq!(PROJECTS_BROWSE.len(), 9); }
+
+    #[test]
+    fn picker_length() { assert_eq!(PICKER.len(), 7); }
+
+    #[test]
+    fn branch_dialog_length() { assert_eq!(BRANCH_DIALOG.len(), 4); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Non-empty arrays
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_nonempty() { assert!(!GLOBAL.is_empty()); }
+
+    #[test]
+    fn worktrees_nonempty() { assert!(!WORKTREES.is_empty()); }
+
+    #[test]
+    fn file_tree_nonempty() { assert!(!FILE_TREE.is_empty()); }
+
+    #[test]
+    fn viewer_nonempty() { assert!(!VIEWER.is_empty()); }
+
+    #[test]
+    fn edit_mode_nonempty() { assert!(!EDIT_MODE.is_empty()); }
+
+    #[test]
+    fn session_nonempty() { assert!(!SESSION.is_empty()); }
+
+    #[test]
+    fn input_nonempty() { assert!(!INPUT.is_empty()); }
+
+    #[test]
+    fn terminal_nonempty() { assert!(!TERMINAL.is_empty()); }
+
+    #[test]
+    fn health_shared_nonempty() { assert!(!HEALTH_SHARED.is_empty()); }
+
+    #[test]
+    fn health_god_files_nonempty() { assert!(!HEALTH_GOD_FILES.is_empty()); }
+
+    #[test]
+    fn health_docs_nonempty() { assert!(!HEALTH_DOCS.is_empty()); }
+
+    #[test]
+    fn git_actions_nonempty() { assert!(!GIT_ACTIONS.is_empty()); }
+
+    #[test]
+    fn projects_browse_nonempty() { assert!(!PROJECTS_BROWSE.is_empty()); }
+
+    #[test]
+    fn picker_nonempty() { assert!(!PICKER.is_empty()); }
+
+    #[test]
+    fn branch_dialog_nonempty() { assert!(!BRANCH_DIALOG.is_empty()); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  No duplicate primary keys within any single array
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_no_duplicate_primaries() { assert_no_duplicate_primaries("GLOBAL", &GLOBAL); }
+
+    #[test]
+    fn worktrees_no_duplicate_primaries() { assert_no_duplicate_primaries("WORKTREES", &WORKTREES); }
+
+    #[test]
+    fn file_tree_no_duplicate_primaries() { assert_no_duplicate_primaries("FILE_TREE", &FILE_TREE); }
+
+    #[test]
+    fn viewer_no_duplicate_primaries() { assert_no_duplicate_primaries("VIEWER", &VIEWER); }
+
+    #[test]
+    fn edit_mode_no_duplicate_primaries() { assert_no_duplicate_primaries("EDIT_MODE", &EDIT_MODE); }
+
+    #[test]
+    fn session_no_duplicate_primaries() { assert_no_duplicate_primaries("SESSION", &SESSION); }
+
+    #[test]
+    fn input_no_duplicate_primaries() { assert_no_duplicate_primaries("INPUT", &INPUT); }
+
+    #[test]
+    fn terminal_no_duplicate_primaries() { assert_no_duplicate_primaries("TERMINAL", &TERMINAL); }
+
+    #[test]
+    fn health_shared_no_duplicate_primaries() { assert_no_duplicate_primaries("HEALTH_SHARED", &HEALTH_SHARED); }
+
+    #[test]
+    fn health_god_files_no_duplicate_primaries() { assert_no_duplicate_primaries("HEALTH_GOD_FILES", &HEALTH_GOD_FILES); }
+
+    #[test]
+    fn health_docs_no_duplicate_primaries() { assert_no_duplicate_primaries("HEALTH_DOCS", &HEALTH_DOCS); }
+
+    #[test]
+    fn git_actions_no_duplicate_primaries() { assert_no_duplicate_primaries("GIT_ACTIONS", &GIT_ACTIONS); }
+
+    #[test]
+    fn projects_browse_no_duplicate_primaries() { assert_no_duplicate_primaries("PROJECTS_BROWSE", &PROJECTS_BROWSE); }
+
+    #[test]
+    fn picker_no_duplicate_primaries() { assert_no_duplicate_primaries("PICKER", &PICKER); }
+
+    #[test]
+    fn branch_dialog_no_duplicate_primaries() { assert_no_duplicate_primaries("BRANCH_DIALOG", &BRANCH_DIALOG); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  All bindings have non-empty descriptions
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_all_descriptions_nonempty() {
+        for b in &GLOBAL { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn worktrees_all_descriptions_nonempty() {
+        for b in &WORKTREES { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn file_tree_all_descriptions_nonempty() {
+        for b in &FILE_TREE { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn viewer_all_descriptions_nonempty() {
+        for b in &VIEWER { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn edit_mode_all_descriptions_nonempty() {
+        for b in &EDIT_MODE { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn session_all_descriptions_nonempty() {
+        for b in &SESSION { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn input_all_descriptions_nonempty() {
+        for b in &INPUT { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn terminal_all_descriptions_nonempty() {
+        for b in &TERMINAL { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn health_shared_all_descriptions_nonempty() {
+        for b in &HEALTH_SHARED { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn health_god_files_all_descriptions_nonempty() {
+        for b in &HEALTH_GOD_FILES { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn health_docs_all_descriptions_nonempty() {
+        for b in &HEALTH_DOCS { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn git_actions_all_descriptions_nonempty() {
+        for b in &GIT_ACTIONS { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn projects_browse_all_descriptions_nonempty() {
+        for b in &PROJECTS_BROWSE { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn picker_all_descriptions_nonempty() {
+        for b in &PICKER { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    #[test]
+    fn branch_dialog_all_descriptions_nonempty() {
+        for b in &BRANCH_DIALOG { assert!(!b.description.is_empty(), "action {:?} has empty desc", b.action); }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — GLOBAL
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_first_is_quit() {
+        assert_eq!(GLOBAL[0].action, Action::Quit);
+        assert_eq!(GLOBAL[0].primary.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(GLOBAL[0].primary.code, KeyCode::Char('q'));
+    }
+
+    #[test]
+    fn global_has_dump_debug() {
+        assert!(GLOBAL.iter().any(|b| b.action == Action::DumpDebug));
+    }
+
+    #[test]
+    fn global_has_cancel_claude() {
+        assert!(GLOBAL.iter().any(|b| b.action == Action::CancelClaude));
+    }
+
+    #[test]
+    fn global_has_copy_selection() {
+        let b = GLOBAL.iter().find(|b| b.action == Action::CopySelection).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+    }
+
+    #[test]
+    fn global_has_cycle_model() {
+        assert!(GLOBAL.iter().any(|b| b.action == Action::CycleModel));
+    }
+
+    #[test]
+    fn global_has_toggle_help() {
+        let b = GLOBAL.iter().find(|b| b.action == Action::ToggleHelp).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('?'));
+    }
+
+    #[test]
+    fn global_worktree_tab_next_paired() {
+        let b = GLOBAL.iter().find(|b| b.action == Action::WorktreeTabNext).unwrap();
+        assert!(b.pair_with_next);
+    }
+
+    #[test]
+    fn global_worktree_tab_prev_not_paired() {
+        let b = GLOBAL.iter().find(|b| b.action == Action::WorktreeTabPrev).unwrap();
+        assert!(!b.pair_with_next);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — FILE_TREE
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn filetree_has_return_to_worktrees() {
+        assert!(FILE_TREE.iter().any(|b| b.action == Action::ReturnToWorktrees));
+    }
+
+    #[test]
+    fn filetree_j_has_down_arrow_alt() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::NavDown).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Down));
+    }
+
+    #[test]
+    fn filetree_nav_down_is_paired() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::NavDown).unwrap();
+        assert!(b.pair_with_next);
+    }
+
+    #[test]
+    fn filetree_nav_up_not_paired() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::NavUp).unwrap();
+        assert!(!b.pair_with_next);
+    }
+
+    #[test]
+    fn filetree_has_all_file_operations() {
+        let actions: Vec<Action> = FILE_TREE.iter().map(|b| b.action).collect();
+        assert!(actions.contains(&Action::AddFile));
+        assert!(actions.contains(&Action::DeleteFile));
+        assert!(actions.contains(&Action::RenameFile));
+        assert!(actions.contains(&Action::CopyFile));
+        assert!(actions.contains(&Action::MoveFile));
+    }
+
+    #[test]
+    fn filetree_has_options_overlay() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::FileTreeOptions).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
+        assert_eq!(b.primary.code, KeyCode::Char('O'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — VIEWER
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn viewer_has_enter_edit_mode() {
+        let b = VIEWER.iter().find(|b| b.action == Action::EnterEditMode).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('e'));
+    }
+
+    #[test]
+    fn viewer_has_page_down_with_pgdn_alt() {
+        let b = VIEWER.iter().find(|b| b.action == Action::PageDown).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::PageDown));
+    }
+
+    #[test]
+    fn viewer_has_page_up_with_pgup_alt() {
+        let b = VIEWER.iter().find(|b| b.action == Action::PageUp).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::PageUp));
+    }
+
+    #[test]
+    fn viewer_has_go_to_top_with_home_alt() {
+        let b = VIEWER.iter().find(|b| b.action == Action::GoToTop).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Home));
+    }
+
+    #[test]
+    fn viewer_has_go_to_bottom_with_end_alt() {
+        let b = VIEWER.iter().find(|b| b.action == Action::GoToBottom).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::End));
+    }
+
+    #[test]
+    fn viewer_has_select_all() {
+        let b = VIEWER.iter().find(|b| b.action == Action::SelectAll).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+    }
+
+    #[test]
+    fn viewer_has_tab_current() {
+        assert!(VIEWER.iter().any(|b| b.action == Action::ViewerTabCurrent));
+    }
+
+    #[test]
+    fn viewer_has_tab_dialog_with_macos_alt() {
+        let b = VIEWER.iter().find(|b| b.action == Action::ViewerOpenTabDialog).unwrap();
+        assert!(!b.alternatives.is_empty());
+    }
+
+    #[test]
+    fn viewer_has_close_tab() {
+        assert!(VIEWER.iter().any(|b| b.action == Action::ViewerCloseTab));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — EDIT_MODE
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn edit_mode_has_save() {
+        let b = EDIT_MODE.iter().find(|b| b.action == Action::Save).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        assert_eq!(b.primary.code, KeyCode::Char('s'));
+    }
+
+    #[test]
+    fn edit_mode_has_undo() {
+        let b = EDIT_MODE.iter().find(|b| b.action == Action::Undo).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        assert_eq!(b.primary.code, KeyCode::Char('z'));
+    }
+
+    #[test]
+    fn edit_mode_undo_is_paired() {
+        let b = EDIT_MODE.iter().find(|b| b.action == Action::Undo).unwrap();
+        assert!(b.pair_with_next);
+    }
+
+    #[test]
+    fn edit_mode_has_redo() {
+        assert!(EDIT_MODE.iter().any(|b| b.action == Action::Redo));
+    }
+
+    #[test]
+    fn edit_mode_has_stt() {
+        let b = EDIT_MODE.iter().find(|b| b.action == Action::ToggleStt).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
+    }
+
+    #[test]
+    fn edit_mode_has_escape() {
+        assert!(EDIT_MODE.iter().any(|b| b.action == Action::Escape));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — SESSION
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn session_has_new_session() {
+        assert!(SESSION.iter().any(|b| b.action == Action::NewSession));
+    }
+
+    #[test]
+    fn session_has_session_list() {
+        assert!(SESSION.iter().any(|b| b.action == Action::ToggleSessionList));
+    }
+
+    #[test]
+    fn session_has_search() {
+        let b = SESSION.iter().find(|b| b.action == Action::SearchSession).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('/'));
+    }
+
+    #[test]
+    fn session_has_jump_next_bubble() {
+        assert!(SESSION.iter().any(|b| b.action == Action::JumpNextBubble));
+    }
+
+    #[test]
+    fn session_has_jump_prev_bubble() {
+        assert!(SESSION.iter().any(|b| b.action == Action::JumpPrevBubble));
+    }
+
+    #[test]
+    fn session_has_jump_next_message() {
+        assert!(SESSION.iter().any(|b| b.action == Action::JumpNextMessage));
+    }
+
+    #[test]
+    fn session_has_jump_prev_message() {
+        assert!(SESSION.iter().any(|b| b.action == Action::JumpPrevMessage));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — INPUT
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn input_has_submit() {
+        let b = INPUT.iter().find(|b| b.action == Action::Submit).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn input_has_insert_newline() {
+        let b = INPUT.iter().find(|b| b.action == Action::InsertNewline).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
+        assert_eq!(b.primary.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn input_word_left_has_ctrl_left_alt() {
+        let b = INPUT.iter().find(|b| b.action == Action::WordLeft).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.modifiers == KeyModifiers::CONTROL && a.code == KeyCode::Left));
+    }
+
+    #[test]
+    fn input_word_right_has_ctrl_right_alt() {
+        let b = INPUT.iter().find(|b| b.action == Action::WordRight).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.modifiers == KeyModifiers::CONTROL && a.code == KeyCode::Right));
+    }
+
+    #[test]
+    fn input_delete_word_has_ctrl_backspace_alt() {
+        let b = INPUT.iter().find(|b| b.action == Action::DeleteWord).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.modifiers == KeyModifiers::CONTROL && a.code == KeyCode::Backspace));
+    }
+
+    #[test]
+    fn input_has_preset_prompts_with_macos_alt() {
+        let b = INPUT.iter().find(|b| b.action == Action::PresetPrompts).unwrap();
+        assert!(!b.alternatives.is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — TERMINAL
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn terminal_has_enter_type_mode() {
+        let b = TERMINAL.iter().find(|b| b.action == Action::EnterTerminalType).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('t'));
+    }
+
+    #[test]
+    fn terminal_has_enter_prompt() {
+        let b = TERMINAL.iter().find(|b| b.action == Action::EnterPromptMode).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('p'));
+    }
+
+    #[test]
+    fn terminal_has_resize_up_down() {
+        assert!(TERMINAL.iter().any(|b| b.action == Action::ResizeUp));
+        assert!(TERMINAL.iter().any(|b| b.action == Action::ResizeDown));
+    }
+
+    #[test]
+    fn terminal_resize_up_is_paired() {
+        let b = TERMINAL.iter().find(|b| b.action == Action::ResizeUp).unwrap();
+        assert!(b.pair_with_next);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — GIT_ACTIONS
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_has_squash_merge() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitSquashMerge).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('m'));
+    }
+
+    #[test]
+    fn git_has_rebase() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitRebase).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('r'));
+    }
+
+    #[test]
+    fn git_has_pull() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitPull).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('l'));
+    }
+
+    #[test]
+    fn git_has_commit() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitCommit).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('c'));
+    }
+
+    #[test]
+    fn git_has_push() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitPush).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
+    }
+
+    #[test]
+    fn git_confirm_enter_with_d_alt() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::Confirm).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Enter);
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Char('d')));
+    }
+
+    #[test]
+    fn git_has_refresh() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitRefresh).unwrap();
+        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
+        assert_eq!(b.primary.code, KeyCode::Char('R'));
+    }
+
+    #[test]
+    fn git_has_prev_next_worktree() {
+        assert!(GIT_ACTIONS.iter().any(|b| b.action == Action::GitPrevWorktree));
+        assert!(GIT_ACTIONS.iter().any(|b| b.action == Action::GitNextWorktree));
+    }
+
+    #[test]
+    fn git_prev_page_has_lbrace_alt() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitPrevPage).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Char('{')));
+    }
+
+    #[test]
+    fn git_next_page_has_rbrace_alt() {
+        let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitNextPage).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Char('}')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — HEALTH
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn health_shared_has_switch_tab() {
+        let b = HEALTH_SHARED.iter().find(|b| b.action == Action::HealthSwitchTab).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Tab);
+    }
+
+    #[test]
+    fn health_shared_has_scope_mode() {
+        let b = HEALTH_SHARED.iter().find(|b| b.action == Action::HealthScopeMode).unwrap();
+        assert_eq!(b.primary.code, KeyCode::Char('s'));
+    }
+
+    #[test]
+    fn health_god_files_modularize_has_m_alt() {
+        let b = HEALTH_GOD_FILES.iter().find(|b| b.action == Action::HealthModularize).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Char('m')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — PROJECTS_BROWSE
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn projects_has_quit() {
+        assert!(PROJECTS_BROWSE.iter().any(|b| b.action == Action::Quit));
+    }
+
+    #[test]
+    fn projects_has_add() {
+        assert!(PROJECTS_BROWSE.iter().any(|b| b.action == Action::ProjectsAdd));
+    }
+
+    #[test]
+    fn projects_has_delete() {
+        assert!(PROJECTS_BROWSE.iter().any(|b| b.action == Action::ProjectsDelete));
+    }
+
+    #[test]
+    fn projects_has_rename() {
+        assert!(PROJECTS_BROWSE.iter().any(|b| b.action == Action::ProjectsRename));
+    }
+
+    #[test]
+    fn projects_has_init() {
+        assert!(PROJECTS_BROWSE.iter().any(|b| b.action == Action::ProjectsInit));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — PICKER
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn picker_has_edit_selected() {
+        assert!(PICKER.iter().any(|b| b.action == Action::EditSelected));
+    }
+
+    #[test]
+    fn picker_has_delete_selected() {
+        assert!(PICKER.iter().any(|b| b.action == Action::DeleteSelected));
+    }
+
+    #[test]
+    fn picker_has_add_new() {
+        assert!(PICKER.iter().any(|b| b.action == Action::ProjectsAdd));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Specific binding verification — BRANCH_DIALOG
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn branch_has_nav_down_with_arrow_alt() {
+        let b = BRANCH_DIALOG.iter().find(|b| b.action == Action::NavDown).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Down));
+    }
+
+    #[test]
+    fn branch_has_nav_up_with_arrow_alt() {
+        let b = BRANCH_DIALOG.iter().find(|b| b.action == Action::NavUp).unwrap();
+        assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Up));
+    }
+
+    #[test]
+    fn branch_has_confirm() {
+        assert!(BRANCH_DIALOG.iter().any(|b| b.action == Action::Confirm));
+    }
+
+    #[test]
+    fn branch_has_escape() {
+        assert!(BRANCH_DIALOG.iter().any(|b| b.action == Action::Escape));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Static alt arrays
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn alt_down_is_down_arrow() {
+        assert_eq!(ALT_DOWN[0].code, KeyCode::Down);
+        assert_eq!(ALT_DOWN[0].modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn alt_up_is_up_arrow() {
+        assert_eq!(ALT_UP[0].code, KeyCode::Up);
+        assert_eq!(ALT_UP[0].modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn alt_left_is_left_arrow() {
+        assert_eq!(ALT_LEFT[0].code, KeyCode::Left);
+    }
+
+    #[test]
+    fn alt_right_is_right_arrow() {
+        assert_eq!(ALT_RIGHT[0].code, KeyCode::Right);
+    }
+
+    #[test]
+    fn alt_ctrl_left_is_ctrl_left() {
+        assert_eq!(ALT_CTRL_LEFT[0].modifiers, KeyModifiers::CONTROL);
+        assert_eq!(ALT_CTRL_LEFT[0].code, KeyCode::Left);
+    }
+
+    #[test]
+    fn alt_ctrl_right_is_ctrl_right() {
+        assert_eq!(ALT_CTRL_RIGHT[0].modifiers, KeyModifiers::CONTROL);
+        assert_eq!(ALT_CTRL_RIGHT[0].code, KeyCode::Right);
+    }
+
+    #[test]
+    fn alt_delete_word_is_ctrl_backspace() {
+        assert_eq!(ALT_DELETE_WORD[0].modifiers, KeyModifiers::CONTROL);
+        assert_eq!(ALT_DELETE_WORD[0].code, KeyCode::Backspace);
+    }
+
+    #[test]
+    fn alt_pgdn_is_pagedown() {
+        assert_eq!(ALT_PGDN[0].code, KeyCode::PageDown);
+    }
+
+    #[test]
+    fn alt_pgup_is_pageup() {
+        assert_eq!(ALT_PGUP[0].code, KeyCode::PageUp);
+    }
+
+    #[test]
+    fn alt_home_is_home() {
+        assert_eq!(ALT_HOME[0].code, KeyCode::Home);
+    }
+
+    #[test]
+    fn alt_end_is_end() {
+        assert_eq!(ALT_END[0].code, KeyCode::End);
+    }
+
+    #[test]
+    fn alt_macos_r_is_registered() {
+        assert_eq!(ALT_MACOS_R[0].code, KeyCode::Char('®'));
+    }
+
+    #[test]
+    fn alt_macos_p_is_pi() {
+        assert_eq!(ALT_MACOS_P[0].code, KeyCode::Char('π'));
+    }
+
+    #[test]
+    fn alt_macos_t_is_dagger() {
+        assert_eq!(ALT_MACOS_T[0].code, KeyCode::Char('†'));
+    }
+
+    #[test]
+    fn alt_char_m_is_m() {
+        assert_eq!(ALT_CHAR_M[0].code, KeyCode::Char('m'));
+    }
+
+    #[test]
+    fn alt_char_d_is_d() {
+        assert_eq!(ALT_CHAR_D[0].code, KeyCode::Char('d'));
+    }
+
+    #[test]
+    fn alt_lbrace_is_lbrace() {
+        assert_eq!(ALT_LBRACE[0].code, KeyCode::Char('{'));
+    }
+
+    #[test]
+    fn alt_rbrace_is_rbrace() {
+        assert_eq!(ALT_RBRACE[0].code, KeyCode::Char('}'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CMD_SHIFT constant
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn cmd_shift_contains_super() {
+        assert!(CMD_SHIFT.contains(KeyModifiers::SUPER));
+    }
+
+    #[test]
+    fn cmd_shift_contains_shift() {
+        assert!(CMD_SHIFT.contains(KeyModifiers::SHIFT));
+    }
+
+    #[test]
+    fn cmd_shift_does_not_contain_control() {
+        assert!(!CMD_SHIFT.contains(KeyModifiers::CONTROL));
+    }
+
+    #[test]
+    fn cmd_shift_does_not_contain_alt() {
+        assert!(!CMD_SHIFT.contains(KeyModifiers::ALT));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  display_keys for bindings with alternatives (integration)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn filetree_nav_down_display_keys() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::NavDown).unwrap();
+        assert_eq!(b.display_keys(), "j/↓");
+    }
+
+    #[test]
+    fn viewer_page_down_display_keys() {
+        let b = VIEWER.iter().find(|b| b.action == Action::PageDown).unwrap();
+        let dk = b.display_keys();
+        assert!(dk.contains("J"), "display_keys should contain J: {}", dk);
+        assert!(dk.contains("PgDn"), "display_keys should contain PgDn: {}", dk);
+    }
+
+    #[test]
+    fn input_preset_prompts_display_hides_macos_pi() {
+        let b = INPUT.iter().find(|b| b.action == Action::PresetPrompts).unwrap();
+        let dk = b.display_keys();
+        // π (macos alt) should be hidden
+        assert!(!dk.contains('π'), "display_keys should not contain π: {}", dk);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Matching integration tests
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn global_quit_matches_ctrl_q() {
+        assert!(GLOBAL[0].matches(KeyModifiers::CONTROL, KeyCode::Char('q')));
+    }
+
+    #[test]
+    fn global_quit_does_not_match_plain_q() {
+        assert!(!GLOBAL[0].matches(KeyModifiers::NONE, KeyCode::Char('q')));
+    }
+
+    #[test]
+    fn filetree_nav_down_matches_arrow() {
+        let b = FILE_TREE.iter().find(|b| b.action == Action::NavDown).unwrap();
+        assert!(b.matches(KeyModifiers::NONE, KeyCode::Down));
+    }
+
+    #[test]
+    fn total_binding_count_across_all_arrays() {
+        let total = GLOBAL.len() + WORKTREES.len() + FILE_TREE.len() + VIEWER.len()
+            + EDIT_MODE.len() + SESSION.len() + INPUT.len() + TERMINAL.len()
+            + HEALTH_SHARED.len() + HEALTH_GOD_FILES.len() + HEALTH_DOCS.len()
+            + GIT_ACTIONS.len() + PROJECTS_BROWSE.len() + PICKER.len() + BRANCH_DIALOG.len();
+        // Sanity: we have a non-trivial number of bindings
+        assert!(total > 100, "total bindings should exceed 100, got {}", total);
+    }
+
+    #[test]
+    fn all_arrays_produce_valid_combos() {
+        // Verify all_combos helper doesn't panic on any array
+        let arrays: &[&[Keybinding]] = &[
+            &GLOBAL, &WORKTREES, &FILE_TREE, &VIEWER, &EDIT_MODE,
+            &SESSION, &INPUT, &TERMINAL, &HEALTH_SHARED, &HEALTH_GOD_FILES,
+            &HEALTH_DOCS, &GIT_ACTIONS, &PROJECTS_BROWSE, &PICKER, &BRANCH_DIALOG,
+        ];
+        for arr in arrays {
+            let combos = all_combos(arr);
+            assert!(!combos.is_empty());
+        }
+    }
+}
+

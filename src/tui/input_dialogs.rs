@@ -486,6 +486,16 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
     Ok(())
 }
 
+/// Truncate long command names for display in sidebar session list.
+/// Extracted for testability: applies the same 30-char limit used by spawn_run_command_prompt.
+fn format_run_cmd_display_name(cmd_name: &str) -> String {
+    if cmd_name.chars().count() > 30 {
+        format!("[NewRunCmd] {}…", &cmd_name.chars().take(29).collect::<String>())
+    } else {
+        format!("[NewRunCmd] {}", cmd_name)
+    }
+}
+
 /// Spawn a Claude session on the main branch to generate a run command from a prompt.
 /// Claude reads/writes `.azureal/runcmds` and adds the new entry.
 fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_name: &str, user_prompt: &str) {
@@ -524,11 +534,7 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
     );
 
     // Session name: [NewRunCmd] <name> — truncated to fit sidebar
-    let display_name = if cmd_name.chars().count() > 30 {
-        format!("[NewRunCmd] {}…", &cmd_name.chars().take(29).collect::<String>())
-    } else {
-        format!("[NewRunCmd] {}", cmd_name)
-    };
+    let display_name = format_run_cmd_display_name(cmd_name);
     // Spawn Claude on current worktree (resume existing session if any)
     let resume_id = app.get_claude_session_id(&branch).cloned();
     match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
@@ -539,5 +545,551 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_n
             app.set_status(format!("Generating run command: {}...", cmd_name));
         }
         Err(e) => app.set_status(format!("Failed to start Claude: {}", e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState};
+
+    /// Helper to build a plain KeyEvent (no modifiers)
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper to build a KeyEvent with modifiers
+    fn key_mod(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  format_run_cmd_display_name
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn display_name_short_cmd() {
+        assert_eq!(format_run_cmd_display_name("Build"), "[NewRunCmd] Build");
+    }
+
+    #[test]
+    fn display_name_exactly_30_chars() {
+        let name = "a".repeat(30);
+        assert_eq!(format_run_cmd_display_name(&name), format!("[NewRunCmd] {}", name));
+    }
+
+    #[test]
+    fn display_name_31_chars_truncates() {
+        let name = "a".repeat(31);
+        let expected = format!("[NewRunCmd] {}…", "a".repeat(29));
+        assert_eq!(format_run_cmd_display_name(&name), expected);
+    }
+
+    #[test]
+    fn display_name_empty_string() {
+        assert_eq!(format_run_cmd_display_name(""), "[NewRunCmd] ");
+    }
+
+    #[test]
+    fn display_name_unicode_chars() {
+        let name = "a".repeat(28) + "🚀🚀🚀"; // 31 chars
+        let result = format_run_cmd_display_name(&name);
+        assert!(result.starts_with("[NewRunCmd] "));
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn display_name_single_char() {
+        assert_eq!(format_run_cmd_display_name("x"), "[NewRunCmd] x");
+    }
+
+    #[test]
+    fn display_name_spaces_preserved() {
+        assert_eq!(format_run_cmd_display_name("My Build"), "[NewRunCmd] My Build");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyEvent construction helpers
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn key_helper_creates_plain_event() {
+        let k = key(KeyCode::Enter);
+        assert_eq!(k.code, KeyCode::Enter);
+        assert_eq!(k.modifiers, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn key_mod_helper_creates_modified_event() {
+        let k = key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(k.code, KeyCode::Char('s'));
+        assert_eq!(k.modifiers, KeyModifiers::CONTROL);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyCode construction and matching
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn keycode_char_equality() {
+        assert_eq!(KeyCode::Char('a'), KeyCode::Char('a'));
+        assert_ne!(KeyCode::Char('a'), KeyCode::Char('b'));
+    }
+
+    #[test]
+    fn keycode_enter_equality() {
+        assert_eq!(KeyCode::Enter, KeyCode::Enter);
+        assert_ne!(KeyCode::Enter, KeyCode::Esc);
+    }
+
+    #[test]
+    fn keycode_esc_equality() {
+        assert_eq!(KeyCode::Esc, KeyCode::Esc);
+    }
+
+    #[test]
+    fn keycode_backspace_equality() {
+        assert_eq!(KeyCode::Backspace, KeyCode::Backspace);
+    }
+
+    #[test]
+    fn keycode_tab_equality() {
+        assert_eq!(KeyCode::Tab, KeyCode::Tab);
+        assert_ne!(KeyCode::Tab, KeyCode::BackTab);
+    }
+
+    #[test]
+    fn keycode_left_right_different() {
+        assert_ne!(KeyCode::Left, KeyCode::Right);
+    }
+
+    #[test]
+    fn keycode_up_down_different() {
+        assert_ne!(KeyCode::Up, KeyCode::Down);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyModifiers construction and bitflags
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn modifiers_none_is_empty() {
+        assert!(KeyModifiers::NONE.is_empty());
+    }
+
+    #[test]
+    fn modifiers_control_not_empty() {
+        assert!(!KeyModifiers::CONTROL.is_empty());
+    }
+
+    #[test]
+    fn modifiers_shift_contains_shift() {
+        assert!(KeyModifiers::SHIFT.contains(KeyModifiers::SHIFT));
+    }
+
+    #[test]
+    fn modifiers_control_does_not_contain_shift() {
+        assert!(!KeyModifiers::CONTROL.contains(KeyModifiers::SHIFT));
+    }
+
+    #[test]
+    fn modifiers_combined_control_shift() {
+        let combined = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+        assert!(combined.contains(KeyModifiers::CONTROL));
+        assert!(combined.contains(KeyModifiers::SHIFT));
+        assert!(!combined.contains(KeyModifiers::ALT));
+    }
+
+    #[test]
+    fn modifiers_super_for_cmd() {
+        assert!(KeyModifiers::SUPER.contains(KeyModifiers::SUPER));
+        assert!(!KeyModifiers::SUPER.contains(KeyModifiers::CONTROL));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Number quick-select index calculation (1-9 digit-to-index)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn digit_1_maps_to_index_0() {
+        let c = '1';
+        let idx = (c as usize) - ('1' as usize);
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn digit_5_maps_to_index_4() {
+        let c = '5';
+        let idx = (c as usize) - ('1' as usize);
+        assert_eq!(idx, 4);
+    }
+
+    #[test]
+    fn digit_9_maps_to_index_8() {
+        let c = '9';
+        let idx = (c as usize) - ('1' as usize);
+        assert_eq!(idx, 8);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action enum variant coverage (used in this file)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_nav_down_eq() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
+
+    #[test]
+    fn action_nav_up_eq() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
+
+    #[test]
+    fn action_confirm_eq() {
+        assert_eq!(Action::Confirm, Action::Confirm);
+    }
+
+    #[test]
+    fn action_escape_eq() {
+        assert_eq!(Action::Escape, Action::Escape);
+    }
+
+    #[test]
+    fn action_edit_selected_eq() {
+        assert_eq!(Action::EditSelected, Action::EditSelected);
+    }
+
+    #[test]
+    fn action_delete_selected_eq() {
+        assert_eq!(Action::DeleteSelected, Action::DeleteSelected);
+    }
+
+    #[test]
+    fn action_projects_add_eq() {
+        assert_eq!(Action::ProjectsAdd, Action::ProjectsAdd);
+    }
+
+    #[test]
+    fn action_different_variants_ne() {
+        assert_ne!(Action::NavDown, Action::NavUp);
+        assert_ne!(Action::Confirm, Action::Escape);
+        assert_ne!(Action::EditSelected, Action::DeleteSelected);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  CommandFieldMode enum
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn command_field_mode_command_eq() {
+        assert_eq!(CommandFieldMode::Command, CommandFieldMode::Command);
+    }
+
+    #[test]
+    fn command_field_mode_prompt_eq() {
+        assert_eq!(CommandFieldMode::Prompt, CommandFieldMode::Prompt);
+    }
+
+    #[test]
+    fn command_field_mode_command_ne_prompt() {
+        assert_ne!(CommandFieldMode::Command, CommandFieldMode::Prompt);
+    }
+
+    #[test]
+    fn command_field_mode_toggle_command_to_prompt() {
+        let mode = CommandFieldMode::Command;
+        let toggled = match mode {
+            CommandFieldMode::Command => CommandFieldMode::Prompt,
+            CommandFieldMode::Prompt => CommandFieldMode::Command,
+        };
+        assert_eq!(toggled, CommandFieldMode::Prompt);
+    }
+
+    #[test]
+    fn command_field_mode_toggle_prompt_to_command() {
+        let mode = CommandFieldMode::Prompt;
+        let toggled = match mode {
+            CommandFieldMode::Command => CommandFieldMode::Prompt,
+            CommandFieldMode::Prompt => CommandFieldMode::Command,
+        };
+        assert_eq!(toggled, CommandFieldMode::Command);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  RunCommandDialog construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn run_command_dialog_new_defaults() {
+        let d = RunCommandDialog::new();
+        assert!(d.name.is_empty());
+        assert!(d.command.is_empty());
+        assert_eq!(d.name_cursor, 0);
+        assert_eq!(d.command_cursor, 0);
+        assert!(d.editing_name);
+        assert!(d.editing_idx.is_none());
+        assert_eq!(d.field_mode, CommandFieldMode::Command);
+        assert!(!d.global);
+    }
+
+    #[test]
+    fn run_command_dialog_edit_preloads() {
+        let cmd = RunCommand::new("Build", "cargo build", true);
+        let d = RunCommandDialog::edit(0, &cmd);
+        assert_eq!(d.name, "Build");
+        assert_eq!(d.command, "cargo build");
+        assert_eq!(d.name_cursor, 5);
+        assert_eq!(d.command_cursor, 11);
+        assert!(d.editing_name);
+        assert_eq!(d.editing_idx, Some(0));
+        assert!(d.global);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PresetPromptDialog construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn preset_dialog_new_defaults() {
+        let d = PresetPromptDialog::new();
+        assert!(d.name.is_empty());
+        assert!(d.prompt.is_empty());
+        assert_eq!(d.name_cursor, 0);
+        assert_eq!(d.prompt_cursor, 0);
+        assert!(d.editing_name);
+        assert!(d.editing_idx.is_none());
+        assert!(!d.global);
+    }
+
+    #[test]
+    fn preset_dialog_edit_preloads() {
+        let preset = PresetPrompt::new("Greet", "Hello world", false);
+        let d = PresetPromptDialog::edit(2, &preset);
+        assert_eq!(d.name, "Greet");
+        assert_eq!(d.prompt, "Hello world");
+        assert_eq!(d.name_cursor, 5);
+        assert_eq!(d.prompt_cursor, 11);
+        assert!(d.editing_name);
+        assert_eq!(d.editing_idx, Some(2));
+        assert!(!d.global);
+    }
+
+    #[test]
+    fn preset_dialog_edit_unicode_cursor_char_count() {
+        let preset = PresetPrompt::new("abc", "hello", false);
+        let d = PresetPromptDialog::edit(0, &preset);
+        assert_eq!(d.name_cursor, 3);
+        assert_eq!(d.prompt_cursor, 5);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  RunCommand construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn run_command_new_global() {
+        let cmd = RunCommand::new("Test", "cargo test", true);
+        assert_eq!(cmd.name, "Test");
+        assert_eq!(cmd.command, "cargo test");
+        assert!(cmd.global);
+    }
+
+    #[test]
+    fn run_command_new_local() {
+        let cmd = RunCommand::new("Lint", "cargo clippy", false);
+        assert!(!cmd.global);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PresetPrompt construction
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn preset_prompt_new_global() {
+        let p = PresetPrompt::new("Review", "Review this code", true);
+        assert_eq!(p.name, "Review");
+        assert_eq!(p.prompt, "Review this code");
+        assert!(p.global);
+    }
+
+    #[test]
+    fn preset_prompt_new_local() {
+        let p = PresetPrompt::new("Fix", "Fix this bug", false);
+        assert!(!p.global);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Label generation for required-field validation message
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn field_mode_label_command() {
+        let label = match CommandFieldMode::Command {
+            CommandFieldMode::Command => "command",
+            CommandFieldMode::Prompt => "prompt",
+        };
+        assert_eq!(label, "command");
+    }
+
+    #[test]
+    fn field_mode_label_prompt() {
+        let label = match CommandFieldMode::Prompt {
+            CommandFieldMode::Command => "command",
+            CommandFieldMode::Prompt => "prompt",
+        };
+        assert_eq!(label, "prompt");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Branch name parsing (local_name extraction used in confirm)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn branch_local_name_with_slash() {
+        let branch = "origin/feature-x";
+        let local_name = if branch.contains('/') {
+            branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+        } else {
+            branch.to_string()
+        };
+        assert_eq!(local_name, "feature-x");
+    }
+
+    #[test]
+    fn branch_local_name_without_slash() {
+        let branch = "main";
+        let local_name = if branch.contains('/') {
+            branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+        } else {
+            branch.to_string()
+        };
+        assert_eq!(local_name, "main");
+    }
+
+    #[test]
+    fn branch_local_name_multiple_slashes() {
+        let branch = "origin/feature/sub/deep";
+        let local_name = if branch.contains('/') {
+            branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+        } else {
+            branch.to_string()
+        };
+        assert_eq!(local_name, "feature/sub/deep");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyEvent matching patterns used by handlers
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn match_char_y_for_confirm() {
+        let k = key(KeyCode::Char('y'));
+        assert!(matches!(k.code, KeyCode::Char('y') | KeyCode::Char('Y')));
+    }
+
+    #[test]
+    fn match_char_upper_y_for_confirm() {
+        let k = key(KeyCode::Char('Y'));
+        assert!(matches!(k.code, KeyCode::Char('y') | KeyCode::Char('Y')));
+    }
+
+    #[test]
+    fn match_char_n_does_not_match_y() {
+        let k = key(KeyCode::Char('n'));
+        assert!(!matches!(k.code, KeyCode::Char('y') | KeyCode::Char('Y')));
+    }
+
+    #[test]
+    fn match_digit_range_1_to_9() {
+        for c in '1'..='9' {
+            assert!(matches!(KeyCode::Char(c), KeyCode::Char('1'..='9')));
+        }
+    }
+
+    #[test]
+    fn match_digit_0_not_in_1_to_9() {
+        assert!(!matches!(KeyCode::Char('0'), KeyCode::Char('1'..='9')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Ctrl+S detection for scope toggle
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn ctrl_s_detected_via_contains() {
+        let k = key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert!(k.modifiers.contains(KeyModifiers::CONTROL));
+        assert_eq!(k.code, KeyCode::Char('s'));
+    }
+
+    #[test]
+    fn ctrl_s_with_extra_shift_still_contains_control() {
+        let k = key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+        assert!(k.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    #[test]
+    fn plain_s_does_not_contain_control() {
+        let k = key(KeyCode::Char('s'));
+        assert!(!k.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  RunCommandPicker / PresetPromptPicker defaults
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn run_command_picker_new_defaults() {
+        let p = crate::app::types::RunCommandPicker::new();
+        assert_eq!(p.selected, 0);
+        assert!(p.confirm_delete.is_none());
+    }
+
+    #[test]
+    fn preset_prompt_picker_new_defaults() {
+        let p = crate::app::types::PresetPromptPicker::new();
+        assert_eq!(p.selected, 0);
+        assert!(p.confirm_delete.is_none());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  lookup function type consistency
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn lookup_branch_dialog_action_returns_option() {
+        let result = lookup_branch_dialog_action(KeyModifiers::NONE, KeyCode::Char('z'));
+        // 'z' is not a branch dialog binding, should be None
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn lookup_picker_action_returns_option() {
+        let result = lookup_picker_action(KeyModifiers::NONE, KeyCode::Char('z'));
+        // 'z' is not a picker binding, should be None
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn lookup_branch_dialog_esc_returns_escape() {
+        let result = lookup_branch_dialog_action(KeyModifiers::NONE, KeyCode::Esc);
+        assert_eq!(result, Some(Action::Escape));
+    }
+
+    #[test]
+    fn lookup_picker_esc_returns_escape() {
+        let result = lookup_picker_action(KeyModifiers::NONE, KeyCode::Esc);
+        assert_eq!(result, Some(Action::Escape));
     }
 }

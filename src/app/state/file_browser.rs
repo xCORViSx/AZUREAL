@@ -331,3 +331,686 @@ impl App {
         self.viewer_lines_dirty = true;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::FileTreeEntry;
+    use std::path::PathBuf;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Build a minimal set of file tree entries for testing navigation
+    fn make_entries() -> Vec<FileTreeEntry> {
+        vec![
+            FileTreeEntry { path: PathBuf::from("/root/src"), name: "src".into(), is_dir: true, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/root/src/main.rs"), name: "main.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/root/src/lib.rs"), name: "lib.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/root/docs"), name: "docs".into(), is_dir: true, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/root/README.md"), name: "README.md".into(), is_dir: false, depth: 0, is_hidden: false },
+        ]
+    }
+
+    // ── is_image_extension ──
+
+    #[test]
+    fn test_is_image_png() {
+        assert!(App::is_image_extension(std::path::Path::new("photo.png")));
+    }
+
+    #[test]
+    fn test_is_image_jpg() {
+        assert!(App::is_image_extension(std::path::Path::new("photo.jpg")));
+    }
+
+    #[test]
+    fn test_is_image_jpeg() {
+        assert!(App::is_image_extension(std::path::Path::new("photo.jpeg")));
+    }
+
+    #[test]
+    fn test_is_image_gif() {
+        assert!(App::is_image_extension(std::path::Path::new("anim.gif")));
+    }
+
+    #[test]
+    fn test_is_image_bmp() {
+        assert!(App::is_image_extension(std::path::Path::new("icon.bmp")));
+    }
+
+    #[test]
+    fn test_is_image_webp() {
+        assert!(App::is_image_extension(std::path::Path::new("hero.webp")));
+    }
+
+    #[test]
+    fn test_is_image_ico() {
+        assert!(App::is_image_extension(std::path::Path::new("favicon.ico")));
+    }
+
+    #[test]
+    fn test_is_image_case_insensitive() {
+        assert!(App::is_image_extension(std::path::Path::new("PHOTO.PNG")));
+        assert!(App::is_image_extension(std::path::Path::new("Photo.Jpg")));
+        assert!(App::is_image_extension(std::path::Path::new("ICON.GIF")));
+    }
+
+    #[test]
+    fn test_is_not_image_rs() {
+        assert!(!App::is_image_extension(std::path::Path::new("main.rs")));
+    }
+
+    #[test]
+    fn test_is_not_image_txt() {
+        assert!(!App::is_image_extension(std::path::Path::new("readme.txt")));
+    }
+
+    #[test]
+    fn test_is_not_image_svg() {
+        assert!(!App::is_image_extension(std::path::Path::new("logo.svg")));
+    }
+
+    #[test]
+    fn test_is_not_image_no_extension() {
+        assert!(!App::is_image_extension(std::path::Path::new("Makefile")));
+    }
+
+    #[test]
+    fn test_is_not_image_pdf() {
+        assert!(!App::is_image_extension(std::path::Path::new("doc.pdf")));
+    }
+
+    #[test]
+    fn test_is_not_image_mp4() {
+        assert!(!App::is_image_extension(std::path::Path::new("video.mp4")));
+    }
+
+    #[test]
+    fn test_is_not_image_empty_path() {
+        assert!(!App::is_image_extension(std::path::Path::new("")));
+    }
+
+    // ── copy_dir_recursive ──
+
+    #[test]
+    fn test_copy_dir_recursive_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src_dir");
+        fs::create_dir(&src).unwrap();
+        let dst = tmp.path().join("dst_dir");
+        copy_dir_recursive(&src, &dst).unwrap();
+        assert!(dst.exists());
+        assert!(dst.is_dir());
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_with_files() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("a.txt"), "aaa").unwrap();
+        fs::write(src.join("b.txt"), "bbb").unwrap();
+        let dst = tmp.path().join("dst");
+        copy_dir_recursive(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(dst.join("a.txt")).unwrap(), "aaa");
+        assert_eq!(fs::read_to_string(dst.join("b.txt")).unwrap(), "bbb");
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_nested() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("top.txt"), "top").unwrap();
+        fs::write(src.join("sub/deep.txt"), "deep").unwrap();
+        let dst = tmp.path().join("dst");
+        copy_dir_recursive(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(dst.join("top.txt")).unwrap(), "top");
+        assert_eq!(fs::read_to_string(dst.join("sub/deep.txt")).unwrap(), "deep");
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_preserves_content() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        let large_content = "x".repeat(10000);
+        fs::write(src.join("big.txt"), &large_content).unwrap();
+        let dst = tmp.path().join("dst");
+        copy_dir_recursive(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(dst.join("big.txt")).unwrap(), large_content);
+    }
+
+    // ── file_tree_next ──
+
+    #[test]
+    fn test_file_tree_next_from_first() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(0);
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, Some(1));
+    }
+
+    #[test]
+    fn test_file_tree_next_from_middle() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(2);
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, Some(3));
+    }
+
+    #[test]
+    fn test_file_tree_next_at_end_stays() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        let last = app.file_tree_entries.len() - 1;
+        app.file_tree_selected = Some(last);
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, Some(last));
+    }
+
+    #[test]
+    fn test_file_tree_next_from_none_selects_first() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, Some(0));
+    }
+
+    #[test]
+    fn test_file_tree_next_empty_tree_from_none() {
+        let mut app = App::new();
+        app.file_tree_entries = Vec::new();
+        app.file_tree_selected = None;
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, None);
+    }
+
+    // ── file_tree_prev ──
+
+    #[test]
+    fn test_file_tree_prev_from_last() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(4);
+        app.file_tree_prev();
+        assert_eq!(app.file_tree_selected, Some(3));
+    }
+
+    #[test]
+    fn test_file_tree_prev_from_middle() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(2);
+        app.file_tree_prev();
+        assert_eq!(app.file_tree_selected, Some(1));
+    }
+
+    #[test]
+    fn test_file_tree_prev_at_start_stays() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(0);
+        app.file_tree_prev();
+        assert_eq!(app.file_tree_selected, Some(0));
+    }
+
+    #[test]
+    fn test_file_tree_prev_from_none_does_nothing() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.file_tree_prev();
+        assert_eq!(app.file_tree_selected, None);
+    }
+
+    // ── file_tree_first_sibling ──
+
+    #[test]
+    fn test_first_sibling_from_last_root_entry() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/a"), name: "a".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/b"), name: "b".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/c"), name: "c".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(2); // "c"
+        app.file_tree_first_sibling();
+        assert_eq!(app.file_tree_selected, Some(0)); // "a"
+    }
+
+    #[test]
+    fn test_first_sibling_already_at_first() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/a"), name: "a".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/b"), name: "b".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_first_sibling();
+        assert_eq!(app.file_tree_selected, Some(0)); // stays
+    }
+
+    #[test]
+    fn test_first_sibling_none_selected() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.file_tree_first_sibling();
+        assert_eq!(app.file_tree_selected, None);
+    }
+
+    // ── file_tree_last_sibling ──
+
+    #[test]
+    fn test_last_sibling_from_first_root_entry() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/a"), name: "a".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/b"), name: "b".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/c"), name: "c".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0); // "a"
+        app.file_tree_last_sibling();
+        assert_eq!(app.file_tree_selected, Some(2)); // "c"
+    }
+
+    #[test]
+    fn test_last_sibling_already_at_last() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/a"), name: "a".into(), is_dir: false, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/b"), name: "b".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(1);
+        app.file_tree_last_sibling();
+        assert_eq!(app.file_tree_selected, Some(1)); // stays
+    }
+
+    #[test]
+    fn test_last_sibling_none_selected() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.file_tree_last_sibling();
+        assert_eq!(app.file_tree_selected, None);
+    }
+
+    // ── file_tree_first/last sibling with nested entries ──
+
+    #[test]
+    fn test_first_sibling_nested_children() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/src"), name: "src".into(), is_dir: true, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/a.rs"), name: "a.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/b.rs"), name: "b.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/c.rs"), name: "c.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/docs"), name: "docs".into(), is_dir: true, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(3); // c.rs
+        app.file_tree_first_sibling();
+        assert_eq!(app.file_tree_selected, Some(1)); // a.rs
+    }
+
+    #[test]
+    fn test_last_sibling_nested_children() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/r/src"), name: "src".into(), is_dir: true, depth: 0, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/a.rs"), name: "a.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/b.rs"), name: "b.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/src/c.rs"), name: "c.rs".into(), is_dir: false, depth: 1, is_hidden: false },
+            FileTreeEntry { path: PathBuf::from("/r/docs"), name: "docs".into(), is_dir: true, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(1); // a.rs
+        app.file_tree_last_sibling();
+        assert_eq!(app.file_tree_selected, Some(3)); // c.rs
+    }
+
+    // ── clear_viewer ──
+
+    #[test]
+    fn test_clear_viewer_resets_content() {
+        let mut app = App::new();
+        app.viewer_content = Some("hello".into());
+        app.viewer_path = Some(PathBuf::from("/test.rs"));
+        app.viewer_mode = ViewerMode::File;
+        app.viewer_scroll = 42;
+        app.clear_viewer();
+        assert!(app.viewer_content.is_none());
+        assert!(app.viewer_path.is_none());
+        assert_eq!(app.viewer_mode, ViewerMode::Empty);
+        assert_eq!(app.viewer_scroll, 0);
+        assert!(app.viewer_lines_dirty);
+    }
+
+    #[test]
+    fn test_clear_viewer_on_already_empty() {
+        let mut app = App::new();
+        app.clear_viewer();
+        assert!(app.viewer_content.is_none());
+        assert!(app.viewer_path.is_none());
+        assert_eq!(app.viewer_mode, ViewerMode::Empty);
+    }
+
+    // ── load_file_into_viewer ──
+
+    #[test]
+    fn test_load_file_into_viewer_no_selection() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.load_file_into_viewer();
+        // Should do nothing — viewer remains empty
+        assert!(app.viewer_content.is_none());
+    }
+
+    #[test]
+    fn test_load_file_into_viewer_dir_selected() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(0); // "src" is a dir
+        app.load_file_into_viewer();
+        // Should do nothing — can't view a directory
+        assert!(app.viewer_content.is_none());
+    }
+
+    // ── load_file_by_path ──
+
+    #[test]
+    fn test_load_file_by_path_text_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("hello.rs");
+        fs::write(&file, "fn main() {}").unwrap();
+        let mut app = App::new();
+        app.load_file_by_path(&file);
+        assert_eq!(app.viewer_content.as_deref(), Some("fn main() {}"));
+        assert_eq!(app.viewer_path.as_deref(), Some(file.as_path()));
+        assert_eq!(app.viewer_mode, ViewerMode::File);
+        assert_eq!(app.viewer_scroll, 0);
+        assert!(app.viewer_lines_dirty);
+    }
+
+    #[test]
+    fn test_load_file_by_path_nonexistent() {
+        let mut app = App::new();
+        app.load_file_by_path(std::path::Path::new("/nonexistent/file.rs"));
+        assert!(app.viewer_content.as_ref().unwrap().contains("Error reading file"));
+        assert_eq!(app.viewer_mode, ViewerMode::File);
+    }
+
+    #[test]
+    fn test_load_file_by_path_empty_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("empty.rs");
+        fs::write(&file, "").unwrap();
+        let mut app = App::new();
+        app.load_file_by_path(&file);
+        assert_eq!(app.viewer_content.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn test_load_file_by_path_resets_scroll() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("code.rs");
+        fs::write(&file, "content").unwrap();
+        let mut app = App::new();
+        app.viewer_scroll = 999;
+        app.load_file_by_path(&file);
+        assert_eq!(app.viewer_scroll, 0);
+    }
+
+    #[test]
+    fn test_load_file_by_path_clears_image_state() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("code.rs");
+        fs::write(&file, "text content").unwrap();
+        let mut app = App::new();
+        app.load_file_by_path(&file);
+        assert!(app.viewer_image_state.is_none());
+    }
+
+    // ── file_tree_exec_add (filesystem operations) ──
+
+    #[test]
+    fn test_file_tree_exec_add_creates_file() {
+        let tmp = TempDir::new().unwrap();
+        let dir_path = tmp.path().to_path_buf();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: dir_path.clone(), name: "root".into(), is_dir: true, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        // Set up worktree so refresh works (it needs current_worktree)
+        app.file_tree_exec_add("newfile.txt");
+        assert!(dir_path.join("newfile.txt").exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_add_creates_dir_with_trailing_slash() {
+        let tmp = TempDir::new().unwrap();
+        let dir_path = tmp.path().to_path_buf();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: dir_path.clone(), name: "root".into(), is_dir: true, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_exec_add("newdir/");
+        assert!(dir_path.join("newdir").is_dir());
+    }
+
+    #[test]
+    fn test_file_tree_exec_add_no_selection() {
+        let mut app = App::new();
+        app.file_tree_selected = None;
+        app.file_tree_exec_add("test.txt"); // should not crash
+    }
+
+    // ── file_tree_exec_rename ──
+
+    #[test]
+    fn test_file_tree_exec_rename_renames_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("old.txt");
+        fs::write(&file, "content").unwrap();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: file.clone(), name: "old.txt".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_exec_rename("new.txt");
+        assert!(!file.exists());
+        assert!(tmp.path().join("new.txt").exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_rename_existing_target() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("old.txt");
+        fs::write(&file, "old").unwrap();
+        fs::write(tmp.path().join("new.txt"), "new").unwrap();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: file.clone(), name: "old.txt".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_exec_rename("new.txt");
+        // Should set status about already existing
+        assert!(app.status_message.as_ref().unwrap().contains("Already exists"));
+        // Original should still exist
+        assert!(file.exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_rename_no_selection() {
+        let mut app = App::new();
+        app.file_tree_selected = None;
+        app.file_tree_exec_rename("whatever"); // should not crash
+    }
+
+    // ── file_tree_exec_delete ──
+
+    #[test]
+    fn test_file_tree_exec_delete_removes_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("doomed.txt");
+        fs::write(&file, "bye").unwrap();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: file.clone(), name: "doomed.txt".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_exec_delete();
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_delete_removes_dir() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("bye_dir");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("inside.txt"), "").unwrap();
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: dir.clone(), name: "bye_dir".into(), is_dir: true, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_exec_delete();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_delete_no_selection() {
+        let mut app = App::new();
+        app.file_tree_selected = None;
+        app.file_tree_exec_delete(); // should not crash
+    }
+
+    // ── file_tree_exec_copy_to ──
+
+    #[test]
+    fn test_file_tree_exec_copy_to_file() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("source.txt");
+        fs::write(&src, "data").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_copy_to(&src, &target_dir);
+        assert!(target_dir.join("source.txt").exists());
+        assert_eq!(fs::read_to_string(target_dir.join("source.txt")).unwrap(), "data");
+        // Source should still exist (it's a copy)
+        assert!(src.exists());
+    }
+
+    #[test]
+    fn test_file_tree_exec_copy_to_existing_target() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("file.txt");
+        fs::write(&src, "original").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        fs::write(target_dir.join("file.txt"), "existing").unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_copy_to(&src, &target_dir);
+        assert!(app.status_message.as_ref().unwrap().contains("Already exists"));
+    }
+
+    #[test]
+    fn test_file_tree_exec_copy_to_expands_target_dir() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("file.txt");
+        fs::write(&src, "data").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_copy_to(&src, &target_dir);
+        assert!(app.file_tree_expanded.contains(&target_dir));
+    }
+
+    // ── file_tree_exec_move_to ──
+
+    #[test]
+    fn test_file_tree_exec_move_to_file() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("moving.txt");
+        fs::write(&src, "data").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_move_to(&src, &target_dir);
+        assert!(!src.exists()); // source removed
+        assert!(target_dir.join("moving.txt").exists()); // target created
+    }
+
+    #[test]
+    fn test_file_tree_exec_move_to_existing_target() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("file.txt");
+        fs::write(&src, "source").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        fs::write(target_dir.join("file.txt"), "existing").unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_move_to(&src, &target_dir);
+        assert!(app.status_message.as_ref().unwrap().contains("Already exists"));
+        assert!(src.exists()); // source should still exist
+    }
+
+    #[test]
+    fn test_file_tree_exec_move_to_expands_target_dir() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("file.txt");
+        fs::write(&src, "data").unwrap();
+        let target_dir = tmp.path().join("dest");
+        fs::create_dir(&target_dir).unwrap();
+        let mut app = App::new();
+        app.file_tree_exec_move_to(&src, &target_dir);
+        assert!(app.file_tree_expanded.contains(&target_dir));
+    }
+
+    // ── Navigation edge cases ──
+
+    #[test]
+    fn test_file_tree_next_single_entry() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/only"), name: "only".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_next();
+        assert_eq!(app.file_tree_selected, Some(0)); // can't go past
+    }
+
+    #[test]
+    fn test_file_tree_prev_single_entry() {
+        let mut app = App::new();
+        app.file_tree_entries = vec![
+            FileTreeEntry { path: PathBuf::from("/only"), name: "only".into(), is_dir: false, depth: 0, is_hidden: false },
+        ];
+        app.file_tree_selected = Some(0);
+        app.file_tree_prev();
+        assert_eq!(app.file_tree_selected, Some(0)); // can't go before
+    }
+
+    #[test]
+    fn test_toggle_file_tree_dir_no_selection() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = None;
+        app.toggle_file_tree_dir(); // should not crash
+    }
+
+    #[test]
+    fn test_toggle_file_tree_dir_on_file() {
+        let mut app = App::new();
+        app.file_tree_entries = make_entries();
+        app.file_tree_selected = Some(4); // README.md is a file
+        app.toggle_file_tree_dir(); // should do nothing since it's not a dir
+        // No crash, expanded set unchanged
+    }
+}

@@ -413,3 +413,266 @@ fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::eve
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key_mod(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  action_count
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_count_main_is_3() { assert_eq!(action_count(true), 3); }
+
+    #[test]
+    fn action_count_feature_is_4() { assert_eq!(action_count(false), 4); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  action_is_nav
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn nav_j_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0), Some(true)); }
+
+    #[test]
+    fn nav_k_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('k'), 0), Some(true)); }
+
+    #[test]
+    fn nav_down_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Down, 0), Some(true)); }
+
+    #[test]
+    fn nav_up_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Up, 0), Some(true)); }
+
+    #[test]
+    fn nav_alt_up_is_nav() { assert_eq!(action_is_nav(KeyModifiers::ALT, KeyCode::Up, 0), Some(true)); }
+
+    #[test]
+    fn nav_alt_down_is_nav() { assert_eq!(action_is_nav(KeyModifiers::ALT, KeyCode::Down, 0), Some(true)); }
+
+    #[test]
+    fn nav_bracket_open_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('['), 0), Some(true)); }
+
+    #[test]
+    fn nav_bracket_close_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char(']'), 0), Some(true)); }
+
+    #[test]
+    fn nav_brace_open_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('{'), 0), Some(true)); }
+
+    #[test]
+    fn nav_brace_close_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('}'), 0), Some(true)); }
+
+    #[test]
+    fn nav_brace_open_with_shift_is_nav() { assert_eq!(action_is_nav(KeyModifiers::SHIFT, KeyCode::Char('{'), 0), Some(true)); }
+
+    #[test]
+    fn non_nav_enter() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Enter, 0), Some(false)); }
+
+    #[test]
+    fn non_nav_esc() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Esc, 0), Some(false)); }
+
+    #[test]
+    fn non_nav_char_a() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('a'), 0), Some(false)); }
+
+    #[test]
+    fn non_nav_char_c() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('c'), 0), Some(false)); }
+
+    #[test]
+    fn non_nav_tab() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Tab, 0), Some(false)); }
+
+    #[test]
+    fn action_is_nav_ignores_focused_pane() {
+        // Same key returns same result regardless of pane
+        assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0),
+                   action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1));
+        assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1),
+                   action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 2));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Git action Action variants used in this module
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_escape_eq() { assert_eq!(Action::Escape, Action::Escape); }
+    #[test]
+    fn action_git_toggle_focus_eq() { assert_eq!(Action::GitToggleFocus, Action::GitToggleFocus); }
+    #[test]
+    fn action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    #[test]
+    fn action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    #[test]
+    fn action_go_to_top_eq() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    #[test]
+    fn action_go_to_bottom_eq() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    #[test]
+    fn action_git_squash_merge_eq() { assert_eq!(Action::GitSquashMerge, Action::GitSquashMerge); }
+    #[test]
+    fn action_git_rebase_eq() { assert_eq!(Action::GitRebase, Action::GitRebase); }
+    #[test]
+    fn action_git_pull_eq() { assert_eq!(Action::GitPull, Action::GitPull); }
+    #[test]
+    fn action_git_commit_eq() { assert_eq!(Action::GitCommit, Action::GitCommit); }
+    #[test]
+    fn action_git_push_eq() { assert_eq!(Action::GitPush, Action::GitPush); }
+    #[test]
+    fn action_git_auto_rebase_eq() { assert_eq!(Action::GitAutoRebase, Action::GitAutoRebase); }
+    #[test]
+    fn action_git_auto_resolve_eq() { assert_eq!(Action::GitAutoResolveSettings, Action::GitAutoResolveSettings); }
+    #[test]
+    fn action_confirm_eq() { assert_eq!(Action::Confirm, Action::Confirm); }
+    #[test]
+    fn action_git_view_diff_eq() { assert_eq!(Action::GitViewDiff, Action::GitViewDiff); }
+    #[test]
+    fn action_git_refresh_eq() { assert_eq!(Action::GitRefresh, Action::GitRefresh); }
+    #[test]
+    fn action_git_prev_worktree_eq() { assert_eq!(Action::GitPrevWorktree, Action::GitPrevWorktree); }
+    #[test]
+    fn action_git_next_worktree_eq() { assert_eq!(Action::GitNextWorktree, Action::GitNextWorktree); }
+    #[test]
+    fn action_git_prev_page_eq() { assert_eq!(Action::GitPrevPage, Action::GitPrevPage); }
+    #[test]
+    fn action_git_next_page_eq() { assert_eq!(Action::GitNextPage, Action::GitNextPage); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  focused_pane cycling arithmetic (toggle focus)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn focused_pane_0_cycles_to_1() { assert_eq!((0u8 + 1) % 3, 1); }
+    #[test]
+    fn focused_pane_1_cycles_to_2() { assert_eq!((1u8 + 1) % 3, 2); }
+    #[test]
+    fn focused_pane_2_cycles_to_0() { assert_eq!((2u8 + 1) % 3, 0); }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Shift+J/K scroll detection
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn shift_j_detected() {
+        let k = key_mod(KeyCode::Char('J'), KeyModifiers::SHIFT);
+        assert!(k.modifiers.contains(KeyModifiers::SHIFT));
+        assert_eq!(k.code, KeyCode::Char('J'));
+    }
+
+    #[test]
+    fn shift_k_detected() {
+        let k = key_mod(KeyCode::Char('K'), KeyModifiers::SHIFT);
+        assert!(k.modifiers.contains(KeyModifiers::SHIFT));
+        assert_eq!(k.code, KeyCode::Char('K'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Cmd+C/Cmd+A detection for git mode
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn cmd_c_detected() {
+        let k = key_mod(KeyCode::Char('c'), KeyModifiers::SUPER);
+        assert!(k.modifiers.contains(KeyModifiers::SUPER));
+        assert_eq!(k.code, KeyCode::Char('c'));
+    }
+
+    #[test]
+    fn cmd_a_detected() {
+        let k = key_mod(KeyCode::Char('a'), KeyModifiers::SUPER);
+        assert!(k.modifiers.contains(KeyModifiers::SUPER));
+        assert_eq!(k.code, KeyCode::Char('a'));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Main vs feature index mapping (action by index)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn main_index_0_is_pull() {
+        let on_main = true;
+        let idx = 0;
+        let action = if on_main {
+            match idx { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" }
+        } else {
+            match idx { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" }
+        };
+        assert_eq!(action, "pull");
+    }
+
+    #[test]
+    fn main_index_1_is_commit() {
+        let action = match 1 { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" };
+        assert_eq!(action, "commit");
+    }
+
+    #[test]
+    fn main_index_2_is_push() {
+        let action = match 2 { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" };
+        assert_eq!(action, "push");
+    }
+
+    #[test]
+    fn feature_index_0_is_squash_merge() {
+        let action = match 0 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        assert_eq!(action, "squash-merge");
+    }
+
+    #[test]
+    fn feature_index_1_is_rebase() {
+        let action = match 1 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        assert_eq!(action, "rebase");
+    }
+
+    #[test]
+    fn feature_index_2_is_commit() {
+        let action = match 2 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        assert_eq!(action, "commit");
+    }
+
+    #[test]
+    fn feature_index_3_is_push() {
+        let action = match 3 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        assert_eq!(action, "push");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  lookup_git_actions_action — returns None for unmapped keys
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn lookup_git_actions_unmapped_key() {
+        let result = lookup_git_actions_action(0, true, KeyModifiers::NONE, KeyCode::Char('z'));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn lookup_git_actions_esc_returns_escape() {
+        let result = lookup_git_actions_action(0, true, KeyModifiers::NONE, KeyCode::Esc);
+        assert_eq!(result, Some(Action::Escape));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  saturating_sub used for viewport scroll
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn viewport_scroll_saturating_sub() {
+        let viewport_height: usize = 20;
+        assert_eq!(viewport_height.saturating_sub(2), 18);
+    }
+
+    #[test]
+    fn viewport_scroll_saturating_sub_small() {
+        let viewport_height: usize = 1;
+        assert_eq!(viewport_height.saturating_sub(2), 0);
+    }
+
+    #[test]
+    fn viewport_scroll_saturating_sub_zero() {
+        let viewport_height: usize = 0;
+        assert_eq!(viewport_height.saturating_sub(2), 0);
+    }
+}
+

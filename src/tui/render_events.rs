@@ -818,4 +818,887 @@ mod tests {
         render_ask_user_question(&mut lines, &input, 20);
         assert!(!lines.is_empty(), "Should produce output even at narrow width");
     }
+
+    // ── Helper to flatten Line spans into a single string ───────────────
+
+    fn lines_to_text(lines: &[Line<'static>]) -> Vec<String> {
+        lines.iter().map(|l| {
+            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+        }).collect()
+    }
+
+    // ── render_ask_user_question extended tests ─────────────────────────
+
+    /// Multiple questions each get their own box.
+    #[test]
+    fn test_render_ask_multi_questions_separate_boxes() {
+        let input = json!({
+            "questions": [
+                {"question": "First?", "options": [{"label": "A", "description": ""}], "multiSelect": false},
+                {"question": "Second?", "options": [{"label": "B", "description": ""}], "multiSelect": false}
+            ]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        // Should have two top borders (one per question)
+        let top_borders = text.iter().filter(|l| l.contains('┌') && l.contains('┐')).count();
+        assert_eq!(top_borders, 2, "Each question should have its own top border");
+    }
+
+    /// Question with no description shows only label.
+    #[test]
+    fn test_render_ask_no_description() {
+        let input = json!({
+            "questions": [{
+                "question": "Pick?",
+                "options": [{"label": "Yes"}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("1. Yes")));
+    }
+
+    /// Option with empty description is handled.
+    #[test]
+    fn test_render_ask_empty_description() {
+        let input = json!({
+            "questions": [{
+                "question": "Q?",
+                "options": [{"label": "Opt", "description": ""}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("1. Opt")));
+    }
+
+    /// Questions with null options field produces no numbered options.
+    #[test]
+    fn test_render_ask_null_options() {
+        let input = json!({
+            "questions": [{"question": "Free form?", "options": null, "multiSelect": false}]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Free form?")));
+        // "Other" should still be present with number 1
+        assert!(text.iter().any(|l| l.contains("1. Other")));
+    }
+
+    /// "Other" option number is correct with 5 options.
+    #[test]
+    fn test_render_ask_other_number_five_options() {
+        let options: Vec<serde_json::Value> = (1..=5)
+            .map(|i| json!({"label": format!("Opt{}", i), "description": ""}))
+            .collect();
+        let input = json!({
+            "questions": [{"question": "Q?", "options": options, "multiSelect": false}]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("6. Other")));
+    }
+
+    /// Very wide width doesn't cause issues.
+    #[test]
+    fn test_render_ask_wide_width() {
+        let input = json!({
+            "questions": [{"question": "Q?", "options": [{"label": "A", "description": "desc"}], "multiSelect": false}]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 500);
+        assert!(!lines.is_empty());
+    }
+
+    /// Width of 4 (minimum before box_width = 0).
+    #[test]
+    fn test_render_ask_minimum_width() {
+        let input = json!({
+            "questions": [{"question": "Q?", "options": [], "multiSelect": false}]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 4);
+        assert!(!lines.is_empty());
+    }
+
+    /// Width of 0 should not panic.
+    #[test]
+    fn test_render_ask_zero_width() {
+        let input = json!({
+            "questions": [{"question": "Q?", "options": [], "multiSelect": false}]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 0);
+        assert!(!lines.is_empty());
+    }
+
+    /// Unicode in option labels.
+    #[test]
+    fn test_render_ask_unicode_labels() {
+        let input = json!({
+            "questions": [{
+                "question": "言語?",
+                "options": [{"label": "日本語", "description": "Japanese"}, {"label": "中文", "description": "Chinese"}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("1. 日本語")));
+        assert!(text.iter().any(|l| l.contains("2. 中文")));
+    }
+
+    /// Long description wraps within box.
+    #[test]
+    fn test_render_ask_long_description_wraps() {
+        let long_desc = "This is a very long description that should definitely wrap across multiple lines within the constrained box width boundary.";
+        let input = json!({
+            "questions": [{
+                "question": "Q?",
+                "options": [{"label": "A", "description": long_desc}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 60);
+        let text = lines_to_text(&lines);
+        // The description should be split across multiple lines
+        let desc_lines: Vec<&String> = text.iter().filter(|l| l.contains("description") || l.contains("definitely") || l.contains("boundary")).collect();
+        assert!(!desc_lines.is_empty(), "Long description should be present");
+    }
+
+    /// Missing label falls back to "?".
+    #[test]
+    fn test_render_ask_missing_label() {
+        let input = json!({
+            "questions": [{
+                "question": "Q?",
+                "options": [{"description": "no label here"}],
+                "multiSelect": false
+            }]
+        });
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_ask_user_question(&mut lines, &input, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("1. ?")));
+    }
+
+    // ── render_init tests ───────────────────────────────────────────────
+
+    /// render_init produces expected structure with model and cwd.
+    #[test]
+    fn test_render_init_basic() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_init(&mut lines, "claude-opus-4-20250514", "/home/user/project");
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Session Started")));
+        assert!(text.iter().any(|l| l.contains("claude-opus-4-20250514")));
+        assert!(text.iter().any(|l| l.contains("/home/user/project")));
+    }
+
+    /// render_init with empty model string.
+    #[test]
+    fn test_render_init_empty_model() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_init(&mut lines, "", "/path");
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Model:")));
+    }
+
+    /// render_init with empty cwd.
+    #[test]
+    fn test_render_init_empty_cwd() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_init(&mut lines, "model", "");
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Path:")));
+    }
+
+    /// render_init produces exactly 5 lines (empty, header, model, path, empty).
+    #[test]
+    fn test_render_init_line_count() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_init(&mut lines, "model", "/cwd");
+        assert_eq!(lines.len(), 5);
+    }
+
+    /// render_init with unicode model name.
+    #[test]
+    fn test_render_init_unicode_model() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_init(&mut lines, "テスト-model", "/path");
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("テスト-model")));
+    }
+
+    // ── render_hook tests ───────────────────────────────────────────────
+
+    /// Hook with output renders name and output.
+    #[test]
+    fn test_render_hook_with_output() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "pre-commit", "All checks passed", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("pre-commit") && l.contains("All checks passed")));
+    }
+
+    /// Hook with empty output renders only name.
+    #[test]
+    fn test_render_hook_empty_output() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "post-checkout", "", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("post-checkout")));
+    }
+
+    /// Hook with whitespace-only output renders only name.
+    #[test]
+    fn test_render_hook_whitespace_output() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "hook-name", "   \t  ", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("hook-name")));
+        // Whitespace-only is trimmed, so output is treated as empty
+    }
+
+    /// Hook with multiline output only shows first line.
+    #[test]
+    fn test_render_hook_multiline_output() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "lint", "Line 1\nLine 2\nLine 3", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Line 1")));
+    }
+
+    /// Hook with narrow width wraps output.
+    #[test]
+    fn test_render_hook_narrow_wraps() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "h", "A long output string that should wrap", 20);
+        assert!(lines.len() >= 1);
+    }
+
+    /// Hook name contains special chars.
+    #[test]
+    fn test_render_hook_special_name() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_hook(&mut lines, "pre-push/main", "ok", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("pre-push/main")));
+    }
+
+    // ── render_command tests ────────────────────────────────────────────
+
+    /// Command renders with / prefix.
+    #[test]
+    fn test_render_command_basic() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_command(&mut lines, "compact");
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("/ ") && l.contains("compact")));
+    }
+
+    /// Command produces exactly 2 lines (empty + command).
+    #[test]
+    fn test_render_command_line_count() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_command(&mut lines, "test");
+        assert_eq!(lines.len(), 2);
+    }
+
+    /// Command with empty name.
+    #[test]
+    fn test_render_command_empty_name() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_command(&mut lines, "");
+        assert_eq!(lines.len(), 2);
+    }
+
+    // ── render_user_message tests ───────────────────────────────────────
+
+    /// User message renders with "You" header.
+    #[test]
+    fn test_render_user_message_basic() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "Hello Claude", 40, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("You")));
+        assert!(text.iter().any(|l| l.contains("Hello Claude")));
+    }
+
+    /// User message renders bottom border.
+    #[test]
+    fn test_render_user_message_bottom_border() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "test", 40, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains('┘')));
+    }
+
+    /// User message with empty content.
+    #[test]
+    fn test_render_user_message_empty() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "", 40, 80);
+        assert!(!lines.is_empty());
+    }
+
+    /// User message wraps long text.
+    #[test]
+    fn test_render_user_message_wraps() {
+        let long = "A ".repeat(100);
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, &long, 40, 80);
+        // Should have more lines due to wrapping
+        assert!(lines.len() > 5);
+    }
+
+    /// User message with unicode.
+    #[test]
+    fn test_render_user_message_unicode() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "こんにちは世界", 40, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("こんにちは世界")));
+    }
+
+    /// User message with newlines.
+    #[test]
+    fn test_render_user_message_newlines() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "Line1\nLine2\nLine3", 40, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Line1")));
+    }
+
+    /// User message at minimum bubble width.
+    #[test]
+    fn test_render_user_message_min_bubble() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_user_message(&mut lines, "Hi", 5, 10);
+        assert!(!lines.is_empty());
+    }
+
+    // ── render_complete tests ───────────────────────────────────────────
+
+    /// Successful completion renders green Completed.
+    #[test]
+    fn test_render_complete_success() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 5000, 0.0123, true);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Completed")));
+        assert!(text.iter().any(|l| l.contains("5.0s")));
+        assert!(text.iter().any(|l| l.contains("$0.0123")));
+    }
+
+    /// Failed completion renders red Failed.
+    #[test]
+    fn test_render_complete_failure() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 1000, 0.05, false);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Failed")));
+    }
+
+    /// Zero duration.
+    #[test]
+    fn test_render_complete_zero_duration() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 0, 0.0, true);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("0.0s")));
+    }
+
+    /// Large duration in milliseconds.
+    #[test]
+    fn test_render_complete_large_duration() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 120000, 1.5, true);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("120.0s")));
+    }
+
+    /// Zero cost.
+    #[test]
+    fn test_render_complete_zero_cost() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 100, 0.0, true);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("$0.0000")));
+    }
+
+    /// Produces exactly 3 lines (empty, content, empty).
+    #[test]
+    fn test_render_complete_line_count() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_complete(&mut lines, 1000, 0.01, true);
+        assert_eq!(lines.len(), 3);
+    }
+
+    // ── render_plan_approval tests ──────────────────────────────────────
+
+    /// Plan approval renders all 5 options.
+    #[test]
+    fn test_render_plan_approval_all_options() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan_approval(&mut lines, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("1. Yes, clear context")));
+        assert!(text.iter().any(|l| l.contains("2. Yes, and manually")));
+        assert!(text.iter().any(|l| l.contains("3. Yes, and bypass")));
+        assert!(text.iter().any(|l| l.contains("4. Yes, manually")));
+        assert!(text.iter().any(|l| l.contains("5. Type to tell")));
+    }
+
+    /// Plan approval header present.
+    #[test]
+    fn test_render_plan_approval_header() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan_approval(&mut lines, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Awaiting Plan Approval")));
+    }
+
+    /// Plan approval has box borders.
+    #[test]
+    fn test_render_plan_approval_borders() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan_approval(&mut lines, 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains('┌')));
+        assert!(text.iter().any(|l| l.contains('└')));
+    }
+
+    /// Plan approval at narrow width doesn't panic.
+    #[test]
+    fn test_render_plan_approval_narrow() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan_approval(&mut lines, 10);
+        assert!(!lines.is_empty());
+    }
+
+    /// Plan approval at zero width doesn't panic.
+    #[test]
+    fn test_render_plan_approval_zero_width() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan_approval(&mut lines, 0);
+        assert!(!lines.is_empty());
+    }
+
+    // ── render_plan tests ───────────────────────────────────────────────
+
+    /// Plan renders with double-line box borders.
+    #[test]
+    fn test_render_plan_borders() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "My Plan", "Step 1\nStep 2", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains('╔')));
+        assert!(text.iter().any(|l| l.contains('╚')));
+    }
+
+    /// Plan renders name in header.
+    #[test]
+    fn test_render_plan_name_in_header() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "Refactor", "content", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("PLAN MODE: Refactor")));
+    }
+
+    /// Plan with empty content.
+    #[test]
+    fn test_render_plan_empty_content() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "Empty", "", 80);
+        assert!(!lines.is_empty());
+    }
+
+    /// Plan with markdown headers.
+    #[test]
+    fn test_render_plan_markdown_headers() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "# Title\n## Subtitle\n### Section", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Title")));
+        assert!(text.iter().any(|l| l.contains("Subtitle")));
+        assert!(text.iter().any(|l| l.contains("Section")));
+    }
+
+    /// Plan with bullet list.
+    #[test]
+    fn test_render_plan_bullets() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "- Item one\n- Item two", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Item one")));
+        assert!(text.iter().any(|l| l.contains("Item two")));
+    }
+
+    /// Plan with numbered list.
+    #[test]
+    fn test_render_plan_numbered_list() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "1. First\n2. Second", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("First")));
+        assert!(text.iter().any(|l| l.contains("Second")));
+    }
+
+    /// Plan with code block.
+    #[test]
+    fn test_render_plan_code_block() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "```rust\nfn main() {}\n```", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("rust")));
+        assert!(text.iter().any(|l| l.contains("fn main()")));
+    }
+
+    /// Plan with blockquote.
+    #[test]
+    fn test_render_plan_blockquote() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "> A quoted line", 80);
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("A quoted line")));
+    }
+
+    /// Plan at very narrow width.
+    #[test]
+    fn test_render_plan_narrow() {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        render_plan(&mut lines, "P", "Some content here", 10);
+        assert!(!lines.is_empty());
+    }
+
+    // ── render_display_events integration tests ─────────────────────────
+
+    /// Empty events produces empty output.
+    #[test]
+    fn test_render_events_empty() {
+        let highlighter = SyntaxHighlighter::new();
+        let (lines, anim, bubbles, clicks) = render_display_events(
+            &[], 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(lines.is_empty());
+        assert!(anim.is_empty());
+        assert!(bubbles.is_empty());
+        assert!(clicks.is_empty());
+    }
+
+    /// Single Init event renders session started.
+    #[test]
+    fn test_render_events_init() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Init {
+            _session_id: "s1".into(),
+            cwd: "/project".into(),
+            model: "claude-opus-4-20250514".into(),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Session Started")));
+    }
+
+    /// Duplicate Init events are deduplicated.
+    #[test]
+    fn test_render_events_dedup_init() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init { _session_id: "s1".into(), cwd: "/a".into(), model: "m".into() },
+            DisplayEvent::Init { _session_id: "s2".into(), cwd: "/b".into(), model: "m2".into() },
+        ];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        // Only one "Session Started" should appear
+        let count = text.iter().filter(|l| l.contains("Session Started")).count();
+        assert_eq!(count, 1);
+    }
+
+    /// UserMessage renders with bubble position tracked.
+    #[test]
+    fn test_render_events_user_message_bubble() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::UserMessage {
+            _uuid: "u1".into(),
+            content: "Hello".into(),
+        }];
+        let (lines, _, bubbles, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(!lines.is_empty());
+        assert_eq!(bubbles.len(), 1);
+        assert!(bubbles[0].1, "User message bubble should be marked as user");
+    }
+
+    /// AssistantText renders with bubble position tracked.
+    #[test]
+    fn test_render_events_assistant_bubble() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::AssistantText {
+            _uuid: "a1".into(),
+            _message_id: "m1".into(),
+            text: "I'll help you.".into(),
+        }];
+        let (lines, _, bubbles, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(!lines.is_empty());
+        assert_eq!(bubbles.len(), 1);
+        assert!(!bubbles[0].1, "Assistant bubble should NOT be marked as user");
+    }
+
+    /// Hook event renders hook name.
+    #[test]
+    fn test_render_events_hook() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Hook {
+            name: "pre-tool-use".into(),
+            output: "approved".into(),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("pre-tool-use")));
+    }
+
+    /// Duplicate consecutive hooks are deduplicated.
+    #[test]
+    fn test_render_events_dedup_hooks() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
+            DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
+        ];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        let hook_count = text.iter().filter(|l| l.contains("hook")).count();
+        assert_eq!(hook_count, 1, "Duplicate hooks should be deduplicated");
+    }
+
+    /// Command event renders with slash.
+    #[test]
+    fn test_render_events_command() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Command { name: "compact".into() }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("compact")));
+    }
+
+    /// Compacting event renders banner.
+    #[test]
+    fn test_render_events_compacting() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Compacting];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Context compacted")));
+    }
+
+    /// Compacted event renders banner.
+    #[test]
+    fn test_render_events_compacted() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Compacted];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Context compacted")));
+    }
+
+    /// MayBeCompacting event renders warning banner.
+    #[test]
+    fn test_render_events_may_be_compacting() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::MayBeCompacting];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("compacting")));
+    }
+
+    /// Complete event renders duration and cost.
+    #[test]
+    fn test_render_events_complete() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Complete {
+            _session_id: "s1".into(),
+            success: true,
+            duration_ms: 3500,
+            cost_usd: 0.02,
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Completed")));
+        assert!(text.iter().any(|l| l.contains("3.5s")));
+    }
+
+    /// Filtered event produces no output.
+    #[test]
+    fn test_render_events_filtered() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Filtered];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(lines.is_empty());
+    }
+
+    /// Pending user message renders at the end.
+    #[test]
+    fn test_render_events_pending_user_message() {
+        let highlighter = SyntaxHighlighter::new();
+        let (lines, _, bubbles, _) = render_display_events(
+            &[], 80, &HashSet::new(), &HashSet::new(), &highlighter, Some("Waiting..."),
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Waiting...")));
+        assert_eq!(bubbles.len(), 1);
+        assert!(bubbles[0].1); // user bubble
+    }
+
+    /// TodoWrite tool calls are skipped in rendering.
+    #[test]
+    fn test_render_events_todowrite_skipped() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "t1".into(),
+            tool_name: "TodoWrite".into(),
+            file_path: None,
+            input: json!({"todos": []}),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(lines.is_empty(), "TodoWrite tool calls should be skipped");
+    }
+
+    /// TodoWrite results are also skipped.
+    #[test]
+    fn test_render_events_todowrite_result_skipped() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::ToolResult {
+            tool_use_id: "t1".into(),
+            tool_name: "TodoWrite".into(),
+            file_path: None,
+            content: "Todos have been modified successfully".into(),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(lines.is_empty(), "TodoWrite results should be skipped");
+    }
+
+    /// ToolCall with pending status gets animation index.
+    #[test]
+    fn test_render_events_tool_pending_animation() {
+        let highlighter = SyntaxHighlighter::new();
+        let mut pending = HashSet::new();
+        pending.insert("tool1".to_string());
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "tool1".into(),
+            tool_name: "Read".into(),
+            file_path: Some("/path/file.rs".into()),
+            input: json!({"file_path": "/path/file.rs"}),
+        }];
+        let (_, anim, _, _) = render_display_events(
+            &events, 80, &pending, &HashSet::new(), &highlighter, None,
+        );
+        assert!(!anim.is_empty(), "Pending tool should have animation index");
+    }
+
+    /// Plan event renders plan content.
+    #[test]
+    fn test_render_events_plan() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::Plan {
+            name: "Implementation".into(),
+            content: "Step 1: Do thing".into(),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("PLAN MODE")));
+        assert!(text.iter().any(|l| l.contains("Step 1")));
+    }
+
+    /// Compaction summary in user message renders as banner instead.
+    #[test]
+    fn test_render_events_compaction_summary_replaced() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::UserMessage {
+            _uuid: "u1".into(),
+            content: "This session is being continued from a previous conversation. Here is a summary...".into(),
+        }];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|l| l.contains("Context compacted")));
+        // The raw compaction text should NOT appear
+        assert!(!text.iter().any(|l| l.contains("Here is a summary")));
+    }
+
+    /// Multiple event types in sequence.
+    #[test]
+    fn test_render_events_mixed_sequence() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
+            DisplayEvent::UserMessage { _uuid: "u".into(), content: "Do something".into() },
+            DisplayEvent::AssistantText { _uuid: "a".into(), _message_id: "m".into(), text: "Sure!".into() },
+            DisplayEvent::Complete { _session_id: "s".into(), success: true, duration_ms: 1000, cost_usd: 0.01 },
+        ];
+        let (lines, _, bubbles, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        assert!(!lines.is_empty());
+        assert_eq!(bubbles.len(), 2); // user + assistant
+    }
+
+    /// Init after content is suppressed.
+    #[test]
+    fn test_render_events_init_after_content_suppressed() {
+        let highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::UserMessage { _uuid: "u".into(), content: "Hi".into() },
+            DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
+        ];
+        let (lines, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        // Init should be suppressed since content was already seen
+        assert!(!text.iter().any(|l| l.contains("Session Started")));
+    }
 }

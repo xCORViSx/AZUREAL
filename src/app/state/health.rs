@@ -193,3 +193,450 @@ pub(crate) fn collect_source_files(dir: &Path, results: &mut Vec<PathBuf>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // ── SOURCE_EXTENSIONS constant ──
+
+    #[test]
+    fn test_source_extensions_contains_rust() {
+        assert!(SOURCE_EXTENSIONS.contains(&"rs"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_python() {
+        assert!(SOURCE_EXTENSIONS.contains(&"py"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_javascript() {
+        assert!(SOURCE_EXTENSIONS.contains(&"js"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_typescript() {
+        assert!(SOURCE_EXTENSIONS.contains(&"ts"));
+        assert!(SOURCE_EXTENSIONS.contains(&"tsx"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_go() {
+        assert!(SOURCE_EXTENSIONS.contains(&"go"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_c_cpp() {
+        assert!(SOURCE_EXTENSIONS.contains(&"c"));
+        assert!(SOURCE_EXTENSIONS.contains(&"h"));
+        assert!(SOURCE_EXTENSIONS.contains(&"cpp"));
+        assert!(SOURCE_EXTENSIONS.contains(&"hpp"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_java_kotlin() {
+        assert!(SOURCE_EXTENSIONS.contains(&"java"));
+        assert!(SOURCE_EXTENSIONS.contains(&"kt"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_swift() {
+        assert!(SOURCE_EXTENSIONS.contains(&"swift"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_shell() {
+        assert!(SOURCE_EXTENSIONS.contains(&"sh"));
+        assert!(SOURCE_EXTENSIONS.contains(&"bash"));
+        assert!(SOURCE_EXTENSIONS.contains(&"zsh"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_sql() {
+        assert!(SOURCE_EXTENSIONS.contains(&"sql"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_vue_svelte() {
+        assert!(SOURCE_EXTENSIONS.contains(&"vue"));
+        assert!(SOURCE_EXTENSIONS.contains(&"svelte"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_ruby() {
+        assert!(SOURCE_EXTENSIONS.contains(&"rb"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_elixir() {
+        assert!(SOURCE_EXTENSIONS.contains(&"ex"));
+        assert!(SOURCE_EXTENSIONS.contains(&"exs"));
+    }
+
+    #[test]
+    fn test_source_extensions_contains_haskell() {
+        assert!(SOURCE_EXTENSIONS.contains(&"hs"));
+    }
+
+    #[test]
+    fn test_source_extensions_does_not_contain_data_formats() {
+        assert!(!SOURCE_EXTENSIONS.contains(&"json"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"yaml"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"xml"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"csv"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"toml"));
+    }
+
+    #[test]
+    fn test_source_extensions_does_not_contain_images() {
+        assert!(!SOURCE_EXTENSIONS.contains(&"png"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"jpg"));
+        assert!(!SOURCE_EXTENSIONS.contains(&"gif"));
+    }
+
+    #[test]
+    fn test_source_extensions_does_not_contain_markdown() {
+        assert!(!SOURCE_EXTENSIONS.contains(&"md"));
+    }
+
+    #[test]
+    fn test_source_extensions_is_not_empty() {
+        assert!(!SOURCE_EXTENSIONS.is_empty());
+        assert!(SOURCE_EXTENSIONS.len() > 50, "should have ~60+ extensions");
+    }
+
+    #[test]
+    fn test_source_extensions_no_duplicates() {
+        let mut seen = std::collections::HashSet::new();
+        for ext in SOURCE_EXTENSIONS {
+            assert!(seen.insert(ext), "duplicate extension: {}", ext);
+        }
+    }
+
+    // ── SKIP_DIRS constant ──
+
+    #[test]
+    fn test_skip_dirs_contains_git() {
+        assert!(SKIP_DIRS.contains(&".git"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_target() {
+        assert!(SKIP_DIRS.contains(&"target"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_node_modules() {
+        assert!(SKIP_DIRS.contains(&"node_modules"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_build_artifacts() {
+        assert!(SKIP_DIRS.contains(&"dist"));
+        assert!(SKIP_DIRS.contains(&"build"));
+        assert!(SKIP_DIRS.contains(&"out"));
+        assert!(SKIP_DIRS.contains(&"bin"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_ide() {
+        assert!(SKIP_DIRS.contains(&".idea"));
+        assert!(SKIP_DIRS.contains(&".vscode"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_python_venvs() {
+        assert!(SKIP_DIRS.contains(&"venv"));
+        assert!(SKIP_DIRS.contains(&".venv"));
+        assert!(SKIP_DIRS.contains(&"__pycache__"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_vendor() {
+        assert!(SKIP_DIRS.contains(&"vendor"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_docs() {
+        assert!(SKIP_DIRS.contains(&"docs"));
+        assert!(SKIP_DIRS.contains(&"doc"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_examples() {
+        assert!(SKIP_DIRS.contains(&"examples"));
+        assert!(SKIP_DIRS.contains(&"example"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_generated() {
+        assert!(SKIP_DIRS.contains(&"generated"));
+        assert!(SKIP_DIRS.contains(&"gen"));
+    }
+
+    #[test]
+    fn test_skip_dirs_contains_third_party() {
+        assert!(SKIP_DIRS.contains(&"third_party"));
+        assert!(SKIP_DIRS.contains(&"third-party"));
+    }
+
+    #[test]
+    fn test_skip_dirs_no_duplicates() {
+        let mut seen = std::collections::HashSet::new();
+        for d in SKIP_DIRS {
+            assert!(seen.insert(d), "duplicate skip dir: {}", d);
+        }
+    }
+
+    #[test]
+    fn test_skip_dirs_is_not_empty() {
+        assert!(!SKIP_DIRS.is_empty());
+        assert!(SKIP_DIRS.len() > 30);
+    }
+
+    // ── SOURCE_ROOTS constant ──
+
+    #[test]
+    fn test_source_roots_contains_src() {
+        assert!(SOURCE_ROOTS.contains(&"src"));
+    }
+
+    #[test]
+    fn test_source_roots_contains_lib() {
+        assert!(SOURCE_ROOTS.contains(&"lib"));
+    }
+
+    #[test]
+    fn test_source_roots_contains_go_dirs() {
+        assert!(SOURCE_ROOTS.contains(&"cmd"));
+        assert!(SOURCE_ROOTS.contains(&"pkg"));
+        assert!(SOURCE_ROOTS.contains(&"internal"));
+    }
+
+    #[test]
+    fn test_source_roots_contains_java_dirs() {
+        assert!(SOURCE_ROOTS.contains(&"app"));
+        assert!(SOURCE_ROOTS.contains(&"core"));
+    }
+
+    #[test]
+    fn test_source_roots_contains_swift_sources() {
+        assert!(SOURCE_ROOTS.contains(&"Sources"));
+    }
+
+    #[test]
+    fn test_source_roots_contains_cpp_include() {
+        assert!(SOURCE_ROOTS.contains(&"include"));
+    }
+
+    #[test]
+    fn test_source_roots_is_not_empty() {
+        assert!(!SOURCE_ROOTS.is_empty());
+    }
+
+    #[test]
+    fn test_source_roots_no_duplicates() {
+        let mut seen = std::collections::HashSet::new();
+        for r in SOURCE_ROOTS {
+            assert!(seen.insert(r), "duplicate source root: {}", r);
+        }
+    }
+
+    // ── collect_source_files ──
+
+    #[test]
+    fn test_collect_source_files_finds_rs() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].ends_with("main.rs"));
+    }
+
+    #[test]
+    fn test_collect_source_files_finds_multiple_types() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("app.rs"), "").unwrap();
+        fs::write(tmp.path().join("script.py"), "").unwrap();
+        fs::write(tmp.path().join("index.js"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_collect_source_files_ignores_non_source() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("data.json"), "{}").unwrap();
+        fs::write(tmp.path().join("readme.md"), "# hi").unwrap();
+        fs::write(tmp.path().join("image.png"), &[0u8; 10]).unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_hidden_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join(".hidden")).unwrap();
+        fs::write(tmp.path().join(".hidden/secret.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_skip_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("node_modules")).unwrap();
+        fs::write(tmp.path().join("node_modules/pkg.js"), "").unwrap();
+        fs::create_dir(tmp.path().join("target")).unwrap();
+        fs::write(tmp.path().join("target/build.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_recurses_into_subdirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("nested")).unwrap();
+        fs::write(tmp.path().join("nested/mod.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_source_files_deeply_nested() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("a/b/c")).unwrap();
+        fs::write(tmp.path().join("a/b/c/deep.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_source_files_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_nonexistent_dir() {
+        let mut results = Vec::new();
+        collect_source_files(Path::new("/nonexistent/dir"), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_sorted_by_name() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("z.rs"), "").unwrap();
+        fs::write(tmp.path().join("a.rs"), "").unwrap();
+        fs::write(tmp.path().join("m.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        let names: Vec<_> = results.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect();
+        assert_eq!(names, vec!["a.rs", "m.rs", "z.rs"]);
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_hidden_files() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join(".hidden.rs"), "").unwrap();
+        fs::write(tmp.path().join("visible.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].ends_with("visible.rs"));
+    }
+
+    #[test]
+    fn test_collect_source_files_case_insensitive_skip_dirs() {
+        let tmp = TempDir::new().unwrap();
+        // SKIP_DIRS are lowercase; directory names are lowered before comparison
+        fs::create_dir(tmp.path().join("Target")).unwrap();
+        fs::write(tmp.path().join("Target/build.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty(), "Target (capital T) should be skipped");
+    }
+
+    #[test]
+    fn test_collect_source_files_no_extension() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("Makefile"), "").unwrap();
+        fs::write(tmp.path().join("Dockerfile"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_appends_to_existing() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("new.rs"), "").unwrap();
+        let mut results = vec![PathBuf::from("/existing/file.rs")];
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], PathBuf::from("/existing/file.rs"));
+    }
+
+    #[test]
+    fn test_collect_source_files_all_source_types() {
+        let tmp = TempDir::new().unwrap();
+        for ext in &["rs", "py", "js", "ts", "go", "java", "c", "cpp", "swift", "rb"] {
+            fs::write(tmp.path().join(format!("file.{}", ext)), "").unwrap();
+        }
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert_eq!(results.len(), 10);
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_refs_dir() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("refs")).unwrap();
+        fs::write(tmp.path().join("refs/helper.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_vendor_dir() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("vendor")).unwrap();
+        fs::write(tmp.path().join("vendor/dep.go"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_skips_coverage_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("coverage")).unwrap();
+        fs::write(tmp.path().join("coverage/report.js"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_collect_source_files_returns_absolute_paths() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("main.rs"), "").unwrap();
+        let mut results = Vec::new();
+        collect_source_files(tmp.path(), &mut results);
+        assert!(results[0].is_absolute());
+    }
+}

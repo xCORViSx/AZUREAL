@@ -220,3 +220,419 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[allow(unused_imports)]
+    use clap::Parser as _;
+
+    // ── CLI parsing: subcommand routing ──
+
+    #[test]
+    fn test_cli_no_args_defaults_to_none_command() {
+        let cli = Cli::try_parse_from(["azureal"]).unwrap();
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_cli_tui_command() {
+        let cli = Cli::try_parse_from(["azureal", "tui"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Tui)));
+    }
+
+    #[test]
+    fn test_cli_list_command() {
+        let cli = Cli::try_parse_from(["azureal", "list"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::List { .. })));
+    }
+
+    #[test]
+    fn test_cli_list_alias_ls() {
+        let cli = Cli::try_parse_from(["azureal", "ls"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::List { .. })));
+    }
+
+    #[test]
+    fn test_cli_new_command() {
+        let cli = Cli::try_parse_from(["azureal", "new", "--prompt", "test prompt"]).unwrap();
+        if let Some(Commands::New { prompt, .. }) = cli.command {
+            assert_eq!(prompt, "test prompt");
+        } else {
+            panic!("expected New command");
+        }
+    }
+
+    #[test]
+    fn test_cli_status_command() {
+        let cli = Cli::try_parse_from(["azureal", "status", "my-session"]).unwrap();
+        if let Some(Commands::Status { session }) = cli.command {
+            assert_eq!(session, "my-session");
+        } else {
+            panic!("expected Status command");
+        }
+    }
+
+    #[test]
+    fn test_cli_diff_command() {
+        let cli = Cli::try_parse_from(["azureal", "diff", "my-session"]).unwrap();
+        if let Some(Commands::Diff { session, stat }) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(!stat);
+        } else {
+            panic!("expected Diff command");
+        }
+    }
+
+    #[test]
+    fn test_cli_diff_with_stat_flag() {
+        let cli = Cli::try_parse_from(["azureal", "diff", "my-session", "--stat"]).unwrap();
+        if let Some(Commands::Diff { stat, .. }) = cli.command {
+            assert!(stat);
+        }
+    }
+
+    // ── CLI parsing: session subcommands ──
+
+    #[test]
+    fn test_cli_session_list() {
+        let cli = Cli::try_parse_from(["azureal", "session", "list"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::List { .. })) = cli.command {
+            // ok
+        } else {
+            panic!("expected Session List");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_new() {
+        let cli = Cli::try_parse_from(["azureal", "session", "new", "--prompt", "build feature"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::New { prompt, .. })) = cli.command {
+            assert_eq!(prompt, "build feature");
+        } else {
+            panic!("expected Session New");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_stop() {
+        let cli = Cli::try_parse_from(["azureal", "session", "stop", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Stop { session, force })) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(!force);
+        } else {
+            panic!("expected Session Stop");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_stop_force() {
+        let cli = Cli::try_parse_from(["azureal", "session", "stop", "my-session", "--force"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Stop { force, .. })) = cli.command {
+            assert!(force);
+        }
+    }
+
+    #[test]
+    fn test_cli_session_delete() {
+        let cli = Cli::try_parse_from(["azureal", "session", "delete", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Delete { session, yes })) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(!yes);
+        } else {
+            panic!("expected Session Delete");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_delete_yes() {
+        let cli = Cli::try_parse_from(["azureal", "session", "delete", "my-session", "--yes"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Delete { yes, .. })) = cli.command {
+            assert!(yes);
+        }
+    }
+
+    #[test]
+    fn test_cli_session_archive() {
+        let cli = Cli::try_parse_from(["azureal", "session", "archive", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Archive { session })) = cli.command {
+            assert_eq!(session, "my-session");
+        } else {
+            panic!("expected Session Archive");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_unarchive() {
+        let cli = Cli::try_parse_from(["azureal", "session", "unarchive", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Unarchive { session })) = cli.command {
+            assert_eq!(session, "my-session");
+        } else {
+            panic!("expected Session Unarchive");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_resume() {
+        let cli = Cli::try_parse_from(["azureal", "session", "resume", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Resume { session, prompt })) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(prompt.is_none());
+        } else {
+            panic!("expected Session Resume");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_logs() {
+        let cli = Cli::try_parse_from(["azureal", "session", "logs", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Logs { session, follow, .. })) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(!follow);
+        } else {
+            panic!("expected Session Logs");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_diff() {
+        let cli = Cli::try_parse_from(["azureal", "session", "diff", "my-session"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Diff { session, stat })) = cli.command {
+            assert_eq!(session, "my-session");
+            assert!(!stat);
+        } else {
+            panic!("expected Session Diff");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_cleanup() {
+        let cli = Cli::try_parse_from(["azureal", "session", "cleanup"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup { delete_branches, yes, dry_run, .. })) = cli.command {
+            assert!(!delete_branches);
+            assert!(!yes);
+            assert!(!dry_run);
+        } else {
+            panic!("expected Session Cleanup");
+        }
+    }
+
+    #[test]
+    fn test_cli_session_cleanup_with_flags() {
+        let cli = Cli::try_parse_from(["azureal", "session", "cleanup", "--delete-branches", "--yes", "--dry-run"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup { delete_branches, yes, dry_run, .. })) = cli.command {
+            assert!(delete_branches);
+            assert!(yes);
+            assert!(dry_run);
+        }
+    }
+
+    // ── CLI parsing: project subcommands ──
+
+    #[test]
+    fn test_cli_project_list() {
+        let cli = Cli::try_parse_from(["azureal", "project", "list"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Project(ProjectCommands::List))));
+    }
+
+    #[test]
+    fn test_cli_project_show() {
+        let cli = Cli::try_parse_from(["azureal", "project", "show"]).unwrap();
+        if let Some(Commands::Project(ProjectCommands::Show { project })) = cli.command {
+            assert!(project.is_none());
+        } else {
+            panic!("expected Project Show");
+        }
+    }
+
+    #[test]
+    fn test_cli_project_show_with_path() {
+        let cli = Cli::try_parse_from(["azureal", "project", "show", "/tmp/project"]).unwrap();
+        if let Some(Commands::Project(ProjectCommands::Show { project })) = cli.command {
+            assert_eq!(project, Some("/tmp/project".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_cli_project_remove() {
+        let cli = Cli::try_parse_from(["azureal", "project", "remove", "my-project"]).unwrap();
+        if let Some(Commands::Project(ProjectCommands::Remove { project, yes })) = cli.command {
+            assert_eq!(project, "my-project");
+            assert!(!yes);
+        } else {
+            panic!("expected Project Remove");
+        }
+    }
+
+    #[test]
+    fn test_cli_project_config() {
+        let cli = Cli::try_parse_from(["azureal", "project", "config"]).unwrap();
+        if let Some(Commands::Project(ProjectCommands::Config { project, main_branch })) = cli.command {
+            assert!(project.is_none());
+            assert!(main_branch.is_none());
+        } else {
+            panic!("expected Project Config");
+        }
+    }
+
+    // ── CLI: global flags ──
+
+    #[test]
+    fn test_cli_verbose_flag() {
+        let cli = Cli::try_parse_from(["azureal", "--verbose"]).unwrap();
+        assert!(cli.verbose);
+    }
+
+    #[test]
+    fn test_cli_verbose_default() {
+        let cli = Cli::try_parse_from(["azureal"]).unwrap();
+        assert!(!cli.verbose);
+    }
+
+    #[test]
+    fn test_cli_output_format_default() {
+        let cli = Cli::try_parse_from(["azureal"]).unwrap();
+        assert!(matches!(cli.output, cli::OutputFormat::Table));
+    }
+
+    #[test]
+    fn test_cli_output_format_json() {
+        let cli = Cli::try_parse_from(["azureal", "--output", "json"]).unwrap();
+        assert!(matches!(cli.output, cli::OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_cli_output_format_plain() {
+        let cli = Cli::try_parse_from(["azureal", "--output", "plain"]).unwrap();
+        assert!(matches!(cli.output, cli::OutputFormat::Plain));
+    }
+
+    #[test]
+    fn test_cli_output_format_table() {
+        let cli = Cli::try_parse_from(["azureal", "--output", "table"]).unwrap();
+        assert!(matches!(cli.output, cli::OutputFormat::Table));
+    }
+
+    // ── CLI: command + global flag combinations ──
+
+    #[test]
+    fn test_cli_verbose_with_list() {
+        let cli = Cli::try_parse_from(["azureal", "--verbose", "list"]).unwrap();
+        assert!(cli.verbose);
+        assert!(matches!(cli.command, Some(Commands::List { .. })));
+    }
+
+    #[test]
+    fn test_cli_output_json_with_session_list() {
+        let cli = Cli::try_parse_from(["azureal", "--output", "json", "session", "list"]).unwrap();
+        assert!(matches!(cli.output, cli::OutputFormat::Json));
+        if let Some(Commands::Session(SessionCommands::List { .. })) = cli.command {
+            // ok
+        } else {
+            panic!("expected Session List");
+        }
+    }
+
+    #[test]
+    fn test_cli_list_all_flag() {
+        let cli = Cli::try_parse_from(["azureal", "list", "--all"]).unwrap();
+        if let Some(Commands::List { all, .. }) = cli.command {
+            assert!(all);
+        }
+    }
+
+    #[test]
+    fn test_cli_list_project_filter() {
+        let cli = Cli::try_parse_from(["azureal", "list", "--project", "my-proj"]).unwrap();
+        if let Some(Commands::List { project, .. }) = cli.command {
+            assert_eq!(project, Some("my-proj".to_string()));
+        }
+    }
+
+    // ── CLI: invalid subcommands ──
+
+    #[test]
+    fn test_cli_invalid_subcommand() {
+        let result = Cli::try_parse_from(["azureal", "nonexistent"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cli_session_invalid_subcommand() {
+        let result = Cli::try_parse_from(["azureal", "session", "invalid"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cli_project_invalid_subcommand() {
+        let result = Cli::try_parse_from(["azureal", "project", "invalid"]);
+        assert!(result.is_err());
+    }
+
+    // ── CLI: missing required args ──
+
+    #[test]
+    fn test_cli_new_missing_prompt() {
+        let result = Cli::try_parse_from(["azureal", "new"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cli_status_missing_session() {
+        let result = Cli::try_parse_from(["azureal", "status"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cli_diff_missing_session() {
+        let result = Cli::try_parse_from(["azureal", "diff"]);
+        assert!(result.is_err());
+    }
+
+    // ── Module existence verification ──
+    // These tests verify that all expected modules are accessible
+
+    #[test]
+    fn test_models_module_accessible() {
+        let _ = models::BRANCH_PREFIX;
+    }
+
+    #[test]
+    fn test_config_module_accessible() {
+        let _ = config::Config::default();
+    }
+
+    #[test]
+    fn test_cli_module_accessible() {
+        let _ = cli::OutputFormat::default();
+    }
+
+    #[test]
+    fn test_models_strip_branch_prefix() {
+        assert_eq!(models::strip_branch_prefix("azureal/test"), "test");
+    }
+
+    #[test]
+    fn test_config_dir_exists() {
+        let dir = config::config_dir();
+        assert!(dir.to_string_lossy().contains(".azureal"));
+    }
+
+    #[test]
+    fn test_cli_version_flag() {
+        let result = Cli::try_parse_from(["azureal", "--version"]);
+        assert!(result.is_err()); // --version causes early exit
+    }
+
+    #[test]
+    fn test_cli_unknown_subcommand() {
+        let result = Cli::try_parse_from(["azureal", "nonexistent"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_dir_is_absolute() {
+        let dir = config::config_dir();
+        assert!(dir.is_absolute());
+    }
+}

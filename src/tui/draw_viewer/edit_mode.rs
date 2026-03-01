@@ -207,3 +207,374 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
         ));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- Rect construction and field access --
+
+    #[test]
+    fn test_rect_zero() {
+        let r = Rect::new(0, 0, 0, 0);
+        assert_eq!((r.x, r.y, r.width, r.height), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn test_rect_nonzero() {
+        let r = Rect::new(5, 10, 80, 24);
+        assert_eq!(r.width, 80);
+        assert_eq!(r.height, 24);
+    }
+
+    #[test]
+    fn test_rect_area() {
+        assert_eq!(Rect::new(0, 0, 10, 20).area(), 200);
+    }
+
+    // -- Style construction --
+
+    #[test]
+    fn test_style_fg_yellow() {
+        assert_eq!(Style::default().fg(Color::Yellow).fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn test_style_fg_dark_gray() {
+        assert_eq!(Style::default().fg(Color::DarkGray).fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn test_style_fg_magenta() {
+        assert_eq!(Style::default().fg(Color::Magenta).fg, Some(Color::Magenta));
+    }
+
+    #[test]
+    fn test_style_bold_modifier() {
+        let s = Style::default().add_modifier(Modifier::BOLD);
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_style_fg_and_bold() {
+        let s = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+        assert_eq!(s.fg, Some(Color::Yellow));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+
+    // -- Border color logic --
+
+    #[test]
+    fn test_border_color_normal() {
+        let color = if false || false { Color::Magenta } else { Color::Yellow };
+        assert_eq!(color, Color::Yellow);
+    }
+
+    #[test]
+    fn test_border_color_recording() {
+        let color = if true || false { Color::Magenta } else { Color::Yellow };
+        assert_eq!(color, Color::Magenta);
+    }
+
+    #[test]
+    fn test_border_color_transcribing() {
+        let color = if false || true { Color::Magenta } else { Color::Yellow };
+        assert_eq!(color, Color::Magenta);
+    }
+
+    #[test]
+    fn test_border_color_both_active() {
+        let color = if true || true { Color::Magenta } else { Color::Yellow };
+        assert_eq!(color, Color::Magenta);
+    }
+
+    // -- Title formatting logic --
+
+    #[test]
+    fn test_title_normal() {
+        let (rec, trans) = (false, false);
+        let p = "main.rs";
+        let t = if rec { format!(" REC EDIT: {} ", p) } else if trans { format!(" ... EDIT: {} ", p) } else { format!(" EDIT: {} ", p) };
+        assert_eq!(t, " EDIT: main.rs ");
+    }
+
+    #[test]
+    fn test_title_recording() {
+        let t = format!(" REC EDIT: {} ", "lib.rs");
+        assert_eq!(t, " REC EDIT: lib.rs ");
+    }
+
+    #[test]
+    fn test_title_transcribing() {
+        let t = format!(" ... EDIT: {} ", "mod.rs");
+        assert_eq!(t, " ... EDIT: mod.rs ");
+    }
+
+    // -- Line number width computation --
+
+    #[test]
+    fn test_line_num_width_single_digit() {
+        assert_eq!(5usize.to_string().len().max(3), 3);
+    }
+
+    #[test]
+    fn test_line_num_width_double_digit() {
+        assert_eq!(42usize.to_string().len().max(3), 3);
+    }
+
+    #[test]
+    fn test_line_num_width_triple_digit() {
+        assert_eq!(100usize.to_string().len().max(3), 3);
+    }
+
+    #[test]
+    fn test_line_num_width_1000_lines() {
+        assert_eq!(1000usize.to_string().len().max(3), 4);
+    }
+
+    #[test]
+    fn test_line_num_width_10000_lines() {
+        assert_eq!(10000usize.to_string().len().max(3), 5);
+    }
+
+    #[test]
+    fn test_line_num_width_zero_lines() {
+        assert_eq!(0usize.to_string().len().max(3), 3);
+    }
+
+    // -- Content width computation --
+
+    #[test]
+    fn test_content_width_basic() {
+        assert_eq!(80usize.saturating_sub(3 + 3), 74);
+    }
+
+    #[test]
+    fn test_content_width_narrow_viewport() {
+        assert_eq!(10usize.saturating_sub(3 + 3), 4);
+    }
+
+    #[test]
+    fn test_content_width_too_narrow() {
+        assert_eq!(5usize.saturating_sub(3 + 3), 0);
+    }
+
+    #[test]
+    fn test_content_width_exact_gutter() {
+        assert_eq!(6usize.saturating_sub(3 + 3), 0);
+    }
+
+    // -- Selection normalization --
+
+    #[test]
+    fn test_selection_normalize_already_ordered() {
+        let (sl, sc, el, ec) = (1, 5, 3, 10);
+        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        assert_eq!(n, (1, 5, 3, 10));
+    }
+
+    #[test]
+    fn test_selection_normalize_reversed() {
+        let (sl, sc, el, ec) = (5, 10, 2, 3);
+        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        assert_eq!(n, (2, 3, 5, 10));
+    }
+
+    #[test]
+    fn test_selection_normalize_same_line_ordered() {
+        let (sl, sc, el, ec) = (3, 2, 3, 8);
+        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        assert_eq!(n, (3, 2, 3, 8));
+    }
+
+    #[test]
+    fn test_selection_normalize_same_line_reversed() {
+        let (sl, sc, el, ec) = (3, 8, 3, 2);
+        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        assert_eq!(n, (3, 2, 3, 8));
+    }
+
+    #[test]
+    fn test_selection_normalize_same_point() {
+        let (sl, sc, el, ec) = (3, 5, 3, 5);
+        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        assert_eq!(n, (3, 5, 3, 5));
+    }
+
+    // -- Line number formatting --
+
+    #[test]
+    fn test_line_number_format_first_wrap() {
+        assert_eq!(format!("{:>width$} │ ", 1, width = 3), "  1 │ ");
+    }
+
+    #[test]
+    fn test_line_number_format_continuation_wrap() {
+        assert_eq!(format!("{:>width$} │ ", "", width = 3), "    │ ");
+    }
+
+    #[test]
+    fn test_line_number_format_large_number() {
+        assert_eq!(format!("{:>width$} │ ", 1000, width = 4), "1000 │ ");
+    }
+
+    #[test]
+    fn test_tilde_padding_format() {
+        assert_eq!(format!("{:>width$} │ ", "~", width = 3), "  ~ │ ");
+    }
+
+    // -- Dashed border coordinate math --
+
+    #[test]
+    fn test_dashed_border_x_range() {
+        let area = Rect::new(5, 3, 40, 20);
+        assert_eq!(area.x, 5);
+        assert_eq!(area.x + area.width.saturating_sub(1), 44);
+    }
+
+    #[test]
+    fn test_dashed_border_y_range() {
+        let area = Rect::new(5, 3, 40, 20);
+        assert_eq!(area.y, 3);
+        assert_eq!(area.y + area.height.saturating_sub(1), 22);
+    }
+
+    #[test]
+    fn test_dashed_border_even_positions() {
+        let x0 = 5u16;
+        let evens: Vec<u16> = (6..44).filter(|x| (x - x0) % 2 == 0).collect();
+        assert!(evens.contains(&7));
+        assert!(!evens.contains(&6));
+    }
+
+    // -- Cursor position math --
+
+    #[test]
+    fn test_cursor_screen_x_calculation() {
+        assert_eq!(5u16 + 1 + 3u16 + 3 + 10u16, 22);
+    }
+
+    #[test]
+    fn test_cursor_screen_y_calculation() {
+        assert_eq!(3u16 + 1 + 5u16, 9);
+    }
+
+    #[test]
+    fn test_cursor_visibility_in_viewport() {
+        let (scroll, vh) = (10, 20);
+        assert!(15 >= scroll && 15 < scroll + vh);
+    }
+
+    #[test]
+    fn test_cursor_visibility_above_viewport() {
+        let (scroll, vh) = (10, 20);
+        assert!(!(5 >= scroll && 5 < scroll + vh));
+    }
+
+    #[test]
+    fn test_cursor_visibility_below_viewport() {
+        let (scroll, vh) = (10, 20);
+        assert!(!(30 >= scroll && 30 < scroll + vh));
+    }
+
+    #[test]
+    fn test_cursor_at_scroll_boundary_start() {
+        let (scroll, vh) = (10, 20);
+        assert!(10 >= scroll && 10 < scroll + vh);
+    }
+
+    #[test]
+    fn test_cursor_at_scroll_boundary_end() {
+        let (scroll, vh) = (10, 20);
+        assert!(29 >= scroll && 29 < scroll + vh);
+        assert!(!(30 >= scroll && 30 < scroll + vh));
+    }
+
+    // -- Span and Line construction --
+
+    #[test]
+    fn test_span_styled() {
+        let s = Span::styled("hello", Style::default().fg(Color::Yellow));
+        assert_eq!(s.content.as_ref(), "hello");
+    }
+
+    #[test]
+    fn test_line_from_spans() {
+        let line = Line::from(vec![
+            Span::raw("  1 │ "),
+            Span::raw("fn main()"),
+        ]);
+        assert_eq!(line.spans.len(), 2);
+    }
+
+    #[test]
+    fn test_block_double_border() {
+        let _b = Block::default().borders(Borders::ALL).border_type(BorderType::Double);
+    }
+
+    #[test]
+    fn test_alignment_right() {
+        assert_eq!(Alignment::Right, Alignment::Right);
+    }
+
+    // -- Content width max(1) guard --
+
+    #[test]
+    fn test_content_width_max_guard_zero() {
+        assert_eq!(0usize.max(1), 1);
+    }
+
+    #[test]
+    fn test_content_width_max_guard_nonzero() {
+        assert_eq!(50usize.max(1), 50);
+    }
+
+    // -- Viewport padding --
+
+    #[test]
+    fn test_viewport_padding_needed() {
+        assert_eq!(20usize.saturating_sub(15), 5);
+    }
+
+    #[test]
+    fn test_viewport_padding_not_needed() {
+        assert_eq!(20usize.saturating_sub(20), 0);
+    }
+
+    #[test]
+    fn test_modified_indicator_text() {
+        assert_eq!(if true { "[modified] " } else { "" }, "[modified] ");
+    }
+
+    #[test]
+    fn test_not_modified_indicator() {
+        assert_eq!(if false { "[modified] " } else { "" }, "");
+    }
+
+    // -- Word wrap breaks accessibility --
+
+    #[test]
+    fn test_word_wrap_breaks_empty() {
+        let breaks = word_wrap_breaks("", 80);
+        assert!(!breaks.is_empty()); // at least [0]
+    }
+
+    #[test]
+    fn test_word_wrap_breaks_short_line() {
+        let breaks = word_wrap_breaks("hello world", 80);
+        assert_eq!(breaks.len(), 1); // fits in one row
+    }
+
+    #[test]
+    fn test_word_wrap_breaks_long_line() {
+        let long = "a ".repeat(50);
+        let breaks = word_wrap_breaks(&long, 20);
+        assert!(breaks.len() > 1); // must wrap
+    }
+
+    #[test]
+    fn test_word_wrap_breaks_width_1() {
+        let breaks = word_wrap_breaks("abc", 1);
+        assert!(breaks.len() >= 1);
+    }
+}

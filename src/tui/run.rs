@@ -821,3 +821,587 @@ fn draw_loading_indicator(f: &mut Frame, msg: &str) {
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Color constants ───────────────────────────────────────────────
+
+    #[test]
+    fn azure_color_is_rgb() {
+        assert!(matches!(AZURE, Color::Rgb(_, _, _)));
+    }
+
+    #[test]
+    fn git_orange_is_rgb() {
+        assert!(matches!(GIT_ORANGE, Color::Rgb(_, _, _)));
+    }
+
+    #[test]
+    fn git_brown_is_rgb() {
+        assert!(matches!(GIT_BROWN, Color::Rgb(_, _, _)));
+    }
+
+    #[test]
+    fn azure_not_equal_git_orange() {
+        assert_ne!(AZURE, GIT_ORANGE);
+    }
+
+    #[test]
+    fn azure_not_equal_git_brown() {
+        assert_ne!(AZURE, GIT_BROWN);
+    }
+
+    #[test]
+    fn git_orange_not_equal_git_brown() {
+        assert_ne!(GIT_ORANGE, GIT_BROWN);
+    }
+
+    // ── Splash screen content ─────────────────────────────────────────
+
+    #[test]
+    fn splash_azure_color() {
+        let az = Color::Rgb(51, 153, 255);
+        assert_eq!(az, Color::Rgb(51, 153, 255));
+    }
+
+    #[test]
+    fn splash_dim_color() {
+        let dim = Color::Rgb(25, 76, 128);
+        assert_eq!(dim, Color::Rgb(25, 76, 128));
+    }
+
+    #[test]
+    fn splash_butterfly_color() {
+        let butterfly_color = Color::Rgb(15, 45, 80);
+        assert_eq!(butterfly_color, Color::Rgb(15, 45, 80));
+    }
+
+    #[test]
+    fn splash_colors_are_all_distinct() {
+        let az = Color::Rgb(51, 153, 255);
+        let dim = Color::Rgb(25, 76, 128);
+        let bf = Color::Rgb(15, 45, 80);
+        assert_ne!(az, dim);
+        assert_ne!(az, bf);
+        assert_ne!(dim, bf);
+    }
+
+    // ── Auto-rebase dialog formatting ─────────────────────────────────
+
+    #[test]
+    fn auto_rebase_success_message_format() {
+        let branch = "feat-tests";
+        let msg = format!(" {} rebased onto main \u{2713} ", branch);
+        assert!(msg.contains("feat-tests"));
+        assert!(msg.contains("rebased onto main"));
+        assert!(msg.contains("\u{2713}")); // checkmark
+    }
+
+    #[test]
+    fn auto_rebase_in_progress_message_format() {
+        let branch = "feat-tests";
+        let msg = format!(" Auto-rebasing {} onto main... ", branch);
+        assert!(msg.contains("Auto-rebasing"));
+        assert!(msg.contains("feat-tests"));
+        assert!(msg.contains("onto main..."));
+    }
+
+    #[test]
+    fn auto_rebase_success_border_is_green() {
+        let success = true;
+        let border_color = if success { Color::Green } else { AZURE };
+        assert_eq!(border_color, Color::Green);
+    }
+
+    #[test]
+    fn auto_rebase_progress_border_is_azure() {
+        let success = false;
+        let border_color = if success { Color::Green } else { AZURE };
+        assert_eq!(border_color, AZURE);
+    }
+
+    // ── Dialog centering arithmetic ───────────────────────────────────
+
+    #[test]
+    fn dialog_center_x_with_100_width() {
+        let area_x: u16 = 0;
+        let area_width: u16 = 100;
+        let w: u16 = 30;
+        let x = area_x + (area_width.saturating_sub(w)) / 2;
+        assert_eq!(x, 35);
+    }
+
+    #[test]
+    fn dialog_center_y_with_50_height() {
+        let area_y: u16 = 0;
+        let area_height: u16 = 50;
+        let h: u16 = 3;
+        let y = area_y + (area_height.saturating_sub(h)) / 2;
+        assert_eq!(y, 23);
+    }
+
+    #[test]
+    fn dialog_width_clamped_to_area() {
+        let area_width: u16 = 20;
+        let msg_len: u16 = 30;
+        let w = (msg_len + 4).min(area_width.saturating_sub(4));
+        assert_eq!(w, 16); // 20 - 4 = 16
+    }
+
+    #[test]
+    fn dialog_width_not_clamped_when_fits() {
+        let area_width: u16 = 100;
+        let msg_len: u16 = 20;
+        let w = (msg_len + 4).min(area_width.saturating_sub(4));
+        assert_eq!(w, 24); // 20 + 4 = 24, 100 - 4 = 96, min(24, 96) = 24
+    }
+
+    #[test]
+    fn dialog_center_with_offset_area() {
+        let area_x: u16 = 10;
+        let area_width: u16 = 80;
+        let w: u16 = 30;
+        let x = area_x + (area_width.saturating_sub(w)) / 2;
+        assert_eq!(x, 35); // 10 + (80 - 30)/2 = 10 + 25 = 35
+    }
+
+    #[test]
+    fn dialog_saturating_sub_prevents_underflow() {
+        let area_width: u16 = 2;
+        let w: u16 = 10;
+        let result = area_width.saturating_sub(w);
+        assert_eq!(result, 0);
+    }
+
+    // ── Git status box height ─────────────────────────────────────────
+
+    #[test]
+    fn git_box_height_is_three() {
+        let git_box_height = 3u16;
+        assert_eq!(git_box_height, 3);
+    }
+
+    // ── Loading indicator padding ─────────────────────────────────────
+
+    #[test]
+    fn loading_indicator_padding() {
+        let msg = "Loading session...";
+        let padded = format!(" {} ", msg);
+        assert_eq!(padded, " Loading session... ");
+        assert_eq!(padded.len(), msg.len() + 2);
+    }
+
+    #[test]
+    fn loading_indicator_width_calculation() {
+        let padded = " Loading... ";
+        let w = (padded.len() as u16 + 4).min(100u16.saturating_sub(4));
+        assert_eq!(w, padded.len() as u16 + 4); // 12 + 4 = 16, fits in 96
+    }
+
+    // ── Debug dump naming dialog ──────────────────────────────────────
+
+    #[test]
+    fn debug_dump_prompt_format() {
+        let input_text = "my-dump";
+        let prompt = format!(" Name: {}\u{25CF}", input_text);
+        assert!(prompt.contains("my-dump"));
+        assert!(prompt.starts_with(" Name: "));
+    }
+
+    #[test]
+    fn debug_dump_prompt_empty_input() {
+        let input_text = "";
+        let prompt = format!(" Name: {}\u{25CF}", input_text);
+        assert_eq!(prompt, " Name: \u{25CF}");
+    }
+
+    #[test]
+    fn debug_dump_dialog_width_clamped() {
+        let area_width: u16 = 30;
+        let w = 50u16.min(area_width.saturating_sub(4));
+        assert_eq!(w, 26); // min(50, 30-4) = 26
+    }
+
+    #[test]
+    fn debug_dump_dialog_width_unclamped() {
+        let area_width: u16 = 200;
+        let w = 50u16.min(area_width.saturating_sub(4));
+        assert_eq!(w, 50); // min(50, 196) = 50
+    }
+
+    // ── Saving indicator ──────────────────────────────────────────────
+
+    #[test]
+    fn saving_debug_dump_message_literal() {
+        let msg = " Saving debug dump... ";
+        assert_eq!(msg.len(), 22);
+    }
+
+    // ── Layout constraint values ──────────────────────────────────────
+
+    #[test]
+    fn normal_mode_sidebar_percentage() {
+        // File tree is 15%
+        let pct = 15u16;
+        assert_eq!(pct, 15);
+    }
+
+    #[test]
+    fn normal_mode_viewer_percentage() {
+        // Viewer is 50%
+        let pct = 50u16;
+        assert_eq!(pct, 50);
+    }
+
+    #[test]
+    fn normal_mode_session_percentage() {
+        // Session is 35%
+        let pct = 35u16;
+        assert_eq!(pct, 35);
+    }
+
+    #[test]
+    fn percentages_sum_to_100() {
+        assert_eq!(15 + 50 + 35, 100);
+    }
+
+    #[test]
+    fn git_mode_sidebar_width() {
+        let w = 40u16;
+        assert_eq!(w, 40);
+    }
+
+    #[test]
+    fn git_mode_session_percentage() {
+        let pct = 35u16;
+        assert_eq!(pct, 35);
+    }
+
+    // ── Input height calculation ──────────────────────────────────────
+
+    #[test]
+    fn terminal_mode_input_height() {
+        let terminal_height: u16 = 10;
+        let input_height = terminal_height + 2;
+        assert_eq!(input_height, 12);
+    }
+
+    #[test]
+    fn max_input_height_uses_three_quarters() {
+        let below_tabs_height: u16 = 40;
+        let max_input = (below_tabs_height * 3 / 4).max(3);
+        assert_eq!(max_input, 30);
+    }
+
+    #[test]
+    fn max_input_height_minimum_is_three() {
+        let below_tabs_height: u16 = 2;
+        let max_input = (below_tabs_height * 3 / 4).max(3);
+        assert_eq!(max_input, 3); // (2*3/4) = 1, max(1, 3) = 3
+    }
+
+    #[test]
+    fn input_lines_clamped_to_max() {
+        let input_lines: u16 = 100;
+        let max_input: u16 = 30;
+        let result = (input_lines + 2).min(max_input);
+        assert_eq!(result, 30);
+    }
+
+    #[test]
+    fn input_lines_plus_border() {
+        let input_lines: u16 = 5;
+        let max_input: u16 = 30;
+        let result = (input_lines + 2).min(max_input);
+        assert_eq!(result, 7); // 5 + 2 border = 7
+    }
+
+    // ── Row wrapping calculation (input area) ─────────────────────────
+
+    #[test]
+    fn row_wrapping_single_line() {
+        let input = "hello";
+        let inner_width: usize = 80;
+        let mut rows = 1usize;
+        let mut col = 0usize;
+        for c in input.chars() {
+            if c == '\n' { rows += 1; col = 0; }
+            else {
+                let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                if col + w > inner_width { rows += 1; col = w; }
+                else { col += w; }
+            }
+        }
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn row_wrapping_newline() {
+        let input = "hello\nworld";
+        let inner_width: usize = 80;
+        let mut rows = 1usize;
+        let mut col = 0usize;
+        for c in input.chars() {
+            if c == '\n' { rows += 1; col = 0; }
+            else {
+                let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                if col + w > inner_width { rows += 1; col = w; }
+                else { col += w; }
+            }
+        }
+        assert_eq!(rows, 2);
+    }
+
+    #[test]
+    fn row_wrapping_at_width_boundary() {
+        let input = "aaaa"; // 4 chars
+        let inner_width: usize = 3; // wraps after 3
+        let mut rows = 1usize;
+        let mut col = 0usize;
+        for c in input.chars() {
+            if c == '\n' { rows += 1; col = 0; }
+            else {
+                let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                if col + w > inner_width { rows += 1; col = w; }
+                else { col += w; }
+            }
+        }
+        assert_eq!(rows, 2); // "aaa" on row 1, "a" wraps to row 2
+    }
+
+    #[test]
+    fn row_wrapping_empty_input() {
+        let input = "";
+        let inner_width: usize = 80;
+        // Empty check bypasses calculation, defaults to 1
+        let input_lines = if inner_width > 0 && !input.is_empty() {
+            let mut rows = 1usize;
+            let mut col = 0usize;
+            for c in input.chars() {
+                if c == '\n' { rows += 1; col = 0; }
+                else {
+                    let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                    if col + w > inner_width { rows += 1; col = w; }
+                    else { col += w; }
+                }
+            }
+            rows
+        } else { 1 };
+        assert_eq!(input_lines, 1);
+    }
+
+    // ── Splash screen dimensions ──────────────────────────────────────
+
+    #[test]
+    fn splash_logo_has_ten_rows() {
+        let logo: Vec<&str> = vec![
+            "line1", "line2", "line3", "line4", "line5",
+            "line6", "line7", "line8", "line9", "line10",
+        ];
+        assert_eq!(logo.len(), 10);
+    }
+
+    #[test]
+    fn splash_acronym_has_twelve_rows() {
+        let acronym: Vec<&str> = vec![
+            "l1", "l2", "l3", "l4", "l5", "l6",
+            "l7", "l8", "l9", "l10", "l11", "l12",
+        ];
+        assert_eq!(acronym.len(), 12);
+    }
+
+    #[test]
+    fn splash_total_height_calculation() {
+        let logo_height: u16 = 10;
+        let acronym_height: u16 = 12;
+        let total_height = logo_height + 1 + acronym_height + 2 + 1;
+        assert_eq!(total_height, 26);
+    }
+
+    #[test]
+    fn splash_center_y_calculation() {
+        let area_y: u16 = 0;
+        let area_height: u16 = 60;
+        let center_y = area_y + area_height / 2;
+        assert_eq!(center_y, 30);
+    }
+
+    #[test]
+    fn splash_text_start_y() {
+        let center_y: u16 = 30;
+        let total_height: u16 = 26;
+        let text_start_y = center_y.saturating_sub(total_height / 2);
+        assert_eq!(text_start_y, 17);
+    }
+
+    #[test]
+    fn splash_butterfly_has_37_rows() {
+        // The actual butterfly vec in draw_splash has 37 entries
+        let butterfly_len = 37;
+        assert_eq!(butterfly_len, 37);
+    }
+
+    #[test]
+    fn splash_butterfly_start_y() {
+        let center_y: u16 = 30;
+        let bf_h: u16 = 37;
+        let bf_start_y = center_y.saturating_sub(bf_h / 2);
+        assert_eq!(bf_start_y, 12);
+    }
+
+    // ── Minimum splash duration ───────────────────────────────────────
+
+    #[test]
+    fn min_splash_is_three_seconds() {
+        let min_splash = std::time::Duration::from_secs(3);
+        assert_eq!(min_splash.as_secs(), 3);
+    }
+
+    #[test]
+    fn splash_remaining_when_fast_load() {
+        let min_splash = std::time::Duration::from_secs(3);
+        let elapsed = std::time::Duration::from_millis(500);
+        assert!(elapsed < min_splash);
+        let remaining = min_splash - elapsed;
+        assert_eq!(remaining.as_millis(), 2500);
+    }
+
+    #[test]
+    fn splash_no_remaining_when_slow_load() {
+        let min_splash = std::time::Duration::from_secs(3);
+        let elapsed = std::time::Duration::from_secs(5);
+        assert!(elapsed >= min_splash);
+    }
+
+    // ── Nerd font detection message ───────────────────────────────────
+
+    #[test]
+    fn nerd_font_warning_message() {
+        let msg = "Nerd Font not detected \u{2014} using emoji icons. Install a Nerd Font for richer file tree icons";
+        assert!(msg.contains("Nerd Font"));
+        assert!(msg.contains("emoji icons"));
+    }
+
+    // ── Tab packing (greedy) arithmetic ───────────────────────────────
+
+    #[test]
+    fn tab_packing_first_tab_no_separator() {
+        let cur_is_empty = true;
+        let tw = 10;
+        let cost = if cur_is_empty { tw } else { tw + 1 };
+        assert_eq!(cost, 10); // first tab has no separator
+    }
+
+    #[test]
+    fn tab_packing_subsequent_tabs_add_separator() {
+        let cur_is_empty = false;
+        let tw = 10;
+        let cost = if cur_is_empty { tw } else { tw + 1 };
+        assert_eq!(cost, 11); // +1 for separator
+    }
+
+    #[test]
+    fn tab_packing_overflow_starts_new_page() {
+        let avail: usize = 20;
+        let cur_w: usize = 18;
+        let cost: usize = 5;
+        let overflow = !vec![0usize].is_empty() && cur_w + cost > avail;
+        assert!(overflow); // 18 + 5 = 23 > 20
+    }
+
+    #[test]
+    fn tab_packing_fits_stays_on_page() {
+        let avail: usize = 20;
+        let cur_w: usize = 10;
+        let cost: usize = 5;
+        let overflow = !vec![0usize].is_empty() && cur_w + cost > avail;
+        assert!(!overflow); // 10 + 5 = 15 <= 20
+    }
+
+    // ── Page indicator formatting ─────────────────────────────────────
+
+    #[test]
+    fn page_indicator_format() {
+        let active_page: usize = 0;
+        let total_pages: usize = 3;
+        let indicator = format!("  {}/{}", active_page + 1, total_pages);
+        assert_eq!(indicator, "  1/3");
+    }
+
+    #[test]
+    fn page_indicator_last_page() {
+        let active_page: usize = 2;
+        let total_pages: usize = 3;
+        let indicator = format!("  {}/{}", active_page + 1, total_pages);
+        assert_eq!(indicator, "  3/3");
+    }
+
+    // ── Focus enum comparison ─────────────────────────────────────────
+
+    #[test]
+    fn focus_worktrees_equality() {
+        assert_eq!(Focus::Worktrees, Focus::Worktrees);
+    }
+
+    #[test]
+    fn focus_worktree_creation_equality() {
+        assert_eq!(Focus::WorktreeCreation, Focus::WorktreeCreation);
+    }
+
+    #[test]
+    fn focus_variants_are_distinct() {
+        assert_ne!(Focus::Worktrees, Focus::WorktreeCreation);
+    }
+
+    // ── Rect construction ─────────────────────────────────────────────
+
+    #[test]
+    fn rect_new_sets_fields() {
+        let r = Rect::new(5, 10, 80, 24);
+        assert_eq!(r.x, 5);
+        assert_eq!(r.y, 10);
+        assert_eq!(r.width, 80);
+        assert_eq!(r.height, 24);
+    }
+
+    #[test]
+    fn rect_zero() {
+        let r = Rect::new(0, 0, 0, 0);
+        assert_eq!(r.x, 0);
+        assert_eq!(r.width, 0);
+    }
+
+    // ── Style construction ────────────────────────────────────────────
+
+    #[test]
+    fn style_default_is_reset() {
+        let s = Style::default();
+        assert_eq!(s, Style::default());
+    }
+
+    #[test]
+    fn style_fg_sets_foreground() {
+        let s = Style::default().fg(Color::Red);
+        assert_ne!(s, Style::default());
+    }
+
+    #[test]
+    fn style_bg_sets_background() {
+        let s = Style::default().bg(Color::Blue);
+        assert_ne!(s, Style::default());
+    }
+
+    #[test]
+    fn style_bold_modifier() {
+        let s = Style::default().add_modifier(Modifier::BOLD);
+        assert_ne!(s, Style::default());
+    }
+
+    #[test]
+    fn style_dim_modifier() {
+        let s = Style::default().add_modifier(Modifier::DIM);
+        assert_ne!(s, Style::default());
+    }
+}

@@ -310,3 +310,643 @@ pub struct HelpSection {
     pub title: &'static str,
     pub bindings: &'static [Keybinding],
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyCombo constructors
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn keycombo_new_sets_modifiers_and_code() {
+        let kc = KeyCombo::new(KeyModifiers::CONTROL, KeyCode::Char('c'));
+        assert_eq!(kc.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(kc.code, KeyCode::Char('c'));
+    }
+
+    #[test]
+    fn keycombo_plain_has_no_modifiers() {
+        let kc = KeyCombo::plain(KeyCode::Char('q'));
+        assert_eq!(kc.modifiers, KeyModifiers::NONE);
+        assert_eq!(kc.code, KeyCode::Char('q'));
+    }
+
+    #[test]
+    fn keycombo_shift_sets_shift() {
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        assert_eq!(kc.modifiers, KeyModifiers::SHIFT);
+        assert_eq!(kc.code, KeyCode::Char('G'));
+    }
+
+    #[test]
+    fn keycombo_ctrl_sets_control() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('s'));
+        assert_eq!(kc.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(kc.code, KeyCode::Char('s'));
+    }
+
+    #[test]
+    fn keycombo_alt_sets_alt() {
+        let kc = KeyCombo::alt(KeyCode::Char('x'));
+        assert_eq!(kc.modifiers, KeyModifiers::ALT);
+        assert_eq!(kc.code, KeyCode::Char('x'));
+    }
+
+    #[test]
+    fn keycombo_cmd_sets_super() {
+        let kc = KeyCombo::cmd(KeyCode::Char('o'));
+        assert_eq!(kc.modifiers, KeyModifiers::SUPER);
+        assert_eq!(kc.code, KeyCode::Char('o'));
+    }
+
+    #[test]
+    fn keycombo_new_combined_modifiers() {
+        let mods = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+        let kc = KeyCombo::new(mods, KeyCode::Char('Z'));
+        assert!(kc.modifiers.contains(KeyModifiers::CONTROL));
+        assert!(kc.modifiers.contains(KeyModifiers::SHIFT));
+    }
+
+    #[test]
+    fn keycombo_plain_enter() {
+        let kc = KeyCombo::plain(KeyCode::Enter);
+        assert_eq!(kc.modifiers, KeyModifiers::NONE);
+        assert_eq!(kc.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn keycombo_plain_esc() {
+        let kc = KeyCombo::plain(KeyCode::Esc);
+        assert_eq!(kc.code, KeyCode::Esc);
+    }
+
+    #[test]
+    fn keycombo_ctrl_arrow() {
+        let kc = KeyCombo::ctrl(KeyCode::Up);
+        assert_eq!(kc.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(kc.code, KeyCode::Up);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyCombo::matches
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn matches_exact_plain_char() {
+        let kc = KeyCombo::plain(KeyCode::Char('j'));
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::Char('j')));
+    }
+
+    #[test]
+    fn matches_exact_ctrl_char() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert!(kc.matches(KeyModifiers::CONTROL, KeyCode::Char('c')));
+    }
+
+    #[test]
+    fn no_match_wrong_modifier() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert!(!kc.matches(KeyModifiers::ALT, KeyCode::Char('c')));
+    }
+
+    #[test]
+    fn no_match_wrong_code() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert!(!kc.matches(KeyModifiers::CONTROL, KeyCode::Char('x')));
+    }
+
+    #[test]
+    fn no_match_both_wrong() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert!(!kc.matches(KeyModifiers::ALT, KeyCode::Char('x')));
+    }
+
+    #[test]
+    fn matches_shift_uppercase_with_shift_modifier() {
+        // Shift+G binding matches (SHIFT, Char('G'))
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        assert!(kc.matches(KeyModifiers::SHIFT, KeyCode::Char('G')));
+    }
+
+    #[test]
+    fn matches_shift_uppercase_with_none_modifier() {
+        // Shift+G binding also matches (NONE, Char('G')) — legacy terminal behavior
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::Char('G')));
+    }
+
+    #[test]
+    fn matches_shift_uppercase_with_shift_lowercase() {
+        // Shift+G binding matches (SHIFT, Char('g')) — Kitty DISAMBIGUATE mode
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        assert!(kc.matches(KeyModifiers::SHIFT, KeyCode::Char('g')));
+    }
+
+    #[test]
+    fn no_match_shift_uppercase_plain_lowercase() {
+        // (NONE, Char('g')) should NOT match Shift+G — that's just a plain 'g'
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        assert!(!kc.matches(KeyModifiers::NONE, KeyCode::Char('g')));
+    }
+
+    #[test]
+    fn matches_enter_key() {
+        let kc = KeyCombo::plain(KeyCode::Enter);
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::Enter));
+    }
+
+    #[test]
+    fn no_match_enter_vs_esc() {
+        let kc = KeyCombo::plain(KeyCode::Enter);
+        assert!(!kc.matches(KeyModifiers::NONE, KeyCode::Esc));
+    }
+
+    #[test]
+    fn matches_f_key() {
+        let kc = KeyCombo::plain(KeyCode::F(1));
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::F(1)));
+    }
+
+    #[test]
+    fn no_match_different_f_key() {
+        let kc = KeyCombo::plain(KeyCode::F(1));
+        assert!(!kc.matches(KeyModifiers::NONE, KeyCode::F(2)));
+    }
+
+    #[test]
+    fn matches_tab_plain() {
+        let kc = KeyCombo::plain(KeyCode::Tab);
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::Tab));
+    }
+
+    #[test]
+    fn no_match_extra_modifier_on_plain() {
+        let kc = KeyCombo::plain(KeyCode::Char('q'));
+        assert!(!kc.matches(KeyModifiers::CONTROL, KeyCode::Char('q')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyCombo::display
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn display_plain_char() {
+        let kc = KeyCombo::plain(KeyCode::Char('j'));
+        assert_eq!(kc.display(), "j");
+    }
+
+    #[test]
+    fn display_uppercase_char() {
+        let kc = KeyCombo::shift(KeyCode::Char('G'));
+        // Shift suppressed for char keys — uppercase implies shift
+        assert_eq!(kc.display(), "G");
+    }
+
+    #[test]
+    fn display_ctrl_char() {
+        let kc = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert_eq!(kc.display(), "⌃c");
+    }
+
+    #[test]
+    fn display_alt_char() {
+        let kc = KeyCombo::alt(KeyCode::Char('x'));
+        assert_eq!(kc.display(), "⌥x");
+    }
+
+    #[test]
+    fn display_cmd_char() {
+        let kc = KeyCombo::cmd(KeyCode::Char('o'));
+        assert_eq!(kc.display(), "⌘o");
+    }
+
+    #[test]
+    fn display_ctrl_alt() {
+        let kc = KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::ALT, KeyCode::Char('d'));
+        assert_eq!(kc.display(), "⌃⌥d");
+    }
+
+    #[test]
+    fn display_enter() {
+        let kc = KeyCombo::plain(KeyCode::Enter);
+        assert_eq!(kc.display(), "Enter");
+    }
+
+    #[test]
+    fn display_esc() {
+        let kc = KeyCombo::plain(KeyCode::Esc);
+        assert_eq!(kc.display(), "Esc");
+    }
+
+    #[test]
+    fn display_tab() {
+        let kc = KeyCombo::plain(KeyCode::Tab);
+        assert_eq!(kc.display(), "Tab");
+    }
+
+    #[test]
+    fn display_backtab() {
+        let kc = KeyCombo::shift(KeyCode::BackTab);
+        assert_eq!(kc.display(), "⇧Tab");
+    }
+
+    #[test]
+    fn display_backspace() {
+        let kc = KeyCombo::plain(KeyCode::Backspace);
+        assert_eq!(kc.display(), "⌫");
+    }
+
+    #[test]
+    fn display_delete() {
+        let kc = KeyCombo::plain(KeyCode::Delete);
+        assert_eq!(kc.display(), "⌦");
+    }
+
+    #[test]
+    fn display_arrows() {
+        assert_eq!(KeyCombo::plain(KeyCode::Up).display(), "↑");
+        assert_eq!(KeyCombo::plain(KeyCode::Down).display(), "↓");
+        assert_eq!(KeyCombo::plain(KeyCode::Left).display(), "←");
+        assert_eq!(KeyCombo::plain(KeyCode::Right).display(), "→");
+    }
+
+    #[test]
+    fn display_home_end() {
+        assert_eq!(KeyCombo::plain(KeyCode::Home).display(), "Home");
+        assert_eq!(KeyCombo::plain(KeyCode::End).display(), "End");
+    }
+
+    #[test]
+    fn display_pageup_pagedown() {
+        assert_eq!(KeyCombo::plain(KeyCode::PageUp).display(), "PgUp");
+        assert_eq!(KeyCombo::plain(KeyCode::PageDown).display(), "PgDn");
+    }
+
+    #[test]
+    fn display_space() {
+        let kc = KeyCombo::plain(KeyCode::Char(' '));
+        assert_eq!(kc.display(), "Space");
+    }
+
+    #[test]
+    fn display_shift_arrow_shows_shift() {
+        // Shift IS shown for non-char keys
+        let kc = KeyCombo::shift(KeyCode::Up);
+        assert_eq!(kc.display(), "⇧↑");
+    }
+
+    #[test]
+    fn display_ctrl_shift_enter() {
+        let kc = KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::SHIFT, KeyCode::Enter);
+        assert_eq!(kc.display(), "⌃⇧Enter");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Keybinding constructors
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn keybinding_new_fields() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('q')),
+            "Quit",
+            Action::Quit,
+        );
+        assert_eq!(kb.primary.code, KeyCode::Char('q'));
+        assert_eq!(kb.description, "Quit");
+        assert_eq!(kb.action, Action::Quit);
+        assert!(kb.alternatives.is_empty());
+        assert!(!kb.pair_with_next);
+    }
+
+    #[test]
+    fn keybinding_with_alt_stores_alternatives() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Down",
+            Action::NavDown,
+        );
+        assert_eq!(kb.alternatives.len(), 1);
+        assert_eq!(kb.alternatives[0].code, KeyCode::Down);
+    }
+
+    #[test]
+    fn keybinding_paired_sets_flag() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('j')),
+            "Down",
+            Action::NavDown,
+        ).paired();
+        assert!(kb.pair_with_next);
+    }
+
+    #[test]
+    fn keybinding_new_not_paired_by_default() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('j')),
+            "Down",
+            Action::NavDown,
+        );
+        assert!(!kb.pair_with_next);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Keybinding::matches
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn keybinding_matches_primary() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('q')),
+            "Quit",
+            Action::Quit,
+        );
+        assert!(kb.matches(KeyModifiers::NONE, KeyCode::Char('q')));
+    }
+
+    #[test]
+    fn keybinding_matches_alternative() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Down",
+            Action::NavDown,
+        );
+        assert!(kb.matches(KeyModifiers::NONE, KeyCode::Down));
+    }
+
+    #[test]
+    fn keybinding_no_match() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('q')),
+            "Quit",
+            Action::Quit,
+        );
+        assert!(!kb.matches(KeyModifiers::NONE, KeyCode::Char('x')));
+    }
+
+    #[test]
+    fn keybinding_no_match_wrong_modifier() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('q')),
+            "Quit",
+            Action::Quit,
+        );
+        assert!(!kb.matches(KeyModifiers::CONTROL, KeyCode::Char('q')));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Keybinding::display_keys
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn display_keys_no_alternatives() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('q')),
+            "Quit",
+            Action::Quit,
+        );
+        assert_eq!(kb.display_keys(), "q");
+    }
+
+    #[test]
+    fn display_keys_with_ascii_alternative() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Down",
+            Action::NavDown,
+        );
+        assert_eq!(kb.display_keys(), "j/↓");
+    }
+
+    #[test]
+    fn display_keys_skips_macos_unicode_alt() {
+        // A bare non-ASCII char with NONE modifiers should be skipped (macOS ⌥ fallback)
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::alt(KeyCode::Char('r')),
+            &ALTS,
+            "Test",
+            Action::Quit,
+        );
+        // ® is non-ASCII with NONE modifiers → skipped
+        assert_eq!(kb.display_keys(), "⌥r");
+    }
+
+    #[test]
+    fn display_keys_keeps_non_ascii_with_modifier() {
+        // Non-ASCII char WITH a modifier should NOT be skipped
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('®') }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::alt(KeyCode::Char('r')),
+            &ALTS,
+            "Test",
+            Action::Quit,
+        );
+        assert_eq!(kb.display_keys(), "⌥r/⌃®");
+    }
+
+    #[test]
+    fn display_keys_multiple_alternatives() {
+        static ALTS: [KeyCombo; 2] = [
+            KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down },
+            KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('n') },
+        ];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Down",
+            Action::NavDown,
+        );
+        assert_eq!(kb.display_keys(), "j/↓/⌃n");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Action enum coverage
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn action_quit_eq() {
+        assert_eq!(Action::Quit, Action::Quit);
+    }
+
+    #[test]
+    fn action_different_not_eq() {
+        assert_ne!(Action::Quit, Action::Save);
+    }
+
+    #[test]
+    fn action_debug_format() {
+        let s = format!("{:?}", Action::ToggleHelp);
+        assert_eq!(s, "ToggleHelp");
+    }
+
+    #[test]
+    fn action_clone() {
+        let a = Action::NavDown;
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn action_copy() {
+        let a = Action::CycleFocusForward;
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  KeyCombo equality
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn keycombo_eq() {
+        let a = KeyCombo::ctrl(KeyCode::Char('c'));
+        let b = KeyCombo::ctrl(KeyCode::Char('c'));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn keycombo_ne_different_mod() {
+        let a = KeyCombo::ctrl(KeyCode::Char('c'));
+        let b = KeyCombo::alt(KeyCode::Char('c'));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn keycombo_ne_different_code() {
+        let a = KeyCombo::ctrl(KeyCode::Char('c'));
+        let b = KeyCombo::ctrl(KeyCode::Char('v'));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn keycombo_clone() {
+        let a = KeyCombo::plain(KeyCode::Char('x'));
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn keycombo_debug_format() {
+        let kc = KeyCombo::plain(KeyCode::Char('a'));
+        let s = format!("{:?}", kc);
+        assert!(s.contains("KeyCombo"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  HelpSection
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn help_section_fields() {
+        static BINDINGS: [Keybinding; 0] = [];
+        let hs = HelpSection { title: "Test", bindings: &BINDINGS };
+        assert_eq!(hs.title, "Test");
+        assert!(hs.bindings.is_empty());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Additional edge cases
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn matches_shift_non_alpha_not_special_cased() {
+        // Shift+Enter is not an alpha key, so only exact match works
+        let kc = KeyCombo::shift(KeyCode::Enter);
+        assert!(kc.matches(KeyModifiers::SHIFT, KeyCode::Enter));
+        assert!(!kc.matches(KeyModifiers::NONE, KeyCode::Enter));
+    }
+
+    #[test]
+    fn display_f_key() {
+        let kc = KeyCombo::plain(KeyCode::F(5));
+        let s = kc.display();
+        assert!(s.contains("5"));
+    }
+
+    #[test]
+    fn display_ctrl_space() {
+        let kc = KeyCombo::ctrl(KeyCode::Char(' '));
+        assert_eq!(kc.display(), "⌃Space");
+    }
+
+    #[test]
+    fn keybinding_matches_shift_alt_through_alternatives() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::SHIFT, code: KeyCode::Char('G') }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('g')),
+            &ALTS,
+            "Go to bottom",
+            Action::GoToBottom,
+        );
+        // Primary match
+        assert!(kb.matches(KeyModifiers::NONE, KeyCode::Char('g')));
+        // Alt match (SHIFT + G)
+        assert!(kb.matches(KeyModifiers::SHIFT, KeyCode::Char('G')));
+        // Alt match (NONE + G, legacy terminal)
+        assert!(kb.matches(KeyModifiers::NONE, KeyCode::Char('G')));
+    }
+
+    #[test]
+    fn keybinding_with_alt_description() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Navigate down",
+            Action::NavDown,
+        );
+        assert_eq!(kb.description, "Navigate down");
+    }
+
+    #[test]
+    fn keybinding_action_stored_correctly() {
+        let kb = Keybinding::new(
+            KeyCombo::ctrl(KeyCode::Char('s')),
+            "Save",
+            Action::Save,
+        );
+        assert_eq!(kb.action, Action::Save);
+    }
+
+    #[test]
+    fn keybinding_paired_preserves_other_fields() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Char('k')),
+            "Up",
+            Action::NavUp,
+        ).paired();
+        assert_eq!(kb.primary.code, KeyCode::Char('k'));
+        assert_eq!(kb.description, "Up");
+        assert_eq!(kb.action, Action::NavUp);
+        assert!(kb.pair_with_next);
+    }
+
+    #[test]
+    fn display_keys_ctrl_binding() {
+        let kb = Keybinding::new(
+            KeyCombo::ctrl(KeyCode::Char('z')),
+            "Undo",
+            Action::Undo,
+        );
+        assert_eq!(kb.display_keys(), "⌃z");
+    }
+
+    #[test]
+    fn display_keys_special_key_binding() {
+        let kb = Keybinding::new(
+            KeyCombo::plain(KeyCode::Esc),
+            "Escape",
+            Action::Escape,
+        );
+        assert_eq!(kb.display_keys(), "Esc");
+    }
+}

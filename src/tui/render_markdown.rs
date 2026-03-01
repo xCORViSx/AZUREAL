@@ -325,3 +325,407 @@ fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usi
         lines.push(Line::from(spans));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // clamp_col_widths
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn clamp_empty_widths() {
+        let mut w: Vec<usize> = vec![];
+        clamp_col_widths(&mut w, 80);
+        assert!(w.is_empty());
+    }
+
+    #[test]
+    fn clamp_single_col_fits() {
+        let mut w = vec![10];
+        clamp_col_widths(&mut w, 80);
+        assert_eq!(w, vec![10]);
+    }
+
+    #[test]
+    fn clamp_two_cols_fit() {
+        let mut w = vec![5, 5];
+        // overhead = 3 + 3*2 = 9, total content = 10, table = 19 — fits in 80
+        clamp_col_widths(&mut w, 80);
+        assert_eq!(w, vec![5, 5]);
+    }
+
+    #[test]
+    fn clamp_two_cols_too_wide() {
+        let mut w = vec![50, 50];
+        // overhead = 3 + 3*2 = 9, total content = 100, table = 109 > 20
+        clamp_col_widths(&mut w, 20);
+        let total: usize = w.iter().sum();
+        // Available = 20 - 9 = 11, so total should be <= 11
+        assert!(total <= 11);
+    }
+
+    #[test]
+    fn clamp_zero_available() {
+        let mut w = vec![10, 10];
+        // overhead = 9, bubble_width = 5 means available = 0
+        clamp_col_widths(&mut w, 5);
+        assert_eq!(w, vec![1, 1]);
+    }
+
+    #[test]
+    fn clamp_preserves_minimum_width() {
+        let mut w = vec![100, 100, 100];
+        clamp_col_widths(&mut w, 20);
+        for col in &w {
+            assert!(*col >= 1, "column width must be at least 1");
+        }
+    }
+
+    #[test]
+    fn clamp_proportional_shrink() {
+        let mut w = vec![20, 10];
+        // overhead = 3 + 3*2 = 9, total = 30, table = 39 > 25
+        clamp_col_widths(&mut w, 25);
+        // Bigger column should still be bigger after shrink
+        assert!(w[0] >= w[1]);
+    }
+
+    #[test]
+    fn clamp_single_col_oversized() {
+        let mut w = vec![200];
+        // overhead = 3 + 3*1 = 6, available = 20-6 = 14
+        clamp_col_widths(&mut w, 20);
+        assert!(w[0] <= 14);
+    }
+
+    #[test]
+    fn clamp_exact_fit_no_change() {
+        let mut w = vec![5, 5];
+        // overhead = 9, total = 10, table = 19
+        let original = w.clone();
+        clamp_col_widths(&mut w, 19);
+        assert_eq!(w, original);
+    }
+
+    #[test]
+    fn clamp_many_columns() {
+        let mut w = vec![10; 10];
+        // overhead = 3 + 3*10 = 33, content = 100, table = 133 > 60
+        // available = 27. Each col proportional: floor(10/100*27)=2, min 3.
+        // 10*3 = 30 > 27 but while loop stops at min_w=3. Total capped at 30.
+        clamp_col_widths(&mut w, 60);
+        let total: usize = w.iter().sum();
+        // Each column should be at minimum width (3)
+        for col in &w {
+            assert!(*col >= 3, "column should be at least min_w=3, got {}", col);
+        }
+        assert_eq!(total, 30);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // scan_tables
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn scan_tables_no_tables() {
+        let lines = vec!["hello", "world"];
+        let result = scan_tables(&lines, 80);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn scan_tables_simple_table() {
+        let lines = vec![
+            "| A | B |",
+            "|---|---|",
+            "| 1 | 2 |",
+        ];
+        let result = scan_tables(&lines, 80);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, 0); // start
+        assert_eq!(result[0].1, 3); // end
+    }
+
+    #[test]
+    fn scan_tables_col_widths_track_max() {
+        let lines = vec![
+            "| Short | LongerColumn |",
+            "|-------|--------------|",
+            "| X | Y |",
+        ];
+        let result = scan_tables(&lines, 200);
+        assert_eq!(result.len(), 1);
+        // "LongerColumn" = 12 chars, which is the max in column 2
+        assert!(result[0].2[1] >= 12);
+    }
+
+    #[test]
+    fn scan_tables_multiple_tables() {
+        let lines = vec![
+            "| A | B |",
+            "|---|---|",
+            "| 1 | 2 |",
+            "not a table",
+            "| C | D |",
+            "|---|---|",
+            "| 3 | 4 |",
+        ];
+        let result = scan_tables(&lines, 80);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn scan_tables_table_at_end() {
+        let lines = vec![
+            "hello",
+            "| A | B |",
+            "|---|---|",
+        ];
+        let result = scan_tables(&lines, 80);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, 1);
+        assert_eq!(result[0].1, 3);
+    }
+
+    #[test]
+    fn scan_tables_separator_only() {
+        let lines = vec!["|---|---|"];
+        let result = scan_tables(&lines, 80);
+        assert_eq!(result.len(), 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // render_assistant_text — structure tests
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn render_empty_text() {
+        let lines = render_assistant_text("", 80);
+        // Empty text produces no output or just an empty line
+        assert!(lines.len() <= 1);
+    }
+
+    #[test]
+    fn render_plain_paragraph() {
+        let lines = render_assistant_text("hello world", 80);
+        assert!(!lines.is_empty());
+        // First span should be the orange gutter
+        let first_span = &lines[0].spans[0];
+        assert_eq!(first_span.content.as_ref(), "│ ");
+    }
+
+    #[test]
+    fn render_code_block() {
+        let text = "```rust\nlet x = 1;\n```";
+        let lines = render_assistant_text(text, 80);
+        // Should have: open delimiter + code line + close delimiter = 3 lines
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn render_code_block_no_language() {
+        let text = "```\ncode\n```";
+        let lines = render_assistant_text(text, 80);
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn render_header_h1() {
+        let lines = render_assistant_text("# Title", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_header_h2() {
+        let lines = render_assistant_text("## Subtitle", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_header_h3() {
+        let lines = render_assistant_text("### Section", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_header_h4() {
+        let lines = render_assistant_text("#### Deep", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_bullet_dash() {
+        let lines = render_assistant_text("- item one", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_bullet_asterisk() {
+        let lines = render_assistant_text("* item two", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_bullet_unicode() {
+        let lines = render_assistant_text("• item three", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_numbered_list() {
+        let lines = render_assistant_text("1. first\n2. second", 80);
+        assert!(lines.len() >= 2);
+    }
+
+    #[test]
+    fn render_blockquote() {
+        let lines = render_assistant_text("> quoted text", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_mixed_content() {
+        let text = "# Title\n\nParagraph\n\n- bullet\n\n```\ncode\n```\n\n> quote";
+        let lines = render_assistant_text(text, 80);
+        assert!(lines.len() >= 5);
+    }
+
+    #[test]
+    fn render_wraps_long_lines() {
+        let long = "a ".repeat(100);
+        let lines = render_assistant_text(&long, 40);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn render_table_basic() {
+        let text = "| Col1 | Col2 |\n|------|------|\n| a | b |";
+        let lines = render_assistant_text(text, 80);
+        // Table rendering adds borders: top, header, separator, data, bottom
+        assert!(lines.len() >= 4);
+    }
+
+    #[test]
+    fn render_narrow_width() {
+        let lines = render_assistant_text("hello world", 10);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_code_block_wraps() {
+        let text = format!("```\n{}\n```", "x".repeat(200));
+        let lines = render_assistant_text(&text, 40);
+        // Code should wrap within the block
+        assert!(lines.len() > 3);
+    }
+
+    #[test]
+    fn render_multiple_paragraphs() {
+        let text = "para one\n\npara two\n\npara three";
+        let lines = render_assistant_text(text, 80);
+        assert!(lines.len() >= 3);
+    }
+
+    #[test]
+    fn render_unicode_content() {
+        let lines = render_assistant_text("日本語テスト", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_emoji_content() {
+        let lines = render_assistant_text("🎉 celebration 🎊", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_header_wraps_long() {
+        let title = format!("# {}", "W".repeat(200));
+        let lines = render_assistant_text(&title, 40);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn render_numbered_double_digit() {
+        let lines = render_assistant_text("12. twelfth item", 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_quote_wraps() {
+        let long_quote = format!("> {}", "word ".repeat(50));
+        let lines = render_assistant_text(&long_quote, 40);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn render_bullet_wraps() {
+        let long_bullet = format!("- {}", "text ".repeat(50));
+        let lines = render_assistant_text(&long_bullet, 40);
+        assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn render_width_1_no_panic() {
+        // Extremely narrow — should not panic
+        let lines = render_assistant_text("hello", 1);
+        let _ = lines;
+    }
+
+    #[test]
+    fn render_width_0_no_panic() {
+        let lines = render_assistant_text("hello", 0);
+        let _ = lines;
+    }
+
+    #[test]
+    fn render_unclosed_code_block() {
+        let text = "```\ncode without closing";
+        let lines = render_assistant_text(text, 80);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_multiple_code_blocks() {
+        let text = "```\nfirst\n```\n\n```python\nsecond\n```";
+        let lines = render_assistant_text(text, 80);
+        assert!(lines.len() >= 6);
+    }
+
+    #[test]
+    fn render_table_clamped_columns() {
+        let text = "| Very Long Column Name Here | Another Very Long Column |\n|---|---|\n| x | y |";
+        let lines = render_assistant_text(text, 30);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn clamp_one_col_exact_fit() {
+        let mut w = vec![10];
+        // overhead = 3 + 3*1 = 6, total = 10, table = 16 <= 16
+        clamp_col_widths(&mut w, 16);
+        assert_eq!(w, vec![10]);
+    }
+
+    #[test]
+    fn scan_tables_header_only_one_line() {
+        let lines = vec!["| A | B |"];
+        let result = scan_tables(&lines, 80);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn render_single_newline() {
+        let lines = render_assistant_text("\n", 80);
+        // Should produce at least one line (empty paragraph)
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn render_only_whitespace() {
+        let lines = render_assistant_text("   ", 80);
+        assert!(!lines.is_empty());
+    }
+}

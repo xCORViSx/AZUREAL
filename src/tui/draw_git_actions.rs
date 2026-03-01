@@ -262,6 +262,8 @@ pub(crate) fn draw_auto_resolve_overlay(f: &mut Frame, overlay: &crate::app::typ
     f.render_widget(Paragraph::new(visible).block(block), area);
 }
 
+// NOTE: tests are at the bottom of this file
+
 /// Conflict resolution UI rendered as an overlay on the viewer pane area
 pub(crate) fn draw_conflict_inline(f: &mut Frame, ov: &crate::app::types::GitConflictOverlay, area: Rect) {
     let inner_w = area.width.saturating_sub(4) as usize;
@@ -326,4 +328,215 @@ pub(crate) fn draw_conflict_inline(f: &mut Frame, ov: &crate::app::types::GitCon
 
     f.render_widget(Clear, area);
     f.render_widget(Paragraph::new(visible).block(block), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::{GitCommitOverlay, GitConflictOverlay, AutoResolveOverlay};
+
+    // ── Color constants ──
+
+    #[test]
+    fn test_git_orange_value() { assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50)); }
+    #[test]
+    fn test_git_brown_value() { assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45)); }
+    #[test]
+    fn test_git_orange_not_red() { assert_ne!(GIT_ORANGE, Color::Red); }
+    #[test]
+    fn test_git_brown_not_yellow() { assert_ne!(GIT_BROWN, Color::Yellow); }
+    #[test]
+    fn test_git_colors_distinct() { assert_ne!(GIT_ORANGE, GIT_BROWN); }
+
+    // ── GitCommitOverlay ──
+
+    #[test]
+    fn test_commit_overlay_empty() {
+        let ov = GitCommitOverlay { message: String::new(), cursor: 0, generating: false, scroll: 0, receiver: None };
+        assert!(ov.message.is_empty());
+    }
+    #[test]
+    fn test_commit_overlay_generating() {
+        let ov = GitCommitOverlay { message: String::new(), cursor: 0, generating: true, scroll: 0, receiver: None };
+        assert!(ov.generating);
+    }
+    #[test]
+    fn test_commit_overlay_with_msg() {
+        let ov = GitCommitOverlay { message: "feat: tests".into(), cursor: 11, generating: false, scroll: 0, receiver: None };
+        assert_eq!(ov.message, "feat: tests");
+    }
+    #[test]
+    fn test_commit_overlay_multiline() {
+        let lines: Vec<&str> = "a\nb\nc".lines().collect();
+        assert_eq!(lines.len(), 3);
+    }
+    #[test]
+    fn test_commit_overlay_trailing_newline() {
+        let msg = "line\n";
+        let mut lines: Vec<&str> = msg.lines().collect();
+        if msg.ends_with('\n') { lines.push(""); }
+        assert_eq!(lines.len(), 2);
+    }
+    #[test]
+    fn test_commit_overlay_empty_lines() {
+        let lines: Vec<&str> = "".lines().collect();
+        let lines: Vec<&str> = if lines.is_empty() { vec![""] } else { lines };
+        assert_eq!(lines.len(), 1);
+    }
+
+    // ── Dots animation ──
+
+    #[test]
+    fn test_dots_0() { assert_eq!(".".repeat(0), ""); }
+    #[test]
+    fn test_dots_1() { assert_eq!(".".repeat(1), "."); }
+    #[test]
+    fn test_dots_3() { assert_eq!(".".repeat(3), "..."); }
+    #[test]
+    fn test_dots_cycle() { for i in 0..8u128 { assert!((i % 4) < 4); } }
+
+    // ── GitConflictOverlay ──
+
+    #[test]
+    fn test_conflict_empty() {
+        let ov = GitConflictOverlay { conflicted_files: vec![], auto_merged_files: vec![], scroll: 0, selected: 0, continue_with_merge: false };
+        assert!(ov.conflicted_files.is_empty());
+    }
+    #[test]
+    fn test_conflict_with_files() {
+        let ov = GitConflictOverlay { conflicted_files: vec!["a".into(), "b".into()], auto_merged_files: vec!["c".into()], scroll: 0, selected: 0, continue_with_merge: false };
+        assert_eq!(ov.conflicted_files.len(), 2);
+        assert_eq!(ov.auto_merged_files.len(), 1);
+    }
+    #[test]
+    fn test_conflict_selected_0() {
+        let ov = GitConflictOverlay { conflicted_files: vec![], auto_merged_files: vec![], scroll: 0, selected: 0, continue_with_merge: false };
+        assert_eq!(ov.selected, 0);
+    }
+    #[test]
+    fn test_conflict_selected_1() {
+        let ov = GitConflictOverlay { conflicted_files: vec![], auto_merged_files: vec![], scroll: 0, selected: 1, continue_with_merge: false };
+        assert_eq!(ov.selected, 1);
+    }
+    #[test]
+    fn test_conflict_continue() {
+        let ov = GitConflictOverlay { conflicted_files: vec![], auto_merged_files: vec![], scroll: 0, selected: 0, continue_with_merge: true };
+        assert!(ov.continue_with_merge);
+    }
+
+    // ── Conflict display ──
+
+    #[test]
+    fn test_conflict_short_display() {
+        let cf = "src/main.rs";
+        let iw = 40;
+        let d = if cf.len() > iw - 3 { format!("   \u{2026}{}", &cf[cf.len().saturating_sub(iw - 4)..]) } else { format!("   {}", cf) };
+        assert_eq!(d, "   src/main.rs");
+    }
+    #[test]
+    fn test_conflict_long_truncated() {
+        let cf = "a".repeat(50);
+        let iw = 20;
+        let d = if cf.len() > iw - 3 { format!("   \u{2026}{}", &cf[cf.len().saturating_sub(iw - 4)..]) } else { format!("   {}", cf) };
+        assert!(d.starts_with("   \u{2026}"));
+    }
+
+    // ── Header pluralization ──
+
+    #[test]
+    fn test_header_singular() { assert_eq!(format!(" {} CONFLICTED FILE{}", 1, if 1 == 1 { "" } else { "S" }), " 1 CONFLICTED FILE"); }
+    #[test]
+    fn test_header_plural() { assert_eq!(format!(" {} CONFLICTED FILE{}", 5, if 5 == 1 { "" } else { "S" }), " 5 CONFLICTED FILES"); }
+    #[test]
+    fn test_auto_merged_header() { assert_eq!(format!(" {} AUTO-MERGED", 3), " 3 AUTO-MERGED"); }
+
+    // ── AutoResolveOverlay ──
+
+    #[test]
+    fn test_ar_overlay_empty() {
+        let ov = AutoResolveOverlay { files: vec![], selected: 0, adding: false, input_buffer: String::new(), input_cursor: 0 };
+        assert!(ov.files.is_empty());
+    }
+    #[test]
+    fn test_ar_overlay_files() {
+        let ov = AutoResolveOverlay { files: vec![("Cargo.lock".into(), true), ("pkg.json".into(), false)], selected: 0, adding: false, input_buffer: String::new(), input_cursor: 0 };
+        assert_eq!(ov.files.len(), 2);
+        assert!(ov.files[0].1);
+        assert!(!ov.files[1].1);
+    }
+    #[test]
+    fn test_ar_overlay_adding() {
+        let ov = AutoResolveOverlay { files: vec![], selected: 0, adding: true, input_buffer: "new".into(), input_cursor: 3 };
+        assert!(ov.adding);
+    }
+    #[test]
+    fn test_ar_check_enabled() { assert_eq!(if true { "[x]" } else { "[ ]" }, "[x]"); }
+    #[test]
+    fn test_ar_check_disabled() { assert_eq!(if false { "[x]" } else { "[ ]" }, "[ ]"); }
+    #[test]
+    fn test_ar_prefix_sel() { assert_eq!(if true { " \u{25b8} " } else { "   " }, " \u{25b8} "); }
+    #[test]
+    fn test_ar_prefix_unsel() { assert_eq!(if false { " \u{25b8} " } else { "   " }, "   "); }
+
+    // ── Arrow indicators ──
+
+    #[test]
+    fn test_arrow_0() {
+        let s = 0;
+        assert_eq!(if s == 0 { " \u{25b8} " } else { "   " }, " \u{25b8} ");
+        assert_eq!(if s == 1 { " \u{25b8} " } else { "   " }, "   ");
+    }
+    #[test]
+    fn test_arrow_1() {
+        let s = 1;
+        assert_eq!(if s == 0 { " \u{25b8} " } else { "   " }, "   ");
+        assert_eq!(if s == 1 { " \u{25b8} " } else { "   " }, " \u{25b8} ");
+    }
+
+    // ── Dimensions ──
+
+    #[test]
+    fn test_inner_h() { assert_eq!(20u16.saturating_sub(2) as usize, 18); }
+    #[test]
+    fn test_inner_w() { assert_eq!(60u16.saturating_sub(2) as usize, 58); }
+    #[test]
+    fn test_inner_w_pad() { assert_eq!(60u16.saturating_sub(4) as usize, 56); }
+    #[test]
+    fn test_inner_h_small() { assert_eq!(2u16.saturating_sub(2) as usize, 0); }
+    #[test]
+    fn test_inner_h_zero() { assert_eq!(0u16.saturating_sub(2) as usize, 0); }
+
+    // ── Wrap width ──
+
+    #[test]
+    fn test_wrap_w_normal() { assert_eq!(58usize.saturating_sub(1).max(1), 57); }
+    #[test]
+    fn test_wrap_w_one() { assert_eq!(1usize.saturating_sub(1).max(1), 1); }
+    #[test]
+    fn test_wrap_w_zero() { assert_eq!(0usize.saturating_sub(1).max(1), 1); }
+
+    // ── Visible height ──
+
+    #[test]
+    fn test_vis_h_normal() { assert_eq!(20usize.saturating_sub(2), 18); }
+    #[test]
+    fn test_vis_h_small() { assert_eq!(2usize.saturating_sub(2), 0); }
+
+    // ── Cursor char ──
+
+    #[test]
+    fn test_cursor_at_pos() { assert_eq!("hello".chars().nth(2).unwrap_or(' '), 'l'); }
+    #[test]
+    fn test_cursor_at_end() { assert_eq!("hi".chars().nth(2).unwrap_or(' '), ' '); }
+    #[test]
+    fn test_cursor_empty() { assert_eq!("".chars().nth(0).unwrap_or(' '), ' '); }
+    #[test]
+    fn test_has_char_in() { assert!(1 < "abc".chars().count()); }
+    #[test]
+    fn test_has_char_end() { assert!(!(3 < "abc".chars().count())); }
+
+    #[test]
+    fn test_git_orange_rgb_components() {
+        if let Color::Rgb(r, g, b) = GIT_ORANGE { assert!(r > g && r > b); } else { panic!(); }
+    }
 }

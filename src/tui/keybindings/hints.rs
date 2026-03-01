@@ -206,3 +206,810 @@ pub fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db
         find_key_for_action(bindings, b).unwrap_or_else(|| db.into()),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ══════════════════════════════════════════════════════════════════
+    //  help_sections
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn help_sections_returns_five_sections() {
+        let sections = help_sections();
+        assert_eq!(sections.len(), 5);
+    }
+
+    #[test]
+    fn help_sections_first_is_worktree_tabs() {
+        let sections = help_sections();
+        assert_eq!(sections[0].title, "Worktree Tabs");
+    }
+
+    #[test]
+    fn help_sections_second_is_filetree() {
+        let sections = help_sections();
+        assert_eq!(sections[1].title, "Filetree");
+    }
+
+    #[test]
+    fn help_sections_third_is_viewer() {
+        let sections = help_sections();
+        assert_eq!(sections[2].title, "Viewer");
+    }
+
+    #[test]
+    fn help_sections_fourth_is_edit_mode() {
+        let sections = help_sections();
+        assert_eq!(sections[3].title, "Edit Mode");
+    }
+
+    #[test]
+    fn help_sections_fifth_is_session() {
+        let sections = help_sections();
+        assert_eq!(sections[4].title, "Session");
+    }
+
+    #[test]
+    fn help_sections_all_have_nonempty_bindings() {
+        for section in help_sections() {
+            assert!(!section.bindings.is_empty(), "section '{}' has no bindings", section.title);
+        }
+    }
+
+    #[test]
+    fn help_sections_worktree_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[0].bindings.len(), WORKTREES.len());
+    }
+
+    #[test]
+    fn help_sections_filetree_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[1].bindings.len(), FILE_TREE.len());
+    }
+
+    #[test]
+    fn help_sections_viewer_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[2].bindings.len(), VIEWER.len());
+    }
+
+    #[test]
+    fn help_sections_edit_mode_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[3].bindings.len(), EDIT_MODE.len());
+    }
+
+    #[test]
+    fn help_sections_session_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[4].bindings.len(), SESSION.len());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  find_key_for_action
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn find_key_quit_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::Quit);
+        assert!(key.is_some());
+        assert_eq!(key.unwrap(), "⌃q");
+    }
+
+    #[test]
+    fn find_key_cancel_claude_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::CancelClaude);
+        assert_eq!(key.unwrap(), "⌃c");
+    }
+
+    #[test]
+    fn find_key_toggle_help_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::ToggleHelp);
+        assert_eq!(key.unwrap(), "?");
+    }
+
+    #[test]
+    fn find_key_enter_prompt_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::EnterPromptMode);
+        assert_eq!(key.unwrap(), "p");
+    }
+
+    #[test]
+    fn find_key_cycle_focus_forward_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::CycleFocusForward);
+        assert_eq!(key.unwrap(), "Tab");
+    }
+
+    #[test]
+    fn find_key_cycle_focus_backward_in_global() {
+        let key = find_key_for_action(&GLOBAL, Action::CycleFocusBackward);
+        assert_eq!(key.unwrap(), "Tab"); // BackTab displays as "Tab" (see types.rs)
+    }
+
+    #[test]
+    fn find_key_nonexistent_action_returns_none() {
+        // Action::Save does not appear in GLOBAL
+        assert!(find_key_for_action(&GLOBAL, Action::Save).is_none());
+    }
+
+    #[test]
+    fn find_key_submit_in_input() {
+        let key = find_key_for_action(&INPUT, Action::Submit);
+        assert_eq!(key.unwrap(), "Enter");
+    }
+
+    #[test]
+    fn find_key_exit_prompt_in_input() {
+        let key = find_key_for_action(&INPUT, Action::ExitPromptMode);
+        assert_eq!(key.unwrap(), "Esc");
+    }
+
+    #[test]
+    fn find_key_delete_word_in_input() {
+        let key = find_key_for_action(&INPUT, Action::DeleteWord);
+        assert_eq!(key.unwrap(), "⌃w");
+    }
+
+    #[test]
+    fn find_key_toggle_stt_in_input() {
+        let key = find_key_for_action(&INPUT, Action::ToggleStt);
+        assert_eq!(key.unwrap(), "⌃s");
+    }
+
+    #[test]
+    fn find_key_escape_in_terminal() {
+        let key = find_key_for_action(&TERMINAL, Action::Escape);
+        assert_eq!(key.unwrap(), "Esc");
+    }
+
+    #[test]
+    fn find_key_enter_terminal_type() {
+        let key = find_key_for_action(&TERMINAL, Action::EnterTerminalType);
+        assert_eq!(key.unwrap(), "t");
+    }
+
+    #[test]
+    fn find_key_in_empty_slice() {
+        let empty: [Keybinding; 0] = [];
+        assert!(find_key_for_action(&empty, Action::Quit).is_none());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  find_key_pair
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn find_key_pair_nav_down_up_in_filetree() {
+        let (down, up) = find_key_pair(&FILE_TREE, Action::NavDown, Action::NavUp, "j", "k");
+        assert_eq!(down, "j");
+        assert_eq!(up, "k");
+    }
+
+    #[test]
+    fn find_key_pair_fallback_when_not_found() {
+        let empty: [Keybinding; 0] = [];
+        let (a, b) = find_key_pair(&empty, Action::NavDown, Action::NavUp, "fallback_a", "fallback_b");
+        assert_eq!(a, "fallback_a");
+        assert_eq!(b, "fallback_b");
+    }
+
+    #[test]
+    fn find_key_pair_history_in_input() {
+        let (prev, next) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
+        assert_eq!(prev, "↑");
+        assert_eq!(next, "↓");
+    }
+
+    #[test]
+    fn find_key_pair_resize_in_terminal() {
+        let (up, down) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
+        assert_eq!(up, "+");
+        assert_eq!(down, "-");
+    }
+
+    #[test]
+    fn find_key_pair_page_in_terminal() {
+        let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
+        assert_eq!(pdn, "J");
+        assert_eq!(pup, "K");
+    }
+
+    #[test]
+    fn find_key_pair_worktree_tabs_in_global() {
+        let (prev, next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
+        assert_eq!(prev, "[");
+        assert_eq!(next, "]");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  prompt_type_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn prompt_type_title_short_label() {
+        let (label, _, _) = prompt_type_title();
+        assert_eq!(label, " PROMPT ");
+    }
+
+    #[test]
+    fn prompt_type_title_full_starts_with_prompt() {
+        let (_, full, _) = prompt_type_title();
+        assert!(full.starts_with(" PROMPT ("));
+    }
+
+    #[test]
+    fn prompt_type_title_full_ends_with_paren() {
+        let (_, full, _) = prompt_type_title();
+        assert!(full.ends_with(") "));
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_exit() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("exit"), "hints should mention exit: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_submit() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("submit"), "hints should mention submit: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_cancel() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("cancel"), "hints should mention cancel: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_history() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("history"), "hints should mention history: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_del_wrd() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("del wrd"), "hints should mention del wrd: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_speech() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("speech"), "hints should mention speech: {}", hints);
+    }
+
+    #[test]
+    fn prompt_type_title_hints_contains_presets() {
+        let (_, _, hints) = prompt_type_title();
+        assert!(hints.contains("presets"), "hints should mention presets: {}", hints);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  prompt_command_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn prompt_command_title_short_label() {
+        let (label, _, _) = prompt_command_title();
+        assert_eq!(label, " COMMAND ");
+    }
+
+    #[test]
+    fn prompt_command_title_full_starts_with_command() {
+        let (_, full, _) = prompt_command_title();
+        assert!(full.starts_with(" COMMAND ("));
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_prompt() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_terminal() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("TERMINAL"), "hints should mention TERMINAL: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_help() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("help"), "hints should mention help: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_quit() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("quit"), "hints should mention quit: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_git() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("Git"), "hints should mention Git: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_focus() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("focus"), "hints should mention focus: {}", hints);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  terminal_type_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn terminal_type_title_short_label() {
+        let (label, _, _) = terminal_type_title();
+        assert_eq!(label, " TERMINAL ");
+    }
+
+    #[test]
+    fn terminal_type_title_hints_contains_exit() {
+        let (_, _, hints) = terminal_type_title();
+        assert!(hints.contains("exit"), "hints should mention exit: {}", hints);
+    }
+
+    #[test]
+    fn terminal_type_title_full_contains_terminal() {
+        let (_, full, _) = terminal_type_title();
+        assert!(full.contains("TERMINAL"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  terminal_command_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn terminal_command_title_short_label() {
+        let (label, _, _) = terminal_command_title();
+        assert_eq!(label, " TERMINAL ");
+    }
+
+    #[test]
+    fn terminal_command_title_hints_contains_type() {
+        let (_, _, hints) = terminal_command_title();
+        assert!(hints.contains("type"), "hints should mention type: {}", hints);
+    }
+
+    #[test]
+    fn terminal_command_title_hints_contains_prompt() {
+        let (_, _, hints) = terminal_command_title();
+        assert!(hints.contains("prompt"), "hints should mention prompt: {}", hints);
+    }
+
+    #[test]
+    fn terminal_command_title_hints_contains_close() {
+        let (_, _, hints) = terminal_command_title();
+        assert!(hints.contains("close"), "hints should mention close: {}", hints);
+    }
+
+    #[test]
+    fn terminal_command_title_hints_contains_scroll() {
+        let (_, _, hints) = terminal_command_title();
+        assert!(hints.contains("scroll"), "hints should mention scroll: {}", hints);
+    }
+
+    #[test]
+    fn terminal_command_title_hints_contains_resize() {
+        let (_, _, hints) = terminal_command_title();
+        assert!(hints.contains("resize"), "hints should mention resize: {}", hints);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  terminal_scroll_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn terminal_scroll_title_label_includes_count() {
+        let (label, _, _) = terminal_scroll_title(42);
+        assert!(label.contains("42"), "label should include scroll count: {}", label);
+    }
+
+    #[test]
+    fn terminal_scroll_title_full_includes_count() {
+        let (_, full, _) = terminal_scroll_title(100);
+        assert!(full.contains("100"), "full title should include scroll count: {}", full);
+    }
+
+    #[test]
+    fn terminal_scroll_title_zero_scroll() {
+        let (label, _, _) = terminal_scroll_title(0);
+        assert!(label.contains("0"), "label should include zero: {}", label);
+    }
+
+    #[test]
+    fn terminal_scroll_title_hints_contains_scroll() {
+        let (_, _, hints) = terminal_scroll_title(5);
+        assert!(hints.contains("scroll"), "hints should mention scroll: {}", hints);
+    }
+
+    #[test]
+    fn terminal_scroll_title_hints_contains_page() {
+        let (_, _, hints) = terminal_scroll_title(5);
+        assert!(hints.contains("page"), "hints should mention page: {}", hints);
+    }
+
+    #[test]
+    fn terminal_scroll_title_hints_contains_top() {
+        let (_, _, hints) = terminal_scroll_title(5);
+        assert!(hints.contains("top"), "hints should mention top: {}", hints);
+    }
+
+    #[test]
+    fn terminal_scroll_title_hints_contains_bottom() {
+        let (_, _, hints) = terminal_scroll_title(5);
+        assert!(hints.contains("bottom"), "hints should mention bottom: {}", hints);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  health_god_files_hints
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn health_god_files_hints_contains_check() {
+        let h = health_god_files_hints();
+        assert!(h.contains("check"), "hints should mention check: {}", h);
+    }
+
+    #[test]
+    fn health_god_files_hints_contains_all() {
+        let h = health_god_files_hints();
+        assert!(h.contains("all"), "hints should mention all: {}", h);
+    }
+
+    #[test]
+    fn health_god_files_hints_contains_view() {
+        let h = health_god_files_hints();
+        assert!(h.contains("view"), "hints should mention view: {}", h);
+    }
+
+    #[test]
+    fn health_god_files_hints_contains_modularize() {
+        let h = health_god_files_hints();
+        assert!(h.contains("modularize"), "hints should mention modularize: {}", h);
+    }
+
+    #[test]
+    fn health_god_files_hints_contains_switch() {
+        let h = health_god_files_hints();
+        assert!(h.contains("switch"), "hints should mention switch: {}", h);
+    }
+
+    #[test]
+    fn health_god_files_hints_contains_close() {
+        let h = health_god_files_hints();
+        assert!(h.contains("close"), "hints should mention close: {}", h);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  health_docs_hints
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn health_docs_hints_contains_check() {
+        let h = health_docs_hints();
+        assert!(h.contains("check"), "hints should mention check: {}", h);
+    }
+
+    #[test]
+    fn health_docs_hints_contains_non_100() {
+        let h = health_docs_hints();
+        assert!(h.contains("non-100%"), "hints should mention non-100%: {}", h);
+    }
+
+    #[test]
+    fn health_docs_hints_contains_view() {
+        let h = health_docs_hints();
+        assert!(h.contains("view"), "hints should mention view: {}", h);
+    }
+
+    #[test]
+    fn health_docs_hints_contains_complete() {
+        let h = health_docs_hints();
+        assert!(h.contains("complete"), "hints should mention complete: {}", h);
+    }
+
+    #[test]
+    fn health_docs_hints_contains_switch() {
+        let h = health_docs_hints();
+        assert!(h.contains("switch"), "hints should mention switch: {}", h);
+    }
+
+    #[test]
+    fn health_docs_hints_contains_close() {
+        let h = health_docs_hints();
+        assert!(h.contains("close"), "hints should mention close: {}", h);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  git_actions_labels
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_labels_main_has_pull_commit_push() {
+        let labels = git_actions_labels(true);
+        let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
+        assert!(descs.contains(&"Pull"), "main should show Pull: {:?}", descs);
+        assert!(descs.contains(&"Commit"), "main should show Commit: {:?}", descs);
+        assert!(descs.contains(&"Push to remote"), "main should show Push to remote: {:?}", descs);
+    }
+
+    #[test]
+    fn git_labels_main_count() {
+        let labels = git_actions_labels(true);
+        assert_eq!(labels.len(), 3);
+    }
+
+    #[test]
+    fn git_labels_feature_has_squash_rebase_commit_push() {
+        let labels = git_actions_labels(false);
+        let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
+        assert!(descs.contains(&"Squash merge to main"), "feature should show Squash: {:?}", descs);
+        assert!(descs.contains(&"Rebase onto main"), "feature should show Rebase: {:?}", descs);
+        assert!(descs.contains(&"Commit"), "feature should show Commit: {:?}", descs);
+        assert!(descs.contains(&"Push to remote"), "feature should show Push: {:?}", descs);
+    }
+
+    #[test]
+    fn git_labels_feature_count() {
+        let labels = git_actions_labels(false);
+        assert_eq!(labels.len(), 4);
+    }
+
+    #[test]
+    fn git_labels_main_no_squash() {
+        let labels = git_actions_labels(true);
+        let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
+        assert!(!descs.contains(&"Squash merge to main"));
+    }
+
+    #[test]
+    fn git_labels_feature_no_pull() {
+        let labels = git_actions_labels(false);
+        let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
+        assert!(!descs.contains(&"Pull"));
+    }
+
+    #[test]
+    fn git_labels_keys_are_nonempty() {
+        for (key, _) in git_actions_labels(true) {
+            assert!(!key.is_empty(), "key display should not be empty");
+        }
+        for (key, _) in git_actions_labels(false) {
+            assert!(!key.is_empty(), "key display should not be empty");
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  git_actions_footer
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn git_footer_contains_cycle_panes() {
+        let f = git_actions_footer();
+        assert!(f.contains("cycle panes"), "footer should mention cycle panes: {}", f);
+    }
+
+    #[test]
+    fn git_footer_contains_exec_view() {
+        let f = git_actions_footer();
+        assert!(f.contains("exec/view"), "footer should mention exec/view: {}", f);
+    }
+
+    #[test]
+    fn git_footer_contains_refresh() {
+        let f = git_actions_footer();
+        assert!(f.contains("refresh"), "footer should mention refresh: {}", f);
+    }
+
+    #[test]
+    fn git_footer_contains_close() {
+        let f = git_actions_footer();
+        assert!(f.contains("close"), "footer should mention close: {}", f);
+    }
+
+    #[test]
+    fn git_footer_contains_wt() {
+        let f = git_actions_footer();
+        assert!(f.contains("wt"), "footer should mention wt (worktree): {}", f);
+    }
+
+    #[test]
+    fn git_footer_contains_page() {
+        let f = git_actions_footer();
+        assert!(f.contains("page"), "footer should mention page: {}", f);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  projects_browse_hint_pairs
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn projects_hints_with_project_includes_close() {
+        let pairs = projects_browse_hint_pairs(true);
+        let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+        assert!(labels.contains(&"close"), "should include close: {:?}", labels);
+    }
+
+    #[test]
+    fn projects_hints_without_project_no_close() {
+        let pairs = projects_browse_hint_pairs(false);
+        let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+        assert!(!labels.contains(&"close"), "should not include close: {:?}", labels);
+    }
+
+    #[test]
+    fn projects_hints_always_has_open() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"open"), "should include open: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_always_has_add() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"add"), "should include add: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_always_has_delete() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"delete"), "should include delete: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_always_has_name() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"name"), "should include name: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_always_has_init() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"init"), "should include init: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_always_has_quit() {
+        for has_project in [true, false] {
+            let pairs = projects_browse_hint_pairs(has_project);
+            let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+            assert!(labels.contains(&"quit"), "should include quit: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn projects_hints_with_project_count() {
+        let pairs = projects_browse_hint_pairs(true);
+        // open, add, delete, name, init, close, quit = 7
+        assert_eq!(pairs.len(), 7);
+    }
+
+    #[test]
+    fn projects_hints_without_project_count() {
+        let pairs = projects_browse_hint_pairs(false);
+        // open, add, delete, name, init, quit = 6 (no close)
+        assert_eq!(pairs.len(), 6);
+    }
+
+    #[test]
+    fn projects_hints_keys_are_nonempty() {
+        for (key, _) in projects_browse_hint_pairs(true) {
+            assert!(!key.is_empty());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  picker_title
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn picker_title_contains_label() {
+        let t = picker_title("Run Command");
+        assert!(t.contains("Run Command"), "title should contain label: {}", t);
+    }
+
+    #[test]
+    fn picker_title_contains_select_hint() {
+        let t = picker_title("Test");
+        assert!(t.contains("1-9:select"), "title should contain select hint: {}", t);
+    }
+
+    #[test]
+    fn picker_title_contains_add() {
+        let t = picker_title("Test");
+        assert!(t.contains("add"), "title should contain add: {}", t);
+    }
+
+    #[test]
+    fn picker_title_contains_edit() {
+        let t = picker_title("Test");
+        assert!(t.contains("edit"), "title should contain edit: {}", t);
+    }
+
+    #[test]
+    fn picker_title_contains_del() {
+        let t = picker_title("Test");
+        assert!(t.contains("del"), "title should contain del: {}", t);
+    }
+
+    #[test]
+    fn picker_title_preset_prompts() {
+        let t = picker_title("Preset Prompts");
+        assert!(t.contains("Preset Prompts"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  dialog_footer_hint_pairs
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn dialog_footer_has_five_pairs() {
+        assert_eq!(dialog_footer_hint_pairs().len(), 5);
+    }
+
+    #[test]
+    fn dialog_footer_first_is_tab_next() {
+        let pairs = dialog_footer_hint_pairs();
+        assert_eq!(pairs[0], ("Tab".into(), "next"));
+    }
+
+    #[test]
+    fn dialog_footer_second_is_shift_tab_back() {
+        let pairs = dialog_footer_hint_pairs();
+        assert_eq!(pairs[1], ("⇧Tab".into(), "back"));
+    }
+
+    #[test]
+    fn dialog_footer_third_is_ctrl_s_scope() {
+        let pairs = dialog_footer_hint_pairs();
+        assert_eq!(pairs[2], ("⌃s".into(), "scope"));
+    }
+
+    #[test]
+    fn dialog_footer_fourth_is_enter_save() {
+        let pairs = dialog_footer_hint_pairs();
+        assert_eq!(pairs[3], ("Enter".into(), "save"));
+    }
+
+    #[test]
+    fn dialog_footer_fifth_is_esc_cancel() {
+        let pairs = dialog_footer_hint_pairs();
+        assert_eq!(pairs[4], ("Esc".into(), "cancel"));
+    }
+
+    #[test]
+    fn dialog_footer_keys_are_nonempty() {
+        for (key, _) in dialog_footer_hint_pairs() {
+            assert!(!key.is_empty());
+        }
+    }
+
+    #[test]
+    fn dialog_footer_labels_are_nonempty() {
+        for (_, label) in dialog_footer_hint_pairs() {
+            assert!(!label.is_empty());
+        }
+    }
+}
