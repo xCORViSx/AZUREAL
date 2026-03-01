@@ -88,7 +88,7 @@ pub async fn run_app(
         let commit_generating = app.git_actions_panel.as_ref()
             .and_then(|p| p.commit_overlay.as_ref())
             .map(|o| o.generating).unwrap_or(false);
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || commit_generating { 16 } else { 100 };
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -243,6 +243,9 @@ pub async fn run_app(
                     }
                     crate::watcher::WatchEvent::WorktreeChanged => {
                         app.file_tree_refresh_pending = true;
+                        if app.health_panel.is_some() {
+                            app.health_refresh_pending = true;
+                        }
                         app.worktree_last_notify = Instant::now();
                     }
                     crate::watcher::WatchEvent::WatcherFailed(_) => {
@@ -273,6 +276,16 @@ pub async fn run_app(
         {
             app.load_file_tree();
             app.file_tree_refresh_pending = false;
+            needs_redraw = true;
+        }
+
+        // Debounced health panel refresh: rescan god files + doc coverage
+        // when source files change while the panel is open
+        if app.health_refresh_pending
+            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
+        {
+            app.refresh_health_panel();
+            app.health_refresh_pending = false;
             needs_redraw = true;
         }
 

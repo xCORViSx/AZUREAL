@@ -129,6 +129,8 @@ pub struct App {
     pub file_watcher: Option<crate::watcher::FileWatcher>,
     /// Whether the worktree directory changed (debounced file tree refresh)
     pub file_tree_refresh_pending: bool,
+    /// Whether the health panel needs a rescan (debounced alongside file tree)
+    pub health_refresh_pending: bool,
     /// Timestamp of last worktree change notification (for 500ms debounce)
     pub worktree_last_notify: std::time::Instant,
     /// Per-worktree terminals (persist when switching worktrees)
@@ -538,6 +540,7 @@ impl App {
             viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),
             file_tree_refresh_pending: false,
+            health_refresh_pending: false,
             worktree_last_notify: std::time::Instant::now(),
             worktree_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),

@@ -576,7 +576,7 @@ pub enum PythonModuleStyle {
 
 /// Pre-modularize dialog: lets user pick module style for Rust/Python files
 /// before spawning GFM sessions. Only shown when checked files include .rs/.py.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleStyleDialog {
     /// Whether any checked files are .rs
     pub has_rust: bool,

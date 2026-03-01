@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Health panel auto-refresh** — God Files and Documentation tabs automatically rescan when source files change in the worktree (500ms debounce). Preserves tab, cursor positions, scroll offsets, and checked states across rescans. No manual re-open needed after editing files.
 - **Unified Add Worktree dialog (`a`)** — Merges the old standalone branch browser (`b`) into the Add Worktree action. Dialog shows a "[+] Create new" row at the top (uses filter text as worktree name) with branches listed below. Branches show `[N WT]` worktree count indicator instead of `[active]`. Filter input doubles as new worktree name with git-safe character validation. Enter on a checked-out branch switches to it; Enter on an unchecked branch creates a worktree from it.
 - **Delete worktree sibling guard (`⌘d`)** — When deleting a worktree whose branch has other worktrees (siblings), shows a dialog: "N other worktree(s) on this branch. Delete all? (y) Archive only? (a)". `y` removes all sibling worktrees then deletes the branch. `a` archives the current worktree only (removes directory, keeps branch). Sole worktrees get the standard y/N delete+branch confirmation. This respects git's constraint that branches can't be deleted while worktrees are checked out.
 - **Remote branch deletion** — `Git::delete_branch()` now also runs `git push origin --delete` (best-effort) to clean up remote branches when deleting worktrees.

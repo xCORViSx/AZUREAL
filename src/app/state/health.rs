@@ -133,12 +133,75 @@ impl App {
         });
     }
 
+    /// Refresh health panel data in-place after file changes.
+    /// Preserves tab, cursor positions, scroll offsets, and checked states.
+    pub fn refresh_health_panel(&mut self) {
+        let panel = match self.health_panel.as_ref() {
+            Some(p) => p,
+            None => return,
+        };
+
+        // Snapshot UI state to restore after rescan
+        let tab = panel.tab;
+        let god_scroll = panel.god_scroll;
+        let doc_scroll = panel.doc_scroll;
+        let dialog = panel.module_style_dialog.clone();
+
+        // Collect checked file paths (rel_path is stable across rescans)
+        let god_checked: HashSet<&str> = panel.god_files.iter()
+            .filter(|f| f.checked).map(|f| f.rel_path.as_str()).collect();
+        let doc_checked: HashSet<&str> = panel.doc_entries.iter()
+            .filter(|f| f.checked).map(|f| f.rel_path.as_str()).collect();
+
+        // Rescan
+        let mut god_files = if let Some(ref project) = self.project {
+            if let Some(dirs) = load_health_scope(&project.path) {
+                self.scan_god_files_with_dirs(&dirs)
+            } else {
+                self.scan_god_files()
+            }
+        } else {
+            self.scan_god_files()
+        };
+        let (mut doc_entries, doc_score) = self.scan_documentation();
+
+        // Restore checked state
+        for f in &mut god_files { f.checked = god_checked.contains(f.rel_path.as_str()); }
+        for f in &mut doc_entries { f.checked = doc_checked.contains(f.rel_path.as_str()); }
+
+        // Clamp cursors to new list bounds
+        let god_selected = self.health_panel.as_ref()
+            .map(|p| p.god_selected.min(god_files.len().saturating_sub(1)))
+            .unwrap_or(0);
+        let doc_selected = self.health_panel.as_ref()
+            .map(|p| p.doc_selected.min(doc_entries.len().saturating_sub(1)))
+            .unwrap_or(0);
+
+        let worktree_name = self.selected_worktree
+            .map(|i| self.worktrees[i].name().to_string())
+            .unwrap_or_default();
+
+        self.health_panel = Some(HealthPanel {
+            worktree_name,
+            tab,
+            god_files,
+            god_selected,
+            god_scroll,
+            doc_entries,
+            doc_selected,
+            doc_scroll,
+            doc_score,
+            module_style_dialog: dialog,
+        });
+    }
+
     /// Close the health panel, remembering which tab was active
     pub fn close_health_panel(&mut self) {
         if let Some(ref panel) = self.health_panel {
             self.last_health_tab = panel.tab;
         }
         self.health_panel = None;
+        self.health_refresh_pending = false;
         self.god_file_filter_mode = false;
         self.god_file_filter_dirs.clear();
     }
