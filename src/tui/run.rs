@@ -520,6 +520,7 @@ fn rebase_indicator_color(app: &App, branch: &str) -> Option<Color> {
 fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let avail = area.width as usize;
     let base_x = area.x;
+    let focused = app.focus == Focus::Worktrees;
 
     // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread)
     // target: None = [M] main browse, Some(idx) = worktree index
@@ -593,6 +594,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
             .sum();
 
+        let dim = if focused { Color::Gray } else { Color::DarkGray };
         let style = if is_active {
             if target.is_none() {
                 Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -600,13 +602,13 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White).bg(AZURE).add_modifier(Modifier::BOLD)
             }
         } else if is_archived {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(dim)
         } else if is_unread {
             Style::default().fg(AZURE)
         } else if target.is_none() {
             Style::default().fg(Color::Yellow)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(dim)
         };
 
         spans.push(Span::styled(tab_text, style));
@@ -620,15 +622,17 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         x_cursor += tab_w;
 
         if j + 1 < page_tabs.len() {
-            spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
+            let sep_color = if focused { AZURE } else { Color::DarkGray };
+            spans.push(Span::styled("│", Style::default().fg(sep_color)));
             x_cursor += 1;
         }
     }
 
     if total_pages > 1 {
+        let page_color = if focused { Color::Gray } else { Color::DarkGray };
         spans.push(Span::styled(
             format!("  {}/{}", active_page + 1, total_pages),
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+            Style::default().fg(page_color).add_modifier(Modifier::DIM),
         ));
     }
 
