@@ -56,11 +56,8 @@ pub struct App {
     pub input_cursor: usize,
     /// Selection range in prompt input: (start, end) as char indices
     pub input_selection: Option<(usize, usize)>,
-    /// Simple y/N delete confirmation (sole worktree on branch)
-    pub worktree_delete_confirm: bool,
-    /// Pending sibling-delete confirmation: (branch_name, sibling_indices including self)
-    /// y = delete all worktrees + branch, a = archive this one only, else cancel
-    pub worktree_delete_siblings: Option<(String, Vec<usize>)>,
+    /// Delete worktree confirmation dialog (⌘d)
+    pub delete_worktree_dialog: Option<crate::app::types::DeleteWorktreeDialog>,
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub prompt_mode: bool,
@@ -499,8 +496,7 @@ impl App {
             input: String::new(),
             input_cursor: 0,
             input_selection: None,
-            worktree_delete_confirm: false,
-            worktree_delete_siblings: None,
+            delete_worktree_dialog: None,
             view_mode: ViewMode::Session,
             focus: Focus::Worktrees,
             prompt_mode: false,
@@ -1005,9 +1001,9 @@ mod tests {
     }
 
     #[test]
-    fn new_worktree_delete_confirm_false() {
+    fn new_delete_worktree_dialog_none() {
         let app = App::new();
-        assert!(!app.worktree_delete_confirm);
+        assert!(app.delete_worktree_dialog.is_none());
     }
 
     #[test]

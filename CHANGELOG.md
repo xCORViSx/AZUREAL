@@ -18,6 +18,8 @@ All notable changes to Azureal will be documented in this file.
 - **Stale session state after worktree deletion** — `delete_current_worktree()` and sibling/post-merge deletion paths now clean up all associated session state maps (`session_files`, `session_selected_file_idx`, `claude_session_ids`, `branch_slots`, `active_slot`, `running_sessions`, `claude_receivers`, `claude_exit_codes`, `unread_sessions`) for the deleted branch.
 
 ### Changed
+- **Delete worktree confirmation is now a dialog box** — The ⌘d delete confirmation has moved from a status-bar text prompt to a proper centered dialog overlay with red double-border. Sole worktrees show "Delete this worktree and its branch?" with y/Esc options. Sibling worktrees show the count with y (delete all + branch) / a (archive only) / Esc options. Enter also confirms for the sole case.
+- **Status bar keybinding hints removed** — The status bar no longer shows contextual keybinding hints per focus mode. It now only displays worktree info, status messages, and the CPU/PID badge. Press `?` for the help overlay instead.
 - **God file detection excludes test modules** — For Rust files, `#[cfg(test)]` module blocks are now excluded from line counts via brace-depth tracking. This prevents files with large test suites from being falsely flagged as god files when the production code is well under the 1000-line threshold.
 - **Worktree tab cycling wraps around** — `[`/`]` now wraps from the last worktree back to the first (and vice versa) instead of stopping at the boundary.
 - **Worktree tab row focus indicator** — When focused (via Tab cycling), separators turn AZURE and inactive tab text brightens from DarkGray to Gray, matching the AZURE focus cue used by all other panes.

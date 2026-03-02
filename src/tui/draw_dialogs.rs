@@ -643,6 +643,72 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center), chunks[2]);
 }
 
+/// Draw the delete worktree confirmation dialog (⌘d)
+pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::DeleteWorktreeDialog, area: Rect) {
+    use crate::app::types::DeleteWorktreeDialog;
+    let (title, lines) = match dialog {
+        DeleteWorktreeDialog::Sole { name } => {
+            let title = format!(" Delete '{}' ", name);
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Delete this worktree and its branch?",
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled("  Confirm delete", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
+                ]),
+            ];
+            (title, lines)
+        }
+        DeleteWorktreeDialog::Siblings { branch, count, .. } => {
+            let title = format!(" Delete on '{}' ", branch);
+            let lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("{} other worktree{} on this branch.", count, if *count == 1 { "" } else { "s" }),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled("  Delete all worktrees + branch", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled("  Archive this one only", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
+                ]),
+            ];
+            (title, lines)
+        }
+    };
+
+    let w = 46u16.min(area.width.saturating_sub(4));
+    let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        .title(Span::styled(&title, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+    let para = Paragraph::new(lines).block(block).alignment(Alignment::Left);
+    f.render_widget(para, rect);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

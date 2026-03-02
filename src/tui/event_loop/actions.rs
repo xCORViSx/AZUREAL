@@ -110,90 +110,87 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         }
     }
 
-    // Worktree delete confirmation — y confirms, anything else cancels
-    if app.worktree_delete_confirm {
-        app.worktree_delete_confirm = false;
-        if key.code == KeyCode::Char('y') || key.code == KeyCode::Char('Y') {
-            if let Err(e) = app.delete_current_worktree() {
-                app.set_status(format!("Delete failed: {}", e));
-            }
-        } else {
-            app.set_status("Delete cancelled");
-        }
-        return Ok(());
-    }
-
-    // Sibling worktree delete: y = delete all siblings + current + branch, a = archive current only
-    if let Some((ref _branch, ref _siblings)) = app.worktree_delete_siblings {
-        let siblings_data = app.worktree_delete_siblings.take().unwrap();
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                let (branch, mut sibling_indices) = siblings_data;
-                // Include current worktree index
-                if let Some(current) = app.selected_worktree {
-                    sibling_indices.push(current);
+    // Delete worktree dialog — y confirms sole delete, y/a for siblings, Esc/other cancels
+    if let Some(ref dialog) = app.delete_worktree_dialog {
+        match dialog {
+            crate::app::types::DeleteWorktreeDialog::Sole { .. } => {
+                app.delete_worktree_dialog = None;
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                        if let Err(e) = app.delete_current_worktree() {
+                            app.set_status(format!("Delete failed: {}", e));
+                        }
+                    }
+                    _ => app.set_status("Delete cancelled"),
                 }
-                // Sort descending so we remove from the end first (indices stay valid)
-                sibling_indices.sort_unstable();
-                sibling_indices.dedup();
-                sibling_indices.reverse();
-                let project = app.project.clone();
-                if let Some(project) = project {
-                    for &idx in &sibling_indices {
-                        if let Some(wt) = app.worktrees.get(idx) {
-                            if let Some(ref wt_path) = wt.worktree_path {
-                                let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                return Ok(());
+            }
+            crate::app::types::DeleteWorktreeDialog::Siblings { branch, sibling_indices, .. } => {
+                let branch = branch.clone();
+                let sibling_indices = sibling_indices.clone();
+                app.delete_worktree_dialog = None;
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        let mut all_indices = sibling_indices;
+                        if let Some(current) = app.selected_worktree {
+                            all_indices.push(current);
+                        }
+                        all_indices.sort_unstable();
+                        all_indices.dedup();
+                        all_indices.reverse();
+                        let project = app.project.clone();
+                        if let Some(project) = project {
+                            for &idx in &all_indices {
+                                if let Some(wt) = app.worktrees.get(idx) {
+                                    if let Some(ref wt_path) = wt.worktree_path {
+                                        let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                    }
+                                    app.auto_rebase_enabled.remove(&wt.branch_name);
+                                    crate::azufig::set_auto_rebase(&project.path, &wt.branch_name, false);
+                                }
                             }
-                            app.auto_rebase_enabled.remove(&wt.branch_name);
-                            crate::azufig::set_auto_rebase(&project.path, &wt.branch_name, false);
+                            let _ = crate::git::Git::delete_branch(&project.path, &branch);
                         }
-                    }
-                    // All worktrees removed — now delete the branch
-                    let _ = crate::git::Git::delete_branch(&project.path, &branch);
-                }
-                // Clean up stale session state for the deleted branch
-                app.session_files.remove(&branch);
-                app.session_selected_file_idx.remove(&branch);
-                app.claude_session_ids.retain(|k, _| k != &branch);
-                app.unread_sessions.remove(&branch);
-                if let Some(slots) = app.branch_slots.remove(&branch) {
-                    for slot in &slots {
-                        app.running_sessions.remove(slot);
-                        app.claude_receivers.remove(slot);
-                        app.claude_exit_codes.remove(slot);
-                        app.claude_session_ids.remove(slot);
-                    }
-                }
-                app.active_slot.remove(&branch);
-                let _ = app.refresh_worktrees();
-                // Clamp selection
-                if app.worktrees.is_empty() {
-                    app.selected_worktree = None;
-                } else if let Some(sel) = app.selected_worktree {
-                    if sel >= app.worktrees.len() {
-                        app.selected_worktree = Some(app.worktrees.len() - 1);
-                    }
-                }
-                app.set_status(format!("Deleted all worktrees on {} and branch", branch));
-            }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                // Archive current only — remove worktree dir, keep branch
-                if let Some(project) = &app.project {
-                    if let Some(wt) = app.current_worktree() {
-                        if let Some(ref wt_path) = wt.worktree_path {
-                            let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                        app.session_files.remove(&branch);
+                        app.session_selected_file_idx.remove(&branch);
+                        app.claude_session_ids.retain(|k, _| k != &branch);
+                        app.unread_sessions.remove(&branch);
+                        if let Some(slots) = app.branch_slots.remove(&branch) {
+                            for slot in &slots {
+                                app.running_sessions.remove(slot);
+                                app.claude_receivers.remove(slot);
+                                app.claude_exit_codes.remove(slot);
+                                app.claude_session_ids.remove(slot);
+                            }
                         }
-                        let name = wt.name().to_string();
+                        app.active_slot.remove(&branch);
                         let _ = app.refresh_worktrees();
-                        app.set_status(format!("Archived '{}' — branch kept (other worktrees still active)", name));
+                        if app.worktrees.is_empty() {
+                            app.selected_worktree = None;
+                        } else if let Some(sel) = app.selected_worktree {
+                            if sel >= app.worktrees.len() {
+                                app.selected_worktree = Some(app.worktrees.len() - 1);
+                            }
+                        }
+                        app.set_status(format!("Deleted all worktrees on {} and branch", branch));
                     }
+                    KeyCode::Char('a') | KeyCode::Char('A') => {
+                        if let Some(project) = &app.project {
+                            if let Some(wt) = app.current_worktree() {
+                                if let Some(ref wt_path) = wt.worktree_path {
+                                    let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                }
+                                let name = wt.name().to_string();
+                                let _ = app.refresh_worktrees();
+                                app.set_status(format!("Archived '{}' — branch kept", name));
+                            }
+                        }
+                    }
+                    _ => app.set_status("Delete cancelled"),
                 }
-            }
-            _ => {
-                app.set_status("Delete cancelled");
+                return Ok(());
             }
         }
-        return Ok(());
     }
 
     // Post-merge dialog — keep/archive/delete worktree after squash merge

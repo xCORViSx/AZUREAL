@@ -227,18 +227,18 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                             .map(|(i, _)| i)
                             .collect();
                         if sibling_indices.is_empty() {
-                            // Sole worktree on this branch — normal delete flow
-                            let name = wt.name().to_string();
-                            app.set_status(format!("Delete '{}' and its branch? (y/N)", name));
-                            app.worktree_delete_confirm = true;
+                            app.delete_worktree_dialog = Some(
+                                crate::app::types::DeleteWorktreeDialog::Sole { name: wt.name().to_string() }
+                            );
                         } else {
-                            // Has siblings — can't delete branch until all worktrees are gone
                             let count = sibling_indices.len();
-                            app.set_status(format!(
-                                "{} other worktree{} on this branch. Delete all? (y) Archive only? (a)",
-                                count, if count == 1 { "" } else { "s" }
-                            ));
-                            app.worktree_delete_siblings = Some((wt.branch_name.clone(), sibling_indices));
+                            app.delete_worktree_dialog = Some(
+                                crate::app::types::DeleteWorktreeDialog::Siblings {
+                                    branch: wt.branch_name.clone(),
+                                    sibling_indices,
+                                    count,
+                                }
+                            );
                         }
                     }
                 }

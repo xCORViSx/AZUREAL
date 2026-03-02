@@ -470,6 +470,21 @@ pub struct PostMergeDialog {
     pub selected: usize,
 }
 
+/// Delete worktree confirmation dialog (⌘d). Two variants:
+/// - Sole: only worktree on this branch — confirm delete worktree + branch
+/// - Siblings: other worktrees exist on same branch — choose delete-all or archive-only
+#[derive(Debug, Clone)]
+pub enum DeleteWorktreeDialog {
+    /// Sole worktree on branch — simple yes/no
+    Sole { name: String },
+    /// Multiple worktrees on branch — choose (y)delete-all or (a)archive-only
+    Siblings {
+        branch: String,
+        sibling_indices: Vec<usize>,
+        count: usize,
+    },
+}
+
 /// State for the Git Actions panel (Shift+G — full-app layout).
 /// Actions are context-aware: main branch gets pull+commit+push,
 /// feature branches get squash-merge+rebase+commit+push.

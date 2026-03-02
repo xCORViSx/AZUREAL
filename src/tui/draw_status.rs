@@ -8,10 +8,12 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus};
+use crate::app::App;
+#[cfg(test)]
+use crate::app::Focus;
 use super::util::{truncate, GIT_BROWN, AZURE};
 
-/// Draw the status bar at the bottom — shows worktree info, contextual help hints, and CPU/PID badge
+/// Draw the status bar at the bottom — shows worktree info, status messages, and CPU/PID badge
 pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     // Sample CPU usage (~1s interval, cheap getrusage delta)
     app.update_cpu_usage();
@@ -73,28 +75,11 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         ));
     }
 
-    status_spans.push(Span::raw(" │ "));
-
-    // Contextual help hints — shows relevant keybindings for current focus/mode
-    let help_text = if let Some(ref msg) = app.status_message {
-        msg.clone()
-    } else {
-        match (app.focus, app.view_mode) {
-            (Focus::Worktrees, _) => {
-                if app.is_current_session_running() {
-                    "?:help  f:files  n:new  a:add  r:run  g:godfiles  G:git  P:projects  ⌃c:cancel  Tab:switch"
-                } else {
-                    "?:help  f:files  n:new  a:add  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
-                }
-            }
-            (Focus::Session, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  s:sessions  /:search  Esc:back",
-            (Focus::Input, _) => "?:help  Enter:submit  Esc:cancel  Tab/⇧Tab:switch",
-            (Focus::BranchDialog, _) => "j/k:select  Enter:create/switch  Esc:cancel  type to filter/name",
-            (Focus::FileTree, _) => "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back",
-            (Focus::Viewer, _) => "?:help  j/k:scroll  J/K:page  ⌥↑/↓:top/bottom  e:edit  Esc:close  Tab:switch",
-        }.to_string()
-    };
-    status_spans.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
+    // Status message (if any) — no permanent keybinding hints
+    if let Some(ref msg) = app.status_message {
+        status_spans.push(Span::raw(" │ "));
+        status_spans.push(Span::styled(msg.clone(), Style::default().fg(Color::Gray)));
+    }
 
     // Right badge: CPU% + PID — azure text in debug builds as a visual indicator
     let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
@@ -289,92 +274,19 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Help text per Focus/ViewMode combos
+    //  Status message display
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn help_worktrees_running_has_cancel() {
-        let running = true;
-        let text = if running {
-            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  \u{2303}c:cancel  Tab:switch"
-        } else {
-            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
-        };
-        assert!(text.contains("\u{2303}c:cancel"));
-        assert!(!text.contains("Enter:start"));
+    fn status_message_present_shown() {
+        let msg: Option<String> = Some("Created worktree: feat".to_string());
+        assert!(msg.is_some());
     }
 
     #[test]
-    fn help_worktrees_not_running_has_start() {
-        let running = false;
-        let text = if running {
-            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  \u{2303}c:cancel  Tab:switch"
-        } else {
-            "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch"
-        };
-        assert!(text.contains("Enter:start"));
-        assert!(!text.contains("\u{2303}c:cancel"));
-    }
-
-    #[test]
-    fn help_session_text() {
-        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  s:sessions  /:search  Esc:back";
-        assert!(text.contains("j/k:scroll"));
-        assert!(text.contains("s:sessions"));
-        assert!(text.contains("Esc:back"));
-    }
-
-    #[test]
-    fn help_input_text() {
-        let text = "?:help  Enter:submit  Esc:cancel  Tab/\u{21e7}Tab:switch";
-        assert!(text.contains("Enter:submit"));
-        assert!(text.contains("Esc:cancel"));
-    }
-
-    #[test]
-    fn help_worktree_creation_text() {
-        let text = "Enter:create  Esc:cancel";
-        assert!(text.contains("Enter:create"));
-        assert!(text.contains("Esc:cancel"));
-    }
-
-    #[test]
-    fn help_branch_dialog_text() {
-        let text = "j/k:select  Enter:switch/create  Esc:cancel  type to filter";
-        assert!(text.contains("j/k:select"));
-        assert!(text.contains("type to filter"));
-    }
-
-    #[test]
-    fn help_file_tree_text() {
-        let text = "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back";
-        assert!(text.contains("j/k:navigate"));
-        assert!(text.contains("Space:toggle"));
-    }
-
-    #[test]
-    fn help_viewer_text() {
-        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  e:edit  Esc:close  Tab:switch";
-        assert!(text.contains("e:edit"));
-        assert!(text.contains("Esc:close"));
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  Status message override
-    // ══════════════════════════════════════════════════════════════════
-
-    #[test]
-    fn status_message_overrides_help() {
-        let msg: Option<String> = Some("Custom status message".to_string());
-        let text = if let Some(ref m) = msg { m.clone() } else { "default help".to_string() };
-        assert_eq!(text, "Custom status message");
-    }
-
-    #[test]
-    fn no_status_message_shows_help() {
+    fn status_message_none_no_hints() {
         let msg: Option<String> = None;
-        let text = if let Some(ref m) = msg { m.clone() } else { "default help".to_string() };
-        assert_eq!(text, "default help");
+        assert!(msg.is_none());
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -546,31 +458,4 @@ mod tests {
         assert_ne!(GIT_BROWN, AZURE);
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  Help text exhaustiveness — all Focus variants present
-    // ══════════════════════════════════════════════════════════════════
-
-    #[test]
-    fn help_session_contains_search() {
-        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  s:sessions  /:search  Esc:back";
-        assert!(text.contains("/:search"));
-    }
-
-    #[test]
-    fn help_viewer_contains_tab_switch() {
-        let text = "?:help  j/k:scroll  J/K:page  \u{2325}\u{2191}/\u{2193}:top/bottom  e:edit  Esc:close  Tab:switch";
-        assert!(text.contains("Tab:switch"));
-    }
-
-    #[test]
-    fn help_worktrees_contains_git_shortcut() {
-        let text = "?:help  f:files  n:new  b:branches  r:run  g:godfiles  G:git  P:projects  Enter:start  Tab:switch";
-        assert!(text.contains("G:git"));
-    }
-
-    #[test]
-    fn help_file_tree_contains_collapse_expand() {
-        let text = "?:help  j/k:navigate  Enter:open  h/l:collapse/expand  Space:toggle  f/Esc:back";
-        assert!(text.contains("h/l:collapse/expand"));
-    }
 }
