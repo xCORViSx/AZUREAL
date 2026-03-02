@@ -19,7 +19,11 @@ use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Acti
 /// selected==0 is "Create new" row, selected>=1 is branch rows.
 pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     if let Some(ref mut dialog) = app.branch_dialog {
-        // Try centralized bindings first for structural keys
+        // On the "Create new" row, let j/k through as text input instead of nav
+        let on_create = dialog.on_create_new();
+        let is_jk = matches!(key.code, KeyCode::Char('j') | KeyCode::Char('k'));
+        // Try centralized bindings first for structural keys (skip j/k when typing)
+        if !(on_create && is_jk) {
         if let Some(action) = lookup_branch_dialog_action(key.modifiers, key.code) {
             match action {
                 Action::NavDown => dialog.select_next(),
@@ -74,6 +78,7 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                 _ => {}
             }
             return Ok(());
+        }
         }
 
         // Raw text input for filter — only git-safe chars allowed
