@@ -29,6 +29,9 @@ impl App {
         // Auto-register this repo in ~/.azureal/projects.txt (no-op if already there)
         crate::config::register_project(&repo_root);
 
+        // Ensure worktrees/ is gitignored so new worktrees don't inherit the folder
+        Git::ensure_worktrees_gitignored(&repo_root);
+
         let main_branch = Git::get_main_branch(&repo_root)?;
         self.project = Some(Project::from_path(repo_root.clone(), main_branch));
 

@@ -615,6 +615,41 @@ impl Git {
         let _ = cmd.current_dir(path).output();
     }
 
+    /// Ensure `worktrees/` is listed in the project's `.gitignore`.
+    /// If missing, appends it, stages `.gitignore`, and commits.
+    /// Silently no-ops if already present or if any step fails.
+    pub fn ensure_worktrees_gitignored(repo_root: &Path) {
+        let gitignore = repo_root.join(".gitignore");
+        let content = std::fs::read_to_string(&gitignore).unwrap_or_default();
+
+        // check if worktrees/ is already covered
+        let dominated = content.lines().any(|line| {
+            let l = line.trim();
+            matches!(l, "worktrees" | "worktrees/" | "/worktrees" | "/worktrees/")
+        });
+        if dominated { return; }
+
+        // append the entry
+        let mut new = content.clone();
+        if !new.is_empty() && !new.ends_with('\n') {
+            new.push('\n');
+        }
+        new.push_str("worktrees/\n");
+        if std::fs::write(&gitignore, &new).is_err() { return; }
+
+        // stage + commit
+        let staged = Command::new("git")
+            .args(["add", ".gitignore"])
+            .current_dir(repo_root)
+            .output();
+        if !staged.map(|o| o.status.success()).unwrap_or(false) { return; }
+
+        let _ = Command::new("git")
+            .args(["commit", "-m", "chore: add worktrees/ to .gitignore"])
+            .current_dir(repo_root)
+            .output();
+    }
+
     /// Get the full diff of staged changes for commit message generation
     pub fn get_staged_diff(worktree_path: &Path) -> Result<String> {
         let output = Command::new("git")
