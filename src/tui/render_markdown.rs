@@ -7,15 +7,18 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
 use super::util::AZURE;
 use super::markdown::{parse_markdown_spans, is_table_separator};
 use super::render_wrap::wrap_text;
 
-/// Render assistant markdown text into lines
-pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'static>> {
+/// Render assistant markdown text into lines (with syntax-highlighted code blocks)
+pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &SyntaxHighlighter) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut in_code_block = false;
+    let mut code_block_lang = String::new();
+    let mut code_block_lines: Vec<&str> = Vec::new();
     let text_lines: Vec<&str> = text.lines().collect();
 
     // Pre-scan for tables and calculate column widths, clamped to fit bubble
@@ -30,32 +33,35 @@ pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'stati
 
         // Code block delimiters
         if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
-            let lang = trimmed.trim_start_matches('`').trim();
-            let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-            if in_code_block && !lang.is_empty() {
-                spans.push(Span::styled("┌─ ", Style::default().fg(Color::DarkGray)));
-                spans.push(Span::styled(lang.to_string(), Style::default().fg(AZURE)));
-                spans.push(Span::styled(" ─", Style::default().fg(Color::DarkGray)));
-            } else if !in_code_block {
-                spans.push(Span::styled("└──────", Style::default().fg(Color::DarkGray)));
+            if !in_code_block {
+                // Opening fence
+                in_code_block = true;
+                code_block_lang = trimmed.trim_start_matches('`').trim().to_string();
+                code_block_lines.clear();
+                let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+                if !code_block_lang.is_empty() {
+                    spans.push(Span::styled("┌─ ", Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(code_block_lang.clone(), Style::default().fg(AZURE)));
+                    spans.push(Span::styled(" ─", Style::default().fg(Color::DarkGray)));
+                } else {
+                    spans.push(Span::styled("┌──────", Style::default().fg(Color::DarkGray)));
+                }
+                lines.push(Line::from(spans));
             } else {
-                spans.push(Span::styled("┌──────", Style::default().fg(Color::DarkGray)));
+                // Closing fence — highlight collected code and emit
+                emit_code_block(&mut lines, &code_block_lines, &code_block_lang, bubble_width, highlighter);
+                in_code_block = false;
+                lines.push(Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                    Span::styled("└──────", Style::default().fg(Color::DarkGray)),
+                ]));
             }
-            lines.push(Line::from(spans));
             continue;
         }
 
-        // Code block content
+        // Code block content — collect for batch highlighting
         if in_code_block {
-            let code_max = bubble_width.saturating_sub(4);
-            for wrapped in wrap_text(line, code_max) {
-                lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(ORANGE)),
-                    Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(wrapped, Style::default().fg(Color::Yellow)),
-                ]));
-            }
+            code_block_lines.push(line);
             continue;
         }
 
@@ -98,7 +104,58 @@ pub fn render_assistant_text(text: &str, bubble_width: usize) -> Vec<Line<'stati
         }
     }
 
+    // Handle unclosed code block — emit any remaining collected lines
+    if in_code_block {
+        emit_code_block(&mut lines, &code_block_lines, &code_block_lang, bubble_width, highlighter);
+    }
+
     lines
+}
+
+/// Emit syntax-highlighted code block lines with gutter prefixes and wrapping
+fn emit_code_block(
+    lines: &mut Vec<Line<'static>>,
+    code_lines: &[&str],
+    lang: &str,
+    bubble_width: usize,
+    highlighter: &SyntaxHighlighter,
+) {
+    let code_max = bubble_width.saturating_sub(4);
+    if code_max == 0 {
+        return;
+    }
+
+    let content = code_lines.join("\n");
+    let highlighted = highlighter.highlight_code_block(&content, lang);
+
+    for (idx, highlighted_spans) in highlighted.iter().enumerate() {
+        let raw_line = code_lines.get(idx).unwrap_or(&"");
+
+        // Check if line needs wrapping
+        let char_count: usize = raw_line.chars().count();
+        if char_count <= code_max {
+            // Single line — use syntax-highlighted spans
+            let mut spans = vec![
+                Span::styled("│ ", Style::default().fg(ORANGE)),
+                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            ];
+            spans.extend(highlighted_spans.iter().cloned());
+            lines.push(Line::from(spans));
+        } else {
+            // Line needs wrapping — fall back to wrap_text with the dominant color
+            // (wrapping mid-span is complex; for long lines, use the first span's color)
+            let fallback_color = highlighted_spans.first()
+                .and_then(|s| s.style.fg)
+                .unwrap_or(Color::Yellow);
+            for wrapped in wrap_text(raw_line, code_max) {
+                lines.push(Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                    Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(wrapped, Style::default().fg(fallback_color)),
+                ]));
+            }
+        }
+    }
 }
 
 /// Pre-scan text to identify table ranges and calculate column widths.
@@ -330,6 +387,8 @@ fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usi
 mod tests {
     use super::*;
 
+    fn hl() -> SyntaxHighlighter { SyntaxHighlighter::new() }
+
     // ═══════════════════════════════════════════════════════════════════
     // clamp_col_widths
     // ═══════════════════════════════════════════════════════════════════
@@ -502,14 +561,14 @@ mod tests {
 
     #[test]
     fn render_empty_text() {
-        let lines = render_assistant_text("", 80);
+        let lines = render_assistant_text("", 80, &hl());
         // Empty text produces no output or just an empty line
         assert!(lines.len() <= 1);
     }
 
     #[test]
     fn render_plain_paragraph() {
-        let lines = render_assistant_text("hello world", 80);
+        let lines = render_assistant_text("hello world", 80, &hl());
         assert!(!lines.is_empty());
         // First span should be the orange gutter
         let first_span = &lines[0].spans[0];
@@ -519,7 +578,7 @@ mod tests {
     #[test]
     fn render_code_block() {
         let text = "```rust\nlet x = 1;\n```";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         // Should have: open delimiter + code line + close delimiter = 3 lines
         assert_eq!(lines.len(), 3);
     }
@@ -527,96 +586,96 @@ mod tests {
     #[test]
     fn render_code_block_no_language() {
         let text = "```\ncode\n```";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         assert_eq!(lines.len(), 3);
     }
 
     #[test]
     fn render_header_h1() {
-        let lines = render_assistant_text("# Title", 80);
+        let lines = render_assistant_text("# Title", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h2() {
-        let lines = render_assistant_text("## Subtitle", 80);
+        let lines = render_assistant_text("## Subtitle", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h3() {
-        let lines = render_assistant_text("### Section", 80);
+        let lines = render_assistant_text("### Section", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h4() {
-        let lines = render_assistant_text("#### Deep", 80);
+        let lines = render_assistant_text("#### Deep", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_dash() {
-        let lines = render_assistant_text("- item one", 80);
+        let lines = render_assistant_text("- item one", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_asterisk() {
-        let lines = render_assistant_text("* item two", 80);
+        let lines = render_assistant_text("* item two", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_unicode() {
-        let lines = render_assistant_text("• item three", 80);
+        let lines = render_assistant_text("• item three", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_numbered_list() {
-        let lines = render_assistant_text("1. first\n2. second", 80);
+        let lines = render_assistant_text("1. first\n2. second", 80, &hl());
         assert!(lines.len() >= 2);
     }
 
     #[test]
     fn render_blockquote() {
-        let lines = render_assistant_text("> quoted text", 80);
+        let lines = render_assistant_text("> quoted text", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_mixed_content() {
         let text = "# Title\n\nParagraph\n\n- bullet\n\n```\ncode\n```\n\n> quote";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         assert!(lines.len() >= 5);
     }
 
     #[test]
     fn render_wraps_long_lines() {
         let long = "a ".repeat(100);
-        let lines = render_assistant_text(&long, 40);
+        let lines = render_assistant_text(&long, 40, &hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_table_basic() {
         let text = "| Col1 | Col2 |\n|------|------|\n| a | b |";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         // Table rendering adds borders: top, header, separator, data, bottom
         assert!(lines.len() >= 4);
     }
 
     #[test]
     fn render_narrow_width() {
-        let lines = render_assistant_text("hello world", 10);
+        let lines = render_assistant_text("hello world", 10, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_code_block_wraps() {
         let text = format!("```\n{}\n```", "x".repeat(200));
-        let lines = render_assistant_text(&text, 40);
+        let lines = render_assistant_text(&text, 40, &hl());
         // Code should wrap within the block
         assert!(lines.len() > 3);
     }
@@ -624,80 +683,80 @@ mod tests {
     #[test]
     fn render_multiple_paragraphs() {
         let text = "para one\n\npara two\n\npara three";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         assert!(lines.len() >= 3);
     }
 
     #[test]
     fn render_unicode_content() {
-        let lines = render_assistant_text("日本語テスト", 80);
+        let lines = render_assistant_text("日本語テスト", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_emoji_content() {
-        let lines = render_assistant_text("🎉 celebration 🎊", 80);
+        let lines = render_assistant_text("🎉 celebration 🎊", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_wraps_long() {
         let title = format!("# {}", "W".repeat(200));
-        let lines = render_assistant_text(&title, 40);
+        let lines = render_assistant_text(&title, 40, &hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_numbered_double_digit() {
-        let lines = render_assistant_text("12. twelfth item", 80);
+        let lines = render_assistant_text("12. twelfth item", 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_quote_wraps() {
         let long_quote = format!("> {}", "word ".repeat(50));
-        let lines = render_assistant_text(&long_quote, 40);
+        let lines = render_assistant_text(&long_quote, 40, &hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_bullet_wraps() {
         let long_bullet = format!("- {}", "text ".repeat(50));
-        let lines = render_assistant_text(&long_bullet, 40);
+        let lines = render_assistant_text(&long_bullet, 40, &hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_width_1_no_panic() {
         // Extremely narrow — should not panic
-        let lines = render_assistant_text("hello", 1);
+        let lines = render_assistant_text("hello", 1, &hl());
         let _ = lines;
     }
 
     #[test]
     fn render_width_0_no_panic() {
-        let lines = render_assistant_text("hello", 0);
+        let lines = render_assistant_text("hello", 0, &hl());
         let _ = lines;
     }
 
     #[test]
     fn render_unclosed_code_block() {
         let text = "```\ncode without closing";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_multiple_code_blocks() {
         let text = "```\nfirst\n```\n\n```python\nsecond\n```";
-        let lines = render_assistant_text(text, 80);
+        let lines = render_assistant_text(text, 80, &hl());
         assert!(lines.len() >= 6);
     }
 
     #[test]
     fn render_table_clamped_columns() {
         let text = "| Very Long Column Name Here | Another Very Long Column |\n|---|---|\n| x | y |";
-        let lines = render_assistant_text(text, 30);
+        let lines = render_assistant_text(text, 30, &hl());
         assert!(!lines.is_empty());
     }
 
@@ -718,14 +777,59 @@ mod tests {
 
     #[test]
     fn render_single_newline() {
-        let lines = render_assistant_text("\n", 80);
+        let lines = render_assistant_text("\n", 80, &hl());
         // Should produce at least one line (empty paragraph)
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_only_whitespace() {
-        let lines = render_assistant_text("   ", 80);
+        let lines = render_assistant_text("   ", 80, &hl());
         assert!(!lines.is_empty());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Code block syntax highlighting
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn code_block_rust_has_colored_spans() {
+        let text = "```rust\nfn main() {\n    let x = 42;\n}\n```";
+        let lines = render_assistant_text(text, 80, &hl());
+        // Line 0 = opening fence, lines 1-3 = code, line 4 = closing fence
+        assert_eq!(lines.len(), 5);
+        // Code lines should have >2 spans (gutter + code gutter + highlighted spans)
+        let code_line = &lines[1]; // "fn main() {"
+        assert!(code_line.spans.len() > 2, "highlighted code should have multiple spans, got {}", code_line.spans.len());
+        // Should have magenta for `fn` keyword
+        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        assert!(has_magenta, "Rust `fn` keyword should be Magenta");
+    }
+
+    #[test]
+    fn code_block_python_has_colored_spans() {
+        let text = "```python\ndef hello():\n    print('hi')\n```";
+        let lines = render_assistant_text(text, 80, &hl());
+        assert_eq!(lines.len(), 4);
+        // "def" keyword should be magenta
+        let code_line = &lines[1];
+        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        assert!(has_magenta, "Python `def` keyword should be Magenta");
+    }
+
+    #[test]
+    fn code_block_no_lang_still_renders() {
+        let text = "```\nplain code\n```";
+        let lines = render_assistant_text(text, 80, &hl());
+        assert_eq!(lines.len(), 3);
+        // Should have spans (gutter + code gutter + text)
+        assert!(lines[1].spans.len() >= 3);
+    }
+
+    #[test]
+    fn code_block_unknown_lang_falls_back() {
+        let text = "```unknownlang\nsome code\n```";
+        let lines = render_assistant_text(text, 80, &hl());
+        assert_eq!(lines.len(), 3);
     }
 }

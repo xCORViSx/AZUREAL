@@ -132,8 +132,11 @@ Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/
 **Viewer Tabs:** Up to 12 tabs across 2 rows (6 per row, fixed-width). `t` saves current file to a tab, `⌥t` opens tab dialog, `[`/`]` navigate, `x` closes. Tab bar renders inside the border at rows 1-2, overlaying empty padding lines so content shifts down. `tab_bar_rows()` returns 0/1/2 based on count; `viewport_height` reduced by tab rows for correct scroll clamping. 12-tab max enforced in `viewer_tab_current()` with status message on overflow.
 
 **Syntax Highlighting:**
-- Uses syntect library with base16-ocean.dark theme
-- Automatic language detection based on file extension
+- Uses syntect library with bright hardcoded color scheme (scope-to-color mapping in `src/syntax.rs`)
+- Automatic language detection based on file extension (Viewer) or code fence language tag (Session code blocks)
+- Session pane code blocks (```lang) use `SyntaxHighlighter::highlight_code_block()` — resolves language via `find_syntax_by_token` then `find_syntax_for_file` fallback
+- Viewer pane uses `SyntaxHighlighter::highlight_file()` — resolves via filename extension
+- Core logic shared via `highlight_with_syntax()` to avoid duplication
 - Supports Rust, TOML, Markdown, JSON, YAML, and 150+ other languages
 
 Other features:

@@ -1,27 +1,23 @@
-# Plan: Auto-gitignore worktrees/ on project load
+# Plan: Syntax-highlighted code blocks in Session pane
 
-## Goal
+## Status: COMPLETE
 
-When the app loads a project, automatically ensure `worktrees/` is in the project's `.gitignore` and commit that change. This prevents future worktrees from inheriting the `worktrees/` folder.
+## Summary
+
+Added syntax highlighting to code blocks in assistant messages in the Session pane. Previously all code block content rendered as plain `Color::Yellow`. Now uses the same syntect-based highlighting as the Viewer pane, resolved from the code fence language tag.
 
 ## Changes
 
-### 1. `src/git/core.rs` — New function `Git::ensure_worktrees_gitignored()`
+### `src/syntax.rs`
+- Added `highlight_code_block(content, lang)` — resolves syntax via `find_syntax_by_token` then `find_syntax_for_file("file.{ext}")` fallback
+- Extracted shared `highlight_with_syntax(content, syntax_ref)` to deduplicate `highlight_file` and `highlight_code_block`
+- Added 12 tests for token-based language matching
 
-- Read `.gitignore` at `repo_root` (or treat as empty if it doesn't exist)
-- Check if any line matches `worktrees/` or `/worktrees/` or `worktrees`
-- If not found: append `worktrees/` to the file (create if needed)
-- Stage `.gitignore` with `git add .gitignore`
-- Commit with message `chore: add worktrees/ to .gitignore`
-- Silently no-op if already present or if any git command fails
+### `src/tui/render_markdown.rs`
+- `render_assistant_text` now takes `&SyntaxHighlighter` parameter
+- Code block lines are collected during iteration, then batch-highlighted via `emit_code_block()` on close
+- Lines that exceed bubble width fall back to single-color wrapping
+- Added 4 tests verifying syntax-colored spans in code blocks
 
-### 2. `src/app/state/load.rs` — Call from `App::load()`
-
-- Add `Git::ensure_worktrees_gitignored(&repo_root);` right after the `register_project` call (line ~30), before `load_worktrees()`
-- This runs once per app launch, idempotent
-
-## Notes
-
-- Pattern follows existing `untrack_gitignored_files()` style — fire-and-forget, silent on failure
-- The commit only happens once per project (subsequent loads find `worktrees/` already present)
-- Also add `.azureal/` if not present since that's project-local config that shouldn't propagate to worktrees either
+### `src/tui/render_events.rs`
+- Updated caller to pass `syntax_highlighter` through to `render_assistant_text`

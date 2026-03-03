@@ -27,7 +27,7 @@
 - **Vim-Style Input** — Modal editing with command/prompt modes, multi-line via Shift+Enter, word-boundary wrapping
 - **Embedded Terminal** — Full PTY-based shell per worktree with color support
 - **Real-time Output** — Kernel-level file watching (kqueue/inotify/ReadDirectoryChangesW via `notify`) for near-instant session updates and auto-refreshing file tree; graceful fallback to stat() polling
-- **Markdown Rendering** — Headers, bold, italic, code blocks, tables rendered with proper styling
+- **Markdown Rendering** — Headers, bold, italic, code blocks (syntax-highlighted via code fence language tag), tables rendered with proper styling
 - **Clickable File Paths** — Edit/Read/Write tool file paths are underlined and clickable; Edit opens diff view, Read/Write opens plain file
 - **Async Rendering** — Session pane renders on a background thread with backpressure + 50ms throttle; incremental renders send only new events (pre-scanned state from already-rendered events avoids mega-clones); single JSON parse per streaming event; input is never blocked by markdown/syntax processing
 - **Incremental Parsing** — Large session files parsed incrementally (only new lines since last read)

@@ -29,15 +29,34 @@ impl SyntaxHighlighter {
         }
     }
 
+    /// Highlight a code block by language token (e.g. "rust", "python", "js")
+    /// Falls back to plain text if language is unknown or empty
+    pub fn highlight_code_block(&self, content: &str, lang: &str) -> Vec<Vec<Span<'static>>> {
+        let syntax = if lang.is_empty() {
+            self.syntax_set.find_syntax_plain_text()
+        } else {
+            self.syntax_set.find_syntax_by_token(lang)
+                .or_else(|| self.syntax_set.find_syntax_for_file(format!("file.{lang}")).ok().flatten())
+                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())
+        };
+
+        self.highlight_with_syntax(content, syntax)
+    }
+
     /// Highlight a file's content using bright hardcoded colors
     pub fn highlight_file(&self, content: &str, filename: &str) -> Vec<Vec<Span<'static>>> {
-        use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
-
         let syntax = self.syntax_set
             .find_syntax_for_file(filename)
             .ok()
             .flatten()
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+
+        self.highlight_with_syntax(content, syntax)
+    }
+
+    /// Core highlighting using a resolved syntax reference
+    fn highlight_with_syntax(&self, content: &str, syntax: &syntect::parsing::SyntaxReference) -> Vec<Vec<Span<'static>>> {
+        use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
 
         let mut parse_state = ParseState::new(syntax);
         let mut result = Vec::new();
@@ -484,5 +503,77 @@ mod tests {
     fn highlight_haskell_code() {
         let result = hl().highlight_file("main = putStrLn \"hello\"", "test.hs");
         assert_eq!(result.len(), 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // highlight_code_block — language token matching
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn code_block_rust_by_token() {
+        let result = hl().highlight_code_block("fn main() {}", "rust");
+        assert_eq!(result.len(), 1);
+        let has_magenta = result[0].iter().any(|s| s.style.fg == Some(Color::Magenta));
+        assert!(has_magenta, "Rust keyword should be Magenta via token lookup");
+    }
+
+    #[test]
+    fn code_block_python_by_token() {
+        let result = hl().highlight_code_block("def hello():\n    pass", "python");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn code_block_js_by_token() {
+        let result = hl().highlight_code_block("const x = 42;", "js");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_javascript_by_token() {
+        let result = hl().highlight_code_block("const x = 42;", "javascript");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_empty_lang_plain_text() {
+        let result = hl().highlight_code_block("some text", "");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_unknown_lang_fallback() {
+        let result = hl().highlight_code_block("content", "unknownlang123");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_toml_by_token() {
+        let result = hl().highlight_code_block("[section]\nkey = \"value\"", "toml");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn code_block_json_by_token() {
+        let result = hl().highlight_code_block("{\"key\": 1}", "json");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_bash_by_token() {
+        let result = hl().highlight_code_block("echo hello", "bash");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn code_block_empty_content() {
+        let result = hl().highlight_code_block("", "rust");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn code_block_multiline() {
+        let result = hl().highlight_code_block("fn a() {}\nfn b() {}\nfn c() {}", "rust");
+        assert_eq!(result.len(), 3);
     }
 }

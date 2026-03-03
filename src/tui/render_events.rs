@@ -168,7 +168,7 @@ fn render_display_events_with_state(
                     Span::styled(header_pad, Style::default().bg(ORANGE)),
                 ]));
 
-                lines.extend(render_assistant_text(text, bubble_width));
+                lines.extend(render_assistant_text(text, bubble_width, syntax_highlighter));
 
                 lines.push(Line::from(vec![
                     Span::styled(format!("└{}", "─".repeat(bubble_width - 1)), Style::default().fg(ORANGE)),
