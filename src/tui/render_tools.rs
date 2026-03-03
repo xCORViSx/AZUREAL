@@ -245,7 +245,7 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
 /// Reads file to find actual line numbers (runs on background render thread,
 /// not the draw path). Removed lines show grey text on dim red bg (no syntax
 /// highlighting). Added lines get syntax highlighting on dim green bg.
-pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &SyntaxHighlighter) {
+pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &mut SyntaxHighlighter) {
     let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
     let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
 

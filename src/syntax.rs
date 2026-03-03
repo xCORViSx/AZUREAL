@@ -1,22 +1,259 @@
-use ratatui::style::{Color, Style};
-use crate::tui::util::AZURE;
-use ratatui::text::Span;
-use syntect::parsing::SyntaxSet;
+use std::collections::HashMap;
 
-/// General-purpose syntax highlighter for file viewing
+use ratatui::style::{Color, Style};
+use ratatui::text::Span;
+use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+
+use crate::tui::util::AZURE;
+
+/// Capture names recognized by all language configs.
+/// Index = Highlight.0 → capture_color() maps to terminal color.
+const HIGHLIGHT_NAMES: &[&str] = &[
+    "attribute",          // 0
+    "comment",            // 1
+    "constant",           // 2
+    "constant.builtin",   // 3
+    "constructor",        // 4
+    "embedded",           // 5
+    "escape",             // 6
+    "function",           // 7
+    "function.builtin",   // 8
+    "function.method",    // 9
+    "keyword",            // 10
+    "label",              // 11
+    "number",             // 12
+    "operator",           // 13
+    "property",           // 14
+    "punctuation",        // 15
+    "punctuation.bracket", // 16
+    "punctuation.delimiter", // 17
+    "string",             // 18
+    "string.special",     // 19
+    "tag",                // 20
+    "type",               // 21
+    "type.builtin",       // 22
+    "variable",           // 23
+    "variable.builtin",   // 24
+    "variable.parameter", // 25
+];
+
+/// Map capture index to terminal color (preserves original scope_to_color scheme)
+fn capture_color(index: usize) -> Color {
+    match index {
+        0 => Color::Rgb(180, 180, 255),   // attribute
+        1 => Color::Rgb(140, 140, 140),   // comment
+        2 => AZURE,                        // constant
+        3 => Color::Yellow,                // constant.builtin (numbers, true/false)
+        4 => AZURE,                        // constructor
+        5 => Color::White,                 // embedded
+        6 => Color::Magenta,               // escape
+        7 => Color::Rgb(100, 160, 255),    // function
+        8 => Color::Rgb(100, 160, 255),    // function.builtin
+        9 => Color::Rgb(100, 160, 255),    // function.method
+        10 => Color::Magenta,              // keyword
+        11 => AZURE,                       // label
+        12 => Color::Yellow,               // number
+        13 => Color::White,                // operator
+        14 => Color::White,                // property
+        15 => Color::White,                // punctuation
+        16 => Color::White,                // punctuation.bracket
+        17 => Color::White,                // punctuation.delimiter
+        18 => Color::Green,                // string
+        19 => Color::Green,                // string.special
+        20 => AZURE,                       // tag
+        21 => Color::Yellow,               // type
+        22 => Color::Yellow,               // type.builtin
+        23 => Color::White,                // variable
+        24 => Color::Magenta,              // variable.builtin (self, this)
+        25 => Color::Rgb(255, 180, 100),   // variable.parameter
+        _ => Color::White,
+    }
+}
+
+/// General-purpose syntax highlighter backed by tree-sitter
 pub struct SyntaxHighlighter {
-    syntax_set: SyntaxSet,
+    highlighter: Highlighter,
+    /// Language name → pre-configured HighlightConfiguration
+    configs: HashMap<&'static str, HighlightConfiguration>,
+    /// File extension → language name
+    ext_to_lang: HashMap<&'static str, &'static str>,
+    /// Code fence token → language name
+    token_to_lang: HashMap<&'static str, &'static str>,
 }
 
 impl SyntaxHighlighter {
     pub fn new() -> Self {
-        let syntax_set = SyntaxSet::load_defaults_newlines();
-        Self { syntax_set }
+        let highlighter = Highlighter::new();
+        let mut configs = HashMap::new();
+        let mut ext_to_lang = HashMap::new();
+        let mut token_to_lang = HashMap::new();
+
+        // Helper: register a language with its grammar, queries, extensions, and tokens
+        let mut reg = |name: &'static str,
+                       language: tree_sitter::Language,
+                       highlights: &str,
+                       injections: &str,
+                       locals: &str,
+                       exts: &[&'static str],
+                       tokens: &[&'static str]| {
+            if let Ok(mut config) = HighlightConfiguration::new(language, name, highlights, injections, locals) {
+                config.configure(HIGHLIGHT_NAMES);
+                configs.insert(name, config);
+                for ext in exts { ext_to_lang.insert(*ext, name); }
+                for tok in tokens { token_to_lang.insert(*tok, name); }
+            }
+        };
+
+        // -- Core languages --
+
+        reg("rust", tree_sitter_rust::LANGUAGE.into(),
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+            tree_sitter_rust::INJECTIONS_QUERY, "",
+            &["rs"], &["rust", "rs"]);
+
+        reg("python", tree_sitter_python::LANGUAGE.into(),
+            tree_sitter_python::HIGHLIGHTS_QUERY, "", "",
+            &["py", "pyw", "pyi"], &["python", "py"]);
+
+        reg("javascript", tree_sitter_javascript::LANGUAGE.into(),
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            tree_sitter_javascript::INJECTIONS_QUERY,
+            tree_sitter_javascript::LOCALS_QUERY,
+            &["js", "mjs", "cjs", "jsx"], &["javascript", "js", "jsx"]);
+
+        reg("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY, "", "",
+            &["ts", "mts", "cts"], &["typescript", "ts"]);
+
+        reg("tsx", tree_sitter_typescript::LANGUAGE_TSX.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY, "", "",
+            &["tsx"], &["tsx"]);
+
+        reg("json", tree_sitter_json::LANGUAGE.into(),
+            tree_sitter_json::HIGHLIGHTS_QUERY, "", "",
+            &["json", "jsonc"], &["json", "jsonc"]);
+
+        reg("toml", tree_sitter_toml_ng::LANGUAGE.into(),
+            tree_sitter_toml_ng::HIGHLIGHTS_QUERY, "", "",
+            &["toml"], &["toml"]);
+
+        reg("bash", tree_sitter_bash::LANGUAGE.into(),
+            tree_sitter_bash::HIGHLIGHT_QUERY, "", "",
+            &["sh", "bash", "zsh"], &["bash", "sh", "shell", "zsh"]);
+
+        reg("c", tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::HIGHLIGHT_QUERY, "", "",
+            &["c", "h"], &["c"]);
+
+        reg("cpp", tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::HIGHLIGHT_QUERY, "", "",
+            &["cpp", "cc", "cxx", "hpp", "hxx", "hh"], &["cpp", "c++", "cxx", "cc"]);
+
+        reg("go", tree_sitter_go::LANGUAGE.into(),
+            tree_sitter_go::HIGHLIGHTS_QUERY, "", "",
+            &["go"], &["go", "golang"]);
+
+        reg("html", tree_sitter_html::LANGUAGE.into(),
+            tree_sitter_html::HIGHLIGHTS_QUERY,
+            tree_sitter_html::INJECTIONS_QUERY, "",
+            &["html", "htm"], &["html", "htm"]);
+
+        reg("css", tree_sitter_css::LANGUAGE.into(),
+            tree_sitter_css::HIGHLIGHTS_QUERY, "", "",
+            &["css"], &["css"]);
+
+        reg("java", tree_sitter_java::LANGUAGE.into(),
+            tree_sitter_java::HIGHLIGHTS_QUERY, "", "",
+            &["java"], &["java"]);
+
+        reg("ruby", tree_sitter_ruby::LANGUAGE.into(),
+            tree_sitter_ruby::HIGHLIGHTS_QUERY,
+            tree_sitter_ruby::LOCALS_QUERY, "",
+            &["rb"], &["ruby", "rb"]);
+
+        reg("lua", tree_sitter_lua::LANGUAGE.into(),
+            tree_sitter_lua::HIGHLIGHTS_QUERY,
+            tree_sitter_lua::INJECTIONS_QUERY, "",
+            &["lua"], &["lua"]);
+
+        reg("yaml", tree_sitter_yaml::LANGUAGE.into(),
+            tree_sitter_yaml::HIGHLIGHTS_QUERY, "", "",
+            &["yaml", "yml"], &["yaml", "yml"]);
+
+        reg("markdown", tree_sitter_md::LANGUAGE.into(),
+            tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+            tree_sitter_md::INJECTION_QUERY_BLOCK, "",
+            &["md", "markdown"], &["markdown", "md"]);
+
+        reg("scala", tree_sitter_scala::LANGUAGE.into(),
+            tree_sitter_scala::HIGHLIGHTS_QUERY, "",
+            tree_sitter_scala::LOCALS_QUERY,
+            &["scala", "sc"], &["scala"]);
+
+        reg("r", tree_sitter_r::LANGUAGE.into(),
+            tree_sitter_r::HIGHLIGHTS_QUERY, "", "",
+            &["r", "R"], &["r", "R"]);
+
+        reg("haskell", tree_sitter_haskell::LANGUAGE.into(),
+            tree_sitter_haskell::HIGHLIGHTS_QUERY,
+            tree_sitter_haskell::INJECTIONS_QUERY,
+            tree_sitter_haskell::LOCALS_QUERY,
+            &["hs"], &["haskell", "hs"]);
+
+        reg("php", tree_sitter_php::LANGUAGE_PHP.into(),
+            tree_sitter_php::HIGHLIGHTS_QUERY,
+            tree_sitter_php::INJECTIONS_QUERY, "",
+            &["php"], &["php"]);
+
+        reg("sql", tree_sitter_sequel::LANGUAGE.into(),
+            tree_sitter_sequel::HIGHLIGHTS_QUERY, "", "",
+            &["sql"], &["sql"]);
+
+        // Perl + LaTeX: grammars exist but no HIGHLIGHTS_QUERY in crate — empty queries = plain text
+        reg("perl", tree_sitter_perl::LANGUAGE.into(),
+            "", "", "",
+            &["pl", "pm"], &["perl", "pl"]);
+
+        // LaTeX: tree-sitter-latex crate has broken external scanner linking,
+        // so .tex files fall back to plain text via ext_to_lang miss.
+
+        Self { highlighter, configs, ext_to_lang, token_to_lang }
     }
 
-    /// Highlight lines with optional background color (for edit diffs)
-    /// Returns highlighted spans with the specified background applied
-    pub fn highlight_with_bg(&self, content: &str, filename: &str, bg: Option<Color>) -> Vec<Vec<Span<'static>>> {
+    /// Highlight a file's content. Language detected from filename extension.
+    pub fn highlight_file(&mut self, content: &str, filename: &str) -> Vec<Vec<Span<'static>>> {
+        let lang = filename
+            .rsplit('.')
+            .next()
+            .and_then(|ext| self.ext_to_lang.get(ext).copied());
+        match lang {
+            Some(name) => self.highlight_impl(content, name),
+            None => plain_text_lines(content),
+        }
+    }
+
+    /// Highlight a code block by language token (e.g. "rust", "python", "js").
+    /// Falls back to plain text for unknown / empty tokens.
+    pub fn highlight_code_block(&mut self, content: &str, lang: &str) -> Vec<Vec<Span<'static>>> {
+        if lang.is_empty() {
+            return plain_text_lines(content);
+        }
+        let name = self.token_to_lang.get(lang).copied();
+        match name {
+            Some(n) => self.highlight_impl(content, n),
+            // Try as file extension fallback (e.g. "rs" → rust)
+            None => {
+                let ext_name = self.ext_to_lang.get(lang).copied();
+                match ext_name {
+                    Some(n) => self.highlight_impl(content, n),
+                    None => plain_text_lines(content),
+                }
+            }
+        }
+    }
+
+    /// Highlight with optional background color (for edit diffs)
+    pub fn highlight_with_bg(&mut self, content: &str, filename: &str, bg: Option<Color>) -> Vec<Vec<Span<'static>>> {
         let base = self.highlight_file(content, filename);
         if let Some(bg_color) = bg {
             base.into_iter().map(|line_spans| {
@@ -29,120 +266,80 @@ impl SyntaxHighlighter {
         }
     }
 
-    /// Highlight a code block by language token (e.g. "rust", "python", "js")
-    /// Falls back to plain text if language is unknown or empty
-    pub fn highlight_code_block(&self, content: &str, lang: &str) -> Vec<Vec<Span<'static>>> {
-        let syntax = if lang.is_empty() {
-            self.syntax_set.find_syntax_plain_text()
-        } else {
-            self.syntax_set.find_syntax_by_token(lang)
-                .or_else(|| self.syntax_set.find_syntax_for_file(format!("file.{lang}")).ok().flatten())
-                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())
+    /// Core highlighting: run tree-sitter-highlight and convert events to ratatui spans
+    fn highlight_impl(&mut self, content: &str, lang_name: &str) -> Vec<Vec<Span<'static>>> {
+        if content.is_empty() {
+            return Vec::new();
+        }
+
+        // Split borrows: configs (immutable) vs highlighter (mutable)
+        let configs = &self.configs;
+        let config = match configs.get(lang_name) {
+            Some(c) => c,
+            None => return plain_text_lines(content),
         };
 
-        self.highlight_with_syntax(content, syntax)
-    }
+        let source = content.as_bytes();
+        let events = match self.highlighter.highlight(
+            config, source, None,
+            |injection_lang| configs.get(injection_lang),
+        ) {
+            Ok(e) => e,
+            Err(_) => return plain_text_lines(content),
+        };
 
-    /// Highlight a file's content using bright hardcoded colors
-    pub fn highlight_file(&self, content: &str, filename: &str) -> Vec<Vec<Span<'static>>> {
-        let syntax = self.syntax_set
-            .find_syntax_for_file(filename)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+        let mut result: Vec<Vec<Span<'static>>> = Vec::new();
+        let mut current_spans: Vec<Span<'static>> = Vec::new();
+        let mut color_stack: Vec<Color> = vec![Color::White];
 
-        self.highlight_with_syntax(content, syntax)
-    }
+        for event in events {
+            match event {
+                Ok(HighlightEvent::Source { start, end }) => {
+                    let text = &content[start..end];
+                    let color = *color_stack.last().unwrap_or(&Color::White);
+                    let style = Style::default().fg(color);
 
-    /// Core highlighting using a resolved syntax reference
-    fn highlight_with_syntax(&self, content: &str, syntax: &syntect::parsing::SyntaxReference) -> Vec<Vec<Span<'static>>> {
-        use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
-
-        let mut parse_state = ParseState::new(syntax);
-        let mut result = Vec::new();
-
-        for line in content.lines() {
-            let mut spans = Vec::new();
-            let ops = parse_state.parse_line(line, &self.syntax_set);
-            let mut scope_stack = ScopeStack::new();
-            let mut pos = 0;
-
-            // ops is Vec<(usize, ScopeStackOp)>
-            let ops: Vec<(usize, ScopeStackOp)> = ops.into_iter().flatten().collect();
-
-            for (offset, op) in ops {
-                // Add text before this operation
-                if offset > pos {
-                    let text = &line[pos..offset];
-                    let color = scope_to_color(&scope_stack);
-                    spans.push(Span::styled(text.to_string(), Style::default().fg(color)));
+                    // Split by newlines — each \n starts a new line in output
+                    let mut first = true;
+                    for chunk in text.split('\n') {
+                        if !first {
+                            // Finalize previous line
+                            if current_spans.is_empty() {
+                                current_spans.push(Span::raw(""));
+                            }
+                            result.push(std::mem::take(&mut current_spans));
+                        }
+                        first = false;
+                        let chunk = chunk.strip_suffix('\r').unwrap_or(chunk);
+                        if !chunk.is_empty() {
+                            current_spans.push(Span::styled(chunk.to_string(), style));
+                        }
+                    }
                 }
-                pos = offset;
-                scope_stack.apply(&op).ok();
+                Ok(HighlightEvent::HighlightStart(h)) => {
+                    color_stack.push(capture_color(h.0));
+                }
+                Ok(HighlightEvent::HighlightEnd) => {
+                    color_stack.pop();
+                }
+                Err(_) => break,
             }
+        }
 
-            // Add remaining text
-            if pos < line.len() {
-                let text = &line[pos..];
-                let color = scope_to_color(&scope_stack);
-                spans.push(Span::styled(text.to_string(), Style::default().fg(color)));
-            }
-
-            // Empty line
-            if spans.is_empty() {
-                spans.push(Span::raw(""));
-            }
-
-            result.push(spans);
+        // Push final line
+        if !current_spans.is_empty() {
+            result.push(current_spans);
         }
 
         result
     }
 }
 
-/// Map syntax scope to bright terminal color
-fn scope_to_color(stack: &syntect::parsing::ScopeStack) -> Color {
-    let scopes: Vec<_> = stack.as_slice().iter()
-        .map(|s| s.build_string())
-        .collect();
-    let scope_str = scopes.join(" ");
-
-    // Check scopes from most specific to least specific
-    if scope_str.contains("comment") {
-        Color::Rgb(140, 140, 140) // Comments: lighter gray than removed lines (100,100,100)
-    } else if scope_str.contains("string") || scope_str.contains("char") {
-        Color::Green
-    } else if scope_str.contains("constant.numeric") || scope_str.contains("number") {
-        Color::Yellow
-    } else if scope_str.contains("constant") {
-        AZURE
-    } else if scope_str.contains("keyword") || scope_str.contains("storage") {
-        Color::Magenta
-    } else if scope_str.contains("entity.name.function") || scope_str.contains("support.function") {
-        Color::Rgb(100, 160, 255) // Light blue for functions — ANSI Blue is too dark on dark backgrounds
-    } else if scope_str.contains("entity.name.type") || scope_str.contains("support.type") || scope_str.contains("entity.name.class") {
-        Color::Yellow
-    } else if scope_str.contains("variable.parameter") {
-        Color::Rgb(255, 180, 100) // Orange for parameters
-    } else if scope_str.contains("variable") {
-        Color::White
-    } else if scope_str.contains("punctuation") || scope_str.contains("operator") {
-        Color::White
-    } else if scope_str.contains("entity.name") {
-        AZURE
-    } else if scope_str.contains("meta.attribute") || scope_str.contains("attribute") {
-        Color::Rgb(180, 180, 255) // Light purple for attributes
-    } else if scope_str.contains("markup.heading") {
-        AZURE
-    } else if scope_str.contains("markup.bold") {
-        Color::White
-    } else if scope_str.contains("markup.italic") {
-        Color::White
-    } else if scope_str.contains("markup.list") {
-        Color::Green
-    } else {
-        Color::White // Default to bright white
-    }
+/// Plain text fallback: one white span per line
+fn plain_text_lines(content: &str) -> Vec<Vec<Span<'static>>> {
+    content.lines().map(|line| {
+        vec![Span::styled(line.to_string(), Style::default().fg(Color::White))]
+    }).collect()
 }
 
 impl Default for SyntaxHighlighter {
@@ -295,12 +492,6 @@ mod tests {
     }
 
     #[test]
-    fn highlight_xml() {
-        let result = hl().highlight_file("<root><child/></root>", "test.xml");
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
     fn highlight_unknown_extension_fallback() {
         let result = hl().highlight_file("some content", "test.xyz123");
         assert_eq!(result.len(), 1);
@@ -350,7 +541,7 @@ mod tests {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // scope_to_color — tested via highlight_file
+    // Color verification — tested via highlight_file
     // ═══════════════════════════════════════════════════════════════════
 
     #[test]
@@ -451,6 +642,10 @@ mod tests {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional language detection
+    // ═══════════════════════════════════════════════════════════════════
+
     #[test]
     fn highlight_cpp_code() {
         let result = hl().highlight_file("#include <iostream>\nint main() {}", "test.cpp");
@@ -502,6 +697,12 @@ mod tests {
     #[test]
     fn highlight_haskell_code() {
         let result = hl().highlight_file("main = putStrLn \"hello\"", "test.hs");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn highlight_java_code() {
+        let result = hl().highlight_file("public class Main {}", "test.java");
         assert_eq!(result.len(), 1);
     }
 
@@ -575,5 +776,45 @@ mod tests {
     fn code_block_multiline() {
         let result = hl().highlight_code_block("fn a() {}\nfn b() {}\nfn c() {}", "rust");
         assert_eq!(result.len(), 3);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Language coverage — every registered language parses without panic
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn all_languages_parse_without_panic() {
+        let mut h = hl();
+        let samples: &[(&str, &str)] = &[
+            ("test.rs", "fn main() {}"),
+            ("test.py", "def f(): pass"),
+            ("test.js", "const x = 1;"),
+            ("test.ts", "let x: number = 1;"),
+            ("test.tsx", "const App = () => <div/>;"),
+            ("test.json", "{\"a\": 1}"),
+            ("test.toml", "key = \"val\""),
+            ("test.sh", "echo hi"),
+            ("test.c", "int main() { return 0; }"),
+            ("test.cpp", "int main() {}"),
+            ("test.go", "package main"),
+            ("test.html", "<p>hi</p>"),
+            ("test.css", "body {}"),
+            ("test.java", "class A {}"),
+            ("test.rb", "puts 'hi'"),
+            ("test.lua", "print('hi')"),
+            ("test.yaml", "key: val"),
+            ("test.md", "# hi"),
+            ("test.scala", "object A"),
+            ("test.r", "x <- 1"),
+            ("test.hs", "main = return ()"),
+            ("test.php", "<?php echo 1; ?>"),
+            ("test.sql", "SELECT 1;"),
+            ("test.pl", "print 1;"),
+            ("test.tex", "\\section{hi}"),
+        ];
+        for (file, code) in samples {
+            let result = h.highlight_file(code, file);
+            assert!(!result.is_empty(), "Language {} should produce output", file);
+        }
     }
 }

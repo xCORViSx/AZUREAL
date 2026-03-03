@@ -132,12 +132,13 @@ Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/
 **Viewer Tabs:** Up to 12 tabs across 2 rows (6 per row, fixed-width). `t` saves current file to a tab, `⌥t` opens tab dialog, `[`/`]` navigate, `x` closes. Tab bar renders inside the border at rows 1-2, overlaying empty padding lines so content shifts down. `tab_bar_rows()` returns 0/1/2 based on count; `viewport_height` reduced by tab rows for correct scroll clamping. 12-tab max enforced in `viewer_tab_current()` with status message on overflow.
 
 **Syntax Highlighting:**
-- Uses syntect library with bright hardcoded color scheme (scope-to-color mapping in `src/syntax.rs`)
-- Automatic language detection based on file extension (Viewer) or code fence language tag (Session code blocks)
-- Session pane code blocks (```lang) use `SyntaxHighlighter::highlight_code_block()` — resolves language via `find_syntax_by_token` then `find_syntax_for_file` fallback
-- Viewer pane uses `SyntaxHighlighter::highlight_file()` — resolves via filename extension
-- Core logic shared via `highlight_with_syntax()` to avoid duplication
-- Supports Rust, TOML, Markdown, JSON, YAML, and 150+ other languages
+- Uses **tree-sitter** (AST-based parser) with `tree-sitter-highlight` for token classification and hardcoded capture-to-color mapping in `src/syntax.rs`
+- 25 language grammars registered at init: Rust, Python, JavaScript, TypeScript, TSX, JSON, TOML, Bash, C, C++, Go, HTML, CSS, Java, Ruby, Lua, YAML, Markdown, Scala, R, Haskell, PHP, SQL, Perl (plain text fallback for Perl — no highlight queries in crate)
+- Language detection: file extension lookup (`ext_to_lang` HashMap) for Viewer pane, code fence token lookup (`token_to_lang` HashMap) for Session code blocks, with extension fallback
+- `SyntaxHighlighter` methods take `&mut self` (tree-sitter `Highlighter` reuses internal buffers)
+- Two instances: one on `App` struct (main thread), one created in `RenderThread::spawn()` (background render thread)
+- `highlight_impl()` uses disjoint field borrows: `&self.configs` (immutable) + `&mut self.highlighter` (mutable) — supports language injection callbacks
+- Capture-to-color mapping via `HIGHLIGHT_NAMES` array (26 entries) → `capture_color(index)` function
 
 Other features:
 - Vim-style modal editing
@@ -181,7 +182,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (5 submodules: a
 ### 1. NEVER Create Expensive Objects in Render Path
 
 ```rust
-// ❌ WRONG - Creates SyntaxHighlighter on EVERY FRAME (loads entire syntect SyntaxSet)
+// ❌ WRONG - Creates SyntaxHighlighter on EVERY FRAME (loads all 25 tree-sitter grammars)
 fn render_edit_diff(...) {
     let highlighter = SyntaxHighlighter::new();  // CATASTROPHIC - 100ms+ per call
 }
@@ -276,7 +277,7 @@ let (events, parsed_json) = self.event_parser.parse(&data); // single parse
 
 **EventParser buffer optimization:** The parser collects all complete lines in one `drain()` call instead of re-allocating `self.buffer` on every newline (O(n) total instead of O(n²) per chunk).
 
-**Dev profile optimization:** `Cargo.toml` sets `opt-level = 2` for `serde_json`, `serde`, and `syntect` packages in dev builds. These hot-path dependencies run 3-5x slower at opt-level 0, amplifying all parsing and highlighting costs in debug mode.
+**Dev profile optimization:** `Cargo.toml` sets `opt-level = 2` for `serde_json`, `serde`, `tree-sitter`, and `tree-sitter-highlight` packages in dev builds. These hot-path dependencies run 3-5x slower at opt-level 0, amplifying all parsing and highlighting costs in debug mode.
 
 **Files:** `src/events/parser.rs` (parse returns JSON), `src/app/state/claude.rs::handle_claude_output()`, `src/app/util.rs` (`display_text_from_json`)
 
@@ -311,7 +312,7 @@ if app.viewer_edit_highlight_ver != edit_ver {
 // Walk source lines to find visible range, only build Lines for viewport
 ```
 
-**Impact:** AGENTS.md (~1000+ lines) caused 90%+ CPU in edit mode — syntect was parsing the entire file every frame at 30fps. Now: highlight once on enter/edit (~50ms), then zero highlight cost per frame. Viewport-only line construction means O(viewport_height) not O(file_size) per frame.
+**Impact:** AGENTS.md (~1000+ lines) caused 90%+ CPU in edit mode — tree-sitter was parsing the entire file every frame at 30fps. Now: highlight once on enter/edit (~50ms), then zero highlight cost per frame. Viewport-only line construction means O(viewport_height) not O(file_size) per frame.
 
 **Cache invalidation:** `viewer_edit_highlight_ver` tracks `viewer_edit_version` — a monotonically increasing counter bumped in `push_undo()` and undo/redo. Cannot use `viewer_edit_undo.len()` because the undo stack caps at 100 entries; after 100 edits, push+trim keeps length at 100 so the cache key never changes. Scrolling, cursor movement, and selection don't bump version → cache hit → zero cost. Cleared on `exit_viewer_edit_mode()`.
 
@@ -1412,7 +1413,7 @@ azureal/
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Worktree, WorktreeStatus, Project, RebaseResult, OutputType, DiffInfo)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
-│   ├── syntax.rs           # Syntax highlighting (SyntaxHighlighter: syntect-based file/diff highlighting for Viewer pane)
+│   ├── syntax.rs           # Syntax highlighting (SyntaxHighlighter: tree-sitter-based highlighting for Viewer + Session code blocks)
 │   ├── watcher.rs          # Filesystem watcher (notify crate — kqueue/inotify/ReadDirectoryChangesW)
 │   └── wizard.rs           # Session creation wizard
 ├── worktrees/              # Git worktrees for sessions

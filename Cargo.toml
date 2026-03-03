@@ -39,8 +39,32 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Syntax highlighting
-syntect = "5.2"
+# Syntax highlighting (tree-sitter)
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-bash = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.25"
+tree-sitter-java = "0.23"
+tree-sitter-ruby = "0.23"
+tree-sitter-lua = "0.5"
+tree-sitter-yaml = "0.7"
+tree-sitter-md = "0.5"
+tree-sitter-scala = "0.24"
+tree-sitter-r = "1.2"
+tree-sitter-haskell = "0.23"
+tree-sitter-php = "0.24"
+tree-sitter-sequel = "0.3"
+tree-sitter-perl = "1.1"
 textwrap = "0.16.2"
 unicode-width = "0.2"
 
@@ -67,12 +91,14 @@ libc = "0.2"
 
 ## Dev builds: optimize hot-path dependencies so debug builds don't crawl.
 ## serde_json does JSON parsing on every streaming event (~62/sec),
-## syntect does syntax highlighting on every render — both are 3-5x slower at opt-level 0.
+## tree-sitter does syntax highlighting on every render — both are 3-5x slower at opt-level 0.
 [profile.dev.package.serde_json]
 opt-level = 2
 [profile.dev.package.serde]
 opt-level = 2
-[profile.dev.package.syntect]
+[profile.dev.package.tree-sitter]
+opt-level = 2
+[profile.dev.package.tree-sitter-highlight]
 opt-level = 2
 
 [profile.release]

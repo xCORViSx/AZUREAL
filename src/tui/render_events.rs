@@ -32,7 +32,7 @@ pub fn render_display_events(
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
-    syntax_highlighter: &SyntaxHighlighter,
+    syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
@@ -47,7 +47,7 @@ pub fn render_display_events_incremental(
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
-    syntax_highlighter: &SyntaxHighlighter,
+    syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     existing_lines: Vec<Line<'static>>,
     mut existing_anim: Vec<(usize, usize)>,
@@ -72,7 +72,7 @@ fn render_display_events_with_state(
     width: u16,
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
-    syntax_highlighter: &SyntaxHighlighter,
+    syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     mut lines: Vec<Line<'static>>,
     mut animation_indices: Vec<(usize, usize)>,
@@ -323,7 +323,7 @@ fn render_tool_call(
     pending_tools: &HashSet<String>,
     failed_tools: &HashSet<String>,
     bubble_width: usize,
-    highlighter: &SyntaxHighlighter,
+    highlighter: &mut SyntaxHighlighter,
 ) {
     let tool_color = AZURE;
     let is_pending = pending_tools.contains(tool_use_id);
@@ -1387,9 +1387,9 @@ mod tests {
     /// Empty events produces empty output.
     #[test]
     fn test_render_events_empty() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let (lines, anim, bubbles, clicks) = render_display_events(
-            &[], 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty());
         assert!(anim.is_empty());
@@ -1400,14 +1400,14 @@ mod tests {
     /// Single Init event renders session started.
     #[test]
     fn test_render_events_init() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Init {
             _session_id: "s1".into(),
             cwd: "/project".into(),
             model: "claude-opus-4-20250514".into(),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Session Started")));
@@ -1416,13 +1416,13 @@ mod tests {
     /// Duplicate Init events are deduplicated.
     #[test]
     fn test_render_events_dedup_init() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
             DisplayEvent::Init { _session_id: "s1".into(), cwd: "/a".into(), model: "m".into() },
             DisplayEvent::Init { _session_id: "s2".into(), cwd: "/b".into(), model: "m2".into() },
         ];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         // Only one "Session Started" should appear
@@ -1433,13 +1433,13 @@ mod tests {
     /// UserMessage renders with bubble position tracked.
     #[test]
     fn test_render_events_user_message_bubble() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::UserMessage {
             _uuid: "u1".into(),
             content: "Hello".into(),
         }];
         let (lines, _, bubbles, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
@@ -1449,14 +1449,14 @@ mod tests {
     /// AssistantText renders with bubble position tracked.
     #[test]
     fn test_render_events_assistant_bubble() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::AssistantText {
             _uuid: "a1".into(),
             _message_id: "m1".into(),
             text: "I'll help you.".into(),
         }];
         let (lines, _, bubbles, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
@@ -1466,13 +1466,13 @@ mod tests {
     /// Hook event renders hook name.
     #[test]
     fn test_render_events_hook() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Hook {
             name: "pre-tool-use".into(),
             output: "approved".into(),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("pre-tool-use")));
@@ -1481,13 +1481,13 @@ mod tests {
     /// Duplicate consecutive hooks are deduplicated.
     #[test]
     fn test_render_events_dedup_hooks() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
             DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
             DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
         ];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         let hook_count = text.iter().filter(|l| l.contains("hook")).count();
@@ -1497,10 +1497,10 @@ mod tests {
     /// Command event renders with slash.
     #[test]
     fn test_render_events_command() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Command { name: "compact".into() }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("compact")));
@@ -1509,10 +1509,10 @@ mod tests {
     /// Compacting event renders banner.
     #[test]
     fn test_render_events_compacting() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacting];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1521,10 +1521,10 @@ mod tests {
     /// Compacted event renders banner.
     #[test]
     fn test_render_events_compacted() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacted];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1533,10 +1533,10 @@ mod tests {
     /// MayBeCompacting event renders warning banner.
     #[test]
     fn test_render_events_may_be_compacting() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::MayBeCompacting];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("compacting")));
@@ -1545,7 +1545,7 @@ mod tests {
     /// Complete event renders duration and cost.
     #[test]
     fn test_render_events_complete() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Complete {
             _session_id: "s1".into(),
             success: true,
@@ -1553,7 +1553,7 @@ mod tests {
             cost_usd: 0.02,
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Completed")));
@@ -1563,10 +1563,10 @@ mod tests {
     /// Filtered event produces no output.
     #[test]
     fn test_render_events_filtered() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Filtered];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty());
     }
@@ -1574,9 +1574,9 @@ mod tests {
     /// Pending user message renders at the end.
     #[test]
     fn test_render_events_pending_user_message() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let (lines, _, bubbles, _) = render_display_events(
-            &[], 80, &HashSet::new(), &HashSet::new(), &highlighter, Some("Waiting..."),
+            &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, Some("Waiting..."),
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Waiting...")));
@@ -1587,7 +1587,7 @@ mod tests {
     /// TodoWrite tool calls are skipped in rendering.
     #[test]
     fn test_render_events_todowrite_skipped() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::ToolCall {
             _uuid: "u1".into(),
             tool_use_id: "t1".into(),
@@ -1596,7 +1596,7 @@ mod tests {
             input: json!({"todos": []}),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty(), "TodoWrite tool calls should be skipped");
     }
@@ -1604,7 +1604,7 @@ mod tests {
     /// TodoWrite results are also skipped.
     #[test]
     fn test_render_events_todowrite_result_skipped() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::ToolResult {
             tool_use_id: "t1".into(),
             tool_name: "TodoWrite".into(),
@@ -1612,7 +1612,7 @@ mod tests {
             content: "Todos have been modified successfully".into(),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty(), "TodoWrite results should be skipped");
     }
@@ -1620,7 +1620,7 @@ mod tests {
     /// ToolCall with pending status gets animation index.
     #[test]
     fn test_render_events_tool_pending_animation() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let mut pending = HashSet::new();
         pending.insert("tool1".to_string());
         let events = vec![DisplayEvent::ToolCall {
@@ -1631,7 +1631,7 @@ mod tests {
             input: json!({"file_path": "/path/file.rs"}),
         }];
         let (_, anim, _, _) = render_display_events(
-            &events, 80, &pending, &HashSet::new(), &highlighter, None,
+            &events, 80, &pending, &HashSet::new(), &mut highlighter, None,
         );
         assert!(!anim.is_empty(), "Pending tool should have animation index");
     }
@@ -1639,13 +1639,13 @@ mod tests {
     /// Plan event renders plan content.
     #[test]
     fn test_render_events_plan() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Plan {
             name: "Implementation".into(),
             content: "Step 1: Do thing".into(),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("PLAN MODE")));
@@ -1655,13 +1655,13 @@ mod tests {
     /// Compaction summary in user message renders as banner instead.
     #[test]
     fn test_render_events_compaction_summary_replaced() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::UserMessage {
             _uuid: "u1".into(),
             content: "This session is being continued from a previous conversation. Here is a summary...".into(),
         }];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1672,7 +1672,7 @@ mod tests {
     /// Multiple event types in sequence.
     #[test]
     fn test_render_events_mixed_sequence() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
             DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
             DisplayEvent::UserMessage { _uuid: "u".into(), content: "Do something".into() },
@@ -1680,7 +1680,7 @@ mod tests {
             DisplayEvent::Complete { _session_id: "s".into(), success: true, duration_ms: 1000, cost_usd: 0.01 },
         ];
         let (lines, _, bubbles, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 2); // user + assistant
@@ -1689,13 +1689,13 @@ mod tests {
     /// Init after content is suppressed.
     #[test]
     fn test_render_events_init_after_content_suppressed() {
-        let highlighter = SyntaxHighlighter::new();
+        let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
             DisplayEvent::UserMessage { _uuid: "u".into(), content: "Hi".into() },
             DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
         ];
         let (lines, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &highlighter, None,
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
         // Init should be suppressed since content was already seen

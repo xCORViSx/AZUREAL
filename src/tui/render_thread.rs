@@ -99,8 +99,8 @@ impl RenderThread {
         let handle = std::thread::Builder::new()
             .name("render".into())
             .spawn(move || {
-                let highlighter = SyntaxHighlighter::new();
-                render_loop(req_rx, res_tx, &highlighter);
+                let mut highlighter = SyntaxHighlighter::new();
+                render_loop(req_rx, res_tx, &mut highlighter);
             })
             .expect("failed to spawn render thread");
 
@@ -142,7 +142,7 @@ impl RenderThread {
 fn render_loop(
     rx: mpsc::Receiver<RenderRequest>,
     tx: mpsc::Sender<RenderResult>,
-    highlighter: &SyntaxHighlighter,
+    highlighter: &mut SyntaxHighlighter,
 ) {
     while let Ok(mut req) = rx.recv() {
         // Drain queued requests — only render the latest one
@@ -567,9 +567,13 @@ mod tests {
             seq: 0,
         };
         rt.send(req);
-        // Give the render thread time to process
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let result = rt.try_recv();
+        // Give the render thread time to init 25+ language grammars and process
+        let mut result = None;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            result = rt.try_recv();
+            if result.is_some() { break; }
+        }
         assert!(result.is_some());
         let res = result.unwrap();
         assert_eq!(res.seq, 1);

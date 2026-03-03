@@ -686,7 +686,7 @@ impl App {
         }
     }
 
-    fn dump_debug_output_inner(&self, name_suffix: &str) -> anyhow::Result<()> {
+    fn dump_debug_output_inner(&mut self, name_suffix: &str) -> anyhow::Result<()> {
         use std::io::Write;
         use std::collections::HashMap;
         use crate::events::DisplayEvent;
@@ -885,7 +885,7 @@ impl App {
             120,
             &self.pending_tool_calls,
             &self.failed_tool_calls,
-            &self.syntax_highlighter,
+            &mut self.syntax_highlighter,
             None,
         );
         writeln!(file, "Total rendered lines: {}", rendered_lines.len())?;
