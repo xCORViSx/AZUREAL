@@ -391,6 +391,13 @@ During active Claude streaming, events are added to `display_events` by the live
 - Terminal width changed (need to re-wrap all text)
 - Session switched (event count drops to 0)
 
+**Safety guards in `refresh_session_events()`:**
+- **Empty-parse guard:** If the re-parse returns empty events but we already had content and `end_offset == 0`, the existing `display_events` are preserved (file was likely temporarily unavailable). The next poll will retry.
+- **Render counter reset on full re-parse:** When `session_file_parse_offset` was 0 (full re-parse, e.g. after Claude exit), `rendered_events_count`, `rendered_content_line_count`, and `rendered_events_start` are reset to 0. Without this, the incremental render path would use stale counts that reference the old event array, producing garbled output.
+
+**Session file index stability (`load_worktrees()`):**
+When `refresh_worktrees()` rebuilds `session_files` via `list_claude_sessions()` (sorted by mtime, newest first), a new session file can shift existing sessions to higher indices. `session_selected_file_idx` is preserved by UUID: before replacing the file list, the UUID at the current index is looked up in the new list, and the index is corrected. This prevents the viewed session from silently switching to a different session file after a worktree refresh.
+
 ### 10. Deferred Initial Render for Large Conversations
 
 For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`session_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when the user reaches scroll position 0 — both `scroll_session_up()` and `jump_to_prev_bubble()` set `rendered_lines_dirty = true` when they hit scroll 0 with `rendered_events_start > 0`, triggering deferred render expansion on the next event loop frame.

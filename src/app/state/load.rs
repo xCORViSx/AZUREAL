@@ -171,6 +171,20 @@ impl App {
                 });
                 // Also load session files for main so browse mode can show sessions
                 let files = crate::config::list_claude_sessions(&wt.path);
+                // Preserve UUID-based selection: if the user was viewing a specific
+                // session UUID, find its new index after the list is re-sorted by mtime.
+                // Without this, a new session appearing at idx=0 silently shifts the
+                // old session to idx=1 while session_selected_file_idx still says 0.
+                if let Some(&old_idx) = self.session_selected_file_idx.get(&branch_name) {
+                    if let Some(old_files) = self.session_files.get(&branch_name) {
+                        if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
+                            let old_uuid = old_uuid.clone();
+                            if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
+                                self.session_selected_file_idx.insert(branch_name.clone(), new_idx);
+                            }
+                        }
+                    }
+                }
                 self.session_files.insert(branch_name.clone(), files);
                 self.session_selected_file_idx.entry(branch_name.clone()).or_insert(0);
                 active_branches.insert(branch_name);
@@ -236,6 +250,17 @@ impl App {
         for session in &self.worktrees {
             if let Some(ref wt_path) = session.worktree_path {
                 let files = crate::config::list_claude_sessions(wt_path);
+                // Preserve UUID-based selection (same logic as main worktree above)
+                if let Some(&old_idx) = self.session_selected_file_idx.get(&session.branch_name) {
+                    if let Some(old_files) = self.session_files.get(&session.branch_name) {
+                        if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
+                            let old_uuid = old_uuid.clone();
+                            if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
+                                self.session_selected_file_idx.insert(session.branch_name.clone(), new_idx);
+                            }
+                        }
+                    }
+                }
                 self.session_files.insert(session.branch_name.clone(), files);
                 self.session_selected_file_idx.entry(session.branch_name.clone()).or_insert(0);
             }
@@ -512,6 +537,7 @@ impl App {
         let was_at_bottom = self.session_scroll == usize::MAX;
 
         // Incremental parse: only read new bytes since last offset
+        let was_full_reparse = self.session_file_parse_offset == 0;
         let parsed = crate::app::session_parser::parse_session_file_incremental(
             &path,
             self.session_file_parse_offset,
@@ -519,7 +545,23 @@ impl App {
             &self.pending_tool_calls,
             &self.failed_tool_calls,
         );
+        // Guard: if the parse returned empty events but we already had content,
+        // the file was likely temporarily unavailable (locked, atomic rewrite,
+        // or deleted during Claude Code compaction). Preserve existing display
+        // rather than wiping the session pane. The next poll will retry.
+        if parsed.events.is_empty() && !self.display_events.is_empty() && parsed.end_offset == 0 {
+            return;
+        }
         self.display_events = parsed.events;
+        // Full re-parse replaced ALL display_events — reset render counters so the
+        // incremental render path doesn't use stale counts that reference the old
+        // event array. Without this, submit_render_request can try to slice events
+        // at the old rendered_events_count, producing garbled or missing output.
+        if was_full_reparse {
+            self.rendered_events_count = 0;
+            self.rendered_content_line_count = 0;
+            self.rendered_events_start = 0;
+        }
         self.pending_tool_calls = parsed.pending_tools;
         self.failed_tool_calls = parsed.failed_tools;
         self.parse_total_lines = parsed.total_lines;

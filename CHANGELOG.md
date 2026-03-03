@@ -4,6 +4,12 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Session pane spontaneously clearing during plan mode** — Three related bugs causing the session pane to lose its content while Claude is working:
+  1. **Stale session index after worktree refresh**: When `refresh_worktrees()` rebuilt `session_files` (every 500ms on file changes), `list_claude_sessions()` sorted by modification time. A new session file appearing at idx=0 silently shifted the old session to idx=1, but `session_selected_file_idx` still said 0 — pointing at the wrong session. Fixed by preserving UUID-based selection: before replacing the file list, the previously-selected UUID is looked up in the new list and the index is corrected.
+  2. **Destructive re-parse on file unavailability**: If the session JSONL was briefly unavailable during `refresh_session_events()` (locked, atomic rewrite, or deleted during Claude Code compaction), the parse returned empty events and `display_events` was wiped. Fixed with a guard: if the parse returns empty events but we already had content and `end_offset == 0`, the existing display is preserved and the next poll retries.
+  3. **Render counter desync after full re-parse**: When `handle_claude_exited()` triggered a full re-parse (offset=0), `rendered_events_count`/`rendered_events_start` were not reset. The incremental render path then tried to slice the new event array at stale offsets, producing garbled or missing output. Fixed by resetting render counters when `session_file_parse_offset` was 0 before the parse.
+
 ### Added
 - **Auto-gitignore worktrees/** — On project load, automatically adds `worktrees/` to the project's `.gitignore` and commits the change if it wasn't already present. Ensures new worktrees never inherit the worktrees folder.
 - **Health panel auto-refresh** — God Files and Documentation tabs automatically rescan when source files change in the worktree (500ms debounce). Preserves tab, cursor positions, scroll offsets, and checked states across rescans. No manual re-open needed after editing files.
