@@ -1641,7 +1641,7 @@ azureal
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
 | `Tab`/`⇧Tab` | Cycle focus forward/backward (Worktrees → FileTree → Viewer → Session → Input) |
-| `[`/`]` | Switch worktree tab (global — works from any pane) |
+| `[`/`]` | Switch worktree tab (global — works from any pane, including main browse) |
 | `M` | Toggle main branch browse |
 | `P` | Projects panel |
 | `R` | Run command (picker or execute) |

@@ -245,11 +245,30 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             }
         }
         // Worktree tab switching (global [ / ])
+        // When browsing main, brackets exit and land on a worktree
         Action::WorktreeTabPrev => {
-            app.select_prev_session();
+            if app.browsing_main {
+                app.exit_main_browse();
+                if !app.worktrees.is_empty() {
+                    app.selected_worktree = Some(app.worktrees.len() - 1);
+                    app.load_session_output();
+                    app.invalidate_sidebar();
+                }
+            } else {
+                app.select_prev_session();
+            }
         }
         Action::WorktreeTabNext => {
-            app.select_next_session();
+            if app.browsing_main {
+                app.exit_main_browse();
+                if !app.worktrees.is_empty() {
+                    app.selected_worktree = Some(0);
+                    app.load_session_output();
+                    app.invalidate_sidebar();
+                }
+            } else {
+                app.select_next_session();
+            }
         }
         Action::OpenHealth => {
             if app.health_panel.is_some() { app.close_health_panel(); }

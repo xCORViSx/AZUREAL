@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Bracket navigation from main browse to worktrees** — `[` and `]` now work while browsing main (Shift+M): `]` exits main browse and lands on the first worktree, `[` exits and lands on the last worktree.
+
 ### Fixed
 - **Edit diff syntax highlighting dropping to white mid-line** — Tree-sitter was receiving only the bare `new_string` snippet from Edit tool calls, which starts mid-function/mid-file. Without surrounding context, tree-sitter couldn't build a proper AST — it highlighted the first few tokens correctly, then fell back to white. Fix: when the edited file is readable and the edit is already applied, the full file is highlighted with tree-sitter and only the edited region's spans are extracted. This gives tree-sitter complete AST context so syntax colors are accurate across the entire line. Falls back to snippet-only highlighting when the file isn't available (mid-edit streaming).
 - **Tool status circles not updating during live sessions** — Status indicators (○/●/✗) next to tool calls stayed as "in progress" (○) until the session ended, then incorrectly showed all as completed (●) even for failed tools. Root cause: incremental rendering baked the indicator text into the cached lines at render time and never updated them when tools completed. Fix: `animation_line_indices` now tracks ALL tool indicator positions with their `tool_use_id` (not just pending tools). At draw time, each indicator is patched based on current `pending_tool_calls`/`failed_tool_calls` state — circles now transition ○→●/✗ immediately when a ToolResult arrives. A `tool_status_generation` counter ensures the viewport cache invalidates on every status change.
