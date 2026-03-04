@@ -56,7 +56,7 @@ pub static GLOBAL: [Keybinding; 17] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('H')), "Worktree health", Action::OpenHealth),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('M')), "Browse main", Action::BrowseMain),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('r')), "Run command", Action::RunCommand),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Run command", Action::RunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::WorktreeTabNext).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::WorktreeTabPrev),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),

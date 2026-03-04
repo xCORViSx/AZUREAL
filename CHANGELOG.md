@@ -11,6 +11,7 @@ All notable changes to Azureal will be documented in this file.
   3. **Render counter desync after full re-parse**: When `handle_claude_exited()` triggered a full re-parse (offset=0), `rendered_events_count`/`rendered_events_start` were not reset. The incremental render path then tried to slice the new event array at stale offsets, producing garbled or missing output. Fixed by resetting render counters when `session_file_parse_offset` was 0 before the parse.
 
 ### Changed
+- **Run Command keybinding changed from `⌘r` to `Shift+R`** — Kitty terminal intercepts `⌘R` for its own resize action, making the previous binding unreachable. Now uses `Shift+R` consistent with other global Shift+ bindings (`Shift+G`, `Shift+H`, `Shift+M`, `Shift+P`).
 - **Syntax highlighting engine replaced: syntect → tree-sitter** — Replaced TextMate-regex-based syntect with AST-based tree-sitter (`tree-sitter-highlight` crate). 25 language grammars statically linked: Rust, Python, JavaScript, TypeScript, TSX, JSON, TOML, Bash, C, C++, Go, HTML, CSS, Java, Ruby, Lua, YAML, Markdown, Scala, R, Haskell, PHP, SQL, Perl. Same color scheme preserved (keywords=Magenta, strings=Green, comments=gray, numbers=Yellow, functions=blue, etc). Supports language injection (e.g. JS inside HTML). `SyntaxHighlighter` methods now take `&mut self` due to tree-sitter's internal buffer reuse.
 
 ### Added
@@ -43,7 +44,7 @@ All notable changes to Azureal will be documented in this file.
 - **Worktree sidebar replaced by horizontal tab row** — The vertical worktree sidebar (15% left column) is now a 1-row horizontal tab bar at the top of the normal mode layout. `[★ main]` tab always first (yellow when active, Shift+M toggles main browse). Active worktree tab uses AZURE bg + white fg + bold. Archived worktrees shown dim with `◇` prefix. Supports greedy pagination with `N/M` page indicator. Mouse click on tabs selects worktrees. `[`/`]` switch tabs globally from any pane; `←/→` switch when focused.
 - **FileTree is always visible** — No longer a toggle overlay (`f` key removed). FileTree is a permanent pane in the 15% left column. Included in the focus cycle as a separate pane.
 - **Focus cycle keys restored to Tab/Shift+Tab** — Pane cycling reverted from `{`/`}` (Shift+[/Shift+]) back to `Tab`/`Shift+Tab`. Cycle: Worktrees → FileTree → Viewer → Session → Input → Worktrees.
-- **Keybindings relocated to GLOBAL** — `Shift+M` (BrowseMain), `Shift+P` (OpenProjects), `⌘r` (RunCommand) now work from any pane. `[`/`]` are global worktree switching keys.
+- **Keybindings relocated to GLOBAL** — `Shift+M` (BrowseMain), `Shift+P` (OpenProjects), `Shift+R` (RunCommand) now work from any pane. `[`/`]` are global worktree switching keys.
 - **Removed keybindings** — `⌃r` (Restart), `f` (ToggleFileTree), `Enter` (StartResume in worktrees), `/` (SearchFilter in worktrees). Sidebar filter removed entirely.
 
 ### Changed

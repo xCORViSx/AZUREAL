@@ -52,7 +52,7 @@ pub fn prompt_command_title() -> (String, String, String) {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
-    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⌘r".into());
+    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⇧R".into());
     let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
     let hints = format!(
         "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:run | {}:cancel | {}:quit",

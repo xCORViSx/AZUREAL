@@ -1173,8 +1173,8 @@ Rebasing is integrated into the Git Actions panel as both a manual action (`r` k
 User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/azufig.toml` `[runcmds]`, shared across all projects) or **project-local** (`.azureal/azufig.toml` `[runcmds]`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
 
 **Keybindings (from Worktrees pane):**
-- `r` — Open picker (if multiple saved commands) or execute directly (if only 1)
-- `⌥r` — Open dialog to create a new run command
+- `R` — Open picker (if multiple saved commands) or execute directly (if only 1) (global — works from any pane)
+- `⌥r` — Open dialog to create a new run command (Worktrees pane)
 
 **Picker overlay:**
 - `j/k` / `↑/↓` — Navigate selection
@@ -1625,7 +1625,7 @@ azureal
 | `[`/`]` | Switch worktree tab (global — works from any pane) |
 | `M` | Toggle main branch browse (read-only) |
 | `P` | Projects panel |
-| `⌘r` | Run command (picker or execute) |
+| `R` | Run command (picker or execute) |
 | `?` | Help |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |
@@ -1691,7 +1691,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | Tab/⇧Tab:focus | [/]:worktree | ⌘r:run | ⌃c:cancel agent | ⌃q:quit)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | Tab/⇧Tab:focus | [/]:worktree | R:run | ⌃c:cancel agent | ⌃q:quit)`
 
 ### Terminal Mode
 

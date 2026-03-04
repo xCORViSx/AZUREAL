@@ -263,9 +263,9 @@ mod tests {
     }
 
     #[test]
-    fn global_cmd_r_run_command() {
+    fn global_shift_r_run_command() {
         let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('r')), Some(Action::RunCommand));
+        assert_eq!(lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('R')), Some(Action::RunCommand));
     }
 
     // ══════════════════════════════════════════════════════════════════

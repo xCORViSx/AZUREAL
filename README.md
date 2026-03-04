@@ -96,7 +96,7 @@ azureal
 | `f` | Toggle FileTree overlay (in Worktrees pane) |
 | `s` | Toggle Session list overlay (in Session pane) |
 | `n` | New worktree/session (creation wizard) |
-| `r` | Run command (picker or execute) |
+| `R` | Run command (picker or execute) |
 | `⌥r` | Add new run command |
 | `G` | Git panel — transforms panes to show actions, files, diff viewer, commit log |
 | `H` | Health panel (God Files + Documentation tabs) |
