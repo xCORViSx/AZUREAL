@@ -70,11 +70,11 @@ Each worktree provides true branch isolation:
 - **Archiving** removes the worktree directory but preserves the git branch (`⌘a` key). Archived worktrees show as `◇` (diamond) with dimmed text in the tab row.
 - **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
 - **Deleting** removes the worktree directory AND deletes the git branch permanently — both local and remote (`⌘d` key). Opens a centered dialog box with red double-border. **Sibling guard:** if other worktrees share the same branch, the dialog offers to delete all siblings + branch (`y`) or archive the current worktree only (`a`) — git prevents branch deletion while worktrees are checked out. Sole worktrees show a simple y/Esc confirmation. State: `delete_worktree_dialog: Option<DeleteWorktreeDialog>` enum with `Sole { name }` and `Siblings { branch, sibling_indices, count }` variants. Also cleans up auto-rebase config and all session state maps (`session_files`, `session_selected_file_idx`, `claude_session_ids`, `branch_slots`, `active_slot`, `running_sessions`, `claude_receivers`, `claude_exit_codes`, `unread_sessions`) for the deleted branch. `delete_branch()` deletes local branch, pushes `--delete` to remote, and prunes the local remote-tracking ref (`origin/<branch>`) so stale refs don't appear in branch dialogs.
-- **Read-only main branch isolation:** Main/master branch is stored separately in `app.main_worktree: Option<Worktree>`. Press `Shift+M` globally to enter read-only main browse mode: the file tree shows main's files with a yellow "(read-only)" border suffix, and the `[★ main]` tab highlights in yellow. All file mutations are blocked (add/delete/rename/copy/move), edit mode is blocked, prompt mode is blocked, and session start is blocked. `Esc` or `Shift+M` again exits browse mode. `current_worktree()` transparently returns `main_worktree` when `browsing_main` is true. `enter_main_browse()` and `exit_main_browse()` in `src/app/state/ui.rs` manage state transitions; `switch_project()` clears browse state.
+- **Main branch browse:** Main/master branch is stored separately in `app.main_worktree: Option<Worktree>`. Press `Shift+M` globally to browse main: the `[★ main]` tab highlights in yellow as a visual distinction from feature worktrees. Main is fully functional — editing, prompting, and sessions all work the same as feature worktrees. The different git overview (pull/commit/push instead of squash/rebase) and yellow tab styling serve as indirect cues that you're on main. `Esc` or `Shift+M` again exits browse mode. `current_worktree()` transparently returns `main_worktree` when `browsing_main` is true. `enter_main_browse()` and `exit_main_browse()` in `src/app/state/ui.rs` manage state transitions; `switch_project()` clears browse state.
 - **Tab row icons:** `[★ main]` tab always first (yellow when active). Archived worktrees show `◇` (diamond) with dimmed text. Feature branches use standard status circles (`●`/`○`/etc.). Unread worktrees show `◐` (half-filled circle) in AZURE — takes priority over running `●`. Per-session granularity: if ANY session in the session list finishes while unviewed (different branch, or background slot on same branch), the tab shows `◐`. Clears per-session when that specific session is viewed; branch `◐` disappears only when all unread sessions on the branch are viewed. Only clears when session pane is visible (normal mode or git panel close). No leading space before icons — symbol sits flush against the left separator.
 - CLI: `azureal session archive <name>` / `azureal session unarchive <name>`
 
-Implementation: `src/git.rs` handles worktree creation, deletion, and status queries. `src/app/state/app.rs` stores `main_worktree`, `browsing_main`, and `pre_main_browse_selection` fields. `src/app/state/load.rs` populates `main_worktree` separately from the `worktrees` vec. `src/app/state/health.rs` uses `current_worktree_info()` (replaced `find_main_worktree()` + `switch_to_main_worktree()`) so health scans run on the current worktree. `src/tui/draw_sidebar.rs` shows yellow "★ main (read-only)" title in browse mode. `src/tui/draw_file_tree.rs` adds "(read-only)" suffix and yellow border in browse mode. `src/tui/event_loop/actions.rs` enforces read-only guards on 7+ actions and handles `BrowseMain` action + `Esc` exit.
+Implementation: `src/git.rs` handles worktree creation, deletion, and status queries. `src/app/state/app.rs` stores `main_worktree`, `browsing_main`, and `pre_main_browse_selection` fields. `src/app/state/load.rs` populates `main_worktree` separately from the `worktrees` vec. `src/app/state/health.rs` uses `current_worktree_info()` (replaced `find_main_worktree()` + `switch_to_main_worktree()`) so health scans run on the current worktree. `src/tui/draw_file_tree.rs` renders the file tree pane. `src/tui/event_loop/actions.rs` handles `BrowseMain` action + `Esc` exit.
 
 ### TUI Interface
 
@@ -697,7 +697,7 @@ Other details:
 
 **Enforcement hooks:** `.claude/scripts/enforce-keybindings.sh` runs as a PreToolUse hook on every Edit/Write. Catches 3 violations: (1) raw `KeyCode::`/`KeyModifiers::` in `input_*.rs` (must use `lookup_*_action()`), (2) hardcoded key label strings in `draw_*.rs` without `keybindings::` import (must use hint generators), (3) new static binding arrays in `keybindings.rs` without companion lookup/hint functions. Configured in `.claude/settings.json`.
 
-Implementation: `src/tui/keybindings.rs` (module root + re-exports), `src/tui/keybindings/types.rs` (KeyCombo, Action enum ~109 variants, Keybinding, HelpSection), `src/tui/keybindings/bindings.rs` (~21 static arrays), `src/tui/keybindings/lookup.rs` (KeyContext, lookup_action() + 7 per-modal lookup fns), `src/tui/keybindings/hints.rs` (help_sections(), title generators, hint generators, find_key_*), `src/tui/keybindings/platform.rs` (macos_opt_key), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers, BrowseMain handler, read-only guards, Esc browse-mode exit), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `.claude/scripts/enforce-keybindings.sh` (PreToolUse enforcement hook)
+Implementation: `src/tui/keybindings.rs` (module root + re-exports), `src/tui/keybindings/types.rs` (KeyCombo, Action enum ~109 variants, Keybinding, HelpSection), `src/tui/keybindings/bindings.rs` (~21 static arrays), `src/tui/keybindings/lookup.rs` (KeyContext, lookup_action() + 7 per-modal lookup fns), `src/tui/keybindings/hints.rs` (help_sections(), title generators, hint generators, find_key_*), `src/tui/keybindings/platform.rs` (macos_opt_key), `src/tui/event_loop/actions.rs` (execute_action(), dispatch helpers, BrowseMain handler, Esc browse-mode exit), `src/tui/draw_dialogs.rs::draw_help_overlay()` (uses `keybindings::help_sections()`), `.claude/scripts/enforce-keybindings.sh` (PreToolUse enforcement hook)
 
 ### Wrap-Aware Edit Cursor
 
@@ -911,7 +911,7 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Worktree Tab Row
 
-The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse (read-only). `[`/`]` switch tabs globally from any pane; `←/→` switch tabs when the tab row is focused. `Tab`/`Shift+Tab` cycle focus through all panes.
+The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse. `[`/`]` switch tabs globally from any pane; `←/→` switch tabs when the tab row is focused. `Tab`/`Shift+Tab` cycle focus through all panes.
 
 **Tab styling:** Active tab uses AZURE bg + white fg + bold; `[M]` active uses yellow bg + black fg + bold; archived tabs use dim gray with `◇` prefix; unread tabs (session finished while viewing another worktree) use AZURE fg with `◐` prefix; inactive tabs use gray with status symbol prefix. No leading space before icons — trailing space only for separator padding. Auto-rebase indicator `R` (bold, color-coded) appended after label with +1 char width. Pagination via greedy tab packing with `N/M` page indicator.
 
@@ -1371,7 +1371,7 @@ azureal/
 │   │   ├── draw_projects.rs # Projects panel modal (full-screen project selection/management)
 │   │   ├── draw_sidebar.rs # Git panel sidebar (Actions + Changed Files) + FileTree overlay delegate
 │   │   ├── file_icons.rs  # File tree icon mapping — Nerd Font glyphs (primary) + emoji fallback
-│   │   ├── draw_file_tree.rs # FileTree pane rendering (always visible in left column); "(read-only)" suffix + yellow border in browse mode
+│   │   ├── draw_file_tree.rs # FileTree pane rendering (always visible in left column)
 │   │   ├── draw_viewer.rs  # Viewer pane module root (re-exports + main draw_viewer fn)
 │   │   ├── draw_viewer/    # Viewer pane submodules
 │   │   │   ├── wrapping.rs     # Text wrapping utilities (word_wrap_breaks, wrap_spans_word)
@@ -1640,7 +1640,7 @@ azureal
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
 | `Tab`/`⇧Tab` | Cycle focus forward/backward (Worktrees → FileTree → Viewer → Session → Input) |
 | `[`/`]` | Switch worktree tab (global — works from any pane) |
-| `M` | Toggle main branch browse (read-only) |
+| `M` | Toggle main branch browse |
 | `P` | Projects panel |
 | `R` | Run command (picker or execute) |
 | `?` | Help |

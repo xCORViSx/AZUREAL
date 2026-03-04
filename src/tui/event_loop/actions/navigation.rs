@@ -42,8 +42,8 @@ pub(super) fn dispatch_nav_up(app: &mut App) {
 /// Route NavLeft — FileTree collapses dirs, Worktrees cycles tabs backward
 pub(super) fn dispatch_nav_left(app: &mut App) {
     match app.focus {
-        // Worktree tab row: Left cycles to previous tab (skip when browsing main)
-        Focus::Worktrees if !app.browsing_main => { app.select_prev_session(); }
+        // Worktree tab row: Left cycles to previous tab
+        Focus::Worktrees => { app.select_prev_session(); }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -68,8 +68,8 @@ pub(super) fn dispatch_nav_left(app: &mut App) {
 /// Route NavRight — FileTree expands dirs, Worktrees cycles tabs forward
 pub(super) fn dispatch_nav_right(app: &mut App) {
     match app.focus {
-        // Worktree tab row: Right cycles to next tab (skip when browsing main)
-        Focus::Worktrees if !app.browsing_main => { app.select_next_session(); }
+        // Worktree tab row: Right cycles to next tab
+        Focus::Worktrees => { app.select_next_session(); }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -118,7 +118,7 @@ pub(super) fn dispatch_go_to_top(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.viewer_scroll = 0,
         Focus::Session => { app.session_scroll = 0; }
-        Focus::Worktrees if !app.browsing_main => app.select_first_session(),
+        Focus::Worktrees => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.terminal_scroll = 0;
@@ -132,7 +132,7 @@ pub(super) fn dispatch_go_to_bottom(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.scroll_viewer_to_bottom(),
         Focus::Session => { app.scroll_session_to_bottom(); }
-        Focus::Worktrees if !app.browsing_main => app.select_last_session(),
+        Focus::Worktrees => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.scroll_terminal_to_bottom();
@@ -442,47 +442,41 @@ mod tests {
     }
 
 
-    // -- Worktrees browsing_main guard (NavLeft/NavRight/GoToTop/GoToBottom) --
+    // -- Worktrees navigation always allowed (browsing_main no longer blocks) --
 
     #[test]
-    fn test_worktrees_browsing_main_blocks_nav_left() {
+    fn test_worktrees_browsing_main_allows_nav_left() {
         let f = Focus::Worktrees;
-        let browsing_main = true;
-        // dispatch_nav_left skips when browsing_main is true
-        let should_act = matches!(f, Focus::Worktrees) && !browsing_main;
-        assert!(!should_act);
+        let should_act = matches!(f, Focus::Worktrees);
+        assert!(should_act);
     }
 
     #[test]
     fn test_worktrees_not_browsing_main_allows_nav_left() {
         let f = Focus::Worktrees;
-        let browsing_main = false;
-        let should_act = matches!(f, Focus::Worktrees) && !browsing_main;
+        let should_act = matches!(f, Focus::Worktrees);
         assert!(should_act);
     }
 
     #[test]
-    fn test_worktrees_browsing_main_blocks_nav_right() {
+    fn test_worktrees_browsing_main_allows_nav_right() {
         let f = Focus::Worktrees;
-        let browsing_main = true;
-        let should_act = matches!(f, Focus::Worktrees) && !browsing_main;
-        assert!(!should_act);
+        let should_act = matches!(f, Focus::Worktrees);
+        assert!(should_act);
     }
 
     #[test]
-    fn test_worktrees_browsing_main_blocks_go_to_top() {
+    fn test_worktrees_browsing_main_allows_go_to_top() {
         let f = Focus::Worktrees;
-        let browsing_main = true;
-        let should_act = matches!(f, Focus::Worktrees) && !browsing_main;
-        assert!(!should_act);
+        let should_act = matches!(f, Focus::Worktrees);
+        assert!(should_act);
     }
 
     #[test]
-    fn test_worktrees_browsing_main_blocks_go_to_bottom() {
+    fn test_worktrees_browsing_main_allows_go_to_bottom() {
         let f = Focus::Worktrees;
-        let browsing_main = true;
-        let should_act = matches!(f, Focus::Worktrees) && !browsing_main;
-        assert!(!should_act);
+        let should_act = matches!(f, Focus::Worktrees);
+        assert!(should_act);
     }
 
     // -- Input focus terminal+prompt guard --

@@ -49,7 +49,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             }
         }
         Action::ToggleHelp => { app.toggle_help(); }
-        Action::EnterPromptMode if !app.browsing_main => {
+        Action::EnterPromptMode => {
             app.show_help = false;
             if app.terminal_mode { app.close_terminal(); }
             app.focus = Focus::Input;
@@ -115,7 +115,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         }
 
         // --- Viewer navigation ---
-        Action::EnterEditMode if !app.browsing_main => {
+        Action::EnterEditMode => {
             if app.viewer_path.is_some() { app.enter_viewer_edit_mode(); }
         }
         Action::JumpNextEdit => { jump_edit(app, true); }
@@ -308,22 +308,22 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         }
 
         // File actions disabled in god file filter mode and main browse mode (read-only)
-        Action::AddFile if !app.god_file_filter_mode && !app.browsing_main => {
+        Action::AddFile if !app.god_file_filter_mode => {
             app.file_tree_action = Some(crate::app::types::FileTreeAction::Add(String::new()));
         }
-        Action::DeleteFile if !app.god_file_filter_mode && !app.browsing_main => {
+        Action::DeleteFile if !app.god_file_filter_mode => {
             if app.file_tree_selected.is_some() {
                 app.file_tree_action = Some(crate::app::types::FileTreeAction::Delete);
             }
         }
-        Action::RenameFile if !app.god_file_filter_mode && !app.browsing_main => {
+        Action::RenameFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Rename(entry.name.clone()));
                 }
             }
         }
-        Action::CopyFile if !app.god_file_filter_mode && !app.browsing_main => {
+        Action::CopyFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Copy(entry.path.clone()));
@@ -332,7 +332,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 }
             }
         }
-        Action::MoveFile if !app.god_file_filter_mode && !app.browsing_main => {
+        Action::MoveFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
                     app.file_tree_action = Some(crate::app::types::FileTreeAction::Move(entry.path.clone()));

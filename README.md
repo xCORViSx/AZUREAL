@@ -92,7 +92,7 @@ azureal
 | `⌥↑/⌥↓` | Jump to top/bottom of current list or pane |
 | `Tab` | Cycle focus forward (Worktrees > Viewer > Session > Input), closes overlays |
 | `⇧Tab` | Cycle focus backward; lands on FileTree if overlay is open |
-| `m` | Browse main branch read-only (in Worktrees pane); Esc to exit |
+| `M` | Browse main branch (yellow ★ tab, different git overview); Esc to exit |
 | `f` | Toggle FileTree overlay (in Worktrees pane) |
 | `s` | Toggle Session list overlay (in Session pane) |
 | `n` | New worktree/session (creation wizard) |
