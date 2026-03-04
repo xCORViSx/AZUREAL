@@ -28,6 +28,9 @@ impl App {
         let Some(entry) = self.file_tree_entries.get(idx) else { return };
         if !entry.is_dir { return; }
 
+        // Discard any in-flight background scan — this manual rebuild takes priority
+        self.file_tree_receiver = None;
+
         // Remember the selected path before rebuilding
         let selected_path = entry.path.clone();
 

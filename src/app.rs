@@ -10,7 +10,7 @@
 
 mod input;
 mod session_parser;
-mod state;
+pub(crate) mod state;
 mod terminal;
 pub(crate) mod types;
 mod util;

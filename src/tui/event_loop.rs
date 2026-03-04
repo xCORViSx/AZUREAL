@@ -90,7 +90,8 @@ pub async fn run_app(
             .map(|o| o.generating).unwrap_or(false);
         let squash_merging = app.git_actions_panel.as_ref()
             .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging { 16 } else { 100 };
+        let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some();
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging || bg_pending { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -175,6 +176,21 @@ pub async fn run_app(
                     break;
                 }
             }
+        }
+
+        // Fast-path input rendering: MUST run immediately after key drain, before
+        // any blocking housekeeping (file tree rebuild, worktree refresh, render
+        // submit clone). Those operations can block 20-150ms every 500ms when
+        // Claude modifies files, causing visible keystroke lag if fast_draw runs
+        // after them. By rendering here, the user sees instant visual feedback
+        // (~0.1ms) regardless of what blocking work follows.
+        // Skip fast-path for multi-line input — the input box must resize via
+        // full draw when newlines are added/removed. Single-line typing (the
+        // common case) still gets the fast path.
+        // Skip fast-path when selection is active — fast_draw_input doesn't
+        // render selection highlighting, so the full draw_input must handle it
+        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+            fast_draw_input(app);
         }
 
         // Process Claude events — drain all available from each receiver.
@@ -328,25 +344,72 @@ pub async fn run_app(
             if app.poll_session_file() { needs_redraw = true; }
         }
 
-        // Debounced file tree refresh: wait 500ms after last worktree change
-        // to coalesce rapid creates/deletes (e.g., Claude creating many files)
+        // Debounced file tree refresh: spawn background thread to avoid
+        // blocking the event loop (build_file_tree walks the filesystem,
+        // 10-100ms depending on tree depth). Old tree stays visible until
+        // the new one arrives — no flash of empty state.
         if app.file_tree_refresh_pending
+            && app.file_tree_receiver.is_none()
             && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
         {
-            app.load_file_tree();
+            if let Some(wt) = app.current_worktree() {
+                if let Some(ref wt_path) = wt.worktree_path {
+                    let path = wt_path.clone();
+                    let expanded = app.file_tree_expanded.clone();
+                    let hidden = app.file_tree_hidden_dirs.clone();
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    std::thread::spawn(move || {
+                        let entries = crate::app::state::helpers::build_file_tree(&path, &expanded, &hidden);
+                        let _ = tx.send(entries);
+                    });
+                    app.file_tree_receiver = Some(rx);
+                }
+            }
             app.file_tree_refresh_pending = false;
-            needs_redraw = true;
         }
 
-        // Debounced worktree tab list refresh: re-query git for added/removed
-        // worktrees when filesystem changes are detected (e.g., external git
-        // commands, embedded terminal operations, other processes)
+        // Poll file tree background scan result
+        if let Some(ref rx) = app.file_tree_receiver {
+            if let Ok(entries) = rx.try_recv() {
+                app.file_tree_entries = entries;
+                app.file_tree_selected = if !app.file_tree_entries.is_empty() { Some(0) } else { None };
+                app.file_tree_scroll = 0;
+                app.invalidate_file_tree();
+                app.file_tree_receiver = None;
+                needs_redraw = true;
+            }
+        }
+
+        // Debounced worktree tab list refresh: spawn background thread for
+        // git + FS I/O (git worktree list, branch listing, session discovery,
+        // 10-50ms). Sidebar stays visible with old data until results arrive.
         if app.worktree_tabs_refresh_pending
+            && app.worktree_refresh_receiver.is_none()
             && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
         {
-            let _ = app.refresh_worktrees();
+            if let Some(ref project) = app.project {
+                let path = project.path.clone();
+                let main_branch = project.main_branch.clone();
+                let wt_dir = project.worktrees_dir();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let result = crate::app::state::load::compute_worktree_refresh(path, main_branch, wt_dir);
+                    let _ = tx.send(result);
+                });
+                app.worktree_refresh_receiver = Some(rx);
+            }
             app.worktree_tabs_refresh_pending = false;
-            needs_redraw = true;
+        }
+
+        // Poll worktree refresh background result
+        if let Some(ref rx) = app.worktree_refresh_receiver {
+            if let Ok(result) = rx.try_recv() {
+                if let Ok(data) = result {
+                    app.apply_worktree_result(data);
+                }
+                app.worktree_refresh_receiver = None;
+                needs_redraw = true;
+            }
         }
 
         // Debounced health panel refresh: rescan god files + doc coverage
@@ -431,19 +494,6 @@ pub async fn run_app(
         // Mark that we need a draw (will be fulfilled on a quiet iteration)
         if had_key_event || needs_redraw || scroll_changed {
             app.draw_pending = true;
-        }
-
-        // Fast-path input rendering: when the user is typing in prompt mode,
-        // skip the expensive terminal.draw() (~18ms) and instead write the
-        // input box content directly via crossterm (~0.1ms). This gives instant
-        // keystroke feedback while the full UI catches up on the next quiet frame.
-        // Skip fast-path for multi-line input — the input box must resize via
-        // full draw when newlines are added/removed. Single-line typing (the
-        // common case) still gets the fast path.
-        // Skip fast-path when selection is active — fast_draw_input doesn't
-        // render selection highlighting, so the full draw_input must handle it
-        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
-            fast_draw_input(app);
         }
 
         // Full draw: terminal.draw() costs ~18ms. Only run on quiet iterations

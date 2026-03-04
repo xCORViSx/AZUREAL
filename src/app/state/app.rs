@@ -132,6 +132,10 @@ pub struct App {
     pub worktree_tabs_refresh_pending: bool,
     /// Timestamp of last worktree change notification (for 500ms debounce)
     pub worktree_last_notify: std::time::Instant,
+    /// Receiver for background file tree scan (replaces synchronous load_file_tree in event loop)
+    pub file_tree_receiver: Option<std::sync::mpsc::Receiver<Vec<FileTreeEntry>>>,
+    /// Receiver for background worktree refresh (replaces synchronous refresh_worktrees in event loop)
+    pub worktree_refresh_receiver: Option<std::sync::mpsc::Receiver<anyhow::Result<crate::app::types::WorktreeRefreshResult>>>,
     /// Per-worktree terminals (persist when switching worktrees)
     pub worktree_terminals: HashMap<String, SessionTerminal>,
     /// FileTree entries for the current worktree
@@ -548,6 +552,8 @@ impl App {
             health_refresh_pending: false,
             worktree_tabs_refresh_pending: false,
             worktree_last_notify: std::time::Instant::now(),
+            file_tree_receiver: None,
+            worktree_refresh_receiver: None,
             worktree_terminals: HashMap::new(),
             file_tree_entries: Vec::new(),
             file_tree_selected: None,

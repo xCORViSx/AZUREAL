@@ -572,6 +572,18 @@ pub enum SquashMergeOutcome {
     Failed(String),
 }
 
+/// Result from background worktree refresh (git + FS I/O done off main thread)
+pub struct WorktreeRefreshResult {
+    /// Main branch worktree (accessed via 'M' browse mode)
+    pub main_worktree: Option<crate::models::Worktree>,
+    /// Feature + archived worktrees (sidebar entries)
+    pub worktrees: Vec<crate::models::Worktree>,
+    /// Branch name → latest Claude session ID
+    pub claude_session_ids: std::collections::HashMap<String, String>,
+    /// Branch name → list of (uuid, path, formatted_time)
+    pub session_files: std::collections::HashMap<String, Vec<(String, PathBuf, String)>>,
+}
+
 /// Auto-resolve settings overlay — manage which files are auto-resolved during
 /// rebase via union merge (keeps both sides' changes, no conflict markers).
 #[derive(Debug)]

@@ -1,12 +1,166 @@
 //! Session loading and discovery
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
+use crate::app::types::WorktreeRefreshResult;
 use crate::git::Git;
 use crate::models::{Project, Worktree};
 
 use super::helpers::build_file_tree;
 use super::App;
+
+/// Pure computation: all git + FS I/O for worktree discovery, no App state.
+/// Safe to run on a background thread. Returns data to apply to App.
+pub fn compute_worktree_refresh(
+    project_path: PathBuf,
+    main_branch: String,
+    worktrees_dir: PathBuf,
+) -> anyhow::Result<WorktreeRefreshResult> {
+    let worktrees = Git::list_worktrees_detailed(&project_path)?;
+
+    // Repair detached HEADs (rebase state recovery, orphaned HEAD re-attach)
+    let mut needs_refetch = false;
+    let mut rebase_branches: Vec<(PathBuf, String)> = Vec::new();
+    for wt in &worktrees {
+        if wt.branch.is_some() { continue; }
+        if !wt.is_main && !wt.path.starts_with(&worktrees_dir) { continue; }
+        if Git::is_rebase_in_progress(&wt.path) {
+            let git_dir = std::process::Command::new("git")
+                .args(["rev-parse", "--git-dir"])
+                .current_dir(&wt.path)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+            if let Some(ref gd) = git_dir {
+                let head_name = std::path::Path::new(gd).join("rebase-merge/head-name");
+                if let Ok(content) = std::fs::read_to_string(&head_name) {
+                    let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                    if !branch.is_empty() {
+                        rebase_branches.push((wt.path.clone(), branch.to_string()));
+                        continue;
+                    }
+                }
+                let head_name = std::path::Path::new(gd).join("rebase-apply/head-name");
+                if let Ok(content) = std::fs::read_to_string(&head_name) {
+                    let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                    if !branch.is_empty() {
+                        rebase_branches.push((wt.path.clone(), branch.to_string()));
+                        continue;
+                    }
+                }
+            }
+            let _ = Git::rebase_abort(&wt.path);
+            needs_refetch = true;
+            continue;
+        }
+        let head_ok = std::process::Command::new("git")
+            .args(["symbolic-ref", "--quiet", "HEAD"])
+            .current_dir(&wt.path)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(true);
+        if !head_ok {
+            if let Ok(out) = std::process::Command::new("git")
+                .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
+                .current_dir(&wt.path)
+                .output()
+            {
+                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if let Some(target) = branch.lines().next().filter(|b| !b.is_empty()) {
+                    let _ = std::process::Command::new("git")
+                        .args(["checkout", target])
+                        .current_dir(&wt.path)
+                        .output();
+                    needs_refetch = true;
+                }
+            }
+        }
+    }
+    let mut worktrees = if needs_refetch {
+        Git::list_worktrees_detailed(&project_path)?
+    } else {
+        worktrees
+    };
+    for (path, branch) in &rebase_branches {
+        for wt in &mut worktrees {
+            if wt.path == *path && wt.branch.is_none() {
+                wt.branch = Some(branch.clone());
+            }
+        }
+    }
+
+    let azureal_branches = Git::list_azureal_branches(&project_path)?;
+
+    let wt_paths: Vec<_> = worktrees.iter().map(|w| w.path.clone()).collect();
+    crate::config::migrate_project_dirs(&wt_paths);
+
+    let mut result_worktrees = Vec::new();
+    let mut result_main: Option<Worktree> = None;
+    let mut claude_session_ids: HashMap<String, String> = HashMap::new();
+    let mut session_files: HashMap<String, Vec<(String, PathBuf, String)>> = HashMap::new();
+    let mut active_branches: HashSet<String> = HashSet::new();
+
+    // Main worktree
+    for wt in &worktrees {
+        if wt.is_main {
+            let branch_name = wt.branch.clone().unwrap_or_else(|| main_branch.clone());
+            let claude_id = crate::config::find_latest_claude_session(&wt.path);
+            if let Some(ref id) = claude_id {
+                claude_session_ids.insert(branch_name.clone(), id.clone());
+            }
+            result_main = Some(Worktree {
+                branch_name: branch_name.clone(),
+                worktree_path: Some(wt.path.clone()),
+                claude_session_id: claude_id,
+                archived: false,
+            });
+            let files = crate::config::list_claude_sessions(&wt.path);
+            session_files.insert(branch_name.clone(), files);
+            active_branches.insert(branch_name);
+        }
+    }
+
+    // Feature worktrees
+    for wt in &worktrees {
+        if !wt.is_main && wt.path.starts_with(&worktrees_dir) {
+            let branch_name = wt.branch.clone().unwrap_or_default();
+            let claude_id = crate::config::find_latest_claude_session(&wt.path);
+            if let Some(ref id) = claude_id {
+                claude_session_ids.insert(branch_name.clone(), id.clone());
+            }
+            result_worktrees.push(Worktree {
+                branch_name: branch_name.clone(),
+                worktree_path: Some(wt.path.clone()),
+                claude_session_id: claude_id,
+                archived: false,
+            });
+            let files = crate::config::list_claude_sessions(&wt.path);
+            session_files.insert(branch_name.clone(), files);
+            active_branches.insert(branch_name);
+        }
+    }
+
+    // Archived branches
+    for branch in azureal_branches {
+        if !active_branches.contains(&branch) {
+            result_worktrees.push(Worktree {
+                branch_name: branch,
+                worktree_path: None,
+                claude_session_id: None,
+                archived: true,
+            });
+        }
+    }
+
+    Ok(WorktreeRefreshResult {
+        main_worktree: result_main,
+        worktrees: result_worktrees,
+        claude_session_ids,
+        session_files,
+    })
+}
 
 impl App {
     /// Load project and sessions from git (stateless discovery).
@@ -53,222 +207,69 @@ impl App {
         Ok(())
     }
 
-    /// Load sessions from git worktrees and branches
+    /// Load sessions from git worktrees and branches.
+    /// Synchronous — used at startup and for user-triggered refreshes.
+    /// The event loop uses compute_worktree_refresh() + apply_worktree_result()
+    /// on a background thread instead.
     pub fn load_worktrees(&mut self) -> anyhow::Result<()> {
         let Some(project) = &self.project else { return Ok(()) };
+        // Discard any in-flight background refresh — this synchronous call takes priority
+        self.worktree_refresh_receiver = None;
+        let result = compute_worktree_refresh(
+            project.path.clone(),
+            project.main_branch.clone(),
+            project.worktrees_dir(),
+        )?;
+        self.apply_worktree_result(result);
+        Ok(())
+    }
 
-        let worktrees = Git::list_worktrees_detailed(&project.path)?;
+    /// Apply pre-computed worktree data to App state.
+    /// Handles selection preservation and session file index fixup.
+    pub fn apply_worktree_result(&mut self, result: WorktreeRefreshResult) {
+        // Apply claude session IDs
+        for (branch, id) in result.claude_session_ids {
+            self.claude_session_ids.insert(branch, id);
+        }
 
-        // Repair detached HEADs — can happen after rebase abort, crash, or
-        // interrupted operations. Without this, detached worktrees get
-        // branch=None → empty-named active entry + real branch as archived.
-        //
-        // Two cases:
-        // 1. Active rebase (e.g. RCR in progress): read branch from
-        //    rebase-merge/head-name WITHOUT aborting — the rebase is intentional.
-        // 2. Orphaned detached HEAD (no rebase): re-attach via checkout.
-        let mut needs_refetch = false;
-        let mut rebase_branches: Vec<(std::path::PathBuf, String)> = Vec::new();
-        let wt_dir = project.worktrees_dir();
-        for wt in &worktrees {
-            if wt.branch.is_some() { continue; }
-            // Only repair our own worktrees (main + worktrees_dir), skip external ones
-            if !wt.is_main && !wt.path.starts_with(&wt_dir) { continue; }
-            if Git::is_rebase_in_progress(&wt.path) {
-                // Read the original branch from rebase state — don't abort
-                let git_dir = std::process::Command::new("git")
-                    .args(["rev-parse", "--git-dir"])
-                    .current_dir(&wt.path)
-                    .output()
-                    .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-                if let Some(ref gd) = git_dir {
-                    let head_name = std::path::Path::new(gd).join("rebase-merge/head-name");
-                    if let Ok(content) = std::fs::read_to_string(&head_name) {
-                        let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
-                        if !branch.is_empty() {
-                            rebase_branches.push((wt.path.clone(), branch.to_string()));
-                            continue;
-                        }
-                    }
-                    // Also check rebase-apply (for non-interactive rebases)
-                    let head_name = std::path::Path::new(gd).join("rebase-apply/head-name");
-                    if let Ok(content) = std::fs::read_to_string(&head_name) {
-                        let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
-                        if !branch.is_empty() {
-                            rebase_branches.push((wt.path.clone(), branch.to_string()));
-                            continue;
+        // Apply main worktree
+        self.main_worktree = result.main_worktree;
+
+        // Apply session files with UUID-based selection preservation
+        for (branch, files) in &result.session_files {
+            if let Some(&old_idx) = self.session_selected_file_idx.get(branch) {
+                if let Some(old_files) = self.session_files.get(branch) {
+                    if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
+                        let old_uuid = old_uuid.clone();
+                        if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
+                            self.session_selected_file_idx.insert(branch.clone(), new_idx);
                         }
                     }
                 }
-                // Rebase state exists but can't read branch — orphaned, abort
-                let _ = Git::rebase_abort(&wt.path);
-                needs_refetch = true;
-                continue;
             }
-            // No rebase — plain detached HEAD, re-attach
-            let head_ok = std::process::Command::new("git")
-                .args(["symbolic-ref", "--quiet", "HEAD"])
-                .current_dir(&wt.path)
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(true);
-            if !head_ok {
-                if let Ok(out) = std::process::Command::new("git")
-                    .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
-                    .current_dir(&wt.path)
-                    .output()
-                {
-                    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if let Some(target) = branch.lines().next().filter(|b| !b.is_empty()) {
-                        let _ = std::process::Command::new("git")
-                            .args(["checkout", target])
-                            .current_dir(&wt.path)
-                            .output();
-                        needs_refetch = true;
-                    }
-                }
-            }
+            self.session_selected_file_idx.entry(branch.clone()).or_insert(0);
         }
-        let mut worktrees = if needs_refetch {
-            Git::list_worktrees_detailed(&project.path)?
-        } else {
-            worktrees
-        };
-        // Patch in branch names recovered from active rebase state
-        for (path, branch) in &rebase_branches {
-            for wt in &mut worktrees {
-                if wt.path == *path && wt.branch.is_none() {
-                    wt.branch = Some(branch.clone());
-                }
-            }
-        }
+        self.session_files = result.session_files;
 
-        let azureal_branches = Git::list_azureal_branches(&project.path)?;
-
-        // Migrate old-encoding Claude project dirs (e.g. AZUREAL++ → AZUREAL--)
-        let wt_paths: Vec<_> = worktrees.iter().map(|w| w.path.clone()).collect();
-        crate::config::migrate_project_dirs(&wt_paths);
-
-        let mut sessions = Vec::new();
-        let mut active_branches: HashSet<String> = HashSet::new();
-
-        // Store main worktree separately — it's accessed via 'm' browse mode, not the sidebar.
-        // Excluded from app.worktrees so it never appears in navigation or sidebar rendering.
-        for wt in &worktrees {
-            if wt.is_main {
-                let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
-                let claude_id = crate::config::find_latest_claude_session(&wt.path);
-                if let Some(ref id) = claude_id {
-                    self.claude_session_ids.insert(branch_name.clone(), id.clone());
-                }
-                self.main_worktree = Some(Worktree {
-                    branch_name: branch_name.clone(),
-                    worktree_path: Some(wt.path.clone()),
-                    claude_session_id: claude_id,
-                    archived: false,
-                });
-                // Also load session files for main so browse mode can show sessions
-                let files = crate::config::list_claude_sessions(&wt.path);
-                // Preserve UUID-based selection: if the user was viewing a specific
-                // session UUID, find its new index after the list is re-sorted by mtime.
-                // Without this, a new session appearing at idx=0 silently shifts the
-                // old session to idx=1 while session_selected_file_idx still says 0.
-                if let Some(&old_idx) = self.session_selected_file_idx.get(&branch_name) {
-                    if let Some(old_files) = self.session_files.get(&branch_name) {
-                        if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
-                            let old_uuid = old_uuid.clone();
-                            if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
-                                self.session_selected_file_idx.insert(branch_name.clone(), new_idx);
-                            }
-                        }
-                    }
-                }
-                self.session_files.insert(branch_name.clone(), files);
-                self.session_selected_file_idx.entry(branch_name.clone()).or_insert(0);
-                active_branches.insert(branch_name);
-            }
-        }
-
-        // Add feature worktrees (azureal/* branches with active worktrees).
-        // Only include worktrees whose path is under the project's worktrees_dir()
-        // to exclude worktrees created by external tools (e.g. Claude Code subagents
-        // creating worktrees inside .git/worktrees/ or .claude/worktrees/).
-        let worktrees_dir = project.worktrees_dir();
-        for wt in &worktrees {
-            if !wt.is_main && wt.path.starts_with(&worktrees_dir) {
-                let branch_name = wt.branch.clone().unwrap_or_default();
-                let claude_id = crate::config::find_latest_claude_session(&wt.path);
-                if let Some(ref id) = claude_id {
-                    self.claude_session_ids.insert(branch_name.clone(), id.clone());
-                }
-                sessions.push(Worktree {
-                    branch_name: branch_name.clone(),
-                    worktree_path: Some(wt.path.clone()),
-                    claude_session_id: claude_id,
-                    archived: false,
-                });
-                active_branches.insert(branch_name);
-            }
-        }
-
-        // Add archived sessions (azureal/* branches without worktrees)
-        for branch in azureal_branches {
-            if !active_branches.contains(&branch) {
-                sessions.push(Worktree {
-                    branch_name: branch,
-                    worktree_path: None,
-                    claude_session_id: None,
-                    archived: true,
-                });
-            }
-        }
-
-        // Preserve current selection by branch name across refresh so the
-        // active tab doesn't jump when worktrees are added/removed/archived.
+        // Preserve current selection by branch name
         let prev_branch = self.selected_worktree
             .and_then(|i| self.worktrees.get(i))
             .map(|w| w.branch_name.clone());
 
-        self.worktrees = sessions;
+        self.worktrees = result.worktrees;
 
         self.selected_worktree = if self.worktrees.is_empty() {
             None
         } else if let Some(ref branch) = prev_branch {
-            // Restore selection to the same branch (index may have shifted)
             self.worktrees.iter().position(|w| w.branch_name == *branch)
                 .or(Some(0))
         } else {
-            // First load: select the worktree matching cwd
             let cwd = std::env::current_dir().ok();
             cwd.and_then(|c| self.worktrees.iter().position(|w| w.worktree_path.as_ref() == Some(&c)))
                 .or(Some(0))
         };
 
-        // Eagerly load session files for all worktrees so sidebar filter can search UUIDs/names
-        for session in &self.worktrees {
-            if let Some(ref wt_path) = session.worktree_path {
-                let files = crate::config::list_claude_sessions(wt_path);
-                // Preserve UUID-based selection (same logic as main worktree above)
-                if let Some(&old_idx) = self.session_selected_file_idx.get(&session.branch_name) {
-                    if let Some(old_files) = self.session_files.get(&session.branch_name) {
-                        if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
-                            let old_uuid = old_uuid.clone();
-                            if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
-                                self.session_selected_file_idx.insert(session.branch_name.clone(), new_idx);
-                            }
-                        }
-                    }
-                }
-                self.session_files.insert(session.branch_name.clone(), files);
-                self.session_selected_file_idx.entry(session.branch_name.clone()).or_insert(0);
-            }
-        }
-
         self.invalidate_sidebar();
-
-        Ok(())
     }
 
     pub fn load_session_output(&mut self) {
@@ -614,6 +615,8 @@ impl App {
 
     /// Load file tree entries for the current session's worktree
     pub fn load_file_tree(&mut self) {
+        // Discard any in-flight background scan — this synchronous call takes priority
+        self.file_tree_receiver = None;
         self.file_tree_entries.clear();
         self.file_tree_selected = None;
         self.file_tree_scroll = 0;
