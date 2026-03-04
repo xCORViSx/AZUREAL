@@ -14,6 +14,7 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - **Run Command keybinding changed from `⌘r` to `Shift+R`** — Kitty terminal intercepts `⌘R` for its own resize action, making the previous binding unreachable. Now uses `Shift+R` consistent with other global Shift+ bindings (`Shift+G`, `Shift+H`, `Shift+M`, `Shift+P`).
 - **Main branch is fully functional** — Removed all read-only restrictions from main browse mode (`Shift+M`). Editing, prompting, file operations, and sessions now work the same as feature worktrees. The ★ yellow tab and different git overview (pull/commit/push instead of squash/rebase) serve as visual distinction only. Removed "(read-only)" suffix from file tree border and yellow border override.
+- **Add Run Command (`⌥r`) moved to global** — Was previously only available from the Worktrees tab row. Now works from any pane, consistent with `Shift+R` (Run Command).
 - **Syntax highlighting engine replaced: syntect → tree-sitter** — Replaced TextMate-regex-based syntect with AST-based tree-sitter (`tree-sitter-highlight` crate). 25 language grammars statically linked: Rust, Python, JavaScript, TypeScript, TSX, JSON, TOML, Bash, C, C++, Go, HTML, CSS, Java, Ruby, Lua, YAML, Markdown, Scala, R, Haskell, PHP, SQL, Perl. Same color scheme preserved (keywords=Magenta, strings=Green, comments=gray, numbers=Yellow, functions=blue, etc). Supports language injection (e.g. JS inside HTML). `SyntaxHighlighter` methods now take `&mut self` due to tree-sitter's internal buffer reuse.
 
 ### Added

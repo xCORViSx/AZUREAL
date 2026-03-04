@@ -1187,11 +1187,11 @@ Rebasing is integrated into the Git Actions panel as both a manual action (`r` k
 
 ### Run Commands
 
-User-defined shell commands that can be saved and executed from the Worktrees pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/azufig.toml` `[runcmds]`, shared across all projects) or **project-local** (`.azureal/azufig.toml` `[runcmds]`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
+User-defined shell commands that can be saved and executed from any pane. Commands are executed in the embedded terminal. Dual-scope persistence: commands can be **global** (`~/.azureal/azufig.toml` `[runcmds]`, shared across all projects) or **project-local** (`.azureal/azufig.toml` `[runcmds]`); toggle scope with `⌃s` in add/edit dialog; picker shows G/P badge per command.
 
-**Keybindings (from Worktrees pane):**
-- `R` — Open picker (if multiple saved commands) or execute directly (if only 1) (global — works from any pane)
-- `⌥r` — Open dialog to create a new run command (Worktrees pane)
+**Keybindings (global — works from any pane):**
+- `R` — Open picker (if multiple saved commands) or execute directly (if only 1)
+- `⌥r` — Open dialog to create a new run command
 
 **Picker overlay:**
 - `j/k` / `↑/↓` — Navigate selection

@@ -43,7 +43,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 17] = [
+pub static GLOBAL: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
@@ -57,6 +57,7 @@ pub static GLOBAL: [Keybinding; 17] = [
     Keybinding::new(KeyCombo::shift(KeyCode::Char('M')), "Browse main", Action::BrowseMain),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Projects", Action::OpenProjects),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Run command", Action::RunCommand),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::WorktreeTabNext).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::WorktreeTabPrev),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
@@ -64,9 +65,8 @@ pub static GLOBAL: [Keybinding; 17] = [
 ];
 
 /// Worktree tab row bindings — actions available when tab row is focused
-pub static WORKTREES: [Keybinding; 4] = [
+pub static WORKTREES: [Keybinding; 3] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add worktree", Action::AddWorktree),
-    Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('r')), &ALT_MACOS_R, "Add run command", Action::AddRunCommand),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Toggle archive", Action::ToggleArchiveWorktree),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('d')), "Delete worktree", Action::DeleteWorktree),
 ];
@@ -294,10 +294,10 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn global_length() { assert_eq!(GLOBAL.len(), 17); }
+    fn global_length() { assert_eq!(GLOBAL.len(), 18); }
 
     #[test]
-    fn worktrees_length() { assert_eq!(WORKTREES.len(), 4); }
+    fn worktrees_length() { assert_eq!(WORKTREES.len(), 3); }
 
     #[test]
     fn file_tree_length() { assert_eq!(FILE_TREE.len(), 16); }
