@@ -263,8 +263,10 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
     // Two cases: (1) edit already applied → new_string is in the file,
     // (2) live preview during streaming → old_string is still in the file.
     // Try new_string first (post-edit), fall back to old_string (mid-edit).
-    let start_line = file_path.as_ref().and_then(|p| {
-        std::fs::read_to_string(p).ok().and_then(|content| {
+    // Keep file content for full-context tree-sitter highlighting.
+    let (start_line, file_content) = file_path.as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|content| {
             let needle = if !new_str.is_empty() && content.contains(new_str) {
                 Some(new_str)
             } else if !old_str.is_empty() && content.contains(old_str) {
@@ -272,14 +274,38 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
             } else {
                 None
             };
-            needle.and_then(|s| content.find(s).map(|byte_pos| {
-                content[..byte_pos].lines().count() + 1
-            }))
+            let line = needle
+                .and_then(|s| content.find(s).map(|byte_pos| {
+                    content[..byte_pos].lines().count() + 1
+                }))
+                .unwrap_or(1);
+            (line, content)
         })
-    }).unwrap_or(1);
+        .map_or((1, None), |(l, c)| (l, Some(c)));
 
-    // Syntax highlight only new (added) lines — removed lines use plain grey
-    let new_highlighted = highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg));
+    let new_line_count = new_str.lines().count();
+
+    // Syntax highlight new (added) lines using full-file context when available.
+    // Tree-sitter needs complete file context to build a proper AST — a bare snippet
+    // starting mid-function only parses the first few tokens, then falls to white.
+    let new_highlighted = match file_content {
+        Some(ref full) if !new_str.is_empty() && full.contains(new_str) => {
+            // Edit already applied: highlight full file, extract the edited region
+            let all = highlighter.highlight_file(full, &filename);
+            let start = start_line.saturating_sub(1);
+            all.into_iter()
+                .skip(start)
+                .take(new_line_count)
+                .map(|spans| spans.into_iter()
+                    .map(|s| Span::styled(s.content, s.style.bg(dim_green_bg)))
+                    .collect())
+                .collect()
+        }
+        _ => {
+            // Fallback: snippet-only highlighting (mid-edit or file unreadable)
+            highlighter.highlight_with_bg(new_str, &filename, Some(dim_green_bg))
+        }
+    };
     // Removed lines: dark grey text on dim red bg (darker than comment grey
     // in syntax-highlighted green lines, which is typically ~128 grey)
     let removed_style = Style::default().fg(Color::Rgb(100, 100, 100)).bg(dim_red_bg);
