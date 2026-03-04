@@ -84,11 +84,13 @@ pub async fn run_app(
         // idle to avoid burning CPU spinning on an empty event queue.
         // Short poll when we have pending work: draw waiting, render in-flight,
         // or Claude streaming. Ensures fast pickup without burning CPU when idle.
-        // Also short-poll while commit message is generating (waiting for Claude one-shot)
+        // Also short-poll while commit message or squash merge is in progress
         let commit_generating = app.git_actions_panel.as_ref()
             .and_then(|p| p.commit_overlay.as_ref())
             .map(|o| o.generating).unwrap_or(false);
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating { 16 } else { 100 };
+        let squash_merging = app.git_actions_panel.as_ref()
+            .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
+        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging { 16 } else { 100 };
         if event::poll(Duration::from_millis(poll_ms))? {
             // Drain all available events without blocking
             loop {
@@ -213,6 +215,62 @@ pub async fn run_app(
                                     needs_redraw = true;
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Poll squash merge progress — background thread sends phase updates and
+        // final outcome via mpsc. Updates loading_indicator with each phase.
+        {
+            use crate::app::types::SquashMergeOutcome;
+            let mut merge_outcome: Option<SquashMergeOutcome> = None;
+            let mut new_phase: Option<String> = None;
+            if let Some(ref mut panel) = app.git_actions_panel {
+                if let Some(ref rx) = panel.squash_merge_receiver {
+                    while let Ok(progress) = rx.try_recv() {
+                        if let Some(outcome) = progress.outcome {
+                            panel.squash_merge_receiver = None;
+                            merge_outcome = Some(outcome);
+                            needs_redraw = true;
+                            break;
+                        }
+                        new_phase = Some(progress.phase);
+                        needs_redraw = true;
+                    }
+                }
+            }
+            if let Some(phase) = new_phase {
+                app.loading_indicator = Some(phase);
+            }
+            if let Some(outcome) = merge_outcome {
+                app.loading_indicator = None;
+                match outcome {
+                    SquashMergeOutcome::Success { status_msg, branch, display_name, worktree_path } => {
+                        app.git_actions_panel = None;
+                        app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
+                            branch,
+                            display_name,
+                            worktree_path,
+                            selected: 0,
+                        });
+                        app.set_status(status_msg);
+                    }
+                    SquashMergeOutcome::Conflict { conflicted, auto_merged } => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
+                                conflicted_files: conflicted,
+                                auto_merged_files: auto_merged,
+                                scroll: 0,
+                                selected: 0,
+                                continue_with_merge: true,
+                            });
+                        }
+                    }
+                    SquashMergeOutcome::Failed(msg) => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            p.result_message = Some((msg, true));
                         }
                     }
                 }

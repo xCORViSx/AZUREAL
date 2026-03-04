@@ -118,6 +118,7 @@ impl App {
             commits_ahead_remote,
             auto_resolve_files,
             auto_resolve_overlay: None,
+            squash_merge_receiver: None,
         });
     }
 
@@ -545,6 +546,8 @@ impl App {
             if let Some(ref overlay) = panel.commit_overlay {
                 if overlay.generating { return true; }
             }
+            // Squash merge running on background thread
+            if panel.squash_merge_receiver.is_some() { return true; }
         }
         // Loading indicator for a git operation (e.g. "Committing...")
         if self.loading_indicator.is_some() && matches!(self.deferred_action,

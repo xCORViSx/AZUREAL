@@ -232,6 +232,7 @@ mod tests {
             commits_ahead_remote: 0,
             auto_resolve_files: Vec::new(),
             auto_resolve_overlay: None,
+            squash_merge_receiver: None,
         });
         app
     }

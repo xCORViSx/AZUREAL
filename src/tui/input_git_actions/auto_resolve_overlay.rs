@@ -164,6 +164,7 @@ mod tests {
                 input_buffer: String::new(),
                 input_cursor: 0,
             }),
+            squash_merge_receiver: None,
         });
         app
     }

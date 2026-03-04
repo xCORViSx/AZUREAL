@@ -540,6 +540,36 @@ pub struct GitActionsPanel {
     pub auto_resolve_files: Vec<String>,
     /// Auto-resolve settings overlay (opened with `s` in actions pane)
     pub auto_resolve_overlay: Option<AutoResolveOverlay>,
+    /// Receiver for squash merge progress from a background thread
+    pub squash_merge_receiver: Option<std::sync::mpsc::Receiver<SquashMergeProgress>>,
+}
+
+/// Progress update from the squash merge background thread
+#[derive(Debug)]
+pub struct SquashMergeProgress {
+    /// Current phase message (e.g. "Rebasing onto main...")
+    pub phase: String,
+    /// Final outcome — None while phases are still running
+    pub outcome: Option<SquashMergeOutcome>,
+}
+
+/// Final result of a background squash merge
+#[derive(Debug)]
+pub enum SquashMergeOutcome {
+    /// Merge succeeded — ready to show post-merge dialog
+    Success {
+        status_msg: String,
+        branch: String,
+        display_name: String,
+        worktree_path: PathBuf,
+    },
+    /// Rebase or merge hit conflicts — show conflict overlay
+    Conflict {
+        conflicted: Vec<String>,
+        auto_merged: Vec<String>,
+    },
+    /// Operation failed with an error message
+    Failed(String),
 }
 
 /// Auto-resolve settings overlay — manage which files are auto-resolved during
@@ -1874,6 +1904,7 @@ mod tests {
             commits_ahead_remote: 0,
             auto_resolve_files: vec![],
             auto_resolve_overlay: None,
+            squash_merge_receiver: None,
         };
         assert_eq!(p.worktree_name, "feat-api");
         assert!(!p.is_on_main);

@@ -5,7 +5,7 @@
 //! Auto-resolve logic uses union merge for configured files.
 
 use crate::app::App;
-use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay, PostMergeDialog};
+use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay};
 use crate::git::{Git, SquashMergeResult};
 
 /// Rebase outcome for the UI to display
@@ -303,14 +303,19 @@ pub(super) fn exec_rebase(app: &mut App) {
     }
 }
 
-/// Squash-merge the current worktree's branch into main. Rebases the feature
-/// branch onto main first to ensure a clean, linear merge. On success, shows
-/// result message. On conflict (rebase or merge), opens the conflict overlay.
+/// Squash-merge the current worktree's branch into main. Validates synchronously,
+/// then spawns a background thread for the heavy work (rebase, push, merge, push).
+/// Progress updates flow through `panel.squash_merge_receiver` and are polled
+/// in the event loop to show real-time phase messages in the loading dialog.
 pub(super) fn exec_squash_merge(app: &mut App) {
+    use std::sync::mpsc;
+    use crate::app::types::{SquashMergeProgress, SquashMergeOutcome};
+
     let (repo_root, branch, wt_path, main_branch, ar_files) = match app.git_actions_panel.as_ref() {
         Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone(), p.main_branch.clone(), p.auto_resolve_files.clone()),
         None => return,
     };
+    // Dirty check is fast — keep synchronous
     if let Some(ref mut p) = app.git_actions_panel {
         if !p.changed_files.is_empty() {
             p.result_message = Some(("Commit your changes first (c) before squash merging".into(), true));
@@ -318,74 +323,93 @@ pub(super) fn exec_squash_merge(app: &mut App) {
         }
     }
 
-    match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
-        RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                p.conflict_overlay = Some(GitConflictOverlay {
-                    conflicted_files: conflicted,
-                    auto_merged_files: auto_merged,
-                    scroll: 0,
-                    selected: 0,
-                    continue_with_merge: true,
+    let (tx, rx) = mpsc::channel::<SquashMergeProgress>();
+    if let Some(ref mut p) = app.git_actions_panel {
+        p.squash_merge_receiver = Some(rx);
+    }
+    app.loading_indicator = Some("Rebasing onto main...".into());
+
+    let display = crate::models::strip_branch_prefix(&branch).to_string();
+    std::thread::spawn(move || {
+        // Phase 1: Rebase
+        let _ = tx.send(SquashMergeProgress {
+            phase: "Rebasing onto main...".into(),
+            outcome: None,
+        });
+
+        match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
+            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+                let _ = tx.send(SquashMergeProgress {
+                    phase: String::new(),
+                    outcome: Some(SquashMergeOutcome::Conflict { conflicted, auto_merged }),
+                });
+                return;
+            }
+            RebaseOutcome::Failed(msg) => {
+                let _ = tx.send(SquashMergeProgress {
+                    phase: String::new(),
+                    outcome: Some(SquashMergeOutcome::Failed(format!("Rebase failed: {}", msg))),
+                });
+                return;
+            }
+            RebaseOutcome::Rebased | RebaseOutcome::UpToDate => {}
+        }
+
+        // Phase 2: Push rebased branch
+        let _ = tx.send(SquashMergeProgress {
+            phase: "Pushing rebased branch...".into(),
+            outcome: None,
+        });
+        let branch_push_note = match Git::push(&wt_path) {
+            Ok(_) => String::new(),
+            Err(e) => format!(" (branch push failed: {})", e),
+        };
+
+        // Phase 3: Squash merge into main
+        let _ = tx.send(SquashMergeProgress {
+            phase: "Merging into main...".into(),
+            outcome: None,
+        });
+        match Git::squash_merge_into_main(&repo_root, &branch) {
+            Ok(SquashMergeResult::Success(msg)) => {
+                // Phase 4: Push main
+                let _ = tx.send(SquashMergeProgress {
+                    phase: "Pushing to remote...".into(),
+                    outcome: None,
+                });
+                let main_push_note = match Git::push(&repo_root) {
+                    Ok(_) => " → pushed".to_string(),
+                    Err(e) => format!(" (main push failed: {})", e),
+                };
+                // Fast-forward feature branch to main so divergence indicators reset
+                let _ = std::process::Command::new("git")
+                    .args(["reset", "--hard", &main_branch])
+                    .current_dir(&wt_path)
+                    .output();
+                let _ = tx.send(SquashMergeProgress {
+                    phase: String::new(),
+                    outcome: Some(SquashMergeOutcome::Success {
+                        status_msg: format!("{}{}{}", msg, main_push_note, branch_push_note),
+                        branch: branch.clone(),
+                        display_name: display,
+                        worktree_path: wt_path,
+                    }),
                 });
             }
-            return;
-        }
-        RebaseOutcome::Failed(msg) => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                p.result_message = Some((format!("Rebase failed: {}", msg), true));
+            Ok(SquashMergeResult::Conflict { conflicted, auto_merged, .. }) => {
+                let _ = tx.send(SquashMergeProgress {
+                    phase: String::new(),
+                    outcome: Some(SquashMergeOutcome::Conflict { conflicted, auto_merged }),
+                });
             }
-            return;
-        }
-        RebaseOutcome::Rebased | RebaseOutcome::UpToDate => {}
-    }
-
-    // Push the rebased feature branch to its remote before merging
-    let branch_push_note = match Git::push(&wt_path) {
-        Ok(_) => String::new(),
-        Err(e) => format!(" (branch push failed: {})", e),
-    };
-
-    match Git::squash_merge_into_main(&repo_root, &branch) {
-        Ok(SquashMergeResult::Success(msg)) => {
-            // Auto-push main to remote after successful squash merge
-            let main_push_note = match Git::push(&repo_root) {
-                Ok(_) => " → pushed".to_string(),
-                Err(e) => format!(" (main push failed: {})", e),
-            };
-            // Fast-forward feature branch to main so divergence indicators reset
-            // (squash merge creates a different commit, leaving the branch "ahead")
-            let _ = std::process::Command::new("git")
-                .args(["reset", "--hard", &main_branch])
-                .current_dir(&wt_path)
-                .output();
-            let display = crate::models::strip_branch_prefix(&branch).to_string();
-            app.git_actions_panel = None;
-            app.post_merge_dialog = Some(PostMergeDialog {
-                branch: branch.clone(),
-                display_name: display,
-                worktree_path: wt_path,
-                selected: 0,
-            });
-            app.set_status(format!("{}{}{}", msg, main_push_note, branch_push_note));
-        }
-        Ok(SquashMergeResult::Conflict { conflicted, auto_merged, .. }) => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                p.conflict_overlay = Some(GitConflictOverlay {
-                    conflicted_files: conflicted,
-                    auto_merged_files: auto_merged,
-                    scroll: 0,
-                    selected: 0,
-                    continue_with_merge: true,
+            Err(e) => {
+                let _ = tx.send(SquashMergeProgress {
+                    phase: String::new(),
+                    outcome: Some(SquashMergeOutcome::Failed(format!("{}", e))),
                 });
             }
         }
-        Err(e) => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                p.result_message = Some((format!("{}", e), true));
-            }
-        }
-    }
+    });
 }
 
 /// Pull latest changes from remote (for main branch)
@@ -543,6 +567,7 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::types::PostMergeDialog;
 
     // ══════════════════════════════════════════════════════════════════
     //  RebaseOutcome enum

@@ -120,7 +120,9 @@ Any user action that triggers blocking I/O (session parse, file read, health sca
 
 `DeferredAction` enum variants: `LoadSession { branch, idx }`, `LoadFile { path }`, `OpenHealthPanel`, `SwitchProject { path }`, `RescanHealthScope { dirs }`. The existing session list loading (`session_list_loading`) uses its own two-phase pattern predating this system.
 
-Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/run.rs` (`draw_loading_indicator()`), `src/tui/event_loop.rs` (deferred execution block), `src/tui/event_loop/actions/deferred.rs` (`execute_deferred_action()`)
+**Background thread progress** (non-deferred): Squash merge uses `loading_indicator` directly without `DeferredAction`. A background thread sends `SquashMergeProgress` updates via `mpsc` channel; the event loop polls the receiver and updates `loading_indicator` with each phase string. On completion, the final `SquashMergeOutcome` is applied (PostMergeDialog, conflict overlay, or error). This pattern avoids blocking the event loop for multi-step git operations.
+
+Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/run.rs` (`draw_loading_indicator()`), `src/tui/event_loop.rs` (deferred execution block + squash merge receiver poll), `src/tui/event_loop/actions/deferred.rs` (`execute_deferred_action()`)
 
 **Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
@@ -662,7 +664,7 @@ Implementation:
 
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (includes `⌃m` for CycleModel), `WORKTREES` (4 entries: `a` AddWorktree, `⌥r` AddRunCommand, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (includes `⌃m` for CycleModel), `WORKTREES` (3 entries: `a` AddWorktree, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
 - **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
@@ -1079,7 +1081,7 @@ Actions change based on whether the current worktree is the main/master branch o
 - `Shift+P` / Enter on index 2 — Push to remote
 
 *On feature branches (4 actions):*
-- `m` / Enter on index 0 — Squash merge to main: rebases onto main first (see rebase-before-merge below), pushes the rebased feature branch to its remote via `Git::push(&wt_path)`, then `Git::squash_merge_into_main()`, then auto-pushes main to remote via `Git::push(&repo_root)`, then fast-forwards the feature branch to main (`git reset --hard main`) so divergence indicators show 0/0 if the branch is kept. RCR auto-continue path follows the same flow.
+- `m` / Enter on index 0 — Squash merge to main: runs on a **background thread** with progress phases shown via `loading_indicator`. Thread sends `SquashMergeProgress` updates through an `mpsc` channel (polled in event loop at 16ms). Phases: "Rebasing onto main..." → "Pushing rebased branch..." → "Merging into main..." → "Pushing to remote...". Final `SquashMergeOutcome` dispatches to success (PostMergeDialog), conflict (GitConflictOverlay), or error. Dirty-check runs synchronously before spawning. Pattern matches commit message generation (`GitCommitOverlay.generating` + `overlay.receiver`). RCR auto-continue path follows the same flow.
 - `r` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main, then auto-pushes the rebased branch to its remote via `Git::push(&wt_path)`. On conflict, shows overlay with RCR option; after RCR acceptance the branch is also pushed.
 - `c` / Enter on index 2 — Commit (see below)
 - `Shift+P` / Enter on index 3 — Push to remote
@@ -1113,7 +1115,7 @@ Pressing `c` stages all changes (`git add -A` + gitignore guard), gets `git diff
 
 **Data flow:** On open, `open_git_actions_panel()` reads `current_worktree().worktree_path` and calls `Git::get_diff_files()` which combines `git diff HEAD --name-status` + `git diff HEAD --numstat` (working tree vs last commit) plus `git ls-files --others --exclude-standard` (untracked files), then filters all paths through `git check-ignore --stdin` to drop tracked-but-gitignored files (e.g., `.DS_Store`). Also calls `Git::get_commit_log(&wt_path, 200, main_branch)` to populate the commits pane (feature branches pass `Some(main_branch)` to scope to branch-only commits). Panel stores `worktree_path`, `repo_root` (project path, always on main), and `main_branch` locally to avoid reborrow conflicts during input handling. After operations that modify the working tree, `refresh_changed_files()` re-scans. After commit/push operations, `refresh_commit_log()` re-fetches the commit log.
 
-**Data flow (rebase-before-merge):** `exec_squash_merge()` first calls `exec_rebase_inner(&wt_path, &main_branch)` to rebase the feature branch onto main. This ensures the subsequent squash merge is always clean and linear — conflicts are resolved during rebase, not during merge. Returns `RebaseOutcome` enum:
+**Data flow (rebase-before-merge):** `exec_squash_merge()` validates dirty state synchronously, then spawns a `std::thread::spawn` background thread. The thread sends `SquashMergeProgress { phase: String, outcome: Option<SquashMergeOutcome> }` updates via `mpsc::Sender`. The receiver is stored on `panel.squash_merge_receiver` and polled in the event loop at 16ms intervals. Phase updates set `app.loading_indicator`; final outcome dispatches to PostMergeDialog (success), GitConflictOverlay (conflict), or result_message (error). `git_action_in_progress()` returns true while `squash_merge_receiver.is_some()`, blocking quit. The thread first calls `exec_rebase_inner(&wt_path, &main_branch)` to rebase the feature branch onto main. Returns `RebaseOutcome` enum:
 - `RebaseOutcome::Rebased` — rebase succeeded, proceed to merge
 - `RebaseOutcome::UpToDate` — already up to date, proceed to merge
 - `RebaseOutcome::Conflict { conflicted, auto_merged, raw_output }` — rebase left in progress (NOT aborted) so RCR can resolve. Opens conflict overlay.
@@ -1139,7 +1141,7 @@ Executes a multi-step cycle from the repo root:
 4. `git log HEAD..branch --reverse --format="- %s"` — collects individual commit messages as bullet points (captured before step 3)
 5. `git commit -m "feat: merge <branch> into main\n\n<commit log bullets>"` — commits with rich message preserving individual commit details, then pops stash. Checks BOTH stdout and stderr for "nothing to commit" (git writes this to stdout not stderr)
 
-Push is a separate user-triggered action (`Shift+P`). `get_main_branch()` dynamically detects main/master/HEAD. `exec_squash_merge()` blocks if the feature branch has uncommitted changes (must commit first).
+`get_main_branch()` dynamically detects main/master/HEAD. `exec_squash_merge()` blocks if the feature branch has uncommitted changes (must commit first). Push to remote is included in the squash merge flow (phase 4).
 
 **Conflict resolution overlay (renders inline in viewer pane):**
 When a rebase produces conflicts (either from manual `r` or pre-merge rebase in `exec_squash_merge()`), a `GitConflictOverlay` fills the viewer pane area with a red-bordered UI. The rebase is left in progress (NOT aborted) so RCR can resolve it. Contents:
@@ -1340,7 +1342,7 @@ azureal/
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_parser.rs # Claude session file parsing
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main + squash_merge_receiver, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, SquashMergeProgress, SquashMergeOutcome, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)
