@@ -24,7 +24,7 @@ pub type ClickablePath = (usize, usize, usize, String, String, String, usize);
 
 /// Render DisplayEvents into Lines for the session pane with iMessage-style layout
 /// Returns (lines, animation_indices, bubble_positions, clickable_paths) where:
-/// - animation_indices are (line_idx, span_idx) pairs for pending tool indicators
+/// - animation_indices are (line_idx, span_idx, tool_use_id) for ALL tool indicators
 /// - bubble_positions are (line_idx, is_user) pairs marking where message bubbles start
 /// - clickable_paths are file path link regions for mouse click handling
 pub fn render_display_events(
@@ -34,7 +34,7 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
 }
 
@@ -50,14 +50,14 @@ pub fn render_display_events_incremental(
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     existing_lines: Vec<Line<'static>>,
-    mut existing_anim: Vec<(usize, usize)>,
+    mut existing_anim: Vec<(usize, usize, String)>,
     existing_bubbles: Vec<(usize, bool)>,
     existing_clickable: Vec<ClickablePath>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     // Pending user message bubble is stripped from existing_lines by
     // submit_render_request() BEFORE sending — no duplicate trimming needed here.
-    existing_anim.retain(|&(line_idx, _)| line_idx < existing_lines.len());
+    existing_anim.retain(|&(line_idx, _, _)| line_idx < existing_lines.len());
 
     // Render new events (they ARE only the new events),
     // with pre-computed state from older events injected into the renderer.
@@ -75,11 +75,11 @@ fn render_display_events_with_state(
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     mut lines: Vec<Line<'static>>,
-    mut animation_indices: Vec<(usize, usize)>,
+    mut animation_indices: Vec<(usize, usize, String)>,
     mut bubble_positions: Vec<(usize, bool)>,
     mut clickable_paths: Vec<ClickablePath>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -314,7 +314,7 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
 
 fn render_tool_call(
     lines: &mut Vec<Line<'static>>,
-    animation_indices: &mut Vec<(usize, usize)>,
+    animation_indices: &mut Vec<(usize, usize, String)>,
     clickable_paths: &mut Vec<ClickablePath>,
     tool_name: &str,
     file_path: &Option<String>,
@@ -365,10 +365,10 @@ fn render_tool_call(
     let wrap_line_count = wrapped_param_lines.len();
     for (i, wrapped) in wrapped_param_lines.into_iter().enumerate() {
         if i == 0 {
-            // Track line index for animation patching (span index 1 is the indicator)
-            if is_pending {
-                animation_indices.push((lines.len(), 1));
-            }
+            // Track line index for draw-time status patching (span index 1 is the indicator).
+            // ALL tool calls are tracked (not just pending) so completed/failed status
+            // updates immediately without waiting for a full re-render.
+            animation_indices.push((lines.len(), 1, tool_use_id.to_string()));
             // Record clickable region for file tools — wrap_line_count tells highlight
             // how many cache lines the path spans (for multi-line highlight)
             if is_file_tool && !param_raw.is_empty() {

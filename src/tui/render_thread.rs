@@ -48,7 +48,7 @@ pub struct RenderRequest {
     pub pending_user_message: Option<String>,
     /// Existing cache for incremental append (empty = full render)
     pub existing_lines: Vec<Line<'static>>,
-    pub existing_anim: Vec<(usize, usize)>,
+    pub existing_anim: Vec<(usize, usize, String)>,
     pub existing_bubbles: Vec<(usize, bool)>,
     pub existing_clickable: Vec<ClickablePath>,
     /// Pre-computed state from events before start_idx (for incremental renders)
@@ -66,7 +66,7 @@ pub struct RenderRequest {
 /// Completed render result sent back to the main thread
 pub struct RenderResult {
     pub lines: Vec<Line<'static>>,
-    pub anim_indices: Vec<(usize, usize)>,
+    pub anim_indices: Vec<(usize, usize, String)>,
     pub bubble_positions: Vec<(usize, bool)>,
     pub clickable_paths: Vec<ClickablePath>,
     pub events_count: usize,
@@ -352,7 +352,7 @@ mod tests {
     fn test_render_result_with_lines() {
         let result = RenderResult {
             lines: vec![Line::from("hello"), Line::from("world")],
-            anim_indices: vec![(0, 5)],
+            anim_indices: vec![(0, 5, "tool1".into())],
             bubble_positions: vec![(0, true), (1, false)],
             clickable_paths: vec![],
             events_count: 2,
@@ -367,9 +367,10 @@ mod tests {
 
     #[test]
     fn test_render_result_anim_indices_tuple() {
-        let anim: (usize, usize) = (5, 10);
+        let anim: (usize, usize, String) = (5, 10, "tool1".into());
         assert_eq!(anim.0, 5);  // line index
         assert_eq!(anim.1, 10); // span index
+        assert_eq!(anim.2, "tool1"); // tool_use_id
     }
 
     #[test]

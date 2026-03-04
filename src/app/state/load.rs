@@ -1248,7 +1248,7 @@ mod tests {
         let mut app = App::new();
         app.rendered_lines_cache.push(ratatui::text::Line::raw("old"));
         app.session_viewport_cache.push(ratatui::text::Line::raw("old"));
-        app.animation_line_indices.push((0, 0));
+        app.animation_line_indices.push((0, 0, "tool1".into()));
         app.message_bubble_positions.push((0, true));
         app.rendered_events_count = 100;
         app.rendered_content_line_count = 50;

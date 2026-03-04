@@ -223,6 +223,7 @@ impl App {
                 match event {
                     DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
                         self.pending_tool_calls.insert(tool_use_id.clone());
+                        self.tool_status_generation += 1;
                         // Track subagent (Task) tool calls — while active, TodoWrite
                         // events go to subagent_todos instead of overwriting main todos.
                         // On first Task spawn, snapshot which main todo is in_progress
@@ -253,6 +254,7 @@ impl App {
                     }
                     DisplayEvent::ToolResult { tool_use_id, content, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
+                        self.tool_status_generation += 1;
                         // When a Task (subagent) completes, clear subagent state
                         if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
                             self.subagent_todos.clear();
@@ -263,6 +265,7 @@ impl App {
                             || lower.starts_with("error") || content.contains("ENOENT")
                             || content.contains("permission denied") {
                             self.failed_tool_calls.insert(tool_use_id.clone());
+                            self.tool_status_generation += 1;
                         }
                     }
                     _ => {}

@@ -180,8 +180,13 @@ pub struct App {
     /// Start index of deferred render (events before this are not yet rendered).
     /// 0 means everything is rendered. >0 means we skipped early events for fast initial load.
     pub rendered_events_start: usize,
-    /// Line indices containing pending tool indicators (line_idx, span_idx) for animation patching
-    pub animation_line_indices: Vec<(usize, usize)>,
+    /// Tool indicator positions (line_idx, span_idx, tool_use_id) for draw-time status patching.
+    /// Tracks ALL tool calls (not just pending) so indicators update in real-time when tools
+    /// complete or fail, without waiting for a full re-render.
+    pub animation_line_indices: Vec<(usize, usize, String)>,
+    /// Generation counter — incremented when pending_tool_calls or failed_tool_calls changes.
+    /// Used to invalidate the viewport cache so status circles redraw immediately.
+    pub tool_status_generation: u64,
     /// Background render thread — expensive session pane rendering runs here, never blocks the event loop
     pub render_thread: RenderThread,
     /// Sequence number of the last applied render result (discard results with lower seq)
@@ -224,6 +229,8 @@ pub struct App {
     /// Scroll position and animation tick used to build the viewport cache (invalidation key)
     pub session_viewport_scroll: usize,
     pub session_viewport_anim_tick: u64,
+    /// Tool status generation used to build the viewport cache
+    pub session_viewport_status_gen: u64,
     /// Title string corresponding to the cached viewport
     pub session_viewport_title: String,
     /// Total lines in last parsed session file
@@ -565,6 +572,7 @@ impl App {
             rendered_content_line_count: 0,
             rendered_events_start: 0,
             animation_line_indices: Vec::new(),
+            tool_status_generation: 0,
             render_thread: RenderThread::spawn(),
             render_seq_applied: 0,
             render_in_flight: false,
@@ -584,6 +592,7 @@ impl App {
             session_viewport_cache: Vec::new(),
             session_viewport_scroll: usize::MAX,
             session_viewport_anim_tick: u64::MAX,
+            session_viewport_status_gen: u64::MAX,
             session_viewport_title: String::new(),
             parse_total_lines: 0,
             parse_errors: 0,
@@ -1124,6 +1133,12 @@ mod tests {
         assert_eq!(app.terminal_height, 12);
         assert_eq!(app.terminal_rows, 24);
         assert_eq!(app.terminal_cols, 120);
+    }
+
+    #[test]
+    fn new_tool_status_generation_zero() {
+        let app = App::new();
+        assert_eq!(app.tool_status_generation, 0);
     }
 
     #[test]

@@ -224,27 +224,42 @@ if app.rendered_lines_dirty || animation_changed {
     app.rendered_lines_cache = render_display_events(...);  // EXPENSIVE: parses ALL events
 }
 
-// ✅ CORRECT - Cache content independently, patch animation colors in viewport only
+// ✅ CORRECT - Cache content independently, patch status + animation in viewport only
 if app.rendered_lines_dirty || app.rendered_lines_width != inner_width {
     let (lines, anim_indices) = render_display_events(...);  // Only when content changes
     app.rendered_lines_cache = lines;
-    app.animation_line_indices = anim_indices;  // Track which lines need animation
+    app.animation_line_indices = anim_indices;  // Track ALL tool indicator positions
 }
 
-// Patch animation colors in viewport slice (O(viewport) not O(all))
+// Patch tool status indicators in viewport slice (O(viewport) not O(all))
+// animation_line_indices is Vec<(line_idx, span_idx, tool_use_id)> — tracks ALL tools,
+// not just pending. Draw-time patching updates both text and color based on current
+// pending_tool_calls / failed_tool_calls, so circles update immediately when a tool
+// completes without waiting for a full re-render.
 let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % 4];
-for &(line_idx, span_idx) in &app.animation_line_indices {
-    if line_idx >= scroll && line_idx < scroll + viewport_height {
-        if let Some(span) = lines[line_idx - scroll].spans.get_mut(span_idx) {
-            span.style = span.style.fg(pulse_color);
+for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
+    if *line_idx >= scroll && *line_idx < scroll + viewport_height {
+        if let Some(span) = lines[*line_idx - scroll].spans.get_mut(*span_idx) {
+            if app.pending_tool_calls.contains(tool_use_id) {
+                span.content = "○ ".into();
+                span.style = span.style.fg(pulse_color);
+            } else if app.failed_tool_calls.contains(tool_use_id) {
+                span.content = "✗ ".into();
+                span.style = span.style.fg(Color::Red);
+            } else {
+                span.content = "● ".into();
+                span.style = span.style.fg(Color::Green);
+            }
         }
     }
 }
 ```
 
-**Files:** `src/tui/draw_output.rs` patches colors in viewport; `src/tui/render_events.rs` returns `animation_line_indices`
+**Files:** `src/tui/draw_output.rs` patches status + colors in viewport; `src/tui/render_events.rs` returns `animation_line_indices`
 
-**Animation guard:** The animation patching loop is skipped entirely when `animation_line_indices` is empty (no pending tools). This avoids pulse_color computation and viewport iteration on every scroll frame when nothing is animating.
+**Draw-time status patching:** `animation_line_indices` tracks ALL tool indicator positions (not just pending). At draw time, each indicator is patched based on current `pending_tool_calls`/`failed_tool_calls` state. This means tool circles transition from ○→●/✗ immediately when a ToolResult arrives, without waiting for a re-render. Cache invalidation uses `tool_status_generation` (incremented in `handle_claude_output` on every pending/failed change) so the viewport rebuilds when status changes.
+
+**Animation guard:** The animation patching loop is skipped entirely when `animation_line_indices` is empty (no tool calls rendered). Pulse animation only runs when at least one tool is still pending (checked via `pending_tool_calls`).
 
 **Throttle values in `src/tui/event_loop.rs`:**
 - `min_draw_interval = 33ms` (~30fps — ALL draws throttled uniformly. `terminal.draw()` costs ~18ms, so this guarantees at least one event-only loop iteration between draws for keystroke pickup)
@@ -712,12 +727,14 @@ Claude output is received in `stream-json` format and parsed for clean display:
 - Slash commands (`/compact`, `/crt`, etc.) shown as 3-line magenta banners
 - Context compaction shown as "✓ Context compacted" green banner (post-compaction)
 
-**Tool Status Indicators:**
+**Tool Status Indicators** (patched at draw time, updates immediately on tool completion):
 | Indicator | Color | Meaning |
 |-----------|-------|---------|
 | ● | Green | Tool completed successfully |
-| ◐ | Pulsating | Tool in progress (waiting for result) |
+| ○ | Pulsating white/gray | Tool in progress (waiting for result) |
 | ✗ | Red | Tool failed (error detected in result) |
+
+Status circles update in real-time as tools complete — `animation_line_indices` tracks ALL tool positions with their `tool_use_id`, and the viewport patching step checks current `pending_tool_calls`/`failed_tool_calls` to set the correct indicator text and color. `tool_status_generation` increments on every status change, invalidating the viewport cache.
 
 Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "No such file", "command failed", non-zero exit codes.
 
@@ -1478,7 +1495,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running Claude simultaneously
 5. **Error Recovery**: Verify graceful handling of Claude exits and git errors
 
-## Test Coverage (6159+ tests)
+## Test Coverage (6143+ tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|

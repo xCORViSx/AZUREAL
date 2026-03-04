@@ -111,8 +111,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 
                 // Check if viewport cache is still valid — skip the clone if so.
                 // Selection changes also invalidate (must re-apply highlight)
+                // Check if any tools are still pending (need pulse animation)
+                let has_pending_tools = app.animation_line_indices.iter()
+                    .any(|(_, _, id)| app.pending_tool_calls.contains(id));
                 let cache_valid = scroll == app.session_viewport_scroll
-                    && app.animation_tick == app.session_viewport_anim_tick
+                    && (!has_pending_tools || app.animation_tick == app.session_viewport_anim_tick)
+                    && app.tool_status_generation == app.session_viewport_status_gen
                     && app.session_selection == app.session_selection_cached
                     && app.session_viewport_cache.len() == viewport_height.min(app.rendered_lines_cache.len().saturating_sub(scroll));
 
@@ -124,16 +128,30 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         .cloned()
                         .collect();
 
-                    // Patch animation colors only when there are pending tool indicators
+                    // Patch tool status indicators based on current state.
+                    // The render cache bakes in the status at render time, but tools may
+                    // complete or fail between renders. This patches both text and color
+                    // so circles update immediately without a full re-render.
                     if !app.animation_line_indices.is_empty() {
                         let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
                         let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
-                        for &(line_idx, span_idx) in &app.animation_line_indices {
-                            if line_idx >= scroll && line_idx < scroll + viewport_height {
+                        for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
+                            if *line_idx >= scroll && *line_idx < scroll + viewport_height {
                                 let viewport_idx = line_idx - scroll;
                                 if let Some(line) = lines.get_mut(viewport_idx) {
-                                    if let Some(span) = line.spans.get_mut(span_idx) {
-                                        span.style = span.style.fg(pulse_color);
+                                    if let Some(span) = line.spans.get_mut(*span_idx) {
+                                        let is_pending = app.pending_tool_calls.contains(tool_use_id);
+                                        let is_failed = app.failed_tool_calls.contains(tool_use_id);
+                                        if is_pending {
+                                            span.content = "○ ".into();
+                                            span.style = span.style.fg(pulse_color);
+                                        } else if is_failed {
+                                            span.content = "✗ ".into();
+                                            span.style = span.style.fg(Color::Red);
+                                        } else {
+                                            span.content = "● ".into();
+                                            span.style = span.style.fg(Color::Green);
+                                        }
                                     }
                                 }
                             }
@@ -260,6 +278,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     app.session_viewport_cache = lines;
                     app.session_viewport_scroll = scroll;
                     app.session_viewport_anim_tick = app.animation_tick;
+                    app.session_viewport_status_gen = app.tool_status_generation;
                     app.session_viewport_title = title;
                 }
 
