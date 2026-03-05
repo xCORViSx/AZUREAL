@@ -100,6 +100,7 @@ impl App {
         self.prompt_history_idx = None;
         self.prompt_history_temp = None;
         self.diag_key_events = 0;
+        self.diag_key_repeats = 0;
         self.diag_chars_inserted = 0;
     }
 

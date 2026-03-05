@@ -524,6 +524,20 @@ fn process_input_event(
             // Input thread already filters to Press/Repeat only
             if !matches!(key.code, KeyCode::Modifier(_)) {
                 app.diag_key_events += 1;
+                // Track Repeat events separately for diagnostics.
+                // In prompt mode (not terminal), filter out Repeat for Char keys:
+                // the Kitty protocol can generate spurious Repeat events when keys
+                // overlap briefly, causing doubled characters (e.g., "tt" instead
+                // of "ty"). Repeat is still accepted for navigation keys (arrows,
+                // backspace, delete) so holding them works as expected.
+                if key.kind == crossterm::event::KeyEventKind::Repeat {
+                    app.diag_key_repeats += 1;
+                    if app.prompt_mode && !app.terminal_mode {
+                        if let KeyCode::Char(_) = key.code {
+                            return Ok(());
+                        }
+                    }
+                }
                 handle_key_event(key, app, claude_process)?;
                 *had_key_event = true;
             }
