@@ -962,10 +962,10 @@ Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio 
 - Transcribing: magenta border + `...` prefix in input title
 - Status bar shows progress messages (Recording..., Transcribing Xs of audio..., Loading Whisper model...)
 
-**Model:** `~/.azureal/speech/ggml-base.en.bin` (~142MB). If missing, status bar shows download instructions:
+**Model:** `~/.azureal/speech/ggml-small.en.bin` (~466MB). If missing, status bar shows download instructions:
 ```bash
-mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
 ```
 
 **Event loop integration:**

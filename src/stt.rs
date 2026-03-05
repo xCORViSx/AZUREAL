@@ -6,7 +6,7 @@
 //!
 //! Audio flow: cpal callback → Arc<Mutex<Vec<f32>>> → resample to 16kHz → whisper.
 //! WhisperContext is lazy-loaded on first transcription and cached for reuse.
-//! Model lives at ~/.azureal/speech/ggml-base.en.bin (~142MB).
+//! Model lives at ~/.azureal/speech/ggml-small.en.bin (~466MB).
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -215,20 +215,20 @@ fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String
     Ok((stream, samples, sample_rate))
 }
 
-/// Load the Whisper model from ~/.azureal/speech/ggml-base.en.bin.
+/// Load the Whisper model from ~/.azureal/speech/ggml-small.en.bin.
 /// Returns a descriptive error message with download instructions if the file is missing.
 fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
     let model_dir = dirs::home_dir()
         .ok_or("Cannot find home directory")?
         .join(".azureal")
         .join("speech");
-    let model_path = model_dir.join("ggml-base.en.bin");
+    let model_path = model_dir.join("ggml-small.en.bin");
 
     if !model_path.exists() {
         return Err(format!(
             "Whisper model not found. Download it:\n\
              mkdir -p ~/.azureal/speech && curl -L -o {} \
-             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
             model_path.display()
         ));
     }

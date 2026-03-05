@@ -62,7 +62,7 @@
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
 - **Git** with worktree support
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons with language-brand colors. Auto-detected on startup; emoji fallback used automatically when Nerd Font not detected
-- **Whisper model** (optional, for speech input): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
+- **Whisper model** (optional, for speech input): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin`
 
 ## Installation
 
