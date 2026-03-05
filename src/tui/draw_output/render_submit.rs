@@ -85,19 +85,18 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
     // content to display while the render thread works. Taking would empty the cache,
     // breaking scroll-to-bottom (clamp_session_scroll sees 0 lines → jumps to top).
     let req = if can_incremental {
-        let existing_lines = app.rendered_lines_cache.clone();
-        let existing_anim = app.animation_line_indices.clone();
-        let existing_bubbles = app.message_bubble_positions.clone();
-        let existing_clickable = app.clickable_paths.clone();
-
         // Pre-compute state flags by scanning existing events (zero-cost: just
         // reads references in main thread's own memory). This eliminates the need
         // to clone ALL display_events — render thread only gets new events.
         let pre_scan = pre_scan_events(&app.display_events[..app.rendered_events_count]);
 
         // Only clone NEW events (from rendered_events_count onwards).
-        // Previously cloned ALL events — the #1 cause of CPU spike during streaming.
         let new_events = app.display_events[app.rendered_events_count..].to_vec();
+
+        // Record existing line count so the main thread can offset new indices.
+        // NO CLONE of rendered_lines_cache — the render thread produces only new
+        // lines, and the main thread extends its cache on poll_render_result.
+        let existing_line_count = app.rendered_lines_cache.len();
 
         RenderRequest {
             events: new_events,
@@ -105,10 +104,7 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: None,
-            existing_lines,
-            existing_anim,
-            existing_bubbles,
-            existing_clickable,
+            existing_line_count,
             pre_scan,
             total_events: event_count,
             deferred_start: 0,
@@ -125,18 +121,13 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
         };
 
         // Clone only the events we'll actually render (from deferred_start onwards).
-        // Previously cloned ALL events even though events before deferred_start are
-        // never touched — wasted cloning of potentially huge serde_json::Value fields.
         RenderRequest {
             events: app.display_events[deferred_start..].to_vec(),
             width: inner_width,
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: None,
-            existing_lines: Vec::new(),
-            existing_anim: Vec::new(),
-            existing_bubbles: Vec::new(),
-            existing_clickable: Vec::new(),
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: event_count,
             deferred_start,
@@ -160,11 +151,35 @@ pub fn poll_render_result(app: &mut App) -> bool {
     // Discard stale results (a newer request was already applied)
     if result.seq <= app.render_seq_applied { return false; }
 
-    // Apply the completed render to app state
-    app.rendered_lines_cache = result.lines;
-    app.animation_line_indices = result.anim_indices;
-    app.message_bubble_positions = result.bubble_positions;
-    app.clickable_paths = result.clickable_paths;
+    if result.incremental {
+        // Incremental: render thread produced ONLY new lines with indices
+        // relative to 0. Offset by existing cache length and extend.
+        let offset = app.rendered_lines_cache.len();
+
+        // Trim stale animation indices (tools that completed since last render)
+        app.animation_line_indices.retain(|&(idx, _, _)| idx < offset);
+
+        // Extend cache with new content
+        app.rendered_lines_cache.extend(result.lines);
+
+        // Offset and extend indices
+        for (idx, col, id) in result.anim_indices {
+            app.animation_line_indices.push((idx + offset, col, id));
+        }
+        for (idx, is_user) in result.bubble_positions {
+            app.message_bubble_positions.push((idx + offset, is_user));
+        }
+        for (line_idx, start_col, end_col, path, old, new, wrap_count) in result.clickable_paths {
+            app.clickable_paths.push((line_idx + offset, start_col, end_col, path, old, new, wrap_count));
+        }
+    } else {
+        // Full render: replace everything
+        app.rendered_lines_cache = result.lines;
+        app.animation_line_indices = result.anim_indices;
+        app.message_bubble_positions = result.bubble_positions;
+        app.clickable_paths = result.clickable_paths;
+    }
+
     app.rendered_lines_width = result.width;
     app.rendered_events_count = result.events_count;
     app.rendered_content_line_count = app.rendered_lines_cache.len();

@@ -530,6 +530,11 @@ pub async fn run_app(
                     _ => {}
                 }
             }
+            // Keys caught in pre-draw drain need immediate visual feedback too.
+            // Without this, they appear only on the next full draw (~33ms later).
+            if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+                fast_draw_input(app);
+            }
             if !got_key {
                 terminal.draw(|f| ui(f, app))?;
                 last_draw = Instant::now();

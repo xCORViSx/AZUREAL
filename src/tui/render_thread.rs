@@ -46,11 +46,10 @@ pub struct RenderRequest {
     pub pending_tools: HashSet<String>,
     pub failed_tools: HashSet<String>,
     pub pending_user_message: Option<String>,
-    /// Existing cache for incremental append (empty = full render)
-    pub existing_lines: Vec<Line<'static>>,
-    pub existing_anim: Vec<(usize, usize, String)>,
-    pub existing_bubbles: Vec<(usize, bool)>,
-    pub existing_clickable: Vec<ClickablePath>,
+    /// Existing cache line count for incremental renders. When > 0, the render
+    /// thread produces ONLY new lines (no clone of existing cache needed). The
+    /// main thread offsets indices by this count and extends its cache.
+    pub existing_line_count: usize,
     /// Pre-computed state from events before start_idx (for incremental renders)
     pub pre_scan: PreScanState,
     /// Total event count (old + new) for incremental renders. The `events` Vec
@@ -73,6 +72,9 @@ pub struct RenderResult {
     pub events_start: usize,
     pub width: u16,
     pub seq: u64,
+    /// True when this result contains only NEW lines (main thread should extend,
+    /// not replace). False for full renders (main thread replaces cache entirely).
+    pub incremental: bool,
 }
 
 /// Handle for the main thread to communicate with the render thread.
@@ -152,16 +154,17 @@ fn render_loop(
         let seq = req.seq;
         let deferred_start = req.deferred_start;
 
-        // Incremental if existing cache was provided (events Vec has only NEW events,
+        // Incremental if existing_line_count > 0 (events Vec has only NEW events,
         // pre_scan has state from old events). Full render otherwise.
-        let (total_events, lines, anim, bubbles, clickable) = if !req.existing_lines.is_empty() {
+        let incremental = req.existing_line_count > 0;
+        let (total_events, lines, anim, bubbles, clickable) = if incremental {
             let total = req.total_events;
+            // Render only new events into a fresh Vec (no existing cache clone).
+            // Indices are relative to 0 — main thread offsets by existing_line_count.
             let (l, a, b, c) = super::render_events::render_display_events_incremental(
                 &req.events, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
-                req.existing_lines, req.existing_anim, req.existing_bubbles,
-                req.existing_clickable,
                 req.pre_scan,
             );
             (total, l, a, b, c)
@@ -181,7 +184,7 @@ fn render_loop(
             lines, anim_indices: anim, bubble_positions: bubbles,
             clickable_paths: clickable,
             events_count: total_events, events_start: deferred_start,
-            width, seq,
+            width, seq, incremental,
         });
     }
 }
@@ -264,10 +267,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
             deferred_start: 0,
@@ -286,10 +286,7 @@ mod tests {
             pending_tools: HashSet::from(["tool1".into()]),
             failed_tools: HashSet::from(["tool2".into()]),
             pending_user_message: Some("hello".into()),
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 5,
             deferred_start: 2,
@@ -342,6 +339,7 @@ mod tests {
             events_start: 0,
             width: 120,
             seq: 5,
+            incremental: false,
         };
         assert_eq!(result.events_count, 10);
         assert_eq!(result.width, 120);
@@ -359,6 +357,7 @@ mod tests {
             events_start: 0,
             width: 80,
             seq: 1,
+            incremental: false,
         };
         assert_eq!(result.lines.len(), 2);
         assert_eq!(result.anim_indices.len(), 1);
@@ -479,10 +478,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
             deferred_start: 0,
@@ -501,10 +497,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
             deferred_start: 0,
@@ -527,10 +520,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
             deferred_start: 0,
@@ -558,10 +548,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
-            existing_lines: vec![],
-            existing_anim: vec![],
-            existing_bubbles: vec![],
-            existing_clickable: vec![],
+            existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
             deferred_start: 0,

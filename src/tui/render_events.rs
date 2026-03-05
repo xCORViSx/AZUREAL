@@ -49,19 +49,11 @@ pub fn render_display_events_incremental(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
-    existing_lines: Vec<Line<'static>>,
-    mut existing_anim: Vec<(usize, usize, String)>,
-    existing_bubbles: Vec<(usize, bool)>,
-    existing_clickable: Vec<ClickablePath>,
     pre_scan: super::render_thread::PreScanState,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
-    // Pending user message bubble is stripped from existing_lines by
-    // submit_render_request() BEFORE sending — no duplicate trimming needed here.
-    existing_anim.retain(|&(line_idx, _, _)| line_idx < existing_lines.len());
-
-    // Render new events (they ARE only the new events),
-    // with pre-computed state from older events injected into the renderer.
-    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, existing_lines, existing_anim, existing_bubbles, existing_clickable, pre_scan)
+    // Render only new events into fresh accumulators. Indices are relative to 0 —
+    // the main thread offsets them by existing_line_count when extending its cache.
+    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), pre_scan)
 }
 
 /// Core renderer: iterates events from `start_idx`, appending to provided vectors.

@@ -47,6 +47,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
             | Action::OpenGitActions | Action::OpenHealth
             | Action::BrowseMain | Action::OpenProjects
+            | Action::RunCommand | Action::AddRunCommand
             | Action::WorktreeTabPrev | Action::WorktreeTabNext
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
