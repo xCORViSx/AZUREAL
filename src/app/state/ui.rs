@@ -576,6 +576,7 @@ impl App {
         self.pending_user_message = None;
         self.staged_prompt = None;
         self.event_parser = crate::events::EventParser::new();
+        self.claude_processor_needs_reset = true;
         self.selected_event = None;
         self.session_file_path = None;
         self.session_file_modified = None;

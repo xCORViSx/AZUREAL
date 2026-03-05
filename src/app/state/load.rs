@@ -304,6 +304,7 @@ impl App {
         self.rendered_content_line_count = 0;
         self.rendered_events_start = 0;
         self.event_parser = crate::events::EventParser::new();
+        self.claude_processor_needs_reset = true;
         self.selected_event = None;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();

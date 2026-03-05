@@ -10,6 +10,129 @@ use crate::models::OutputType;
 use super::App;
 
 impl App {
+    /// Check if a slot's output should be displayed (active slot of viewed branch)
+    pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
+        let is_rcr_slot = self.rcr_session.as_ref().map(|r| r.slot_id == slot_id).unwrap_or(false);
+        !self.viewing_historic_session && (is_rcr_slot || self.current_worktree().map(|s| {
+            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
+        }).unwrap_or(false))
+    }
+
+    /// Apply pre-parsed Claude output to app state. Called with results from
+    /// the background ClaudeProcessor thread — all JSON parsing already done.
+    pub fn apply_parsed_output(
+        &mut self,
+        events: Vec<DisplayEvent>,
+        parsed_json: Option<serde_json::Value>,
+        output_type: OutputType,
+        data: &str,
+    ) {
+        for event in &events {
+            match event {
+                DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
+                    self.pending_tool_calls.insert(tool_use_id.clone());
+                    self.tool_status_generation += 1;
+                    if tool_name == "Task" {
+                        if self.active_task_tool_ids.is_empty() {
+                            self.subagent_parent_idx = self.current_todos.iter()
+                                .position(|t| t.status == crate::app::TodoStatus::InProgress);
+                        }
+                        self.active_task_tool_ids.insert(tool_use_id.clone());
+                    }
+                    if tool_name == "TodoWrite" {
+                        if self.active_task_tool_ids.is_empty() {
+                            self.current_todos = parse_todos_from_input(input);
+                            self.todo_scroll = 0;
+                        } else {
+                            self.subagent_todos = parse_todos_from_input(input);
+                            self.todo_scroll = 0;
+                        }
+                    }
+                    if tool_name == "AskUserQuestion" {
+                        self.awaiting_ask_user_question = true;
+                        self.ask_user_questions_cache = Some(input.clone());
+                    }
+                }
+                DisplayEvent::ToolResult { tool_use_id, content, .. } => {
+                    self.pending_tool_calls.remove(tool_use_id);
+                    self.tool_status_generation += 1;
+                    if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
+                        self.subagent_todos.clear();
+                        self.subagent_parent_idx = None;
+                    }
+                    let lower = content.to_lowercase();
+                    if lower.contains("error:") || lower.contains("failed")
+                        || lower.starts_with("error") || content.contains("ENOENT")
+                        || content.contains("permission denied") {
+                        self.failed_tool_calls.insert(tool_use_id.clone());
+                        self.tool_status_generation += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(ref json) = parsed_json {
+            let mut tokens_changed = false;
+            match json.get("type").and_then(|t| t.as_str()) {
+                Some("assistant") => if let Some(msg) = json.get("message") {
+                    if let Some(usage) = msg.get("usage") {
+                        let input_t = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let output_t = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        self.session_tokens = Some((input_t + cache_read + cache_create, output_t));
+                        tokens_changed = true;
+                    }
+                    if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
+                        self.detected_model = Some(model.to_string());
+                        if self.model_context_window.is_none() {
+                            self.model_context_window = Some(
+                                crate::app::session_parser::context_window_for_model(model)
+                            );
+                            tokens_changed = true;
+                        }
+                    }
+                },
+                Some("result") => {
+                    if let Some(obj) = json.get("model_usage")
+                        .or_else(|| json.get("modelUsage"))
+                        .and_then(|v| v.as_object())
+                    {
+                        for (_model, usage) in obj {
+                            if let Some(cw) = usage.get("context_window")
+                                .or_else(|| usage.get("contextWindow"))
+                                .and_then(|v| v.as_u64())
+                            {
+                                self.model_context_window = Some(cw);
+                                tokens_changed = true;
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+            if tokens_changed { self.update_token_badge(); }
+        }
+
+        if !events.is_empty() {
+            self.display_events.extend(events);
+            self.invalidate_render_cache();
+            self.last_session_event_time = std::time::Instant::now();
+            self.compaction_banner_injected = false;
+        }
+
+        if self.rendered_lines_cache.is_empty() {
+            if let Some(json) = parsed_json {
+                if let Some(display_text) = display_text_from_json(&json) {
+                    self.process_session_chunk(&display_text);
+                }
+            } else if output_type != OutputType::Stdout && output_type != OutputType::Json {
+                self.process_session_chunk(data);
+            }
+        }
+    }
+
     /// Called when a Claude process emits Started { pid }. The slot_id IS the
     /// PID string, already registered in register_claude() — this just confirms
     /// the process is alive and clears stale exit codes.

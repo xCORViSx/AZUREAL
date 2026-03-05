@@ -3,12 +3,15 @@
 //! Split into focused submodules:
 //! - `actions`: Keyboard action dispatch (6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr)
 //! - `claude_events`: Claude process event handling
+//! - `claude_processor`: Background JSON parsing for Claude streaming events
 //! - `coords`: Screen-to-content coordinate mapping
 //! - `fast_draw`: Fast-path input rendering (~0.1ms bypass)
+//! - `input_thread`: Dedicated stdin reader thread
 //! - `mouse`: Mouse click, drag, scroll, and selection copy
 
 mod actions;
 mod claude_events;
+mod claude_processor;
 mod coords;
 mod fast_draw;
 mod input_thread;
@@ -63,6 +66,11 @@ pub async fn run_app(
     // draw sit in the kernel buffer and some terminal emulators drop them under
     // heavy output load.
     let input_rx = input_thread::spawn_input_thread();
+
+    // Background JSON parser: Claude streaming events get parsed off the main
+    // thread. Eliminates 10-50ms of serde_json::from_str() per tick that was
+    // blocking input during Claude streaming.
+    let claude_proc = claude_processor::ClaudeProcessor::spawn();
 
     // Initial draw
     terminal.draw(|f| ui(f, app))?;
@@ -129,36 +137,62 @@ pub async fn run_app(
             fast_draw_input(app);
         }
 
-        // Process Claude events — drain up to MAX_CLAUDE_EVENTS per tick to prevent
-        // burst processing from blocking input. During streaming Claude sends ~60
-        // events/sec; draining all at once can take 10-50ms of sequential JSON
-        // parsing. Capping per tick ensures the loop returns to key polling quickly.
-        // Remaining events stay in the channel for the next iteration.
+        // Reset the background JSON parser when session changed (flag set by
+        // load_session_output / clear_session_state). Drain stale results too.
+        if app.claude_processor_needs_reset {
+            claude_proc.reset();
+            claude_proc.drain();
+            app.claude_processor_needs_reset = false;
+        }
+
+        // Process Claude events — drain raw events from Claude subprocess channels.
+        // Output events are forwarded to the background ClaudeProcessor for JSON
+        // parsing (non-blocking send). Non-Output events (Started, SessionId,
+        // Exited) are handled directly — they're instant. This moves 10-50ms of
+        // serde_json::from_str() per tick off the main thread entirely.
         const MAX_CLAUDE_EVENTS_PER_TICK: usize = 10;
         if !app.claude_receivers.is_empty() {
+            let mut count = 0;
             let mut claude_events: Vec<(String, crate::claude::ClaudeEvent)> = Vec::new();
             'outer: for (sid, rx) in &app.claude_receivers {
                 while let Ok(event) = rx.try_recv() {
                     claude_events.push((sid.clone(), event));
-                    if claude_events.len() >= MAX_CLAUDE_EVENTS_PER_TICK { break 'outer; }
+                    count += 1;
+                    if count >= MAX_CLAUDE_EVENTS_PER_TICK { break 'outer; }
                 }
             }
             for (session_id, event) in claude_events {
-                handle_claude_event(&session_id, event, app, &claude_process)?;
-                needs_redraw = true;
+                match event {
+                    crate::claude::ClaudeEvent::Output(output) => {
+                        // Only parse output for the active/viewed slot — other
+                        // slots' output is discarded (no display needed)
+                        if app.is_viewing_slot(&session_id) {
+                            claude_proc.submit(
+                                session_id,
+                                output.output_type,
+                                output.data,
+                            );
+                        }
+                    }
+                    other => {
+                        handle_claude_event(&session_id, other, app, &claude_process)?;
+                        needs_redraw = true;
+                    }
+                }
             }
         }
 
-        // Secondary drain: catch keys that arrived during Claude event processing
-        // (1-5ms of JSON parsing per tick). With the input reader thread, events
-        // are continuously buffered in the channel — just drain what's there.
-        if !app.claude_receivers.is_empty() && needs_redraw {
-            while let Ok(evt) = input_rx.try_recv() {
-                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
-            }
-            if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
-                fast_draw_input(app);
-            }
+        // Poll parsed results from the background ClaudeProcessor. Each result
+        // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
+        // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
+        while let Some(result) = claude_proc.try_recv() {
+            app.apply_parsed_output(
+                result.events,
+                result.parsed_json,
+                result.output_type,
+                &result.data,
+            );
+            needs_redraw = true;
         }
 
         // Poll commit message generation — background thread sends the Claude-generated
@@ -524,19 +558,8 @@ fn process_input_event(
             // Input thread already filters to Press/Repeat only
             if !matches!(key.code, KeyCode::Modifier(_)) {
                 app.diag_key_events += 1;
-                // Track Repeat events separately for diagnostics.
-                // In prompt mode (not terminal), filter out Repeat for Char keys:
-                // the Kitty protocol can generate spurious Repeat events when keys
-                // overlap briefly, causing doubled characters (e.g., "tt" instead
-                // of "ty"). Repeat is still accepted for navigation keys (arrows,
-                // backspace, delete) so holding them works as expected.
                 if key.kind == crossterm::event::KeyEventKind::Repeat {
                     app.diag_key_repeats += 1;
-                    if app.prompt_mode && !app.terminal_mode {
-                        if let KeyCode::Char(_) = key.code {
-                            return Ok(());
-                        }
-                    }
                 }
                 handle_key_event(key, app, claude_process)?;
                 *had_key_event = true;

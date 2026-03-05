@@ -129,6 +129,9 @@ pub struct App {
     pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
+    /// Signals the event loop to reset the background ClaudeProcessor's parser
+    /// state (e.g., on session switch). The event loop checks and clears this.
+    pub claude_processor_needs_reset: bool,
     /// True when the user is viewing a session file that doesn't match the
     /// active slot's Claude session. Suppresses live event display and PID badge
     /// so content from a running process doesn't bleed into a historic view.
@@ -561,6 +564,7 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
+            claude_processor_needs_reset: false,
             viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),
             file_tree_refresh_pending: false,
