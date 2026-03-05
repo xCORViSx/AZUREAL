@@ -56,6 +56,11 @@ pub async fn run_app(
     let min_draw_interval = Duration::from_millis(33); // ~30fps max
     let min_poll_interval = Duration::from_millis(500); // Poll session file max 2x/sec
     let min_animation_interval = Duration::from_millis(250); // 4fps for pulsating indicators
+    // Track last key event time so we can defer session pane updates while
+    // typing. This keeps terminal.draw() diffs small (input-only) near
+    // keystrokes, reducing terminal escape-sequence volume that causes
+    // terminal emulators to drop keyboard input.
+    let mut last_key_time = Instant::now() - Duration::from_secs(1);
 
     // Cache terminal size, update on resize events
     let (mut cached_width, mut cached_height) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -133,6 +138,9 @@ pub async fn run_app(
         // common case) still gets the fast path.
         // Skip fast-path when selection is active — fast_draw_input doesn't
         // render selection highlighting, so the full draw_input must handle it
+        if had_key_event {
+            last_key_time = Instant::now();
+        }
         if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
             fast_draw_input(app);
         }
@@ -478,8 +486,18 @@ pub async fn run_app(
 
         // Poll for completed render results from the background thread (non-blocking).
         // If fresh content arrived, trigger a redraw to show it.
-        if poll_render_result(app) {
-            needs_redraw = true;
+        // DEFER during active typing: applying new session content makes the next
+        // terminal.draw() diff large (many escape sequences). Terminal emulators
+        // drop keyboard input while processing heavy stdout output. By deferring
+        // render results for 150ms after the last keystroke, draws near typing
+        // only update the input box (tiny diff). Session pane catches up when
+        // the user pauses. Render thread keeps working — only the APPLY is deferred.
+        let typing_recently = last_key_time.elapsed() < Duration::from_millis(150);
+        let defer_render_poll = typing_recently && !app.claude_receivers.is_empty();
+        if !defer_render_poll {
+            if poll_render_result(app) {
+                needs_redraw = true;
+            }
         }
 
         // Mark that we need a draw (will be fulfilled on a quiet iteration)
@@ -494,8 +512,12 @@ pub async fn run_app(
         // Defer draw when typing single-line in Claude prompt (fast-path handles it).
         // Multi-line input needs immediate full draw to resize the input box.
         // Terminal mode needs immediate draws — PTY output has no fast-path.
+        // During Claude streaming, extend the deferral to 150ms after the last
+        // keystroke — terminal.draw() escape sequences cause terminal emulators
+        // to drop keyboard input. fast_draw_input handles visual feedback (~0.1ms).
         let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
-        let defer_for_typing = had_key_event && has_fast_path;
+        let streaming_typing_cooldown = typing_recently && !app.claude_receivers.is_empty() && has_fast_path;
+        let defer_for_typing = (had_key_event && has_fast_path) || streaming_typing_cooldown;
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
         if should_draw {
