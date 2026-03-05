@@ -141,7 +141,11 @@ pub async fn run_app(
         if had_key_event {
             last_key_time = Instant::now();
         }
-        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+        // Skip fast_draw during streaming to test if its escape sequences cause
+        // the terminal emulator to misreport keys. When skipped, the input is
+        // "blind" until the next full draw — purely diagnostic.
+        let skip_fast_draw = !app.claude_receivers.is_empty();
+        if had_key_event && !skip_fast_draw && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
             fast_draw_input(app);
         }
 
@@ -530,7 +534,7 @@ pub async fn run_app(
                 }
                 process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
-            if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+            if got_key && !skip_fast_draw && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
                 fast_draw_input(app);
             }
             if !got_key {
