@@ -101,6 +101,7 @@ pub async fn run_app(
                         // is held down (Kitty REPORT_EVENT_TYPES). Without this,
                         // holding arrow keys only moves cursor once.
                         if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                            app.diag_key_events += 1;
                             handle_key_event(key, app, &claude_process)?;
                             had_key_event = true;
                         }
@@ -210,6 +211,28 @@ pub async fn run_app(
             for (session_id, event) in claude_events {
                 handle_claude_event(&session_id, event, app, &claude_process)?;
                 needs_redraw = true;
+            }
+        }
+
+        // Secondary key drain: catch keys that arrived during Claude event processing
+        // (1-5ms of JSON parsing per tick). Without this, keys wait until the next
+        // iteration's primary drain — which may be delayed by housekeeping + draw.
+        // Only runs during streaming when Claude events were actually processed.
+        if !app.claude_receivers.is_empty() && needs_redraw {
+            while event::poll(Duration::from_millis(0))? {
+                match event::read()? {
+                    Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) && !matches!(key.code, KeyCode::Modifier(_)) => {
+                        app.diag_key_events += 1;
+                        handle_key_event(key, app, &claude_process)?;
+                        had_key_event = true;
+                    }
+                    Event::Resize(w, h) => { cached_width = w; cached_height = h; app.screen_height = h; }
+                    _ => {}
+                }
+            }
+            // Fast-path for keys caught in secondary drain
+            if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+                fast_draw_input(app);
             }
         }
 
@@ -523,6 +546,7 @@ pub async fn run_app(
             while event::poll(Duration::from_millis(0))? {
                 match event::read()? {
                     Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) && !matches!(key.code, KeyCode::Modifier(_)) => {
+                        app.diag_key_events += 1;
                         handle_key_event(key, app, &claude_process)?;
                         got_key = true;
                     }
