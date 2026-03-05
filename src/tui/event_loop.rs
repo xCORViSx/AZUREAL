@@ -141,11 +141,7 @@ pub async fn run_app(
         if had_key_event {
             last_key_time = Instant::now();
         }
-        // Skip fast_draw during streaming to test if its escape sequences cause
-        // the terminal emulator to misreport keys. When skipped, the input is
-        // "blind" until the next full draw — purely diagnostic.
-        let skip_fast_draw = !app.claude_receivers.is_empty();
-        if had_key_event && !skip_fast_draw && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
             fast_draw_input(app);
         }
 
@@ -516,12 +512,8 @@ pub async fn run_app(
         // Defer draw when typing single-line in Claude prompt (fast-path handles it).
         // Multi-line input needs immediate full draw to resize the input box.
         // Terminal mode needs immediate draws — PTY output has no fast-path.
-        // During Claude streaming, extend the deferral to 150ms after the last
-        // keystroke — terminal.draw() escape sequences cause terminal emulators
-        // to drop keyboard input. fast_draw_input handles visual feedback (~0.1ms).
         let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
-        let streaming_typing_cooldown = typing_recently && !app.claude_receivers.is_empty() && has_fast_path;
-        let defer_for_typing = (had_key_event && has_fast_path) || streaming_typing_cooldown;
+        let defer_for_typing = had_key_event && has_fast_path;
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
         if should_draw {
@@ -534,7 +526,7 @@ pub async fn run_app(
                 }
                 process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
-            if got_key && !skip_fast_draw && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+            if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
                 fast_draw_input(app);
             }
             if !got_key {
