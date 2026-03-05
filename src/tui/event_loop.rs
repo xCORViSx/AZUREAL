@@ -193,14 +193,18 @@ pub async fn run_app(
             fast_draw_input(app);
         }
 
-        // Process Claude events — drain all available from each receiver.
-        // We must collect first (borrows claude_receivers) then process (borrows app mutably).
-        // Avoid nested Vec + flat_map — single drain loop per receiver is simpler.
+        // Process Claude events — drain up to MAX_CLAUDE_EVENTS per tick to prevent
+        // burst processing from blocking input. During streaming Claude sends ~60
+        // events/sec; draining all at once can take 10-50ms of sequential JSON
+        // parsing. Capping per tick ensures the loop returns to key polling quickly.
+        // Remaining events stay in the channel for the next iteration.
+        const MAX_CLAUDE_EVENTS_PER_TICK: usize = 10;
         if !app.claude_receivers.is_empty() {
             let mut claude_events: Vec<(String, crate::claude::ClaudeEvent)> = Vec::new();
-            for (sid, rx) in &app.claude_receivers {
+            'outer: for (sid, rx) in &app.claude_receivers {
                 while let Ok(event) = rx.try_recv() {
                     claude_events.push((sid.clone(), event));
+                    if claude_events.len() >= MAX_CLAUDE_EVENTS_PER_TICK { break 'outer; }
                 }
             }
             for (session_id, event) in claude_events {
@@ -448,8 +452,13 @@ pub async fn run_app(
             }
         }
 
-        // Periodic auto-rebase check (every 2 seconds)
-        if now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2) {
+        // Periodic auto-rebase check (every 2 seconds).
+        // Skip during active Claude streaming — git subprocess calls (git status
+        // --porcelain per worktree) block 5-50ms, and rebasing while Claude is
+        // modifying files would fail with dirty working tree anyway.
+        if app.claude_receivers.is_empty()
+            && now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2)
+        {
             app.last_auto_rebase_check = now_poll;
             if !app.auto_rebase_enabled.is_empty() {
                 if check_auto_rebase(app, &claude_process) {
