@@ -11,12 +11,13 @@ mod actions;
 mod claude_events;
 mod coords;
 mod fast_draw;
+mod input_thread;
 mod mouse;
 
 pub(super) use mouse::copy_viewer_selection;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -56,6 +57,13 @@ pub async fn run_app(
     // Cache terminal size, update on resize events
     let (mut cached_width, mut cached_height) = crossterm::terminal::size().unwrap_or((80, 24));
 
+    // Dedicated input reader thread: continuously reads crossterm events from
+    // stdin so keystrokes are captured immediately — even during terminal.draw()
+    // (~18ms) or other blocking work. Without this, keys that arrive during a
+    // draw sit in the kernel buffer and some terminal emulators drop them under
+    // heavy output load.
+    let input_rx = input_thread::spawn_input_thread();
+
     // Initial draw
     terminal.draw(|f| ui(f, app))?;
 
@@ -79,103 +87,30 @@ pub async fn run_app(
         let mut scroll_row: u16 = 0;
         let mut had_key_event = false;
 
-        // Poll timeout: short when busy (render in-flight or Claude streaming)
-        // so we pick up completed renders and key events quickly. Longer when
-        // idle to avoid burning CPU spinning on an empty event queue.
-        // Short poll when we have pending work: draw waiting, render in-flight,
-        // or Claude streaming. Ensures fast pickup without burning CPU when idle.
-        // Also short-poll while commit message or squash merge is in progress
+        // Drain all events from the input reader thread (non-blocking).
+        // The reader thread continuously reads stdin, so events are buffered
+        // in the channel even during terminal.draw() or other blocking work.
+        // If idle with no pending work, block briefly to avoid busy-spinning.
         let commit_generating = app.git_actions_panel.as_ref()
             .and_then(|p| p.commit_overlay.as_ref())
             .map(|o| o.generating).unwrap_or(false);
         let squash_merging = app.git_actions_panel.as_ref()
             .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
         let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some();
-        let poll_ms = if app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging || bg_pending { 16 } else { 100 };
-        if event::poll(Duration::from_millis(poll_ms))? {
-            // Drain all available events without blocking
-            loop {
-                match event::read()? {
-                    Event::Key(key) => {
-                        // Accept Press AND Repeat — Repeat fires when a key
-                        // is held down (Kitty REPORT_EVENT_TYPES). Without this,
-                        // holding arrow keys only moves cursor once.
-                        if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-                            app.diag_key_events += 1;
-                            handle_key_event(key, app, &claude_process)?;
-                            had_key_event = true;
-                        }
-                    }
-                    Event::Mouse(mouse) => {
-                        match mouse.kind {
-                            MouseEventKind::ScrollDown => {
-                                scroll_delta += 3;
-                                scroll_col = mouse.column;
-                                scroll_row = mouse.row;
-                            }
-                            MouseEventKind::ScrollUp => {
-                                scroll_delta -= 3;
-                                scroll_col = mouse.column;
-                                scroll_row = mouse.row;
-                            }
-                            // Left click: convert screen→cache coords for drag anchor,
-                            // clear selections, focus/select. Cache coords stored so
-                            // auto-scroll during drag doesn't shift the anchor.
-                            MouseEventKind::Down(MouseButton::Left) => {
-                                app.viewer_selection = None;
-                                app.session_selection = None;
-                                let (mc, mr) = (mouse.column, mouse.row);
-                                use ratatui::layout::Position;
-                                let mpos = Position::new(mc, mr);
-                                if app.pane_viewer.contains(mpos) {
-                                    if app.viewer_edit_mode {
-                                        // Edit mode: click sets edit cursor, drag anchor stores source coords
-                                        if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
-                                            app.mouse_drag_start = Some((src_line, src_col, 3));
-                                        }
-                                    } else if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
-                                        app.mouse_drag_start = Some((cl, cc, 0));
-                                    }
-                                } else if app.pane_session.contains(mpos) {
-                                    app.clamp_session_scroll();
-                                    if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
-                                        app.mouse_drag_start = Some((cl, cc, 1));
-                                    }
-                                } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
-                                    let ci = screen_to_input_char(app, mc, mr);
-                                    app.mouse_drag_start = Some((ci, 0, 2));
-                                } else {
-                                    app.mouse_drag_start = None;
-                                }
-                                if handle_mouse_click(app, mc, mr) {
-                                    needs_redraw = true;
-                                }
-                            }
-                            // Drag: compute text selection from start to current
-                            MouseEventKind::Drag(MouseButton::Left) => {
-                                if handle_mouse_drag(app, mouse.column, mouse.row) {
-                                    needs_redraw = true;
-                                }
-                            }
-                            // Release: stop drag tracking, keep selection
-                            MouseEventKind::Up(MouseButton::Left) => {
-                                app.mouse_drag_start = None;
-                            }
-                            _ => {} // Discard motion, right-click
-                        }
-                    }
-                    Event::Resize(w, h) => {
-                        cached_width = w;
-                        cached_height = h;
-                        app.screen_height = h;
-                        needs_redraw = true;
-                    }
-                    _ => {}
-                }
-                // Check if more events pending (non-blocking)
-                if !event::poll(Duration::from_millis(0))? {
-                    break;
-                }
+        let is_busy = app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging || bg_pending;
+
+        // First event: block briefly when idle so we don't spin the CPU
+        let first_event = if is_busy {
+            input_rx.try_recv().ok()
+        } else {
+            input_rx.recv_timeout(Duration::from_millis(100)).ok()
+        };
+
+        if let Some(evt) = first_event {
+            process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
+            // Drain remaining queued events (non-blocking)
+            while let Ok(evt) = input_rx.try_recv() {
+                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
         }
 
@@ -214,23 +149,13 @@ pub async fn run_app(
             }
         }
 
-        // Secondary key drain: catch keys that arrived during Claude event processing
-        // (1-5ms of JSON parsing per tick). Without this, keys wait until the next
-        // iteration's primary drain — which may be delayed by housekeeping + draw.
-        // Only runs during streaming when Claude events were actually processed.
+        // Secondary drain: catch keys that arrived during Claude event processing
+        // (1-5ms of JSON parsing per tick). With the input reader thread, events
+        // are continuously buffered in the channel — just drain what's there.
         if !app.claude_receivers.is_empty() && needs_redraw {
-            while event::poll(Duration::from_millis(0))? {
-                match event::read()? {
-                    Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) && !matches!(key.code, KeyCode::Modifier(_)) => {
-                        app.diag_key_events += 1;
-                        handle_key_event(key, app, &claude_process)?;
-                        had_key_event = true;
-                    }
-                    Event::Resize(w, h) => { cached_width = w; cached_height = h; app.screen_height = h; }
-                    _ => {}
-                }
+            while let Ok(evt) = input_rx.try_recv() {
+                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
-            // Fast-path for keys caught in secondary drain
             if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
                 fast_draw_input(app);
             }
@@ -540,22 +465,15 @@ pub async fn run_app(
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
         if should_draw {
-            // Pre-draw drain: catch events that arrived between the top-of-loop
-            // drain and now (~0-5ms gap). If a key arrives here, skip draw.
+            // Pre-draw drain: catch events buffered by the input thread since
+            // the primary drain. If a key arrives, skip draw (loop back).
             let mut got_key = false;
-            while event::poll(Duration::from_millis(0))? {
-                match event::read()? {
-                    Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) && !matches!(key.code, KeyCode::Modifier(_)) => {
-                        app.diag_key_events += 1;
-                        handle_key_event(key, app, &claude_process)?;
-                        got_key = true;
-                    }
-                    Event::Resize(w, h) => { cached_width = w; cached_height = h; app.screen_height = h; }
-                    _ => {}
+            while let Ok(evt) = input_rx.try_recv() {
+                if let Event::Key(_) = &evt {
+                    got_key = true;
                 }
+                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
-            // Keys caught in pre-draw drain need immediate visual feedback too.
-            // Without this, they appear only on the next full draw (~33ms later).
             if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
                 fast_draw_input(app);
             }
@@ -583,6 +501,93 @@ pub async fn run_app(
         if app.should_quit { break; }
     }
 
+    Ok(())
+}
+
+/// Process a single input event from the reader thread channel.
+/// Dispatches key, mouse, and resize events to the appropriate handlers.
+#[allow(clippy::too_many_arguments)]
+fn process_input_event(
+    evt: Event,
+    app: &mut App,
+    claude_process: &ClaudeProcess,
+    needs_redraw: &mut bool,
+    scroll_delta: &mut i32,
+    scroll_col: &mut u16,
+    scroll_row: &mut u16,
+    had_key_event: &mut bool,
+    cached_width: &mut u16,
+    cached_height: &mut u16,
+) -> Result<()> {
+    match evt {
+        Event::Key(key) => {
+            // Input thread already filters to Press/Repeat only
+            if !matches!(key.code, KeyCode::Modifier(_)) {
+                app.diag_key_events += 1;
+                handle_key_event(key, app, claude_process)?;
+                *had_key_event = true;
+            }
+        }
+        Event::Mouse(mouse) => {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    *scroll_delta += 3;
+                    *scroll_col = mouse.column;
+                    *scroll_row = mouse.row;
+                }
+                MouseEventKind::ScrollUp => {
+                    *scroll_delta -= 3;
+                    *scroll_col = mouse.column;
+                    *scroll_row = mouse.row;
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    app.viewer_selection = None;
+                    app.session_selection = None;
+                    let (mc, mr) = (mouse.column, mouse.row);
+                    use ratatui::layout::Position;
+                    let mpos = Position::new(mc, mr);
+                    if app.pane_viewer.contains(mpos) {
+                        if app.viewer_edit_mode {
+                            if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
+                                app.mouse_drag_start = Some((src_line, src_col, 3));
+                            }
+                        } else if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
+                            app.mouse_drag_start = Some((cl, cc, 0));
+                        }
+                    } else if app.pane_session.contains(mpos) {
+                        app.clamp_session_scroll();
+                        if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
+                            app.mouse_drag_start = Some((cl, cc, 1));
+                        }
+                    } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
+                        let ci = screen_to_input_char(app, mc, mr);
+                        app.mouse_drag_start = Some((ci, 0, 2));
+                    } else {
+                        app.mouse_drag_start = None;
+                    }
+                    if handle_mouse_click(app, mc, mr) {
+                        *needs_redraw = true;
+                    }
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    if handle_mouse_drag(app, mouse.column, mouse.row) {
+                        *needs_redraw = true;
+                    }
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    app.mouse_drag_start = None;
+                }
+                _ => {}
+            }
+        }
+        Event::Resize(w, h) => {
+            *cached_width = w;
+            *cached_height = h;
+            app.screen_height = h;
+            *needs_redraw = true;
+        }
+        _ => {}
+    }
     Ok(())
 }
 
