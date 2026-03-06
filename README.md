@@ -104,7 +104,7 @@ azureal
 | `/` | Search/filter sessions (Worktrees); Search text (Session); Filter/search sessions (Session list) |
 | `?` | Help |
 | `⌘a` | Archive/unarchive worktree (keeps branch) |
-| `⌘d` | Delete worktree + branch (sibling guard: y=delete all, a=archive only) |
+| `⌘d` | Delete worktree + branch (warns uncommitted/unmerged; sibling guard: y=delete all, a=archive only) |
 | `⌃d` | Debug dump (save session state snapshot) |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |

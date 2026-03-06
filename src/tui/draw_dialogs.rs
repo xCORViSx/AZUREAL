@@ -647,53 +647,71 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
 pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::DeleteWorktreeDialog, area: Rect) {
     use crate::app::types::DeleteWorktreeDialog;
     let (title, lines) = match dialog {
-        DeleteWorktreeDialog::Sole { name } => {
+        DeleteWorktreeDialog::Sole { name, warnings } => {
             let title = format!(" Delete '{}' ", name);
-            let lines = vec![
+            let mut lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
                     "Delete this worktree and its branch?",
                     Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                 )),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                    Span::styled("  Confirm delete", Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-                    Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
-                ]),
             ];
+            if !warnings.is_empty() {
+                lines.push(Line::from(""));
+                for w in warnings {
+                    lines.push(Line::from(Span::styled(
+                        format!("  ! {}", w),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    )));
+                }
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  Confirm delete", Style::default().fg(Color::White)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
+            ]));
             (title, lines)
         }
-        DeleteWorktreeDialog::Siblings { branch, count, .. } => {
+        DeleteWorktreeDialog::Siblings { branch, count, warnings, .. } => {
             let title = format!(" Delete on '{}' ", branch);
-            let lines = vec![
+            let mut lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
                     format!("{} other worktree{} on this branch.", count, if *count == 1 { "" } else { "s" }),
                     Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                 )),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                    Span::styled("  Delete all worktrees + branch", Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                    Span::styled("  Archive this one only", Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-                    Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
-                ]),
             ];
+            if !warnings.is_empty() {
+                lines.push(Line::from(""));
+                for w in warnings {
+                    lines.push(Line::from(Span::styled(
+                        format!("  ! {}", w),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    )));
+                }
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  Delete all worktrees + branch", Style::default().fg(Color::White)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  Archive this one only", Style::default().fg(Color::White)),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
+            ]));
             (title, lines)
         }
     };
 
-    let w = 46u16.min(area.width.saturating_sub(4));
+    let w = 50u16.min(area.width.saturating_sub(4));
     let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
     let x = (area.width.saturating_sub(w)) / 2;
     let y = (area.height.saturating_sub(h)) / 2;

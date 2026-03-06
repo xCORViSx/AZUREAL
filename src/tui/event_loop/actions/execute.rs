@@ -220,6 +220,40 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                     if wt.branch_name == project.main_branch {
                         app.set_status("Cannot delete main branch");
                     } else {
+                        // Check for uncommitted changes and unmerged commits
+                        let mut warnings = Vec::new();
+                        if let Some(ref wt_path) = wt.worktree_path {
+                            let dirty_count = std::process::Command::new("git")
+                                .args(["status", "--porcelain"])
+                                .current_dir(wt_path)
+                                .output()
+                                .ok()
+                                .map(|o| String::from_utf8_lossy(&o.stdout)
+                                    .lines().filter(|l| !l.is_empty()).count())
+                                .unwrap_or(0);
+                            if dirty_count > 0 {
+                                warnings.push(format!(
+                                    "{} uncommitted change{}", dirty_count,
+                                    if dirty_count == 1 { "" } else { "s" }
+                                ));
+                            }
+                        }
+                        let unmerged_count = std::process::Command::new("git")
+                            .args(["log", &format!("{}..{}", project.main_branch, wt.branch_name), "--oneline"])
+                            .current_dir(&project.path)
+                            .output()
+                            .ok()
+                            .map(|o| String::from_utf8_lossy(&o.stdout)
+                                .lines().filter(|l| !l.is_empty()).count())
+                            .unwrap_or(0);
+                        if unmerged_count > 0 {
+                            warnings.push(format!(
+                                "{} commit{} not merged to {}", unmerged_count,
+                                if unmerged_count == 1 { "" } else { "s" },
+                                project.main_branch
+                            ));
+                        }
+
                         // Sibling guard: find other worktrees on the same branch
                         let current_idx = app.selected_worktree.unwrap_or(0);
                         let sibling_indices: Vec<usize> = app.worktrees.iter().enumerate()
@@ -228,7 +262,10 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                             .collect();
                         if sibling_indices.is_empty() {
                             app.delete_worktree_dialog = Some(
-                                crate::app::types::DeleteWorktreeDialog::Sole { name: wt.name().to_string() }
+                                crate::app::types::DeleteWorktreeDialog::Sole {
+                                    name: wt.name().to_string(),
+                                    warnings,
+                                }
                             );
                         } else {
                             let count = sibling_indices.len();
@@ -237,6 +274,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                                     branch: wt.branch_name.clone(),
                                     sibling_indices,
                                     count,
+                                    warnings,
                                 }
                             );
                         }

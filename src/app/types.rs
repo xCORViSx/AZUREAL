@@ -476,12 +476,18 @@ pub struct PostMergeDialog {
 #[derive(Debug, Clone)]
 pub enum DeleteWorktreeDialog {
     /// Sole worktree on branch — simple yes/no
-    Sole { name: String },
+    Sole {
+        name: String,
+        /// Yellow warnings shown before action keys (uncommitted changes, unmerged commits)
+        warnings: Vec<String>,
+    },
     /// Multiple worktrees on branch — choose (y)delete-all or (a)archive-only
     Siblings {
         branch: String,
         sibling_indices: Vec<usize>,
         count: usize,
+        /// Yellow warnings shown before action keys (uncommitted changes, unmerged commits)
+        warnings: Vec<String>,
     },
 }
 
