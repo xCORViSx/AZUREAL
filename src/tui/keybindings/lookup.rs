@@ -772,13 +772,18 @@ mod tests {
     }
 
     #[test]
+    fn git_refresh_on_feature_actions_focused() {
+        assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::NONE, KeyCode::Char('r')), Some(Action::GitRefresh));
+    }
+
+    #[test]
     fn git_rebase_on_feature_actions_focused() {
-        assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::NONE, KeyCode::Char('r')), Some(Action::GitRebase));
+        assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::SHIFT, KeyCode::Char('R')), Some(Action::GitRebase));
     }
 
     #[test]
     fn git_rebase_skipped_on_main() {
-        assert_ne!(lookup_git_actions_action(0, true, KeyModifiers::NONE, KeyCode::Char('r')), Some(Action::GitRebase));
+        assert_ne!(lookup_git_actions_action(0, true, KeyModifiers::SHIFT, KeyCode::Char('R')), Some(Action::GitRebase));
     }
 
     #[test]
@@ -828,11 +833,6 @@ mod tests {
         // focused_pane=0 (actions) → GitViewDiff is skipped (guard: actions_focused → true)
         // 'd' instead matches Confirm via the Enter/d alternative
         assert_ne!(lookup_git_actions_action(0, false, KeyModifiers::NONE, KeyCode::Char('d')), Some(Action::GitViewDiff));
-    }
-
-    #[test]
-    fn git_refresh() {
-        assert_eq!(lookup_git_actions_action(0, false, KeyModifiers::SHIFT, KeyCode::Char('R')), Some(Action::GitRefresh));
     }
 
     #[test]

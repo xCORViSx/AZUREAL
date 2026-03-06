@@ -1103,9 +1103,12 @@ Actions change based on whether the current worktree is the main/master branch o
 
 *On feature branches (4 actions):*
 - `m` / Enter on index 0 — Squash merge to main: runs on a **background thread** with progress phases shown via `loading_indicator`. Thread sends `SquashMergeProgress` updates through an `mpsc` channel (polled in event loop at 16ms). Phases: "Rebasing onto main..." → "Pushing rebased branch..." → "Merging into main..." → "Pushing to remote...". Final `SquashMergeOutcome` dispatches to success (PostMergeDialog), conflict (GitConflictOverlay), or error. Dirty-check runs synchronously before spawning. Pattern matches commit message generation (`GitCommitOverlay.generating` + `overlay.receiver`). RCR auto-continue path follows the same flow.
-- `r` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main, then auto-pushes the rebased branch to its remote via `Git::push(&wt_path)`. On conflict, shows overlay with RCR option; after RCR acceptance the branch is also pushed.
+- `Shift+R` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main, then auto-pushes the rebased branch to its remote via `Git::push(&wt_path)`. On conflict, shows overlay with RCR option; after RCR acceptance the branch is also pushed.
 - `c` / Enter on index 2 — Commit (see below)
 - `Shift+P` / Enter on index 3 — Push to remote
+- `r` — Refresh (re-fetches changed files and commit log; works on all pages including main)
+
+**Post-action refresh:** Every git action outcome calls `refresh_changed_files()` + `refresh_commit_log()` — including error paths (rebase failed, squash merge failed), conflict paths (shows overlay but also refreshes data underneath), and "up to date" results. Switching worktree pages (`[`/`]`, `{`/`}`, `Shift+M`) calls `open_git_actions_panel()` which does a full rebuild from git, so navigated-to pages always show fresh data.
 
 **Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
 
@@ -1117,7 +1120,7 @@ Actions change based on whether the current worktree is the main/master branch o
 **Commits list (when commits pane focused, focused_pane==2):**
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
 - `j/k` — navigate commits (auto-loads `git show <hash>` in viewer via `load_commit_diff_inline()`); `Enter` — also loads diff inline
-- `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after commit/push operations; also refreshes all divergence counts
+- `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after all git operations (pull, push, commit, rebase, refresh); also refreshes all divergence counts
 - **Bottom border divergence badges:** Compact right-aligned badges show `↑N ↓M main` (red bg when behind, green when only ahead; feature branches only) and `↑N ↓M remote` (yellow bg when behind, cyan when only ahead). Uses `Git::get_main_divergence()` and `Git::get_remote_divergence()` — both backed by `git rev-list --left-right --count`. Panel fields: `commits_behind_main`, `commits_ahead_main`, `commits_behind_remote`, `commits_ahead_remote`
 
 **Global within panel:**

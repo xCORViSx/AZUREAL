@@ -276,11 +276,15 @@ pub async fn run_app(
                                 selected: 0,
                                 continue_with_merge: true,
                             });
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
                         }
                     }
                     SquashMergeOutcome::Failed(msg) => {
                         if let Some(ref mut p) = app.git_actions_panel {
                             p.result_message = Some((msg, true));
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
                         }
                     }
                 }

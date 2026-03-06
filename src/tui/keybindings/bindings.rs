@@ -212,12 +212,12 @@ pub static GIT_ACTIONS: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Jump to bottom", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Squash merge to main", Action::GitSquashMerge),
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Rebase onto main", Action::GitRebase),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('r')), "Refresh", Action::GitRefresh),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('l')), "Pull", Action::GitPull),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Commit", Action::GitCommit),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('P')), "Push to remote", Action::GitPush),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Enter), &ALT_CHAR_D, "Exec/view diff", Action::Confirm),
-    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Refresh", Action::GitRefresh),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('R')), "Rebase onto main", Action::GitRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Auto-resolve files", Action::GitAutoResolveSettings),
@@ -827,7 +827,8 @@ mod tests {
     #[test]
     fn git_has_rebase() {
         let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitRebase).unwrap();
-        assert_eq!(b.primary.code, KeyCode::Char('r'));
+        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
+        assert_eq!(b.primary.code, KeyCode::Char('R'));
     }
 
     #[test]
@@ -858,8 +859,8 @@ mod tests {
     #[test]
     fn git_has_refresh() {
         let b = GIT_ACTIONS.iter().find(|b| b.action == Action::GitRefresh).unwrap();
-        assert_eq!(b.primary.modifiers, KeyModifiers::SHIFT);
-        assert_eq!(b.primary.code, KeyCode::Char('R'));
+        assert_eq!(b.primary.modifiers, KeyModifiers::NONE);
+        assert_eq!(b.primary.code, KeyCode::Char('r'));
     }
 
     #[test]

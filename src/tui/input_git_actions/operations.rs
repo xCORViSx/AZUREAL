@@ -281,6 +281,8 @@ pub(super) fn exec_rebase(app: &mut App) {
         }
         RebaseOutcome::UpToDate => {
             if let Some(ref mut p) = app.git_actions_panel {
+                super::refresh_changed_files(p);
+                super::refresh_commit_log(p);
                 p.result_message = Some(("Already up to date with main".to_string(), false));
             }
         }
@@ -293,10 +295,14 @@ pub(super) fn exec_rebase(app: &mut App) {
                     selected: 0,
                     continue_with_merge: false,
                 });
+                super::refresh_changed_files(p);
+                super::refresh_commit_log(p);
             }
         }
         RebaseOutcome::Failed(e) => {
             if let Some(ref mut p) = app.git_actions_panel {
+                super::refresh_changed_files(p);
+                super::refresh_commit_log(p);
                 p.result_message = Some((format!("Rebase failed: {}", e), true));
             }
         }
@@ -428,6 +434,7 @@ pub(super) fn exec_pull(app: &mut App) {
     if let Some(ref mut p) = app.git_actions_panel {
         p.result_message = Some(msg);
         super::refresh_changed_files(p);
+        super::refresh_commit_log(p);
     }
 }
 
@@ -446,6 +453,8 @@ pub(super) fn exec_push(app: &mut App) {
     };
     if let Some(ref mut p) = app.git_actions_panel {
         p.result_message = Some(msg);
+        super::refresh_changed_files(p);
+        super::refresh_commit_log(p);
     }
 }
 
