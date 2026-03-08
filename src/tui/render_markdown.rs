@@ -14,8 +14,11 @@ use super::markdown::{parse_markdown_spans, is_table_separator};
 use super::render_wrap::wrap_text;
 
 /// Render assistant markdown text into lines (with syntax-highlighted code blocks)
-pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut SyntaxHighlighter) -> Vec<Line<'static>> {
+/// Returns (rendered_lines, table_regions) where table_regions are
+/// (output_line_start, output_line_end, raw_markdown) for click-to-expand.
+pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut SyntaxHighlighter) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>) {
     let mut lines = Vec::new();
+    let mut table_regions: Vec<(usize, usize, String)> = Vec::new();
     let mut in_code_block = false;
     let mut code_block_lang = String::new();
     let mut code_block_lines: Vec<&str> = Vec::new();
@@ -27,6 +30,9 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
     let get_table_info = |idx: usize| -> Option<&(usize, usize, Vec<usize>)> {
         table_info.iter().find(|(s, e, _)| idx >= *s && idx < *e)
     };
+
+    // Track which table regions we've already recorded (by source start line)
+    let mut recorded_tables: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     for (i, line) in text_lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -65,9 +71,23 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
             continue;
         }
 
-        // Table rows
+        // Table rows — record region on first row of each table
         if let Some((table_start, table_end, col_widths)) = get_table_info(i) {
-            render_table_row(&mut lines, trimmed, i, *table_start, *table_end, col_widths, &text_lines);
+            if !recorded_tables.contains(table_start) {
+                recorded_tables.insert(*table_start);
+                // Record output line index before rendering this table's first row
+                let output_start = lines.len();
+                // Render all rows of this table to get the output line range
+                for j in *table_start..*table_end {
+                    let row_trimmed = text_lines[j].trim();
+                    render_table_row(&mut lines, row_trimmed, j, *table_start, *table_end, col_widths, &text_lines);
+                }
+                let output_end = lines.len();
+                // Collect raw markdown for the table
+                let raw = text_lines[*table_start..*table_end].join("\n");
+                table_regions.push((output_start, output_end, raw));
+            }
+            // Already rendered above (or by a previous iteration for this table)
             continue;
         }
 
@@ -107,6 +127,23 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
     // Handle unclosed code block — emit any remaining collected lines
     if in_code_block {
         emit_code_block(&mut lines, &code_block_lines, &code_block_lang, bubble_width, highlighter);
+    }
+
+    (lines, table_regions)
+}
+
+/// Re-render a table at wider width for the popup overlay.
+/// Takes raw markdown (pipe-delimited rows) and renders at the given width.
+pub fn render_table_for_popup(raw_markdown: &str, width: usize) -> Vec<Line<'static>> {
+    let text_lines: Vec<&str> = raw_markdown.lines().collect();
+    let table_info = scan_tables(&text_lines, width);
+    let mut lines = Vec::new();
+
+    if let Some((start, end, col_widths)) = table_info.first() {
+        for i in *start..*end {
+            let trimmed = text_lines[i].trim();
+            render_table_row(&mut lines, trimmed, i, *start, *end, col_widths, &text_lines);
+        }
     }
 
     lines
@@ -561,14 +598,14 @@ mod tests {
 
     #[test]
     fn render_empty_text() {
-        let lines = render_assistant_text("", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("", 80, &mut hl());
         // Empty text produces no output or just an empty line
         assert!(lines.len() <= 1);
     }
 
     #[test]
     fn render_plain_paragraph() {
-        let lines = render_assistant_text("hello world", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("hello world", 80, &mut hl());
         assert!(!lines.is_empty());
         // First span should be the orange gutter
         let first_span = &lines[0].spans[0];
@@ -578,7 +615,7 @@ mod tests {
     #[test]
     fn render_code_block() {
         let text = "```rust\nlet x = 1;\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         // Should have: open delimiter + code line + close delimiter = 3 lines
         assert_eq!(lines.len(), 3);
     }
@@ -586,96 +623,96 @@ mod tests {
     #[test]
     fn render_code_block_no_language() {
         let text = "```\ncode\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert_eq!(lines.len(), 3);
     }
 
     #[test]
     fn render_header_h1() {
-        let lines = render_assistant_text("# Title", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("# Title", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h2() {
-        let lines = render_assistant_text("## Subtitle", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("## Subtitle", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h3() {
-        let lines = render_assistant_text("### Section", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("### Section", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_h4() {
-        let lines = render_assistant_text("#### Deep", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("#### Deep", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_dash() {
-        let lines = render_assistant_text("- item one", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("- item one", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_asterisk() {
-        let lines = render_assistant_text("* item two", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("* item two", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_bullet_unicode() {
-        let lines = render_assistant_text("• item three", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("• item three", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_numbered_list() {
-        let lines = render_assistant_text("1. first\n2. second", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("1. first\n2. second", 80, &mut hl());
         assert!(lines.len() >= 2);
     }
 
     #[test]
     fn render_blockquote() {
-        let lines = render_assistant_text("> quoted text", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("> quoted text", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_mixed_content() {
         let text = "# Title\n\nParagraph\n\n- bullet\n\n```\ncode\n```\n\n> quote";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert!(lines.len() >= 5);
     }
 
     #[test]
     fn render_wraps_long_lines() {
         let long = "a ".repeat(100);
-        let lines = render_assistant_text(&long, 40, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(&long, 40, &mut hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_table_basic() {
         let text = "| Col1 | Col2 |\n|------|------|\n| a | b |";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         // Table rendering adds borders: top, header, separator, data, bottom
         assert!(lines.len() >= 4);
     }
 
     #[test]
     fn render_narrow_width() {
-        let lines = render_assistant_text("hello world", 10, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("hello world", 10, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_code_block_wraps() {
         let text = format!("```\n{}\n```", "x".repeat(200));
-        let lines = render_assistant_text(&text, 40, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(&text, 40, &mut hl());
         // Code should wrap within the block
         assert!(lines.len() > 3);
     }
@@ -683,80 +720,80 @@ mod tests {
     #[test]
     fn render_multiple_paragraphs() {
         let text = "para one\n\npara two\n\npara three";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert!(lines.len() >= 3);
     }
 
     #[test]
     fn render_unicode_content() {
-        let lines = render_assistant_text("日本語テスト", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("日本語テスト", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_emoji_content() {
-        let lines = render_assistant_text("🎉 celebration 🎊", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("🎉 celebration 🎊", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_header_wraps_long() {
         let title = format!("# {}", "W".repeat(200));
-        let lines = render_assistant_text(&title, 40, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(&title, 40, &mut hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_numbered_double_digit() {
-        let lines = render_assistant_text("12. twelfth item", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("12. twelfth item", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_quote_wraps() {
         let long_quote = format!("> {}", "word ".repeat(50));
-        let lines = render_assistant_text(&long_quote, 40, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(&long_quote, 40, &mut hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_bullet_wraps() {
         let long_bullet = format!("- {}", "text ".repeat(50));
-        let lines = render_assistant_text(&long_bullet, 40, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(&long_bullet, 40, &mut hl());
         assert!(lines.len() > 1);
     }
 
     #[test]
     fn render_width_1_no_panic() {
         // Extremely narrow — should not panic
-        let lines = render_assistant_text("hello", 1, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("hello", 1, &mut hl());
         let _ = lines;
     }
 
     #[test]
     fn render_width_0_no_panic() {
-        let lines = render_assistant_text("hello", 0, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("hello", 0, &mut hl());
         let _ = lines;
     }
 
     #[test]
     fn render_unclosed_code_block() {
         let text = "```\ncode without closing";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_multiple_code_blocks() {
         let text = "```\nfirst\n```\n\n```python\nsecond\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert!(lines.len() >= 6);
     }
 
     #[test]
     fn render_table_clamped_columns() {
         let text = "| Very Long Column Name Here | Another Very Long Column |\n|---|---|\n| x | y |";
-        let lines = render_assistant_text(text, 30, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 30, &mut hl());
         assert!(!lines.is_empty());
     }
 
@@ -777,14 +814,14 @@ mod tests {
 
     #[test]
     fn render_single_newline() {
-        let lines = render_assistant_text("\n", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("\n", 80, &mut hl());
         // Should produce at least one line (empty paragraph)
         assert!(!lines.is_empty());
     }
 
     #[test]
     fn render_only_whitespace() {
-        let lines = render_assistant_text("   ", 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text("   ", 80, &mut hl());
         assert!(!lines.is_empty());
     }
 
@@ -795,7 +832,7 @@ mod tests {
     #[test]
     fn code_block_rust_has_colored_spans() {
         let text = "```rust\nfn main() {\n    let x = 42;\n}\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         // Line 0 = opening fence, lines 1-3 = code, line 4 = closing fence
         assert_eq!(lines.len(), 5);
         // Code lines should have >2 spans (gutter + code gutter + highlighted spans)
@@ -809,7 +846,7 @@ mod tests {
     #[test]
     fn code_block_python_has_colored_spans() {
         let text = "```python\ndef hello():\n    print('hi')\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert_eq!(lines.len(), 4);
         // "def" keyword should be magenta
         let code_line = &lines[1];
@@ -820,7 +857,7 @@ mod tests {
     #[test]
     fn code_block_no_lang_still_renders() {
         let text = "```\nplain code\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert_eq!(lines.len(), 3);
         // Should have spans (gutter + code gutter + text)
         assert!(lines[1].spans.len() >= 3);
@@ -829,7 +866,7 @@ mod tests {
     #[test]
     fn code_block_unknown_lang_falls_back() {
         let text = "```unknownlang\nsome code\n```";
-        let lines = render_assistant_text(text, 80, &mut hl());
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert_eq!(lines.len(), 3);
     }
 }

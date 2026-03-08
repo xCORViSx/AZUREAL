@@ -282,6 +282,10 @@ pub struct App {
     pub message_bubble_positions: Vec<(usize, bool)>,
     /// Clickable file path links in output: (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
     pub clickable_paths: Vec<(usize, usize, usize, String, String, String, usize)>,
+    /// Clickable table regions in output: (cache_line_start, cache_line_end, raw_markdown)
+    pub clickable_tables: Vec<(usize, usize, String)>,
+    /// Full-width table popup overlay (opened by clicking a table in session pane)
+    pub table_popup: Option<crate::app::types::TablePopup>,
     /// Currently highlighted (clicked) file path in session pane: (line_idx, start_col, end_col, wrap_line_count)
     /// Rendered with inverted colors so the user sees which path they clicked
     pub clicked_path_highlight: Option<(usize, usize, usize, usize)>,
@@ -636,6 +640,8 @@ impl App {
             message_bubble_positions: Vec::new(),
             selected_tool_diff: None,
             clickable_paths: Vec::new(),
+            clickable_tables: Vec::new(),
+            table_popup: None,
             clicked_path_highlight: None,
             title_session_name: String::new(),
             viewer_edit_mode: false,
@@ -851,6 +857,16 @@ impl App {
 
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }
     pub fn clear_status(&mut self) { self.status_message = None; }
+
+    /// Open a full-width table popup for the given raw markdown table text.
+    /// Re-renders the table at near-terminal width so columns aren't truncated.
+    pub fn open_table_popup(&mut self, raw_markdown: &str) {
+        let term_width = crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(120);
+        let popup_width = term_width.saturating_sub(8).max(60);
+        let lines = crate::tui::render_markdown::render_table_for_popup(raw_markdown, popup_width);
+        let total_lines = lines.len();
+        self.table_popup = Some(crate::app::types::TablePopup { lines, scroll: 0, total_lines });
+    }
 
     /// Toggle speech-to-text recording. Lazy-initializes the STT background thread on first use.
     /// Press once to start recording (magenta border), press again to stop and transcribe.

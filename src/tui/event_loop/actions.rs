@@ -110,6 +110,26 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
         }
     }
 
+    // Table popup — Esc/q closes, j/k/arrows scroll
+    if app.table_popup.is_some() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => { app.table_popup = None; }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(ref mut p) = app.table_popup {
+                    let max = p.total_lines.saturating_sub(1);
+                    p.scroll = (p.scroll + 1).min(max);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(ref mut p) = app.table_popup {
+                    p.scroll = p.scroll.saturating_sub(1);
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Delete worktree dialog — y confirms sole delete, y/a for siblings, Esc/other cancels
     if let Some(ref dialog) = app.delete_worktree_dialog {
         match dialog {

@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use ratatui::text::Line;
+
 use crate::config::ProjectEntry;
 
 /// Viewer pane display mode
@@ -468,6 +470,15 @@ pub struct PostMergeDialog {
     pub worktree_path: std::path::PathBuf,
     /// Currently selected option: 0=Keep, 1=Archive, 2=Delete
     pub selected: usize,
+}
+
+/// Full-width table popup overlay (click a table in session pane to open).
+/// Pre-rendered at popup width so columns aren't truncated.
+#[derive(Debug, Clone)]
+pub struct TablePopup {
+    pub lines: Vec<Line<'static>>,
+    pub scroll: usize,
+    pub total_lines: usize,
 }
 
 /// Delete worktree confirmation dialog (⌘d). Two variants:

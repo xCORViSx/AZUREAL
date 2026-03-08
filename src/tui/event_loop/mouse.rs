@@ -84,6 +84,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     let pos = Position::new(col, row);
 
     // Overlays first — clicking anywhere dismisses them
+    if app.table_popup.is_some() { app.table_popup = None; return true; }
     if app.show_help { app.show_help = false; return true; }
 
     // Worktree tab row click — select worktree or toggle BrowseMain
@@ -225,7 +226,14 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                     app.load_file_at_path(&file_path);
                 }
             } else {
-                // Clicked somewhere else in session pane — clear any previous highlight
+                // Check if the click landed on a table region
+                let table_hit = app.clickable_tables.iter().find(|(start, end, _)| {
+                    cache_line >= *start && cache_line < *end
+                }).cloned();
+                if let Some((_, _, raw_markdown)) = table_hit {
+                    app.open_table_popup(&raw_markdown);
+                }
+                // Clear any previous path highlight
                 if app.clicked_path_highlight.is_some() {
                     app.clicked_path_highlight = None;
                     app.session_viewport_scroll = usize::MAX;

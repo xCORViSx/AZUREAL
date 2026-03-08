@@ -19,7 +19,7 @@ use ratatui::text::Line;
 
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
-use super::render_events::ClickablePath;
+use super::render_events::{ClickablePath, ClickableTable};
 
 /// Pre-computed state flags from events before start_idx.
 /// Computed on the main thread (zero-cost read) so the render thread
@@ -68,6 +68,7 @@ pub struct RenderResult {
     pub anim_indices: Vec<(usize, usize, String)>,
     pub bubble_positions: Vec<(usize, bool)>,
     pub clickable_paths: Vec<ClickablePath>,
+    pub clickable_tables: Vec<ClickableTable>,
     pub events_count: usize,
     pub events_start: usize,
     pub width: u16,
@@ -157,32 +158,32 @@ fn render_loop(
         // Incremental if existing_line_count > 0 (events Vec has only NEW events,
         // pre_scan has state from old events). Full render otherwise.
         let incremental = req.existing_line_count > 0;
-        let (total_events, lines, anim, bubbles, clickable) = if incremental {
+        let (total_events, lines, anim, bubbles, clickable, tables) = if incremental {
             let total = req.total_events;
             // Render only new events into a fresh Vec (no existing cache clone).
             // Indices are relative to 0 — main thread offsets by existing_line_count.
-            let (l, a, b, c) = super::render_events::render_display_events_incremental(
+            let (l, a, b, c, t) = super::render_events::render_display_events_incremental(
                 &req.events, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
                 req.pre_scan,
             );
-            (total, l, a, b, c)
+            (total, l, a, b, c, t)
         } else {
             // Events are already sliced from deferred_start by submit_render_request —
             // no need to skip here. total_events is the FULL count (for rendered_events_count).
             let total = req.total_events;
-            let (l, a, b, c) = super::render_events::render_display_events(
+            let (l, a, b, c, t) = super::render_events::render_display_events(
                 &req.events, width,
                 &req.pending_tools, &req.failed_tools, highlighter,
                 req.pending_user_message.as_deref(),
             );
-            (total, l, a, b, c)
+            (total, l, a, b, c, t)
         };
 
         let _ = tx.send(RenderResult {
             lines, anim_indices: anim, bubble_positions: bubbles,
-            clickable_paths: clickable,
+            clickable_paths: clickable, clickable_tables: tables,
             events_count: total_events, events_start: deferred_start,
             width, seq, incremental,
         });
@@ -335,6 +336,7 @@ mod tests {
             anim_indices: vec![],
             bubble_positions: vec![],
             clickable_paths: vec![],
+            clickable_tables: vec![],
             events_count: 10,
             events_start: 0,
             width: 120,
@@ -353,6 +355,7 @@ mod tests {
             anim_indices: vec![(0, 5, "tool1".into())],
             bubble_positions: vec![(0, true), (1, false)],
             clickable_paths: vec![],
+            clickable_tables: vec![],
             events_count: 2,
             events_start: 0,
             width: 80,

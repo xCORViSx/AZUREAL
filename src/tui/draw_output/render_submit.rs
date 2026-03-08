@@ -172,12 +172,16 @@ pub fn poll_render_result(app: &mut App) -> bool {
         for (line_idx, start_col, end_col, path, old, new, wrap_count) in result.clickable_paths {
             app.clickable_paths.push((line_idx + offset, start_col, end_col, path, old, new, wrap_count));
         }
+        for (start, end, raw) in result.clickable_tables {
+            app.clickable_tables.push((start + offset, end + offset, raw));
+        }
     } else {
         // Full render: replace everything
         app.rendered_lines_cache = result.lines;
         app.animation_line_indices = result.anim_indices;
         app.message_bubble_positions = result.bubble_positions;
         app.clickable_paths = result.clickable_paths;
+        app.clickable_tables = result.clickable_tables;
     }
 
     app.rendered_lines_width = result.width;

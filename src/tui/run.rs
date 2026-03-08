@@ -252,6 +252,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     draw_status::draw_status(f, app, status_area);
 
     // Draw overlays
+    if let Some(ref popup) = app.table_popup {
+        draw_dialogs::draw_table_popup(f, popup, f.area());
+    }
     if let Some(ref dialog) = app.delete_worktree_dialog {
         draw_dialogs::draw_delete_worktree_dialog(f, dialog, f.area());
     }

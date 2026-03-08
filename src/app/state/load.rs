@@ -293,6 +293,8 @@ impl App {
         self.animation_line_indices.clear();
         self.message_bubble_positions.clear();
         self.clickable_paths.clear();
+        self.clickable_tables.clear();
+        self.table_popup = None;
         self.clicked_path_highlight = None;
         // Discard any in-flight render result from the previous session.
         // The render thread may still be processing old events — advancing
@@ -884,7 +886,7 @@ impl App {
 
         // Full rendered output — every line obfuscated
         writeln!(file, "=== RENDERED OUTPUT ===")?;
-        let (rendered_lines, _, _, _) = crate::tui::util::render_display_events(
+        let (rendered_lines, _, _, _, _) = crate::tui::util::render_display_events(
             &self.display_events,
             120,
             &self.pending_tool_calls,

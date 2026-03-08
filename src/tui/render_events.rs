@@ -22,11 +22,16 @@ use super::render_wrap::wrap_text;
 /// (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
 pub type ClickablePath = (usize, usize, usize, String, String, String, usize);
 
+/// Clickable table entry: (cache_line_start, cache_line_end, raw_markdown_text)
+/// Identifies rendered table regions so mouse clicks can open a full-width popup.
+pub type ClickableTable = (usize, usize, String);
+
 /// Render DisplayEvents into Lines for the session pane with iMessage-style layout
-/// Returns (lines, animation_indices, bubble_positions, clickable_paths) where:
+/// Returns (lines, animation_indices, bubble_positions, clickable_paths, clickable_tables) where:
 /// - animation_indices are (line_idx, span_idx, tool_use_id) for ALL tool indicators
 /// - bubble_positions are (line_idx, is_user) pairs marking where message bubbles start
 /// - clickable_paths are file path link regions for mouse click handling
+/// - clickable_tables are table regions for click-to-expand popup
 pub fn render_display_events(
     events: &[DisplayEvent],
     width: u16,
@@ -34,8 +39,8 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
-    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
+    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
 }
 
 /// Render only new events, appending to existing cache data.
@@ -50,10 +55,10 @@ pub fn render_display_events_incremental(
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
     // Render only new events into fresh accumulators. Indices are relative to 0 —
     // the main thread offsets them by existing_line_count when extending its cache.
-    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), pre_scan)
+    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), pre_scan)
 }
 
 /// Core renderer: iterates events from `start_idx`, appending to provided vectors.
@@ -70,8 +75,9 @@ fn render_display_events_with_state(
     mut animation_indices: Vec<(usize, usize, String)>,
     mut bubble_positions: Vec<(usize, bool)>,
     mut clickable_paths: Vec<ClickablePath>,
+    mut clickable_tables: Vec<ClickableTable>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>) {
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -160,7 +166,13 @@ fn render_display_events_with_state(
                     Span::styled(header_pad, Style::default().bg(ORANGE)),
                 ]));
 
-                lines.extend(render_assistant_text(text, bubble_width, syntax_highlighter));
+                let base_offset = lines.len();
+                let (text_lines, table_regions) = render_assistant_text(text, bubble_width, syntax_highlighter);
+                lines.extend(text_lines);
+                // Offset table regions to absolute cache line positions
+                for (start, end, raw) in table_regions {
+                    clickable_tables.push((start + base_offset, end + base_offset, raw));
+                }
 
                 lines.push(Line::from(vec![
                     Span::styled(format!("└{}", "─".repeat(bubble_width - 1)), Style::default().fg(ORANGE)),
@@ -214,7 +226,7 @@ fn render_display_events_with_state(
         render_user_message(&mut lines, msg, bubble_width, w);
     }
 
-    (lines, animation_indices, bubble_positions, clickable_paths)
+    (lines, animation_indices, bubble_positions, clickable_paths, clickable_tables)
 }
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
@@ -1380,7 +1392,7 @@ mod tests {
     #[test]
     fn test_render_events_empty() {
         let mut highlighter = SyntaxHighlighter::new();
-        let (lines, anim, bubbles, clicks) = render_display_events(
+        let (lines, anim, bubbles, clicks, _tables) = render_display_events(
             &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty());
@@ -1398,7 +1410,7 @@ mod tests {
             cwd: "/project".into(),
             model: "claude-opus-4-20250514".into(),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1413,7 +1425,7 @@ mod tests {
             DisplayEvent::Init { _session_id: "s1".into(), cwd: "/a".into(), model: "m".into() },
             DisplayEvent::Init { _session_id: "s2".into(), cwd: "/b".into(), model: "m2".into() },
         ];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1430,7 +1442,7 @@ mod tests {
             _uuid: "u1".into(),
             content: "Hello".into(),
         }];
-        let (lines, _, bubbles, _) = render_display_events(
+        let (lines, _, bubbles, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
@@ -1447,7 +1459,7 @@ mod tests {
             _message_id: "m1".into(),
             text: "I'll help you.".into(),
         }];
-        let (lines, _, bubbles, _) = render_display_events(
+        let (lines, _, bubbles, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
@@ -1463,7 +1475,7 @@ mod tests {
             name: "pre-tool-use".into(),
             output: "approved".into(),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1478,7 +1490,7 @@ mod tests {
             DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
             DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
         ];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1491,7 +1503,7 @@ mod tests {
     fn test_render_events_command() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Command { name: "compact".into() }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1503,7 +1515,7 @@ mod tests {
     fn test_render_events_compacting() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacting];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1515,7 +1527,7 @@ mod tests {
     fn test_render_events_compacted() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacted];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1527,7 +1539,7 @@ mod tests {
     fn test_render_events_may_be_compacting() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::MayBeCompacting];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1544,7 +1556,7 @@ mod tests {
             duration_ms: 3500,
             cost_usd: 0.02,
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1557,7 +1569,7 @@ mod tests {
     fn test_render_events_filtered() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Filtered];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty());
@@ -1567,7 +1579,7 @@ mod tests {
     #[test]
     fn test_render_events_pending_user_message() {
         let mut highlighter = SyntaxHighlighter::new();
-        let (lines, _, bubbles, _) = render_display_events(
+        let (lines, _, bubbles, _, _) = render_display_events(
             &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, Some("Waiting..."),
         );
         let text = lines_to_text(&lines);
@@ -1587,7 +1599,7 @@ mod tests {
             file_path: None,
             input: json!({"todos": []}),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty(), "TodoWrite tool calls should be skipped");
@@ -1603,7 +1615,7 @@ mod tests {
             file_path: None,
             content: "Todos have been modified successfully".into(),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(lines.is_empty(), "TodoWrite results should be skipped");
@@ -1622,7 +1634,7 @@ mod tests {
             file_path: Some("/path/file.rs".into()),
             input: json!({"file_path": "/path/file.rs"}),
         }];
-        let (_, anim, _, _) = render_display_events(
+        let (_, anim, _, _, _) = render_display_events(
             &events, 80, &pending, &HashSet::new(), &mut highlighter, None,
         );
         assert!(!anim.is_empty(), "Pending tool should have animation index");
@@ -1636,7 +1648,7 @@ mod tests {
             name: "Implementation".into(),
             content: "Step 1: Do thing".into(),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1652,7 +1664,7 @@ mod tests {
             _uuid: "u1".into(),
             content: "This session is being continued from a previous conversation. Here is a summary...".into(),
         }];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
@@ -1671,7 +1683,7 @@ mod tests {
             DisplayEvent::AssistantText { _uuid: "a".into(), _message_id: "m".into(), text: "Sure!".into() },
             DisplayEvent::Complete { _session_id: "s".into(), success: true, duration_ms: 1000, cost_usd: 0.01 },
         ];
-        let (lines, _, bubbles, _) = render_display_events(
+        let (lines, _, bubbles, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         assert!(!lines.is_empty());
@@ -1686,7 +1698,7 @@ mod tests {
             DisplayEvent::UserMessage { _uuid: "u".into(), content: "Hi".into() },
             DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
         ];
-        let (lines, _, _, _) = render_display_events(
+        let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
         );
         let text = lines_to_text(&lines);
