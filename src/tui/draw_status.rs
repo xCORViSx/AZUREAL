@@ -82,13 +82,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Right badge: CPU% + PID — azure text in debug builds as a visual indicator
-    // In prompt mode, append key event diagnostic counters (K=received, C=inserted)
-    let diag = if app.prompt_mode && app.diag_key_events > 0 {
-        format!(" K:{}/R:{}/C:{}", app.diag_key_events, app.diag_key_repeats, app.diag_chars_inserted)
-    } else {
-        String::new()
-    };
-    let badge_text = format!("CPU {} │ PID {}{} ", app.cpu_usage_text, std::process::id(), diag);
+    let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
     let badge_color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
     let badge_width = badge_text.len() as u16;
 

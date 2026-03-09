@@ -54,18 +54,6 @@ pub struct App {
     pub selected_event: Option<usize>,
     pub input: String,
     pub input_cursor: usize,
-    /// Diagnostic: counts every Press/Repeat key event received from crossterm.
-    /// Compared against chars inserted to detect drops at app vs terminal level.
-    /// Reset on input clear (submit / Esc).
-    pub diag_key_events: usize,
-    /// Diagnostic: counts KeyEventKind::Repeat events specifically.
-    /// If R > 0 during normal typing (not holding keys), the Kitty protocol is
-    /// generating spurious repeats that cause doubled characters.
-    pub diag_key_repeats: usize,
-    /// Diagnostic: counts every character inserted via input_char().
-    /// If diag_key_events > diag_chars_inserted, keys are received but not inserted (dispatch bug).
-    /// If diag_key_events == diag_chars_inserted < expected, terminal/crossterm is dropping events.
-    pub diag_chars_inserted: usize,
     /// Selection range in prompt input: (start, end) as char indices
     pub input_selection: Option<(usize, usize)>,
     /// Delete worktree confirmation dialog (⌘d)
@@ -525,9 +513,6 @@ impl App {
             selected_event: None,
             input: String::new(),
             input_cursor: 0,
-            diag_key_events: 0,
-            diag_key_repeats: 0,
-            diag_chars_inserted: 0,
             input_selection: None,
             delete_worktree_dialog: None,
             view_mode: ViewMode::Session,

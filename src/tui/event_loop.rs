@@ -579,10 +579,6 @@ fn process_input_event(
         Event::Key(key) => {
             // Input thread already filters to Press/Repeat only
             if !matches!(key.code, KeyCode::Modifier(_)) {
-                app.diag_key_events += 1;
-                if key.kind == crossterm::event::KeyEventKind::Repeat {
-                    app.diag_key_repeats += 1;
-                }
                 handle_key_event(key, app, claude_process)?;
                 *had_key_event = true;
             }

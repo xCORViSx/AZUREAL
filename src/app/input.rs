@@ -18,7 +18,6 @@ impl App {
         let byte_pos = self.char_to_byte(self.input_cursor);
         self.input.insert(byte_pos, c);
         self.input_cursor += 1;
-        self.diag_chars_inserted += 1;
     }
 
     /// Handle backspace
@@ -99,9 +98,6 @@ impl App {
         self.input_selection = None;
         self.prompt_history_idx = None;
         self.prompt_history_temp = None;
-        self.diag_key_events = 0;
-        self.diag_key_repeats = 0;
-        self.diag_chars_inserted = 0;
     }
 
     /// Collect prompt history from display_events UserMessage entries (most recent last)
