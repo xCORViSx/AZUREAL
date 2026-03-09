@@ -757,7 +757,7 @@ impl App {
             let pct = (ctx_tokens as f64 / usable as f64 * 100.0).min(100.0);
             pct_value = pct;
             let color = if pct < 60.0 { ratatui::style::Color::Green }
-                else if pct < 80.0 { ratatui::style::Color::Yellow }
+                else if pct < 90.0 { ratatui::style::Color::Yellow }
                 else { ratatui::style::Color::Red };
             (format!(" {:.0}% ", pct), color)
         });

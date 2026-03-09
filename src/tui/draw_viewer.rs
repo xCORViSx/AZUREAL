@@ -105,8 +105,8 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         ViewerMode::Empty => {
             let placeholder = vec![
                 Line::from(""),
-                Line::from(Span::styled("Select a file from the tree", Style::default().fg(Color::DarkGray))),
-                Line::from(Span::styled("or a diff from output", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled("Select a file from the Filetree", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled("Session pane.", Style::default().fg(Color::DarkGray))),
             ];
             (" Viewer ".to_string(), placeholder)
         }
