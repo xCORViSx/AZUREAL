@@ -2,7 +2,7 @@
 //!
 //! Two fast paths that bypass terminal.draw() (~18ms) for instant feedback:
 //! - `fast_draw_input`: writes input box content via crossterm (~0.1ms)
-//! - `fast_draw_session`: scrolls session pane via DECSTBM scroll regions (~0.1ms per line)
+//! - `fast_draw_session`: rewrites session pane via direct cursor positioning (~2-5ms)
 
 use std::io::{self, Write};
 use crossterm::{cursor, execute, queue, style};
@@ -117,46 +117,34 @@ fn ratatui_to_crossterm(c: ratatui::style::Color) -> style::Color {
     }
 }
 
-/// Fast-path: render new session lines via DECSTBM scroll regions.
+/// Fast-path: rewrite visible session lines via direct cursor positioning.
 ///
-/// Instead of ratatui's full cell-by-cell diff (~87KB when session scrolls),
-/// sets a terminal scroll region on the session pane, scrolls existing content
-/// up, and writes only the new line(s) at the bottom. ~200 bytes per new line.
+/// Instead of ratatui's full cell-by-cell diff (~87KB for the whole terminal),
+/// rewrites only the session pane's content area (~10-15KB). No DECSTBM scroll
+/// regions — those are full-width and would scroll the file tree / viewer columns
+/// too, leaving blank gaps until the next full draw.
 ///
 /// Only used during streaming follow-bottom when incremental lines arrive.
 /// The next full terminal.draw() reconciles ratatui's buffer naturally.
-pub fn fast_draw_session(app: &App, new_line_count: usize) {
+pub fn fast_draw_session(app: &App, _new_line_count: usize) {
     let rect = app.pane_session;
     let inner_height = rect.height.saturating_sub(2) as usize;
     let inner_width = rect.width.saturating_sub(2) as usize;
 
-    if inner_width == 0 || inner_height == 0 || new_line_count == 0 { return; }
+    if inner_width == 0 || inner_height == 0 { return; }
 
     let total = app.rendered_lines_cache.len();
     if total == 0 { return; }
 
-    // Cap to viewport height (if more lines arrived than fit, just redraw visible area)
-    let lines_to_draw = new_line_count.min(inner_height);
-    let start_idx = total.saturating_sub(lines_to_draw);
+    // Follow-bottom: show last inner_height lines from cache
+    let start_idx = total.saturating_sub(inner_height);
+    let visible_lines = &app.rendered_lines_cache[start_idx..];
 
     let mut stdout = io::stdout();
-
-    // DECSTBM scroll region (1-indexed, inclusive)
-    // Content area: rows rect.y+1 through rect.y+height-2 (0-indexed)
-    // 1-indexed:    rows rect.y+2 through rect.y+height-1
-    let region_top_1 = rect.y + 2;
-    let region_bottom_1 = rect.y + rect.height - 1;
-
-    // Save cursor (DECSC) + set scroll region (DECSTBM)
-    let _ = write!(stdout, "\x1b7\x1b[{};{}r", region_top_1, region_bottom_1);
-    // Scroll up within the region
-    let _ = queue!(stdout, crossterm::terminal::ScrollUp(lines_to_draw as u16));
-
-    // New lines go at the bottom of the scroll region
-    let first_row = rect.y + rect.height - 1 - lines_to_draw as u16;
     let left = rect.x + 1;
+    let first_row = rect.y + 1; // inside top border
 
-    for (i, line) in app.rendered_lines_cache[start_idx..].iter().enumerate() {
+    for (i, line) in visible_lines.iter().enumerate() {
         let row = first_row + i as u16;
         let _ = queue!(stdout, cursor::MoveTo(left, row));
         let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
@@ -208,14 +196,24 @@ pub fn fast_draw_session(app: &App, new_line_count: usize) {
             let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
         }
 
-        // Pad remaining width (clear old content from scrolled area)
+        // Pad remaining width
         if col < inner_width {
             let _ = queue!(stdout, style::Print(" ".repeat(inner_width - col)));
         }
     }
 
-    // Reset scroll region (DECSTBM full screen) + restore cursor (DECRC)
-    let _ = write!(stdout, "\x1b[r\x1b8");
+    // Pad empty rows below content (cache has fewer lines than viewport)
+    for i in visible_lines.len()..inner_height {
+        let row = first_row + i as u16;
+        let _ = queue!(stdout, cursor::MoveTo(left, row));
+        let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
+        let _ = queue!(stdout, style::Print(" ".repeat(inner_width)));
+    }
+
+    // Restore cursor to input area
+    if app.input_area.width > 0 {
+        let _ = queue!(stdout, cursor::MoveTo(app.input_area.x + 1, app.input_area.y + 1));
+    }
     let _ = stdout.flush();
 }
 
