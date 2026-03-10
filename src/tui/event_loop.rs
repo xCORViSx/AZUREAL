@@ -22,6 +22,7 @@ pub(super) use mouse::copy_viewer_selection;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use std::io;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -46,6 +47,21 @@ pub async fn run_app(
     config: Config,
 ) -> Result<()> {
     let claude_process = ClaudeProcess::new(config);
+
+    // Event loop profiler: log slow iterations (>5ms) to find input blockers
+    let mut profile_log = {
+        let dir = dirs::home_dir().unwrap_or_default().join(".azureal");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("event_loop_profile.log"))
+            .ok()
+    };
+    if let Some(ref mut f) = profile_log {
+        let _ = writeln!(f, "\n=== Session started {:?} ===", std::time::SystemTime::now());
+    }
+
     let mut last_draw = Instant::now();
     let mut last_session_poll = Instant::now();
     let mut last_animation = Instant::now();
@@ -81,6 +97,8 @@ pub async fn run_app(
     terminal.draw(|f| ui(f, app))?;
 
     loop {
+        let _loop_start = Instant::now();
+
         // Only poll terminal when in terminal mode (avoid unnecessary rx check)
         let terminal_changed = app.terminal_mode && app.poll_terminal();
 
@@ -145,6 +163,8 @@ pub async fn run_app(
             fast_draw_input(app);
         }
 
+        let _t_input = _loop_start.elapsed();
+
         // Reset the background JSON parser when session changed (flag set by
         // load_session_output / clear_session_state). Drain stale results too.
         if app.claude_processor_needs_reset {
@@ -190,6 +210,8 @@ pub async fn run_app(
             }
         }
 
+        let _t_claude = _loop_start.elapsed();
+
         // Poll parsed results from the background ClaudeProcessor. Each result
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
@@ -212,6 +234,8 @@ pub async fn run_app(
                 }
             }
         }
+
+        let _t_parsed = _loop_start.elapsed();
 
         // Poll commit message generation — background thread sends the Claude-generated
         // commit message via mpsc. Non-blocking try_recv; fills the overlay when ready.
@@ -475,6 +499,8 @@ pub async fn run_app(
             }
         }
 
+        let _t_housekeeping = _loop_start.elapsed();
+
         // Apply accumulated scroll using cached terminal size
         let mut scroll_changed = false;
         if scroll_delta != 0 {
@@ -518,6 +544,8 @@ pub async fn run_app(
             }
         }
 
+        let _t_render = _loop_start.elapsed();
+
         // Mark that we need a draw (will be fulfilled on a quiet iteration)
         if had_key_event || needs_redraw || scroll_changed {
             app.draw_pending = true;
@@ -534,6 +562,7 @@ pub async fn run_app(
         let defer_for_typing = had_key_event && has_fast_path;
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
+        let mut drew = false;
         if should_draw {
             // Pre-draw drain: catch events buffered by the input thread since
             // the primary drain. If a key arrives, skip draw (loop back).
@@ -551,6 +580,7 @@ pub async fn run_app(
                 terminal.draw(|f| ui(f, app))?;
                 last_draw = Instant::now();
                 app.draw_pending = false;
+                drew = true;
 
                 // Deferred session list loading: the loading dialog just rendered,
                 // so now we can do the expensive message count I/O. The user sees
@@ -565,6 +595,28 @@ pub async fn run_app(
                     actions::execute_deferred_action(app, action);
                     app.draw_pending = true;
                 }
+            }
+        }
+
+        // Profile: log slow iterations (>5ms) to find the blocking phase
+        let streaming = !app.claude_receivers.is_empty();
+        let typing_recently = last_key_time.elapsed() < Duration::from_millis(150);
+        let _t_total = _loop_start.elapsed();
+        if _t_total.as_millis() > 5 {
+            if let Some(ref mut f) = profile_log {
+                let _ = writeln!(f,
+                    "{}ms total | input:{:.1} claude:{:.1} parsed:{:.1} house:{:.1} render:{:.1} draw:{} | key:{} stream:{} typing:{}",
+                    _t_total.as_millis(),
+                    (_t_input.as_micros() as f64) / 1000.0,
+                    ((_t_claude - _t_input).as_micros() as f64) / 1000.0,
+                    ((_t_parsed - _t_claude).as_micros() as f64) / 1000.0,
+                    ((_t_housekeeping - _t_parsed).as_micros() as f64) / 1000.0,
+                    ((_t_render - _t_housekeeping).as_micros() as f64) / 1000.0,
+                    if drew { format!("{:.1}", (_t_total - _t_render).as_micros() as f64 / 1000.0) } else { "-".to_string() },
+                    had_key_event,
+                    streaming,
+                    typing_recently,
+                );
             }
         }
 
