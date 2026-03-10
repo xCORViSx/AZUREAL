@@ -159,9 +159,14 @@ pub async fn run_app(
         if had_key_event {
             last_key_time = Instant::now();
         }
-        if had_key_event && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+        let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
+        if had_key_event && has_fast_path && app.focus == Focus::Input && app.input_area.width > 2 {
             fast_draw_input(app);
         }
+
+        // Compute ONCE per iteration. 300ms covers ~3 chars/sec typing with margin.
+        let streaming = !app.claude_receivers.is_empty();
+        let typing_recently = last_key_time.elapsed() < Duration::from_millis(300);
 
         let _t_input = _loop_start.elapsed();
 
@@ -216,7 +221,11 @@ pub async fn run_app(
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
         // Capped to prevent unbounded drain when parser batches many results.
+        // During typing+streaming: suppress needs_redraw so parsed results don't
+        // trigger draws that overwhelm Terminal.app with escape sequences.
+        // Events ARE applied to state — only the DRAW is deferred.
         {
+            let suppress_redraw = typing_recently && streaming;
             let mut parsed_count = 0;
             while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
                 match claude_proc.try_recv() {
@@ -227,7 +236,9 @@ pub async fn run_app(
                             result.output_type,
                             &result.data,
                         );
-                        needs_redraw = true;
+                        if !suppress_redraw {
+                            needs_redraw = true;
+                        }
                         parsed_count += 1;
                     }
                     None => break,
@@ -536,8 +547,7 @@ pub async fn run_app(
         // render results for 150ms after the last keystroke, draws near typing
         // only update the input box (tiny diff). Session pane catches up when
         // the user pauses. Render thread keeps working — only the APPLY is deferred.
-        let typing_recently = last_key_time.elapsed() < Duration::from_millis(150);
-        let defer_render_poll = typing_recently && !app.claude_receivers.is_empty();
+        let defer_render_poll = typing_recently && streaming;
         if !defer_render_poll {
             if poll_render_result(app) {
                 needs_redraw = true;
@@ -551,15 +561,24 @@ pub async fn run_app(
             app.draw_pending = true;
         }
 
-        // Full draw: terminal.draw() costs ~18ms. Only run on quiet iterations
-        // (no key events) to avoid blocking the event loop during typing.
+        // Full draw: terminal.draw() writes escape sequences that Terminal.app must
+        // process. During streaming, draws happen at 30fps from parsed result redraws.
+        // Terminal.app delays keyboard forwarding while processing escape sequences,
+        // causing ~10% keystroke timing distortion. Two mitigations:
+        //
+        // 1. DEFER during typing: extend to full 300ms window (not just key frame).
+        //    fast_draw_input handles visual feedback. Zero draws during active typing.
+        //
+        // 2. THROTTLE during idle streaming: reduce from 30fps to 5fps when Claude
+        //    is streaming and the user isn't interacting.
         let now = Instant::now();
-        let draw_ready = now.duration_since(last_draw) >= min_draw_interval;
-        // Defer draw when typing single-line in Claude prompt (fast-path handles it).
-        // Multi-line input needs immediate full draw to resize the input box.
-        // Terminal mode needs immediate draws — PTY output has no fast-path.
-        let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
-        let defer_for_typing = had_key_event && has_fast_path;
+        let draw_interval = if streaming && !had_key_event {
+            Duration::from_millis(200) // 5fps idle during streaming
+        } else {
+            min_draw_interval // 30fps with user interaction
+        };
+        let draw_ready = now.duration_since(last_draw) >= draw_interval;
+        let defer_for_typing = typing_recently && has_fast_path;
         let should_draw = app.draw_pending && draw_ready && !defer_for_typing;
 
         let mut drew = false;
@@ -599,8 +618,6 @@ pub async fn run_app(
         }
 
         // Profile: log slow iterations (>5ms) to find the blocking phase
-        let streaming = !app.claude_receivers.is_empty();
-        let typing_recently = last_key_time.elapsed() < Duration::from_millis(150);
         let _t_total = _loop_start.elapsed();
         if _t_total.as_millis() > 5 {
             if let Some(ref mut f) = profile_log {

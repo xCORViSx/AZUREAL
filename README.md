@@ -63,7 +63,7 @@
 ### Performance
 
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
-- **Fast Input** — Prompt keystrokes render via fast-path (~0.1ms) during streaming; full redraws deferred
+- **Fast Input** — Prompt keystrokes render via fast-path (~0.1ms); all full redraws suppressed during active typing (300ms window) with adaptive 5fps throttle during idle streaming
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — No database; two small TOML config files and runtime git/Claude discovery
 
