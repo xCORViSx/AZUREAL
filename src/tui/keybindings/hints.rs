@@ -53,9 +53,12 @@ pub fn prompt_command_title() -> (String, String, String) {
     let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
     let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⇧R".into());
     let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
+    let wt_add = find_key_for_action(&GLOBAL, Action::AddWorktree).unwrap_or("w".into());
+    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or("⌘a".into());
+    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or("⌘d".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:run | {}:cancel | {}:quit",
-        p, t, g, h, dump, help, tab, stab, wt_prev, wt_next, run, cancel, quit
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:run | {}:cancel | {}:quit",
+        p, t, g, h, dump, help, tab, stab, wt_prev, wt_next, wt_add, wt_archive, wt_delete, run, cancel, quit
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);

@@ -1727,7 +1727,7 @@ azureal
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
 **Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | Tab/⇧Tab:focus | [/]:worktree | w:add wt | ⌘a:archive | ⌘d:del wt | R:run | ⌃c:cancel | ⌃q:quit)`
+**Command mode title shows:** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | ⌃d:dump | ?:help | Tab/⇧Tab:focus | [/]:worktree | w:add wt | ⌘a:archive wt | ⌘d:del wt | R:run | ⌃c:cancel | ⌃q:quit)`
 
 ### Terminal Mode
 
