@@ -77,7 +77,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     if !app.prompt_mode {
         match key.code {
             KeyCode::Char('p') => app.prompt_mode = true,
-            KeyCode::Esc => app.focus = Focus::Worktrees,
+            KeyCode::Esc => app.focus = Focus::FileTree,
             _ => {}
         }
         return Ok(());

@@ -11,7 +11,6 @@ use super::bindings::*;
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "Worktree Tabs", bindings: &WORKTREES },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
@@ -216,39 +215,33 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn help_sections_returns_five_sections() {
+    fn help_sections_returns_four_sections() {
         let sections = help_sections();
-        assert_eq!(sections.len(), 5);
+        assert_eq!(sections.len(), 4);
     }
 
     #[test]
-    fn help_sections_first_is_worktree_tabs() {
+    fn help_sections_first_is_filetree() {
         let sections = help_sections();
-        assert_eq!(sections[0].title, "Worktree Tabs");
+        assert_eq!(sections[0].title, "Filetree");
     }
 
     #[test]
-    fn help_sections_second_is_filetree() {
+    fn help_sections_second_is_viewer() {
         let sections = help_sections();
-        assert_eq!(sections[1].title, "Filetree");
+        assert_eq!(sections[1].title, "Viewer");
     }
 
     #[test]
-    fn help_sections_third_is_viewer() {
+    fn help_sections_third_is_edit_mode() {
         let sections = help_sections();
-        assert_eq!(sections[2].title, "Viewer");
+        assert_eq!(sections[2].title, "Edit Mode");
     }
 
     #[test]
-    fn help_sections_fourth_is_edit_mode() {
+    fn help_sections_fourth_is_session() {
         let sections = help_sections();
-        assert_eq!(sections[3].title, "Edit Mode");
-    }
-
-    #[test]
-    fn help_sections_fifth_is_session() {
-        let sections = help_sections();
-        assert_eq!(sections[4].title, "Session");
+        assert_eq!(sections[3].title, "Session");
     }
 
     #[test]
@@ -259,33 +252,27 @@ mod tests {
     }
 
     #[test]
-    fn help_sections_worktree_binding_count() {
-        let sections = help_sections();
-        assert_eq!(sections[0].bindings.len(), WORKTREES.len());
-    }
-
-    #[test]
     fn help_sections_filetree_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[1].bindings.len(), FILE_TREE.len());
+        assert_eq!(sections[0].bindings.len(), FILE_TREE.len());
     }
 
     #[test]
     fn help_sections_viewer_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[2].bindings.len(), VIEWER.len());
+        assert_eq!(sections[1].bindings.len(), VIEWER.len());
     }
 
     #[test]
     fn help_sections_edit_mode_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[3].bindings.len(), EDIT_MODE.len());
+        assert_eq!(sections[2].bindings.len(), EDIT_MODE.len());
     }
 
     #[test]
     fn help_sections_session_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[4].bindings.len(), SESSION.len());
+        assert_eq!(sections[3].bindings.len(), SESSION.len());
     }
 
     // ══════════════════════════════════════════════════════════════════

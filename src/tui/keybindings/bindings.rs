@@ -43,7 +43,7 @@ const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
 );
 
 /// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 18] = [
+pub static GLOBAL: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
@@ -62,18 +62,16 @@ pub static GLOBAL: [Keybinding; 18] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::WorktreeTabPrev),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::plain(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
-];
-
-/// Worktree tab row bindings — actions available when tab row is focused
-pub static WORKTREES: [Keybinding; 3] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Add worktree", Action::AddWorktree),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Toggle archive", Action::ToggleArchiveWorktree),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Add worktree", Action::AddWorktree),
+    Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Archive worktree", Action::ToggleArchiveWorktree),
     Keybinding::new(KeyCombo::cmd(KeyCode::Char('d')), "Delete worktree", Action::DeleteWorktree),
 ];
 
+/// Worktree tab row bindings — kept empty; worktree actions are now global
+pub static WORKTREES: [Keybinding; 0] = [];
+
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 16] = [
-    Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Back to worktrees", Action::ReturnToWorktrees),
+pub static FILE_TREE: [Keybinding; 15] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft).paired(),
@@ -88,7 +86,7 @@ pub static FILE_TREE: [Keybinding; 16] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('c')), "Copy", Action::CopyFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('m')), "Move", Action::MoveFile),
     Keybinding::new(KeyCombo::shift(KeyCode::Char('O')), "Options", Action::FileTreeOptions),
-    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back to Worktrees", Action::Escape),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Back", Action::Escape),
 ];
 
 /// Viewer bindings (read-only mode)
@@ -294,13 +292,13 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn global_length() { assert_eq!(GLOBAL.len(), 18); }
+    fn global_length() { assert_eq!(GLOBAL.len(), 21); }
 
     #[test]
-    fn worktrees_length() { assert_eq!(WORKTREES.len(), 3); }
+    fn worktrees_length() { assert_eq!(WORKTREES.len(), 0); }
 
     #[test]
-    fn file_tree_length() { assert_eq!(FILE_TREE.len(), 16); }
+    fn file_tree_length() { assert_eq!(FILE_TREE.len(), 15); }
 
     #[test]
     fn viewer_length() { assert_eq!(VIEWER.len(), 14); }
@@ -346,7 +344,7 @@ mod tests {
     fn global_nonempty() { assert!(!GLOBAL.is_empty()); }
 
     #[test]
-    fn worktrees_nonempty() { assert!(!WORKTREES.is_empty()); }
+    fn worktrees_is_empty() { assert!(WORKTREES.is_empty()); }
 
     #[test]
     fn file_tree_nonempty() { assert!(!FILE_TREE.is_empty()); }
@@ -570,8 +568,8 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn filetree_has_return_to_worktrees() {
-        assert!(FILE_TREE.iter().any(|b| b.action == Action::ReturnToWorktrees));
+    fn filetree_no_return_to_worktrees() {
+        assert!(!FILE_TREE.iter().any(|b| b.action == Action::ReturnToWorktrees));
     }
 
     #[test]
@@ -1166,7 +1164,10 @@ mod tests {
         ];
         for arr in arrays {
             let combos = all_combos(arr);
-            assert!(!combos.is_empty());
+            // WORKTREES is now empty — skip the non-empty assertion for empty arrays
+            if !arr.is_empty() {
+                assert!(!combos.is_empty());
+            }
         }
     }
 }

@@ -9,14 +9,13 @@ use super::{App, DeferredAction};
 
 impl App {
     pub fn focus_next(&mut self) {
-        // FileTree is always visible — full cycle includes it
+        // Cycle: FileTree → Viewer → Session → Input → FileTree
         self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => Focus::FileTree,
-            Focus::FileTree => Focus::Viewer,
+            Focus::FileTree | Focus::Worktrees => Focus::Viewer,
             Focus::Viewer => Focus::Session,
             Focus::Session => Focus::Input,
-            Focus::Input => Focus::Worktrees,
+            Focus::Input => Focus::FileTree,
             Focus::BranchDialog => self.focus,
         };
     }
@@ -24,11 +23,10 @@ impl App {
     pub fn focus_prev(&mut self) {
         self.show_session_list = false;
         self.focus = match self.focus {
-            Focus::Worktrees => Focus::Input,
             Focus::Input => Focus::Session,
             Focus::Session => Focus::Viewer,
             Focus::Viewer => Focus::FileTree,
-            Focus::FileTree => Focus::Worktrees,
+            Focus::FileTree | Focus::Worktrees => Focus::Input,
             Focus::BranchDialog => self.focus,
         };
     }
@@ -45,7 +43,7 @@ impl App {
 
     pub fn close_branch_dialog(&mut self) {
         self.branch_dialog = None;
-        self.focus = Focus::Worktrees;
+        self.focus = Focus::FileTree;
     }
 
     /// Open the Git Actions panel for the currently selected worktree.
@@ -317,7 +315,7 @@ impl App {
     pub fn exit_main_browse(&mut self) {
         self.browsing_main = false;
         self.selected_worktree = self.pre_main_browse_selection.take();
-        self.focus = Focus::Worktrees;
+        self.focus = Focus::FileTree;
         self.load_session_output();
         self.invalidate_sidebar();
     }
@@ -521,10 +519,10 @@ impl App {
         self.projects_panel = Some(ProjectsPanel::new(entries));
     }
 
-    /// Close the Projects panel and return focus to Worktrees
+    /// Close the Projects panel and return focus
     pub fn close_projects_panel(&mut self) {
         self.projects_panel = None;
-        self.focus = Focus::Worktrees;
+        self.focus = Focus::FileTree;
     }
 
     pub fn is_projects_panel_active(&self) -> bool { self.projects_panel.is_some() }
@@ -623,7 +621,7 @@ impl App {
 
         // Close the panel and return focus
         self.projects_panel = None;
-        self.focus = Focus::Worktrees;
+        self.focus = Focus::FileTree;
     }
 
     /// Set the OS terminal window title to reflect the current state.
@@ -697,11 +695,11 @@ mod tests {
     // ── focus_next ──
 
     #[test]
-    fn focus_next_worktrees_to_filetree() {
+    fn focus_next_worktrees_to_viewer() {
         let mut app = App::new();
         app.focus = Focus::Worktrees;
         app.focus_next();
-        assert_eq!(app.focus, Focus::FileTree);
+        assert_eq!(app.focus, Focus::Viewer);
     }
 
     #[test]
@@ -729,18 +727,18 @@ mod tests {
     }
 
     #[test]
-    fn focus_next_input_to_worktrees() {
+    fn focus_next_input_to_filetree() {
         let mut app = App::new();
         app.focus = Focus::Input;
         app.focus_next();
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     #[test]
     fn focus_next_full_cycle() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
-        let expected = [Focus::FileTree, Focus::Viewer, Focus::Session, Focus::Input, Focus::Worktrees];
+        app.focus = Focus::FileTree;
+        let expected = [Focus::Viewer, Focus::Session, Focus::Input, Focus::FileTree];
         for &exp in &expected {
             app.focus_next();
             assert_eq!(app.focus, exp);
@@ -799,18 +797,18 @@ mod tests {
     }
 
     #[test]
-    fn focus_prev_filetree_to_worktrees() {
+    fn focus_prev_filetree_to_input() {
         let mut app = App::new();
         app.focus = Focus::FileTree;
         app.focus_prev();
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::Input);
     }
 
     #[test]
     fn focus_prev_full_cycle() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
-        let expected = [Focus::Input, Focus::Session, Focus::Viewer, Focus::FileTree, Focus::Worktrees];
+        app.focus = Focus::FileTree;
+        let expected = [Focus::Input, Focus::Session, Focus::Viewer, Focus::FileTree];
         for &exp in &expected {
             app.focus_prev();
             assert_eq!(app.focus, exp);
@@ -839,10 +837,10 @@ mod tests {
     #[test]
     fn focus_next_prev_roundtrip() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         app.focus_next();
         app.focus_prev();
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     #[test]
@@ -919,7 +917,7 @@ mod tests {
         app.focus = Focus::BranchDialog;
         app.close_branch_dialog();
         assert!(app.branch_dialog.is_none());
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     // ── close_projects_panel ──
@@ -931,7 +929,7 @@ mod tests {
         app.focus = Focus::Input;
         app.close_projects_panel();
         assert!(app.projects_panel.is_none());
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     // ── is_projects_panel_active ──
@@ -1157,7 +1155,7 @@ mod tests {
         app.exit_main_browse();
         assert!(!app.browsing_main);
         assert_eq!(app.selected_worktree, Some(2));
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     // ── git_action_in_progress (from ui.rs context) ──

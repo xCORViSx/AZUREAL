@@ -8,7 +8,7 @@ use crate::app::{App, Focus};
 /// Escape dispatch — context-dependent close/back
 pub(super) fn dispatch_escape(app: &mut App) {
     match app.focus {
-        // Worktree tab row: exit BrowseMain if active, otherwise move focus to FileTree
+        // Worktree tab row (legacy): treat same as FileTree
         Focus::Worktrees if app.browsing_main => { app.exit_main_browse(); }
         Focus::Worktrees => { app.focus = Focus::FileTree; }
         Focus::Viewer if app.viewer_edit_mode => {
@@ -81,18 +81,18 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 app.god_file_filter_mode = false;
                 app.god_file_filter_dirs.clear();
                 app.invalidate_file_tree();
-                app.focus = crate::app::Focus::Worktrees;
+                app.focus = crate::app::Focus::FileTree;
                 app.loading_indicator = Some("Rescanning health scope…".into());
                 app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });
             } else {
-                // FileTree is always visible; Esc just moves focus to Worktrees
-                app.focus = Focus::Worktrees;
+                // FileTree is always visible; Esc moves focus to Session
+                app.focus = Focus::Session;
                 app.invalidate_sidebar();
             }
         }
         Focus::Session => {
             if app.show_session_list { app.show_session_list = false; }
-            else { app.focus = Focus::Worktrees; }
+            else { app.focus = Focus::FileTree; }
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.close_terminal();
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_worktrees_browsing_main_exits_main_browse() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         app.browsing_main = true;
         app.pre_main_browse_selection = Some(2);
         dispatch_escape(&mut app);
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn test_worktrees_browsing_main_restores_selection() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         app.browsing_main = true;
         app.pre_main_browse_selection = Some(3);
         dispatch_escape(&mut app);
@@ -132,23 +132,23 @@ mod tests {
     }
 
     #[test]
-    fn test_worktrees_browsing_main_sets_focus_worktrees() {
+    fn test_worktrees_browsing_main_sets_focus_file_tree() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         app.browsing_main = true;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
-    // ── 2. Worktrees focus — not browsing_main moves to FileTree ──
+    // ── 2. FileTree focus — not browsing_main moves to Session ──
 
     #[test]
-    fn test_worktrees_not_browsing_moves_to_file_tree() {
+    fn test_file_tree_not_browsing_moves_to_session() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         app.browsing_main = false;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::FileTree);
+        assert_eq!(app.focus, Focus::Session);
     }
 
     // ── 3. Viewer edit mode — dirty shows discard dialog ──
@@ -337,16 +337,16 @@ mod tests {
         assert_eq!(app.selected_worktree, Some(5));
     }
 
-    // ── 9. FileTree — not browsing, not god_file_filter → Worktrees ──
+    // ── 9. FileTree — not browsing, not god_file_filter → Session ──
 
     #[test]
-    fn test_file_tree_normal_moves_to_worktrees() {
+    fn test_file_tree_normal_moves_to_session() {
         let mut app = App::new();
         app.focus = Focus::FileTree;
         app.browsing_main = false;
         app.god_file_filter_mode = false;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::Session);
     }
 
     // ── 10. FileTree — god_file_filter_mode sets deferred action and exits filter ──
@@ -373,13 +373,13 @@ mod tests {
     }
 
     #[test]
-    fn test_file_tree_god_filter_sets_focus_worktrees() {
+    fn test_file_tree_god_filter_sets_focus_file_tree() {
         let mut app = App::new();
         app.focus = Focus::FileTree;
         app.god_file_filter_mode = true;
         app.browsing_main = false;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     #[test]
@@ -416,12 +416,12 @@ mod tests {
     }
 
     #[test]
-    fn test_session_without_list_moves_to_worktrees() {
+    fn test_session_without_list_moves_to_file_tree() {
         let mut app = App::new();
         app.focus = Focus::Session;
         app.show_session_list = false;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     // ── 12. Input — terminal mode (not prompt) closes terminal ──
@@ -557,25 +557,26 @@ mod tests {
     // ── 22. Multiple escapes cascade correctly ──
 
     #[test]
-    fn test_double_escape_from_viewer_to_worktrees() {
+    fn test_double_escape_from_viewer_to_session() {
         let mut app = App::new();
         app.focus = Focus::Viewer;
         dispatch_escape(&mut app);
         assert_eq!(app.focus, Focus::FileTree);
-        // Second escape from FileTree → Worktrees
+        // Second escape from FileTree → Session
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::Session);
     }
 
     #[test]
-    fn test_triple_escape_from_viewer_to_file_tree_to_worktrees() {
+    fn test_triple_escape_from_viewer_to_file_tree_to_session() {
         let mut app = App::new();
         app.focus = Focus::Viewer;
         dispatch_escape(&mut app);
         assert_eq!(app.focus, Focus::FileTree);
+        // Second escape from FileTree → Session
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
-        // Third escape from Worktrees → FileTree
+        assert_eq!(app.focus, Focus::Session);
+        // Third escape from Session (no list) → FileTree
         dispatch_escape(&mut app);
         assert_eq!(app.focus, Focus::FileTree);
     }
@@ -591,15 +592,15 @@ mod tests {
         assert!(app.viewer_lines_dirty);
     }
 
-    // ── 24. Session escape without list goes to worktrees ──
+    // ── 24. Session escape without list goes to FileTree ──
 
     #[test]
-    fn test_session_no_list_escape_to_worktrees() {
+    fn test_session_no_list_escape_to_file_tree() {
         let mut app = App::new();
         app.focus = Focus::Session;
         app.show_session_list = false;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     // ── 25. FileTree normal: browsing_main precedence ──
@@ -617,14 +618,14 @@ mod tests {
         assert!(app.god_file_filter_mode);
     }
 
-    // ── 26. Worktrees escape without browsing_main, focus becomes FileTree ──
+    // ── 26. FileTree escape without browsing_main, focus becomes Session ──
 
     #[test]
-    fn test_worktrees_escape_focus_is_file_tree() {
+    fn test_file_tree_escape_focus_is_session() {
         let mut app = App::new();
-        app.focus = Focus::Worktrees;
+        app.focus = Focus::FileTree;
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::FileTree);
+        assert_eq!(app.focus, Focus::Session);
     }
 
     // ── 27. Viewer diff overlay: prev_state None path ──
@@ -691,7 +692,7 @@ mod tests {
         app.god_file_filter_mode = false;
         app.viewer_content = Some("untouched".to_string());
         dispatch_escape(&mut app);
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::Session);
         // viewer_content is unchanged by FileTree escape
         assert_eq!(app.viewer_content.as_deref(), Some("untouched"));
     }

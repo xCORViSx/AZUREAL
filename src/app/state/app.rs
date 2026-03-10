@@ -516,7 +516,7 @@ impl App {
             input_selection: None,
             delete_worktree_dialog: None,
             view_mode: ViewMode::Session,
-            focus: Focus::Worktrees,
+            focus: Focus::FileTree,
             prompt_mode: false,
             should_quit: false,
             status_message: None,
@@ -1048,9 +1048,9 @@ mod tests {
     }
 
     #[test]
-    fn new_focus_worktrees() {
+    fn new_focus_filetree() {
         let app = App::new();
-        assert_eq!(app.focus, Focus::Worktrees);
+        assert_eq!(app.focus, Focus::FileTree);
     }
 
     #[test]

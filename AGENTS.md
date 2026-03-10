@@ -95,7 +95,7 @@ Normal Mode:                              Git Mode (Shift+G):
 ```
 
 **Panes:**
-- **Worktree Tab Row** (1 row, top): Horizontal tab bar showing all worktrees. `[★ main]` always first (Shift+M toggles main browse). Active tab: AZURE bg + white fg + bold; archived tabs: dim gray with `◇` prefix; inactive tabs: gray with status symbol prefix (`●`/`○`/etc.). **Focus indicator:** when `Focus::Worktrees`, separators turn AZURE and inactive tab text brightens from DarkGray to Gray (matching other panes' AZURE focus cue without needing borders). Navigation: `[`/`]` globally switch tabs (wraps around at both ends), Left/Right when focused. Pagination: greedy tab packing with `N/M` page indicator. Mouse: click tab to select. Tab row rect cached as `pane_worktree_tabs`, click regions as `worktree_tab_hits`.
+- **Worktree Tab Row** (1 row, top): Horizontal tab bar showing all worktrees (not focusable). `[★ main]` always first (Shift+M toggles main browse). Active tab: AZURE bg + white fg + bold; archived tabs: dim gray with `◇` prefix; inactive tabs: gray with status symbol prefix (`●`/`○`/etc.). Navigation: `[`/`]` globally switch tabs (wraps around at both ends). Worktree actions (`w` add, `⌘a` archive, `⌘d` delete) are global. Pagination: greedy tab packing with `N/M` page indicator. Mouse: click tab to select. Tab row rect cached as `pane_worktree_tabs`, click regions as `worktree_tab_hits`.
 - **FileTree** (15%): Always-visible directory tree for the selected worktree. Uses Nerd Font icons with automatic detection. Focus cycle includes it as a separate pane.
 - **Viewer** (50%): File content viewer or diff detail (dual-purpose)
 - **Session** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces session output with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Session [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
@@ -565,13 +565,13 @@ When a modal/overlay mode modifies a pane's visual state (e.g., scope mode adds 
 // ❌ WRONG — file tree still shows scope highlights until cursor moves
 app.god_file_filter_mode = false;
 app.god_file_filter_dirs.clear();
-app.focus = Focus::Worktrees;
+app.focus = Focus::FileTree;
 
 // ✅ CORRECT — invalidate forces redraw on next frame
 app.god_file_filter_mode = false;
 app.god_file_filter_dirs.clear();
 app.invalidate_file_tree();
-app.focus = Focus::Worktrees;
+app.focus = Focus::FileTree;
 ```
 
 **Affected:** Any cached pane whose rendering depends on modal state flags. Fixed in scope mode exit (`escape.rs`).
@@ -684,7 +684,7 @@ Implementation:
 
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (includes `⌃m` for CycleModel), `WORKTREES` (3 entries: `a` AddWorktree, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `FILE_TREE`, `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (21 entries — includes `⌃m` CycleModel, `w` AddWorktree, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `WORKTREES` (0 entries — worktree bindings moved to GLOBAL), `FILE_TREE` (15 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
 - **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
@@ -933,7 +933,7 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Worktree Tab Row
 
-The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse. `[`/`]` switch tabs globally from any pane; `←/→` switch tabs when the tab row is focused. `Tab`/`Shift+Tab` cycle focus through all panes.
+The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse. `[`/`]` switch tabs globally from any pane. The tab row is not focusable — `Tab`/`Shift+Tab` cycle through FileTree → Viewer → Session → Input. Worktree actions (`w` add, `⌘a` archive, `⌘d` delete) are global keybindings.
 
 **Tab styling:** Active tab uses AZURE bg + white fg + bold; `[M]` active uses yellow bg + black fg + bold; archived tabs use dim gray with `◇` prefix; unread tabs (session finished while viewing another worktree) use AZURE fg with `◐` prefix; inactive tabs use gray with status symbol prefix. No leading space before icons — trailing space only for separator padding. Auto-rebase indicator `R` (bold, color-coded) appended after label with +1 char width. Pagination via greedy tab packing with `N/M` page indicator.
 
@@ -1663,26 +1663,18 @@ azureal
 | `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
-| `Tab`/`⇧Tab` | Cycle focus forward/backward (Worktrees → FileTree → Viewer → Session → Input) |
+| `Tab`/`⇧Tab` | Cycle focus forward/backward (FileTree → Viewer → Session → Input) |
 | `[`/`]` | Switch worktree tab (global — works from any pane, including main browse) |
 | `M` | Toggle main branch browse |
 | `P` | Projects panel |
 | `R` | Run command (picker or execute) |
+| `w` | Add worktree |
+| `⌘a` | Archive worktree (falls through to select-all in Viewer) |
+| `⌘d` | Delete worktree |
 | `?` | Help |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` | Quit |
-
-### Worktree Tab Row
-| Key | Action |
-|-----|--------|
-| `←/→` | Cycle worktree tabs (when focused) |
-| `⌥↑/⌥↓` | Jump to first/last worktree |
-| `a` | Add new worktree |
-| `b` | Browse branches |
-| `⌥r` | Add new run command |
-| `⌘a` | Archive/unarchive worktree |
-| `Esc` | Exit main browse or move focus to FileTree |
 
 ### FileTree Pane
 | Key | Action |
@@ -1698,7 +1690,7 @@ azureal
 | `c` | Copy selected file/directory (clipboard-style: navigate to target dir, Enter to paste) |
 | `m` | Move selected file/directory (clipboard-style: navigate to target dir, Enter to paste) |
 | `O` | Options overlay (toggle visibility of `.git`, `.claude`, `.azureal` dirs) |
-| `Esc` | Move focus to Worktree Tab Row |
+| `Esc` | Move focus to Session |
 
 ### Viewer Pane
 | Key | Action |
@@ -1724,7 +1716,7 @@ azureal
 | `s` | Toggle Session list overlay (browse all session files) |
 | `/` | Search text in current session (yellow highlights, `[N/M]` counter) |
 | `n/N` | Next/prev search match (after `/` search confirmed with Enter) |
-| `Esc` | Return to Worktree Tab Row |
+| `Esc` | Return to FileTree |
 
 **Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Session pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Session scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Session pane.
 

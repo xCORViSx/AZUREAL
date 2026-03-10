@@ -100,7 +100,7 @@ azureal
 | `M` | Browse main branch |
 | `f` | Toggle file tree |
 | `s` | Toggle session list |
-| `n` | New worktree |
+| `w` | New worktree |
 | `R` | Run command |
 | `G` | Git panel |
 | `H` | Health panel |

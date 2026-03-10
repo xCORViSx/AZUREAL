@@ -86,7 +86,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
         Action::ReturnToWorktrees if !app.god_file_filter_mode => {
             if app.browsing_main { app.exit_main_browse(); }
             else {
-                app.focus = Focus::Worktrees;
+                app.focus = Focus::FileTree;
                 app.invalidate_sidebar();
             }
         }

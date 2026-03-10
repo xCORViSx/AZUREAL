@@ -49,7 +49,10 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::BrowseMain | Action::OpenProjects
             | Action::RunCommand | Action::AddRunCommand
             | Action::WorktreeTabPrev | Action::WorktreeTabNext
+            | Action::AddWorktree
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode => true,
+            // ⌘A archive must not fire in Viewer — Viewer owns ⌘A for select-all
+            Action::ToggleArchiveWorktree if ctx.focus == Focus::Viewer => true,
             // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
@@ -382,9 +385,10 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn worktrees_a_adds_worktree() {
+    fn worktrees_a_returns_none() {
+        // WORKTREES is now empty and 'a' is not a GLOBAL binding — returns None
         let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')), Some(Action::AddWorktree));
+        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')), None);
     }
 
     #[test]
@@ -404,9 +408,10 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn filetree_w_returns_to_worktrees() {
+    fn filetree_w_adds_worktree() {
+        // 'w' is now a GLOBAL binding (AddWorktree) — fires in FileTree context
         let ctx = cmd_ctx(Focus::FileTree);
-        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')), Some(Action::ReturnToWorktrees));
+        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')), Some(Action::AddWorktree));
     }
 
     #[test]
@@ -620,10 +625,10 @@ mod tests {
     }
 
     #[test]
-    fn wrong_focus_key_returns_none() {
-        // FileTree keys don't fire in Session focus
+    fn session_w_fires_global_add_worktree() {
+        // 'w' is now a GLOBAL binding (AddWorktree) — fires in all non-input contexts
         let ctx = cmd_ctx(Focus::Session);
-        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')), None);
+        assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')), Some(Action::AddWorktree));
     }
 
     // ══════════════════════════════════════════════════════════════════
