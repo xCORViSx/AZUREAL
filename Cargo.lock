@@ -4409,7 +4409,6 @@ dependencies = [
 [[package]]
 name = "whisper-rs"
 version = "0.15.1"
-source = "git+https://codeberg.org/tazz4843/whisper-rs.git?branch=master#d38738df8dc54b12d2918494586ba0817c3cb12f"
 dependencies = [
  "whisper-rs-sys",
 ]
@@ -4417,7 +4416,6 @@ dependencies = [
 [[package]]
 name = "whisper-rs-sys"
 version = "0.14.1"
-source = "git+https://codeberg.org/tazz4843/whisper-rs.git?branch=master#d38738df8dc54b12d2918494586ba0817c3cb12f"
 dependencies = [
  "bindgen",
  "cfg-if",

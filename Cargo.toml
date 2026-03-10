@@ -82,6 +82,7 @@ arboard = "3"
 notify-rust = "4.12"
 
 # Speech-to-text
+whisper-rs = "0.15"
 cpal = "0.17"
 
 # Platform-specific
@@ -92,19 +93,15 @@ crossterm = { version = "0.29", features = ["use-dev-tty"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15", features = ["metal"] }
 
-[target.'cfg(all(not(target_os = "macos"), not(windows)))'.dependencies]
-whisper-rs = "0.15"
-
 [target.'cfg(windows)'.dependencies]
-whisper-rs = "0.15"
 windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 
-# Patch whisper-rs with Codeberg master — the crates.io v0.15.1 has a
-# whisper_full_params struct size mismatch on Windows/MSVC (repo archived
-# on GitHub, development continued on Codeberg with updated bindings.rs)
+# Vendor patch: upstream whisper-rs-sys generates bindgen layout_tests that
+# fail on MSVC (whisper_full_params struct size mismatch). Our vendored fork
+# adds .layout_tests(false) to the bindgen builder to suppress these assertions.
 [patch.crates-io]
-whisper-rs = { git = "https://codeberg.org/tazz4843/whisper-rs.git", branch = "master" }
-whisper-rs-sys = { git = "https://codeberg.org/tazz4843/whisper-rs.git", branch = "master" }
+whisper-rs = { path = "vendor/whisper-rs" }
+whisper-rs-sys = { path = "vendor/whisper-rs/sys" }
 
 ## Dev builds: optimize hot-path dependencies so debug builds don't crawl.
 ## serde_json does JSON parsing on every streaming event (~62/sec),

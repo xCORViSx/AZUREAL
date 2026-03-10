@@ -181,14 +181,15 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (7 submodules: a
 
 Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
-**Build requirements:**
+**Build requirements:** LLVM/Clang + CMake (for whisper-rs-sys). macOS: Xcode CLT. Linux: `libclang-dev cmake`. Windows: `winget install LLVM.LLVM Kitware.CMake` + set `LIBCLANG_PATH`.
 
-- **LLVM/Clang** — Required by `whisper-rs-sys` (bindgen). macOS: included with Xcode CLT. Linux: `libclang-dev`. Windows: `winget install LLVM.LLVM` + set `LIBCLANG_PATH=C:\Program Files\LLVM\bin`.
-- **CMake** — Required by `whisper-rs-sys` (builds whisper.cpp). macOS: included with Xcode CLT. Linux: `cmake`. Windows: `winget install Kitware.CMake`.
+**Vendored dependencies** (`vendor/`):
+
+- `whisper-rs` — Vendored from Codeberg (`vendor/whisper-rs/`). Upstream `whisper-rs-sys` generates bindgen `layout_tests` that fail on MSVC (`whisper_full_params` struct size mismatch). Our fork adds `.layout_tests(false)` to `sys/build.rs`. Patched via `[patch.crates-io]` in `Cargo.toml`.
 
 **Platform-conditional dependencies** (`Cargo.toml`):
 
-- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only on Windows/Linux. Patched via `[patch.crates-io]` to Codeberg master (`d38738df`) because crates.io v0.15.1 has a `whisper_full_params` struct size mismatch on Windows/MSVC (GitHub repo archived, development moved to Codeberg)
+- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only elsewhere. macOS variant adds `features = ["metal"]`
 - `crossterm` — `use-dev-tty` feature enabled on Unix only (reads `/dev/tty`); Windows uses Console API natively
 - `libc` — Unix only, for `getrusage()` CPU time sampling
 - `windows-sys` — Windows only, for `GetProcessTimes()` CPU time sampling

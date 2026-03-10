@@ -872,12 +872,10 @@ impl App {
     /// Called every event loop iteration when stt_handle exists.
     /// Collects events first to avoid borrow conflict (try_recv borrows handle, processing borrows &mut self).
     pub fn poll_stt(&mut self) -> bool {
-        // Drain all pending events into a local vec, then drop the handle borrow
         let events: Vec<_> = self.stt_handle.as_ref()
             .map(|h| std::iter::from_fn(|| h.try_recv()).collect())
             .unwrap_or_default();
         if events.is_empty() { return false; }
-        // Now we can freely mutate self while processing each event
         for event in events {
             match event {
                 crate::stt::SttEvent::RecordingStarted => {
