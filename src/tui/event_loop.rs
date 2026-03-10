@@ -193,14 +193,24 @@ pub async fn run_app(
         // Poll parsed results from the background ClaudeProcessor. Each result
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
-        while let Some(result) = claude_proc.try_recv() {
-            app.apply_parsed_output(
-                result.events,
-                result.parsed_json,
-                result.output_type,
-                &result.data,
-            );
-            needs_redraw = true;
+        // Capped to prevent unbounded drain when parser batches many results.
+        {
+            let mut parsed_count = 0;
+            while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
+                match claude_proc.try_recv() {
+                    Some(result) => {
+                        app.apply_parsed_output(
+                            result.events,
+                            result.parsed_json,
+                            result.output_type,
+                            &result.data,
+                        );
+                        needs_redraw = true;
+                        parsed_count += 1;
+                    }
+                    None => break,
+                }
+            }
         }
 
         // Poll commit message generation — background thread sends the Claude-generated
@@ -411,8 +421,12 @@ pub async fn run_app(
         }
 
         // Debounced health panel refresh: rescan god files + doc coverage
-        // when source files change while the panel is open
+        // when source files change while the panel is open.
+        // Skipped during active Claude streaming — the synchronous filesystem
+        // walk (10-200ms) would block the event loop and cause input hiccups.
+        // Panel refreshes once streaming finishes.
         if app.health_refresh_pending
+            && app.claude_receivers.is_empty()
             && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
         {
             app.refresh_health_panel();
