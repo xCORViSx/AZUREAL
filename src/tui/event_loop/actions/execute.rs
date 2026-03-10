@@ -169,38 +169,7 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
                 app.set_status("No project loaded — open a project first");
             }
         }
-        Action::NewSession => {
-            // Start a fresh Claude session in the current worktree (don't resume)
-            if let Some(wt) = app.current_worktree().cloned() {
-                if wt.archived {
-                    app.set_status("Worktree is archived — unarchive first (⌘a)");
-                } else if wt.worktree_path.is_some() {
-                    let branch = wt.branch_name.clone();
-                    // Clear session ID so next prompt starts fresh (no --resume)
-                    app.claude_session_ids.remove(&branch);
-                    // Clear display to show fresh conversation
-                    app.display_events.clear();
-                    app.session_lines.clear();
-                    app.session_buffer.clear();
-                    app.session_scroll = usize::MAX;
-                    app.session_file_parse_offset = 0;
-                    app.rendered_events_count = 0;
-                    app.rendered_content_line_count = 0;
-                    app.rendered_events_start = 0;
-                    app.event_parser = crate::events::EventParser::new();
-                    app.selected_event = None;
-                    app.current_todos.clear();
-                    app.subagent_todos.clear();
-                    app.session_tokens = None;
-                    app.token_badge_cache = None;
-                    app.invalidate_render_cache();
-                    // Enter prompt mode for the new session
-                    app.focus = Focus::Input;
-                    app.prompt_mode = true;
-                    app.set_status("Add session — type your prompt and press Enter");
-                }
-            }
-        }
+        Action::NewSession => { app.start_new_session(); }
         Action::RunCommand => { app.open_run_command_picker(); }
         Action::AddRunCommand => { app.open_run_command_dialog(); }
         Action::ToggleArchiveWorktree => {

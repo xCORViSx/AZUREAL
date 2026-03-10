@@ -1,5 +1,6 @@
 //! Session navigation and CRUD operations
 
+use crate::app::types::Focus;
 use crate::git::Git;
 use crate::models::Worktree;
 
@@ -176,6 +177,36 @@ impl App {
             self.selected_worktree = Some(0);
             self.load_session_output();
             self.invalidate_sidebar();
+        }
+    }
+
+    /// Start a fresh Claude session on the current worktree (clears state, enters prompt mode)
+    pub fn start_new_session(&mut self) {
+        if let Some(wt) = self.current_worktree().cloned() {
+            if wt.archived {
+                self.set_status("Worktree is archived — unarchive first (⌘a)");
+            } else if wt.worktree_path.is_some() {
+                let branch = wt.branch_name.clone();
+                self.claude_session_ids.remove(&branch);
+                self.display_events.clear();
+                self.session_lines.clear();
+                self.session_buffer.clear();
+                self.session_scroll = usize::MAX;
+                self.session_file_parse_offset = 0;
+                self.rendered_events_count = 0;
+                self.rendered_content_line_count = 0;
+                self.rendered_events_start = 0;
+                self.event_parser = crate::events::EventParser::new();
+                self.selected_event = None;
+                self.current_todos.clear();
+                self.subagent_todos.clear();
+                self.session_tokens = None;
+                self.token_badge_cache = None;
+                self.invalidate_render_cache();
+                self.focus = Focus::Input;
+                self.prompt_mode = true;
+                self.set_status("Add session — type your prompt and press Enter");
+            }
         }
     }
 
@@ -769,5 +800,38 @@ mod tests {
         assert_eq!(app.selected_worktree, Some(4));
         app.select_last_session();
         assert_eq!(app.selected_worktree, Some(4)); // no change
+    }
+
+    // ── start_new_session ──
+
+    #[test]
+    fn test_start_new_session_enters_prompt_mode() {
+        let mut app = app_with_worktrees(1);
+        app.start_new_session();
+        assert!(app.prompt_mode);
+        assert_eq!(app.focus, Focus::Input);
+        assert_eq!(app.session_scroll, usize::MAX);
+    }
+
+    #[test]
+    fn test_start_new_session_archived_blocked() {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: "azureal/archived".to_string(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: true,
+        });
+        app.selected_worktree = Some(0);
+        app.start_new_session();
+        assert!(app.status_message.as_ref().unwrap().contains("archived"));
+        assert!(!app.prompt_mode);
+    }
+
+    #[test]
+    fn test_start_new_session_no_worktree() {
+        let mut app = App::new();
+        app.start_new_session();
+        assert!(!app.prompt_mode);
     }
 }

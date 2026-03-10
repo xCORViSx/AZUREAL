@@ -210,6 +210,15 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         (KeyModifiers::NONE, KeyCode::Enter) => {
             select_session_at_row(app);
         }
+        // a: add new session (same as 'a' from session view)
+        (KeyModifiers::NONE, KeyCode::Char('a')) => {
+            app.show_session_list = false;
+            app.session_filter.clear();
+            app.session_filter_active = false;
+            app.session_content_search = false;
+            app.session_search_results.clear();
+            app.start_new_session();
+        }
         // s or Esc: close overlay
         (KeyModifiers::NONE, KeyCode::Char('s')) | (_, KeyCode::Esc) => {
             app.show_session_list = false;
@@ -859,6 +868,16 @@ mod tests {
         let mut app = App::new();
         app.show_session_list = true;
         let k = key(KeyCode::Esc);
+        let result = handle_session_input(k, &mut app);
+        assert!(result.is_ok());
+        assert!(!app.show_session_list);
+    }
+
+    #[test]
+    fn session_list_a_closes_list_and_starts_new_session() {
+        let mut app = App::new();
+        app.show_session_list = true;
+        let k = key(KeyCode::Char('a'));
         let result = handle_session_input(k, &mut app);
         assert!(result.is_ok());
         assert!(!app.show_session_list);

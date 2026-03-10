@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Add session from session list overlay** — Pressing `a` in the session list now starts a new session (closes the list, clears state, enters prompt mode), matching the `a` keybinding from the normal session view. Extracted `start_new_session()` method on `App` to share logic between both paths.
 - **Bracket navigation from main browse to worktrees** — `[` and `]` now work while browsing main (Shift+M): `]` exits main browse and lands on the first worktree, `[` exits and lands on the last worktree.
 - **Dedicated input reader thread** — Background thread continuously reads crossterm events from stdin and buffers them in an mpsc channel. Main loop drains from the channel instead of calling `event::poll`/`event::read` directly. Ensures keystrokes are captured immediately even during `terminal.draw()` (~18ms) — without this, keys arriving during a draw sit in the kernel tty buffer and some terminal emulators drop them under heavy output load.
 - **Background Claude event parsing** — Claude streaming JSON events (`serde_json::from_str`, 1-5ms each × up to 10/tick = 10-50ms blocking) are now parsed on a dedicated background thread (`claude-parser`). The main event loop forwards raw output to the processor and polls pre-parsed results — only cheap state updates (HashMap lookups, Vec pushes, flag sets) happen on the main thread. Eliminates the single largest source of event loop blocking during Claude streaming.
