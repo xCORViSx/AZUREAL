@@ -99,6 +99,13 @@ whisper-rs = "0.15"
 whisper-rs = "0.15"
 windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 
+# Patch whisper-rs with Codeberg master — the crates.io v0.15.1 has a
+# whisper_full_params struct size mismatch on Windows/MSVC (repo archived
+# on GitHub, development continued on Codeberg with updated bindings.rs)
+[patch.crates-io]
+whisper-rs = { git = "https://codeberg.org/tazz4843/whisper-rs.git", branch = "master" }
+whisper-rs-sys = { git = "https://codeberg.org/tazz4843/whisper-rs.git", branch = "master" }
+
 ## Dev builds: optimize hot-path dependencies so debug builds don't crawl.
 ## serde_json does JSON parsing on every streaming event (~62/sec),
 ## tree-sitter does syntax highlighting on every render — both are 3-5x slower at opt-level 0.

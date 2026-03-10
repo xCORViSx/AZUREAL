@@ -183,11 +183,12 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
 **Build requirements:**
 
-- **LLVM/Clang** — Required by `whisper-rs-sys` (bindgen). macOS: included with Xcode CLT. Linux: `libclang-dev`. Windows: install LLVM and set `LIBCLANG_PATH=C:\Program Files\LLVM\bin`.
+- **LLVM/Clang** — Required by `whisper-rs-sys` (bindgen). macOS: included with Xcode CLT. Linux: `libclang-dev`. Windows: `winget install LLVM.LLVM` + set `LIBCLANG_PATH=C:\Program Files\LLVM\bin`.
+- **CMake** — Required by `whisper-rs-sys` (builds whisper.cpp). macOS: included with Xcode CLT. Linux: `cmake`. Windows: `winget install Kitware.CMake`.
 
 **Platform-conditional dependencies** (`Cargo.toml`):
 
-- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only on Windows/Linux
+- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only on Windows/Linux. Patched via `[patch.crates-io]` to Codeberg master (`d38738df`) because crates.io v0.15.1 has a `whisper_full_params` struct size mismatch on Windows/MSVC (GitHub repo archived, development moved to Codeberg)
 - `crossterm` — `use-dev-tty` feature enabled on Unix only (reads `/dev/tty`); Windows uses Console API natively
 - `libc` — Unix only, for `getrusage()` CPU time sampling
 - `windows-sys` — Windows only, for `GetProcessTimes()` CPU time sampling
