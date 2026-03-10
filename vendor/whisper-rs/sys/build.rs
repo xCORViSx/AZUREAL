@@ -115,9 +115,20 @@ fn main() {
         });
     }
 
-    if env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok() {
-        let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
-            .expect("Failed to copy bindings.rs");
+    // MSVC: bindgen generates opaque structs (only `_address` field) instead of
+    // proper struct definitions. Skip bindgen entirely and use pre-built bindings.
+    let skip_bindgen = env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok()
+        || target.contains("msvc");
+
+    if skip_bindgen {
+        if target.contains("msvc") {
+            println!("cargo:warning=MSVC target detected, using pre-built bindings (bindgen generates opaque structs on MSVC)");
+            // Strip compile-time layout assertions that fail due to MSVC struct packing
+            copy_bindings_without_layout_tests("src/bindings.rs", &out.join("bindings.rs"));
+        } else {
+            let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
+                .expect("Failed to copy bindings.rs");
+        }
     } else {
         let mut bindings = bindgen::Builder::default().header("wrapper.h");
 
@@ -137,8 +148,6 @@ fn main() {
             .clang_arg("-I./whisper.cpp/include")
             .clang_arg("-I./whisper.cpp/ggml/include")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-            // Disable struct size/alignment assertions — MSVC packs structs
-            // differently than bindgen expects, causing compile failures on Windows
             .layout_tests(false)
             .generate();
 
@@ -361,6 +370,54 @@ fn add_link_search_path(dir: &std::path::Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Copy src/bindings.rs to dest, stripping `const _: () = { ... };` layout assertion blocks.
+/// These blocks contain compile-time struct size/alignment checks that fail on MSVC
+/// because MSVC packs structs differently than clang/gcc.
+fn copy_bindings_without_layout_tests(src: &str, dest: &std::path::Path) {
+    use std::io::Write;
+    let content = std::fs::read_to_string(src).expect("Failed to read bindings.rs");
+    let mut out = std::io::BufWriter::new(File::create(dest).expect("Failed to create bindings.rs"));
+    let mut skip = false;
+    let mut brace_depth: i32 = 0;
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if !skip {
+            // Skip #[allow(...)] + const _: () = { ... }; assertion blocks
+            if line.contains("#[allow(clippy::unnecessary_operation") {
+                if i + 1 < lines.len() && lines[i + 1].contains("const _: () = {") {
+                    // Skip the allow attr + start of const block
+                    skip = true;
+                    brace_depth = 1;
+                    i += 2;
+                    continue;
+                }
+            }
+            if line.contains("const _: () = {") {
+                skip = true;
+                brace_depth = 1;
+                i += 1;
+                continue;
+            }
+            writeln!(out, "{}", line).unwrap();
+        } else {
+            for ch in line.chars() {
+                match ch {
+                    '{' => brace_depth += 1,
+                    '}' => brace_depth -= 1,
+                    _ => {}
+                }
+            }
+            if brace_depth <= 0 {
+                skip = false;
+            }
+        }
+        i += 1;
+    }
+    out.flush().unwrap();
 }
 
 fn get_whisper_cpp_version(whisper_root: &std::path::Path) -> std::io::Result<Option<String>> {

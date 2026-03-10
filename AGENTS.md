@@ -185,7 +185,7 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
 **Vendored dependencies** (`vendor/`):
 
-- `whisper-rs` — Vendored from Codeberg (`vendor/whisper-rs/`). Upstream `whisper-rs-sys` generates bindgen `layout_tests` that fail on MSVC (`whisper_full_params` struct size mismatch). Our fork adds `.layout_tests(false)` to `sys/build.rs`. Patched via `[patch.crates-io]` in `Cargo.toml`.
+- `whisper-rs` — Vendored from Codeberg (`vendor/whisper-rs/`). Two MSVC fixes in `sys/build.rs`: (1) `.layout_tests(false)` suppresses compile-time struct size assertions, (2) MSVC targets auto-skip bindgen entirely (bindgen generates opaque structs with only `_address` field on MSVC) and use the pre-built `src/bindings.rs` with layout assertion blocks (`const _: () = { ... };`) stripped at copy time. Patched via `[patch.crates-io]` in `Cargo.toml`.
 
 **Platform-conditional dependencies** (`Cargo.toml`):
 
