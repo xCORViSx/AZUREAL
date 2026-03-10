@@ -458,6 +458,7 @@ dependencies = [
  "uuid",
  "vt100",
  "whisper-rs",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

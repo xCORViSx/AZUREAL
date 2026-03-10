@@ -950,7 +950,7 @@ impl App {
 }
 
 /// Get cumulative user+system CPU time for this process in microseconds.
-/// Uses libc::getrusage(RUSAGE_SELF) — works on macOS and Linux.
+#[cfg(unix)]
 fn get_cpu_time_micros() -> u64 {
     unsafe {
         let mut usage: libc::rusage = std::mem::zeroed();
@@ -958,6 +958,36 @@ fn get_cpu_time_micros() -> u64 {
         let user = usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
         let sys = usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;
         user + sys
+    }
+}
+
+/// Get cumulative user+system CPU time for this process in microseconds.
+#[cfg(windows)]
+fn get_cpu_time_micros() -> u64 {
+    use std::mem::MaybeUninit;
+    unsafe {
+        let handle = windows_sys::Win32::System::Threading::GetCurrentProcess();
+        let mut creation = MaybeUninit::zeroed();
+        let mut exit = MaybeUninit::zeroed();
+        let mut kernel = MaybeUninit::zeroed();
+        let mut user = MaybeUninit::zeroed();
+        if windows_sys::Win32::System::Threading::GetProcessTimes(
+            handle,
+            creation.as_mut_ptr(),
+            exit.as_mut_ptr(),
+            kernel.as_mut_ptr(),
+            user.as_mut_ptr(),
+        ) != 0
+        {
+            let k = kernel.assume_init();
+            let u = user.assume_init();
+            // FILETIME is 100ns intervals → divide by 10 for microseconds
+            let kernel_us = (k.dwLowDateTime as u64 | (k.dwHighDateTime as u64) << 32) / 10;
+            let user_us = (u.dwLowDateTime as u64 | (u.dwHighDateTime as u64) << 32) / 10;
+            kernel_us + user_us
+        } else {
+            0
+        }
     }
 }
 

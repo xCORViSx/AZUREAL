@@ -117,6 +117,7 @@ pub async fn run_app(
         let mut scroll_col: u16 = 0;
         let mut scroll_row: u16 = 0;
         let mut had_key_event = false;
+        let mut _key_chars = String::new(); // diagnostic: chars received per drain
 
         // Drain all events from the input reader thread (non-blocking).
         // The reader thread continuously reads stdin, so events are buffered
@@ -138,9 +139,26 @@ pub async fn run_app(
         };
 
         if let Some(evt) = first_event {
+            // Diagnostic: capture key chars + kinds for profiler
+            if let Event::Key(ref k) = evt {
+                if let KeyCode::Char(c) = k.code {
+                    _key_chars.push(c);
+                    let kind_ch = match k.kind { crossterm::event::KeyEventKind::Press => 'P', crossterm::event::KeyEventKind::Repeat => 'R', _ => '?' };
+                    _key_chars.push(kind_ch);
+                    _key_chars.push(' ');
+                }
+            }
             process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             // Drain remaining queued events (non-blocking)
             while let Ok(evt) = input_rx.try_recv() {
+                if let Event::Key(ref k) = evt {
+                    if let KeyCode::Char(c) = k.code {
+                        _key_chars.push(c);
+                        let kind_ch = match k.kind { crossterm::event::KeyEventKind::Press => 'P', crossterm::event::KeyEventKind::Repeat => 'R', _ => '?' };
+                        _key_chars.push(kind_ch);
+                        _key_chars.push(' ');
+                    }
+                }
                 process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
         }
@@ -535,10 +553,11 @@ pub async fn run_app(
 
         // Poll for completed render results from the background thread (non-blocking).
         // Always apply results immediately — session content stays up-to-date.
-        // During streaming follow-bottom: use fast_draw_session (DECSTBM scroll
-        // regions, ~200 bytes per new line) instead of triggering a full
-        // terminal.draw() (~87KB cell-by-cell diff). Both session AND input
-        // update simultaneously without overwhelming the terminal's PTY buffer.
+        // During streaming follow-bottom without active typing: use fast_draw_session
+        // (direct cell writes, ~10-15KB) instead of waiting for the next full
+        // terminal.draw() (~87KB). Skip during typing — the escape sequences cause
+        // Terminal.app to delay keyboard forwarding, distorting keystroke timing.
+        // Session pane catches up on the next full draw after typing pauses (~300ms).
         let old_cache_len = app.rendered_lines_cache.len();
         if poll_render_result(app) {
             let new_cache_len = app.rendered_lines_cache.len();
@@ -546,6 +565,7 @@ pub async fn run_app(
             let follow_bottom = app.session_scroll == usize::MAX;
 
             if streaming && follow_bottom && new_line_count > 0
+                && !typing_recently
                 && app.pane_session.width > 2 && app.pane_session.height > 2
             {
                 fast_draw_session(app, new_line_count);
@@ -616,11 +636,11 @@ pub async fn run_app(
             }
         }
 
-        // Profile: log slow iterations (>5ms) to find the blocking phase
+        // Profile: log slow iterations (>5ms) OR any iteration with key events
         let _t_total = _loop_start.elapsed();
-        if _t_total.as_millis() > 5 {
+        if _t_total.as_millis() > 5 || had_key_event {
             if let Some(ref mut f) = profile_log {
-                let _ = writeln!(f,
+                let _ = write!(f,
                     "{}ms total | input:{:.1} claude:{:.1} parsed:{:.1} house:{:.1} render:{:.1} draw:{} | key:{} stream:{} typing:{}",
                     _t_total.as_millis(),
                     (_t_input.as_micros() as f64) / 1000.0,
@@ -633,6 +653,10 @@ pub async fn run_app(
                     streaming,
                     typing_recently,
                 );
+                if !_key_chars.is_empty() {
+                    let _ = write!(f, " | keys:[{}]", _key_chars.trim());
+                }
+                let _ = writeln!(f);
             }
         }
 

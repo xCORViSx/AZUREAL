@@ -9,7 +9,7 @@ license = "MIT"
 [dependencies]
 # TUI
 ratatui = "0.30"
-crossterm = { version = "0.29", features = ["use-dev-tty"] }
+crossterm = "0.29"
 ansi-to-tui = "8"
 
 # Async runtime
@@ -82,12 +82,22 @@ arboard = "3"
 notify-rust = "4.12"
 
 # Speech-to-text
-whisper-rs = { version = "0.15", features = ["metal"] }
 cpal = "0.17"
 
 # Platform-specific
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+crossterm = { version = "0.29", features = ["use-dev-tty"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }
+
+[target.'cfg(all(not(target_os = "macos"), not(windows)))'.dependencies]
+whisper-rs = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+whisper-rs = "0.15"
+windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 
 ## Dev builds: optimize hot-path dependencies so debug builds don't crawl.
 ## serde_json does JSON parsing on every streaming event (~62/sec),

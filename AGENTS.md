@@ -177,6 +177,27 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (7 submodules: a
 
 ---
 
+### Platform Support
+
+Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
+
+**Platform-conditional dependencies** (`Cargo.toml`):
+
+- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only on Windows/Linux
+- `crossterm` — `use-dev-tty` feature enabled on Unix only (reads `/dev/tty`); Windows uses Console API natively
+- `libc` — Unix only, for `getrusage()` CPU time sampling
+- `windows-sys` — Windows only, for `GetProcessTimes()` CPU time sampling
+
+**Runtime platform guards:**
+
+- Shell detection (`src/app/terminal.rs`): `COMSPEC`/`cmd.exe` on Windows, `SHELL`/`/bin/bash` on Unix
+- Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows
+- macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
+
+**Already cross-platform** (no guards needed): `portable-pty` (ConPTY on Windows), `notify` (ReadDirectoryChangesW), `arboard`, `dirs`, `notify-rust`, `ratatui`/`crossterm`, all path handling via `PathBuf`.
+
+---
+
 ## ⚠️ CRITICAL: CPU PERFORMANCE RULES ⚠️
 
 **DO NOT REGRESS THESE OPTIMIZATIONS. CPU usage must stay <5% during scrolling.**

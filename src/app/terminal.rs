@@ -60,7 +60,11 @@ impl App {
             }
         };
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
+        let shell = if cfg!(windows) {
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+        } else {
+            std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
+        };
         let mut cmd = CommandBuilder::new(&shell);
         cmd.cwd(&cwd);
 

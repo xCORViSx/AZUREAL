@@ -226,10 +226,9 @@ fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
 
     if !model_path.exists() {
         return Err(format!(
-            "Whisper model not found. Download it:\n\
-             mkdir -p ~/.azureal/speech && curl -L -o {} \
+            "Whisper model not found. Create {} and download ggml-small.en.bin into it from:\n\
              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
-            model_path.display()
+            model_dir.display()
         ));
     }
 

@@ -63,7 +63,7 @@
 ### Performance
 
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
-- **Fast Input & Session** — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using DECSTBM scroll regions (~0.1ms per new line vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing
+- **Fast Input & Session** — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using direct cursor positioning (~2-5ms for session column only vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — No database; two small TOML config files and runtime git/Claude discovery
 
@@ -73,7 +73,15 @@
 - **Claude Code CLI** — macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash` · Windows: `irm https://claude.ai/install.ps1 | iex`
 - **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons; emoji fallback when not detected
-- **Whisper model** (optional, for speech): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin`
+- **Whisper model** (optional, for speech) — Create `~/.azureal/speech/` and download [ggml-small.en.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin) into it
+
+### Platform Support
+
+| Platform | Status |
+|----------|--------|
+| macOS | Primary — Metal GPU for Whisper, `.app` bundle icon |
+| Linux | Supported — CPU Whisper, all features |
+| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CPU Whisper |
 
 ## Installation
 
