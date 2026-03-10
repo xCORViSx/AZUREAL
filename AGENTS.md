@@ -181,6 +181,10 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (7 submodules: a
 
 Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
+**Build requirements:**
+
+- **LLVM/Clang** — Required by `whisper-rs-sys` (bindgen). macOS: included with Xcode CLT. Linux: `libclang-dev`. Windows: install LLVM and set `LIBCLANG_PATH=C:\Program Files\LLVM\bin`.
+
 **Platform-conditional dependencies** (`Cargo.toml`):
 
 - `whisper-rs` — Metal GPU acceleration on macOS, CPU-only on Windows/Linux
