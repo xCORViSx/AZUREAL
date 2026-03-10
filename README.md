@@ -69,9 +69,9 @@
 
 ## Requirements
 
-- **Rust** (latest stable)
-- **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
-- **Git** with worktree support
+- **Rust** (latest stable) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- **Claude Code CLI** — macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash` · Windows: `irm https://claude.ai/install.ps1 | iex`
+- **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons; emoji fallback when not detected
 - **Whisper model** (optional, for speech): `mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin`
 
