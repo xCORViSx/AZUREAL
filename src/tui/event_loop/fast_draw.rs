@@ -1,11 +1,12 @@
-//! Fast-path input rendering
+//! Fast-path rendering bypasses
 //!
-//! Writes the input box content directly via crossterm (~0.1ms) instead of
-//! going through terminal.draw() (~18ms). Used during rapid typing so
-//! keystrokes get instant visual feedback while the full UI catches up later.
+//! Two fast paths that bypass terminal.draw() (~18ms) for instant feedback:
+//! - `fast_draw_input`: writes input box content via crossterm (~0.1ms)
+//! - `fast_draw_session`: scrolls session pane via DECSTBM scroll regions (~0.1ms per line)
 
 use std::io::{self, Write};
-use crossterm::{cursor, execute, style};
+use crossterm::{cursor, execute, queue, style};
+use ratatui::style::Modifier;
 
 use crate::app::App;
 use super::super::draw_input::{word_wrap_break_points, display_width};
@@ -86,6 +87,135 @@ pub fn fast_draw_input(app: &App) {
         ),
         cursor::Show
     );
+    let _ = stdout.flush();
+}
+
+/// Convert ratatui Color to crossterm Color.
+/// Mapping matches ratatui's internal crossterm backend (map_color).
+fn ratatui_to_crossterm(c: ratatui::style::Color) -> style::Color {
+    use ratatui::style::Color as RC;
+    match c {
+        RC::Reset => style::Color::Reset,
+        RC::Black => style::Color::Black,
+        RC::Red => style::Color::DarkRed,
+        RC::Green => style::Color::DarkGreen,
+        RC::Yellow => style::Color::DarkYellow,
+        RC::Blue => style::Color::DarkBlue,
+        RC::Magenta => style::Color::DarkMagenta,
+        RC::Cyan => style::Color::DarkCyan,
+        RC::Gray => style::Color::Grey,
+        RC::DarkGray => style::Color::DarkGrey,
+        RC::LightRed => style::Color::Red,
+        RC::LightGreen => style::Color::Green,
+        RC::LightYellow => style::Color::Yellow,
+        RC::LightBlue => style::Color::Blue,
+        RC::LightMagenta => style::Color::Magenta,
+        RC::LightCyan => style::Color::Cyan,
+        RC::White => style::Color::White,
+        RC::Rgb(r, g, b) => style::Color::Rgb { r, g, b },
+        RC::Indexed(i) => style::Color::AnsiValue(i),
+    }
+}
+
+/// Fast-path: render new session lines via DECSTBM scroll regions.
+///
+/// Instead of ratatui's full cell-by-cell diff (~87KB when session scrolls),
+/// sets a terminal scroll region on the session pane, scrolls existing content
+/// up, and writes only the new line(s) at the bottom. ~200 bytes per new line.
+///
+/// Only used during streaming follow-bottom when incremental lines arrive.
+/// The next full terminal.draw() reconciles ratatui's buffer naturally.
+pub fn fast_draw_session(app: &App, new_line_count: usize) {
+    let rect = app.pane_session;
+    let inner_height = rect.height.saturating_sub(2) as usize;
+    let inner_width = rect.width.saturating_sub(2) as usize;
+
+    if inner_width == 0 || inner_height == 0 || new_line_count == 0 { return; }
+
+    let total = app.rendered_lines_cache.len();
+    if total == 0 { return; }
+
+    // Cap to viewport height (if more lines arrived than fit, just redraw visible area)
+    let lines_to_draw = new_line_count.min(inner_height);
+    let start_idx = total.saturating_sub(lines_to_draw);
+
+    let mut stdout = io::stdout();
+
+    // DECSTBM scroll region (1-indexed, inclusive)
+    // Content area: rows rect.y+1 through rect.y+height-2 (0-indexed)
+    // 1-indexed:    rows rect.y+2 through rect.y+height-1
+    let region_top_1 = rect.y + 2;
+    let region_bottom_1 = rect.y + rect.height - 1;
+
+    // Save cursor (DECSC) + set scroll region (DECSTBM)
+    let _ = write!(stdout, "\x1b7\x1b[{};{}r", region_top_1, region_bottom_1);
+    // Scroll up within the region
+    let _ = queue!(stdout, crossterm::terminal::ScrollUp(lines_to_draw as u16));
+
+    // New lines go at the bottom of the scroll region
+    let first_row = rect.y + rect.height - 1 - lines_to_draw as u16;
+    let left = rect.x + 1;
+
+    for (i, line) in app.rendered_lines_cache[start_idx..].iter().enumerate() {
+        let row = first_row + i as u16;
+        let _ = queue!(stdout, cursor::MoveTo(left, row));
+        let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
+
+        let mut col = 0usize;
+        for span in &line.spans {
+            if col >= inner_width { break; }
+
+            // Apply span style (fg, bg, modifiers)
+            if let Some(fg) = span.style.fg {
+                let _ = queue!(stdout, style::SetForegroundColor(ratatui_to_crossterm(fg)));
+            }
+            if let Some(bg) = span.style.bg {
+                let _ = queue!(stdout, style::SetBackgroundColor(ratatui_to_crossterm(bg)));
+            }
+            let m = span.style.add_modifier;
+            if m.contains(Modifier::BOLD) {
+                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Bold));
+            }
+            if m.contains(Modifier::DIM) {
+                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Dim));
+            }
+            if m.contains(Modifier::ITALIC) {
+                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Italic));
+            }
+            if m.contains(Modifier::UNDERLINED) {
+                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Underlined));
+            }
+            if m.contains(Modifier::CROSSED_OUT) {
+                let _ = queue!(stdout, style::SetAttribute(style::Attribute::CrossedOut));
+            }
+
+            // Print text truncated to remaining display width
+            let remaining = inner_width - col;
+            let mut width_used = 0;
+            let mut byte_end = 0;
+            for c in span.content.chars() {
+                let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
+                if width_used + w > remaining { break; }
+                width_used += w;
+                byte_end += c.len_utf8();
+            }
+            if byte_end > 0 {
+                let _ = queue!(stdout, style::Print(&span.content[..byte_end]));
+            }
+            col += width_used;
+
+            // Reset after each span to prevent style leaking
+            let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
+        }
+
+        // Pad remaining width (clear old content from scrolled area)
+        if col < inner_width {
+            let _ = queue!(stdout, style::Print(" ".repeat(inner_width - col)));
+        }
+    }
+
+    // Reset scroll region (DECSTBM full screen) + restore cursor (DECRC)
+    let _ = write!(stdout, "\x1b[r\x1b8");
     let _ = stdout.flush();
 }
 

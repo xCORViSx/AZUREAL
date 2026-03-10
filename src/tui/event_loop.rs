@@ -37,7 +37,7 @@ use super::run::ui;
 use actions::handle_key_event;
 use claude_events::handle_claude_event;
 use coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
-use fast_draw::fast_draw_input;
+use fast_draw::{fast_draw_input, fast_draw_session};
 use mouse::{apply_scroll_cached, handle_mouse_click, handle_mouse_drag};
 
 /// Main TUI event loop
@@ -221,11 +221,7 @@ pub async fn run_app(
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
         // Capped to prevent unbounded drain when parser batches many results.
-        // During typing+streaming: suppress needs_redraw so parsed results don't
-        // trigger draws that overwhelm Terminal.app with escape sequences.
-        // Events ARE applied to state — only the DRAW is deferred.
         {
-            let suppress_redraw = typing_recently && streaming;
             let mut parsed_count = 0;
             while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
                 match claude_proc.try_recv() {
@@ -236,9 +232,7 @@ pub async fn run_app(
                             result.output_type,
                             &result.data,
                         );
-                        if !suppress_redraw {
-                            needs_redraw = true;
-                        }
+                        needs_redraw = true;
                         parsed_count += 1;
                     }
                     None => break,
@@ -540,18 +534,23 @@ pub async fn run_app(
         }
 
         // Poll for completed render results from the background thread (non-blocking).
-        // If fresh content arrived, trigger a redraw to show it.
-        // DEFER during active typing: applying new session content makes the next
-        // terminal.draw() diff large (many escape sequences). Terminal emulators
-        // drop keyboard input while processing heavy stdout output. By deferring
-        // render results for 150ms after the last keystroke, draws near typing
-        // only update the input box (tiny diff). Session pane catches up when
-        // the user pauses. Render thread keeps working — only the APPLY is deferred.
-        let defer_render_poll = typing_recently && streaming;
-        if !defer_render_poll {
-            if poll_render_result(app) {
-                needs_redraw = true;
+        // Always apply results immediately — session content stays up-to-date.
+        // During streaming follow-bottom: use fast_draw_session (DECSTBM scroll
+        // regions, ~200 bytes per new line) instead of triggering a full
+        // terminal.draw() (~87KB cell-by-cell diff). Both session AND input
+        // update simultaneously without overwhelming the terminal's PTY buffer.
+        let old_cache_len = app.rendered_lines_cache.len();
+        if poll_render_result(app) {
+            let new_cache_len = app.rendered_lines_cache.len();
+            let new_line_count = new_cache_len.saturating_sub(old_cache_len);
+            let follow_bottom = app.session_scroll == usize::MAX;
+
+            if streaming && follow_bottom && new_line_count > 0
+                && app.pane_session.width > 2 && app.pane_session.height > 2
+            {
+                fast_draw_session(app, new_line_count);
             }
+            needs_redraw = true;
         }
 
         let _t_render = _loop_start.elapsed();

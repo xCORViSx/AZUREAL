@@ -63,7 +63,7 @@
 ### Performance
 
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
-- **Fast Input** — Prompt keystrokes render via fast-path (~0.1ms); all full redraws suppressed during active typing (300ms window) with adaptive 5fps throttle during idle streaming
+- **Fast Input & Session** — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using DECSTBM scroll regions (~0.1ms per new line vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — No database; two small TOML config files and runtime git/Claude discovery
 
