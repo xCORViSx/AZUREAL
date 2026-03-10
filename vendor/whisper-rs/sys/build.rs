@@ -372,9 +372,9 @@ fn add_link_search_path(dir: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Copy src/bindings.rs to dest, stripping `const _: () = { ... };` layout assertion blocks.
-/// These blocks contain compile-time struct size/alignment checks that fail on MSVC
-/// because MSVC packs structs differently than clang/gcc.
+/// Copy src/bindings.rs to dest with MSVC compatibility fixes:
+/// 1. Strip `const _: () = { ... };` layout assertion blocks (MSVC struct packing differs)
+/// 2. Convert C enum type aliases from c_uint to c_int (MSVC uses signed int for C enums)
 fn copy_bindings_without_layout_tests(src: &str, dest: &std::path::Path) {
     use std::io::Write;
     let content = std::fs::read_to_string(src).expect("Failed to read bindings.rs");
@@ -389,7 +389,6 @@ fn copy_bindings_without_layout_tests(src: &str, dest: &std::path::Path) {
             // Skip #[allow(...)] + const _: () = { ... }; assertion blocks
             if line.contains("#[allow(clippy::unnecessary_operation") {
                 if i + 1 < lines.len() && lines[i + 1].contains("const _: () = {") {
-                    // Skip the allow attr + start of const block
                     skip = true;
                     brace_depth = 1;
                     i += 2;
@@ -401,6 +400,14 @@ fn copy_bindings_without_layout_tests(src: &str, dest: &std::path::Path) {
                 brace_depth = 1;
                 i += 1;
                 continue;
+            }
+            // MSVC uses signed int for C enums — convert ggml/whisper enum typedefs
+            if line.starts_with("pub type ggml_") || line.starts_with("pub type whisper_") {
+                if line.contains("::std::os::raw::c_uint") {
+                    writeln!(out, "{}", line.replace("::std::os::raw::c_uint", "::std::os::raw::c_int")).unwrap();
+                    i += 1;
+                    continue;
+                }
             }
             writeln!(out, "{}", line).unwrap();
         } else {
