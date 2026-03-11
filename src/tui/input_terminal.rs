@@ -5,7 +5,7 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::claude::ClaudeProcess;
-use crate::tui::keybindings::macos_opt_key;
+use crate::tui::keybindings::{macos_opt_key, is_cmd};
 
 /// Handle keyboard input when Input field is focused (terminal mode or Claude prompt)
 pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
@@ -86,19 +86,19 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
     // Claude prompt mode - handle text editing
     // Clipboard operations (Cmd/Ctrl+C/X/V/A) - handle BEFORE character input
     match (key.modifiers, key.code) {
-        (KeyModifiers::SUPER, KeyCode::Char('c')) => {
+        (m, KeyCode::Char('c')) if is_cmd(m) => {
             app.input_copy();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('x')) => {
+        (m, KeyCode::Char('x')) if is_cmd(m) => {
             app.input_cut();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('v')) => {
+        (m, KeyCode::Char('v')) if is_cmd(m) => {
             app.input_paste();
             return Ok(());
         }
-        (KeyModifiers::SUPER, KeyCode::Char('a')) => {
+        (m, KeyCode::Char('a')) if is_cmd(m) => {
             app.input_select_all();
             return Ok(());
         }

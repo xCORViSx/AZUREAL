@@ -28,7 +28,7 @@ use crossterm::event::KeyModifiers;
 
 use crate::app::App;
 use crate::claude::ClaudeProcess;
-use super::keybindings::{lookup_git_actions_action, Action};
+use super::keybindings::{lookup_git_actions_action, Action, is_cmd};
 use super::event_loop::copy_viewer_selection;
 
 use diff_viewer::{open_file_diff_inline, load_file_diff_inline, load_commit_diff_inline};
@@ -64,8 +64,8 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         return handle_auto_resolve_overlay(key, app);
     }
 
-    // Cmd+C (copy) and Cmd+A (select all) — global actions that must work in git mode
-    if key.modifiers.contains(KeyModifiers::SUPER) {
+    // Cmd+C / Ctrl+C (copy) and Cmd+A / Ctrl+A (select all) — global actions that must work in git mode
+    if is_cmd(key.modifiers) {
         match key.code {
             event::KeyCode::Char('c') => {
                 if app.viewer_selection.is_some() {

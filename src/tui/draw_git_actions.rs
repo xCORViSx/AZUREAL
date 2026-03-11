@@ -144,7 +144,7 @@ pub(crate) fn draw_commit_editor(f: &mut Frame, overlay: &crate::app::types::Git
         commit_lines.push(Line::from(vec![
             Span::styled(" Enter", Style::default().fg(GIT_ORANGE)),
             Span::styled(":commit  ", Style::default().fg(GIT_BROWN)),
-            Span::styled("\u{2318}P", Style::default().fg(GIT_ORANGE)),
+            Span::styled(if cfg!(target_os = "macos") { "\u{2318}P" } else { "Ctrl+P" }, Style::default().fg(GIT_ORANGE)),
             Span::styled(":commit+push  ", Style::default().fg(GIT_BROWN)),
             Span::styled("Shift+Enter", Style::default().fg(GIT_ORANGE)),
             Span::styled(":newline  ", Style::default().fg(GIT_BROWN)),

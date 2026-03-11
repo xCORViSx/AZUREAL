@@ -37,7 +37,7 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
             });
         }
 
-        (m, KeyCode::Char('p')) if m.contains(KeyModifiers::SUPER) && !generating && !overlay.message.trim().is_empty() => {
+        (m, KeyCode::Char('p')) if crate::tui::keybindings::is_cmd(m) && !generating && !overlay.message.trim().is_empty() => {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;

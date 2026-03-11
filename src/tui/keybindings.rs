@@ -52,4 +52,4 @@ pub use hints::{
 };
 
 // Platform utilities
-pub use platform::macos_opt_key;
+pub use platform::{macos_opt_key, is_cmd, is_cmd_shift};

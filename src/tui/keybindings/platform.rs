@@ -26,6 +26,33 @@ pub fn macos_opt_key(ch: char) -> Option<char> {
     }
 }
 
+/// Check if the given modifiers represent the platform "command" key.
+/// macOS: ⌘ (SUPER). Windows/Linux: Ctrl (CONTROL).
+/// Use this in match guards instead of hard-coding `KeyModifiers::SUPER`.
+#[inline]
+pub fn is_cmd(modifiers: crossterm::event::KeyModifiers) -> bool {
+    #[cfg(target_os = "macos")]
+    { modifiers.contains(crossterm::event::KeyModifiers::SUPER) }
+    #[cfg(not(target_os = "macos"))]
+    { modifiers.contains(crossterm::event::KeyModifiers::CONTROL) }
+}
+
+/// Check if the given modifiers represent the platform "command+shift" combo.
+/// macOS: ⌘⇧ (SUPER|SHIFT). Windows/Linux: Ctrl+Shift (CONTROL|SHIFT).
+#[inline]
+pub fn is_cmd_shift(modifiers: crossterm::event::KeyModifiers) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let required = crossterm::event::KeyModifiers::SUPER | crossterm::event::KeyModifiers::SHIFT;
+        modifiers == required
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let required = crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT;
+        modifiers == required
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
