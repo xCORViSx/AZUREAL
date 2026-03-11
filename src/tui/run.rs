@@ -6,7 +6,8 @@ use anyhow::Result;
 use crossterm::{
     event::{
         DisableMouseCapture, EnableMouseCapture,
-        PopKeyboardEnhancementFlags,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+        PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
