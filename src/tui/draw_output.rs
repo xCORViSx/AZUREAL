@@ -81,6 +81,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(todo_height),
     ]).areas(area);
     let area = session_area;
+    app.pane_session_content = area;
     let viewport_height = area.height.saturating_sub(2) as usize;
 
     // Cache viewport height for scroll operations (input handling uses this)

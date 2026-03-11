@@ -127,7 +127,9 @@ fn ratatui_to_crossterm(c: ratatui::style::Color) -> style::Color {
 /// Only used during streaming follow-bottom when incremental lines arrive.
 /// The next full terminal.draw() reconciles ratatui's buffer naturally.
 pub fn fast_draw_session(app: &App, _new_line_count: usize) {
-    let rect = app.pane_session;
+    // Use the actual session content rect (excludes todo widget and search bar)
+    // to avoid overwriting those sub-areas with session content.
+    let rect = app.pane_session_content;
     let inner_height = rect.height.saturating_sub(2) as usize;
     let inner_width = rect.width.saturating_sub(2) as usize;
 

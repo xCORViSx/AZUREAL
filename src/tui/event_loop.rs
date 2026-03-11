@@ -566,7 +566,9 @@ pub async fn run_app(
 
             if streaming && follow_bottom && new_line_count > 0
                 && !typing_recently
-                && app.pane_session.width > 2 && app.pane_session.height > 2
+                && app.pane_session_content.width > 2 && app.pane_session_content.height > 2
+                && app.git_actions_panel.is_none()
+                && !app.show_session_list
             {
                 fast_draw_session(app, new_line_count);
             }
