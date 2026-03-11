@@ -420,6 +420,20 @@ fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usi
     }
 }
 
+/// Render markdown for the viewer pane (no session gutter prefix, full-width).
+/// Reuses the assistant text renderer then strips the orange `│ ` prefix from
+/// each line, giving a clean markdown reading experience.
+pub fn render_markdown_for_viewer(text: &str, width: usize, highlighter: &mut SyntaxHighlighter) -> Vec<Line<'static>> {
+    // +2 compensates for the gutter we strip — keeps content wrapping at `width`
+    let (mut lines, _) = render_assistant_text(text, width + 2, highlighter);
+    for line in &mut lines {
+        if !line.spans.is_empty() && line.spans[0].content.as_ref() == "│ " {
+            line.spans.remove(0);
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -868,5 +882,105 @@ mod tests {
         let text = "```unknownlang\nsome code\n```";
         let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
         assert_eq!(lines.len(), 3);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // render_markdown_for_viewer
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn viewer_no_gutter_prefix() {
+        let lines = render_markdown_for_viewer("hello world", 80, &mut hl());
+        assert!(!lines.is_empty());
+        // No line should start with the orange "│ " gutter
+        for line in &lines {
+            if let Some(first) = line.spans.first() {
+                assert_ne!(first.content.as_ref(), "│ ", "viewer lines must not have session gutter");
+            }
+        }
+    }
+
+    #[test]
+    fn viewer_header_rendered() {
+        let lines = render_markdown_for_viewer("# Title", 80, &mut hl());
+        assert!(!lines.is_empty());
+        // Should contain the block prefix for h1
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("█"), "h1 should have block prefix");
+        assert!(text.contains("Title"));
+    }
+
+    #[test]
+    fn viewer_bullet_rendered() {
+        let lines = render_markdown_for_viewer("- item one", 80, &mut hl());
+        assert!(!lines.is_empty());
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("•"), "bullet should have dot prefix");
+    }
+
+    #[test]
+    fn viewer_code_block_highlighted() {
+        let text = "```rust\nfn main() {}\n```";
+        let lines = render_markdown_for_viewer(text, 80, &mut hl());
+        assert!(lines.len() >= 3);
+        // Code line should have syntax highlighting (magenta for `fn`)
+        let code_line = &lines[1];
+        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        assert!(has_magenta, "code block should have syntax highlighting");
+    }
+
+    #[test]
+    fn viewer_empty_text() {
+        let lines = render_markdown_for_viewer("", 80, &mut hl());
+        assert!(lines.len() <= 1);
+    }
+
+    #[test]
+    fn viewer_width_respected() {
+        let long = "word ".repeat(50);
+        let lines = render_markdown_for_viewer(&long, 40, &mut hl());
+        assert!(lines.len() > 1, "long text should wrap");
+    }
+
+    #[test]
+    fn viewer_blockquote_rendered() {
+        let lines = render_markdown_for_viewer("> quoted text", 80, &mut hl());
+        assert!(!lines.is_empty());
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("┃"), "blockquote should have pipe prefix");
+    }
+
+    #[test]
+    fn viewer_numbered_list() {
+        let lines = render_markdown_for_viewer("1. first\n2. second", 80, &mut hl());
+        assert!(lines.len() >= 2);
+    }
+
+    #[test]
+    fn viewer_mixed_content() {
+        let md = "# Title\n\nParagraph text.\n\n- bullet\n\n```\ncode\n```\n\n> quote";
+        let lines = render_markdown_for_viewer(md, 80, &mut hl());
+        assert!(lines.len() >= 5);
+        // No ORANGE gutter on any line (gray code gutters are fine)
+        let orange_gutter = Style::default().fg(ORANGE);
+        for line in &lines {
+            if let Some(first) = line.spans.first() {
+                if first.content.as_ref() == "│ " {
+                    assert_ne!(first.style, orange_gutter, "viewer lines must not have orange session gutter");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn viewer_table_no_gutter() {
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |";
+        let lines = render_markdown_for_viewer(md, 80, &mut hl());
+        assert!(!lines.is_empty());
+        for line in &lines {
+            if let Some(first) = line.spans.first() {
+                assert_ne!(first.content.as_ref(), "│ ");
+            }
+        }
     }
 }

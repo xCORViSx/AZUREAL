@@ -21,7 +21,7 @@
 - **Multi-Worktree Sessions** — Run multiple Claude agents concurrently, each in its own git worktree with independent sessions
 - **3-Pane Layout** — File tree, viewer, and session panes with Tab cycling and proportional sizing
 - **Viewer Tabs** — Tab up to 12 files for quick switching between references
-- **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews
+- **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews; markdown files render with styled headers, tables, code blocks, and lists
 - **Image Viewer** — View PNG, JPG, GIF, and other image formats inline in the terminal
 - **Embedded Terminal** — Full shell per worktree with color support
 - **Projects Panel** — Switch between registered projects; auto-discovers git repos on startup

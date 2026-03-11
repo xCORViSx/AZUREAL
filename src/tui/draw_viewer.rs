@@ -32,6 +32,7 @@ use ratatui::{
 use ratatui_image::StatefulImage;
 
 use crate::app::{App, Focus, ViewerMode};
+use super::render_markdown::render_markdown_for_viewer;
 use super::util::AZURE;
 
 use dialogs::{draw_discard_dialog, draw_save_dialog};
@@ -115,118 +116,126 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
                 .unwrap_or_else(|| "File".to_string());
 
+            let is_markdown_view = (path_str.ends_with(".md") || path_str.ends_with(".markdown"))
+                && app.viewer_edit_diff.is_none();
+
             if app.viewer_content.is_some() {
                 // Only re-render if cache is dirty or width changed
                 if app.viewer_lines_dirty || app.viewer_lines_width != viewport_width {
                     let content = app.viewer_content.as_ref().unwrap();
-                    let content_lines: Vec<&str> = content.lines().collect();
-                    let highlighted = app.syntax_highlighter.highlight_file(content, &path_str);
 
-                    // Check for edit diff overlay
-                    let (diff_start_line, diff_line_count, old_lines) = if let Some((ref old_str, ref new_str)) = app.viewer_edit_diff {
-                        // Find where new_str starts in the file
-                        let new_lines: Vec<&str> = new_str.lines().collect();
-                        let old_lines_vec: Vec<&str> = old_str.lines().collect();
-                        let mut found_line = None;
+                    if is_markdown_view {
+                        // Prettified markdown rendering (no line numbers)
+                        let rendered = render_markdown_for_viewer(
+                            content, viewport_width, &mut app.syntax_highlighter,
+                        );
+                        let count = rendered.len();
+                        app.viewer_lines_cache = rendered;
+                        app.viewer_line_numbers = (1..=count).collect();
+                        app.viewer_original_line_count = count;
+                    } else {
+                        // Regular syntax highlighting with line numbers
+                        let content_lines: Vec<&str> = content.lines().collect();
+                        let highlighted = app.syntax_highlighter.highlight_file(content, &path_str);
 
-                        // Search for the first line of new_str
-                        if !new_lines.is_empty() {
-                            for (idx, line) in content_lines.iter().enumerate() {
-                                if *line == new_lines[0] {
-                                    // Check if all subsequent lines match
-                                    let mut matches = true;
-                                    for (offset, new_line) in new_lines.iter().enumerate() {
-                                        if content_lines.get(idx + offset) != Some(new_line) {
-                                            matches = false;
+                        // Check for edit diff overlay
+                        let (diff_start_line, diff_line_count, old_lines) = if let Some((ref old_str, ref new_str)) = app.viewer_edit_diff {
+                            let new_lines: Vec<&str> = new_str.lines().collect();
+                            let old_lines_vec: Vec<&str> = old_str.lines().collect();
+                            let mut found_line = None;
+
+                            if !new_lines.is_empty() {
+                                for (idx, line) in content_lines.iter().enumerate() {
+                                    if *line == new_lines[0] {
+                                        let mut matches = true;
+                                        for (offset, new_line) in new_lines.iter().enumerate() {
+                                            if content_lines.get(idx + offset) != Some(new_line) {
+                                                matches = false;
+                                                break;
+                                            }
+                                        }
+                                        if matches {
+                                            found_line = Some(idx);
                                             break;
                                         }
                                     }
-                                    if matches {
-                                        found_line = Some(idx);
-                                        break;
-                                    }
                                 }
                             }
-                        }
 
-                        if let Some(start) = found_line {
-                            (Some(start), new_lines.len(), old_lines_vec)
+                            if let Some(start) = found_line {
+                                (Some(start), new_lines.len(), old_lines_vec)
+                            } else {
+                                (None, 0, vec![])
+                            }
                         } else {
                             (None, 0, vec![])
-                        }
-                    } else {
-                        (None, 0, vec![])
-                    };
-
-                    // Calculate line number width including old lines that will be inserted
-                    let total_visual_lines = highlighted.len() + old_lines.len();
-                    let line_num_width = total_visual_lines.to_string().len().max(3);
-                    let content_width = viewport_width.saturating_sub(line_num_width + 3);
-
-                    let mut all_lines: Vec<Line> = Vec::new();
-                    let mut line_numbers: Vec<usize> = Vec::new();
-
-                    for (line_idx, spans) in highlighted.into_iter().enumerate() {
-                        // Insert old (deleted) lines before the new content at diff_start_line
-                        if diff_start_line == Some(line_idx) && !old_lines.is_empty() {
-                            for old_line in &old_lines {
-                                let line_num = format!("{:>width$} │ ", "-", width = line_num_width);
-                                let mut all_spans = vec![
-                                    Span::styled(line_num, Style::default().fg(Color::Red)),
-                                    Span::styled((*old_line).to_string(), Style::default().fg(Color::Red).bg(Color::Rgb(60, 20, 20))),
-                                ];
-                                // Pad to fill width for background
-                                let old_len = old_line.chars().count();
-                                if old_len < content_width {
-                                    all_spans.push(Span::styled(" ".repeat(content_width - old_len), Style::default().bg(Color::Rgb(60, 20, 20))));
-                                }
-                                all_lines.push(Line::from(all_spans));
-                                line_numbers.push(0); // 0 = deleted line (not in file)
-                            }
-                        }
-
-                        // Check if this line is part of the added (new) content
-                        let is_added_line = if let Some(start) = diff_start_line {
-                            line_idx >= start && line_idx < start + diff_line_count
-                        } else {
-                            false
                         };
 
-                        let wrapped = wrap_spans_word(spans, content_width);
-                        for (wrap_idx, mut wrapped_spans) in wrapped.into_iter().enumerate() {
-                            let line_num = if wrap_idx == 0 {
-                                format!("{:>width$} │ ", line_idx + 1, width = line_num_width)
+                        let total_visual_lines = highlighted.len() + old_lines.len();
+                        let line_num_width = total_visual_lines.to_string().len().max(3);
+                        let content_width = viewport_width.saturating_sub(line_num_width + 3);
+
+                        let mut all_lines: Vec<Line> = Vec::new();
+                        let mut line_numbers: Vec<usize> = Vec::new();
+
+                        for (line_idx, spans) in highlighted.into_iter().enumerate() {
+                            if diff_start_line == Some(line_idx) && !old_lines.is_empty() {
+                                for old_line in &old_lines {
+                                    let line_num = format!("{:>width$} │ ", "-", width = line_num_width);
+                                    let mut all_spans = vec![
+                                        Span::styled(line_num, Style::default().fg(Color::Red)),
+                                        Span::styled((*old_line).to_string(), Style::default().fg(Color::Red).bg(Color::Rgb(60, 20, 20))),
+                                    ];
+                                    let old_len = old_line.chars().count();
+                                    if old_len < content_width {
+                                        all_spans.push(Span::styled(" ".repeat(content_width - old_len), Style::default().bg(Color::Rgb(60, 20, 20))));
+                                    }
+                                    all_lines.push(Line::from(all_spans));
+                                    line_numbers.push(0);
+                                }
+                            }
+
+                            let is_added_line = if let Some(start) = diff_start_line {
+                                line_idx >= start && line_idx < start + diff_line_count
                             } else {
-                                format!("{:>width$} │ ", "", width = line_num_width)
+                                false
                             };
 
-                            // Apply green background for added lines
-                            if is_added_line {
-                                let line_num_style = Style::default().fg(Color::Green);
-                                let green_bg = Color::Rgb(20, 60, 20);
-                                wrapped_spans = wrapped_spans.into_iter()
-                                    .map(|s| Span::styled(s.content.to_string(), s.style.bg(green_bg)))
-                                    .collect();
-                                let content_len: usize = wrapped_spans.iter().map(|s| s.content.chars().count()).sum();
-                                let mut all_spans = vec![Span::styled(line_num, line_num_style)];
-                                all_spans.extend(wrapped_spans);
-                                // Pad to fill width for background
-                                if content_len < content_width {
-                                    all_spans.push(Span::styled(" ".repeat(content_width - content_len), Style::default().bg(green_bg)));
+                            let wrapped = wrap_spans_word(spans, content_width);
+                            for (wrap_idx, mut wrapped_spans) in wrapped.into_iter().enumerate() {
+                                let line_num = if wrap_idx == 0 {
+                                    format!("{:>width$} │ ", line_idx + 1, width = line_num_width)
+                                } else {
+                                    format!("{:>width$} │ ", "", width = line_num_width)
+                                };
+
+                                if is_added_line {
+                                    let line_num_style = Style::default().fg(Color::Green);
+                                    let green_bg = Color::Rgb(20, 60, 20);
+                                    wrapped_spans = wrapped_spans.into_iter()
+                                        .map(|s| Span::styled(s.content.to_string(), s.style.bg(green_bg)))
+                                        .collect();
+                                    let content_len: usize = wrapped_spans.iter().map(|s| s.content.chars().count()).sum();
+                                    let mut all_spans = vec![Span::styled(line_num, line_num_style)];
+                                    all_spans.extend(wrapped_spans);
+                                    if content_len < content_width {
+                                        all_spans.push(Span::styled(" ".repeat(content_width - content_len), Style::default().bg(green_bg)));
+                                    }
+                                    all_lines.push(Line::from(all_spans));
+                                } else {
+                                    let mut all_spans = vec![Span::styled(line_num, Style::default().fg(Color::DarkGray))];
+                                    all_spans.extend(wrapped_spans);
+                                    all_lines.push(Line::from(all_spans));
                                 }
-                                all_lines.push(Line::from(all_spans));
-                            } else {
-                                let mut all_spans = vec![Span::styled(line_num, Style::default().fg(Color::DarkGray))];
-                                all_spans.extend(wrapped_spans);
-                                all_lines.push(Line::from(all_spans));
+                                line_numbers.push(line_idx + 1);
                             }
-                            line_numbers.push(line_idx + 1); // 1-indexed original line
                         }
+
+                        app.viewer_lines_cache = all_lines;
+                        app.viewer_line_numbers = line_numbers;
+                        app.viewer_original_line_count = content_lines.len();
                     }
 
-                    app.viewer_lines_cache = all_lines;
-                    app.viewer_line_numbers = line_numbers;
-                    app.viewer_original_line_count = content_lines.len();
                     app.viewer_lines_width = viewport_width;
                     app.viewer_lines_dirty = false;
                 }
@@ -238,10 +247,15 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 let scroll = app.viewer_scroll;
 
                 // Gutter = char width of line number column (first span, e.g. "  1 │ ")
-                let gutter = app.viewer_lines_cache.first()
-                    .and_then(|l| l.spans.first())
-                    .map(|s| s.content.chars().count())
-                    .unwrap_or(0);
+                // Markdown view has no line numbers so gutter = 0
+                let gutter = if is_markdown_view {
+                    0
+                } else {
+                    app.viewer_lines_cache.first()
+                        .and_then(|l| l.spans.first())
+                        .map(|s| s.content.chars().count())
+                        .unwrap_or(0)
+                };
 
                 // Build viewport slice with selection highlighting if active
                 let display_lines: Vec<Line> = app.viewer_lines_cache.iter()

@@ -128,6 +128,7 @@ Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/
 
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers
+- When `.md`/`.markdown` selected in FileTree → renders prettified markdown via `render_markdown_for_viewer()` (headers with `█▓▒░` prefixes, bullets, numbered lists, blockquotes with `┃`, syntax-highlighted code blocks, box-drawn tables, inline bold/italic/code). No line numbers (gutter=0). Reverts to plain syntax-highlighted text in edit mode or when `viewer_edit_diff` is active.
 - When image selected in FileTree → renders image via terminal graphics protocol (Kitty/Sixel/halfblock fallback) using `ratatui-image` crate. Image auto-fits viewport; no scroll/selection/edit mode. `Picker::from_query_stdio()` lazy-inits once to detect terminal capabilities. `StatefulProtocol` adapts to render area each frame.
 - When diff selected in Session → shows diff detail (future)
 
@@ -1457,7 +1458,7 @@ azureal/
 │   │   ├── util.rs         # Display utilities (re-exports)
 │   │   ├── colorize.rs     # Output colorization
 │   │   ├── markdown.rs     # Markdown parsing
-│   │   ├── render_markdown.rs # Markdown rendering (tables, headers, lists, quotes, code blocks)
+│   │   ├── render_markdown.rs # Markdown rendering (tables, headers, lists, quotes, code blocks) + viewer markdown
 │   │   ├── render_events.rs # DisplayEvent rendering (full + incremental)
 │   │   ├── render_thread.rs # Background render thread (PreScanState, RenderRequest/Result, sequence numbers)
 │   │   ├── render_tools.rs # Tool result rendering
@@ -1589,7 +1590,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running Claude simultaneously
 5. **Error Recovery**: Verify graceful handling of Claude exits and git errors
 
-## Test Coverage (6143+ tests)
+## Test Coverage (6155+ tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|
@@ -1671,7 +1672,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/input_git_actions/diff_viewer | `src/tui/input_git_actions/diff_viewer.rs` | 54 | Panel viewer_diff set/clear, diff title prefix/short-hash/subject, file/commit selection, commits_ahead/behind_main counters, result message success/error, full_hash format |
 | tui/input_git_actions/auto_resolve_overlay | `src/tui/input_git_actions/auto_resolve_overlay.rs` | 51 | Auto-resolve overlay add/delete/toggle/navigation state tests |
 | tui/input_git_actions/conflict_resolution | `src/tui/input_git_actions/conflict_resolution.rs` | 82 | Navigation/abort/spawn/prompt building/state preservation across all conflict resolution states |
-| tui/render_markdown | `src/tui/render_markdown.rs` | 50 | Markdown-to-spans rendering |
+| tui/render_markdown | `src/tui/render_markdown.rs` | 60 | Markdown-to-spans rendering + viewer markdown (10 tests: header/bullet/code block/blockquote/table/numbered list/mixed content/empty/width/no gutter) |
 | tui/render_thread | `src/tui/render_thread.rs` | 50 | Render thread message passing, try_recv |
 | tui/util | `src/tui/util.rs` | 50 | TUI utility functions, truncation, formatting |
 | tui/run | `src/tui/run.rs` | 70 | TUI run loop, event dispatch, initialization |
