@@ -57,18 +57,20 @@ const KEY_COPY: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
 
 #[cfg(target_os = "macos")]
 const KEY_CANCEL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
+// Ctrl+Shift+C is Windows Terminal's copy — use Alt+c instead.
+// Without Kitty keyboard protocol, Ctrl+Shift+C arrives as Ctrl+C anyway.
 #[cfg(not(target_os = "macos"))]
-const KEY_CANCEL: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('C'));
+const KEY_CANCEL: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('c'));
 
 #[cfg(target_os = "macos")]
 const KEY_ARCHIVE: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
 #[cfg(not(target_os = "macos"))]
-const KEY_ARCHIVE: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('A'));
+const KEY_ARCHIVE: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('a'));
 
 #[cfg(target_os = "macos")]
 const KEY_DELETE_WT: KeyCombo = KeyCombo::cmd(KeyCode::Char('d'));
 #[cfg(not(target_os = "macos"))]
-const KEY_DELETE_WT: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('D'));
+const KEY_DELETE_WT: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('d'));
 
 #[cfg(target_os = "macos")]
 const KEY_SELECT_ALL: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
@@ -93,8 +95,9 @@ const KEY_REDO: KeyCombo = KeyCombo::ctrl(KeyCode::Char('y'));
 // STT in edit mode: ⌃s on macOS (no conflict with ⌘s Save), ⌃⇧S on non-macOS (⌃s is Save)
 #[cfg(target_os = "macos")]
 const KEY_EDIT_STT: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
+// Ctrl+Shift+S not reliably delivered on Windows without Kitty protocol
 #[cfg(not(target_os = "macos"))]
-const KEY_EDIT_STT: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('S'));
+const KEY_EDIT_STT: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('s'));
 
 /// Global keybindings (always active, checked first)
 pub static GLOBAL: [Keybinding; 21] = [

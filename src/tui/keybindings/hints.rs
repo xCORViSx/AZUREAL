@@ -54,10 +54,10 @@ pub fn prompt_command_title() -> (String, String, String) {
     let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⇧R".into());
     let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
     let wt_add = find_key_for_action(&GLOBAL, Action::AddWorktree).unwrap_or("w".into());
-    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘a" } else { "Ctrl+Shift+A" }.into());
-    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘d" } else { "Ctrl+Shift+D" }.into());
+    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘a" } else { "Alt+a" }.into());
+    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘d" } else { "Alt+d" }.into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:run | {}:cancel | {}:quit",
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:run | {}:cancel agent | {}:quit",
         p, t, g, h, dump, help, tab, stab, wt_prev, wt_next, wt_add, wt_archive, wt_delete, run, cancel, quit
     );
     let label = " COMMAND ".to_string();
@@ -295,7 +295,7 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(key.unwrap(), "⌃c");
         #[cfg(not(target_os = "macos"))]
-        assert_eq!(key.unwrap(), "Ctrl+Shift+C");
+        assert_eq!(key.unwrap(), "Alt+c");
     }
 
     #[test]
