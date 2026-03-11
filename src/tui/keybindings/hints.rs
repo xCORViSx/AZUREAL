@@ -46,8 +46,6 @@ pub fn prompt_command_title() -> (String, String, String) {
     let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
     let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
-    let tab = find_key_for_action(&GLOBAL, Action::CycleFocusForward).unwrap_or("Tab".into());
-    let stab = find_key_for_action(&GLOBAL, Action::CycleFocusBackward).unwrap_or("⇧Tab".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
     let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
@@ -57,8 +55,8 @@ pub fn prompt_command_title() -> (String, String, String) {
     let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘a" } else { "Alt+a" }.into());
     let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘d" } else { "Alt+d" }.into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:cancel agent | {}:quit",
-        p, t, run, g, h, dump, help, tab, stab, wt_prev, wt_next, wt_add, wt_archive, wt_delete, cancel, quit
+        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | Tab/⇧Tab:focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
+        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, cancel, quit, dump, help
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
