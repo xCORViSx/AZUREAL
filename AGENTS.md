@@ -755,7 +755,7 @@ Implementation:
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
 - **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (21 entries — includes `⌃m` CycleModel, `w` AddWorktree, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `WORKTREES` (0 entries — worktree bindings moved to GLOBAL), `FILE_TREE` (15 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
-- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
+- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, terminal mode, or filter — no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
 
@@ -770,8 +770,9 @@ Other details:
 1. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
 2. Text input modals (`BranchDialog`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel) from stealing keystrokes meant as literal text
 3. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
-4. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
-5. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav)
+4. If `stt_recording` is true, ToggleStt is resolved from any focus/mode (so recording can always be stopped even after Tab changes focus)
+5. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
+6. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav)
 
 **Input handlers only handle unresolved keys:**
 - `input_viewer.rs` — tab dialog, save dialog, discard dialog, edit mode text editing
@@ -1011,7 +1012,7 @@ Implementation: `draw_worktree_tabs()` in `src/tui/run.rs`, `worktree_tab_hits: 
 
 ### Speech-to-Text Input
 
-Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field.
+Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field. When recording is active, `⌃s` resolves from ANY focus/mode (via `stt_recording` in `KeyContext`) so the user can stop recording even after Tab clears prompt_mode.
 
 **Architecture:**
 - Background thread (`stt_loop`) blocks on `mpsc::recv()` when idle (zero CPU)

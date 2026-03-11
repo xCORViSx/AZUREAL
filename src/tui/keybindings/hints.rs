@@ -75,10 +75,11 @@ pub fn prompt_command_title() -> (String, String, String) {
     let wt_add = find_key_for_action(&GLOBAL, Action::AddWorktree).unwrap_or("w".into());
     let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or(plat_alt("a"));
     let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or(plat_alt("d"));
+    let main = find_key_for_action(&GLOBAL, Action::BrowseMain).unwrap_or("M".into());
     let focus_hint = if cfg!(target_os = "macos") { "Tab/⇧Tab" } else { "Tab/Shift+Tab" };
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
-        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, focus_hint, cancel, quit, dump, help
+        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:main | {}:pane focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
+        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, main, focus_hint, cancel, quit, dump, help
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);

@@ -18,6 +18,7 @@ pub struct KeyContext {
     pub edit_mode: bool,
     pub terminal_mode: bool,
     pub help_open: bool,
+    pub stt_recording: bool,
 }
 
 impl KeyContext {
@@ -29,6 +30,7 @@ impl KeyContext {
             edit_mode: app.viewer_edit_mode,
             terminal_mode: app.terminal_mode,
             help_open: app.show_help,
+            stt_recording: app.stt_recording,
         }
     }
 }
@@ -68,6 +70,16 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         };
         if !skip && binding.matches(modifiers, code) {
             return Some(binding.action);
+        }
+    }
+
+    // When STT is recording, ToggleStt must be reachable from ANY focus/mode
+    // so the user can stop recording after tabbing away (which clears prompt_mode)
+    if ctx.stt_recording {
+        for binding in &INPUT {
+            if binding.action == Action::ToggleStt && binding.matches(modifiers, code) {
+                return Some(Action::ToggleStt);
+            }
         }
     }
 
@@ -164,7 +176,7 @@ mod tests {
 
     // Helper to create a default "command mode" context (no prompt, no edit, no terminal, no help)
     fn cmd_ctx(focus: Focus) -> KeyContext {
-        KeyContext { focus, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: false }
+        KeyContext { focus, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -291,38 +303,38 @@ mod tests {
 
     #[test]
     fn prompt_mode_skips_enter_prompt() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         // 'p' should be skipped when prompt_mode=true AND focus=Input
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')), Some(Action::EnterPromptMode));
     }
 
     #[test]
     fn prompt_mode_skips_toggle_help() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('?')), Some(Action::ToggleHelp));
     }
 
     #[test]
     fn prompt_mode_skips_toggle_terminal() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('T')), Some(Action::ToggleTerminal));
     }
 
     #[test]
     fn prompt_mode_skips_open_git() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')), Some(Action::OpenGitActions));
     }
 
     #[test]
     fn prompt_mode_skips_open_health() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')), Some(Action::OpenHealth));
     }
 
     #[test]
     fn prompt_mode_skips_worktree_tab_nav() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')), Some(Action::WorktreeTabNext));
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('[')), Some(Action::WorktreeTabPrev));
     }
@@ -330,13 +342,13 @@ mod tests {
     #[test]
     fn prompt_mode_does_not_skip_ctrl_q() {
         // Ctrl+Q is NOT in the skip list, so it still fires
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('q')), Some(Action::Quit));
     }
 
     #[test]
     fn prompt_mode_does_not_skip_cancel() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         // macOS: ⌃C = Cancel, Windows/Linux: ⌃⇧C = Cancel
         #[cfg(target_os = "macos")]
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')), Some(Action::CancelClaude));
@@ -354,7 +366,7 @@ mod tests {
     #[test]
     fn edit_mode_skips_copy_selection() {
         // Global copy skipped in edit mode — edit handler owns clipboard
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         #[cfg(target_os = "macos")]
         assert_ne!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('c')), Some(Action::CopySelection));
         #[cfg(not(target_os = "macos"))]
@@ -363,13 +375,13 @@ mod tests {
 
     #[test]
     fn edit_mode_skips_tab_cycle() {
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Tab), Some(Action::CycleFocusForward));
     }
 
     #[test]
     fn edit_mode_skips_enter_prompt() {
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')), Some(Action::EnterPromptMode));
     }
 
@@ -379,7 +391,7 @@ mod tests {
 
     #[test]
     fn help_open_skips_tab_cycle() {
-        let ctx = KeyContext { focus: Focus::Worktrees, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: true };
+        let ctx = KeyContext { focus: Focus::Worktrees, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: true, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Tab), Some(Action::CycleFocusForward));
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::BackTab), Some(Action::CycleFocusBackward));
     }
@@ -392,7 +404,7 @@ mod tests {
     fn terminal_mode_skips_global_help_toggle() {
         // '?' is a GLOBAL binding that gets skipped in terminal_mode.
         // It's also NOT in the TERMINAL array, so it returns None.
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_ne!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('?')), Some(Action::ToggleHelp));
     }
 
@@ -400,7 +412,7 @@ mod tests {
     fn terminal_mode_p_fires_from_terminal_bindings() {
         // 'p' is skipped as a GLOBAL binding in terminal_mode, but the TERMINAL
         // context array has its own 'p' → EnterPromptMode ("Close & prompt").
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')), Some(Action::EnterPromptMode));
     }
 
@@ -508,19 +520,19 @@ mod tests {
 
     #[test]
     fn edit_mode_cmd_s_saves() {
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('s')), Some(Action::Save));
     }
 
     #[test]
     fn edit_mode_cmd_z_undoes() {
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('z')), Some(Action::Undo));
     }
 
     #[test]
     fn edit_mode_esc_exits() {
-        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc), Some(Action::Escape));
     }
 
@@ -564,37 +576,37 @@ mod tests {
 
     #[test]
     fn input_enter_submits() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Enter), Some(Action::Submit));
     }
 
     #[test]
     fn input_esc_exits_prompt() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc), Some(Action::ExitPromptMode));
     }
 
     #[test]
     fn input_ctrl_w_deletes_word() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('w')), Some(Action::DeleteWord));
     }
 
     #[test]
     fn input_up_history_prev() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Up), Some(Action::HistoryPrev));
     }
 
     #[test]
     fn input_down_history_next() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Down), Some(Action::HistoryNext));
     }
 
     #[test]
     fn input_ctrl_s_toggles_stt() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('s')), Some(Action::ToggleStt));
     }
 
@@ -604,31 +616,31 @@ mod tests {
 
     #[test]
     fn terminal_t_enters_type_mode() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('t')), Some(Action::EnterTerminalType));
     }
 
     #[test]
     fn terminal_esc_closes() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc), Some(Action::Escape));
     }
 
     #[test]
     fn terminal_j_scrolls_down() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('j')), Some(Action::NavDown));
     }
 
     #[test]
     fn terminal_plus_resizes_up() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('+')), Some(Action::ResizeUp));
     }
 
     #[test]
     fn terminal_minus_resizes_down() {
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: true, help_open: false, stt_recording: false };
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('-')), Some(Action::ResizeDown));
     }
 
@@ -662,7 +674,7 @@ mod tests {
     #[test]
     fn prompt_mode_non_input_focus_allows_p() {
         // When prompt_mode=true but focus is NOT Input, 'p' should still fire to re-focus input
-        let ctx = KeyContext { focus: Focus::Session, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Session, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         // 'p' is skipped in prompt_mode BUT the guard only skips EnterPromptMode,ToggleTerminal etc.
         // Actually the guard skips it. Let me re-check: the skip is
         //   Action::EnterPromptMode if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
@@ -687,7 +699,7 @@ mod tests {
     #[test]
     fn input_no_prompt_no_terminal_returns_empty_context() {
         // Focus::Input with neither prompt_mode nor terminal_mode active → empty bindings
-        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: false };
+        let ctx = KeyContext { focus: Focus::Input, prompt_mode: false, edit_mode: false, terminal_mode: false, help_open: false, stt_recording: false };
         // 'j' has no global or context binding here
         assert_eq!(lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('j')), None);
     }
