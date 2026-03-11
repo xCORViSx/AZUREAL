@@ -7,6 +7,21 @@
 use super::types::{Action, HelpSection, Keybinding};
 use super::bindings::*;
 
+/// Platform-appropriate modifier prefix for Ctrl
+fn plat_ctrl(key: &str) -> String {
+    if cfg!(target_os = "macos") { format!("⌃{}", key) } else { format!("Ctrl+{}", key) }
+}
+
+/// Platform-appropriate modifier prefix for Alt
+fn plat_alt(key: &str) -> String {
+    if cfg!(target_os = "macos") { format!("⌥{}", key) } else { format!("Alt+{}", key) }
+}
+
+/// Platform-appropriate modifier prefix for Shift
+fn plat_shift(key: &str) -> String {
+    if cfg!(target_os = "macos") { format!("⇧{}", key) } else { format!("Shift+{}", key) }
+}
+
 /// Generate help sections from binding definitions
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
@@ -24,14 +39,16 @@ pub fn help_sections() -> Vec<HelpSection> {
 pub fn prompt_type_title() -> (String, String, String) {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
-    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
     let (hprev, hnext) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
-    let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or("⌃w".into());
-    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or("⌃s".into());
-    let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or("⌥p".into());
+    let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or(plat_ctrl("w"));
+    let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or(plat_ctrl("s"));
+    let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or(plat_alt("p"));
+    let shift_enter = plat_shift("Enter");
+    let alt_arrows = format!("{}←/→", if cfg!(target_os = "macos") { "⌥" } else { "Alt+" });
     let hints = format!(
-        "{}:exit | {}:submit | ⇧Enter:newline | {}:cancel agent | {}/{}:history | ⌥←/→:word | {}:del wrd | {}:speech | {}:presets",
-        esc, submit, cancel, hprev, hnext, dw, stt, presets
+        "{}:exit | {}:submit | {}:newline | {}:cancel agent | {}/{}:history | {}:word | {}:del wrd | {}:speech | {}:presets",
+        esc, submit, shift_enter, cancel, hprev, hnext, alt_arrows, dw, stt, presets
     );
     let label = " PROMPT ".to_string();
     let full = format!(" PROMPT ({}) ", hints);
@@ -46,17 +63,18 @@ pub fn prompt_command_title() -> (String, String, String) {
     let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
     let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
-    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or("⌃c".into());
-    let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or("⌃q".into());
-    let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or("⌃d".into());
-    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("⇧R".into());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
+    let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
+    let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or(plat_ctrl("d"));
+    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("R".into());
     let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
     let wt_add = find_key_for_action(&GLOBAL, Action::AddWorktree).unwrap_or("w".into());
-    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘a" } else { "Alt+a" }.into());
-    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘d" } else { "Alt+d" }.into());
+    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or(plat_alt("a"));
+    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or(plat_alt("d"));
+    let focus_hint = if cfg!(target_os = "macos") { "Tab/⇧Tab" } else { "Tab/Shift+Tab" };
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | Tab/⇧Tab:focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
-        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, cancel, quit, dump, help
+        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
+        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, focus_hint, cancel, quit, dump, help
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
@@ -79,7 +97,9 @@ pub fn terminal_command_title() -> (String, String, String) {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
-    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, "⌥↑", "⌥↓");
+    let alt_up = if cfg!(target_os = "macos") { "⌥↑" } else { "Alt+↑" };
+    let alt_dn = if cfg!(target_os = "macos") { "⌥↓" } else { "Alt+↓" };
+    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, alt_up, alt_dn);
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
     let hints = format!(
         "{}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize",
@@ -93,8 +113,8 @@ pub fn terminal_command_title() -> (String, String, String) {
 pub fn terminal_scroll_title(scroll: usize) -> (String, String, String) {
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
-    let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or("⌥↑".into());
-    let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or("⌥↓".into());
+    let top = find_key_for_action(&TERMINAL, Action::GoToTop).unwrap_or(plat_alt("↑"));
+    let bot = find_key_for_action(&TERMINAL, Action::GoToBottom).unwrap_or(plat_alt("↓"));
     let t = find_key_for_action(&TERMINAL, Action::EnterTerminalType).unwrap_or("t".into());
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     let hints = format!(
@@ -284,7 +304,7 @@ mod tests {
     fn find_key_quit_in_global() {
         let key = find_key_for_action(&GLOBAL, Action::Quit);
         assert!(key.is_some());
-        assert_eq!(key.unwrap(), "⌃q");
+        assert_eq!(key.unwrap(), plat_ctrl("q"));
     }
 
     #[test]
@@ -341,13 +361,13 @@ mod tests {
     #[test]
     fn find_key_delete_word_in_input() {
         let key = find_key_for_action(&INPUT, Action::DeleteWord);
-        assert_eq!(key.unwrap(), "⌃w");
+        assert_eq!(key.unwrap(), plat_ctrl("w"));
     }
 
     #[test]
     fn find_key_toggle_stt_in_input() {
         let key = find_key_for_action(&INPUT, Action::ToggleStt);
-        assert_eq!(key.unwrap(), "⌃s");
+        assert_eq!(key.unwrap(), plat_ctrl("s"));
     }
 
     #[test]

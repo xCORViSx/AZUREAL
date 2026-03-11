@@ -1797,13 +1797,17 @@ azureal
 
 Prompt keybindings are displayed directly in the Input pane's title bar (not in the help panel). All title hints are dynamically sourced from the `INPUT` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title. When the terminal is too narrow for the full title, `split_title_hints()` packs as many hint segments as fit on the top border, then overflow hints go on the bottom border in parentheses with the same style (color + bold) as the top title.
 
-**Type mode title shows:** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
-**Command mode title shows:** `(p:PROMPT | T:TERMINAL | R:run | G:Git | H:Health | [/]:worktree | w:add wt | ⌘a:archive wt | ⌘d:del wt | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃d:dump | ?:help)`
+**Type mode title shows (macOS):** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥←/→:word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
+**Type mode title shows (Windows/Linux):** `(Esc:exit | Enter:submit | Shift+Enter:newline | Ctrl+c:cancel agent | ↑/↓:history | Alt+←/→:word | Ctrl+w:del wrd | Ctrl+s:speech | Alt+p:presets)`
+**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | R:run | G:Git | H:Health | [/]:worktree | w:add wt | ⌘a:archive wt | ⌘d:del wt | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃d:dump | ?:help)`
+**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | R:run | G:Git | H:Health | [/]:worktree | w:add wt | Alt+a:archive wt | Alt+d:del wt | Tab/Shift+Tab:focus | Ctrl+c:cancel agent | Ctrl+q:quit | Ctrl+d:dump | ?:help)`
 
 ### Terminal Mode
 
 Terminal keybindings are displayed directly in the terminal pane's title bar (not in the help panel). All title hints are dynamically sourced from the `TERMINAL` binding array via `find_key_for_action()` / `find_key_pair()` — changing a key in the array automatically updates the title.
 
-**Command mode title shows:** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | ⌥↑/⌥↓:top/bottom | +/-:resize)`
+**Command mode title shows (macOS):** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | ⌥↑/⌥↓:top/bottom | +/-:resize)`
+**Command mode title shows (Windows/Linux):** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | Alt+↑/Alt+↓:top/bottom | +/-:resize)`
 **Type mode title shows:** `(Esc:exit)`
-**Scroll mode title shows:** `[N↑] (j/k:scroll | J/K:page | ⌥↑:top | ⌥↓:bottom | t:type | Esc:close)`
+**Scroll mode title shows (macOS):** `[N↑] (j/k:scroll | J/K:page | ⌥↑:top | ⌥↓:bottom | t:type | Esc:close)`
+**Scroll mode title shows (Windows/Linux):** `[N↑] (j/k:scroll | J/K:page | Alt+↑:top | Alt+↓:bottom | t:type | Esc:close)`
