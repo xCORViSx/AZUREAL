@@ -432,7 +432,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    // ⌃m model indicator on bottom border (right-aligned)
+    // Model indicator on bottom border (right-aligned)
     {
         let model_name = app.display_model_name();
         let model_color = match model_name {
@@ -441,9 +441,13 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             "haiku" => Color::Yellow,
             _ => Color::DarkGray,
         };
+        let model_key = crate::tui::keybindings::find_key_for_action(
+            &crate::tui::keybindings::GLOBAL,
+            crate::tui::keybindings::Action::CycleModel,
+        ).unwrap_or_else(|| "Ctrl+m".into());
         block = block.title_bottom(
             Line::from(vec![
-                Span::styled(" ⌃m", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" {}", model_key), Style::default().fg(Color::DarkGray)),
                 Span::styled(":", Style::default().fg(Color::DarkGray)),
                 Span::styled(format!("{} ", model_name), Style::default().fg(model_color).add_modifier(Modifier::BOLD)),
             ]).alignment(Alignment::Right)
