@@ -52,14 +52,23 @@ impl KeyCombo {
         // but NEVER (NONE, Char('g')) for a shifted press. So only match
         // when the pressed char is already uppercase (NONE modifier) or
         // SHIFT is held — reject plain lowercase to avoid t matching T.
-        if self.modifiers == KeyModifiers::SHIFT {
+        // Shift+letter bindings: crossterm delivers uppercase chars
+        // inconsistently depending on terminal + Kitty flags. Generalized
+        // for pure SHIFT and combined modifiers (e.g. CTRL+SHIFT+C).
+        if self.modifiers.contains(KeyModifiers::SHIFT) {
             if let KeyCode::Char(c) = self.code {
                 if c.is_ascii_uppercase() {
+                    let other_mods = self.modifiers.difference(KeyModifiers::SHIFT);
                     if let KeyCode::Char(pressed) = code {
-                        if modifiers == KeyModifiers::SHIFT && pressed.to_ascii_uppercase() == c {
+                        // (other_mods | SHIFT, any case) — SHIFT explicitly flagged
+                        if modifiers.contains(KeyModifiers::SHIFT)
+                            && modifiers.difference(KeyModifiers::SHIFT) == other_mods
+                            && pressed.to_ascii_uppercase() == c
+                        {
                             return true;
                         }
-                        if modifiers == KeyModifiers::NONE && pressed == c {
+                        // (other_mods, uppercase) — legacy terminals omit SHIFT flag
+                        if modifiers == other_mods && pressed == c {
                             return true;
                         }
                     }
@@ -69,16 +78,37 @@ impl KeyCombo {
         false
     }
 
-    /// Platform-appropriate display string (macOS symbols)
+    /// Platform-appropriate display string
+    /// macOS: ⌃⌥⇧⌘ symbols. Windows/Linux: Ctrl+Alt+Shift+ text labels.
     pub fn display(&self) -> String {
         let mut s = String::new();
-        if self.modifiers.contains(KeyModifiers::CONTROL) { s.push('⌃'); }
-        if self.modifiers.contains(KeyModifiers::ALT) { s.push('⌥'); }
-        // Only show ⇧ for non-char keys (arrows, enter, etc.) — uppercase chars imply Shift
-        if self.modifiers.contains(KeyModifiers::SHIFT) && !matches!(self.code, KeyCode::Char(_)) {
-            s.push('⇧');
+
+        #[cfg(target_os = "macos")]
+        {
+            if self.modifiers.contains(KeyModifiers::CONTROL) { s.push('⌃'); }
+            if self.modifiers.contains(KeyModifiers::ALT) { s.push('⌥'); }
+            // Show ⇧ for non-char keys always, and for char keys when
+            // combined with other modifiers (e.g. ⌃⇧C vs just G)
+            if self.modifiers.contains(KeyModifiers::SHIFT) {
+                let has_other_mods = self.modifiers != KeyModifiers::SHIFT;
+                if !matches!(self.code, KeyCode::Char(_)) || has_other_mods {
+                    s.push('⇧');
+                }
+            }
+            if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
         }
-        if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if self.modifiers.contains(KeyModifiers::CONTROL) { s.push_str("Ctrl+"); }
+            if self.modifiers.contains(KeyModifiers::ALT) { s.push_str("Alt+"); }
+            if self.modifiers.contains(KeyModifiers::SHIFT) {
+                let has_other_mods = self.modifiers != KeyModifiers::SHIFT;
+                if !matches!(self.code, KeyCode::Char(_)) || has_other_mods {
+                    s.push_str("Shift+");
+                }
+            }
+        }
 
         match self.code {
             KeyCode::Char(' ') => s.push_str("Space"),
@@ -507,25 +537,42 @@ mod tests {
     #[test]
     fn display_ctrl_char() {
         let kc = KeyCombo::ctrl(KeyCode::Char('c'));
-        assert_eq!(kc.display(), "⌃c");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌃c");
+        } else {
+            assert_eq!(kc.display(), "Ctrl+c");
+        }
     }
 
     #[test]
     fn display_alt_char() {
         let kc = KeyCombo::alt(KeyCode::Char('x'));
-        assert_eq!(kc.display(), "⌥x");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌥x");
+        } else {
+            assert_eq!(kc.display(), "Alt+x");
+        }
     }
 
     #[test]
     fn display_cmd_char() {
         let kc = KeyCombo::cmd(KeyCode::Char('o'));
-        assert_eq!(kc.display(), "⌘o");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌘o");
+        } else {
+            // SUPER modifier not displayed on non-macOS (bindings use Ctrl+ instead)
+            assert_eq!(kc.display(), "o");
+        }
     }
 
     #[test]
     fn display_ctrl_alt() {
         let kc = KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::ALT, KeyCode::Char('d'));
-        assert_eq!(kc.display(), "⌃⌥d");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌃⌥d");
+        } else {
+            assert_eq!(kc.display(), "Ctrl+Alt+d");
+        }
     }
 
     #[test]
@@ -549,7 +596,11 @@ mod tests {
     #[test]
     fn display_backtab() {
         let kc = KeyCombo::shift(KeyCode::BackTab);
-        assert_eq!(kc.display(), "⇧Tab");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⇧Tab");
+        } else {
+            assert_eq!(kc.display(), "Shift+Tab");
+        }
     }
 
     #[test]
@@ -592,15 +643,22 @@ mod tests {
 
     #[test]
     fn display_shift_arrow_shows_shift() {
-        // Shift IS shown for non-char keys
         let kc = KeyCombo::shift(KeyCode::Up);
-        assert_eq!(kc.display(), "⇧↑");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⇧↑");
+        } else {
+            assert_eq!(kc.display(), "Shift+↑");
+        }
     }
 
     #[test]
     fn display_ctrl_shift_enter() {
         let kc = KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::SHIFT, KeyCode::Enter);
-        assert_eq!(kc.display(), "⌃⇧Enter");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌃⇧Enter");
+        } else {
+            assert_eq!(kc.display(), "Ctrl+Shift+Enter");
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -728,7 +786,6 @@ mod tests {
 
     #[test]
     fn display_keys_skips_macos_unicode_alt() {
-        // A bare non-ASCII char with NONE modifiers should be skipped (macOS ⌥ fallback)
         static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
         let kb = Keybinding::with_alt(
             KeyCombo::alt(KeyCode::Char('r')),
@@ -736,13 +793,15 @@ mod tests {
             "Test",
             Action::Quit,
         );
-        // ® is non-ASCII with NONE modifiers → skipped
-        assert_eq!(kb.display_keys(), "⌥r");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys(), "⌥r");
+        } else {
+            assert_eq!(kb.display_keys(), "Alt+r");
+        }
     }
 
     #[test]
     fn display_keys_keeps_non_ascii_with_modifier() {
-        // Non-ASCII char WITH a modifier should NOT be skipped
         static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('®') }];
         let kb = Keybinding::with_alt(
             KeyCombo::alt(KeyCode::Char('r')),
@@ -750,7 +809,11 @@ mod tests {
             "Test",
             Action::Quit,
         );
-        assert_eq!(kb.display_keys(), "⌥r/⌃®");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys(), "⌥r/⌃®");
+        } else {
+            assert_eq!(kb.display_keys(), "Alt+r/Ctrl+®");
+        }
     }
 
     #[test]
@@ -765,7 +828,11 @@ mod tests {
             "Down",
             Action::NavDown,
         );
-        assert_eq!(kb.display_keys(), "j/↓/⌃n");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys(), "j/↓/⌃n");
+        } else {
+            assert_eq!(kb.display_keys(), "j/↓/Ctrl+n");
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -875,7 +942,11 @@ mod tests {
     #[test]
     fn display_ctrl_space() {
         let kc = KeyCombo::ctrl(KeyCode::Char(' '));
-        assert_eq!(kc.display(), "⌃Space");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⌃Space");
+        } else {
+            assert_eq!(kc.display(), "Ctrl+Space");
+        }
     }
 
     #[test]
@@ -937,7 +1008,11 @@ mod tests {
             "Undo",
             Action::Undo,
         );
-        assert_eq!(kb.display_keys(), "⌃z");
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys(), "⌃z");
+        } else {
+            assert_eq!(kb.display_keys(), "Ctrl+z");
+        }
     }
 
     #[test]

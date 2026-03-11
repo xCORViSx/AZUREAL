@@ -53,7 +53,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode => true,
             // ⌘A archive must not fire in Viewer — Viewer owns ⌘A for select-all
             Action::ToggleArchiveWorktree if ctx.focus == Focus::Viewer => true,
-            // ⌘C global copy must not fire in edit mode — edit handler owns clipboard
+            // Global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
             Action::CycleFocusForward | Action::CycleFocusBackward
@@ -182,15 +182,26 @@ mod tests {
     }
 
     #[test]
-    fn global_ctrl_c_cancels_claude() {
+    fn global_cancel_claude() {
         let ctx = cmd_ctx(Focus::Worktrees);
+        // macOS: ⌃C = Cancel, Windows/Linux: ⌃⇧C = Cancel
+        #[cfg(target_os = "macos")]
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')), Some(Action::CancelClaude));
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mods = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+            assert_eq!(lookup_action(&ctx, mods, KeyCode::Char('C')), Some(Action::CancelClaude));
+        }
     }
 
     #[test]
-    fn global_cmd_c_copies_selection() {
+    fn global_copy_selection() {
         let ctx = cmd_ctx(Focus::Worktrees);
+        // macOS: ⌘C = Copy, Windows/Linux: ⌃C = Copy
+        #[cfg(target_os = "macos")]
         assert_eq!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('c')), Some(Action::CopySelection));
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')), Some(Action::CopySelection));
     }
 
     #[test]
@@ -322,9 +333,16 @@ mod tests {
     }
 
     #[test]
-    fn prompt_mode_does_not_skip_ctrl_c() {
+    fn prompt_mode_does_not_skip_cancel() {
         let ctx = KeyContext { focus: Focus::Input, prompt_mode: true, edit_mode: false, terminal_mode: false, help_open: false };
+        // macOS: ⌃C = Cancel, Windows/Linux: ⌃⇧C = Cancel
+        #[cfg(target_os = "macos")]
         assert_eq!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')), Some(Action::CancelClaude));
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mods = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+            assert_eq!(lookup_action(&ctx, mods, KeyCode::Char('C')), Some(Action::CancelClaude));
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -333,8 +351,12 @@ mod tests {
 
     #[test]
     fn edit_mode_skips_copy_selection() {
+        // Global copy skipped in edit mode — edit handler owns clipboard
         let ctx = KeyContext { focus: Focus::Viewer, prompt_mode: false, edit_mode: true, terminal_mode: false, help_open: false };
+        #[cfg(target_os = "macos")]
         assert_ne!(lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('c')), Some(Action::CopySelection));
+        #[cfg(not(target_os = "macos"))]
+        assert_ne!(lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')), Some(Action::CopySelection));
     }
 
     #[test]

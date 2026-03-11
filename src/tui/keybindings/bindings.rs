@@ -37,17 +37,71 @@ static ALT_MACOS_T: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, c
 static ALT_LBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('{') }];
 static ALT_RBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('}') }];
 
-// Cmd+Shift modifier combo
+// Modifier combos
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
     KeyModifiers::SUPER.bits() | KeyModifiers::SHIFT.bits()
 );
+#[allow(dead_code)] // Used on non-macOS targets
+const CTRL_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
+    KeyModifiers::CONTROL.bits() | KeyModifiers::SHIFT.bits()
+);
+
+// ── Platform-conditional key combos ──────────────────────────────────────────
+// macOS: ⌘ bindings (Cmd key). Windows/Linux: Ctrl or Ctrl+Shift equivalents.
+// Super (Win key) is intercepted by the OS on Windows — terminals never receive it.
+
+#[cfg(target_os = "macos")]
+const KEY_COPY: KeyCombo = KeyCombo::cmd(KeyCode::Char('c'));
+#[cfg(not(target_os = "macos"))]
+const KEY_COPY: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
+
+#[cfg(target_os = "macos")]
+const KEY_CANCEL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
+#[cfg(not(target_os = "macos"))]
+const KEY_CANCEL: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('C'));
+
+#[cfg(target_os = "macos")]
+const KEY_ARCHIVE: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
+#[cfg(not(target_os = "macos"))]
+const KEY_ARCHIVE: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('A'));
+
+#[cfg(target_os = "macos")]
+const KEY_DELETE_WT: KeyCombo = KeyCombo::cmd(KeyCode::Char('d'));
+#[cfg(not(target_os = "macos"))]
+const KEY_DELETE_WT: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('D'));
+
+#[cfg(target_os = "macos")]
+const KEY_SELECT_ALL: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
+#[cfg(not(target_os = "macos"))]
+const KEY_SELECT_ALL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('a'));
+
+#[cfg(target_os = "macos")]
+const KEY_SAVE: KeyCombo = KeyCombo::cmd(KeyCode::Char('s'));
+#[cfg(not(target_os = "macos"))]
+const KEY_SAVE: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
+
+#[cfg(target_os = "macos")]
+const KEY_UNDO: KeyCombo = KeyCombo::cmd(KeyCode::Char('z'));
+#[cfg(not(target_os = "macos"))]
+const KEY_UNDO: KeyCombo = KeyCombo::ctrl(KeyCode::Char('z'));
+
+#[cfg(target_os = "macos")]
+const KEY_REDO: KeyCombo = KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z'));
+#[cfg(not(target_os = "macos"))]
+const KEY_REDO: KeyCombo = KeyCombo::ctrl(KeyCode::Char('y'));
+
+// STT in edit mode: ⌃s on macOS (no conflict with ⌘s Save), ⌃⇧S on non-macOS (⌃s is Save)
+#[cfg(target_os = "macos")]
+const KEY_EDIT_STT: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
+#[cfg(not(target_os = "macos"))]
+const KEY_EDIT_STT: KeyCombo = KeyCombo::new(CTRL_SHIFT, KeyCode::Char('S'));
 
 /// Global keybindings (always active, checked first)
 pub static GLOBAL: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit azureal", Action::Quit),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('d')), "Dump debug output", Action::DumpDebug),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('c')), "Cancel agent", Action::CancelClaude),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('c')), "Copy selection", Action::CopySelection),
+    Keybinding::new(KEY_CANCEL, "Cancel agent", Action::CancelClaude),
+    Keybinding::new(KEY_COPY, "Copy selection", Action::CopySelection),
     Keybinding::new(KeyCombo::ctrl(KeyCode::Char('m')), "Cycle model", Action::CycleModel),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('?')), "Toggle help", Action::ToggleHelp),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('p')), "Enter prompt mode", Action::EnterPromptMode),
@@ -63,8 +117,8 @@ pub static GLOBAL: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle focus forward", Action::CycleFocusForward),
     Keybinding::new(KeyCombo::plain(KeyCode::BackTab), "Cycle focus backward", Action::CycleFocusBackward),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('w')), "Add worktree", Action::AddWorktree),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Archive worktree", Action::ToggleArchiveWorktree),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('d')), "Delete worktree", Action::DeleteWorktree),
+    Keybinding::new(KEY_ARCHIVE, "Archive worktree", Action::ToggleArchiveWorktree),
+    Keybinding::new(KEY_DELETE_WT, "Delete worktree", Action::DeleteWorktree),
 ];
 
 /// Worktree tab row bindings — kept empty; worktree actions are now global
@@ -101,7 +155,7 @@ pub static VIEWER: [Keybinding; 14] = [
     Keybinding::new(KeyCombo::alt(KeyCode::Left), "Prev Edit", Action::JumpPrevEdit),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('e')), "Edit file", Action::EnterEditMode),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close viewer", Action::Escape),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('a')), "Select all", Action::SelectAll),
+    Keybinding::new(KEY_SELECT_ALL, "Select all", Action::SelectAll),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('t')), "Tab file", Action::ViewerTabCurrent),
     Keybinding::with_alt(KeyCombo::alt(KeyCode::Char('t')), &ALT_MACOS_T, "Tab dialog", Action::ViewerOpenTabDialog),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Close tab", Action::ViewerCloseTab),
@@ -109,10 +163,10 @@ pub static VIEWER: [Keybinding; 14] = [
 
 /// Edit mode bindings
 pub static EDIT_MODE: [Keybinding; 5] = [
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('s')), "Save file", Action::Save),
-    Keybinding::new(KeyCombo::cmd(KeyCode::Char('z')), "Undo", Action::Undo).paired(),
-    Keybinding::new(KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z')), "Redo", Action::Redo),
-    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Speech input", Action::ToggleStt),
+    Keybinding::new(KEY_SAVE, "Save file", Action::Save),
+    Keybinding::new(KEY_UNDO, "Undo", Action::Undo).paired(),
+    Keybinding::new(KEY_REDO, "Redo", Action::Redo),
+    Keybinding::new(KEY_EDIT_STT, "Speech input", Action::ToggleStt),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Exit edit mode", Action::Escape),
 ];
 
@@ -537,7 +591,10 @@ mod tests {
     #[test]
     fn global_has_copy_selection() {
         let b = GLOBAL.iter().find(|b| b.action == Action::CopySelection).unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
     }
 
     #[test]

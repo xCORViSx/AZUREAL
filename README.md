@@ -116,11 +116,12 @@ azureal
 | `P` | Projects panel |
 | `/` | Search / filter |
 | `?` | Help |
-| `⌘a` | Archive worktree |
-| `⌘d` | Delete worktree |
-| `⌃c` | Cancel agent |
-| `⌃m` | Cycle model |
-| `⌃q` | Quit |
+| `⌘a` / `Ctrl+Shift+A` | Archive worktree |
+| `⌘d` / `Ctrl+Shift+D` | Delete worktree |
+| `⌘c` / `Ctrl+C` | Copy selection |
+| `⌃c` / `Ctrl+Shift+C` | Cancel agent |
+| `⌃m` / `Ctrl+M` | Cycle model |
+| `⌃q` / `Ctrl+Q` | Quit |
 
 **Input modes** are indicated by the input box border color:
 

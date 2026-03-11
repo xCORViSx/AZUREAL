@@ -194,6 +194,24 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 - `libc` — Unix only, for `getrusage()` CPU time sampling
 - `windows-sys` — Windows only, for `GetProcessTimes()` CPU time sampling
 
+**Platform-conditional keybindings** (`src/tui/keybindings/bindings.rs`):
+
+macOS `⌘` (Super) bindings get platform equivalents via `#[cfg(target_os = "macos")]` const key combos. Windows/Linux terminals cannot capture the Win/Super key. On Windows/Linux, Copy uses `Ctrl+C` and Cancel uses `Ctrl+Shift+C` (swapped from the macOS layout where `⌃C` is cancel).
+
+| Action | macOS | Windows/Linux |
+|--------|-------|---------------|
+| Copy selection | `⌘c` | `Ctrl+C` |
+| Cancel agent | `⌃c` | `Ctrl+Shift+C` |
+| Archive worktree | `⌘a` | `Ctrl+Shift+A` |
+| Delete worktree | `⌘d` | `Ctrl+Shift+D` |
+| Select all | `⌘a` | `Ctrl+A` |
+| Save file | `⌘s` | `Ctrl+S` |
+| Undo | `⌘z` | `Ctrl+Z` |
+| Redo | `⌘⇧Z` | `Ctrl+Y` |
+| STT (edit mode) | `⌃s` | `Ctrl+Shift+S` |
+
+Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+Shift+` text labels on Windows/Linux.
+
 **Runtime platform guards:**
 
 - Shell detection (`src/app/terminal.rs`): `COMSPEC`/`cmd.exe` on Windows, `SHELL`/`/bin/bash` on Unix
@@ -692,7 +710,7 @@ Key mappings:
 - `T` (Shift+T, global, except edit mode): Toggle terminal pane
 - `G` (Shift+G, global, except edit mode): Toggle Git panel
 
-**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `R`, `?`, `Tab`, `Shift+Tab`, `⌥r`) from firing during text input, edit mode, terminal mode, sidebar filter, or wizard. `⌘C` is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead. **Every Shift+letter global binding MUST be in the skip list** or it will steal uppercase letter input in prompt mode.
+**CRITICAL: All keybinding guards are centralized in `lookup_action()`.** The skip logic in `lookup_action()` prevents single-key globals (`p`, `T`, `G`, `R`, `?`, `Tab`, `Shift+Tab`, `⌥r`) from firing during text input, edit mode, terminal mode, sidebar filter, or wizard. `⌘C` (copy) is skipped in edit mode so the edit handler owns clipboard. Tab/Shift+Tab skipped in edit mode, help overlay, and wizard. **NEVER add guard conditions in event_loop.rs or input handlers** — add them to the skip match in `lookup_action()` instead. **Every Shift+letter global binding MUST be in the skip list** or it will steal uppercase letter input in prompt mode.
 - `Escape` / click another pane / `Tab` (in prompt mode): Return to command mode
 - `Enter` (in prompt mode): Submit prompt. If Claude is already running, a single Enter cancels the current run and auto-sends the new prompt once the process exits (via `staged_prompt` mechanism — no second Enter needed)
 
@@ -1723,6 +1741,7 @@ azureal
 | `⌘a` | Archive worktree (falls through to select-all in Viewer) |
 | `⌘d` | Delete worktree |
 | `?` | Help |
+| `⌘c` | Copy selection |
 | `⌃c` | Cancel agent |
 | `⌃m` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` | Quit |

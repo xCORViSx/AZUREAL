@@ -184,7 +184,8 @@ impl App {
     pub fn start_new_session(&mut self) {
         if let Some(wt) = self.current_worktree().cloned() {
             if wt.archived {
-                self.set_status("Worktree is archived — unarchive first (⌘a)");
+                let key = if cfg!(target_os = "macos") { "⌘a" } else { "Ctrl+Shift+A" };
+                self.set_status(&format!("Worktree is archived — unarchive first ({key})"));
             } else if wt.worktree_path.is_some() {
                 let branch = wt.branch_name.clone();
                 self.claude_session_ids.remove(&branch);
