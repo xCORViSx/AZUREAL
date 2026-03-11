@@ -68,20 +68,43 @@ impl Git {
         }
     }
 
-    /// List all prefixed branches (for archived session detection)
+    /// List all prefixed branches (for archived session detection).
+    /// Includes both local branches and remote branches (from origin).
+    /// Remote branches appear as archived worktrees when no local checkout exists.
     pub fn list_azureal_branches(repo_path: &Path) -> Result<Vec<String>> {
         let pattern = format!("{}/*", crate::models::BRANCH_PREFIX);
-        let output = Command::new("git")
+
+        // Local branches: azureal/*
+        let local_output = Command::new("git")
             .args(["branch", "--list", &pattern, "--format=%(refname:short)"])
             .current_dir(repo_path)
             .output()
-            .context("Failed to list branches")?;
+            .context("Failed to list local branches")?;
 
-        let branches: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        let mut branches: Vec<String> = String::from_utf8_lossy(&local_output.stdout)
             .lines()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+
+        // Remote branches: origin/azureal/* (strip origin/ prefix to get branch name)
+        let remote_pattern = format!("origin/{}/*", crate::models::BRANCH_PREFIX);
+        let remote_output = Command::new("git")
+            .args(["branch", "-r", "--list", &remote_pattern, "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to list remote branches")?;
+
+        for line in String::from_utf8_lossy(&remote_output.stdout).lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            // Strip "origin/" prefix to get the bare branch name
+            let branch_name = trimmed.strip_prefix("origin/").unwrap_or(trimmed);
+            // Only add if not already present as a local branch
+            if !branches.contains(&branch_name.to_string()) {
+                branches.push(branch_name.to_string());
+            }
+        }
 
         Ok(branches)
     }
