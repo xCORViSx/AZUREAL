@@ -211,6 +211,8 @@ pub struct App {
     pub cpu_usage_text: String,
     /// Last getrusage sample: (wall_time, cpu_time_micros)
     pub cpu_last_sample: (std::time::Instant, u64),
+    /// Exponentially smoothed CPU percentage (reduces noise from Windows timer granularity)
+    pub cpu_smoothed: f64,
     /// Cached input area rect from last full draw — used for fast-path direct
     /// input rendering that bypasses terminal.draw() during rapid typing.
     pub input_area: ratatui::layout::Rect,
@@ -597,6 +599,7 @@ impl App {
             draw_pending: false,
             cpu_usage_text: String::new(),
             cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),
+            cpu_smoothed: 0.0,
             input_area: ratatui::layout::Rect::default(),
             pane_worktrees: ratatui::layout::Rect::default(),
             pane_viewer: ratatui::layout::Rect::default(),
@@ -796,15 +799,21 @@ impl App {
     pub fn update_cpu_usage(&mut self) {
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.cpu_last_sample.0);
-        if elapsed.as_millis() < 1000 { return; }
+        // Sample every 3s — longer window averages out Windows timer tick noise
+        // (GetProcessTimes only updates at ~15.6ms granularity)
+        if elapsed.as_millis() < 3000 { return; }
         let cpu_now = get_cpu_time_micros();
         let cpu_delta = cpu_now.saturating_sub(self.cpu_last_sample.1) as f64;
         let wall_delta = elapsed.as_micros() as f64;
         let cores = std::thread::available_parallelism()
             .map(|n| n.get() as f64)
             .unwrap_or(1.0);
-        let pct = if wall_delta > 0.0 { cpu_delta / wall_delta / cores * 100.0 } else { 0.0 };
-        self.cpu_usage_text = format!("{:.0}%", pct);
+        let raw_pct = if wall_delta > 0.0 { cpu_delta / wall_delta / cores * 100.0 } else { 0.0 };
+        // Exponential moving average (alpha=0.2) for heavy smoothing
+        self.cpu_smoothed = if self.cpu_smoothed == 0.0 { raw_pct } else { self.cpu_smoothed * 0.8 + raw_pct * 0.2 };
+        // Floor: show "0%" for values under 0.5 to match Task Manager conventions
+        let display = if self.cpu_smoothed < 0.5 { 0.0 } else { self.cpu_smoothed };
+        self.cpu_usage_text = format!("{:.0}%", display);
         self.cpu_last_sample = (now, cpu_now);
     }
 

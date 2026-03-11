@@ -129,7 +129,11 @@ pub async fn run_app(
         let squash_merging = app.git_actions_panel.as_ref()
             .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
         let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some();
-        let is_busy = app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || app.session_file_dirty || app.file_tree_refresh_pending || app.health_refresh_pending || commit_generating || squash_merging || bg_pending;
+        // Note: session_file_dirty, file_tree_refresh_pending, health_refresh_pending
+        // are NOT included — they have their own debounce timers and don't need
+        // the main loop to busy-spin. Including them caused sustained high CPU
+        // when file watchers fired frequently (the debounce kept resetting).
+        let is_busy = app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || commit_generating || squash_merging || bg_pending;
 
         // First event: block briefly when idle so we don't spin the CPU
         let first_event = if is_busy {
