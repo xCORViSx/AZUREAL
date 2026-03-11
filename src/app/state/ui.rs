@@ -91,6 +91,7 @@ impl App {
         };
         let (commits_behind_remote, commits_ahead_remote) = Git::get_remote_divergence(&wt_path);
 
+        self.force_full_redraw = true;
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
@@ -134,6 +135,7 @@ impl App {
         }
         self.git_actions_panel = None;
         self.git_status_selected = false;
+        self.force_full_redraw = true;
         // Session pane visible again — clear unread for the viewed session, then
         // recompute branch-level unread (remove branch if no more unread UUIDs)
         if let Some(wt) = self.current_worktree() {

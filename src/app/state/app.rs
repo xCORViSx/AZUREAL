@@ -207,6 +207,11 @@ pub struct App {
     /// True when state changed and a draw is needed. Draw is deferred if keys
     /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
     pub draw_pending: bool,
+    /// When true, next terminal.draw() calls terminal.clear() first to reset
+    /// ratatui's internal buffer. Needed after fast_draw_session() writes
+    /// directly to the terminal — ratatui doesn't know those cells changed,
+    /// so its diff misses them when switching to a different layout (e.g. git panel).
+    pub force_full_redraw: bool,
     /// Cached CPU usage string for status bar (updated every ~1s via getrusage delta)
     pub cpu_usage_text: String,
     /// Last getrusage sample: (wall_time, cpu_time_micros)
@@ -597,6 +602,7 @@ impl App {
             render_in_flight: false,
             last_render_submit: std::time::Instant::now(),
             draw_pending: false,
+            force_full_redraw: false,
             cpu_usage_text: String::new(),
             cpu_last_sample: (std::time::Instant::now(), get_cpu_time_micros()),
             cpu_smoothed: 0.0,

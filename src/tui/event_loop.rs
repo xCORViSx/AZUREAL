@@ -629,6 +629,10 @@ pub async fn run_app(
                 fast_draw_input(app);
             }
             if !got_key {
+                if app.force_full_redraw {
+                    terminal.clear()?;
+                    app.force_full_redraw = false;
+                }
                 terminal.draw(|f| ui(f, app))?;
                 last_draw = Instant::now();
                 app.draw_pending = false;
