@@ -13,6 +13,7 @@ mod actions;
 mod claude_events;
 mod claude_processor;
 mod coords;
+#[allow(dead_code)] // macOS-only fast paths; compiled on all platforms for tests
 mod fast_draw;
 mod input_thread;
 mod mouse;

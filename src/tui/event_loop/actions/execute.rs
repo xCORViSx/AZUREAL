@@ -83,13 +83,6 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             if app.browsing_main { app.exit_main_browse(); }
             else { app.enter_main_browse(); }
         }
-        Action::ReturnToWorktrees if !app.god_file_filter_mode => {
-            if app.browsing_main { app.exit_main_browse(); }
-            else {
-                app.focus = Focus::FileTree;
-                app.invalidate_sidebar();
-            }
-        }
         Action::ToggleSessionList => {
             if app.show_session_list { app.show_session_list = false; }
             else { open_session_list(app); }
@@ -479,8 +472,6 @@ mod tests {
     fn test_action_resize_down_eq() { assert_eq!(Action::ResizeDown, Action::ResizeDown); }
     #[test]
     fn test_action_browse_main_eq() { assert_eq!(Action::BrowseMain, Action::BrowseMain); }
-    #[test]
-    fn test_action_return_to_worktrees_eq() { assert_eq!(Action::ReturnToWorktrees, Action::ReturnToWorktrees); }
     #[test]
     fn test_action_toggle_session_list_eq() { assert_eq!(Action::ToggleSessionList, Action::ToggleSessionList); }
     #[test]

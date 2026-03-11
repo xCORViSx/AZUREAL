@@ -132,6 +132,7 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
 
 /// Rebuild a FileTreeAction from tag + buffer. Extracted for testability.
 /// tag 0 = Add, tag 1 = Rename.
+#[cfg(test)]
 fn rebuild_action(tag: u8, buf: String) -> FileTreeAction {
     if tag == 0 { FileTreeAction::Add(buf) } else { FileTreeAction::Rename(buf) }
 }

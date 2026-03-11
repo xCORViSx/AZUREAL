@@ -831,11 +831,6 @@ impl App {
             .unwrap_or(false)
     }
 
-    /// True if any Claude process is running on the currently viewed branch
-    pub fn is_current_session_running(&self) -> bool {
-        self.current_worktree().map(|s| self.is_session_running(&s.branch_name)).unwrap_or(false)
-    }
-
     /// True if the ACTIVE slot (the one feeding display_events) is running
     pub fn is_active_slot_running(&self) -> bool {
         self.current_worktree().and_then(|s| {
@@ -1592,29 +1587,6 @@ mod tests {
         app.branch_slots.insert("branch-a".to_string(), vec!["pid-123".to_string()]);
         // pid-123 not in running_sessions
         assert!(!app.is_session_running("branch-a"));
-    }
-
-    // ── is_current_session_running ──
-
-    #[test]
-    fn is_current_session_running_no_worktree() {
-        let app = App::new();
-        assert!(!app.is_current_session_running());
-    }
-
-    #[test]
-    fn is_current_session_running_true() {
-        let mut app = App::new();
-        app.worktrees.push(Worktree {
-            branch_name: "azureal/test".to_string(),
-            worktree_path: Some(PathBuf::from("/tmp")),
-            claude_session_id: None,
-            archived: false,
-        });
-        app.selected_worktree = Some(0);
-        app.branch_slots.insert("azureal/test".to_string(), vec!["pid-1".to_string()]);
-        app.running_sessions.insert("pid-1".to_string());
-        assert!(app.is_current_session_running());
     }
 
     // ── is_active_slot_running ──

@@ -108,6 +108,7 @@ impl Git {
     /// Parse `git worktree list --porcelain` output into worktree paths.
     /// Extracted for testability — the public `list_worktrees` calls git and
     /// feeds the stdout here.
+    #[cfg(test)]
     pub(crate) fn parse_worktree_paths(stdout: &str) -> Vec<String> {
         stdout.lines()
             .filter(|line| line.starts_with("worktree "))
@@ -118,6 +119,7 @@ impl Git {
     /// Parse `git worktree list --porcelain` output into `WorktreeInfo` structs.
     /// Extracted for testability — the public `list_worktrees_detailed` calls
     /// git and feeds stdout + repo_path here.
+    #[cfg(test)]
     pub(crate) fn parse_worktree_info(stdout: &str, repo_path: &Path) -> Vec<WorktreeInfo> {
         let mut worktrees = Vec::new();
         let mut current_path: Option<std::path::PathBuf> = None;

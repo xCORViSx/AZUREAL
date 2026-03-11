@@ -38,6 +38,7 @@ static ALT_LBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, co
 static ALT_RBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('}') }];
 
 // Modifier combos
+#[cfg(target_os = "macos")]
 const CMD_SHIFT: KeyModifiers = KeyModifiers::from_bits_truncate(
     KeyModifiers::SUPER.bits() | KeyModifiers::SHIFT.bits()
 );
@@ -628,11 +629,6 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn filetree_no_return_to_worktrees() {
-        assert!(!FILE_TREE.iter().any(|b| b.action == Action::ReturnToWorktrees));
-    }
-
-    #[test]
     fn filetree_j_has_down_arrow_alt() {
         let b = FILE_TREE.iter().find(|b| b.action == Action::NavDown).unwrap();
         assert!(b.alternatives.iter().any(|a| a.code == KeyCode::Down));
@@ -1135,25 +1131,29 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  CMD_SHIFT constant
+    //  CMD_SHIFT constant (macOS only)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn cmd_shift_contains_super() {
         assert!(CMD_SHIFT.contains(KeyModifiers::SUPER));
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn cmd_shift_contains_shift() {
         assert!(CMD_SHIFT.contains(KeyModifiers::SHIFT));
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn cmd_shift_does_not_contain_control() {
         assert!(!CMD_SHIFT.contains(KeyModifiers::CONTROL));
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn cmd_shift_does_not_contain_alt() {
         assert!(!CMD_SHIFT.contains(KeyModifiers::ALT));
     }

@@ -33,6 +33,7 @@ impl KeyCombo {
         Self { modifiers: KeyModifiers::ALT, code }
     }
 
+    #[cfg(target_os = "macos")]
     pub const fn cmd(code: KeyCode) -> Self {
         Self { modifiers: KeyModifiers::SUPER, code }
     }
@@ -184,7 +185,6 @@ pub enum Action {
     OpenProjects,
 
     // FileTree
-    ReturnToWorktrees,
     ToggleDir,
     OpenFile,
     AddFile,
@@ -400,6 +400,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn keycombo_cmd_sets_super() {
         let kc = KeyCombo::cmd(KeyCode::Char('o'));
         assert_eq!(kc.modifiers, KeyModifiers::SUPER);
@@ -570,14 +571,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn display_cmd_char() {
         let kc = KeyCombo::cmd(KeyCode::Char('o'));
-        if cfg!(target_os = "macos") {
-            assert_eq!(kc.display(), "⌘o");
-        } else {
-            // SUPER modifier not displayed on non-macOS (bindings use Ctrl+ instead)
-            assert_eq!(kc.display(), "o");
-        }
+        assert_eq!(kc.display(), "⌘o");
     }
 
     #[test]

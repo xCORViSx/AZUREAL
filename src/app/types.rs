@@ -12,6 +12,7 @@ pub enum ViewerMode {
     #[default]
     Empty, // Nothing selected
     File, // Showing file from FileTree
+    #[allow(dead_code)] // Used in draw_viewer match + tests
     Diff, // Showing diff from Session
     Image, // Showing image from FileTree (rendered via terminal graphics protocol)
 }
