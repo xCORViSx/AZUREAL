@@ -166,6 +166,10 @@ pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
 /// Old Claude CLI versions used `replace('/', '-')` which preserved chars like `+`.
 /// Current Claude CLI uses `replace(/[^a-zA-Z0-9]/g, '-')`.
 /// Call once at startup to rename any stale directories.
+///
+/// Also performs cross-platform session linking: if the native project dir doesn't
+/// exist but a foreign-platform dir with the same worktree suffix does, creates a
+/// symlink (macOS/Linux) or junction (Windows) so sessions sync across machines.
 pub fn migrate_project_dirs(worktree_paths: &[std::path::PathBuf]) {
     let Some(home) = dirs::home_dir() else { return };
     let projects_dir = home.join(".claude").join("projects");
@@ -174,14 +178,90 @@ pub fn migrate_project_dirs(worktree_paths: &[std::path::PathBuf]) {
     for wt_path in worktree_paths {
         let new_name = encode_project_path(wt_path);
         let old_name = wt_path.to_string_lossy().replace('/', "-");
-        if new_name == old_name { continue; } // no change needed
+        if new_name != old_name {
+            let old_dir = projects_dir.join(&old_name);
+            let new_dir = projects_dir.join(&new_name);
 
-        let old_dir = projects_dir.join(&old_name);
-        let new_dir = projects_dir.join(&new_name);
+            // Old dir exists but new dir doesn't → rename
+            if old_dir.exists() && !new_dir.exists() {
+                let _ = std::fs::rename(&old_dir, &new_dir);
+            }
+        }
 
-        // Old dir exists but new dir doesn't → rename
-        if old_dir.exists() && !new_dir.exists() {
-            let _ = std::fs::rename(&old_dir, &new_dir);
+        // Cross-platform session linking: find a foreign-platform project dir
+        // with the same worktree suffix and link it to the native name.
+        let native_dir = projects_dir.join(&new_name);
+        if !native_dir.exists() {
+            if let Some(foreign) = find_foreign_project_dir(&projects_dir, wt_path) {
+                link_project_dir(&foreign, &native_dir);
+            }
+        }
+    }
+}
+
+/// Find a foreign-platform project directory that matches the same worktree.
+/// Extracts the repo-relative suffix (e.g. "-AZUREAL-worktrees-run") from the
+/// worktree path and searches for any existing project dir with that suffix.
+fn find_foreign_project_dir(projects_dir: &std::path::Path, worktree_path: &std::path::Path) -> Option<PathBuf> {
+    // Build suffix from path components after (and including) the repo name.
+    // e.g. /Users/foo/AZUREAL/worktrees/run → "-AZUREAL-worktrees-run"
+    //      C:\Users\bar\AZUREAL\worktrees\run → "-AZUREAL-worktrees-run"
+    // We use the last 3 components for worktrees (repo/worktrees/name) or
+    // last 1 for the main repo. The suffix is platform-independent since
+    // component names don't contain path separators.
+    let components: Vec<&str> = worktree_path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+
+    // Find "worktrees" in the path to determine the suffix depth
+    let suffix_parts = if let Some(pos) = components.iter().rposition(|&c| c == "worktrees") {
+        // Include repo name + worktrees + branch: components[pos-1..]
+        if pos > 0 { &components[pos - 1..] } else { &components[pos..] }
+    } else {
+        // Main repo: just the last component
+        if components.is_empty() { return None; }
+        &components[components.len() - 1..]
+    };
+
+    let suffix: String = suffix_parts.iter()
+        .map(|s| format!("-{}", s))
+        .collect();
+
+    if suffix.is_empty() { return None; }
+
+    let native_name = encode_project_path(worktree_path);
+    let Ok(entries) = std::fs::read_dir(projects_dir) else { return None };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        // Must end with same suffix, be a different name, and be a real directory
+        if name_str.ends_with(&suffix) && *name_str != native_name && entry.path().is_dir() {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+/// Create a symlink (Unix) or junction (Windows) from `target` to `link`.
+/// Windows junctions don't require elevated privileges (unlike symlinks).
+fn link_project_dir(target: &std::path::Path, link: &std::path::Path) {
+    #[cfg(unix)]
+    { let _ = std::os::unix::fs::symlink(target, link); }
+    #[cfg(windows)]
+    {
+        // Use junction (NTFS reparse point) — no elevation required.
+        // Falls back to symlink_dir if junction fails.
+        let target_abs = dunce::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link.as_os_str())
+            .arg(target_abs.as_os_str())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !status.map(|s| s.success()).unwrap_or(false) {
+            let _ = std::os::windows::fs::symlink_dir(target, link);
         }
     }
 }
