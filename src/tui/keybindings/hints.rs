@@ -45,7 +45,11 @@ pub fn prompt_type_title() -> (String, String, String) {
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or(plat_ctrl("s"));
     let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or(plat_alt("p"));
     let shift_enter = plat_shift("Enter");
-    let alt_arrows = format!("{} ←/→ :word", if cfg!(target_os = "macos") { "⌥" } else { "Alt+" });
+    let alt_arrows = if cfg!(target_os = "macos") {
+        "⌥←/→:word".to_string()
+    } else {
+        "Alt+ ← / → :word".to_string()
+    };
     let hints = format!(
         "{}:exit | {}:submit | {}:newline | {}:cancel agent | {}/{}:history | {} | {}:del wrd | {}:speech | {}:presets",
         esc, submit, shift_enter, cancel, hprev, hnext, alt_arrows, dw, stt, presets
