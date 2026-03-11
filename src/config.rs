@@ -247,7 +247,7 @@ fn resolve_path(raw: &str) -> PathBuf {
     } else {
         PathBuf::from(raw)
     };
-    std::fs::canonicalize(&expanded).unwrap_or(expanded)
+    dunce::canonicalize(&expanded).unwrap_or(expanded)
 }
 
 /// Shorten a path by replacing home dir with ~
@@ -286,7 +286,7 @@ pub fn load_projects() -> Vec<ProjectEntry> {
 
 /// Look up the display name for a repo path from projects.
 pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
-    let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
+    let canonical = dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     load_projects().into_iter()
         .find(|e| e.path == canonical)
         .map(|e| e.display_name)
@@ -306,7 +306,7 @@ pub fn save_projects(entries: &[ProjectEntry]) {
 /// Called on startup when azureal detects a git repo.
 /// Display name: git remote repo name (from origin URL) → folder name fallback.
 pub fn register_project(repo_path: &std::path::Path) {
-    let canonical = std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
+    let canonical = dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     let mut entries = load_projects();
     if entries.iter().any(|e| e.path == canonical) { return; }
     let display_name = repo_name_from_origin(&canonical)

@@ -87,6 +87,7 @@ impl ClaudeProcess {
         let mut child = Command::new(self.config.claude_executable())
             .args(cmd.get_argv().iter().skip(1).map(|s| s.to_str().unwrap_or("")))
             .current_dir(working_dir)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

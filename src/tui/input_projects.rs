@@ -186,7 +186,7 @@ fn confirm_add(app: &mut App) {
     }
 
     // Check for duplicates
-    let canonical = std::fs::canonicalize(&path).unwrap_or(path.clone());
+    let canonical = dunce::canonicalize(&path).unwrap_or(path.clone());
     if let Some(ref panel) = app.projects_panel {
         if panel.entries.iter().any(|e| e.path == canonical) {
             if let Some(ref mut panel) = app.projects_panel {
@@ -269,7 +269,7 @@ fn confirm_init(app: &mut App) {
     match result {
         Ok(output) if output.status.success() => {
             // Register the new repo and refresh
-            let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+            let canonical = dunce::canonicalize(&path).unwrap_or(path);
             config::register_project(&canonical);
             if let Some(ref mut panel) = app.projects_panel {
                 panel.entries = config::load_projects();

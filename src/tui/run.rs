@@ -41,6 +41,11 @@ pub async fn run() -> Result<()> {
     // We intentionally omit REPORT_ALL_KEYS because it makes Shift+letter
     // arrive as (SHIFT, Char('1')) instead of (NONE, Char('!')), breaking
     // secondary character input (!, @, #, etc.).
+    //
+    // Disabled on Windows — Windows Terminal claims Kitty support but the
+    // implementation conflicts with mouse capture: scroll/arrow CSI sequences
+    // leak through as raw text (e.g. "[A[B" appearing in the input box).
+    #[cfg(not(target_os = "windows"))]
     let kbd_enhanced = execute!(
         stdout,
         PushKeyboardEnhancementFlags(
@@ -48,6 +53,8 @@ pub async fn run() -> Result<()> {
                 | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
         )
     ).is_ok();
+    #[cfg(target_os = "windows")]
+    let kbd_enhanced = false;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;

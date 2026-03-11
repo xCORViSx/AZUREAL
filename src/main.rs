@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         let contents = bundle_dir.join("Contents");
         let bundle_exec = contents.join("MacOS/azureal");
         let exe = std::env::current_exe()
-            .and_then(|p| p.canonicalize())
+            .and_then(|p| dunce::canonicalize(&p).map_err(Into::into))
             .unwrap_or_default();
 
         // Are we already running from inside the bundle? If so, skip re-exec.

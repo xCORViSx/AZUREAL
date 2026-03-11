@@ -84,6 +84,7 @@ notify-rust = "4.12"
 # Speech-to-text
 whisper-rs = "0.15"
 cpal = "0.17"
+dunce = "1.0.5"
 
 # Platform-specific
 [target.'cfg(unix)'.dependencies]
