@@ -27,7 +27,9 @@ use std::time::{Duration, Instant};
 
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::app::{App, Focus};
+use crate::app::App;
+#[cfg(any(target_os = "macos", test))]
+use crate::app::Focus;
 use crate::claude::ClaudeProcess;
 use crate::config::Config;
 
@@ -37,6 +39,7 @@ use super::run::ui;
 use actions::handle_key_event;
 use claude_events::handle_claude_event;
 use coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
+#[cfg(target_os = "macos")]
 use fast_draw::{fast_draw_input, fast_draw_session};
 use mouse::{apply_scroll_cached, handle_mouse_click, handle_mouse_drag};
 
@@ -181,7 +184,14 @@ pub async fn run_app(
         if had_key_event {
             last_key_time = Instant::now();
         }
+        // fast_draw_input bypasses ratatui and writes directly to stdout.
+        // Only safe on macOS — on Windows, direct escape sequences corrupt
+        // the console input parser (garbled text in input, broken cursor).
+        #[cfg(target_os = "macos")]
         let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
+        #[cfg(not(target_os = "macos"))]
+        let has_fast_path = false;
+        #[cfg(target_os = "macos")]
         if had_key_event && has_fast_path && app.focus == Focus::Input && app.input_area.width > 2 {
             fast_draw_input(app);
         }
@@ -557,17 +567,18 @@ pub async fn run_app(
 
         // Poll for completed render results from the background thread (non-blocking).
         // Always apply results immediately — session content stays up-to-date.
-        // During streaming follow-bottom without active typing: use fast_draw_session
-        // (direct cell writes, ~10-15KB) instead of waiting for the next full
-        // terminal.draw() (~87KB). Skip during typing — the escape sequences cause
-        // Terminal.app to delay keyboard forwarding, distorting keystroke timing.
-        // Session pane catches up on the next full draw after typing pauses (~300ms).
+        // On macOS: fast_draw_session (direct cell writes, ~10-15KB) updates the
+        // session pane without a full terminal.draw() (~87KB). Skipped during
+        // typing so escape sequences don't compete with keystroke processing.
+        // On Windows: disabled — direct CSI writes corrupt the console input
+        // parser, causing escape sequences to appear as text and broken cursor.
+        #[cfg(target_os = "macos")]
         let old_cache_len = app.rendered_lines_cache.len();
         if poll_render_result(app) {
-            let new_cache_len = app.rendered_lines_cache.len();
-            let new_line_count = new_cache_len.saturating_sub(old_cache_len);
+            #[cfg(target_os = "macos")]
+            {
+            let new_line_count = app.rendered_lines_cache.len().saturating_sub(old_cache_len);
             let follow_bottom = app.session_scroll == usize::MAX;
-
             if streaming && follow_bottom && new_line_count > 0
                 && !typing_recently
                 && app.pane_session_content.width > 2 && app.pane_session_content.height > 2
@@ -576,6 +587,7 @@ pub async fn run_app(
             {
                 fast_draw_session(app, new_line_count);
             }
+            } // #[cfg(target_os = "macos")]
             needs_redraw = true;
         }
 
@@ -586,16 +598,10 @@ pub async fn run_app(
             app.draw_pending = true;
         }
 
-        // Full draw: terminal.draw() writes escape sequences that Terminal.app must
-        // process. During streaming, draws happen at 30fps from parsed result redraws.
-        // Terminal.app delays keyboard forwarding while processing escape sequences,
-        // causing ~10% keystroke timing distortion. Two mitigations:
-        //
-        // 1. DEFER during typing: extend to full 300ms window (not just key frame).
-        //    fast_draw_input handles visual feedback. Zero draws during active typing.
-        //
-        // 2. THROTTLE during idle streaming: reduce from 30fps to 5fps when Claude
-        //    is streaming and the user isn't interacting.
+        // Full draw throttling during streaming:
+        // On macOS: defer draws during typing (fast_draw_input handles feedback).
+        // On Windows: no deferral — full draws handle everything.
+        // On all platforms: throttle to 5fps during idle streaming.
         let now = Instant::now();
         let draw_interval = if streaming && !had_key_event {
             Duration::from_millis(200) // 5fps idle during streaming
@@ -617,6 +623,7 @@ pub async fn run_app(
                 }
                 process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
             }
+            #[cfg(target_os = "macos")]
             if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
                 fast_draw_input(app);
             }

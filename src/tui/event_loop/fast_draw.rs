@@ -1,8 +1,10 @@
-//! Fast-path rendering bypasses
+//! Fast-path rendering bypasses (macOS only)
 //!
 //! Two fast paths that bypass terminal.draw() (~18ms) for instant feedback:
 //! - `fast_draw_input`: writes input box content via crossterm (~0.1ms)
 //! - `fast_draw_session`: rewrites session pane via direct cursor positioning (~2-5ms)
+//!
+//! Disabled on Windows — direct CSI writes corrupt the console input parser.
 
 use std::io::{self, Write};
 use crossterm::{cursor, execute, queue, style};
