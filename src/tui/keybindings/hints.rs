@@ -57,8 +57,8 @@ pub fn prompt_command_title() -> (String, String, String) {
     let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘a" } else { "Alt+a" }.into());
     let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or_else(|| if cfg!(target_os = "macos") { "⌘d" } else { "Alt+d" }.into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:run | {}:cancel agent | {}:quit",
-        p, t, g, h, dump, help, tab, stab, wt_prev, wt_next, wt_add, wt_archive, wt_delete, run, cancel, quit
+        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}:dump | {}:help | {}/{}:focus | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:cancel agent | {}:quit",
+        p, t, run, g, h, dump, help, tab, stab, wt_prev, wt_next, wt_add, wt_archive, wt_delete, cancel, quit
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
