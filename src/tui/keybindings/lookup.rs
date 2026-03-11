@@ -51,8 +51,10 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::WorktreeTabPrev | Action::WorktreeTabNext
             | Action::AddWorktree
                 if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode => true,
-            // ⌘A archive must not fire in Viewer — Viewer owns ⌘A for select-all
-            Action::ToggleArchiveWorktree if ctx.focus == Focus::Viewer => true,
+            // ⌘A archive must not fire in Viewer (select-all), prompt mode
+            // (select-all input), or edit mode (select-all editor)
+            Action::ToggleArchiveWorktree
+                if ctx.focus == Focus::Viewer || ctx.prompt_mode || ctx.edit_mode => true,
             // Global copy must not fire in edit mode — edit handler owns clipboard
             Action::CopySelection if ctx.edit_mode => true,
             // Tab/Shift+Tab must not steal focus in edit mode, help overlay, or wizard
