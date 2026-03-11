@@ -41,6 +41,21 @@ impl KeyCombo {
     #[inline]
     pub fn matches(&self, modifiers: KeyModifiers, code: KeyCode) -> bool {
         if self.modifiers == modifiers && self.code == code { return true; }
+        // Shifted-symbol bindings: characters like ?, !, @, #, etc. are
+        // produced by pressing Shift+<key>. On macOS, crossterm typically
+        // delivers these as (NONE, Char('?')). On Windows, crossterm
+        // delivers (SHIFT, Char('?')). When a binding uses plain(Char('?')),
+        // also accept SHIFT modifier if the char matches — the SHIFT is
+        // implicit in producing the character itself.
+        if self.modifiers == KeyModifiers::NONE
+            && modifiers == KeyModifiers::SHIFT
+            && self.code == code
+        {
+            if let KeyCode::Char(c) = code {
+                // Only for non-alpha chars — Shift+letter has separate handling below
+                if !c.is_ascii_alphabetic() { return true; }
+            }
+        }
         // Shift+letter bindings use shift(Char('G')) but crossterm delivers
         // uppercase chars inconsistently depending on terminal + Kitty flags:
         //   - (NONE, Char('G'))  — no Kitty or legacy terminals
