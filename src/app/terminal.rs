@@ -194,9 +194,24 @@ impl App {
         if let Some(ref rx) = self.terminal_rx {
             let was_at_bottom = self.terminal_scroll == 0;
             let mut had_data = false;
+            let mut needs_dsr_response = false;
             while let Ok(data) = rx.try_recv() {
+                // Check for DSR (Device Status Report) request: \x1b[6n
+                // ConPTY sends this and blocks until the host responds with cursor position.
+                if data.windows(4).any(|w| w == b"\x1b[6n") {
+                    needs_dsr_response = true;
+                }
                 self.terminal_parser.process(&data);
                 had_data = true;
+            }
+            // Respond to DSR with current cursor position (1-based)
+            if needs_dsr_response {
+                let (row, col) = self.terminal_parser.screen().cursor_position();
+                let response = format!("\x1b[{};{}R", row + 1, col + 1);
+                if let Some(ref mut writer) = self.terminal_writer {
+                    let _ = writer.write_all(response.as_bytes());
+                    let _ = writer.flush();
+                }
             }
             if was_at_bottom {
                 self.terminal_scroll = 0;
