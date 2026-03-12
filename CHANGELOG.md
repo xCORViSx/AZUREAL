@@ -9,6 +9,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Fixed
 - **Test compilation error** — Added missing `GitConflictOverlay` import in `operations.rs` test module.
+- **Session resume broken after "Add session"** — After using `a` (Add session) to start a fresh Claude conversation, all subsequent prompts on that branch would create new sessions instead of resuming. Root cause: `claude_session_ids` used two keying schemes (branch-name fallback from startup, slot-id/PID from runtime) but the session ID was never promoted back to the branch-key when a process exited. `start_new_session()` only cleared the branch-key, leaving the slot-key intact on the primary lookup path. Fix: (1) `handle_claude_exited` now copies the session UUID from slot-key to branch-key when the last slot on a branch exits, preserving it for the fallback lookup. (2) `start_new_session` now also clears the active slot's session ID so `get_claude_session_id()` returns `None` and the next prompt starts fresh.
 
 ## [0.7.0] - 2026-03-12
 

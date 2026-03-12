@@ -214,6 +214,13 @@ impl App {
                 self.set_status(&format!("Worktree is archived — unarchive first ({key})"));
             } else if wt.worktree_path.is_some() {
                 let branch = wt.branch_name.clone();
+                // Clear session ID from both the branch-key fallback AND the
+                // active slot's key so get_claude_session_id() returns None
+                // and the next prompt starts a fresh conversation.
+                if let Some(slot) = self.active_slot.get(&branch) {
+                    let slot = slot.clone();
+                    self.claude_session_ids.remove(&slot);
+                }
                 self.claude_session_ids.remove(&branch);
                 self.display_events.clear();
                 self.session_lines.clear();

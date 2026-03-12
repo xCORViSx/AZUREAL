@@ -181,7 +181,15 @@ impl App {
                     .and_then(|slots| slots.last().cloned());
                 match next {
                     Some(next_slot) => { self.active_slot.insert(branch.clone(), next_slot); }
-                    None => { self.active_slot.remove(branch); }
+                    None => {
+                        // Promote session ID from slot-key to branch-key so the
+                        // fallback path in get_claude_session_id() can resume
+                        // this conversation on the next prompt.
+                        if let Some(sid) = self.claude_session_ids.get(slot_id).cloned() {
+                            self.claude_session_ids.insert(branch.clone(), sid);
+                        }
+                        self.active_slot.remove(branch);
+                    }
                 }
             }
         }
