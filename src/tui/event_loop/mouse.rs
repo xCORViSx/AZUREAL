@@ -389,14 +389,49 @@ pub fn copy_viewer_selection(app: &mut App) {
     app.set_status("Copied to clipboard");
 }
 
-/// Copy text selected in the session pane to clipboard
+/// Copy text selected in the session pane to clipboard.
+/// Respects bubble content bounds so copied text excludes borders, headers,
+/// and gutters — only actual message/content text is extracted.
 pub fn copy_session_selection(app: &mut App) {
     let Some((sl, sc, el, ec)) = app.session_selection else { return };
-    let text = extract_text_from_cache(&app.rendered_lines_cache, sl, sc, el, ec, 0);
+    let text = extract_session_text(&app.rendered_lines_cache, sl, sc, el, ec);
     if text.is_empty() { return; }
     if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
     app.clipboard = text;
     app.set_status("Copied to clipboard");
+}
+
+/// Extract text from session pane cache, respecting per-line content bounds.
+/// Non-selectable lines (borders, headers, blank spacers) are skipped.
+/// Bubble gutters and right-side borders are excluded from extraction.
+fn extract_session_text(
+    cache: &[ratatui::text::Line],
+    sl: usize, sc: usize, el: usize, ec: usize,
+) -> String {
+    use crate::tui::draw_output::compute_line_content_bounds;
+    let mut parts: Vec<String> = Vec::new();
+    for idx in sl..=el {
+        let Some(line) = cache.get(idx) else { continue };
+        let (cb_start, cb_end) = compute_line_content_bounds(line);
+        if cb_start >= cb_end { continue; } // skip decoration
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let chars: Vec<char> = text.chars().collect();
+        let start = if idx == sl { sc.max(cb_start) } else { cb_start };
+        let end = if idx == el { ec.min(cb_end) } else { cb_end };
+        if start < end && start < chars.len() {
+            parts.push(chars[start..end.min(chars.len())].iter().collect());
+        } else {
+            parts.push(String::new()); // empty content line (paragraph break)
+        }
+    }
+    // Trim leading/trailing empty parts from skipped decoration boundaries
+    while parts.last().map(|s| s.is_empty()).unwrap_or(false) {
+        parts.pop();
+    }
+    while parts.first().map(|s| s.is_empty()).unwrap_or(false) {
+        parts.remove(0);
+    }
+    parts.join("\n")
 }
 
 #[cfg(test)]

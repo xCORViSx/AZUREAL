@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Session pane selection includes bubble chrome** — Mouse drag selection in the session pane highlighted and copied bubble box-drawing characters (`│`, `└`, `─`, `┘`), header bars (`Claude ▶`, `You ◀`), right-alignment padding, and orange gutters alongside the actual text. `compute_line_content_bounds()` analyzes each cache line's span structure to identify selectable content regions, excluding: assistant gutter (`│ `, 2-char left strip), code block double-gutter (`│ │ `, 4-char left strip), user bubble offset padding + right border (` │`, 2-char right strip), headers (ORANGE/AZURE background), bottom borders (`└───`/`───┘`), and code fence decorations (`┌─`/`└──`). Selection highlighting clamps to per-line content bounds. `extract_session_text()` replaces the generic extractor for session copy, skipping decoration lines entirely. Non-bubble content (tool calls, hooks, status lines) remains fully selectable.
 - **Cancel agent prints taskkill output into TUI on Windows** — `taskkill /F /PID` outputs "SUCCESS: The process with PID X has been terminated." to stdout. Using `.status()` inherited the TUI's terminal, leaking that text into the display (appeared in the prompt box). Changed to `.output()` which captures and discards stdout/stderr. Unix `kill` is silent so was unaffected.
 
 ### Changed
