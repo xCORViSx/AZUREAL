@@ -124,19 +124,26 @@ impl App {
         thread::spawn(move || {
             let mut reader = reader;
             let mut buf = [0u8; 4096];
+            let mut total: usize = 0;
+            let mut reads: usize = 0;
             let _ = dbg_tx.send("reader thread started".into());
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        let _ = dbg_tx.send("reader: EOF (0 bytes)".into());
+                        let _ = dbg_tx.send(format!("reader: EOF after {} reads ({} bytes total)", reads, total));
                         break;
                     }
                     Ok(n) => {
-                        let _ = dbg_tx.send(format!("reader: {} bytes", n));
+                        reads += 1;
+                        total += n;
+                        // Show hex dump of first 48 bytes for debugging
+                        let preview: String = buf[..n.min(48)].iter()
+                            .map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                        let _ = dbg_tx.send(format!("read#{} {}B ({}B total) [{}]", reads, n, total, preview));
                         let _ = tx.send(buf[..n].to_vec());
                     }
                     Err(e) => {
-                        let _ = dbg_tx.send(format!("reader error: {}", e));
+                        let _ = dbg_tx.send(format!("reader error after {} reads: {}", reads, e));
                         break;
                     }
                 }

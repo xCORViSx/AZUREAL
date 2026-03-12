@@ -45,10 +45,15 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
         let size_changed = inner_height != app.terminal_rows || inner_w != app.terminal_cols;
         let needs_initial = app.terminal_needs_resize;
         app.resize_terminal(inner_height, inner_w);
-        // On Unix, Ctrl+L reprints the prompt after a clear. Windows shells
-        // (cmd.exe, PowerShell) clear without reprinting, leaving a blank screen.
-        if needs_initial && size_changed && !cfg!(windows) {
-            app.write_to_terminal(&[0x0c]);
+        if needs_initial && size_changed {
+            if cfg!(windows) {
+                // On Windows, send Enter to trigger a fresh prompt after resize.
+                // Form feed clears the screen without reprinting the prompt.
+                app.write_to_terminal(b"\r");
+            } else {
+                // On Unix, Ctrl+L (form feed) reprints the prompt after a clear.
+                app.write_to_terminal(&[0x0c]);
+            }
         }
         app.terminal_needs_resize = false;
     }
