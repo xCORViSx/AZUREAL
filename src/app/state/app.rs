@@ -93,6 +93,8 @@ pub struct App {
     pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
     pub terminal_writer: Option<Box<dyn Write + Send>>,
     pub terminal_rx: Option<Receiver<Vec<u8>>>,
+    /// Debug channel from PTY reader thread (temporary diagnostic)
+    pub terminal_debug_rx: Option<Receiver<String>>,
     pub terminal_parser: vt100::Parser,
     pub terminal_scroll: usize,
     pub terminal_height: u16,
@@ -556,6 +558,7 @@ impl App {
             terminal_child: None,
             terminal_writer: None,
             terminal_rx: None,
+            terminal_debug_rx: None,
             terminal_parser: vt100::Parser::new(24, 120, 1000),
             terminal_scroll: 0,
             terminal_height: 12,

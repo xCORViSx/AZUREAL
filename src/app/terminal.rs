@@ -118,14 +118,27 @@ impl App {
         drop(pair.slave);
 
         let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel();
+        // Debug channel to report reader thread status back to main thread
+        let (dbg_tx, dbg_rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+        self.terminal_debug_rx = Some(dbg_rx);
         thread::spawn(move || {
             let mut reader = reader;
             let mut buf = [0u8; 4096];
+            let _ = dbg_tx.send("reader thread started".into());
             loop {
                 match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => { let _ = tx.send(buf[..n].to_vec()); }
-                    Err(_) => break,
+                    Ok(0) => {
+                        let _ = dbg_tx.send("reader: EOF (0 bytes)".into());
+                        break;
+                    }
+                    Ok(n) => {
+                        let _ = dbg_tx.send(format!("reader: {} bytes", n));
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
+                    Err(e) => {
+                        let _ = dbg_tx.send(format!("reader error: {}", e));
+                        break;
+                    }
                 }
             }
         });
@@ -161,6 +174,16 @@ impl App {
 
     /// Poll terminal for new output. Returns true if there was data.
     pub fn poll_terminal(&mut self) -> bool {
+        // Drain debug messages from reader thread
+        let mut dbg_msgs: Vec<String> = Vec::new();
+        if let Some(ref dbg_rx) = self.terminal_debug_rx {
+            while let Ok(msg) = dbg_rx.try_recv() {
+                dbg_msgs.push(msg);
+            }
+        }
+        if let Some(msg) = dbg_msgs.last() {
+            self.set_status(format!("[PTY] {}", msg));
+        }
         if let Some(ref rx) = self.terminal_rx {
             let was_at_bottom = self.terminal_scroll == 0;
             let mut had_data = false;
