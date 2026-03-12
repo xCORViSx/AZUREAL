@@ -1532,6 +1532,9 @@ azureal/
 │   ├── watcher.rs          # Filesystem watcher (notify crate — kqueue/inotify/ReadDirectoryChangesW)
 │   └── wizard.rs           # Session creation wizard
 ├── worktrees/              # Git worktrees for sessions
+├── .github/
+│   └── workflows/
+│       └── release.yml     # GitHub Actions: multi-platform release builds (triggered by v* tags)
 ├── AGENTS.md               # This file
 ├── CHANGELOG.md            # Version history
 ├── Cargo.toml              # Rust dependencies
@@ -1711,6 +1714,21 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 # USE
 
 ## Installation
+
+### Pre-built Binaries
+
+Download the latest binary from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and place it in your PATH:
+
+**macOS / Linux:**
+
+```bash
+chmod +x azureal-*
+sudo mv azureal-* /usr/local/bin/azureal
+```
+
+**Windows:** Place `azureal-windows-x64.exe` in a directory on your `PATH`.
+
+### From Source
 
 ```bash
 cargo install --path .

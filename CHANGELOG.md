@@ -4,14 +4,20 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-12
+
 ### Fixed
 - **Session pane selection includes bubble chrome** — Mouse drag selection in the session pane highlighted and copied bubble box-drawing characters (`│`, `└`, `─`, `┘`), header bars (`Claude ▶`, `You ◀`), right-alignment padding, and orange gutters alongside the actual text. `compute_line_content_bounds()` analyzes each cache line's span structure to identify selectable content regions, excluding: assistant gutter (`│ `, 2-char left strip), code block double-gutter (`│ │ `, 4-char left strip), user bubble offset padding + right border (` │`, 2-char right strip), headers (ORANGE/AZURE background), bottom borders (`└───`/`───┘`), and code fence decorations (`┌─`/`└──`). Selection highlighting clamps to per-line content bounds. `extract_session_text()` replaces the generic extractor for session copy, skipping decoration lines entirely. Non-bubble content (tool calls, hooks, status lines) remains fully selectable.
 - **Cancel agent prints taskkill output into TUI on Windows** — `taskkill /F /PID` outputs "SUCCESS: The process with PID X has been terminated." to stdout. Using `.status()` inherited the TUI's terminal, leaking that text into the display (appeared in the prompt box). Changed to `.output()` which captures and discards stdout/stderr. Unix `kill` is silent so was unaffected.
 
 ### Changed
 - **Project-local azufig excluded from git** — `.azureal/azufig.toml` added to `.gitignore` and removed from tracking. This file contains machine-specific paths and local session data that shouldn't be shared via the remote.
+- **Unarchive worktree loading indicator** — Changed loading indicator text from "Restoring worktree..." to "Unarchiving worktree..." in `unarchive_current_worktree()` to match the actual operation name.
+- **Version bumped to 0.7.0** — First versioned release with pre-built binaries.
 
 ### Added
+- **GitHub Actions release workflow** — Multi-platform CI builds triggered by `v*` tags. Builds native binaries for macOS ARM64, macOS x64, Linux x64, and Windows x64 (MSVC). Creates a GitHub Release with all four binaries and platform-specific installation instructions.
+- **Pre-built binary installation** — README and AGENTS.md updated with binary download instructions from GitHub Releases alongside the existing `cargo install` method.
 - **Background progress dialogs for all blocking operations** — Archive, unarchive, create, and delete worktree operations now run on background threads with a centered loading dialog ("Archiving worktree...", "Unarchiving worktree...", "Creating worktree...", "Deleting worktree..."). Git panel pull, push, and rebase also run on background threads ("Pulling from remote...", "Pushing to remote...", "Rebasing onto main..."). Previously all of these blocked the event loop for 100ms–5+ seconds (git I/O, network, disk copy). Uses `BackgroundOpProgress` + `BackgroundRebaseOutcome` types with mpsc channels, polled in the event loop alongside the existing squash merge progress system. Quit is blocked while any background operation is in progress.
 - **Fast-draw session pane** — Session pane updates during streaming via direct cursor positioning (~10-15KB for the session column only vs ~87KB for ratatui's full terminal diff). Rewrites all visible session lines in the session pane column without DECSTBM scroll regions (those are full-width and would scroll file tree / viewer columns too). Combined with `fast_draw_input()`, both panes get visual feedback while the expensive full `terminal.draw()` remains deferred during active typing. Removed `suppress_redraw` and `defer_render_poll` — events are always applied and render results always polled immediately. Includes `ratatui_to_crossterm()` color conversion for all ANSI, RGB, and 256-color indexed values.
 - **Add session from session list overlay** — Pressing `a` in the session list now starts a new session (closes the list, clears state, enters prompt mode), matching the `a` keybinding from the normal session view. Extracted `start_new_session()` method on `App` to share logic between both paths.
