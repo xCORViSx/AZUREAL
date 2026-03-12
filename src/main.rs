@@ -7,6 +7,7 @@ mod cmd;
 mod config;
 mod events;
 mod git;
+mod install;
 mod models;
 mod stt;
 mod syntax;
@@ -21,6 +22,12 @@ use cli::{Cli, Commands, ProjectCommands, SessionCommands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Self-install: if running from outside PATH (e.g. ~/Downloads), copy binary
+    // to a PATH directory and exit. Skips for cargo builds (target/debug|release).
+    if install::maybe_self_install() {
+        return Ok(());
+    }
+
     let cli = Cli::parse();
 
     let log_level = if cli.verbose { "azureal=debug" } else { "azureal=info" };

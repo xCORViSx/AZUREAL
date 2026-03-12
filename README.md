@@ -88,16 +88,14 @@
 
 ### Pre-built Binaries
 
-Download the latest binary from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and place it in your PATH:
+Download the latest binary for your platform from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and run it. The binary is **self-installing** — it detects first run, copies itself to your PATH, and you're done.
 
-**macOS / Linux:**
+| Platform | Install location |
+|----------|-----------------|
+| macOS/Linux | `/usr/local/bin/azureal` (or `~/.local/bin/` if not writable) |
+| Windows | `%USERPROFILE%\.azureal\bin\azureal.exe` |
 
-```bash
-chmod +x azureal-*
-sudo mv azureal-* /usr/local/bin/azureal
-```
-
-**Windows:** Place `azureal-windows-x64.exe` in a directory on your `PATH` (e.g., `C:\Users\<you>\bin\`).
+After install, run `azureal` from any terminal.
 
 ### From Source
 

@@ -1686,6 +1686,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | cli | `src/cli.rs` | 51 | CLI argument parsing, subcommand routing |
 | stt | `src/stt.rs` | 51 | Speech-to-text event handling |
 | syntax | `src/syntax.rs` | 50 | Syntax highlighting, theme loading |
+| install | `src/install.rs` | 6 | Self-install logic: PATH detection, binary copy, shell profile update |
 | main | `src/main.rs` | 50 | Main entry point, CLI dispatch |
 | app/input | `src/app/input.rs` | 80 | Input handling, key routing, mode switching |
 | app/state/output | `src/app/state/output.rs` | 51 | Output state management, event buffering |
@@ -1715,18 +1716,14 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 
 ## Installation
 
-### Pre-built Binaries
+### Pre-built Binaries (Self-Installing)
 
-Download the latest binary from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and place it in your PATH:
+Download the latest binary from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and run it. The binary automatically installs itself to your PATH on first run — no manual setup needed.
 
-**macOS / Linux:**
+- **macOS/Linux:** Installs to `/usr/local/bin/azureal` (or `~/.local/bin/` if not writable). May prompt for `sudo`.
+- **Windows:** Installs to `%USERPROFILE%\.azureal\bin\azureal.exe` and adds to user PATH.
 
-```bash
-chmod +x azureal-*
-sudo mv azureal-* /usr/local/bin/azureal
-```
-
-**Windows:** Place `azureal-windows-x64.exe` in a directory on your `PATH`.
+After install, run `azureal` from any terminal.
 
 ### From Source
 

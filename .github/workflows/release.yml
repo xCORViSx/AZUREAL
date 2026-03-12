@@ -73,25 +73,13 @@ jobs:
           body: |
             ## Installation
 
-            Download the binary for your platform and place it in your PATH:
+            Download the binary for your platform and run it. The binary is **self-installing** — it copies itself to your PATH on first run.
 
-            ### macOS (Apple Silicon)
-            ```bash
-            curl -L https://github.com/xCORViSx/AZUREAL/releases/download/${{ github.ref_name }}/azureal-macos-arm64 -o /usr/local/bin/azureal
-            chmod +x /usr/local/bin/azureal
-            ```
+            | Platform | Binary | Installs to |
+            |----------|--------|-------------|
+            | macOS (Apple Silicon) | `azureal-macos-arm64` | `/usr/local/bin/azureal` |
+            | macOS (Intel) | `azureal-macos-x64` | `/usr/local/bin/azureal` |
+            | Linux (x64) | `azureal-linux-x64` | `/usr/local/bin/azureal` |
+            | Windows (x64) | `azureal-windows-x64.exe` | `%USERPROFILE%\.azureal\bin\azureal.exe` |
 
-            ### macOS (Intel)
-            ```bash
-            curl -L https://github.com/xCORViSx/AZUREAL/releases/download/${{ github.ref_name }}/azureal-macos-x64 -o /usr/local/bin/azureal
-            chmod +x /usr/local/bin/azureal
-            ```
-
-            ### Linux (x64)
-            ```bash
-            curl -L https://github.com/xCORViSx/AZUREAL/releases/download/${{ github.ref_name }}/azureal-linux-x64 -o /usr/local/bin/azureal
-            chmod +x /usr/local/bin/azureal
-            ```
-
-            ### Windows (x64)
-            Download `azureal-windows-x64.exe` and place it in a directory on your `PATH` (e.g., `C:\Users\<you>\bin\`), or add its location to your PATH environment variable.
+            After install, run `azureal` from any terminal.

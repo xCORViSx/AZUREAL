@@ -4,6 +4,12 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Self-installing binaries** — Downloaded binaries detect first run (not in PATH, not a cargo build), copy themselves to `/usr/local/bin/` (macOS/Linux) or `%USERPROFILE%\.azureal\bin\` (Windows), update shell profile / user PATH, and print a success message. No manual `chmod`/`mv`/`sudo` needed — just download and run. Skips silently when already installed or running from `target/debug`/`target/release`.
+
+### Fixed
+- **Test compilation error** — Added missing `GitConflictOverlay` import in `operations.rs` test module.
+
 ## [0.7.0] - 2026-03-12
 
 ### Fixed

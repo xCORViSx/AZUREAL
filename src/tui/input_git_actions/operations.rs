@@ -567,7 +567,7 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::types::PostMergeDialog;
+    use crate::app::types::{GitConflictOverlay, PostMergeDialog};
 
     // ══════════════════════════════════════════════════════════════════
     //  RebaseOutcome enum
