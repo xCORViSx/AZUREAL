@@ -115,7 +115,7 @@ impl App {
         let worktree_path = project.worktrees_dir().join(&worktree_name);
         let project_path = project.path.clone();
         let (tx, rx) = mpsc::channel();
-        self.loading_indicator = Some("Restoring worktree...".into());
+        self.loading_indicator = Some("Unarchiving worktree...".into());
         self.background_op_receiver = Some(rx);
         let branch_clone = branch.clone();
         let name_clone = worktree_name.clone();
