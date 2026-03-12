@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn command_title_hints_contains_prompt() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("prompt"));
+        assert!(hints.contains("PROMPT"));
     }
 
     #[test]

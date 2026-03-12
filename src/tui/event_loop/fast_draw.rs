@@ -79,16 +79,20 @@ pub fn fast_draw_input(app: &App) {
         );
     }
 
-    // Position cursor
-    let adjusted_row = cursor_row.saturating_sub(scroll_offset);
-    let _ = execute!(
-        stdout,
-        cursor::MoveTo(
-            area.x + 1 + cursor_col as u16,
-            area.y + 1 + adjusted_row as u16,
-        ),
-        cursor::Show
-    );
+    // Position cursor only in prompt mode (typing); hide otherwise
+    if app.prompt_mode && !app.terminal_mode {
+        let adjusted_row = cursor_row.saturating_sub(scroll_offset);
+        let _ = execute!(
+            stdout,
+            cursor::MoveTo(
+                area.x + 1 + cursor_col as u16,
+                area.y + 1 + adjusted_row as u16,
+            ),
+            cursor::Show
+        );
+    } else {
+        let _ = execute!(stdout, cursor::Hide);
+    }
     let _ = stdout.flush();
 }
 
@@ -214,10 +218,9 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
         let _ = queue!(stdout, style::Print(" ".repeat(inner_width)));
     }
 
-    // Restore cursor to input area
-    if app.input_area.width > 0 {
-        let _ = queue!(stdout, cursor::MoveTo(app.input_area.x + 1, app.input_area.y + 1));
-    }
+    // Hide cursor after session draw — ratatui's draw() manages visibility,
+    // but fast_draw bypasses it, so we must hide explicitly.
+    let _ = queue!(stdout, cursor::Hide);
     let _ = stdout.flush();
 }
 

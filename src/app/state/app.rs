@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
-use portable_pty::MasterPty;
+use portable_pty::{Child as PtyChild, MasterPty};
 
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
@@ -90,6 +90,7 @@ pub struct App {
     pub pending_session_names: Vec<(String, String)>,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
+    pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
     pub terminal_writer: Option<Box<dyn Write + Send>>,
     pub terminal_rx: Option<Receiver<Vec<u8>>>,
     pub terminal_parser: vt100::Parser,
@@ -552,6 +553,7 @@ impl App {
             pending_session_names: Vec::new(),
             terminal_mode: false,
             terminal_pty: None,
+            terminal_child: None,
             terminal_writer: None,
             terminal_rx: None,
             terminal_parser: vt100::Parser::new(24, 120, 1000),
@@ -1197,6 +1199,7 @@ mod tests {
     fn new_terminal_pty_none() {
         let app = App::new();
         assert!(app.terminal_pty.is_none());
+        assert!(app.terminal_child.is_none());
         assert!(app.terminal_writer.is_none());
         assert!(app.terminal_rx.is_none());
     }

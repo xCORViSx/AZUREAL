@@ -1,6 +1,6 @@
 //! Terminal PTY management for App
 
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -10,6 +10,7 @@ use super::App;
 /// Per-session terminal state (persists independently for each session)
 pub struct SessionTerminal {
     pub pty: Box<dyn MasterPty + Send>,
+    pub child: Box<dyn PtyChild + Send + Sync>,
     pub writer: Box<dyn Write + Send>,
     pub rx: Receiver<Vec<u8>>,
     pub parser: vt100::Parser,
@@ -82,10 +83,16 @@ impl App {
         // Set TERM for proper VT100 sequence output
         cmd.env("TERM", "xterm-256color");
 
-        if let Err(e) = pair.slave.spawn_command(cmd) {
-            self.set_status(format!("Failed to spawn shell: {}", e));
-            return;
-        }
+        let child = match pair.slave.spawn_command(cmd) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status(format!("Failed to spawn shell: {}", e));
+                return;
+            }
+        };
+        // Drop the slave handle — on Windows (ConPTY), reads from master block
+        // until the slave side is closed.
+        drop(pair.slave);
 
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
@@ -110,6 +117,7 @@ impl App {
         }
 
         self.terminal_pty = Some(pair.master);
+        self.terminal_child = Some(child);
         self.terminal_writer = Some(writer);
         self.terminal_rx = Some(rx);
         self.terminal_rows = self.terminal_height;
@@ -223,18 +231,20 @@ impl App {
         };
 
         // Only save if we have a terminal
-        let (pty, writer, rx) = match (
+        let (pty, child, writer, rx) = match (
             self.terminal_pty.take(),
+            self.terminal_child.take(),
             self.terminal_writer.take(),
             self.terminal_rx.take(),
         ) {
-            (Some(p), Some(w), Some(r)) => (p, w, r),
+            (Some(p), Some(c), Some(w), Some(r)) => (p, c, w, r),
             _ => return,
         };
 
         // Save terminal state to map
         let terminal = SessionTerminal {
             pty,
+            child,
             writer,
             rx,
             parser: std::mem::replace(
@@ -262,6 +272,7 @@ impl App {
         // Try to restore from map
         if let Some(terminal) = self.worktree_terminals.remove(&branch_name) {
             self.terminal_pty = Some(terminal.pty);
+            self.terminal_child = Some(terminal.child);
             self.terminal_writer = Some(terminal.writer);
             self.terminal_rx = Some(terminal.rx);
             self.terminal_parser = terminal.parser;
