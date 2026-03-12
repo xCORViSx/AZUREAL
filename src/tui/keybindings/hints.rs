@@ -26,7 +26,7 @@ fn plat_shift(key: &str) -> String {
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "Global", bindings: &GLOBAL },
+        HelpSection { title: "GLOBAL", bindings: &GLOBAL },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
@@ -60,11 +60,21 @@ pub fn prompt_type_title() -> (String, String, String) {
     (label, full, hints)
 }
 
-/// Title + hints for command mode — just shows help shortcut (full list is in help panel).
+/// Title + hints for command mode — essential mode switches + help shortcut.
 /// Returns (short_label, full_title_with_hints, just_the_hints).
 pub fn prompt_command_title() -> (String, String, String) {
+    let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
+    let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("T".into());
+    let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
+    let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
+    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("R".into());
+    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
+    let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
-    let hints = format!("{}:help", help);
+    let hints = format!(
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:run | {}:cancel | {}:quit | {}:help",
+        p, t, g, h, run, cancel, quit, help
+    );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
     (label, full, hints)
@@ -233,7 +243,7 @@ mod tests {
     #[test]
     fn help_sections_first_is_global() {
         let sections = help_sections();
-        assert_eq!(sections[0].title, "Global");
+        assert_eq!(sections[0].title, "GLOBAL");
     }
 
     #[test]
@@ -517,15 +527,51 @@ mod tests {
     }
 
     #[test]
-    fn prompt_command_title_hints_contains_help() {
+    fn prompt_command_title_hints_contains_prompt() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("help"), "hints should mention help: {}", hints);
+        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
     }
 
     #[test]
-    fn prompt_command_title_hints_only_help() {
+    fn prompt_command_title_hints_contains_terminal() {
         let (_, _, hints) = prompt_command_title();
-        assert_eq!(hints, "?:help");
+        assert!(hints.contains("TERMINAL"), "hints should mention TERMINAL: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_git() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("Git"), "hints should mention Git: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_health() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("Health"), "hints should mention Health: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_run() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("run"), "hints should mention run: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_cancel() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("cancel"), "hints should mention cancel: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_quit() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("quit"), "hints should mention quit: {}", hints);
+    }
+
+    #[test]
+    fn prompt_command_title_hints_contains_help() {
+        let (_, _, hints) = prompt_command_title();
+        assert!(hints.contains("help"), "hints should mention help: {}", hints);
     }
 
     // ══════════════════════════════════════════════════════════════════

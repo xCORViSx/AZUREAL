@@ -300,13 +300,31 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
         .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
         .map(|(i, _)| i)
         .collect();
-    if active.len() <= 1 { return; }
+    if active.is_empty() { return; }
 
-    // Find current position — match against panel's worktree_name
-    let current_name = match app.git_actions_panel.as_ref() {
-        Some(p) => p.worktree_name.clone(),
+    let panel = match app.git_actions_panel.as_ref() {
+        Some(p) => p,
         None => return,
     };
+    let focused_pane = panel.focused_pane;
+    let is_on_main = panel.is_on_main;
+    let current_name = panel.worktree_name.clone();
+
+    // When on main, ] goes to first worktree, [ goes to last
+    if is_on_main {
+        let new_idx = if forward { active[0] } else { active[active.len() - 1] };
+        app.browsing_main = false;
+        app.selected_worktree = Some(new_idx);
+        app.load_session_output();
+        app.open_git_actions_panel();
+        if let Some(ref mut p) = app.git_actions_panel {
+            p.focused_pane = focused_pane;
+        }
+        return;
+    }
+
+    if active.len() <= 1 { return; }
+
     let pos = active.iter().position(|&idx| {
         app.worktrees[idx].branch_name == current_name
     }).unwrap_or(0);
@@ -317,9 +335,6 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
         (pos + active.len() - 1) % active.len()
     };
     let new_idx = active[new_pos];
-
-    // Preserve focused pane across the rebuild
-    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
 
     app.selected_worktree = Some(new_idx);
     app.load_session_output();

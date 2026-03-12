@@ -83,24 +83,63 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let num_cols = (available_width / col_width).clamp(1, 3);
     let actual_col_width = available_width / num_cols;
 
-    // Distribute sections across columns (roughly equal height)
-    let total_lines: usize = section_rows.iter().map(|(_, rows)| rows.len() + 2).sum();
-    let target_per_col = (total_lines + num_cols - 1) / num_cols;
+    // Distribute sections across columns to minimize max column height.
+    // Try all possible partition points and pick the split with the smallest
+    // tallest column — guarantees optimal packing for ≤3 columns.
+    let section_heights: Vec<usize> = section_rows.iter().map(|(_, rows)| rows.len() + 2).collect();
+    let n = section_heights.len();
 
-    let mut columns: Vec<Vec<Line>> = vec![Vec::new(); num_cols];
-    let mut current_col = 0;
-    let mut current_height = 0;
+    // Prefix sums for O(1) range height queries
+    let mut prefix = vec![0usize; n + 1];
+    for i in 0..n {
+        prefix[i + 1] = prefix[i] + section_heights[i];
+    }
+    let range_height = |from: usize, to: usize| prefix[to] - prefix[from];
+
+    // Find optimal partition: which sections go in which column
+    let best_splits: Vec<usize> = if num_cols == 1 || n <= 1 {
+        // Everything in one column
+        vec![n]
+    } else if num_cols == 2 {
+        // Try all split points, pick the one minimizing max(col0, col1)
+        let mut best = (usize::MAX, vec![n, n]);
+        for s in 1..n {
+            let max_h = range_height(0, s).max(range_height(s, n));
+            if max_h < best.0 { best = (max_h, vec![s, n]); }
+        }
+        best.1
+    } else {
+        // 3 columns: try all pairs of split points
+        let mut best = (usize::MAX, vec![n, n, n]);
+        for s1 in 1..n {
+            for s2 in (s1 + 1)..n {
+                let max_h = range_height(0, s1)
+                    .max(range_height(s1, s2))
+                    .max(range_height(s2, n));
+                if max_h < best.0 { best = (max_h, vec![s1, s2, n]); }
+            }
+        }
+        // Also try 2-column packing in case 3 columns wastes space
+        for s in 1..n {
+            let max_h = range_height(0, s).max(range_height(s, n));
+            if max_h < best.0 { best = (max_h, vec![s, n]); }
+        }
+        best.1
+    };
+
+    let actual_num_cols = best_splits.len();
+    let mut columns: Vec<Vec<Line>> = vec![Vec::new(); actual_num_cols];
 
     let dim_style = Style::default().fg(Color::DarkGray);
 
-    for (title, rows) in &section_rows {
-        let section_height = rows.len() + 2;
-        if current_height + section_height > target_per_col && current_col < num_cols - 1 && current_height > 0 {
-            current_col += 1;
-            current_height = 0;
+    let mut col_idx = 0;
+    for (idx, (title, rows)) in section_rows.iter().enumerate() {
+        // Advance to next column when we've passed the split point
+        if col_idx < actual_num_cols - 1 && idx >= best_splits[col_idx] {
+            col_idx += 1;
         }
 
-        columns[current_col].push(Line::from(vec![
+        columns[col_idx].push(Line::from(vec![
             Span::styled(*title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         ]));
 
@@ -127,11 +166,10 @@ pub fn draw_help_overlay(f: &mut Frame) {
                     Line::from(vec![k1, d1, sep, k2, d2])
                 }
             };
-            columns[current_col].push(line);
+            columns[col_idx].push(line);
         }
 
-        columns[current_col].push(Line::from(""));
-        current_height += section_height;
+        columns[col_idx].push(Line::from(""));
     }
 
     // Calculate actual height needed (max column height + title + footer + borders)
@@ -139,7 +177,7 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let help_height = (max_col_height as u16 + 4).min(area.height.saturating_sub(4));
 
     // Calculate actual width needed
-    let help_width = ((actual_col_width * num_cols) as u16 + 4).min(area.width.saturating_sub(4));
+    let help_width = ((actual_col_width * actual_num_cols) as u16 + 4).min(area.width.saturating_sub(4));
 
     let help_area = Rect {
         x: (area.width.saturating_sub(help_width)) / 2,
@@ -160,8 +198,8 @@ pub fn draw_help_overlay(f: &mut Frame) {
     };
 
     // Split into columns
-    let col_constraints: Vec<Constraint> = (0..num_cols)
-        .map(|_| Constraint::Ratio(1, num_cols as u32))
+    let col_constraints: Vec<Constraint> = (0..actual_num_cols)
+        .map(|_| Constraint::Ratio(1, actual_num_cols as u32))
         .collect();
     let col_areas = Layout::default()
         .direction(Direction::Horizontal)

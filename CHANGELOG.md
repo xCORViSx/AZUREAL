@@ -8,10 +8,12 @@ All notable changes to Azureal will be documented in this file.
 - **Self-installing binaries** — Downloaded binaries detect first run (not in PATH, not a cargo build), copy themselves to `/usr/local/bin/` (macOS/Linux) or `%USERPROFILE%\.azureal\bin\` (Windows), update shell profile / user PATH, and print a success message. No manual `chmod`/`mv`/`sudo` needed — just download and run. Skips silently when already installed or running from `target/debug`/`target/release`.
 
 ### Changed
-- **Help panel Global section** — Moved all global keybinding hints from the command box title bar into a new "Global" section in the help overlay (`?`). Command box title now shows only `?:help` for a cleaner UI.
+- **Help panel Global section** — Added a "GLOBAL" section to the help overlay (`?`) showing all global keybindings. Command box title retains essential hints (prompt, terminal, git, health, run, cancel, quit, help) with remaining bindings discoverable via the help panel.
+- **Help panel optimal column packing** — Replaced greedy column distribution with optimal partitioning that tries all possible split points to minimize max column height. Eliminates blank space under large sections like GLOBAL.
 
 ### Fixed
 - **Test compilation error** — Added missing `GitConflictOverlay` import in `operations.rs` test module.
+- **Bracket navigation broken from main in git panel** — `[`/`]` in the git panel while viewing main did nothing useful because `switch_git_panel_worktree()` only searched `app.worktrees` for the current name, which never matched main. Now detects `is_on_main` and exits main browse: `]` lands on the first worktree, `[` on the last — matching normal mode bracket behavior.
 - **Session resume broken after "Add session"** — After using `a` (Add session) to start a fresh Claude conversation, all subsequent prompts on that branch would create new sessions instead of resuming. Root cause: `claude_session_ids` used two keying schemes (branch-name fallback from startup, slot-id/PID from runtime) but the session ID was never promoted back to the branch-key when a process exited. `start_new_session()` only cleared the branch-key, leaving the slot-key intact on the primary lookup path. Fix: (1) `handle_claude_exited` now copies the session UUID from slot-key to branch-key when the last slot on a branch exits, preserving it for the fallback lookup. (2) `start_new_session` now also clears the active slot's session ID so `get_claude_session_id()` returns `None` and the next prompt starts fresh.
 
 ## [0.7.0] - 2026-03-12
