@@ -72,7 +72,7 @@ pub fn prompt_command_title() -> (String, String, String) {
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:run | {}:cancel | {}:quit | {}:help",
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:run | {}:cancel agent | {}:quit | {}:help",
         p, t, g, h, run, cancel, quit, help
     );
     let label = " COMMAND ".to_string();
@@ -101,7 +101,7 @@ pub fn terminal_command_title() -> (String, String, String) {
     let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, alt_up, alt_dn);
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
     let hints = format!(
-        "{}:type | {}:prompt | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize",
+        "{}:type | {}:PROMPT | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize",
         t, p, esc, down, up, pdn, pup, top, bot, rup, rdn
     );
     (" TERMINAL ".to_string(), format!(" TERMINAL ({}) ", hints), hints)
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn terminal_command_title_hints_contains_prompt() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("prompt"), "hints should mention prompt: {}", hints);
+        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
     }
 
     #[test]

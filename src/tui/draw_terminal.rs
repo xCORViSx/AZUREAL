@@ -45,7 +45,9 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
         let size_changed = inner_height != app.terminal_rows || inner_w != app.terminal_cols;
         let needs_initial = app.terminal_needs_resize;
         app.resize_terminal(inner_height, inner_w);
-        if needs_initial && size_changed {
+        // On Unix, Ctrl+L reprints the prompt after a clear. Windows shells
+        // (cmd.exe, PowerShell) clear without reprinting, leaving a blank screen.
+        if needs_initial && size_changed && !cfg!(windows) {
             app.write_to_terminal(&[0x0c]);
         }
         app.terminal_needs_resize = false;

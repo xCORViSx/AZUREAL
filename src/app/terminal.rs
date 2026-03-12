@@ -60,13 +60,27 @@ impl App {
             }
         };
 
-        let shell = if cfg!(windows) {
-            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+        let shell: String = if cfg!(windows) {
+            // Prefer PowerShell 7 (pwsh), then Windows PowerShell, then COMSPEC
+            use std::process::Command as StdCmd;
+            if StdCmd::new("pwsh").arg("-Version").output().is_ok() {
+                "pwsh.exe".into()
+            } else if StdCmd::new("powershell").arg("-Version").output().is_ok() {
+                "powershell.exe".into()
+            } else {
+                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+            }
         } else {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
         };
         let mut cmd = CommandBuilder::new(&shell);
+        // PowerShell: suppress the startup banner for a cleaner embedded experience
+        if cfg!(windows) && (shell.contains("pwsh") || shell.contains("powershell")) {
+            cmd.arg("-NoLogo");
+        }
         cmd.cwd(&cwd);
+        // Set TERM for proper VT100 sequence output
+        cmd.env("TERM", "xterm-256color");
 
         if let Err(e) = pair.slave.spawn_command(cmd) {
             self.set_status(format!("Failed to spawn shell: {}", e));

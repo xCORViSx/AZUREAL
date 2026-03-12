@@ -215,7 +215,7 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 
 **Runtime platform guards:**
 
-- Shell detection (`src/app/terminal.rs`): `COMSPEC`/`cmd.exe` on Windows, `SHELL`/`/bin/bash` on Unix
+- Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe`; on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear).
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
 
