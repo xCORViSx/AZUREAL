@@ -15,7 +15,7 @@ Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a R
 **Persistent State (azufig.toml):**
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
-- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts, git settings (auto-rebase per branch, auto-resolve file list). Always at the **main worktree root** (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees — no per-worktree copies.
+- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), custom session name → UUID mappings, health scan scope (directory paths), project-local run commands, project-local preset prompts, git settings (auto-rebase per branch, auto-resolve file list). Always at the **main worktree root** (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees — no per-worktree copies. **Gitignored** — contains machine-specific paths and local session data.
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`, `SessionUUID = "display name"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -1735,25 +1735,25 @@ azureal
 | `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
-| `Tab`/`⇧Tab` | Cycle focus forward/backward (FileTree → Viewer → Session → Input) |
+| `Tab`/`Shift+Tab` | Cycle focus forward/backward (FileTree → Viewer → Session → Input) |
 | `[`/`]` | Switch worktree tab (global — works from any pane, including main browse) |
 | `M` | Toggle main branch browse |
 | `P` | Projects panel |
 | `R` | Run command (picker or execute) |
 | `w` | Add worktree |
-| `⌘a` | Archive worktree (falls through to select-all in Viewer) |
-| `⌘d` | Delete worktree |
+| `⌘a` / `Alt+A` | Archive worktree (falls through to select-all in Viewer) |
+| `⌘d` / `Alt+D` | Delete worktree |
 | `?` | Help |
-| `⌘c` | Copy selection |
-| `⌃c` | Cancel agent |
-| `⌃m` | Cycle model (opus → sonnet → haiku) |
-| `⌃q` | Quit |
+| `⌘c` / `Ctrl+C` | Copy selection |
+| `⌃c` / `Ctrl+Shift+C` | Cancel agent |
+| `⌃m` / `Ctrl+M` | Cycle model (opus → sonnet → haiku) |
+| `⌃q` / `Ctrl+Q` | Quit |
 
 ### FileTree Pane
 | Key | Action |
 |-----|--------|
 | `j/k` | Navigate up/down |
-| `⌥↑/⌥↓` | Jump to first/last sibling in current folder |
+| `⌥↑/⌥↓` (`Alt+↑/↓`) | Jump to first/last sibling in current folder |
 | `Enter` | Open file in Viewer / Expand directory |
 | `h/l` | Collapse/Expand directory |
 | `Space` | Toggle directory expand |
@@ -1770,11 +1770,11 @@ azureal
 |-----|--------|
 | `j/k` | Scroll up/down |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
-| `⌥↑/⌥↓` | Jump to top/bottom |
-| `⌥←/⌥→` | Prev/next Edit (syncs Session scroll) |
-| `⌘A` | Select all (then `⌘C` to copy) |
+| `⌥↑/⌥↓` (`Alt+↑/↓`) | Jump to top/bottom |
+| `⌥←/⌥→` (`Alt+←/→`) | Prev/next Edit (syncs Session scroll) |
+| `⌘A` / `Ctrl+A` | Select all (then `⌘C`/`Ctrl+C` to copy) |
 | `t` | Tab current file (save to tab list) |
-| `⌥t` | Open tab dialog (browse/switch tabs) |
+| `⌥t` / `Alt+T` | Open tab dialog (browse/switch tabs) |
 | `x` | Close current tab |
 | `Esc` | Exit viewer (restores previous content if in Edit diff view) |
 
@@ -1785,7 +1785,7 @@ azureal
 | `↑/↓` | Jump to prev/next message (user + assistant) |
 | `Shift+↑/↓` | Jump to prev/next user prompt only |
 | `J/K` | Page scroll (viewport minus 2 overlap) |
-| `⌥↑/⌥↓` | Jump to top/bottom |
+| `⌥↑/⌥↓` (`Alt+↑/↓`) | Jump to top/bottom |
 | `a` | Add session (clear state, enter prompt mode — also works from session list overlay) |
 | `s` | Toggle Session list overlay (browse all session files) |
 | `/` | Search text in current session (yellow highlights, `[N/M]` counter) |

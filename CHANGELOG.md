@@ -4,6 +4,12 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Cancel agent prints taskkill output into TUI on Windows** — `taskkill /F /PID` outputs "SUCCESS: The process with PID X has been terminated." to stdout. Using `.status()` inherited the TUI's terminal, leaking that text into the display (appeared in the prompt box). Changed to `.output()` which captures and discards stdout/stderr. Unix `kill` is silent so was unaffected.
+
+### Changed
+- **Project-local azufig excluded from git** — `.azureal/azufig.toml` added to `.gitignore` and removed from tracking. This file contains machine-specific paths and local session data that shouldn't be shared via the remote.
+
 ### Added
 - **Fast-draw session pane** — Session pane updates during streaming via direct cursor positioning (~10-15KB for the session column only vs ~87KB for ratatui's full terminal diff). Rewrites all visible session lines in the session pane column without DECSTBM scroll regions (those are full-width and would scroll file tree / viewer columns too). Combined with `fast_draw_input()`, both panes get visual feedback while the expensive full `terminal.draw()` remains deferred during active typing. Removed `suppress_redraw` and `defer_render_poll` — events are always applied and render results always polled immediately. Includes `ratatui_to_crossterm()` color conversion for all ANSI, RGB, and 256-color indexed values.
 - **Add session from session list overlay** — Pressing `a` in the session list now starts a new session (closes the list, clears state, enters prompt mode), matching the `a` keybinding from the normal session view. Extracted `start_new_session()` method on `App` to share logic between both paths.

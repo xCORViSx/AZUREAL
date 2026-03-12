@@ -317,7 +317,7 @@ impl App {
                 #[cfg(windows)]
                 {
                     use std::process::Command;
-                    let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+                    let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).output();
                 }
                 self.set_status("Cancelled Claude");
             }

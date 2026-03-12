@@ -33,7 +33,7 @@
 - **Clickable Tables** — Click any table to expand it in a full-width popup
 - **Todo Widget** — Live task progress from Claude's TodoWrite calls (checkboxes with subagent nesting)
 - **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
-- **Model Switcher** — Cycle between Claude models with `⌃m`
+- **Model Switcher** — Cycle between Claude models with `⌃m` / `Ctrl+M`
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions
 
@@ -48,14 +48,14 @@
 ### Editor & Input
 
 - **Vim-Style Modes** — Command mode (red border), prompt mode (yellow), terminal mode (azure)
-- **Speech-to-Text** — Dictate with `⌃s`; transcribed locally via Whisper
+- **Speech-to-Text** — Dictate with `⌃s` / `Ctrl+S`; transcribed locally via Whisper
 - **Mouse Support** — Click, drag-select, scroll, and copy across all panes
-- **Diff Viewer** — Syntax-highlighted inline diffs with `⌥←/⌥→` to cycle through edits
+- **Diff Viewer** — Syntax-highlighted inline diffs with `⌥←`/`⌥→` (`Alt+←`/`Alt+→`) to cycle through edits
 
 ### Extras
 
 - **Run Commands** — Save and execute shell commands globally or per-project
-- **Preset Prompts** — Quick-access prompt templates with `⌥P` or `⌥1`-`⌥9` shortcuts
+- **Preset Prompts** — Quick-access prompt templates with `⌥P` / `Alt+P` or `⌥1`-`⌥9` / `Alt+1`-`Alt+9` shortcuts
 - **Health Panel** — Scan for oversized files and missing documentation; spawn Claude to fix them
 - **Completion Notifications** — macOS notifications when any Claude instance finishes
 - **Worktree Safety** — Delete dialog warns about uncommitted changes and unmerged commits
@@ -105,7 +105,7 @@ azureal
 | `Esc` | Return to command mode |
 | `j/k` | Scroll line |
 | `J/K` | Page scroll |
-| `Tab/⇧Tab` | Cycle pane focus |
+| `Tab/Shift+Tab` | Cycle pane focus |
 | `M` | Browse main branch |
 | `f` | Toggle file tree |
 | `s` | Toggle session list |

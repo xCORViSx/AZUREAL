@@ -2,3 +2,4 @@
 .DS_Store
 worktrees/
 nul
+.azureal/azufig.toml
