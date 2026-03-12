@@ -3,3 +3,4 @@
 worktrees/
 nul
 .azureal/azufig.toml
+release-artifacts/

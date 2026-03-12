@@ -117,13 +117,16 @@ fn main() {
 
     // MSVC: bindgen generates opaque structs (only `_address` field) instead of
     // proper struct definitions. Skip bindgen entirely and use pre-built bindings.
+    // MinGW cross-compile: bindgen can't find system headers, falls back to bundled
+    // bindings which have Linux-specific layout assertions. Skip bindgen for all Windows.
     let skip_bindgen = env::var("WHISPER_DONT_GENERATE_BINDINGS").is_ok()
-        || target.contains("msvc");
+        || target.contains("msvc")
+        || target.contains("windows");
 
     if skip_bindgen {
-        if target.contains("msvc") {
-            println!("cargo:warning=MSVC target detected, using pre-built bindings (bindgen generates opaque structs on MSVC)");
-            // Strip compile-time layout assertions that fail due to MSVC struct packing
+        if target.contains("windows") {
+            println!("cargo:warning=Windows target detected, using pre-built bindings with layout tests stripped");
+            // Strip compile-time layout assertions that fail due to Windows struct packing
             copy_bindings_without_layout_tests("src/bindings.rs", &out.join("bindings.rs"));
         } else {
             let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
@@ -184,8 +187,10 @@ fn main() {
         .very_verbose(true)
         .pic(true);
 
-    if cfg!(target_os = "windows") {
-        config.cxxflag("/utf-8");
+    if target.contains("windows") {
+        if target.contains("msvc") {
+            config.cxxflag("/utf-8");
+        }
         println!("cargo:rustc-link-lib=advapi32");
     }
 

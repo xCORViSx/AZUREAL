@@ -86,6 +86,21 @@
 
 ## Installation
 
+### Pre-built Binaries
+
+Download the latest binary from [Releases](https://github.com/xCORViSx/AZUREAL/releases) and place it in your PATH:
+
+**macOS / Linux:**
+
+```bash
+chmod +x azureal-*
+sudo mv azureal-* /usr/local/bin/azureal
+```
+
+**Windows:** Place `azureal-windows-x64.exe` in a directory on your `PATH` (e.g., `C:\Users\<you>\bin\`).
+
+### From Source
+
 ```bash
 cargo install --path .
 ```
