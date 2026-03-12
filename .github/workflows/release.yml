@@ -16,7 +16,7 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: azureal-macos-arm64
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             artifact: azureal-macos-x64
           - os: ubuntu-latest
@@ -44,11 +44,11 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary (Unix)
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         run: cp target/${{ matrix.target }}/release/azureal ${{ matrix.artifact }}
 
       - name: Rename binary (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         run: cp target/${{ matrix.target }}/release/azureal.exe ${{ matrix.artifact }}
 
       - name: Upload artifact
