@@ -765,7 +765,7 @@ The module root (`keybindings.rs`) re-exports all public items so existing `use 
 
 Other details:
 - `execute_action()` in `event_loop.rs` dispatches all actions to their side effects
-- Global, Terminal, and Input bindings shown in title bars only (not in help panel) via title functions
+- Global bindings shown in help panel (Global section) with only `?:help` hint in command box title; Terminal and Input bindings shown in their own title bars (not in help panel) via title functions
 - Modal panels with visible footer hints (Health, Git, Projects) are excluded from the help panel — their keys are already self-documenting in the panel UI
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**

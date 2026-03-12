@@ -26,6 +26,7 @@ fn plat_shift(key: &str) -> String {
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
+        HelpSection { title: "Global", bindings: &GLOBAL },
         HelpSection { title: "Filetree", bindings: &FILE_TREE },
         HelpSection { title: "Viewer", bindings: &VIEWER },
         HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
@@ -59,28 +60,11 @@ pub fn prompt_type_title() -> (String, String, String) {
     (label, full, hints)
 }
 
-/// Title + hints for command mode — shows ALL global keybindings.
+/// Title + hints for command mode — just shows help shortcut (full list is in help panel).
 /// Returns (short_label, full_title_with_hints, just_the_hints).
 pub fn prompt_command_title() -> (String, String, String) {
-    let p = find_key_for_action(&GLOBAL, Action::EnterPromptMode).unwrap_or("p".into());
-    let t = find_key_for_action(&GLOBAL, Action::ToggleTerminal).unwrap_or("T".into());
-    let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
-    let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
-    let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
-    let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
-    let dump = find_key_for_action(&GLOBAL, Action::DumpDebug).unwrap_or(plat_ctrl("d"));
-    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("R".into());
-    let (wt_prev, wt_next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
-    let wt_add = find_key_for_action(&GLOBAL, Action::AddWorktree).unwrap_or("w".into());
-    let wt_archive = find_key_for_action(&GLOBAL, Action::ToggleArchiveWorktree).unwrap_or(plat_alt("a"));
-    let wt_delete = find_key_for_action(&GLOBAL, Action::DeleteWorktree).unwrap_or(plat_alt("d"));
-    let main = find_key_for_action(&GLOBAL, Action::BrowseMain).unwrap_or("M".into());
-    let focus_hint = if cfg!(target_os = "macos") { "Tab/⇧Tab" } else { "Tab/Shift+Tab" };
-    let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:run | {}:Git | {}:Health | {}/{}:worktree | {}:add wt | {}:archive wt | {}:del wt | {}:main | {}:pane focus | {}:cancel agent | {}:quit | {}:dump | {}:help",
-        p, t, run, g, h, wt_prev, wt_next, wt_add, wt_archive, wt_delete, main, focus_hint, cancel, quit, dump, help
-    );
+    let hints = format!("{}:help", help);
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);
     (label, full, hints)
@@ -241,33 +225,39 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn help_sections_returns_four_sections() {
+    fn help_sections_returns_five_sections() {
         let sections = help_sections();
-        assert_eq!(sections.len(), 4);
+        assert_eq!(sections.len(), 5);
     }
 
     #[test]
-    fn help_sections_first_is_filetree() {
+    fn help_sections_first_is_global() {
         let sections = help_sections();
-        assert_eq!(sections[0].title, "Filetree");
+        assert_eq!(sections[0].title, "Global");
     }
 
     #[test]
-    fn help_sections_second_is_viewer() {
+    fn help_sections_second_is_filetree() {
         let sections = help_sections();
-        assert_eq!(sections[1].title, "Viewer");
+        assert_eq!(sections[1].title, "Filetree");
     }
 
     #[test]
-    fn help_sections_third_is_edit_mode() {
+    fn help_sections_third_is_viewer() {
         let sections = help_sections();
-        assert_eq!(sections[2].title, "Edit Mode");
+        assert_eq!(sections[2].title, "Viewer");
     }
 
     #[test]
-    fn help_sections_fourth_is_session() {
+    fn help_sections_fourth_is_edit_mode() {
         let sections = help_sections();
-        assert_eq!(sections[3].title, "Session");
+        assert_eq!(sections[3].title, "Edit Mode");
+    }
+
+    #[test]
+    fn help_sections_fifth_is_session() {
+        let sections = help_sections();
+        assert_eq!(sections[4].title, "Session");
     }
 
     #[test]
@@ -278,27 +268,33 @@ mod tests {
     }
 
     #[test]
+    fn help_sections_global_binding_count() {
+        let sections = help_sections();
+        assert_eq!(sections[0].bindings.len(), GLOBAL.len());
+    }
+
+    #[test]
     fn help_sections_filetree_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[0].bindings.len(), FILE_TREE.len());
+        assert_eq!(sections[1].bindings.len(), FILE_TREE.len());
     }
 
     #[test]
     fn help_sections_viewer_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[1].bindings.len(), VIEWER.len());
+        assert_eq!(sections[2].bindings.len(), VIEWER.len());
     }
 
     #[test]
     fn help_sections_edit_mode_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[2].bindings.len(), EDIT_MODE.len());
+        assert_eq!(sections[3].bindings.len(), EDIT_MODE.len());
     }
 
     #[test]
     fn help_sections_session_binding_count() {
         let sections = help_sections();
-        assert_eq!(sections[3].bindings.len(), SESSION.len());
+        assert_eq!(sections[4].bindings.len(), SESSION.len());
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -521,39 +517,15 @@ mod tests {
     }
 
     #[test]
-    fn prompt_command_title_hints_contains_prompt() {
-        let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
-    }
-
-    #[test]
-    fn prompt_command_title_hints_contains_terminal() {
-        let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("TERMINAL"), "hints should mention TERMINAL: {}", hints);
-    }
-
-    #[test]
     fn prompt_command_title_hints_contains_help() {
         let (_, _, hints) = prompt_command_title();
         assert!(hints.contains("help"), "hints should mention help: {}", hints);
     }
 
     #[test]
-    fn prompt_command_title_hints_contains_quit() {
+    fn prompt_command_title_hints_only_help() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("quit"), "hints should mention quit: {}", hints);
-    }
-
-    #[test]
-    fn prompt_command_title_hints_contains_git() {
-        let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("Git"), "hints should mention Git: {}", hints);
-    }
-
-    #[test]
-    fn prompt_command_title_hints_contains_focus() {
-        let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("focus"), "hints should mention focus: {}", hints);
+        assert_eq!(hints, "?:help");
     }
 
     // ══════════════════════════════════════════════════════════════════
