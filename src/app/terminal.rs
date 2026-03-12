@@ -62,11 +62,16 @@ impl App {
         };
 
         let shell: String = if cfg!(windows) {
-            // Prefer PowerShell 7 (pwsh), then Windows PowerShell, then COMSPEC
+            // Prefer PowerShell 7 (pwsh), then Windows PowerShell, then COMSPEC.
+            // Check exit status (not just is_ok) to verify the shell actually works.
             use std::process::Command as StdCmd;
-            if StdCmd::new("pwsh").arg("-Version").output().is_ok() {
+            let check = |name: &str| -> bool {
+                StdCmd::new(name).arg("-Version").output()
+                    .map(|o| o.status.success()).unwrap_or(false)
+            };
+            if check("pwsh") {
                 "pwsh.exe".into()
-            } else if StdCmd::new("powershell").arg("-Version").output().is_ok() {
+            } else if check("powershell") {
                 "powershell.exe".into()
             } else {
                 std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
@@ -83,16 +88,15 @@ impl App {
         // Set TERM for proper VT100 sequence output
         cmd.env("TERM", "xterm-256color");
 
-        let child = match pair.slave.spawn_command(cmd) {
-            Ok(c) => c,
+        // Get reader BEFORE spawning — on Windows ConPTY, the reader must be
+        // obtained while the slave handle is still open.
+        let reader = match pair.master.try_clone_reader() {
+            Ok(r) => r,
             Err(e) => {
-                self.set_status(format!("Failed to spawn shell: {}", e));
+                self.set_status(format!("Failed to get PTY reader: {}", e));
                 return;
             }
         };
-        // Drop the slave handle — on Windows (ConPTY), reads from master block
-        // until the slave side is closed.
-        drop(pair.slave);
 
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
@@ -102,19 +106,29 @@ impl App {
             }
         };
 
+        let child = match pair.slave.spawn_command(cmd) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status(format!("Failed to spawn shell: {}", e));
+                return;
+            }
+        };
+        // Drop the slave handle — on Windows (ConPTY), the master reader blocks
+        // until all slave handles are closed.
+        drop(pair.slave);
+
         let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel();
-        if let Ok(mut reader) = pair.master.try_clone_reader() {
-            thread::spawn(move || {
-                let mut buf = [0u8; 4096];
-                loop {
-                    match reader.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => { let _ = tx.send(buf[..n].to_vec()); }
-                        Err(_) => break,
-                    }
+        thread::spawn(move || {
+            let mut reader = reader;
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => { let _ = tx.send(buf[..n].to_vec()); }
+                    Err(_) => break,
                 }
-            });
-        }
+            }
+        });
 
         self.terminal_pty = Some(pair.master);
         self.terminal_child = Some(child);
@@ -127,6 +141,7 @@ impl App {
         self.terminal_mode = true;
         self.terminal_needs_resize = true;
         self.prompt_mode = true;
+        self.set_status(format!("Terminal: {} in {}", shell, cwd.display()));
     }
 
     /// Hide terminal (PTY keeps running in background)

@@ -215,7 +215,7 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 
 **Runtime platform guards:**
 
-- Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe`; on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical:** the PTY slave handle must be `drop(pair.slave)` after `spawn_command` — on Windows (ConPTY) reads from master block until the slave is released. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
+- Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
 
