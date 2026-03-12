@@ -151,6 +151,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                 app.delete_worktree_dialog = None;
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        use std::sync::mpsc;
+                        use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                         let mut all_indices = sibling_indices;
                         if let Some(current) = app.selected_worktree {
                             all_indices.push(current);
@@ -158,19 +160,21 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                         all_indices.sort_unstable();
                         all_indices.dedup();
                         all_indices.reverse();
+                        // Gather paths for background removal
+                        let mut wt_paths = Vec::new();
                         let project = app.project.clone();
-                        if let Some(project) = project {
+                        if let Some(ref project) = project {
                             for &idx in &all_indices {
                                 if let Some(wt) = app.worktrees.get(idx) {
                                     if let Some(ref wt_path) = wt.worktree_path {
-                                        let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                        wt_paths.push(wt_path.clone());
                                     }
                                     app.auto_rebase_enabled.remove(&wt.branch_name);
                                     crate::azufig::set_auto_rebase(&project.path, &wt.branch_name, false);
                                 }
                             }
-                            let _ = crate::git::Git::delete_branch(&project.path, &branch);
                         }
+                        // Clean up state immediately (fast)
                         app.session_files.remove(&branch);
                         app.session_selected_file_idx.remove(&branch);
                         app.claude_session_ids.retain(|k, _| k != &branch);
@@ -184,25 +188,47 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                             }
                         }
                         app.active_slot.remove(&branch);
-                        let _ = app.refresh_worktrees();
-                        if app.worktrees.is_empty() {
-                            app.selected_worktree = None;
-                        } else if let Some(sel) = app.selected_worktree {
-                            if sel >= app.worktrees.len() {
-                                app.selected_worktree = Some(app.worktrees.len() - 1);
+                        let prev_idx = app.selected_worktree.unwrap_or(0);
+                        // Spawn background thread for git I/O
+                        let (tx, rx) = mpsc::channel();
+                        app.loading_indicator = Some("Deleting worktrees...".into());
+                        app.background_op_receiver = Some(rx);
+                        let branch_clone = branch.clone();
+                        std::thread::spawn(move || {
+                            if let Some(ref project) = project {
+                                for wt_path in &wt_paths {
+                                    let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                }
+                                let _ = crate::git::Git::delete_branch(&project.path, &branch_clone);
                             }
-                        }
-                        app.set_status(format!("Deleted all worktrees on {} and branch", branch));
+                            let _ = tx.send(BackgroundOpProgress {
+                                phase: String::new(),
+                                outcome: Some(BackgroundOpOutcome::Deleted {
+                                    display_name: branch,
+                                    prev_idx,
+                                }),
+                            });
+                        });
                     }
                     KeyCode::Char('a') | KeyCode::Char('A') => {
+                        use std::sync::mpsc;
+                        use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                         if let Some(project) = &app.project {
                             if let Some(wt) = app.current_worktree() {
                                 if let Some(ref wt_path) = wt.worktree_path {
-                                    let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                    let wt_path = wt_path.clone();
+                                    let project_path = project.path.clone();
+                                    let (tx, rx) = mpsc::channel();
+                                    app.loading_indicator = Some("Archiving worktree...".into());
+                                    app.background_op_receiver = Some(rx);
+                                    std::thread::spawn(move || {
+                                        let outcome = match crate::git::Git::remove_worktree(&project_path, &wt_path) {
+                                            Ok(()) => BackgroundOpOutcome::Archived,
+                                            Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
+                                        };
+                                        let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+                                    });
                                 }
-                                let name = wt.name().to_string();
-                                let _ = app.refresh_worktrees();
-                                app.set_status(format!("Archived '{}' — branch kept", name));
                             }
                         }
                     }
@@ -223,37 +249,44 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                 if let Some(ref mut d) = app.post_merge_dialog { if d.selected > 0 { d.selected -= 1; } }
             }
             KeyCode::Enter => {
+                use std::sync::mpsc;
+                use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                 let d = app.post_merge_dialog.take().unwrap();
-                // Remember current selection so refresh doesn't reset to index 0
-                let prev_branch = app.selected_worktree
-                    .and_then(|i| app.worktrees.get(i))
-                    .map(|w| w.branch_name.clone());
                 let prev_idx = app.selected_worktree.unwrap_or(0);
                 match d.selected {
                     0 => {
                         // Keep — worktree is already rebased (rebase happens before merge)
                         app.set_status(format!("{} — kept", d.display_name));
+                        let _ = app.refresh_worktrees();
+                        app.selected_worktree = if app.worktrees.is_empty() { None }
+                        else { Some(prev_idx.min(app.worktrees.len() - 1)) };
                     }
                     1 => {
                         // Archive — remove worktree, keep branch
                         if let Some(project) = &app.project {
-                            let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
-                            // Clean up auto-rebase config for removed worktree
                             app.auto_rebase_enabled.remove(&d.branch);
                             crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
+                            let project_path = project.path.clone();
+                            let wt_path = d.worktree_path.clone();
+                            let (tx, rx) = mpsc::channel();
+                            app.loading_indicator = Some("Archiving worktree...".into());
+                            app.background_op_receiver = Some(rx);
+                            std::thread::spawn(move || {
+                                let outcome = match crate::git::Git::remove_worktree(&project_path, &wt_path) {
+                                    Ok(()) => BackgroundOpOutcome::Archived,
+                                    Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
+                                };
+                                let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+                            });
                         }
-                        app.set_status(format!("{} — archived", d.display_name));
                     }
                     2 => {
                         // Delete — remove worktree + delete branch
                         if let Some(project) = &app.project {
-                            let _ = crate::git::Git::remove_worktree(&project.path, &d.worktree_path);
-                            let _ = crate::git::Git::delete_branch(&project.path, &d.branch);
-                            // Clean up auto-rebase config for deleted branch
                             app.auto_rebase_enabled.remove(&d.branch);
                             crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
                         }
-                        // Clean up stale session state for the deleted branch
+                        // Clean up stale session state immediately
                         app.session_files.remove(&d.branch);
                         app.session_selected_file_idx.remove(&d.branch);
                         app.claude_session_ids.retain(|k, _| k != &d.branch);
@@ -267,19 +300,29 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                             }
                         }
                         app.active_slot.remove(&d.branch);
-                        app.set_status(format!("{} — deleted", d.display_name));
+                        let project_path = app.project.as_ref().map(|p| p.path.clone());
+                        let wt_path = d.worktree_path.clone();
+                        let branch = d.branch.clone();
+                        let display_name = d.display_name.clone();
+                        let (tx, rx) = mpsc::channel();
+                        app.loading_indicator = Some("Deleting worktree...".into());
+                        app.background_op_receiver = Some(rx);
+                        std::thread::spawn(move || {
+                            if let Some(ref project_path) = project_path {
+                                let _ = crate::git::Git::remove_worktree(project_path, &wt_path);
+                                let _ = crate::git::Git::delete_branch(project_path, &branch);
+                            }
+                            let _ = tx.send(BackgroundOpProgress {
+                                phase: String::new(),
+                                outcome: Some(BackgroundOpOutcome::Deleted {
+                                    display_name,
+                                    prev_idx,
+                                }),
+                            });
+                        });
                     }
                     _ => {}
                 }
-                let _ = app.refresh_worktrees();
-                // Restore selection: find the same branch, or clamp to previous index
-                app.selected_worktree = if app.worktrees.is_empty() {
-                    None
-                } else {
-                    let by_branch = prev_branch.and_then(|b|
-                        app.worktrees.iter().position(|w| w.branch_name == b));
-                    Some(by_branch.unwrap_or_else(|| prev_idx.min(app.worktrees.len() - 1)))
-                };
             }
             _ => {}
         }

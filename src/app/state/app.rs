@@ -455,6 +455,12 @@ pub struct App {
     pub loading_indicator: Option<String>,
     /// Action to execute after the loading indicator has rendered on-screen
     pub deferred_action: Option<DeferredAction>,
+    /// Receiver for background worktree/git operations (archive, unarchive,
+    /// create, delete, pull, push). Polled in the event loop.
+    pub background_op_receiver: Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundOpProgress>>,
+    /// Receiver for background rebase operations (separate because rebase
+    /// has conflict handling that needs the full RebaseOutcome)
+    pub rebase_op_receiver: Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundRebaseOutcome>>,
     /// Selected index in session list overlay
     pub session_list_selected: usize,
     /// Scroll offset in session list overlay
@@ -714,6 +720,8 @@ impl App {
             session_list_loading: false,
             loading_indicator: None,
             deferred_action: None,
+            background_op_receiver: None,
+            rebase_op_receiver: None,
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),

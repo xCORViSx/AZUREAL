@@ -590,6 +590,51 @@ pub enum SquashMergeOutcome {
     Failed(String),
 }
 
+/// Progress update from a background worktree/git operation.
+/// Used for archive, unarchive, create, delete, pull, push, rebase — any
+/// blocking operation that needs a progress dialog.
+#[derive(Debug)]
+pub struct BackgroundOpProgress {
+    /// Phase message shown in the loading dialog (e.g. "Archiving worktree...")
+    pub phase: String,
+    /// Final outcome — None while the operation is still running
+    pub outcome: Option<BackgroundOpOutcome>,
+}
+
+/// Final result of a background worktree/git operation.
+/// Each variant carries enough data for the event loop to do post-processing
+/// (refresh worktrees, select branch, clean up state, etc.)
+#[derive(Debug)]
+pub enum BackgroundOpOutcome {
+    /// Worktree archived — refresh and maintain current selection
+    Archived,
+    /// Worktree unarchived — refresh and select the named branch
+    Unarchived { branch: String, display_name: String },
+    /// Worktree created — refresh and select the named branch
+    Created { branch: String },
+    /// Worktree deleted — refresh and clamp selection (state cleanup done before spawn)
+    Deleted { display_name: String, prev_idx: usize },
+    /// Git panel operation result (pull, push) — set result_message + refresh
+    GitResult { message: String, is_error: bool },
+    /// Operation failed — show error in status bar
+    Failed(String),
+}
+
+/// Result of a background rebase, sent via mpsc to the event loop.
+/// Separate from `BackgroundOpOutcome` because rebase has conflict handling
+/// that needs different post-processing (conflict overlay, not just status).
+#[derive(Debug)]
+pub enum BackgroundRebaseOutcome {
+    /// Rebase succeeded + push result
+    Rebased(String),
+    /// Already up to date with main
+    UpToDate,
+    /// Rebase hit conflicts — show conflict overlay
+    Conflict { conflicted: Vec<String>, auto_merged: Vec<String> },
+    /// Rebase failed with error
+    Failed(String),
+}
+
 /// Result from background worktree refresh (git + FS I/O done off main thread)
 pub struct WorktreeRefreshResult {
     /// Main branch worktree (accessed via 'M' browse mode)

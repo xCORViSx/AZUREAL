@@ -5,7 +5,7 @@
 //! Auto-resolve logic uses union merge for configured files.
 
 use crate::app::App;
-use crate::app::types::{GitActionsPanel, GitChangedFile, GitCommitOverlay, GitConflictOverlay};
+use crate::app::types::{BackgroundRebaseOutcome, GitActionsPanel, GitChangedFile, GitCommitOverlay};
 use crate::git::{Git, SquashMergeResult};
 
 /// Rebase outcome for the UI to display
@@ -266,47 +266,26 @@ pub(super) fn exec_rebase(app: &mut App) {
         Some(p) => p.auto_resolve_files.clone(),
         None => return,
     };
-    match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
-        RebaseOutcome::Rebased => {
-            // Push the rebased branch to its remote
-            let push_note = match Git::push(&wt_path) {
-                Ok(_) => " → pushed".to_string(),
-                Err(e) => format!(" (push failed: {})", e),
-            };
-            if let Some(ref mut p) = app.git_actions_panel {
-                super::refresh_changed_files(p);
-                super::refresh_commit_log(p);
-                p.result_message = Some((format!("Rebased onto main{}", push_note), false));
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.loading_indicator = Some("Rebasing onto main...".into());
+    app.rebase_op_receiver = Some(rx);
+    std::thread::spawn(move || {
+        let outcome = match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
+            RebaseOutcome::Rebased => {
+                let push_note = match Git::push(&wt_path) {
+                    Ok(_) => " → pushed".to_string(),
+                    Err(e) => format!(" (push failed: {})", e),
+                };
+                BackgroundRebaseOutcome::Rebased(format!("Rebased onto main{}", push_note))
             }
-        }
-        RebaseOutcome::UpToDate => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                super::refresh_changed_files(p);
-                super::refresh_commit_log(p);
-                p.result_message = Some(("Already up to date with main".to_string(), false));
+            RebaseOutcome::UpToDate => BackgroundRebaseOutcome::UpToDate,
+            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+                BackgroundRebaseOutcome::Conflict { conflicted, auto_merged }
             }
-        }
-        RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                p.conflict_overlay = Some(GitConflictOverlay {
-                    conflicted_files: conflicted,
-                    auto_merged_files: auto_merged,
-                    scroll: 0,
-                    selected: 0,
-                    continue_with_merge: false,
-                });
-                super::refresh_changed_files(p);
-                super::refresh_commit_log(p);
-            }
-        }
-        RebaseOutcome::Failed(e) => {
-            if let Some(ref mut p) = app.git_actions_panel {
-                super::refresh_changed_files(p);
-                super::refresh_commit_log(p);
-                p.result_message = Some((format!("Rebase failed: {}", e), true));
-            }
-        }
-    }
+            RebaseOutcome::Failed(e) => BackgroundRebaseOutcome::Failed(e),
+        };
+        let _ = tx.send(outcome);
+    });
 }
 
 /// Squash-merge the current worktree's branch into main. Validates synchronously,
@@ -420,42 +399,54 @@ pub(super) fn exec_squash_merge(app: &mut App) {
 
 /// Pull latest changes from remote (for main branch)
 pub(super) fn exec_pull(app: &mut App) {
+    use std::sync::mpsc;
+    use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
     let wt = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_path.clone(),
         None => return,
     };
-    let msg = match Git::pull(&wt) {
-        Ok(m) => {
-            let summary = m.lines().next().unwrap_or(&m);
-            (format!("Pulled: {}", summary), false)
-        }
-        Err(e) => (format!("{}", e), true),
-    };
-    if let Some(ref mut p) = app.git_actions_panel {
-        p.result_message = Some(msg);
-        super::refresh_changed_files(p);
-        super::refresh_commit_log(p);
-    }
+    let (tx, rx) = mpsc::channel();
+    app.loading_indicator = Some("Pulling from remote...".into());
+    app.background_op_receiver = Some(rx);
+    std::thread::spawn(move || {
+        let (message, is_error) = match Git::pull(&wt) {
+            Ok(m) => {
+                let summary = m.lines().next().unwrap_or(&m).to_string();
+                (format!("Pulled: {}", summary), false)
+            }
+            Err(e) => (format!("{}", e), true),
+        };
+        let _ = tx.send(BackgroundOpProgress {
+            phase: String::new(),
+            outcome: Some(BackgroundOpOutcome::GitResult { message, is_error }),
+        });
+    });
 }
 
 /// Push the current worktree branch to remote
 pub(super) fn exec_push(app: &mut App) {
+    use std::sync::mpsc;
+    use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
     let wt = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_path.clone(),
         None => return,
     };
-    let msg = match Git::push(&wt) {
-        Ok(m) => {
-            let summary = m.lines().next().unwrap_or(&m);
-            (format!("Pushed: {}", summary), false)
-        }
-        Err(e) => (format!("{}", e), true),
-    };
-    if let Some(ref mut p) = app.git_actions_panel {
-        p.result_message = Some(msg);
-        super::refresh_changed_files(p);
-        super::refresh_commit_log(p);
-    }
+    let (tx, rx) = mpsc::channel();
+    app.loading_indicator = Some("Pushing to remote...".into());
+    app.background_op_receiver = Some(rx);
+    std::thread::spawn(move || {
+        let (message, is_error) = match Git::push(&wt) {
+            Ok(m) => {
+                let summary = m.lines().next().unwrap_or(&m).to_string();
+                (format!("Pushed: {}", summary), false)
+            }
+            Err(e) => (format!("{}", e), true),
+        };
+        let _ = tx.send(BackgroundOpProgress {
+            phase: String::new(),
+            outcome: Some(BackgroundOpOutcome::GitResult { message, is_error }),
+        });
+    });
 }
 
 /// Start the commit flow: stage all changes, get the diff, spawn Claude one-shot

@@ -554,6 +554,10 @@ impl App {
             Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })) {
             return true;
         }
+        // Background worktree/git operation in progress
+        if self.background_op_receiver.is_some() || self.rebase_op_receiver.is_some() {
+            return true;
+        }
         false
     }
 

@@ -1,6 +1,7 @@
 //! Session navigation and CRUD operations
 
-use crate::app::types::Focus;
+use std::sync::mpsc;
+use crate::app::types::{Focus, BackgroundOpProgress, BackgroundOpOutcome};
 use crate::git::Git;
 use crate::models::Worktree;
 
@@ -46,46 +47,59 @@ impl App {
             anyhow::bail!("Worktree already exists: {}", worktree_path.display());
         }
 
-        // Create git worktree
-        Git::create_worktree(&project.path, &worktree_path, &branch_name)?;
+        let project_path = project.path.clone();
+        let wt_path = worktree_path.clone();
+        let branch_clone = branch_name.clone();
+        let (tx, rx) = mpsc::channel();
+        self.loading_indicator = Some("Creating worktree...".into());
+        self.background_op_receiver = Some(rx);
+        self.save_current_terminal();
+        std::thread::spawn(move || {
+            let outcome = match Git::create_worktree(&project_path, &wt_path, &branch_clone) {
+                Ok(()) => BackgroundOpOutcome::Created { branch: branch_clone },
+                Err(e) => BackgroundOpOutcome::Failed(format!("Create failed: {}", e)),
+            };
+            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+        });
 
-        let worktree = Worktree {
-            branch_name: branch_name.clone(),
+        // Return a placeholder — the real worktree is set up when the background op completes
+        Ok(Worktree {
+            branch_name,
             worktree_path: Some(worktree_path),
             claude_session_id: None,
             archived: false,
-        };
-
-        self.refresh_worktrees()?;
-
-        // Select the new worktree
-        if let Some(idx) = self.worktrees.iter().position(|s| s.branch_name == branch_name) {
-            self.save_current_terminal(); // Save before switching
-            self.selected_worktree = Some(idx);
-            self.load_session_output();
-        }
-
-        Ok(worktree)
+        })
     }
 
     pub fn archive_current_worktree(&mut self) -> anyhow::Result<()> {
-        if let Some(session) = self.current_worktree() {
-            // Never allow archiving the main branch — it would destroy the primary worktree
-            if let Some(project) = &self.project {
-                if session.branch_name == project.main_branch {
-                    self.set_status("Cannot archive main branch");
-                    return Ok(());
-                }
+        let session = match self.current_worktree() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        if let Some(project) = &self.project {
+            if session.branch_name == project.main_branch {
+                self.set_status("Cannot archive main branch");
+                return Ok(());
             }
-            if let Some(ref wt_path) = session.worktree_path {
-                if let Some(project) = &self.project {
-                    Git::remove_worktree(&project.path, wt_path)?;
-                }
-            }
-            self.set_status("Session archived");
-            self.refresh_worktrees()?;
-            self.load_session_output();
         }
+        let wt_path = match session.worktree_path.clone() {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+        let project_path = match self.project.as_ref() {
+            Some(p) => p.path.clone(),
+            None => return Ok(()),
+        };
+        let (tx, rx) = mpsc::channel();
+        self.loading_indicator = Some("Archiving worktree...".into());
+        self.background_op_receiver = Some(rx);
+        std::thread::spawn(move || {
+            let outcome = match Git::remove_worktree(&project_path, &wt_path) {
+                Ok(()) => BackgroundOpOutcome::Archived,
+                Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
+            };
+            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+        });
         Ok(())
     }
 
@@ -99,15 +113,19 @@ impl App {
         let worktree_name = session.name().to_string();
         let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
         let worktree_path = project.worktrees_dir().join(&worktree_name);
-        // Recreate worktree from the existing branch
-        Git::create_worktree_from_branch(&project.path, &worktree_path, &branch)?;
-        self.set_status(format!("Unarchived: {}", worktree_name));
-        self.refresh_worktrees()?;
-        // Re-select the worktree (index may have shifted after refresh)
-        if let Some(idx) = self.worktrees.iter().position(|s| s.branch_name == branch) {
-            self.selected_worktree = Some(idx);
-            self.load_session_output();
-        }
+        let project_path = project.path.clone();
+        let (tx, rx) = mpsc::channel();
+        self.loading_indicator = Some("Restoring worktree...".into());
+        self.background_op_receiver = Some(rx);
+        let branch_clone = branch.clone();
+        let name_clone = worktree_name.clone();
+        std::thread::spawn(move || {
+            let outcome = match Git::create_worktree_from_branch(&project_path, &worktree_path, &branch_clone) {
+                Ok(()) => BackgroundOpOutcome::Unarchived { branch: branch_clone, display_name: name_clone },
+                Err(e) => BackgroundOpOutcome::Failed(format!("Unarchive failed: {}", e)),
+            };
+            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+        });
         Ok(())
     }
 
@@ -120,17 +138,14 @@ impl App {
         }
         let branch = wt.branch_name.clone();
         let name = wt.name().to_string();
-        // Remove the worktree directory (if active, not archived)
-        if let Some(ref wt_path) = wt.worktree_path {
-            Git::remove_worktree(&project.path, wt_path)?;
-        }
-        // Delete the git branch (local + remote + tracking ref)
-        let _ = Git::delete_branch(&project.path, &branch);
-        // Clean up auto-rebase config
+        let wt_path = wt.worktree_path.clone();
+        let project_path = project.path.clone();
+        let prev_idx = self.selected_worktree.unwrap_or(0);
+
+        // Clean up auto-rebase config (fast, can stay on main thread)
         self.auto_rebase_enabled.remove(&branch);
-        crate::azufig::set_auto_rebase(&project.path, &branch, false);
-        // Clean up stale session state for the deleted branch so it doesn't
-        // interfere with future worktrees or accumulate dead entries.
+        crate::azufig::set_auto_rebase(&project_path, &branch, false);
+        // Clean up stale session state immediately
         self.session_files.remove(&branch);
         self.session_selected_file_idx.remove(&branch);
         self.claude_session_ids.retain(|k, _| k != &branch);
@@ -144,16 +159,27 @@ impl App {
             }
         }
         self.active_slot.remove(&branch);
-        self.set_status(format!("Deleted: {}", name));
-        let prev_idx = self.selected_worktree.unwrap_or(0);
-        self.refresh_worktrees()?;
-        // Clamp selection after removal
-        self.selected_worktree = if self.worktrees.is_empty() {
-            None
-        } else {
-            Some(prev_idx.min(self.worktrees.len() - 1))
-        };
-        self.load_session_output();
+
+        let (tx, rx) = mpsc::channel();
+        self.loading_indicator = Some("Deleting worktree...".into());
+        self.background_op_receiver = Some(rx);
+        let branch_clone = branch.clone();
+        let name_clone = name.clone();
+        std::thread::spawn(move || {
+            // Remove worktree directory
+            if let Some(ref path) = wt_path {
+                let _ = Git::remove_worktree(&project_path, path);
+            }
+            // Delete git branch (local + remote + tracking ref)
+            let _ = Git::delete_branch(&project_path, &branch_clone);
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(BackgroundOpOutcome::Deleted {
+                    display_name: name_clone,
+                    prev_idx,
+                }),
+            });
+        });
         Ok(())
     }
 

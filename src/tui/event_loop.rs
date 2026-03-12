@@ -132,7 +132,8 @@ pub async fn run_app(
             .map(|o| o.generating).unwrap_or(false);
         let squash_merging = app.git_actions_panel.as_ref()
             .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
-        let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some();
+        let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some()
+            || app.background_op_receiver.is_some() || app.rebase_op_receiver.is_some();
         // Note: session_file_dirty, file_tree_refresh_pending, health_refresh_pending
         // are NOT included — they have their own debounce timers and don't need
         // the main loop to busy-spin. Including them caused sustained high CPU
@@ -357,6 +358,130 @@ pub async fn run_app(
                             p.result_message = Some((msg, true));
                             crate::tui::input_git_actions::refresh_changed_files(p);
                             crate::tui::input_git_actions::refresh_commit_log(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Poll background worktree/git operations (archive, unarchive, create,
+        // delete, pull, push). Background thread sends progress phases and
+        // final outcome via mpsc.
+        {
+            use crate::app::types::BackgroundOpOutcome;
+            let mut op_outcome: Option<BackgroundOpOutcome> = None;
+            let mut new_phase: Option<String> = None;
+            if let Some(ref rx) = app.background_op_receiver {
+                while let Ok(progress) = rx.try_recv() {
+                    if let Some(outcome) = progress.outcome {
+                        app.background_op_receiver = None;
+                        op_outcome = Some(outcome);
+                        needs_redraw = true;
+                        break;
+                    }
+                    if !progress.phase.is_empty() {
+                        new_phase = Some(progress.phase);
+                        needs_redraw = true;
+                    }
+                }
+            }
+            if let Some(phase) = new_phase {
+                app.loading_indicator = Some(phase);
+            }
+            if let Some(outcome) = op_outcome {
+                app.loading_indicator = None;
+                match outcome {
+                    BackgroundOpOutcome::Archived => {
+                        app.set_status("Session archived");
+                        let _ = app.refresh_worktrees();
+                        app.load_session_output();
+                    }
+                    BackgroundOpOutcome::Unarchived { branch, display_name } => {
+                        app.set_status(format!("Unarchived: {}", display_name));
+                        let _ = app.refresh_worktrees();
+                        if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
+                            app.selected_worktree = Some(idx);
+                            app.load_session_output();
+                        }
+                    }
+                    BackgroundOpOutcome::Created { branch } => {
+                        let _ = app.refresh_worktrees();
+                        if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
+                            app.selected_worktree = Some(idx);
+                            app.load_session_output();
+                        }
+                    }
+                    BackgroundOpOutcome::Deleted { display_name, prev_idx, .. } => {
+                        app.set_status(format!("Deleted: {}", display_name));
+                        let _ = app.refresh_worktrees();
+                        app.selected_worktree = if app.worktrees.is_empty() {
+                            None
+                        } else {
+                            Some(prev_idx.min(app.worktrees.len() - 1))
+                        };
+                        app.load_session_output();
+                    }
+                    BackgroundOpOutcome::GitResult { message, is_error } => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            p.result_message = Some((message, is_error));
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
+                        }
+                    }
+                    BackgroundOpOutcome::Failed(msg) => {
+                        app.set_status(msg);
+                    }
+                }
+            }
+        }
+
+        // Poll background rebase operations (separate from generic ops because
+        // rebase has conflict overlay handling)
+        {
+            use crate::app::types::BackgroundRebaseOutcome;
+            let mut rebase_outcome: Option<BackgroundRebaseOutcome> = None;
+            if let Some(ref rx) = app.rebase_op_receiver {
+                if let Ok(outcome) = rx.try_recv() {
+                    app.rebase_op_receiver = None;
+                    rebase_outcome = Some(outcome);
+                    needs_redraw = true;
+                }
+            }
+            if let Some(outcome) = rebase_outcome {
+                app.loading_indicator = None;
+                match outcome {
+                    BackgroundRebaseOutcome::Rebased(msg) => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
+                            p.result_message = Some((msg, false));
+                        }
+                    }
+                    BackgroundRebaseOutcome::UpToDate => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
+                            p.result_message = Some(("Already up to date with main".to_string(), false));
+                        }
+                    }
+                    BackgroundRebaseOutcome::Conflict { conflicted, auto_merged } => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
+                                conflicted_files: conflicted,
+                                auto_merged_files: auto_merged,
+                                scroll: 0,
+                                selected: 0,
+                                continue_with_merge: false,
+                            });
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
+                        }
+                    }
+                    BackgroundRebaseOutcome::Failed(e) => {
+                        if let Some(ref mut p) = app.git_actions_panel {
+                            crate::tui::input_git_actions::refresh_changed_files(p);
+                            crate::tui::input_git_actions::refresh_commit_log(p);
+                            p.result_message = Some((format!("Rebase failed: {}", e), true));
                         }
                     }
                 }
