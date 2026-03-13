@@ -35,6 +35,7 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 }
                 app.viewer_edit_diff = None;
                 app.viewer_edit_diff_line = None;
+                app.viewer_scroll_to_diff = false;
                 app.selected_tool_diff = None;
                 app.viewer_lines_dirty = true;
                 app.focus = Focus::FileTree;

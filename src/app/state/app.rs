@@ -235,6 +235,8 @@ pub struct App {
     /// Hit-test regions for worktree tab bar clicks: (x_start, x_end, tab_target)
     /// None = [M] main branch tab, Some(idx) = worktree index
     pub worktree_tab_hits: Vec<(u16, u16, Option<usize>)>,
+    /// Cached rect for the status bar (mouse click → copy status message)
+    pub pane_status: ratatui::layout::Rect,
     /// Cached rect for the todo widget area (mouse scroll hit-testing)
     pub pane_todo: ratatui::layout::Rect,
     /// Scroll offset for the todo widget (lines scrolled from top)
@@ -342,6 +344,8 @@ pub struct App {
     pub viewer_edit_diff: Option<(String, String)>,
     /// Line number where the edit diff starts (for scrolling to it)
     pub viewer_edit_diff_line: Option<usize>,
+    /// One-shot flag: correct viewer_scroll to match the actual visual line on next cache rebuild
+    pub viewer_scroll_to_diff: bool,
     /// Previous viewer state before Edit diff (content, path, scroll) for restoration on Esc
     pub viewer_prev_state: Option<(Option<String>, Option<PathBuf>, usize)>,
     /// Current position in prompt history (None = new input, Some(idx) = browsing history)
@@ -606,6 +610,7 @@ impl App {
             pane_session_content: ratatui::layout::Rect::default(),
             pane_worktree_tabs: ratatui::layout::Rect::default(),
             worktree_tab_hits: Vec::new(),
+            pane_status: ratatui::layout::Rect::default(),
             pane_todo: ratatui::layout::Rect::default(),
             todo_scroll: 0,
             todo_total_lines: 0,
@@ -657,6 +662,7 @@ impl App {
             last_click: None,
             viewer_edit_diff: None,
             viewer_edit_diff_line: None,
+            viewer_scroll_to_diff: false,
             viewer_prev_state: None,
             prompt_history_idx: None,
             prompt_history_temp: None,

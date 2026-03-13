@@ -177,8 +177,13 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
 
                         let mut all_lines: Vec<Line> = Vec::new();
                         let mut line_numbers: Vec<usize> = Vec::new();
+                        let mut diff_visual_start: Option<usize> = None;
 
                         for (line_idx, spans) in highlighted.into_iter().enumerate() {
+                            if diff_start_line == Some(line_idx) {
+                                // Record visual line where the diff region starts (before old lines)
+                                diff_visual_start = Some(all_lines.len());
+                            }
                             if diff_start_line == Some(line_idx) && !old_lines.is_empty() {
                                 for old_line in &old_lines {
                                     let line_num = format!("{:>width$} │ ", "-", width = line_num_width);
@@ -234,6 +239,24 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                         app.viewer_lines_cache = all_lines;
                         app.viewer_line_numbers = line_numbers;
                         app.viewer_original_line_count = content_lines.len();
+
+                        // Correct scroll to the actual visual line where the diff renders.
+                        // find_edit_line returns a content line number, but the cache has
+                        // extra visual lines from word-wrapping and inserted old/deleted lines.
+                        if app.viewer_scroll_to_diff {
+                            if let Some(vis) = diff_visual_start {
+                                app.viewer_scroll = vis.saturating_sub(3);
+                            } else if let Some(target_line) = app.viewer_edit_diff_line {
+                                // Fallback: draw_viewer didn't find the diff highlight but
+                                // find_edit_line found a content line. Map it to visual line
+                                // via line_numbers (which maps visual → content 1-indexed).
+                                let target_1 = target_line + 1;
+                                if let Some(vis) = app.viewer_line_numbers.iter().position(|&n| n == target_1) {
+                                    app.viewer_scroll = vis.saturating_sub(3);
+                                }
+                            }
+                            app.viewer_scroll_to_diff = false;
+                        }
                     }
 
                     app.viewer_lines_width = viewport_width;

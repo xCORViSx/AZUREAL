@@ -21,7 +21,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     // Git panel mode — minimal status bar (hints are in the git status box title)
     if let Some(ref panel) = app.git_actions_panel {
         let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
-        let badge_color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
+        let badge_color = AZURE;
         let badge_width = badge_text.len() as u16;
 
         let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
@@ -83,7 +83,7 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Right badge: CPU% + PID — azure text in debug builds as a visual indicator
     let badge_text = format!("CPU {} │ PID {} ", app.cpu_usage_text, std::process::id());
-    let badge_color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
+    let badge_color = AZURE;
     let badge_width = badge_text.len() as u16;
 
     // Left side: status content (leave room for badge on right)
@@ -195,14 +195,13 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Badge color logic (debug vs release)
+    //  Badge color — always Azure
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn badge_color_debug_build() {
-        // In test builds, cfg!(debug_assertions) is true
-        let color = if cfg!(debug_assertions) { AZURE } else { Color::DarkGray };
-        assert_eq!(color, AZURE);
+    fn badge_color_always_azure() {
+        let badge_color = AZURE;
+        assert_eq!(badge_color, Color::Rgb(51, 153, 255));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -445,7 +444,7 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  Azure color vs DarkGray for badge
+    //  Color constants distinctness
     // ══════════════════════════════════════════════════════════════════
 
     #[test]

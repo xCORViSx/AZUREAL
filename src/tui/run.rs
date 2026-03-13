@@ -257,6 +257,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_output::draw_post_merge_dialog(f, f.area(), pmd);
     }
 
+    app.pane_status = status_area;
     draw_status::draw_status(f, app, status_area);
 
     // Draw overlays

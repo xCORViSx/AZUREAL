@@ -261,6 +261,17 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         return true;
     }
 
+    // Status bar click — copy the status message to clipboard
+    if app.pane_status.contains(pos) {
+        if let Some(ref msg) = app.status_message {
+            let text = msg.clone();
+            if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+            app.clipboard = text;
+            app.set_status("Copied to clipboard");
+        }
+        return true;
+    }
+
     false
 }
 

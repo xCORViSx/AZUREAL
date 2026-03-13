@@ -288,6 +288,7 @@ fn handle_save_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.viewer_edit_save_dialog = false;
             app.viewer_edit_diff = None;
             app.viewer_edit_diff_line = None;
+            app.viewer_scroll_to_diff = false;
             app.selected_tool_diff = None;
             app.exit_viewer_edit_mode();
             // Reload file without diff overlay

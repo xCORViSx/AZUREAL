@@ -196,7 +196,8 @@ impl App {
             self.viewer_mode = crate::app::ViewerMode::File;
             self.viewer_edit_diff = Some((old_string.to_string(), new_string.to_string()));
             self.viewer_edit_diff_line = Some(edit_line);
-            self.viewer_scroll = edit_line.saturating_sub(3); // Scroll to show edit with 3 lines context above
+            self.viewer_scroll = edit_line.saturating_sub(3); // Preliminary — corrected to visual line on cache rebuild
+            self.viewer_scroll_to_diff = true;
             self.viewer_lines_dirty = true;
             self.focus = Focus::Viewer;
         } else {
