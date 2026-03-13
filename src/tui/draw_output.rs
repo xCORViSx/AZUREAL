@@ -411,7 +411,17 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 (title, lines)
             } else {
-                (" Session ".to_string(), vec![])
+                // Empty session pane — show hint to open session list
+                let key = crate::tui::keybindings::find_key_for_action(
+                    &crate::tui::keybindings::SESSION,
+                    crate::tui::keybindings::Action::ToggleSessionList,
+                ).unwrap_or_else(|| "s".into());
+                let hint = vec![Line::from(vec![
+                    Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+                    Span::styled(" to choose a session", Style::default().fg(Color::DarkGray)),
+                ])];
+                (" Session ".to_string(), hint)
             }
         }
     };

@@ -135,7 +135,11 @@ fn draw_content_search(
     }
     app.session_list_scroll = app.session_list_scroll.min(max_scroll);
     let display: Vec<Line> = rows.into_iter().skip(app.session_list_scroll).take(viewport_height).collect();
-    let title = format!(" Search [{}/{}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total.max(1));
+    let title = if total == 0 {
+        " Search [0/0] ".to_string()
+    } else {
+        format!(" Search [{}/{}] ", app.session_list_selected.saturating_add(1).min(total), total)
+    };
     let border_style = if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else { Style::default().fg(Color::White) };
@@ -144,6 +148,16 @@ fn draw_content_search(
         .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
         .title(Span::styled(title, border_style))
         .border_style(border_style);
+    let display = if total == 0 {
+        let msg = "No results";
+        let pad = (inner_width.saturating_sub(msg.len())) / 2;
+        vec![Line::from(Span::styled(
+            format!("{}{}", " ".repeat(pad), msg),
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        display
+    };
     f.render_widget(Paragraph::new(display).block(block), list_area);
 }
 
@@ -236,10 +250,12 @@ fn draw_name_list(
         .take(viewport_height)
         .collect();
 
-    let title = if filtering {
-        format!(" Sessions [{}/{} of {}] ", app.session_list_selected.saturating_add(1).min(total.max(1)), total, total_unfiltered)
+    let title = if total == 0 {
+        " Sessions [0/0] ".to_string()
+    } else if filtering {
+        format!(" Sessions [{}/{} of {}] ", app.session_list_selected.saturating_add(1).min(total), total, total_unfiltered)
     } else {
-        format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total.max(1))
+        format!(" Sessions [{}/{}] ", app.session_list_selected + 1, total)
     };
     let border_style = if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
@@ -252,6 +268,29 @@ fn draw_name_list(
         .title(Span::styled(title, border_style))
         .border_style(border_style);
 
+    let display = if total == 0 {
+        let msg = "No sessions";
+        let pad = (inner_width.saturating_sub(msg.len())) / 2;
+        let hint_spans = vec![
+            Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("a", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+            Span::styled(" to add a session", Style::default().fg(Color::DarkGray)),
+        ];
+        let hint_len: usize = hint_spans.iter().map(|s| s.content.len()).sum();
+        let hint_pad = (inner_width.saturating_sub(hint_len)) / 2;
+        let mut hint = vec![Span::styled(" ".repeat(hint_pad), Style::default())];
+        hint.extend(hint_spans);
+        vec![
+            Line::from(Span::styled(
+                format!("{}{}", " ".repeat(pad), msg),
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(hint),
+        ]
+    } else {
+        display
+    };
     let widget = Paragraph::new(display).block(block);
     f.render_widget(widget, list_area);
 }
@@ -715,10 +754,13 @@ mod tests {
 
     #[test]
     fn search_title_empty() {
-        let selected: usize = 0;
         let total: usize = 0;
-        let title = format!(" Search [{}/{}] ", selected.saturating_add(1).min(total.max(1)), total.max(1));
-        assert_eq!(title, " Search [1/1] ");
+        let title = if total == 0 {
+            " Search [0/0] ".to_string()
+        } else {
+            format!(" Search [{}/{}] ", 1, total)
+        };
+        assert_eq!(title, " Search [0/0] ");
     }
 
     #[test]
@@ -751,10 +793,13 @@ mod tests {
 
     #[test]
     fn session_title_zero_total() {
-        let selected: usize = 0;
         let total: usize = 0;
-        let title = format!(" Sessions [{}/{}] ", selected + 1, total.max(1));
-        assert_eq!(title, " Sessions [1/1] ");
+        let title = if total == 0 {
+            " Sessions [0/0] ".to_string()
+        } else {
+            format!(" Sessions [{}/{}] ", 1, total)
+        };
+        assert_eq!(title, " Sessions [0/0] ");
     }
 
     // ══════════════════════════════════════════════════════════════════
