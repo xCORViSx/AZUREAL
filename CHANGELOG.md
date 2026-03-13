@@ -7,6 +7,19 @@ All notable changes to Azureal will be documented in this file.
 ### Added
 - **Self-installing binaries** — Downloaded binaries detect first run (not in PATH, not a cargo build), copy themselves to `/usr/local/bin/` (macOS/Linux) or `%USERPROFILE%\.azureal\bin\` (Windows), update shell profile / user PATH, and print a success message. No manual `chmod`/`mv`/`sudo` needed — just download and run. Skips silently when already installed or running from `target/debug`/`target/release`.
 - **Clickable status bar message** — Clicking the status bar copies the current status message to the system clipboard.
+- **Cross-platform session directory linking** — Sessions created on macOS are now accessible on Windows (and vice versa) via NTFS junctions (Windows) or symlinks (Unix). `find_foreign_project_dir()` matches worktree suffixes across platform-specific encoded paths; `link_project_dir()` creates the appropriate link type. No elevation required on Windows.
+- **Command box `M:main` hint** — Added main branch browse hint to command mode title bar.
+
+### Changed
+- **Windows keybindings use Alt instead of Ctrl+Shift** — Archive (`Alt+A`), Delete worktree (`Alt+D`), Cancel agent (`Alt+C`), and Edit STT (`Alt+S`) changed from `Ctrl+Shift+*` to `Alt+*` on Windows/Linux. Windows Terminal intercepts `Ctrl+Shift+` combos (select-all, new tab, etc.) and without the Kitty keyboard protocol the Shift modifier is dropped for alphabetic chars.
+- **Kitty keyboard protocol disabled on Windows** — `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) conflicts with mouse capture on Windows Terminal. Gated to non-Windows with `#[cfg(not(target_os = "windows"))]`.
+- **fast_draw disabled on Windows** — Direct VT escape sequence writes to stdout bypass ratatui's buffer, which corrupts Windows Terminal's console input parser causing escape sequences (`[A[B`) to appear in the input box. Both `fast_draw_input()` and `fast_draw_session()` gated to `#[cfg(target_os = "macos")]`.
+
+### Fixed
+- **Session pane content spilling into todo widget** — `fast_draw_session()` used `app.pane_session` (full session column) instead of the content sub-area, overwriting the todo widget and search bar. Added `pane_session_content: Rect` field to track the actual content rect.
+- **CPU meter showing 3-5% on idle** — Two causes: (1) debounce-managed flags (`session_file_dirty`, `file_tree_refresh_pending`, `health_refresh_pending`) in `is_busy` check caused the event loop to busy-spin with `try_recv()` instead of blocking `recv_timeout()`. Removed from `is_busy`. (2) `GetProcessTimes` 15.6ms timer granularity caused noisy readings. Increased sampling window to 3 seconds with EMA smoothing (alpha=0.2) and 0.5% floor.
+- **Escape sequences in input box during streaming** — Claude subprocess inherited the console stdin handle via `Stdio::inherit()` (default), causing input event competition between the parent TUI and child process. Fixed with `.stdin(Stdio::null())`.
+- **`\\?\C:\` path prefix on Windows** — `std::fs::canonicalize()` returns extended-length paths (`\\?\C:\...`) on Windows. Replaced all 5 call sites with `dunce::canonicalize()` which strips the prefix when safe.
 
 ### Changed
 - **CPU/PID badge always Azure** — Removed debug/release color distinction for the CPU/PID badge. Previously Azure in debug builds and DarkGray in release; now always Azure.

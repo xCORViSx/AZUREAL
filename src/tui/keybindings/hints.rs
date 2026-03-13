@@ -71,9 +71,10 @@ pub fn prompt_command_title() -> (String, String, String) {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
+    let main = find_key_for_action(&GLOBAL, Action::BrowseMain).unwrap_or("M".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:run | {}:cancel agent | {}:quit | {}:help",
-        p, t, g, h, run, cancel, quit, help
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:main | {}:run | {}:cancel agent | {}:quit | {}:help",
+        p, t, g, h, main, run, cancel, quit, help
     );
     let label = " COMMAND ".to_string();
     let full = format!(" COMMAND ({}) ", hints);

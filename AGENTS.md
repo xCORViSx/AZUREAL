@@ -197,29 +197,33 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
 **Platform-conditional keybindings** (`src/tui/keybindings/bindings.rs`):
 
-macOS `⌘` (Super) bindings get platform equivalents via `#[cfg(target_os = "macos")]` const key combos. Windows/Linux terminals cannot capture the Win/Super key. On Windows/Linux, Copy uses `Ctrl+C` and Cancel uses `Ctrl+Shift+C` (swapped from the macOS layout where `⌃C` is cancel).
+macOS `⌘` (Super) bindings get platform equivalents via `#[cfg(target_os = "macos")]` const key combos. Windows/Linux terminals cannot capture the Win/Super key. On Windows/Linux, destructive/modal actions use `Alt+` instead of `Ctrl+Shift+` because Windows Terminal intercepts `Ctrl+Shift+` combos and without the Kitty keyboard protocol the Shift modifier is dropped for alphabetic chars.
 
 | Action | macOS | Windows/Linux |
 |--------|-------|---------------|
 | Copy selection | `⌘c` | `Ctrl+C` |
-| Cancel agent | `⌃c` | `Ctrl+Shift+C` |
-| Archive worktree | `⌘a` | `Ctrl+Shift+A` |
-| Delete worktree | `⌘d` | `Ctrl+Shift+D` |
+| Cancel agent | `⌃c` | `Alt+C` |
+| Archive worktree | `⌘a` | `Alt+A` |
+| Delete worktree | `⌘d` | `Alt+D` |
 | Select all | `⌘a` | `Ctrl+A` |
 | Save file | `⌘s` | `Ctrl+S` |
 | Undo | `⌘z` | `Ctrl+Z` |
 | Redo | `⌘⇧Z` | `Ctrl+Y` |
-| STT (edit mode) | `⌃s` | `Ctrl+Shift+S` |
+| STT (edit mode) | `⌃s` | `Alt+S` |
 
 Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+Shift+` text labels on Windows/Linux.
 
 **Runtime platform guards:**
 
 - Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
-- Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows
+- Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows. Claude subprocess spawned with `.stdin(Stdio::null())` to prevent console stdin handle sharing on Windows (causes input event competition between TUI and child).
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
+- Kitty keyboard protocol (`src/tui/run.rs`): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal.
+- fast_draw (`src/tui/event_loop/fast_draw.rs`): Both `fast_draw_input()` and `fast_draw_session()` gated to `#[cfg(target_os = "macos")]`. Direct VT writes to stdout bypass ratatui's buffer and corrupt Windows Terminal's console input parser.
+- Path canonicalization: All `std::fs::canonicalize()` calls replaced with `dunce::canonicalize()` to strip `\\?\` extended-length path prefix on Windows.
+- Cross-platform session linking (`src/config.rs`): `find_foreign_project_dir()` + `link_project_dir()` create NTFS junctions (Windows, no elevation) or symlinks (Unix) to share session directories across platforms.
 
-**Already cross-platform** (no guards needed): `portable-pty` (ConPTY on Windows), `notify` (ReadDirectoryChangesW), `arboard`, `dirs`, `notify-rust`, `ratatui`/`crossterm`, all path handling via `PathBuf`.
+**Already cross-platform** (no guards needed): `portable-pty` (ConPTY on Windows), `notify` (ReadDirectoryChangesW), `arboard`, `dirs`, `notify-rust`, `ratatui`/`crossterm`, `dunce`, all path handling via `PathBuf`.
 
 ---
 
@@ -1770,7 +1774,7 @@ azureal
 | `⌘d` / `Alt+D` | Delete worktree |
 | `?` | Help |
 | `⌘c` / `Ctrl+C` | Copy selection |
-| `⌃c` / `Ctrl+Shift+C` | Cancel agent |
+| `⌃c` / `Alt+C` | Cancel agent |
 | `⌃m` / `Ctrl+M` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` / `Ctrl+Q` | Quit |
 
@@ -1827,8 +1831,8 @@ Prompt keybindings are displayed directly in the Input pane's title bar (not in 
 
 **Type mode title shows (macOS):** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥ ←/→ :word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
 **Type mode title shows (Windows/Linux):** `(Esc:exit | Enter:submit | Shift+Enter:newline | Ctrl+c:cancel agent | ↑/↓:history | Alt+ ←/→ :word | Ctrl+w:del wrd | Ctrl+s:speech | Alt+p:presets)`
-**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | R:run | G:Git | H:Health | [/]:worktree | w:add wt | ⌘a:archive wt | ⌘d:del wt | Tab/⇧Tab:focus | ⌃c:cancel agent | ⌃q:quit | ⌃d:dump | ?:help)`
-**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | R:run | G:Git | H:Health | [/]:worktree | w:add wt | Alt+a:archive wt | Alt+d:del wt | Tab/Shift+Tab:focus | Ctrl+c:cancel agent | Ctrl+q:quit | Ctrl+d:dump | ?:help)`
+**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | R:run | ⌃c:cancel agent | ⌃q:quit | ?:help)`
+**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | R:run | Alt+c:cancel agent | Ctrl+q:quit | ?:help)`
 
 ### Terminal Mode
 

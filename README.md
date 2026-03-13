@@ -63,7 +63,7 @@
 ### Performance
 
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
-- **Fast Input & Session** — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using direct cursor positioning (~2-5ms for session column only vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing
+- **Fast Input & Session** (macOS) — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using direct cursor positioning (~2-5ms for session column only vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing. Disabled on Windows where direct VT writes conflict with the console input parser
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — No database; two small TOML config files and runtime git/Claude discovery
 
@@ -129,10 +129,10 @@ azureal
 | `P` | Projects panel |
 | `/` | Search / filter |
 | `?` | Help |
-| `⌘a` / `Ctrl+Shift+A` | Archive worktree |
-| `⌘d` / `Ctrl+Shift+D` | Delete worktree |
+| `⌘a` / `Alt+A` | Archive worktree |
+| `⌘d` / `Alt+D` | Delete worktree |
 | `⌘c` / `Ctrl+C` | Copy selection |
-| `⌃c` / `Ctrl+Shift+C` | Cancel agent |
+| `⌃c` / `Alt+C` | Cancel agent |
 | `⌃m` / `Ctrl+M` | Cycle model |
 | `⌃q` / `Ctrl+Q` | Quit |
 
