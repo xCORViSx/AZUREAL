@@ -378,6 +378,11 @@ impl App {
                 }
             }
 
+            // Migrate any old UUID-named .json cache files to new .json.gz format
+            if let Some(ref wt_path) = worktree_path {
+                crate::app::session_cache::migrate_legacy_caches(wt_path, self.backend);
+            }
+
             // Try loading session — check cache first, fall back to raw parse,
             // or load from orphan cache if the source file is missing.
             if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
@@ -390,7 +395,12 @@ impl App {
                         .unwrap_or(0);
                     self.session_file_size = source_size;
 
-                    if let Some(cached) = crate::app::session_cache::read_cache(wt_path, &claude_id, session_file, source_size) {
+                    // Resolve or assign a sequential cache name (e.g. "claude-3")
+                    let cache_name = crate::app::session_cache::resolve_cache_name(wt_path, &claude_id, self.backend).ok();
+
+                    if let Some(cached) = cache_name.as_deref().and_then(|cn| {
+                        crate::app::session_cache::read_cache(wt_path, cn, session_file, source_size)
+                    }) {
                         // Cache hit — skip raw parse
                         Some(cached.into_parsed())
                     } else {
@@ -402,12 +412,17 @@ impl App {
                         let cached = crate::app::session_cache::CachedSession::from_parsed(
                             &parsed, session_file.clone(), source_size,
                         );
-                        let _ = crate::app::session_cache::write_cache(wt_path, &claude_id, &cached);
+                        if let Some(ref cn) = cache_name {
+                            let _ = crate::app::session_cache::write_cache(wt_path, cn, &cached);
+                        }
                         Some(parsed)
                     }
                 } else {
                     // Source file missing — try orphan cache (read-only mode)
-                    if let Some(cached) = crate::app::session_cache::read_cache_orphan(wt_path, &claude_id) {
+                    let cache_name = crate::app::session_cache::lookup_cache_name(wt_path, &claude_id);
+                    if let Some(cached) = cache_name.as_deref().and_then(|cn| {
+                        crate::app::session_cache::read_cache_orphan(wt_path, cn)
+                    }) {
                         self.source_file_missing = Some(cached.source_path.clone());
                         Some(cached.into_parsed())
                     } else {
@@ -666,7 +681,9 @@ impl App {
                     awaiting_plan_approval: self.awaiting_plan_approval,
                 };
                 cached.compact();
-                let _ = crate::app::session_cache::write_cache(wt_path, &session_id, &cached);
+                if let Ok(cache_name) = crate::app::session_cache::resolve_cache_name(wt_path, &session_id, self.backend) {
+                    let _ = crate::app::session_cache::write_cache(wt_path, &cache_name, &cached);
+                }
             }
         }
 

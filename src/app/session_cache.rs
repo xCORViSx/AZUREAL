@@ -1,10 +1,13 @@
 //! Session cache — intermediate translation layer
 //!
-//! Writes parsed session data to `.azureal/sessions/<session-id>.json.gz` so the
+//! Writes parsed session data to `.azureal/sessions/<backend-N>.json.gz` so the
 //! TUI reads from a unified format instead of backend-specific JSONL files.
 //! Cache files are gzip-compressed for minimal disk footprint.
+//!
+//! Files are named sequentially per backend: `claude-1.json.gz`, `claude-2.json.gz`,
+//! `codex-1.json.gz`, etc. An `index.json` maps session UUIDs to cache names.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -15,7 +18,80 @@ use flate2::Compression;
 use serde::{Deserialize, Serialize};
 
 use crate::app::session_parser::ParsedSession;
+use crate::backend::Backend;
 use crate::events::DisplayEvent;
+
+// =========================================================================
+// Cache index — maps session UUIDs to sequential cache names
+// =========================================================================
+
+/// Maps session UUIDs to their cache filenames (e.g. "claude-1", "codex-3")
+#[derive(Serialize, Deserialize, Default)]
+struct CacheIndex {
+    /// UUID → cache name (without extension)
+    #[serde(flatten)]
+    map: HashMap<String, String>,
+}
+
+/// Path to the index file
+fn index_path(project_root: &Path) -> PathBuf {
+    project_root.join(".azureal").join("sessions").join("index.json")
+}
+
+/// Load the index (returns empty if missing or corrupt)
+fn read_index(project_root: &Path) -> CacheIndex {
+    let path = index_path(project_root);
+    fs::read(&path)
+        .ok()
+        .and_then(|data| serde_json::from_slice(&data).ok())
+        .unwrap_or_default()
+}
+
+/// Save the index atomically
+fn write_index(project_root: &Path, index: &CacheIndex) -> io::Result<()> {
+    let path = index_path(project_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let data = serde_json::to_vec(index)?;
+    fs::write(&tmp, &data)?;
+    fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
+/// Find the next sequential number for a backend prefix by scanning existing values
+fn next_number(index: &CacheIndex, prefix: &str) -> u64 {
+    let pat = format!("{}-", prefix);
+    index.map.values()
+        .filter_map(|name| name.strip_prefix(&pat).and_then(|n| n.parse::<u64>().ok()))
+        .max()
+        .map(|n| n + 1)
+        .unwrap_or(1)
+}
+
+/// Look up existing cache name for a session UUID
+pub fn lookup_cache_name(project_root: &Path, session_id: &str) -> Option<String> {
+    let index = read_index(project_root);
+    index.map.get(session_id).cloned()
+}
+
+/// Get or assign a cache name for a session UUID
+pub fn resolve_cache_name(project_root: &Path, session_id: &str, backend: Backend) -> io::Result<String> {
+    let mut index = read_index(project_root);
+    if let Some(name) = index.map.get(session_id) {
+        return Ok(name.clone());
+    }
+    let prefix = match backend {
+        Backend::Claude => "claude",
+        Backend::Codex => "codex",
+    };
+    let n = next_number(&index, prefix);
+    let name = format!("{}-{}", prefix, n);
+    index.map.insert(session_id.to_string(), name.clone());
+    write_index(project_root, &index)?;
+    Ok(name)
+}
 
 /// Cached session data — mirrors ParsedSession plus source provenance fields
 #[derive(Serialize, Deserialize)]
@@ -202,14 +278,14 @@ fn compact_tool_input(tool_name: &str, input: &mut serde_json::Value) {
     }
 }
 
-/// Returns `.azureal/sessions/<session-id>.json.gz`
-pub fn cache_path(project_root: &Path, session_id: &str) -> PathBuf {
-    project_root.join(".azureal").join("sessions").join(format!("{session_id}.json.gz"))
+/// Returns `.azureal/sessions/<cache_name>.json.gz`
+pub fn cache_path(project_root: &Path, cache_name: &str) -> PathBuf {
+    project_root.join(".azureal").join("sessions").join(format!("{cache_name}.json.gz"))
 }
 
 /// Write parsed session to cache (gzip-compressed, atomic: write tmp then rename)
-pub fn write_cache(project_root: &Path, session_id: &str, cached: &CachedSession) -> io::Result<()> {
-    let path = cache_path(project_root, session_id);
+pub fn write_cache(project_root: &Path, cache_name: &str, cached: &CachedSession) -> io::Result<()> {
+    let path = cache_path(project_root, cache_name);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -231,14 +307,15 @@ fn decompress_cache(compressed: &[u8]) -> Option<CachedSession> {
     serde_json::from_slice(&json).ok()
 }
 
-/// Read cache if valid — source_path and source_size must both match
+/// Read cache if valid — source_path and source_size must both match.
+/// `cache_name` is the indexed name (e.g. "claude-1"), not the UUID.
 pub fn read_cache(
     project_root: &Path,
-    session_id: &str,
+    cache_name: &str,
     source_path: &Path,
     current_source_size: u64,
 ) -> Option<CachedSession> {
-    let path = cache_path(project_root, session_id);
+    let path = cache_path(project_root, cache_name);
     let data = fs::read(&path).ok()?;
     let cached = decompress_cache(&data)?;
     if cached.source_path != source_path || cached.source_size != current_source_size {
@@ -247,11 +324,70 @@ pub fn read_cache(
     Some(cached)
 }
 
-/// Read cache without source validation (for when raw file is missing)
-pub fn read_cache_orphan(project_root: &Path, session_id: &str) -> Option<CachedSession> {
-    let path = cache_path(project_root, session_id);
+/// Read cache without source validation (for when raw file is missing).
+/// `cache_name` is the indexed name (e.g. "claude-1"), not the UUID.
+pub fn read_cache_orphan(project_root: &Path, cache_name: &str) -> Option<CachedSession> {
+    let path = cache_path(project_root, cache_name);
     let data = fs::read(&path).ok()?;
     decompress_cache(&data)
+}
+
+/// Migrate old UUID-named `.json` cache files to new `.json.gz` format with index entries.
+/// Scans `.azureal/sessions/` for `*.json` files (excluding `index.json`), reads each as
+/// uncompressed JSON, assigns a sequential cache name, writes compressed `.json.gz`, and
+/// removes the old file. No-op if no legacy files exist. Safe to call multiple times.
+pub fn migrate_legacy_caches(project_root: &Path, default_backend: Backend) {
+    let sessions_dir = project_root.join(".azureal").join("sessions");
+    let entries = match fs::read_dir(&sessions_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let mut migrated = 0u32;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Only process *.json files (not index.json, not *.json.gz, not *.tmp)
+        if !name.ends_with(".json") || name == "index.json" {
+            continue;
+        }
+
+        // Extract UUID from filename (strip .json extension)
+        let uuid = name.strip_suffix(".json").unwrap();
+
+        // Read old uncompressed JSON
+        let data = match fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let cached: CachedSession = match serde_json::from_slice(&data) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Detect backend from source_path (codex sessions have "codex" in path)
+        let backend = if cached.source_path.to_str().map_or(false, |p| p.contains("codex")) {
+            Backend::Codex
+        } else {
+            default_backend
+        };
+
+        // Assign sequential cache name and write compressed
+        if let Ok(cache_name) = resolve_cache_name(project_root, uuid, backend) {
+            if write_cache(project_root, &cache_name, &cached).is_ok() {
+                let _ = fs::remove_file(&path);
+                migrated += 1;
+            }
+        }
+    }
+
+    if migrated > 0 {
+        eprintln!("[session_cache] migrated {} legacy cache file(s)", migrated);
+    }
 }
 
 #[cfg(test)]
@@ -1030,5 +1166,398 @@ mod tests {
         // Write garbage data
         std::fs::write(sessions_dir.join("bad.json.gz"), b"not gzip data").unwrap();
         assert!(read_cache_orphan(project_root, "bad").is_none());
+    }
+
+    // =====================================================================
+    // CacheIndex — sequential naming
+    // =====================================================================
+
+    #[test]
+    fn resolve_cache_name_assigns_claude_1_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = resolve_cache_name(dir.path(), "uuid-aaa", Backend::Claude).unwrap();
+        assert_eq!(name, "claude-1");
+    }
+
+    #[test]
+    fn resolve_cache_name_assigns_codex_1_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = resolve_cache_name(dir.path(), "uuid-bbb", Backend::Codex).unwrap();
+        assert_eq!(name, "codex-1");
+    }
+
+    #[test]
+    fn resolve_cache_name_increments_per_backend() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let c1 = resolve_cache_name(root, "uuid-1", Backend::Claude).unwrap();
+        let c2 = resolve_cache_name(root, "uuid-2", Backend::Claude).unwrap();
+        let x1 = resolve_cache_name(root, "uuid-3", Backend::Codex).unwrap();
+        let c3 = resolve_cache_name(root, "uuid-4", Backend::Claude).unwrap();
+        let x2 = resolve_cache_name(root, "uuid-5", Backend::Codex).unwrap();
+
+        assert_eq!(c1, "claude-1");
+        assert_eq!(c2, "claude-2");
+        assert_eq!(x1, "codex-1");
+        assert_eq!(c3, "claude-3");
+        assert_eq!(x2, "codex-2");
+    }
+
+    #[test]
+    fn resolve_cache_name_returns_existing_for_same_uuid() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let first = resolve_cache_name(root, "uuid-dup", Backend::Claude).unwrap();
+        let second = resolve_cache_name(root, "uuid-dup", Backend::Claude).unwrap();
+
+        assert_eq!(first, "claude-1");
+        assert_eq!(second, "claude-1"); // same UUID → same name
+    }
+
+    #[test]
+    fn lookup_cache_name_returns_none_for_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(lookup_cache_name(dir.path(), "unknown-uuid").is_none());
+    }
+
+    #[test]
+    fn lookup_cache_name_returns_assigned_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        resolve_cache_name(root, "uuid-look", Backend::Codex).unwrap();
+        let found = lookup_cache_name(root, "uuid-look");
+        assert_eq!(found, Some("codex-1".to_string()));
+    }
+
+    #[test]
+    fn next_number_empty_index() {
+        let index = CacheIndex::default();
+        assert_eq!(next_number(&index, "claude"), 1);
+        assert_eq!(next_number(&index, "codex"), 1);
+    }
+
+    #[test]
+    fn next_number_skips_non_matching_prefix() {
+        let mut index = CacheIndex::default();
+        index.map.insert("a".into(), "codex-5".into());
+        index.map.insert("b".into(), "codex-3".into());
+        // "claude" prefix should still start at 1
+        assert_eq!(next_number(&index, "claude"), 1);
+        assert_eq!(next_number(&index, "codex"), 6);
+    }
+
+    #[test]
+    fn next_number_handles_gaps() {
+        let mut index = CacheIndex::default();
+        index.map.insert("a".into(), "claude-1".into());
+        index.map.insert("b".into(), "claude-5".into());
+        // Should be max+1, not fill gaps
+        assert_eq!(next_number(&index, "claude"), 6);
+    }
+
+    #[test]
+    fn index_persists_across_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        resolve_cache_name(root, "uuid-persist", Backend::Claude).unwrap();
+
+        // Read index from disk in a separate call
+        let index = read_index(root);
+        assert_eq!(index.map.get("uuid-persist").unwrap(), "claude-1");
+    }
+
+    #[test]
+    fn index_handles_corrupt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let idx_path = index_path(root);
+        std::fs::create_dir_all(idx_path.parent().unwrap()).unwrap();
+        std::fs::write(&idx_path, b"not json {{{").unwrap();
+
+        // Should return empty index, not panic
+        let index = read_index(root);
+        assert!(index.map.is_empty());
+
+        // Should overwrite corrupt index
+        let name = resolve_cache_name(root, "uuid-fix", Backend::Claude).unwrap();
+        assert_eq!(name, "claude-1");
+    }
+
+    #[test]
+    fn cache_files_use_sequential_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let name = resolve_cache_name(root, "uuid-file", Backend::Claude).unwrap();
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/x.jsonl"), 1);
+        write_cache(root, &name, &cached).unwrap();
+
+        // File should be at claude-1.json.gz
+        let path = cache_path(root, "claude-1");
+        assert!(path.exists());
+        assert_eq!(path.file_name().unwrap().to_str().unwrap(), "claude-1.json.gz");
+
+        // Should read back via the cache name
+        let restored = read_cache_orphan(root, "claude-1");
+        assert!(restored.is_some());
+    }
+
+    #[test]
+    fn mixed_backends_independent_counters() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // Interleave Claude and Codex sessions
+        assert_eq!(resolve_cache_name(root, "c1", Backend::Claude).unwrap(), "claude-1");
+        assert_eq!(resolve_cache_name(root, "x1", Backend::Codex).unwrap(), "codex-1");
+        assert_eq!(resolve_cache_name(root, "c2", Backend::Claude).unwrap(), "claude-2");
+        assert_eq!(resolve_cache_name(root, "x2", Backend::Codex).unwrap(), "codex-2");
+        assert_eq!(resolve_cache_name(root, "x3", Backend::Codex).unwrap(), "codex-3");
+        assert_eq!(resolve_cache_name(root, "c3", Backend::Claude).unwrap(), "claude-3");
+    }
+
+    // =====================================================================
+    // Migration — legacy UUID-named .json → .json.gz
+    // =====================================================================
+
+    /// Write an old-style uncompressed UUID.json cache file (for migration tests)
+    fn write_legacy_cache(project_root: &Path, uuid: &str, cached: &CachedSession) {
+        let dir = project_root.join(".azureal").join("sessions");
+        fs::create_dir_all(&dir).unwrap();
+        let json = serde_json::to_vec(cached).unwrap();
+        fs::write(dir.join(format!("{uuid}.json")), &json).unwrap();
+    }
+
+    #[test]
+    fn migrate_converts_legacy_json_to_gz() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 100);
+
+        // Write old-style UUID.json
+        write_legacy_cache(root, "aaaa-bbbb-cccc", &cached);
+        let legacy = root.join(".azureal/sessions/aaaa-bbbb-cccc.json");
+        assert!(legacy.exists());
+
+        // Migrate
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Old file removed
+        assert!(!legacy.exists());
+
+        // New .json.gz created
+        let gz = cache_path(root, "claude-1");
+        assert!(gz.exists());
+
+        // Index updated
+        assert_eq!(lookup_cache_name(root, "aaaa-bbbb-cccc"), Some("claude-1".into()));
+
+        // Data round-trips
+        let restored = read_cache_orphan(root, "claude-1").unwrap();
+        assert_eq!(restored.events.len(), cached.events.len());
+    }
+
+    #[test]
+    fn migrate_noop_when_no_legacy_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // No sessions dir at all
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Create dir but only put index.json in it
+        let sessions_dir = root.join(".azureal/sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        fs::write(sessions_dir.join("index.json"), b"{}").unwrap();
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Index unchanged
+        let idx = read_index(root);
+        assert!(idx.map.is_empty());
+    }
+
+    #[test]
+    fn migrate_handles_multiple_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let parsed = sample_parsed();
+
+        // Two Claude sessions
+        let c1 = CachedSession::from_parsed(&parsed, PathBuf::from("/a.jsonl"), 10);
+        let c2 = CachedSession::from_parsed(&parsed, PathBuf::from("/b.jsonl"), 20);
+        write_legacy_cache(root, "uuid-1", &c1);
+        write_legacy_cache(root, "uuid-2", &c2);
+
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Both migrated
+        assert!(lookup_cache_name(root, "uuid-1").is_some());
+        assert!(lookup_cache_name(root, "uuid-2").is_some());
+
+        // Sequential names assigned (order may vary, just check both exist)
+        let n1 = lookup_cache_name(root, "uuid-1").unwrap();
+        let n2 = lookup_cache_name(root, "uuid-2").unwrap();
+        assert!(n1.starts_with("claude-"));
+        assert!(n2.starts_with("claude-"));
+        assert_ne!(n1, n2);
+
+        // Old files gone
+        assert!(!root.join(".azureal/sessions/uuid-1.json").exists());
+        assert!(!root.join(".azureal/sessions/uuid-2.json").exists());
+    }
+
+    #[test]
+    fn migrate_detects_codex_backend_from_source_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(
+            &parsed,
+            PathBuf::from("/home/.codex/sessions/abc.jsonl"),
+            50,
+        );
+        write_legacy_cache(root, "codex-uuid", &cached);
+
+        migrate_legacy_caches(root, Backend::Claude); // default is Claude
+
+        // Should detect codex from source_path
+        let name = lookup_cache_name(root, "codex-uuid").unwrap();
+        assert!(name.starts_with("codex-"), "expected codex prefix, got {}", name);
+    }
+
+    #[test]
+    fn migrate_skips_corrupt_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let sessions_dir = root.join(".azureal/sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write corrupt JSON
+        fs::write(sessions_dir.join("bad-uuid.json"), b"not valid json {{{").unwrap();
+
+        // Also write a valid one
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 10);
+        write_legacy_cache(root, "good-uuid", &cached);
+
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Good one migrated
+        assert!(lookup_cache_name(root, "good-uuid").is_some());
+        // Bad one left in place (not deleted since we couldn't read it)
+        assert!(sessions_dir.join("bad-uuid.json").exists());
+    }
+
+    #[test]
+    fn migrate_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 10);
+        write_legacy_cache(root, "uuid-idem", &cached);
+
+        migrate_legacy_caches(root, Backend::Claude);
+        let name1 = lookup_cache_name(root, "uuid-idem").unwrap();
+
+        // Second call is a no-op (old file already removed)
+        migrate_legacy_caches(root, Backend::Claude);
+        let name2 = lookup_cache_name(root, "uuid-idem").unwrap();
+        assert_eq!(name1, name2);
+    }
+
+    #[test]
+    fn migrate_ignores_index_json_and_gz_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let sessions_dir = root.join(".azureal/sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Pre-existing index.json
+        fs::write(sessions_dir.join("index.json"), b"{\"existing\": \"claude-1\"}").unwrap();
+        // Pre-existing .json.gz
+        fs::write(sessions_dir.join("claude-1.json.gz"), b"compressed").unwrap();
+
+        migrate_legacy_caches(root, Backend::Claude);
+
+        // Neither touched — index preserved
+        let idx = read_index(root);
+        assert_eq!(idx.map.get("existing").unwrap(), "claude-1");
+        // .gz file still there
+        assert!(sessions_dir.join("claude-1.json.gz").exists());
+    }
+
+    // =====================================================================
+    // Integration — real session file through full pipeline
+    // =====================================================================
+
+    #[test]
+    fn real_session_full_pipeline() {
+        // This session's JSONL file (the one you're reading right now)
+        let jsonl = std::path::Path::new(
+            "/Users/macbookpro/.claude/projects/-Users-macbookpro-AZUREAL-worktrees-codexsupport/fb57e64f-917c-4cc6-bc11-5ca999597fa4.jsonl"
+        );
+        if !jsonl.exists() {
+            // Skip in CI or when session file is missing
+            return;
+        }
+
+        let jsonl_size = std::fs::metadata(jsonl).unwrap().len();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // Step 1: Resolve sequential name
+        let session_id = "fb57e64f-917c-4cc6-bc11-5ca999597fa4";
+        let cache_name = resolve_cache_name(root, session_id, Backend::Claude).unwrap();
+        assert_eq!(cache_name, "claude-1");
+
+        // Step 2: Parse the real JSONL
+        let parsed = crate::app::session_parser::parse_session_file(jsonl);
+        assert!(!parsed.events.is_empty(), "parsed 0 events from 19MB JSONL");
+
+        // Step 3: Build cached session with compaction
+        let cached = CachedSession::from_parsed(&parsed, jsonl.to_path_buf(), jsonl_size);
+
+        // Step 4: Write compressed cache
+        write_cache(root, &cache_name, &cached).unwrap();
+
+        // Step 5: Verify file exists with correct name
+        let gz_path = cache_path(root, "claude-1");
+        assert!(gz_path.exists());
+        assert_eq!(gz_path.file_name().unwrap().to_str().unwrap(), "claude-1.json.gz");
+        let gz_size = std::fs::metadata(&gz_path).unwrap().len();
+
+        // Step 6: Verify index.json was created
+        let idx = read_index(root);
+        assert_eq!(idx.map.get(session_id).unwrap(), "claude-1");
+
+        // Step 7: Read back and verify
+        let restored = read_cache(root, "claude-1", jsonl, jsonl_size).unwrap();
+        assert_eq!(restored.events.len(), cached.events.len());
+        assert_eq!(restored.total_lines, cached.total_lines);
+        assert_eq!(restored.source_size, jsonl_size);
+
+        // Step 8: Lookup works
+        assert_eq!(lookup_cache_name(root, session_id), Some("claude-1".to_string()));
+
+        // Step 9: Second session gets claude-2
+        let name2 = resolve_cache_name(root, "other-uuid", Backend::Claude).unwrap();
+        assert_eq!(name2, "claude-2");
+
+        // Print size comparison
+        eprintln!("  JSONL:       {:>10} bytes", jsonl_size);
+        eprintln!("  Compressed:  {:>10} bytes", gz_size);
+        eprintln!("  Ratio:       {:>10.1}x reduction", jsonl_size as f64 / gz_size as f64);
+        eprintln!("  Events:      {:>10}", cached.events.len());
+        eprintln!("  Cache name:  {}", cache_name);
     }
 }
