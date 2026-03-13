@@ -647,7 +647,7 @@ impl App {
             if let Some(session_id) = self.viewed_session_id(
                 &self.current_worktree().map(|w| w.branch_name.clone()).unwrap_or_default()
             ) {
-                let cached = crate::app::session_cache::CachedSession {
+                let mut cached = crate::app::session_cache::CachedSession {
                     source_path: path.clone(),
                     source_size: self.session_file_size,
                     parse_offset: self.session_file_parse_offset,
@@ -665,6 +665,7 @@ impl App {
                     assistant_text_blocks: self.assistant_text_blocks,
                     awaiting_plan_approval: self.awaiting_plan_approval,
                 };
+                cached.compact();
                 let _ = crate::app::session_cache::write_cache(wt_path, &session_id, &cached);
             }
         }

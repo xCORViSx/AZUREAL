@@ -7,6 +7,7 @@
 pub enum DisplayEvent {
     /// System initialization
     Init {
+        #[serde(skip)]
         _session_id: String,
         cwd: String,
         model: String,
@@ -18,6 +19,7 @@ pub enum DisplayEvent {
     },
     /// User's message
     UserMessage {
+        #[serde(skip)]
         _uuid: String,
         content: String,
     },
@@ -38,12 +40,15 @@ pub enum DisplayEvent {
     },
     /// Assistant text response
     AssistantText {
+        #[serde(skip)]
         _uuid: String,
+        #[serde(skip)]
         _message_id: String,
         text: String,
     },
     /// Tool being called
     ToolCall {
+        #[serde(skip)]
         _uuid: String,
         tool_use_id: String,
         tool_name: String,
@@ -65,6 +70,7 @@ pub enum DisplayEvent {
     },
     /// Session complete
     Complete {
+        #[serde(skip)]
         _session_id: String,
         success: bool,
         duration_ms: u64,

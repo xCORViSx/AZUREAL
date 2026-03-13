@@ -23,28 +23,42 @@ pub struct CachedSession {
     /// Byte offset for incremental resumption against raw JSONL
     pub parse_offset: u64,
     pub events: Vec<DisplayEvent>,
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub pending_tools: HashSet<String>,
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub failed_tools: HashSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_tokens: Option<(u64, u64)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub total_lines: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub parse_errors: usize,
     pub assistant_total: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub assistant_no_message: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub assistant_no_content_arr: usize,
     pub assistant_text_blocks: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub awaiting_plan_approval: bool,
 }
 
+fn is_zero(v: &usize) -> bool { *v == 0 }
+fn is_false(v: &bool) -> bool { !*v }
+
 impl CachedSession {
-    /// Build from a freshly parsed session (clones event data for the cache)
+    /// Build from a freshly parsed session (clones + compacts event data for the cache)
     pub fn from_parsed(parsed: &ParsedSession, source_path: PathBuf, source_size: u64) -> Self {
+        let mut events = parsed.events.clone();
+        compact_events(&mut events);
         Self {
             source_path,
             source_size,
             parse_offset: parsed.end_offset,
-            events: parsed.events.clone(),
+            events,
             pending_tools: parsed.pending_tools.clone(),
             failed_tools: parsed.failed_tools.clone(),
             session_tokens: parsed.session_tokens,
@@ -58,6 +72,11 @@ impl CachedSession {
             assistant_text_blocks: parsed.assistant_text_blocks,
             awaiting_plan_approval: parsed.awaiting_plan_approval,
         }
+    }
+
+    /// Apply compaction to strip event data the render pipeline doesn't need
+    pub(crate) fn compact(&mut self) {
+        compact_events(&mut self.events);
     }
 
     /// Convert back to ParsedSession for hydration into App state
@@ -77,6 +96,104 @@ impl CachedSession {
             session_tokens: self.session_tokens,
             context_window: self.context_window,
             model: self.model,
+        }
+    }
+}
+
+/// Strip events down to what the render pipeline actually uses
+fn compact_events(events: &mut Vec<DisplayEvent>) {
+    for event in events.iter_mut() {
+        match event {
+            DisplayEvent::ToolResult { tool_name, content, .. } => {
+                *content = compact_tool_result(tool_name, content);
+            }
+            DisplayEvent::ToolCall { tool_name, input, .. } => {
+                compact_tool_input(tool_name, input);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Truncate tool result content to what the render pipeline shows
+fn compact_tool_result(tool_name: &str, content: &str) -> String {
+    // Strip system reminders (same as render_tool_result)
+    let content = content.split("<system-reminder>").next().unwrap_or(content).trim_end();
+    let lines: Vec<&str> = content.lines().collect();
+    let n = lines.len();
+
+    match tool_name {
+        "Read" | "read" => {
+            // Render shows: first line + "(N lines)" + last non-empty line
+            if n <= 3 { return content.to_string(); }
+            let first = lines[0];
+            let last = lines.iter().rev().find(|l| !l.trim().is_empty()).unwrap_or(&"");
+            format!("{}\n({} lines)\n{}", first, n, last)
+        }
+        "Bash" | "bash" => {
+            // Render shows: last 2 non-empty lines
+            let non_empty: Vec<&str> = lines.iter().filter(|l| !l.trim().is_empty()).copied().collect();
+            non_empty.iter().rev().take(2).rev().copied().collect::<Vec<_>>().join("\n")
+        }
+        "Grep" | "grep" => {
+            if n <= 3 { return content.to_string(); }
+            format!("{}\n(+{} more)", lines[..3].join("\n"), n - 3)
+        }
+        "Glob" | "glob" => {
+            // Render shows: "N files"
+            format!("{} files", n)
+        }
+        "Task" | "task" => {
+            if n <= 5 { return content.to_string(); }
+            format!("{}\n(+{} more lines)", lines[..5].join("\n"), n - 5)
+        }
+        _ => {
+            if n <= 3 { return content.to_string(); }
+            format!("{}\n(+{} more)", lines[..3].join("\n"), n - 3)
+        }
+    }
+}
+
+/// Strip tool input down to display-relevant fields only
+fn compact_tool_input(tool_name: &str, input: &mut serde_json::Value) {
+    match tool_name {
+        // Edit keeps full input (old_string/new_string needed for diff rendering)
+        "Edit" | "edit" => {}
+        // Write: replace full file content with line count + purpose line
+        "Write" | "write" => {
+            let summary = input.get("content").and_then(|v| v.as_str()).map(|file_content| {
+                let lines: Vec<&str> = file_content.lines().collect();
+                let line_count = lines.len();
+                let purpose = lines.iter()
+                    .find(|l| {
+                        let t = l.trim();
+                        t.starts_with("//") || t.starts_with('#')
+                            || t.starts_with("/*") || t.starts_with("\"\"\"")
+                            || t.starts_with("///") || t.starts_with("//!")
+                    })
+                    .or(lines.first()).copied()
+                    .unwrap_or("");
+                format!("({} lines) {}", line_count, purpose.trim())
+            });
+            if let (Some(summary), Some(obj)) = (summary, input.as_object_mut()) {
+                obj.insert("content".into(), serde_json::Value::String(summary));
+            }
+        }
+        // All other tools: keep only the one field extract_tool_param reads
+        _ => {
+            let keys: &[&str] = match tool_name {
+                "Bash" | "bash" => &["command"],
+                "Glob" | "glob" | "Grep" | "grep" => &["pattern"],
+                "Read" | "read" => &["file_path", "path"],
+                "WebFetch" | "webfetch" => &["url"],
+                "WebSearch" | "websearch" => &["query"],
+                "Task" | "task" => &["subagent_type", "description"],
+                "LSP" | "lsp" => &["operation", "filePath"],
+                _ => &["file_path", "path", "command", "query", "pattern"],
+            };
+            if let Some(obj) = input.as_object_mut() {
+                obj.retain(|k, _| keys.contains(&k.as_str()));
+            }
         }
     }
 }
@@ -573,5 +690,263 @@ mod tests {
         let json = serde_json::to_vec(&cached).unwrap();
         let restored: CachedSession = serde_json::from_slice(&json).unwrap();
         assert!(restored.session_tokens.is_none());
+    }
+
+    // =====================================================================
+    // Serde skip — underscore fields omitted from JSON
+    // =====================================================================
+
+    #[test]
+    fn serde_skip_underscore_fields() {
+        let events = vec![
+            DisplayEvent::Init { _session_id: "sess-1".into(), cwd: "/tmp".into(), model: "opus".into() },
+            DisplayEvent::UserMessage { _uuid: "uuid-1".into(), content: "Hello".into() },
+            DisplayEvent::AssistantText { _uuid: "uuid-2".into(), _message_id: "msg-1".into(), text: "Hi".into() },
+            DisplayEvent::ToolCall {
+                _uuid: "uuid-3".into(), tool_use_id: "tc1".into(),
+                tool_name: "Read".into(), file_path: None, input: serde_json::json!({}),
+            },
+            DisplayEvent::Complete { _session_id: "sess-1".into(), success: true, duration_ms: 100, cost_usd: 0.01 },
+        ];
+
+        let json = serde_json::to_string(&events).unwrap();
+
+        // Underscore fields should NOT appear in JSON
+        assert!(!json.contains("_session_id"));
+        assert!(!json.contains("_uuid"));
+        assert!(!json.contains("_message_id"));
+
+        // Non-underscore fields should be present
+        assert!(json.contains("cwd"));
+        assert!(json.contains("opus"));
+        assert!(json.contains("Hello"));
+        assert!(json.contains("tool_use_id"));
+
+        // Round-trip: underscore fields deserialize as empty strings
+        let restored: Vec<DisplayEvent> = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.len(), 5);
+        match &restored[0] {
+            DisplayEvent::Init { _session_id, cwd, .. } => {
+                assert_eq!(_session_id, "");
+                assert_eq!(cwd, "/tmp");
+            }
+            _ => panic!("wrong variant"),
+        }
+        match &restored[2] {
+            DisplayEvent::AssistantText { _uuid, _message_id, text } => {
+                assert_eq!(_uuid, "");
+                assert_eq!(_message_id, "");
+                assert_eq!(text, "Hi");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // =====================================================================
+    // skip_serializing_if — defaults omitted from JSON
+    // =====================================================================
+
+    #[test]
+    fn serde_skip_defaults() {
+        let cached = CachedSession {
+            source_path: PathBuf::from("/x.jsonl"),
+            source_size: 1,
+            parse_offset: 1,
+            events: vec![],
+            pending_tools: HashSet::new(),
+            failed_tools: HashSet::new(),
+            session_tokens: None,
+            context_window: None,
+            model: None,
+            total_lines: 0,
+            parse_errors: 0,
+            assistant_total: 0,
+            assistant_no_message: 0,
+            assistant_no_content_arr: 0,
+            assistant_text_blocks: 0,
+            awaiting_plan_approval: false,
+        };
+
+        let json = serde_json::to_string(&cached).unwrap();
+
+        // Default values should be omitted
+        assert!(!json.contains("pending_tools"));
+        assert!(!json.contains("failed_tools"));
+        assert!(!json.contains("session_tokens"));
+        assert!(!json.contains("context_window"));
+        assert!(!json.contains("model"));
+        assert!(!json.contains("parse_errors"));
+        assert!(!json.contains("assistant_no_message"));
+        assert!(!json.contains("assistant_no_content_arr"));
+        assert!(!json.contains("awaiting_plan_approval"));
+
+        // Required fields still present
+        assert!(json.contains("source_path"));
+        assert!(json.contains("source_size"));
+        assert!(json.contains("total_lines"));
+
+        // Round-trip restores defaults
+        let restored: CachedSession = serde_json::from_str(&json).unwrap();
+        assert!(restored.pending_tools.is_empty());
+        assert!(restored.failed_tools.is_empty());
+        assert!(restored.session_tokens.is_none());
+        assert_eq!(restored.parse_errors, 0);
+        assert!(!restored.awaiting_plan_approval);
+    }
+
+    // =====================================================================
+    // Compaction — ToolResult.content
+    // =====================================================================
+
+    #[test]
+    fn compact_read_result_truncates_large_content() {
+        let big_content = (1..=100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let result = compact_tool_result("Read", &big_content);
+        assert!(result.contains("line 1"));
+        assert!(result.contains("(100 lines)"));
+        assert!(result.contains("line 100"));
+        assert!(!result.contains("line 50"));
+    }
+
+    #[test]
+    fn compact_read_result_preserves_small_content() {
+        let small = "line 1\nline 2\nline 3";
+        let result = compact_tool_result("Read", small);
+        assert_eq!(result, small);
+    }
+
+    #[test]
+    fn compact_bash_result_keeps_last_two() {
+        let content = "step 1\nstep 2\nstep 3\n\nresult line 1\nresult line 2";
+        let result = compact_tool_result("Bash", content);
+        assert_eq!(result, "result line 1\nresult line 2");
+    }
+
+    #[test]
+    fn compact_grep_result_keeps_first_three() {
+        let content = "match 1\nmatch 2\nmatch 3\nmatch 4\nmatch 5";
+        let result = compact_tool_result("Grep", &content);
+        assert!(result.contains("match 1"));
+        assert!(result.contains("match 3"));
+        assert!(result.contains("(+2 more)"));
+        assert!(!result.contains("match 4"));
+    }
+
+    #[test]
+    fn compact_glob_result_shows_count() {
+        let content = "file1.rs\nfile2.rs\nfile3.rs";
+        let result = compact_tool_result("Glob", content);
+        assert_eq!(result, "3 files");
+    }
+
+    #[test]
+    fn compact_task_result_keeps_first_five() {
+        let content = (1..=10).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let result = compact_tool_result("Task", &content);
+        assert!(result.contains("line 5"));
+        assert!(result.contains("(+5 more lines)"));
+        assert!(!result.contains("line 6"));
+    }
+
+    #[test]
+    fn compact_unknown_tool_keeps_first_three() {
+        let content = "a\nb\nc\nd\ne";
+        let result = compact_tool_result("Unknown", content);
+        assert!(result.contains("a\nb\nc"));
+        assert!(result.contains("(+2 more)"));
+    }
+
+    #[test]
+    fn compact_strips_system_reminder() {
+        let content = "real output\n<system-reminder>hidden stuff</system-reminder>";
+        let result = compact_tool_result("Bash", content);
+        assert!(!result.contains("system-reminder"));
+        assert!(result.contains("real output"));
+    }
+
+    // =====================================================================
+    // Compaction — ToolCall.input
+    // =====================================================================
+
+    #[test]
+    fn compact_write_input_summarizes_content() {
+        let mut input = serde_json::json!({
+            "file_path": "/src/main.rs",
+            "content": "//! Main module\nfn main() {\n    println!(\"hello\");\n}\n"
+        });
+        compact_tool_input("Write", &mut input);
+        let content = input.get("content").unwrap().as_str().unwrap();
+        assert!(content.contains("(4 lines)"));
+        assert!(content.contains("//! Main module"));
+        // file_path preserved
+        assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
+    }
+
+    #[test]
+    fn compact_edit_input_preserved() {
+        let mut input = serde_json::json!({
+            "file_path": "/src/lib.rs",
+            "old_string": "fn old() {}",
+            "new_string": "fn new() {}"
+        });
+        let original = input.clone();
+        compact_tool_input("Edit", &mut input);
+        assert_eq!(input, original);
+    }
+
+    #[test]
+    fn compact_bash_input_strips_extras() {
+        let mut input = serde_json::json!({
+            "command": "cargo build",
+            "timeout": 60000,
+            "description": "Build the project"
+        });
+        compact_tool_input("Bash", &mut input);
+        assert_eq!(input.get("command").unwrap().as_str().unwrap(), "cargo build");
+        assert!(input.get("timeout").is_none());
+        assert!(input.get("description").is_none());
+    }
+
+    #[test]
+    fn compact_read_input_strips_extras() {
+        let mut input = serde_json::json!({
+            "file_path": "/src/main.rs",
+            "offset": 100,
+            "limit": 50
+        });
+        compact_tool_input("Read", &mut input);
+        assert!(input.get("file_path").is_some());
+        assert!(input.get("offset").is_none());
+        assert!(input.get("limit").is_none());
+    }
+
+    #[test]
+    fn compact_events_applies_to_from_parsed() {
+        let mut parsed = sample_parsed();
+        // Add a large Read result
+        parsed.events.push(DisplayEvent::ToolResult {
+            tool_use_id: "tc-big".into(),
+            tool_name: "Read".into(),
+            file_path: Some("/big.rs".into()),
+            content: (1..=200).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n"),
+            is_error: false,
+        });
+
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/x"), 1);
+
+        // Original parsed events unchanged
+        match &parsed.events.last().unwrap() {
+            DisplayEvent::ToolResult { content, .. } => assert!(content.lines().count() == 200),
+            _ => panic!("wrong variant"),
+        }
+
+        // Cached events compacted
+        match &cached.events.last().unwrap() {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("(200 lines)"));
+                assert!(content.lines().count() <= 3);
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 }
