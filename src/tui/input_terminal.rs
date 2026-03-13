@@ -27,7 +27,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &C
                     let s = c.encode_utf8(&mut buf);
                     app.write_to_terminal(s.as_bytes());
                 }
-                (KeyModifiers::NONE, KeyCode::Enter) => app.write_to_terminal(b"\n"),
+                (KeyModifiers::NONE, KeyCode::Enter) => app.write_to_terminal(b"\r"),
                 (KeyModifiers::NONE, KeyCode::Backspace) => app.write_to_terminal(&[0x7f]),
                 (KeyModifiers::NONE, KeyCode::Tab) => app.write_to_terminal(b"\t"),
                 (KeyModifiers::NONE, KeyCode::Up) => app.write_to_terminal(b"\x1b[A"),
