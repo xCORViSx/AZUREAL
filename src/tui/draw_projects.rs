@@ -48,16 +48,24 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
         )));
     }
 
-    // Check which project is currently loaded (for green dot indicator)
+    // Check which project is currently loaded
     let current_path = app.project.as_ref().map(|p| &p.path);
 
     for (i, entry) in panel.entries.iter().enumerate() {
         let is_selected = i == panel.selected;
         let is_current = current_path.map(|p| p == &entry.path).unwrap_or(false);
 
-        // Green dot for currently loaded project, space otherwise
-        let indicator = if is_current { "● " } else { "  " };
-        let indicator_color = if is_current { Color::Green } else { Color::DarkGray };
+        // Worktree activity status icon (same symbols as worktree tab row)
+        let status = app.project_status(&entry.path);
+        let indicator = format!("{} ", status.symbol());
+        let indicator_color = if is_current {
+            // Active project: use status color but brighten it
+            status.color()
+        } else if status.color() == Color::Gray {
+            Color::DarkGray
+        } else {
+            status.color()
+        };
 
         // Truncate display name and path to fit within modal width
         let path_str = display_path(&entry.path);

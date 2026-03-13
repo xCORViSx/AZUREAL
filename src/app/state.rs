@@ -22,6 +22,7 @@ pub(crate) mod health;
 pub(crate) mod helpers;
 pub(crate) mod load;
 mod output;
+pub(crate) mod project_snapshot;
 mod scroll;
 mod session_names;
 mod sessions;

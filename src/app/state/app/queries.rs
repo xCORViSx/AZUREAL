@@ -1,7 +1,8 @@
 //! Session status queries and project/worktree accessors
 
+use std::path::Path;
 use super::App;
-use crate::models::{Project, Worktree};
+use crate::models::{Project, Worktree, WorktreeStatus};
 
 impl App {
     pub fn current_project(&self) -> Option<&Project> { self.project.as_ref() }
@@ -51,5 +52,46 @@ impl App {
         let lines = crate::tui::render_markdown::render_table_for_popup(raw_markdown, popup_width);
         let total_lines = lines.len();
         self.table_popup = Some(crate::app::types::TablePopup { lines, scroll: 0, total_lines });
+    }
+
+    /// Compute the aggregate worktree activity status for a project path.
+    /// Returns the highest-priority status across all worktrees:
+    /// Running > Failed > Waiting > Pending > Stopped
+    pub fn project_status(&self, project_path: &Path) -> WorktreeStatus {
+        let is_current = self.project.as_ref().map(|p| p.path == project_path).unwrap_or(false);
+
+        if is_current {
+            // Active project — check live worktree statuses
+            self.worktrees.iter()
+                .map(|wt| wt.status(self.is_session_running(&wt.branch_name)))
+                .max_by_key(status_priority)
+                .unwrap_or(WorktreeStatus::Pending)
+        } else if let Some(snapshot) = self.project_snapshots.get(project_path) {
+            // Background project — check saved worktrees against global running_sessions
+            snapshot.worktrees.iter()
+                .map(|wt| {
+                    let running = snapshot.branch_slots.get(&wt.branch_name)
+                        .map(|slots| slots.iter().any(|s| self.running_sessions.contains(s)))
+                        .unwrap_or(false);
+                    wt.status(running)
+                })
+                .max_by_key(status_priority)
+                .unwrap_or(WorktreeStatus::Pending)
+        } else {
+            // No data for this project
+            WorktreeStatus::Pending
+        }
+    }
+}
+
+/// Priority ordering for aggregate status: higher = takes precedence
+fn status_priority(status: &WorktreeStatus) -> u8 {
+    match status {
+        WorktreeStatus::Running => 5,
+        WorktreeStatus::Failed => 4,
+        WorktreeStatus::Waiting => 3,
+        WorktreeStatus::Pending => 2,
+        WorktreeStatus::Completed => 1,
+        WorktreeStatus::Stopped => 0,
     }
 }

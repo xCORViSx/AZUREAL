@@ -35,6 +35,7 @@ use crate::syntax::SyntaxHighlighter;
 use crate::tui::render_thread::RenderThread;
 use super::AgentEvent;
 use super::DisplayEvent;
+use super::project_snapshot::ProjectSnapshot;
 
 /// Application state
 pub struct App {
@@ -86,6 +87,12 @@ pub struct App {
     pub branch_dialog: Option<BranchDialog>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
+    /// Saved project states for parallel project switching (project_path → snapshot).
+    /// When the user switches away from a project, its state is saved here.
+    /// Claude processes continue running in background — only UI state is swapped.
+    pub project_snapshots: HashMap<PathBuf, ProjectSnapshot>,
+    /// Maps slot_id (PID string) → project path for routing background Claude events
+    pub slot_to_project: HashMap<String, PathBuf>,
     /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
     /// Multiple concurrent spawns (e.g. GFM) can each register their own pending name.
     pub pending_session_names: Vec<(String, String)>,
@@ -553,6 +560,8 @@ impl App {
             show_help: false,
             branch_dialog: None,
             projects_panel: None,
+            project_snapshots: HashMap::new(),
+            slot_to_project: HashMap::new(),
             pending_session_names: Vec::new(),
             terminal_mode: false,
             terminal_pty: None,

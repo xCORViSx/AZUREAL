@@ -144,8 +144,15 @@ impl App {
     /// Called when a Claude process exits. Cleans up slot state, switches active
     /// slot if needed, and triggers session file re-parse.
     pub fn handle_claude_exited(&mut self, slot_id: &str, code: Option<i32>) {
-        // Resolve branch before cleanup removes the slot from branch_slots
+        // Resolve branch — first in current project, then in background snapshots
         let branch = self.branch_for_slot(slot_id);
+
+        // If not in current project, check background project snapshots
+        if branch.is_none() {
+            if self.handle_background_exit(slot_id, code) {
+                return;
+            }
+        }
 
         // Send macOS notification before cleaning up state
         if let Some(ref branch) = branch {
@@ -155,6 +162,7 @@ impl App {
         // Remove slot from all process-tracking maps
         self.running_sessions.remove(slot_id);
         self.agent_receivers.remove(slot_id);
+        self.slot_to_project.remove(slot_id);
         if let Some(c) = code {
             self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -257,6 +265,89 @@ impl App {
             };
             self.set_status(format!("{} {}", display, exit_str));
         }
+    }
+
+    /// Handle a Claude process exit for a background (non-active) project.
+    /// Updates the saved snapshot's branch_slots/active_slot/unread state.
+    /// Returns true if the slot was found in a background snapshot.
+    fn handle_background_exit(&mut self, slot_id: &str, code: Option<i32>) -> bool {
+        // Find which snapshot owns this slot
+        let project_path = self.slot_to_project.get(slot_id).cloned();
+        let project_path = match project_path {
+            Some(p) => p,
+            None => return false,
+        };
+        let snapshot = match self.project_snapshots.get_mut(&project_path) {
+            Some(s) => s,
+            None => return false,
+        };
+
+        // Find branch in snapshot
+        let branch = snapshot.branch_slots.iter()
+            .find(|(_, slots)| slots.contains(&slot_id.to_string()))
+            .map(|(b, _)| b.clone());
+
+        // Send notification
+        if let Some(ref branch) = branch {
+            self.send_completion_notification(branch, slot_id, code);
+        }
+
+        // Global cleanup
+        self.running_sessions.remove(slot_id);
+        self.agent_receivers.remove(slot_id);
+        self.slot_to_project.remove(slot_id);
+        if let Some(c) = code {
+            self.agent_exit_codes.insert(slot_id.to_string(), c);
+        }
+
+        // Re-borrow snapshot after self borrows above
+        let snapshot = self.project_snapshots.get_mut(&project_path).unwrap();
+
+        // Update snapshot's branch_slots
+        let _was_active = if let Some(ref branch) = branch {
+            let active = snapshot.active_slot.get(branch).map(|a| a == slot_id).unwrap_or(false);
+            if let Some(slots) = snapshot.branch_slots.get_mut(branch) {
+                slots.retain(|s| s != slot_id);
+                if slots.is_empty() { snapshot.branch_slots.remove(branch); }
+            }
+            if active {
+                let next = snapshot.branch_slots.get(branch).and_then(|s| s.last().cloned());
+                match next {
+                    Some(next_slot) => { snapshot.active_slot.insert(branch.clone(), next_slot); }
+                    None => {
+                        if let Some(sid) = self.agent_session_ids.get(slot_id).cloned() {
+                            self.agent_session_ids.insert(branch.clone(), sid);
+                        }
+                        snapshot.active_slot.remove(branch);
+                    }
+                }
+            }
+            active
+        } else {
+            false
+        };
+
+        // Mark as unread in the snapshot (user will see it when they switch back)
+        if let Some(ref b) = branch {
+            if let Some(uuid) = self.agent_session_ids.get(slot_id) {
+                snapshot.unread_session_ids.insert(uuid.clone());
+            }
+            snapshot.unread_sessions.insert(b.clone());
+        }
+
+        // Status message
+        let display = branch.as_deref().unwrap_or(slot_id);
+        let project_name = &self.project_snapshots.get(&project_path)
+            .map(|s| s.project.name.clone())
+            .unwrap_or_default();
+        let exit_str = match code {
+            Some(0) => "exited OK".to_string(),
+            Some(c) => format!("exited: {}", c),
+            None => "exited".to_string(),
+        };
+        self.set_status(format!("[{}] {} {}", project_name, display, exit_str));
+
+        true
     }
 
     /// Send a macOS notification when Claude finishes.
@@ -482,6 +573,10 @@ impl App {
         let slot = pid.to_string();
         self.agent_receivers.insert(slot.clone(), receiver);
         self.running_sessions.insert(slot.clone());
+        // Track slot→project for background event routing
+        if let Some(ref project) = self.project {
+            self.slot_to_project.insert(slot.clone(), project.path.clone());
+        }
         // Track this slot under its branch (append = spawn order preserved)
         self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
         // Newest spawn becomes active — its output shows in session pane

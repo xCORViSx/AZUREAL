@@ -1356,12 +1356,18 @@ Persistent project management across azureal sessions. Projects are stored in `~
 - `Esc`: close panel (only if a project is already loaded)
 - `⌃Q`: quit azureal
 
-**Project Switching:**
-When switching projects, azureal kills all running Claude processes, clears all session/render state (sessions, display events, caches, file watcher), sets the new project via `Project::from_path()`, and reloads sessions, output, and run commands.
+**Project Switching (Parallel Projects):**
+Projects run in parallel — switching preserves all state. When switching away, the current project's state is saved to a `ProjectSnapshot` (worktrees, file tree, viewer tabs, branch→slot mappings, unread sessions, terminals, run commands, presets). Claude processes continue running in background; the event loop drains all `agent_receivers` regardless of active project. Output events for non-active projects are silently dropped (session file captures them). When switching back, the snapshot is restored and `load_session_output()` rebuilds the display from the session file (picking up any output from background Claude). Stale slot entries (processes that exited while backgrounded) are cleaned up on restore.
+
+**Background Process Exit Handling:**
+`handle_claude_exited()` checks `slot_to_project` to determine if the exiting slot belongs to a background project. If so, `handle_background_exit()` updates the snapshot's `branch_slots`/`active_slot`, marks the session as unread in the snapshot, and shows a status message prefixed with the project name. Global maps (`running_sessions`, `agent_exit_codes`, `agent_session_ids`) are always updated regardless of active project.
+
+**Activity Status Icons:**
+The projects panel shows worktree activity status icons (same symbols as the worktree tab row) next to each project name. `project_status()` computes the aggregate status across all worktrees: for the active project it checks live worktree statuses; for background projects it checks saved snapshot worktrees against `running_sessions`. Priority: Running > Failed > Waiting > Pending > Completed > Stopped.
 
 **Auto-pruning:** `load_projects()` validates every entry on load — directories that don't exist or aren't git repos are silently removed from `projects`. This prevents ghost entries after a repo's `.git` directory is deleted.
 
-Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`, `cancel_all_claude()`)
+Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects()`, `register_project()`, `project_display_name()`, `repo_name_from_origin()`), `src/app/types.rs` (`ProjectsPanel`, `ProjectsPanelMode`), `src/tui/draw_projects.rs` (rendering), `src/tui/input_projects.rs` (key handling), `src/app/state/ui.rs` (`switch_project()`), `src/app/state/project_snapshot.rs` (`ProjectSnapshot`), `src/app/state/claude.rs` (`handle_background_exit()`), `src/app/state/app/queries.rs` (`project_status()`)
 
 ### Debug Dump
 

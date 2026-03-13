@@ -563,18 +563,44 @@ impl App {
         false
     }
 
-    /// Switch to a different project by path. Kills all Claude processes,
-    /// clears all session/render state, and reloads everything for the new project.
+    /// Switch to a different project by path. Saves current project state to a
+    /// snapshot and restores the target project's snapshot (or fresh-loads it).
+    /// Claude processes continue running in the background.
     pub fn switch_project(&mut self, path: std::path::PathBuf) {
-        // Kill all running Claude processes first
-        self.cancel_all_claude();
+        use crate::app::state::project_snapshot::ProjectSnapshot;
 
-        // Clear all session and render state
-        self.browsing_main = false;
-        self.pre_main_browse_selection = None;
-        self.main_worktree = None;
-        self.worktrees.clear();
-        self.selected_worktree = None;
+        // ── Save current project state to snapshot ──
+        if let Some(ref current_project) = self.project.clone() {
+            let snapshot = ProjectSnapshot {
+                project: current_project.clone(),
+                worktrees: std::mem::take(&mut self.worktrees),
+                selected_worktree: self.selected_worktree.take(),
+                main_worktree: self.main_worktree.take(),
+                browsing_main: self.browsing_main,
+                pre_main_browse_selection: self.pre_main_browse_selection.take(),
+                branch_slots: std::mem::take(&mut self.branch_slots),
+                active_slot: std::mem::take(&mut self.active_slot),
+                pending_session_names: std::mem::take(&mut self.pending_session_names),
+                session_files: std::mem::take(&mut self.session_files),
+                session_selected_file_idx: std::mem::take(&mut self.session_selected_file_idx),
+                unread_sessions: std::mem::take(&mut self.unread_sessions),
+                unread_session_ids: std::mem::take(&mut self.unread_session_ids),
+                file_tree_entries: std::mem::take(&mut self.file_tree_entries),
+                file_tree_selected: self.file_tree_selected.take(),
+                file_tree_scroll: self.file_tree_scroll,
+                file_tree_expanded: std::mem::take(&mut self.file_tree_expanded),
+                file_tree_hidden_dirs: std::mem::take(&mut self.file_tree_hidden_dirs),
+                viewer_tabs: std::mem::take(&mut self.viewer_tabs),
+                viewer_active_tab: self.viewer_active_tab,
+                worktree_terminals: std::mem::take(&mut self.worktree_terminals),
+                auto_rebase_enabled: std::mem::take(&mut self.auto_rebase_enabled),
+                run_commands: std::mem::take(&mut self.run_commands),
+                preset_prompts: std::mem::take(&mut self.preset_prompts),
+            };
+            self.project_snapshots.insert(current_project.path.clone(), snapshot);
+        }
+
+        // ── Clear session/render state (rebuilt by load_session_output) ──
         self.display_events.clear();
         self.session_lines.clear();
         self.session_buffer.clear();
@@ -591,21 +617,11 @@ impl App {
         self.session_file_dirty = false;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
-        self.agent_session_ids.clear();
-        self.agent_exit_codes.clear();
-        self.unread_sessions.clear();
-        self.unread_session_ids.clear();
-        self.session_files.clear();
-        self.session_selected_file_idx.clear();
-        self.file_tree_entries.clear();
-        self.file_tree_selected = None;
-        self.file_tree_expanded.clear();
-        self.viewer_content = None;
-        self.viewer_path = None;
-        self.viewer_tabs.clear();
         self.title_session_name.clear();
         self.current_todos.clear();
         self.subagent_todos.clear();
+        self.viewer_content = None;
+        self.viewer_path = None;
         self.invalidate_render_cache();
         self.invalidate_sidebar();
         self.invalidate_file_tree();
@@ -613,22 +629,64 @@ impl App {
         self.rendered_content_line_count = 0;
         self.rendered_events_start = 0;
 
-        // Set the new project
-        let main_branch = Git::get_main_branch(&path).unwrap_or_else(|_| "main".to_string());
-        self.project = Some(Project::from_path(path.clone(), main_branch));
+        // ── Restore target project from snapshot (or fresh-load) ──
+        if let Some(snapshot) = self.project_snapshots.remove(&path) {
+            // Restore saved state
+            self.project = Some(snapshot.project);
+            self.worktrees = snapshot.worktrees;
+            self.selected_worktree = snapshot.selected_worktree;
+            self.main_worktree = snapshot.main_worktree;
+            self.browsing_main = snapshot.browsing_main;
+            self.pre_main_browse_selection = snapshot.pre_main_browse_selection;
+            self.pending_session_names = snapshot.pending_session_names;
+            self.session_files = snapshot.session_files;
+            self.session_selected_file_idx = snapshot.session_selected_file_idx;
+            self.unread_sessions = snapshot.unread_sessions;
+            self.unread_session_ids = snapshot.unread_session_ids;
+            self.file_tree_entries = snapshot.file_tree_entries;
+            self.file_tree_selected = snapshot.file_tree_selected;
+            self.file_tree_scroll = snapshot.file_tree_scroll;
+            self.file_tree_expanded = snapshot.file_tree_expanded;
+            self.file_tree_hidden_dirs = snapshot.file_tree_hidden_dirs;
+            self.viewer_tabs = snapshot.viewer_tabs;
+            self.viewer_active_tab = snapshot.viewer_active_tab;
+            self.worktree_terminals = snapshot.worktree_terminals;
+            self.auto_rebase_enabled = snapshot.auto_rebase_enabled;
+            self.run_commands = snapshot.run_commands;
+            self.preset_prompts = snapshot.preset_prompts;
 
-        // Reload filetree hidden dirs from the new project's azufig
-        let az = crate::azufig::load_project_azufig(&path);
-        self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
+            // Restore branch_slots and active_slot, cleaning up stale entries
+            // (slots whose processes exited while this project was in background)
+            let mut branch_slots = snapshot.branch_slots;
+            let mut active_slot = snapshot.active_slot;
+            for slots in branch_slots.values_mut() {
+                slots.retain(|s| self.running_sessions.contains(s) || self.agent_exit_codes.contains_key(s));
+            }
+            branch_slots.retain(|_, slots| !slots.is_empty());
+            active_slot.retain(|branch, slot| {
+                branch_slots.get(branch).map(|s| s.contains(slot)).unwrap_or(false)
+                    || self.agent_exit_codes.contains_key(slot)
+            });
+            self.branch_slots = branch_slots;
+            self.active_slot = active_slot;
 
-        // Prune stale remote-tracking refs before loading worktrees
-        Git::prune_remote_refs(&path);
+            // Rebuild session display from file (picks up any output from background Claude)
+            self.load_session_output();
+        } else {
+            // Fresh load — no saved state for this project
+            self.browsing_main = false;
+            let main_branch = Git::get_main_branch(&path).unwrap_or_else(|_| "main".to_string());
+            self.project = Some(Project::from_path(path.clone(), main_branch));
 
-        // Reload sessions and output
-        let _ = self.load_worktrees();
-        self.load_session_output();
-        self.load_run_commands();
-        self.load_preset_prompts();
+            let az = crate::azufig::load_project_azufig(&path);
+            self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
+
+            Git::prune_remote_refs(&path);
+            let _ = self.load_worktrees();
+            self.load_session_output();
+            self.load_run_commands();
+            self.load_preset_prompts();
+        }
 
         // Close the panel and return focus
         self.projects_panel = None;
@@ -649,8 +707,9 @@ impl App {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
     }
 
-    /// Kill all running Claude processes across all sessions.
+    /// Kill all running Claude processes across all sessions (including background projects).
     /// Slot keys ARE PID strings — parse each back to u32 for kill.
+    #[allow(dead_code)]
     pub fn cancel_all_claude(&mut self) {
         let slots: Vec<String> = self.running_sessions.drain().collect();
         for slot in &slots {

@@ -24,7 +24,7 @@
 - **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews; markdown files render with styled headers, tables, code blocks, and lists
 - **Image Viewer** — View PNG, JPG, GIF, and other image formats inline in the terminal
 - **Embedded Terminal** — Full shell per worktree with color support
-- **Projects Panel** — Switch between registered projects; auto-discovers git repos on startup
+- **Projects Panel** — Switch between projects in parallel; Claude processes continue running in background with activity status icons per project
 
 ### Session
 
