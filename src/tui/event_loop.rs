@@ -398,6 +398,7 @@ pub async fn run_app(
                     }
                     BackgroundOpOutcome::Unarchived { branch, display_name } => {
                         app.set_status(format!("Unarchived: {}", display_name));
+                        app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
                             app.selected_worktree = Some(idx);
@@ -405,6 +406,7 @@ pub async fn run_app(
                         }
                     }
                     BackgroundOpOutcome::Created { branch } => {
+                        app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
                             app.selected_worktree = Some(idx);
@@ -413,6 +415,7 @@ pub async fn run_app(
                     }
                     BackgroundOpOutcome::Deleted { display_name, prev_idx, .. } => {
                         app.set_status(format!("Deleted: {}", display_name));
+                        app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         app.selected_worktree = if app.worktrees.is_empty() {
                             None

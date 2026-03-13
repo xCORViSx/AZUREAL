@@ -388,6 +388,7 @@ impl App {
         self.viewer_path = None;
         self.viewer_mode = ViewerMode::Empty;
         self.viewer_scroll = 0;
+        self.viewer_lines_cache.clear();
         self.viewer_lines_dirty = true;
     }
 }

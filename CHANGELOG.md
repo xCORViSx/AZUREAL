@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Stale UI on worktree creation/switch** — Creating a new worktree (or switching via archive/unarchive/delete) could leave stale content from the previous worktree visible in the file tree and viewer panes. Four causes: (1) `file_tree_lines_cache` was not cleared in `load_session_output()` — the dirty flag triggered a rebuild but old cached lines could render for one frame. (2) `clear_viewer()` was only called when no worktree was selected, so switching between two valid worktrees kept the old viewer file on screen. Now called unconditionally on every switch. (3) `clear_viewer()` set `viewer_lines_dirty` but didn't clear `viewer_lines_cache`, allowing stale rendered lines to flash. (4) Background op handlers (`Created`, `Unarchived`, `Deleted`) changed `selected_worktree` without calling `save_current_terminal()` first — the save from operation start could be stale if the user interacted between then and completion.
+
 ### Added
 - **Parallel project switching** — Projects now run in parallel. Switching projects saves the current project's state (worktrees, file tree, viewer tabs, terminals, process mappings) to a snapshot and restores it when switching back. Claude processes continue running in the background — output is captured by session files and picked up on return. The projects panel shows worktree activity status icons (●/○/◌/✓/✗) next to each project name, matching the worktree tab row's color scheme. Background process exits are handled cleanly: the snapshot's unread markers are updated and a project-prefixed status message is shown.
 - **Session rename in session list** — Press `r` in the session list overlay to rename the selected session. Opens a centered dialog pre-filled with the current name (custom name or session ID). Enter saves to `azufig.toml`, Esc cancels. Supports cursor movement with left/right arrows.
