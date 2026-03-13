@@ -4,4 +4,5 @@
 worktrees/
 nul
 .azureal/azufig.toml
+.azureal/sessions/
 release-artifacts/
