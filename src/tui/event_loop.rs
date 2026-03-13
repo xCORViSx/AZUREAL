@@ -627,7 +627,7 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
-        // Compaction inactivity watcher: when context ≥ 95% and no events for 20s,
+        // Compaction inactivity watcher: when context ≥ 90% and no events for 20s,
         // inject a "may be compacting" banner so the user knows why session pane is frozen
         if app.context_pct_high
             && !app.compaction_banner_injected

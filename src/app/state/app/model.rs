@@ -34,9 +34,9 @@ impl App {
                 else { ratatui::style::Color::Red };
             (format!(" {:.0}% ", pct), color)
         });
-        // Track 95% threshold for compaction inactivity watcher
+        // Track 90% threshold for compaction inactivity watcher
         let was_high = self.context_pct_high;
-        self.context_pct_high = pct_value >= 95.0;
+        self.context_pct_high = pct_value >= 90.0;
         // Reset banner state when context drops below threshold (e.g. after compaction)
         if was_high && !self.context_pct_high {
             self.compaction_banner_injected = false;

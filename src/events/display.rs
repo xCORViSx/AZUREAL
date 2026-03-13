@@ -29,7 +29,7 @@ pub enum DisplayEvent {
     Compacting,
     /// Context compacted via /compact command (unreachable in -p mode)
     Compacted,
-    /// Suspected compaction (95%+ context, 20s inactivity)
+    /// Suspected compaction (90%+ context, 20s inactivity)
     MayBeCompacting,
     /// Plan mode content (from ~/.claude/plans/)
     Plan {

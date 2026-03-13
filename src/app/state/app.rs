@@ -382,7 +382,7 @@ pub struct App {
     pub model_context_window: Option<u64>,
     /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
     pub token_badge_cache: Option<(String, ratatui::style::Color)>,
-    /// True when computed context usage ≥ 95% (triggers compaction inactivity watcher)
+    /// True when computed context usage ≥ 90% (triggers compaction inactivity watcher)
     pub context_pct_high: bool,
     /// Last time display_events were extended (new events parsed from session or stream)
     pub last_session_event_time: std::time::Instant,
