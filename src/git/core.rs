@@ -770,23 +770,39 @@ impl Git {
     /// Ensure `worktrees/` is listed in the project's `.gitignore`.
     /// If missing, appends it, stages `.gitignore`, and commits.
     /// Silently no-ops if already present or if any step fails.
+    /// Entries that must be in .gitignore for azureal to work correctly.
+    /// Each tuple: (canonical form to write, all accepted variants).
+    const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[
+        ("worktrees/", &["worktrees", "worktrees/", "/worktrees", "/worktrees/"]),
+        (".azureal/sessions/", &[".azureal/sessions", ".azureal/sessions/"]),
+    ];
+
     pub fn ensure_worktrees_gitignored(repo_root: &Path) {
         let gitignore = repo_root.join(".gitignore");
         let content = std::fs::read_to_string(&gitignore).unwrap_or_default();
 
-        // check if worktrees/ is already covered
-        let dominated = content.lines().any(|line| {
-            let l = line.trim();
-            matches!(l, "worktrees" | "worktrees/" | "/worktrees" | "/worktrees/")
-        });
-        if dominated { return; }
+        // collect missing entries
+        let mut missing: Vec<&str> = Vec::new();
+        for (canonical, variants) in Self::REQUIRED_GITIGNORE {
+            let covered = content.lines().any(|line| {
+                let l = line.trim();
+                variants.contains(&l)
+            });
+            if !covered {
+                missing.push(canonical);
+            }
+        }
+        if missing.is_empty() { return; }
 
-        // append the entry
+        // append missing entries
         let mut new = content.clone();
         if !new.is_empty() && !new.ends_with('\n') {
             new.push('\n');
         }
-        new.push_str("worktrees/\n");
+        for entry in &missing {
+            new.push_str(entry);
+            new.push('\n');
+        }
         if std::fs::write(&gitignore, &new).is_err() { return; }
 
         // stage + commit
@@ -796,8 +812,9 @@ impl Git {
             .output();
         if !staged.map(|o| o.status.success()).unwrap_or(false) { return; }
 
+        let msg = format!("chore: gitignore {}", missing.join(", "));
         let _ = Command::new("git")
-            .args(["commit", "-m", "chore: add worktrees/ to .gitignore"])
+            .args(["commit", "-m", &msg])
             .current_dir(repo_root)
             .output();
     }

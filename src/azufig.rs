@@ -58,8 +58,9 @@ pub struct AzufigConfig {
 // ── Project-local azufig (.azureal/azufig.toml) ──
 
 /// Top-level structure for the project-local azufig file.
-/// Stores per-project settings like filetree filters, session names, etc.
+/// Stores per-project settings like filetree filters, run commands, etc.
 /// Each section uses single-bracket `[section]` with flat `key = "value"` pairs.
+/// Session names are stored in `.azureal/sessions/index.json`, not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectAzufig {
     /// FileTree display options (hidden entry names)
@@ -68,9 +69,6 @@ pub struct ProjectAzufig {
     /// Health scope — directories included in all health scanners (god files, docs, etc.)
     #[serde(default, alias = "godfilescope")]
     pub healthscope: AzufigHealthScope,
-    /// Custom session name mappings: session_uuid = "display_name"
-    #[serde(default)]
-    pub sessions: HashMap<String, String>,
     /// Project-local run commands: name = "shell command"
     #[serde(default)]
     pub runcmds: HashMap<String, String>,
@@ -426,7 +424,6 @@ mod tests {
     #[test]
     fn test_project_azufig_default() {
         let az = ProjectAzufig::default();
-        assert!(az.sessions.is_empty());
         assert!(az.runcmds.is_empty());
         assert!(az.presetprompts.is_empty());
         assert!(az.git.is_empty());
@@ -461,13 +458,11 @@ mod tests {
     #[test]
     fn test_project_azufig_toml_roundtrip() {
         let mut az = ProjectAzufig::default();
-        az.sessions.insert("uuid-123".to_string(), "my-session".to_string());
         az.git.insert("auto-rebase/feature".to_string(), "true".to_string());
 
         let toml_str = toml::to_string_pretty(&az).unwrap();
         let parsed: ProjectAzufig = toml::from_str(&toml_str).unwrap();
 
-        assert_eq!(parsed.sessions.get("uuid-123").unwrap(), "my-session");
         assert_eq!(parsed.git.get("auto-rebase/feature").unwrap(), "true");
     }
 
@@ -680,11 +675,6 @@ mod tests {
             healthscope: AzufigHealthScope {
                 dirs: vec!["/src".into(), "/lib".into()],
             },
-            sessions: {
-                let mut m = HashMap::new();
-                m.insert("uuid-1".to_string(), "Session A".to_string());
-                m
-            },
             runcmds: {
                 let mut m = HashMap::new();
                 m.insert("lint".to_string(), "cargo clippy".to_string());
@@ -708,7 +698,6 @@ mod tests {
 
         assert_eq!(parsed.filetree.hidden.len(), 3);
         assert_eq!(parsed.healthscope.dirs.len(), 2);
-        assert_eq!(parsed.sessions.len(), 1);
         assert_eq!(parsed.runcmds.len(), 1);
         assert_eq!(parsed.presetprompts.len(), 1);
         assert_eq!(parsed.git.len(), 2);
@@ -775,13 +764,13 @@ MyProj = "~/dev/myproj"
     #[test]
     fn test_project_azufig_from_partial_toml() {
         let toml_str = r#"
-[sessions]
-"abc-123" = "my session"
+[git]
+"auto-rebase/main" = "true"
 "#;
         let parsed: ProjectAzufig = toml::from_str(toml_str).unwrap();
-        assert_eq!(parsed.sessions.get("abc-123").unwrap(), "my session");
+        assert_eq!(parsed.git.get("auto-rebase/main").unwrap(), "true");
         assert_eq!(parsed.filetree.hidden.len(), 5); // defaults
-        assert!(parsed.git.is_empty());
+        assert!(parsed.runcmds.is_empty());
     }
 
     #[test]
@@ -887,9 +876,9 @@ verbose = true
     #[test]
     fn test_project_azufig_clone() {
         let mut az = ProjectAzufig::default();
-        az.sessions.insert("s1".into(), "Session 1".into());
+        az.runcmds.insert("build".into(), "cargo build".into());
         let cloned = az.clone();
-        assert_eq!(cloned.sessions.get("s1").unwrap(), "Session 1");
+        assert_eq!(cloned.runcmds.get("build").unwrap(), "cargo build");
     }
 
     #[test]

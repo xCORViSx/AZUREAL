@@ -1,4 +1,4 @@
-//! Session name storage in `.azureal/azufig.toml` under the `[sessions]` section.
+//! Session name storage in `index.json` (alongside cache index entries).
 //!
 //! Allows users to assign custom names to sessions that are stored
 //! locally and displayed in the UI instead of the cryptic session IDs.
@@ -8,18 +8,16 @@ use std::collections::HashMap;
 use super::App;
 
 impl App {
-    /// Save a custom session name mapping to the `[sessions]` section of project azufig.
+    /// Save a custom session name to the cache index.
     pub fn save_session_name(&self, session_id: &str, custom_name: &str) {
         let Some(ref project) = self.project else { return };
-        crate::azufig::update_project_azufig(&project.path, |az| {
-            az.sessions.insert(session_id.to_string(), custom_name.to_string());
-        });
+        crate::app::session_cache::save_session_name(&project.path, session_id, custom_name);
     }
 
     /// Load all custom session name mappings (session_id → custom_name)
     pub fn load_all_session_names(&self) -> HashMap<String, String> {
         let Some(ref project) = self.project else { return HashMap::new() };
-        crate::azufig::load_project_azufig(&project.path).sessions
+        crate::app::session_cache::load_all_session_names(&project.path)
     }
 
     /// Check if there's a pending session name for this slot and save it.
@@ -181,7 +179,7 @@ mod tests {
             path: tmp.path().to_path_buf(),
             main_branch: "main".to_string(),
         });
-        // Should not crash even if azufig doesn't exist
+        // Should not crash even if index doesn't exist
         app.save_session_name("sess-123", "My Session Name");
     }
 
@@ -317,7 +315,7 @@ mod tests {
         app.pending_session_names.push(("slot-1".to_string(), "Name with \"quotes\" & <brackets>".to_string()));
         app.check_pending_session_name("slot-1", "sess-1");
         let names = app.load_all_session_names();
-        // TOML should handle special chars
+        // JSON should handle special chars
         assert!(names.contains_key("sess-1"));
     }
 
@@ -388,8 +386,6 @@ mod tests {
         let names = app.load_all_session_names();
         assert_eq!(names.get("sess-1"), Some(&long_name));
     }
-
-    // ── Additional tests for 50+ threshold ──
 
     #[test]
     fn test_save_session_name_numeric_id() {

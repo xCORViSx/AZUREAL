@@ -25,12 +25,40 @@ use crate::events::DisplayEvent;
 // Cache index — maps session UUIDs to sequential cache names
 // =========================================================================
 
-/// Maps session UUIDs to their cache filenames (e.g. "claude-1", "codex-3")
+/// Per-session entry in the cache index
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct IndexEntry {
+    /// Cache filename without extension (e.g. "claude-1")
+    cache: String,
+    /// User-assigned display name (e.g. "Feature Work")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+}
+
+/// Maps session UUIDs to cache filenames and display names.
+/// Supports legacy format (bare string values) for backward compatibility.
 #[derive(Serialize, Deserialize, Default)]
 struct CacheIndex {
-    /// UUID → cache name (without extension)
     #[serde(flatten)]
-    map: HashMap<String, String>,
+    map: HashMap<String, IndexEntry>,
+}
+
+/// Deserialize helper: accepts both `"claude-1"` (legacy) and `{"cache":"claude-1","name":"..."}` (current)
+impl CacheIndex {
+    fn from_bytes(data: &[u8]) -> Self {
+        // Try current format first
+        if let Ok(idx) = serde_json::from_slice::<CacheIndex>(data) {
+            return idx;
+        }
+        // Fall back to legacy format: UUID → bare string
+        if let Ok(legacy) = serde_json::from_slice::<HashMap<String, String>>(data) {
+            let map = legacy.into_iter()
+                .map(|(uuid, cache)| (uuid, IndexEntry { cache, name: None }))
+                .collect();
+            return CacheIndex { map };
+        }
+        CacheIndex::default()
+    }
 }
 
 /// Path to the index file
@@ -41,10 +69,10 @@ fn index_path(project_root: &Path) -> PathBuf {
 /// Load the index (returns empty if missing or corrupt)
 fn read_index(project_root: &Path) -> CacheIndex {
     let path = index_path(project_root);
-    fs::read(&path)
-        .ok()
-        .and_then(|data| serde_json::from_slice(&data).ok())
-        .unwrap_or_default()
+    match fs::read(&path) {
+        Ok(data) => CacheIndex::from_bytes(&data),
+        Err(_) => CacheIndex::default(),
+    }
 }
 
 /// Save the index atomically
@@ -64,7 +92,7 @@ fn write_index(project_root: &Path, index: &CacheIndex) -> io::Result<()> {
 fn next_number(index: &CacheIndex, prefix: &str) -> u64 {
     let pat = format!("{}-", prefix);
     index.map.values()
-        .filter_map(|name| name.strip_prefix(&pat).and_then(|n| n.parse::<u64>().ok()))
+        .filter_map(|entry| entry.cache.strip_prefix(&pat).and_then(|n| n.parse::<u64>().ok()))
         .max()
         .map(|n| n + 1)
         .unwrap_or(1)
@@ -73,7 +101,7 @@ fn next_number(index: &CacheIndex, prefix: &str) -> u64 {
 /// Look up existing cache name for a session UUID
 pub fn lookup_cache_name(project_root: &Path, session_id: &str) -> Option<String> {
     let index = read_index(project_root);
-    index.map.get(session_id).cloned()
+    index.map.get(session_id).map(|e| e.cache.clone())
 }
 
 /// Infer backend from a session file path.
@@ -92,18 +120,45 @@ pub fn backend_from_path(path: &Path, fallback: Backend) -> Backend {
 /// Get or assign a cache name for a session UUID
 pub fn resolve_cache_name(project_root: &Path, session_id: &str, backend: Backend) -> io::Result<String> {
     let mut index = read_index(project_root);
-    if let Some(name) = index.map.get(session_id) {
-        return Ok(name.clone());
+    if let Some(entry) = index.map.get(session_id) {
+        return Ok(entry.cache.clone());
     }
     let prefix = match backend {
         Backend::Claude => "claude",
         Backend::Codex => "codex",
     };
     let n = next_number(&index, prefix);
-    let name = format!("{}-{}", prefix, n);
-    index.map.insert(session_id.to_string(), name.clone());
+    let cache = format!("{}-{}", prefix, n);
+    index.map.insert(session_id.to_string(), IndexEntry { cache: cache.clone(), name: None });
     write_index(project_root, &index)?;
-    Ok(name)
+    Ok(cache)
+}
+
+// =========================================================================
+// Session display names — stored in index.json alongside cache names
+// =========================================================================
+
+/// Save a custom display name for a session UUID
+pub fn save_session_name(project_root: &Path, session_id: &str, display_name: &str) {
+    let mut index = read_index(project_root);
+    if let Some(entry) = index.map.get_mut(session_id) {
+        entry.name = Some(display_name.to_string());
+    } else {
+        // no cache entry yet — store name-only (cache assigned later on first load)
+        index.map.insert(session_id.to_string(), IndexEntry {
+            cache: String::new(),
+            name: Some(display_name.to_string()),
+        });
+    }
+    let _ = write_index(project_root, &index);
+}
+
+/// Load all custom session name mappings (session_id → display_name)
+pub fn load_all_session_names(project_root: &Path) -> HashMap<String, String> {
+    let index = read_index(project_root);
+    index.map.into_iter()
+        .filter_map(|(uuid, entry)| entry.name.map(|n| (uuid, n)))
+        .collect()
 }
 
 /// Cached session data — mirrors ParsedSession plus source provenance fields
@@ -343,64 +398,6 @@ pub fn read_cache_orphan(project_root: &Path, cache_name: &str) -> Option<Cached
     let path = cache_path(project_root, cache_name);
     let data = fs::read(&path).ok()?;
     decompress_cache(&data)
-}
-
-/// Migrate old UUID-named `.json` cache files to new `.json.gz` format with index entries.
-/// Scans `.azureal/sessions/` for `*.json` files (excluding `index.json`), reads each as
-/// uncompressed JSON, assigns a sequential cache name, writes compressed `.json.gz`, and
-/// removes the old file. No-op if no legacy files exist. Safe to call multiple times.
-pub fn migrate_legacy_caches(project_root: &Path, default_backend: Backend) {
-    let sessions_dir = project_root.join(".azureal").join("sessions");
-    let entries = match fs::read_dir(&sessions_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    let mut migrated = 0u32;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Only process *.json files (not index.json, not *.json.gz, not *.tmp)
-        if !name.ends_with(".json") || name == "index.json" {
-            continue;
-        }
-
-        // Extract UUID from filename (strip .json extension)
-        let uuid = name.strip_suffix(".json").unwrap();
-
-        // Read old uncompressed JSON
-        let data = match fs::read(&path) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-        let cached: CachedSession = match serde_json::from_slice(&data) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        // Detect backend from source_path (codex sessions have "codex" in path)
-        let backend = if cached.source_path.to_str().map_or(false, |p| p.contains("codex")) {
-            Backend::Codex
-        } else {
-            default_backend
-        };
-
-        // Assign sequential cache name and write compressed
-        if let Ok(cache_name) = resolve_cache_name(project_root, uuid, backend) {
-            if write_cache(project_root, &cache_name, &cached).is_ok() {
-                let _ = fs::remove_file(&path);
-                migrated += 1;
-            }
-        }
-    }
-
-    if migrated > 0 {
-        eprintln!("[session_cache] migrated {} legacy cache file(s)", migrated);
-    }
 }
 
 #[cfg(test)]
@@ -1255,8 +1252,8 @@ mod tests {
     #[test]
     fn next_number_skips_non_matching_prefix() {
         let mut index = CacheIndex::default();
-        index.map.insert("a".into(), "codex-5".into());
-        index.map.insert("b".into(), "codex-3".into());
+        index.map.insert("a".into(), IndexEntry { cache: "codex-5".into(), name: None });
+        index.map.insert("b".into(), IndexEntry { cache: "codex-3".into(), name: None });
         // "claude" prefix should still start at 1
         assert_eq!(next_number(&index, "claude"), 1);
         assert_eq!(next_number(&index, "codex"), 6);
@@ -1265,8 +1262,8 @@ mod tests {
     #[test]
     fn next_number_handles_gaps() {
         let mut index = CacheIndex::default();
-        index.map.insert("a".into(), "claude-1".into());
-        index.map.insert("b".into(), "claude-5".into());
+        index.map.insert("a".into(), IndexEntry { cache: "claude-1".into(), name: None });
+        index.map.insert("b".into(), IndexEntry { cache: "claude-5".into(), name: None });
         // Should be max+1, not fill gaps
         assert_eq!(next_number(&index, "claude"), 6);
     }
@@ -1280,7 +1277,7 @@ mod tests {
 
         // Read index from disk in a separate call
         let index = read_index(root);
-        assert_eq!(index.map.get("uuid-persist").unwrap(), "claude-1");
+        assert_eq!(index.map.get("uuid-persist").unwrap().cache, "claude-1");
     }
 
     #[test]
@@ -1358,178 +1355,81 @@ mod tests {
     }
 
     // =====================================================================
-    // Migration — legacy UUID-named .json → .json.gz
+    // Session display names (in index.json)
     // =====================================================================
 
-    /// Write an old-style uncompressed UUID.json cache file (for migration tests)
-    fn write_legacy_cache(project_root: &Path, uuid: &str, cached: &CachedSession) {
-        let dir = project_root.join(".azureal").join("sessions");
-        fs::create_dir_all(&dir).unwrap();
-        let json = serde_json::to_vec(cached).unwrap();
-        fs::write(dir.join(format!("{uuid}.json")), &json).unwrap();
-    }
-
     #[test]
-    fn migrate_converts_legacy_json_to_gz() {
+    fn save_and_load_session_name() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-
-        let parsed = sample_parsed();
-        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 100);
-
-        // Write old-style UUID.json
-        write_legacy_cache(root, "aaaa-bbbb-cccc", &cached);
-        let legacy = root.join(".azureal/sessions/aaaa-bbbb-cccc.json");
-        assert!(legacy.exists());
-
-        // Migrate
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Old file removed
-        assert!(!legacy.exists());
-
-        // New .json.gz created
-        let gz = cache_path(root, "claude-1");
-        assert!(gz.exists());
-
-        // Index updated
-        assert_eq!(lookup_cache_name(root, "aaaa-bbbb-cccc"), Some("claude-1".into()));
-
-        // Data round-trips
-        let restored = read_cache_orphan(root, "claude-1").unwrap();
-        assert_eq!(restored.events.len(), cached.events.len());
+        save_session_name(root, "uuid-1", "Feature Work");
+        let names = load_all_session_names(root);
+        assert_eq!(names.get("uuid-1"), Some(&"Feature Work".to_string()));
     }
 
     #[test]
-    fn migrate_noop_when_no_legacy_files() {
+    fn save_session_name_overwrites() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-
-        // No sessions dir at all
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Create dir but only put index.json in it
-        let sessions_dir = root.join(".azureal/sessions");
-        fs::create_dir_all(&sessions_dir).unwrap();
-        fs::write(sessions_dir.join("index.json"), b"{}").unwrap();
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Index unchanged
-        let idx = read_index(root);
-        assert!(idx.map.is_empty());
+        save_session_name(root, "uuid-1", "Old Name");
+        save_session_name(root, "uuid-1", "New Name");
+        let names = load_all_session_names(root);
+        assert_eq!(names.get("uuid-1"), Some(&"New Name".to_string()));
     }
 
     #[test]
-    fn migrate_handles_multiple_files() {
+    fn save_session_name_preserves_cache_entry() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-
-        let parsed = sample_parsed();
-
-        // Two Claude sessions
-        let c1 = CachedSession::from_parsed(&parsed, PathBuf::from("/a.jsonl"), 10);
-        let c2 = CachedSession::from_parsed(&parsed, PathBuf::from("/b.jsonl"), 20);
-        write_legacy_cache(root, "uuid-1", &c1);
-        write_legacy_cache(root, "uuid-2", &c2);
-
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Both migrated
-        assert!(lookup_cache_name(root, "uuid-1").is_some());
-        assert!(lookup_cache_name(root, "uuid-2").is_some());
-
-        // Sequential names assigned (order may vary, just check both exist)
-        let n1 = lookup_cache_name(root, "uuid-1").unwrap();
-        let n2 = lookup_cache_name(root, "uuid-2").unwrap();
-        assert!(n1.starts_with("claude-"));
-        assert!(n2.starts_with("claude-"));
-        assert_ne!(n1, n2);
-
-        // Old files gone
-        assert!(!root.join(".azureal/sessions/uuid-1.json").exists());
-        assert!(!root.join(".azureal/sessions/uuid-2.json").exists());
+        // First create a cache entry
+        resolve_cache_name(root, "uuid-1", Backend::Claude).unwrap();
+        // Then save a name
+        save_session_name(root, "uuid-1", "Named Session");
+        // Cache name should still be there
+        assert_eq!(lookup_cache_name(root, "uuid-1"), Some("claude-1".into()));
+        // And so should the display name
+        let names = load_all_session_names(root);
+        assert_eq!(names.get("uuid-1"), Some(&"Named Session".to_string()));
     }
 
     #[test]
-    fn migrate_detects_codex_backend_from_source_path() {
+    fn load_session_names_empty_index() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-
-        let parsed = sample_parsed();
-        let cached = CachedSession::from_parsed(
-            &parsed,
-            PathBuf::from("/home/.codex/sessions/abc.jsonl"),
-            50,
-        );
-        write_legacy_cache(root, "codex-uuid", &cached);
-
-        migrate_legacy_caches(root, Backend::Claude); // default is Claude
-
-        // Should detect codex from source_path
-        let name = lookup_cache_name(root, "codex-uuid").unwrap();
-        assert!(name.starts_with("codex-"), "expected codex prefix, got {}", name);
+        let names = load_all_session_names(root);
+        assert!(names.is_empty());
     }
 
     #[test]
-    fn migrate_skips_corrupt_json() {
+    fn load_session_names_skips_unnamed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Create a cache entry without a name
+        resolve_cache_name(root, "uuid-anon", Backend::Claude).unwrap();
+        // Create one with a name
+        save_session_name(root, "uuid-named", "Has Name");
+        let names = load_all_session_names(root);
+        assert_eq!(names.len(), 1);
+        assert!(!names.contains_key("uuid-anon"));
+    }
+
+    #[test]
+    fn legacy_index_format_reads_as_unnamed() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let sessions_dir = root.join(".azureal/sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
-
-        // Write corrupt JSON
-        fs::write(sessions_dir.join("bad-uuid.json"), b"not valid json {{{").unwrap();
-
-        // Also write a valid one
-        let parsed = sample_parsed();
-        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 10);
-        write_legacy_cache(root, "good-uuid", &cached);
-
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Good one migrated
-        assert!(lookup_cache_name(root, "good-uuid").is_some());
-        // Bad one left in place (not deleted since we couldn't read it)
-        assert!(sessions_dir.join("bad-uuid.json").exists());
-    }
-
-    #[test]
-    fn migrate_idempotent() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-
-        let parsed = sample_parsed();
-        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/raw.jsonl"), 10);
-        write_legacy_cache(root, "uuid-idem", &cached);
-
-        migrate_legacy_caches(root, Backend::Claude);
-        let name1 = lookup_cache_name(root, "uuid-idem").unwrap();
-
-        // Second call is a no-op (old file already removed)
-        migrate_legacy_caches(root, Backend::Claude);
-        let name2 = lookup_cache_name(root, "uuid-idem").unwrap();
-        assert_eq!(name1, name2);
-    }
-
-    #[test]
-    fn migrate_ignores_index_json_and_gz_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let sessions_dir = root.join(".azureal/sessions");
-        fs::create_dir_all(&sessions_dir).unwrap();
-
-        // Pre-existing index.json
-        fs::write(sessions_dir.join("index.json"), b"{\"existing\": \"claude-1\"}").unwrap();
-        // Pre-existing .json.gz
-        fs::write(sessions_dir.join("claude-1.json.gz"), b"compressed").unwrap();
-
-        migrate_legacy_caches(root, Backend::Claude);
-
-        // Neither touched — index preserved
-        let idx = read_index(root);
-        assert_eq!(idx.map.get("existing").unwrap(), "claude-1");
-        // .gz file still there
-        assert!(sessions_dir.join("claude-1.json.gz").exists());
+        // Write old-format index: UUID → bare string
+        fs::write(
+            sessions_dir.join("index.json"),
+            b"{\"uuid-old\": \"claude-1\", \"uuid-old2\": \"codex-1\"}"
+        ).unwrap();
+        // Should parse via legacy path
+        assert_eq!(lookup_cache_name(root, "uuid-old"), Some("claude-1".into()));
+        assert_eq!(lookup_cache_name(root, "uuid-old2"), Some("codex-1".into()));
+        // No display names in legacy format
+        let names = load_all_session_names(root);
+        assert!(names.is_empty());
     }
 
     // =====================================================================
@@ -1574,7 +1474,7 @@ mod tests {
 
         // Step 6: Verify index.json was created
         let idx = read_index(root);
-        assert_eq!(idx.map.get(session_id).unwrap(), "claude-1");
+        assert_eq!(idx.map.get(session_id).unwrap().cache, "claude-1");
 
         // Step 7: Read back and verify
         let restored = read_cache(root, "claude-1", jsonl, jsonl_size).unwrap();

@@ -378,11 +378,6 @@ impl App {
                 }
             }
 
-            // Migrate any old UUID-named .json cache files to new .json.gz format
-            if let Some(ref wt_path) = worktree_path {
-                crate::app::session_cache::migrate_legacy_caches(wt_path, self.backend);
-            }
-
             // Try loading session — check cache first, fall back to raw parse,
             // or load from orphan cache if the source file is missing.
             if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
