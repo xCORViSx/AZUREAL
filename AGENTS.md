@@ -1403,6 +1403,7 @@ Custom session names stored alongside cache index in `.azureal/sessions/index.js
   "abc123-def456-...": {"cache": "claude-2", "name": "filetree-operations"}
 }
 ```
+Display name fallback chain: custom `name` field → cache filename (e.g. "claude-1") → UUID short format. Session pane title, session list, and notifications all use this chain via `load_all_session_names()`.
 
 Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (rendering), `src/tui/input_wizard.rs` (input handling), `src/app/state/session_names.rs` (name storage — delegates to `session_cache.rs`)
 

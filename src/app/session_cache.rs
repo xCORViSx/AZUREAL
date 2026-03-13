@@ -153,11 +153,18 @@ pub fn save_session_name(project_root: &Path, session_id: &str, display_name: &s
     let _ = write_index(project_root, &index);
 }
 
-/// Load all custom session name mappings (session_id → display_name)
+/// Load all session display names (session_id → display_name).
+/// Returns custom name if set, otherwise falls back to cache name (e.g. "claude-1").
 pub fn load_all_session_names(project_root: &Path) -> HashMap<String, String> {
     let index = read_index(project_root);
     index.map.into_iter()
-        .filter_map(|(uuid, entry)| entry.name.map(|n| (uuid, n)))
+        .filter_map(|(uuid, entry)| {
+            let display = entry.name.unwrap_or_else(|| {
+                if entry.cache.is_empty() { return uuid.clone(); }
+                entry.cache.clone()
+            });
+            Some((uuid, display))
+        })
         .collect()
 }
 
@@ -1401,16 +1408,18 @@ mod tests {
     }
 
     #[test]
-    fn load_session_names_skips_unnamed() {
+    fn load_session_names_falls_back_to_cache_name() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // Create a cache entry without a name
+        // Create a cache entry without a custom name
         resolve_cache_name(root, "uuid-anon", Backend::Claude).unwrap();
-        // Create one with a name
+        // Create one with a custom name
         save_session_name(root, "uuid-named", "Has Name");
         let names = load_all_session_names(root);
-        assert_eq!(names.len(), 1);
-        assert!(!names.contains_key("uuid-anon"));
+        assert_eq!(names.len(), 2);
+        // Unnamed entry falls back to cache name
+        assert_eq!(names["uuid-anon"], "claude-1");
+        assert_eq!(names["uuid-named"], "Has Name");
     }
 
     #[test]
@@ -1427,9 +1436,11 @@ mod tests {
         // Should parse via legacy path
         assert_eq!(lookup_cache_name(root, "uuid-old"), Some("claude-1".into()));
         assert_eq!(lookup_cache_name(root, "uuid-old2"), Some("codex-1".into()));
-        // No display names in legacy format
+        // Legacy entries have cache names but no custom names
         let names = load_all_session_names(root);
-        assert!(names.is_empty());
+        assert_eq!(names.len(), 2);
+        assert_eq!(names["uuid-old"], "claude-1");
+        assert_eq!(names["uuid-old2"], "codex-1");
     }
 
     // =====================================================================

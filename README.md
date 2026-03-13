@@ -35,7 +35,7 @@
 - **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
 - **Model Switcher** — Cycle between backend models with `⌃m` / `Ctrl+M` (Claude: opus/sonnet/haiku; Codex: o3/o4-mini/codex-mini)
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
-- **Session Rename** — `r` in the session list to rename the selected session (persisted in `azufig.toml`)
+- **Session Rename** — `r` in the session list to rename the selected session (persisted in session cache index)
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions
 
 ### Git
