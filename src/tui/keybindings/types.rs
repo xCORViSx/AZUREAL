@@ -132,7 +132,7 @@ impl KeyCombo {
             KeyCode::Enter => s.push_str("Enter"),
             KeyCode::Esc => s.push_str("Esc"),
             KeyCode::Tab => s.push_str("Tab"),
-            KeyCode::BackTab => s.push_str("Tab"),
+            KeyCode::BackTab => s.push_str("S-Tab"),
             KeyCode::Backspace => s.push('⌫'),
             KeyCode::Delete => s.push('⌦'),
             KeyCode::Up => s.push('↑'),
@@ -262,6 +262,7 @@ pub enum Action {
 
     // Git Actions Panel (modal)
     GitToggleFocus,
+    GitToggleFocusBack,
     GitSquashMerge,
     GitRebase,
     GitPull,
@@ -612,11 +613,15 @@ mod tests {
 
     #[test]
     fn display_backtab() {
-        let kc = KeyCombo::shift(KeyCode::BackTab);
+        // plain(BackTab) — BackTab already implies Shift+Tab
+        let kc = KeyCombo::plain(KeyCode::BackTab);
+        assert_eq!(kc.display(), "S-Tab");
+        // shift(BackTab) adds explicit shift prefix
+        let kc2 = KeyCombo::shift(KeyCode::BackTab);
         if cfg!(target_os = "macos") {
-            assert_eq!(kc.display(), "⇧Tab");
+            assert_eq!(kc2.display(), "⇧S-Tab");
         } else {
-            assert_eq!(kc.display(), "Shift+Tab");
+            assert_eq!(kc2.display(), "Shift+S-Tab");
         }
     }
 

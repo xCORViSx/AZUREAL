@@ -94,7 +94,7 @@ Normal Mode:                              Git Mode (Shift+G):
 ├──────────┴───────────────┤           │   ║──────────║               ║         ║
 │  Input / Terminal        │           │   ║ Files    ║               ║         ║
 ├──────────────────────────┴───────────┤   ╠══════════╩═══════════════╩═════════╣
-│             Status Bar               │   ║ GIT: wt (Tab:cycle | Enter:exec)  ║
+│             Status Bar               │   ║ GIT: wt (Tab/S-Tab:cycle | Enter) ║
 └──────────────────────────────────────┘   ╚════════════════════════════════════╝
                                             Status Bar (minimal)
 ```
@@ -1207,13 +1207,13 @@ Actions change based on whether the current worktree is the main/master branch o
 **File list (when files pane focused, focused_pane==1):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). **Staged files** show underlined path with normal colors; **unstaged files** show strikethrough path in DarkGray with dimmed stats. Title shows total file count, staged count (e.g. `3✓`), and +/- stats.
 - `j/k` — navigate files (auto-loads diff in viewer pane via `load_file_diff_inline()`); `Enter`/`d` — also loads diff inline
-- `s` — toggle stage/unstage for selected file (`Git::stage_file` / `Git::unstage_file`). Same key as `GitAutoResolveSettings` but pane-gated: `s` fires auto-resolve in actions pane (focused_pane==0), toggle-stage in files pane (focused_pane==1)
-- `Shift+S` — stage all / unstage all toggle. If all files are staged, unstages all (`Git::unstage_all`); otherwise stages all (`Git::stage_all`)
+- `s` — toggle stage/unstage for selected file (purely UI — flips `staged` bool, no git commands). Same key as `GitAutoResolveSettings` but pane-gated: `s` fires auto-resolve in actions pane (focused_pane==0), toggle-stage in files pane (focused_pane==1)
+- `Shift+S` — stage all / unstage all toggle (purely UI — flips all `staged` bools)
 - `x` — discard changes for selected file. Shows inline confirmation (`Discard <path>? [y/n]`) in red bold, replacing the file's row. `y` confirms (`Git::discard_file` — `git restore` for tracked, `git clean -f` for untracked), `n`/`Esc` cancels. State: `panel.discard_confirm: Option<usize>` (file index)
-- **Selective commit:** When user has manually staged files (any `staged == true`), the commit flow (`exec_commit_start`) uses only those staged files. When no files are staged (default state), falls back to `stage_all` for the traditional "commit everything" behavior.
+- **Staging model:** All files default to `staged = true` on load. User unstages files they don't want committed. At commit time (`exec_commit_start`): if all files staged (default), `stage_all` for efficiency; if any unstaged, `unstage_all` first then `stage_file` for each staged file individually.
 - Mouse wheel scrolls selection (moves `selected_file`, auto-loads diff)
 - Scroll maintained via `file_scroll` field (written back from draw function each frame)
-- `GitChangedFile.staged` field populated from `git diff --cached --name-only` in `get_diff_files()`
+- `GitChangedFile.staged` defaults to `true` in `get_diff_files()` — staging is a UI concept, not read from git index
 
 **Commits list (when commits pane focused, focused_pane==2):**
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
@@ -1223,7 +1223,7 @@ Actions change based on whether the current worktree is the main/master branch o
 - **Bottom border divergence badges:** Compact right-aligned badges show `↑N ↓M main` (red bg when behind, green when only ahead; feature branches only) and `↑N ↓M remote` (yellow bg when behind, cyan when only ahead). Uses `Git::get_main_divergence()` and `Git::get_remote_divergence()` — both backed by `git rev-list --left-right --count`. Panel fields: `commits_behind_main`, `commits_ahead_main`, `commits_behind_remote`, `commits_ahead_remote`
 
 **Global within panel:**
-- `Tab` — cycle focus: Actions → Files → Commits → Actions (`focused_pane = (focused_pane + 1) % 3`)
+- `Tab` / `Shift+Tab` — cycle focus forward/backward: Actions → Files → Commits → Actions
 - `[` / `]` — cycle to prev/next active worktree's git view without closing the panel; focused pane preserved; no-op with ≤1 active worktrees
 - `{` / `}` — jump to prev/next tab bar page (first worktree on the target page becomes active); wraps around; no-op with ≤1 pages
 - `R` — refresh changed files and commit log

@@ -451,16 +451,44 @@ pub(super) fn exec_push(app: &mut App) {
 
 /// Start the commit flow: stage changes, get the diff, spawn Claude one-shot
 /// to generate a commit message, and open the commit overlay.
-/// If user has manually staged files (any `staged == true`), only those are committed.
-/// Otherwise falls back to `stage_all` for the traditional "commit everything" flow.
+/// All files default to staged=true. If user unstaged some files, only staged
+/// ones are committed. If all are staged (default), stage_all for efficiency.
 pub(super) fn exec_commit_start(app: &mut App) {
-    let (wt, has_staged_files) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.worktree_path.clone(), p.changed_files.iter().any(|f| f.staged)),
+    let (wt, files_snapshot) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.worktree_path.clone(), p.changed_files.clone()),
         None => return,
     };
 
-    if !has_staged_files {
-        // No manual staging — stage everything (original behavior)
+    let has_unstaged = files_snapshot.iter().any(|f| !f.staged);
+    if has_unstaged {
+        // User explicitly unstaged some files — stage only the selected ones
+        let staged_paths: Vec<&str> = files_snapshot.iter()
+            .filter(|f| f.staged)
+            .map(|f| f.path.as_str())
+            .collect();
+        if staged_paths.is_empty() {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some(("No files staged for commit".into(), false));
+            }
+            return;
+        }
+        // Reset index first, then add only staged files
+        if let Err(e) = Git::unstage_all(&wt) {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("Unstage failed: {}", e), true));
+            }
+            return;
+        }
+        for path in &staged_paths {
+            if let Err(e) = Git::stage_file(&wt, path) {
+                if let Some(ref mut p) = app.git_actions_panel {
+                    p.result_message = Some((format!("Stage failed: {}", e), true));
+                }
+                return;
+            }
+        }
+    } else {
+        // All files staged (default) — stage everything
         if let Err(e) = Git::stage_all(&wt) {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.result_message = Some((format!("Stage failed: {}", e), true));
@@ -468,7 +496,6 @@ pub(super) fn exec_commit_start(app: &mut App) {
             return;
         }
     }
-    // else: user has already staged specific files via 's' — commit only those
     let diff = match Git::get_staged_diff(&wt) {
         Ok(d) if d.trim().is_empty() => {
             if let Some(ref mut p) = app.git_actions_panel {

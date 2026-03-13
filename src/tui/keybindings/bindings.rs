@@ -271,9 +271,10 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 24] = [
+pub static GIT_ACTIONS: [Keybinding; 25] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
-    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
+    Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Cycle fwd", Action::GitToggleFocus).paired(),
+    Keybinding::new(KeyCombo::plain(KeyCode::BackTab), "Cycle back", Action::GitToggleFocusBack),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),

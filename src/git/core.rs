@@ -287,16 +287,6 @@ impl Git {
             .context("Failed to get diff numstat")?;
         let numstat_text = String::from_utf8_lossy(&numstat_out.stdout);
 
-        // Build set of staged file paths (files in the index that differ from HEAD)
-        let staged_out = Command::new("git")
-            .args(["diff", "--cached", "--name-only"])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to get staged files")?;
-        let staged_set: std::collections::HashSet<String> =
-            String::from_utf8_lossy(&staged_out.stdout)
-                .lines().map(|l| l.to_string()).collect();
-
         // Build path → (additions, deletions) lookup from numstat
         let mut stats: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
         for line in numstat_text.lines() {
@@ -316,9 +306,9 @@ impl Git {
                 let status = parts[0].chars().next().unwrap_or('M');
                 let path = parts.last().unwrap().to_string();
                 let (add, del) = stats.get(&path).copied().unwrap_or((0, 0));
-                let staged = staged_set.contains(&path);
                 seen.insert(path.clone());
-                result.push((path, status, add, del, staged));
+                // Default all files to staged=true; user unstages explicitly via UI
+                result.push((path, status, add, del, true));
             }
         }
 
@@ -331,7 +321,7 @@ impl Git {
         for line in String::from_utf8_lossy(&untracked_out.stdout).lines() {
             let path = line.trim().to_string();
             if !path.is_empty() && !seen.contains(&path) {
-                result.push((path, '?', 0, 0, false));
+                result.push((path, '?', 0, 0, true));
             }
         }
 

@@ -157,6 +157,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 p.focused_pane = (p.focused_pane + 1) % 3;
             }
         }
+        Action::GitToggleFocusBack => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.focused_pane = (p.focused_pane + 2) % 3;
+            }
+        }
         Action::NavDown => {
             if let Some(ref mut p) = app.git_actions_panel {
                 match p.focused_pane {
@@ -300,56 +305,28 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
             if let Some(ref mut p) = app.git_actions_panel {
                 let idx = p.selected_file;
                 if idx < p.changed_files.len() {
-                    let file = &p.changed_files[idx];
-                    let path = file.path.clone();
-                    let was_staged = file.staged;
-                    let wt = p.worktree_path.clone();
-                    let result = if was_staged {
-                        crate::git::Git::unstage_file(&wt, &path)
-                    } else {
-                        crate::git::Git::stage_file(&wt, &path)
-                    };
-                    match result {
-                        Ok(()) => {
-                            p.changed_files[idx].staged = !was_staged;
-                            p.result_message = Some((
-                                if was_staged { format!("Unstaged: {}", path) }
-                                else { format!("Staged: {}", path) },
-                                false,
-                            ));
-                        }
-                        Err(e) => {
-                            p.result_message = Some((format!("Stage error: {}", e), true));
-                        }
-                    }
+                    let was_staged = p.changed_files[idx].staged;
+                    p.changed_files[idx].staged = !was_staged;
+                    let path = &p.changed_files[idx].path;
+                    p.result_message = Some((
+                        if was_staged { format!("Unstaged: {}", path) }
+                        else { format!("Staged: {}", path) },
+                        false,
+                    ));
                 }
             }
         }
         Action::GitStageAll => {
             if let Some(ref mut p) = app.git_actions_panel {
-                let wt = p.worktree_path.clone();
-                // If all files are staged, unstage all; otherwise stage all
                 let all_staged = !p.changed_files.is_empty()
                     && p.changed_files.iter().all(|f| f.staged);
-                let result = if all_staged {
-                    crate::git::Git::unstage_all(&wt)
-                } else {
-                    crate::git::Git::stage_all(&wt)
-                };
-                match result {
-                    Ok(()) => {
-                        let new_staged = !all_staged;
-                        for f in &mut p.changed_files { f.staged = new_staged; }
-                        p.result_message = Some((
-                            if new_staged { "Staged all files".into() }
-                            else { "Unstaged all files".into() },
-                            false,
-                        ));
-                    }
-                    Err(e) => {
-                        p.result_message = Some((format!("Stage error: {}", e), true));
-                    }
-                }
+                let new_staged = !all_staged;
+                for f in &mut p.changed_files { f.staged = new_staged; }
+                p.result_message = Some((
+                    if new_staged { "Staged all files".into() }
+                    else { "Unstaged all files".into() },
+                    false,
+                ));
             }
         }
         Action::GitDiscardFile => {

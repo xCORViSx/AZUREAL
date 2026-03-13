@@ -167,7 +167,7 @@ pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
 
 /// Git Actions panel footer hints
 pub fn git_actions_footer() -> String {
-    let tab = find_key_for_action(&GIT_ACTIONS, Action::GitToggleFocus).unwrap_or("Tab".into());
+    let (tab_fwd, tab_back) = find_key_pair(&GIT_ACTIONS, Action::GitToggleFocus, Action::GitToggleFocusBack, "Tab", "S-Tab");
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
@@ -175,7 +175,7 @@ pub fn git_actions_footer() -> String {
     let (pprev, pnext) = find_key_pair(&GIT_ACTIONS, Action::GitPrevPage, Action::GitNextPage, "{", "}");
     let stage = find_key_for_action(&GIT_ACTIONS, Action::GitToggleStage).unwrap_or("s".into());
     let discard = find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
-    format!("{}:cycle panes | {}:exec/view | {}:stage | {}:discard | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab, enter, stage, discard, refresh, prev, next, pprev, pnext, esc)
+    format!("{}/{}:cycle | {}:exec/view | {}:stage | {}:discard | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab_fwd, tab_back, enter, stage, discard, refresh, prev, next, pprev, pnext, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn git_footer_contains_cycle_panes() {
         let f = git_actions_footer();
-        assert!(f.contains("cycle panes"), "footer should mention cycle panes: {}", f);
+        assert!(f.contains("cycle"), "footer should mention cycle: {}", f);
     }
 
     #[test]
