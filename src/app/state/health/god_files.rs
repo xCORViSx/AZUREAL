@@ -341,6 +341,37 @@ impl App {
             }
         }
 
+        // Clear session pane so GFM output starts fresh (otherwise old session
+        // content stays visible and new output appends below it)
+        if spawned > 0 {
+            self.display_events.clear();
+            self.session_lines.clear();
+            self.session_buffer.clear();
+            self.session_scroll = usize::MAX;
+            self.rendered_lines_cache.clear();
+            self.session_viewport_cache.clear();
+            self.animation_line_indices.clear();
+            self.message_bubble_positions.clear();
+            self.clickable_paths.clear();
+            self.clickable_tables.clear();
+            self.rendered_events_count = 0;
+            self.rendered_content_line_count = 0;
+            self.rendered_events_start = 0;
+            self.render_seq_applied = self.render_thread.current_seq();
+            self.render_in_flight = false;
+            self.invalidate_render_cache();
+            self.event_parser = crate::events::EventParser::new();
+            self.claude_processor_needs_reset = true;
+            self.session_file_path = None;
+            self.session_file_modified = None;
+            self.session_file_size = 0;
+            self.session_file_parse_offset = 0;
+            self.session_file_dirty = false;
+            self.current_todos.clear();
+            self.subagent_todos.clear();
+            self.active_task_tool_ids.clear();
+        }
+
         if failed == 0 {
             self.set_status(format!("Modularizing {} files simultaneously", spawned));
         } else {
@@ -351,9 +382,10 @@ impl App {
     /// Scan the project for source files exceeding the LOC threshold.
     /// Uses source-root detection: if well-known source directories exist,
     /// only scans those + top-level files. Otherwise scans the entire project.
+    /// Scans the current worktree path (not project root) so results reflect
+    /// the actual files on the working branch.
     pub(crate) fn scan_god_files(&self) -> Vec<GodFileEntry> {
-        let Some(ref project) = self.project else { return Vec::new() };
-        let root = &project.path;
+        let Some(root) = self.health_scan_root() else { return Vec::new() };
 
         let found_roots: HashSet<PathBuf> = SOURCE_ROOTS.iter()
             .map(|name| root.join(name))
@@ -362,7 +394,7 @@ impl App {
 
         if found_roots.is_empty() {
             let mut all = HashSet::new();
-            all.insert(root.clone());
+            all.insert(root);
             self.scan_god_files_with_dirs(&all)
         } else {
             self.scan_god_files_with_dirs(&found_roots)
@@ -370,23 +402,23 @@ impl App {
     }
 
     /// Scan specific directories for god files. Used by both auto-detect and
-    /// user-customized scope mode.
+    /// user-customized scope mode. Dirs should already be translated to the
+    /// current worktree path (via `translate_scope_dirs`).
     pub(crate) fn scan_god_files_with_dirs(&self, dirs: &HashSet<PathBuf>) -> Vec<GodFileEntry> {
-        let Some(ref project) = self.project else { return Vec::new() };
-        let root = &project.path;
+        let Some(root) = self.health_scan_root() else { return Vec::new() };
         let mut entries = Vec::new();
 
-        let scanning_root = dirs.contains(root);
+        let scanning_root = dirs.contains(&root);
 
         if scanning_root && dirs.len() == 1 {
-            scan_dir_recursive(root, root, &mut entries);
+            scan_dir_recursive(&root, &root, &mut entries);
         } else {
             for dir in dirs {
                 if dir.is_dir() {
-                    scan_dir_recursive(root, dir, &mut entries);
+                    scan_dir_recursive(&root, dir, &mut entries);
                 }
             }
-            scan_top_level_files(root, &mut entries);
+            scan_top_level_files(&root, &mut entries);
         }
 
         entries.sort_by(|a, b| b.line_count.cmp(&a.line_count));

@@ -20,23 +20,25 @@ impl App {
     /// whether each has a preceding `///` or `//!` doc comment.
     /// Returns (entries sorted by coverage ascending, overall score 0.0–100.0).
     pub(crate) fn scan_documentation(&self) -> (Vec<DocEntry>, f32) {
-        let Some(ref project) = self.project else { return (Vec::new(), 0.0) };
-        let root = &project.path;
+        let Some(root) = self.health_scan_root() else { return (Vec::new(), 0.0) };
 
         // Determine which directories to scan (same logic as god files)
-        let dirs = load_health_scope(root).unwrap_or_else(|| {
-            let found: HashSet<PathBuf> = SOURCE_ROOTS.iter()
-                .map(|name| root.join(name))
-                .filter(|p| p.is_dir())
-                .collect();
-            if found.is_empty() {
-                let mut s = HashSet::new();
-                s.insert(root.clone());
-                s
-            } else {
-                found
-            }
-        });
+        let dirs = self.project.as_ref()
+            .and_then(|p| load_health_scope(&p.path))
+            .map(|d| self.translate_scope_dirs(&d))
+            .unwrap_or_else(|| {
+                let found: HashSet<PathBuf> = SOURCE_ROOTS.iter()
+                    .map(|name| root.join(name))
+                    .filter(|p| p.is_dir())
+                    .collect();
+                if found.is_empty() {
+                    let mut s = HashSet::new();
+                    s.insert(root.clone());
+                    s
+                } else {
+                    found
+                }
+            });
 
         let mut entries = Vec::new();
         let mut total_all = 0usize;
@@ -44,15 +46,15 @@ impl App {
 
         // Collect all source files to scan
         let mut files = Vec::new();
-        let scanning_root = dirs.contains(root) && dirs.len() == 1;
+        let scanning_root = dirs.contains(&root) && dirs.len() == 1;
         if scanning_root {
-            collect_source_files(root, &mut files);
+            collect_source_files(&root, &mut files);
         } else {
             for dir in &dirs {
                 if dir.is_dir() { collect_source_files(dir, &mut files); }
             }
             // Top-level source files (e.g. main.rs, build.rs)
-            if let Ok(rd) = fs::read_dir(root) {
+            if let Ok(rd) = fs::read_dir(&root) {
                 for entry in rd.filter_map(|e| e.ok()) {
                     let p = entry.path();
                     if p.is_file() {
@@ -68,7 +70,7 @@ impl App {
             let (total, documented) = scan_file_doc_coverage(path);
             if total == 0 { continue; }
             let coverage_pct = documented as f32 / total as f32 * 100.0;
-            let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
+            let rel_path = path.strip_prefix(&root).unwrap_or(path).display().to_string();
             total_all += total;
             documented_all += documented;
             entries.push(DocEntry { path: path.clone(), rel_path, total_items: total, documented_items: documented, coverage_pct, checked: false });
@@ -196,6 +198,36 @@ impl App {
                 }
                 Err(_) => { failed += 1; }
             }
+        }
+
+        // Clear session pane so DH output starts fresh (same as GFM)
+        if spawned > 0 {
+            self.display_events.clear();
+            self.session_lines.clear();
+            self.session_buffer.clear();
+            self.session_scroll = usize::MAX;
+            self.rendered_lines_cache.clear();
+            self.session_viewport_cache.clear();
+            self.animation_line_indices.clear();
+            self.message_bubble_positions.clear();
+            self.clickable_paths.clear();
+            self.clickable_tables.clear();
+            self.rendered_events_count = 0;
+            self.rendered_content_line_count = 0;
+            self.rendered_events_start = 0;
+            self.render_seq_applied = self.render_thread.current_seq();
+            self.render_in_flight = false;
+            self.invalidate_render_cache();
+            self.event_parser = crate::events::EventParser::new();
+            self.claude_processor_needs_reset = true;
+            self.session_file_path = None;
+            self.session_file_modified = None;
+            self.session_file_size = 0;
+            self.session_file_parse_offset = 0;
+            self.session_file_dirty = false;
+            self.current_todos.clear();
+            self.subagent_todos.clear();
+            self.active_task_tool_ids.clear();
         }
 
         if failed == 0 {

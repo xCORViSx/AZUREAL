@@ -101,13 +101,43 @@ pub(crate) const SOURCE_ROOTS: &[&str] = &[
 ];
 
 impl App {
+    /// Effective root for health scans — uses the current worktree path so scans
+    /// reflect the actual files on the working branch, falling back to project.path.
+    pub(crate) fn health_scan_root(&self) -> Option<PathBuf> {
+        self.current_worktree()
+            .and_then(|wt| wt.worktree_path.clone())
+            .or_else(|| self.project.as_ref().map(|p| p.path.clone()))
+    }
+
+    /// Translate scope dirs persisted under `project.path` to the current worktree root.
+    /// Scope dirs are absolute paths (e.g., `/repo/src`); when scanning a worktree
+    /// (e.g., `/repo/worktrees/run`) we need `/repo/worktrees/run/src`.
+    fn translate_scope_dirs(&self, dirs: &HashSet<PathBuf>) -> HashSet<PathBuf> {
+        let Some(ref project) = self.project else { return dirs.clone() };
+        let project_root = &project.path;
+        let wt_root = match self.health_scan_root() {
+            Some(r) => r,
+            None => return dirs.clone(),
+        };
+        if wt_root == *project_root { return dirs.clone(); }
+        dirs.iter().map(|p| {
+            if let Ok(rel) = p.strip_prefix(project_root) {
+                let translated = wt_root.join(rel);
+                if translated.is_dir() { translated } else { p.clone() }
+            } else {
+                p.clone()
+            }
+        }).collect()
+    }
+
     /// Open the Worktree Health panel — scans both god files and documentation.
     /// Uses persisted scope from `[healthscope]` in .azureal/azufig.toml if it exists;
     /// otherwise falls back to auto-detected source roots.
     pub fn open_health_panel(&mut self) {
         let god_files = if let Some(ref project) = self.project {
             if let Some(dirs) = load_health_scope(&project.path) {
-                self.scan_god_files_with_dirs(&dirs)
+                let translated = self.translate_scope_dirs(&dirs);
+                self.scan_god_files_with_dirs(&translated)
             } else {
                 self.scan_god_files()
             }
@@ -156,7 +186,8 @@ impl App {
         // Rescan
         let mut god_files = if let Some(ref project) = self.project {
             if let Some(dirs) = load_health_scope(&project.path) {
-                self.scan_god_files_with_dirs(&dirs)
+                let translated = self.translate_scope_dirs(&dirs);
+                self.scan_god_files_with_dirs(&translated)
             } else {
                 self.scan_god_files()
             }

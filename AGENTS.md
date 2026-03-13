@@ -1421,7 +1421,14 @@ azureal/
 │   ├── app/                # Application state module
 │   │   ├── state.rs        # State module root (re-exports only)
 │   │   ├── state/          # State submodules
-│   │   │   ├── app.rs      # App struct definition + new(); includes `screen_height`, `browsing_main`, `pre_main_browse_selection`, `main_worktree: Option<Worktree>` (separate from worktrees vec); `current_worktree()` returns main_worktree when browsing_main is true
+│   │   │   ├── app.rs      # App module root: struct definition + new() + cache invalidation; declares submodules
+│   │   │   ├── app/        # App submodules (file-based module root)
+│   │   │   │   ├── cpu.rs       # CPU usage monitoring (get_cpu_time_micros + update_cpu_usage)
+│   │   │   │   ├── deferred.rs  # DeferredAction enum (two-phase draw pattern)
+│   │   │   │   ├── model.rs     # Model selection (cycle_model, display_model_name, update_token_badge)
+│   │   │   │   ├── queries.rs   # Session status queries + project/worktree accessors (current_worktree, is_session_running, set_status, open_table_popup)
+│   │   │   │   ├── stt.rs       # Speech-to-text integration (toggle_stt, poll_stt, insert_stt_text)
+│   │   │   │   └── todo.rs      # TodoItem + TodoStatus types from Claude's TodoWrite tool call
 │   │   │   ├── load.rs     # Session loading and discovery; main stored in main_worktree (not worktrees vec)
 │   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive
 │   │   │   ├── output.rs   # Session output processing
@@ -1431,7 +1438,7 @@ azureal/
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard, enter_main_browse/exit_main_browse (clears in switch_project)
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard
 │   │   │   ├── session_names.rs # Custom session name storage
-│   │   │   ├── health.rs    # Health module root: shared constants (SOURCE_EXTENSIONS, SKIP_DIRS, SOURCE_ROOTS), scope persistence (load_health_scope/save_health_scope, AzufigHealthScope), open/close panel, current_worktree_info() (replaced find_main_worktree + switch_to_main_worktree)
+│   │   │   ├── health.rs    # Health module root: shared constants (SOURCE_EXTENSIONS, SKIP_DIRS, SOURCE_ROOTS), scope persistence (load_health_scope/save_health_scope, AzufigHealthScope), open/close panel, current_worktree_info(), health_scan_root() (worktree-aware scan root), translate_scope_dirs() (project→worktree path translation)
 │   │   │   ├── health/     # Health submodules (file-based module root)
 │   │   │   │   ├── god_files.rs     # God File System: scan, scope mode, parallel modularize, module style selector
 │   │   │   │   └── documentation.rs # Doc coverage scanner, DH session spawning, doc toggle/view
