@@ -21,6 +21,9 @@ mod operations;
 
 // Re-export pub(crate) items for external consumers
 pub(crate) use operations::{exec_rebase_inner, RebaseOutcome, refresh_changed_files, refresh_commit_log};
+pub(crate) mod diff_viewer_api {
+    pub(crate) use super::diff_viewer::{load_file_diff_inline, load_commit_diff_inline};
+}
 
 use anyhow::Result;
 use crossterm::event;

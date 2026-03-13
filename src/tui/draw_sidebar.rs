@@ -16,7 +16,11 @@ use super::util::{GIT_BROWN, GIT_ORANGE};
 /// otherwise delegates to the file tree pane.
 pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
     if let Some(ref panel) = app.git_actions_panel {
-        draw_git_sidebar(f, app, panel, area);
+        let scroll = draw_git_sidebar(f, app, panel, area);
+        // Write back computed scroll (can't mutate during immutable borrow above)
+        if let Some(ref mut p) = app.git_actions_panel {
+            p.file_scroll = scroll;
+        }
     }
 }
 
@@ -26,7 +30,8 @@ pub fn draw_file_tree_overlay(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Git panel sidebar — Actions list (top) + Changed Files (bottom)
-fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActionsPanel, area: Rect) {
+/// Returns the computed file_scroll for writeback.
+fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActionsPanel, area: Rect) -> usize {
     // Split vertically: actions (auto-height) | files (fill)
     let action_rows = if panel.is_on_main { 8 } else { 10 };
     let splits = Layout::vertical([
@@ -119,7 +124,7 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     let inner_h = files_area.height.saturating_sub(2) as usize;
     let mut file_lines: Vec<Line> = Vec::new();
 
-    // Scroll so selected file is visible
+    // Scroll so selected file is visible (written back after draw via file_scroll_writeback)
     let visible_files = inner_h;
     let scroll = if panel.selected_file < panel.file_scroll {
         panel.selected_file
@@ -128,6 +133,8 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     } else {
         panel.file_scroll
     };
+    // Stash for writeback after this borrow ends
+    let file_scroll_writeback = scroll;
 
     for (i, file) in panel.changed_files.iter().enumerate().skip(scroll).take(visible_files) {
         let selected = files_focused && i == panel.selected_file;
@@ -194,6 +201,7 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
             Style::default().fg(GIT_BROWN)
         });
     f.render_widget(Paragraph::new(file_lines).block(files_block), files_area);
+    file_scroll_writeback
 }
 
 #[cfg(test)]

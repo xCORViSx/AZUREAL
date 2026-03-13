@@ -1206,11 +1206,13 @@ Actions change based on whether the current worktree is the main/master branch o
 **File list (when files pane focused, focused_pane==1):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Title shows total file count and +/- stats.
 - `j/k` — navigate files (auto-loads diff in viewer pane via `load_file_diff_inline()`); `Enter`/`d` — also loads diff inline
-- Scroll maintained via `file_scroll` field
+- Mouse wheel scrolls selection (moves `selected_file`, auto-loads diff)
+- Scroll maintained via `file_scroll` field (written back from draw function each frame)
 
 **Commits list (when commits pane focused, focused_pane==2):**
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
 - `j/k` — navigate commits (auto-loads `git show <hash>` in viewer via `load_commit_diff_inline()`); `Enter` — also loads diff inline
+- Mouse wheel scrolls selection (moves `selected_commit`, auto-loads diff)
 - `Git::get_commit_log(worktree_path, 200, main_branch)` loads commits on panel open — passes `Some(main_branch)` for feature branches (scopes to `main..HEAD`), `None` for main (full log). `refresh_commit_log()` called after all git operations (pull, push, commit, rebase, refresh); also refreshes all divergence counts
 - **Bottom border divergence badges:** Compact right-aligned badges show `↑N ↓M main` (red bg when behind, green when only ahead; feature branches only) and `↑N ↓M remote` (yellow bg when behind, cyan when only ahead). Uses `Git::get_main_divergence()` and `Git::get_remote_divergence()` — both backed by `git rev-list --left-right --count`. Panel fields: `commits_behind_main`, `commits_ahead_main`, `commits_behind_remote`, `commits_ahead_remote`
 

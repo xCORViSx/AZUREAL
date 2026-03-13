@@ -12,6 +12,43 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     use ratatui::layout::Position;
     let pos = Position::new(col, row);
 
+    // Git Actions panel — intercept scroll on sidebar (changed files) and right pane (commits)
+    if app.git_actions_panel.is_some() {
+        if app.pane_worktrees.contains(pos) {
+            // Scroll changed files list (move selection)
+            if let Some(ref mut p) = app.git_actions_panel {
+                if p.changed_files.is_empty() { return false; }
+                let max = p.changed_files.len() - 1;
+                if delta > 0 {
+                    p.selected_file = (p.selected_file + delta as usize).min(max);
+                } else {
+                    p.selected_file = p.selected_file.saturating_sub((-delta) as usize);
+                }
+                crate::tui::input_git_actions::diff_viewer_api::load_file_diff_inline(p);
+            }
+            return true;
+        } else if app.pane_session.contains(pos) {
+            // Scroll commits list (move selection)
+            if let Some(ref mut p) = app.git_actions_panel {
+                if p.commits.is_empty() { return false; }
+                let max = p.commits.len() - 1;
+                if delta > 0 {
+                    p.selected_commit = (p.selected_commit + delta as usize).min(max);
+                } else {
+                    p.selected_commit = p.selected_commit.saturating_sub((-delta) as usize);
+                }
+                crate::tui::input_git_actions::diff_viewer_api::load_commit_diff_inline(p);
+            }
+            return true;
+        } else if app.pane_viewer.contains(pos) {
+            // Scroll the diff viewer
+            app.viewer_selection = None;
+            return if delta > 0 { app.scroll_viewer_down(delta as usize) }
+                   else { app.scroll_viewer_up((-delta) as usize) };
+        }
+        return false;
+    }
+
     // Health panel is a modal overlay — scroll anywhere goes to the active tab's list
     if let Some(ref mut p) = app.health_panel {
         match p.tab {

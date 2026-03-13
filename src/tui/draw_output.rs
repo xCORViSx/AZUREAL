@@ -108,8 +108,9 @@ pub(crate) fn compute_line_content_bounds(line: &Line) -> (usize, usize) {
 /// Draw the main output/diff panel — cheap, just reads from pre-rendered caches
 pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     // Git panel mode — show commit log instead of conversation
-    if let Some(ref panel) = app.git_actions_panel {
-        draw_git_commits(f, panel, area);
+    if app.git_actions_panel.is_some() {
+        let scroll = draw_git_commits(f, app.git_actions_panel.as_ref().unwrap(), area);
+        app.git_actions_panel.as_mut().unwrap().commit_scroll = scroll;
         return;
     }
 
@@ -656,26 +657,30 @@ pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::a
 }
 
 /// Git panel commit log — scrollable list of recent commits
-fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect) {
+/// Returns the computed commit_scroll for writeback.
+fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect) -> usize {
     let focused = panel.focused_pane == 2;
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
     let mut lines: Vec<Line> = Vec::new();
 
+    let computed_scroll;
     if panel.commits.is_empty() {
+        computed_scroll = 0;
         lines.push(Line::from(Span::styled(
             " No commits",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
         // Adjust scroll so selected commit is visible
-        let scroll = if panel.selected_commit < panel.commit_scroll {
+        computed_scroll = if panel.selected_commit < panel.commit_scroll {
             panel.selected_commit
         } else if panel.selected_commit >= panel.commit_scroll + inner_h {
             panel.selected_commit.saturating_sub(inner_h.saturating_sub(1))
         } else {
             panel.commit_scroll
         };
+        let scroll = computed_scroll;
 
         for (i, commit) in panel.commits.iter().enumerate().skip(scroll).take(inner_h) {
             let selected = focused && i == panel.selected_commit;
@@ -761,6 +766,7 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
     }
 
     f.render_widget(Paragraph::new(lines).block(block), area);
+    computed_scroll
 }
 
 #[cfg(test)]
