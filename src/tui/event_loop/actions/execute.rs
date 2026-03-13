@@ -302,6 +302,8 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                 }
             }
         }
+        Action::RecursiveExpand => app.recursive_expand_dir(),
+        Action::RecursiveCollapse => app.recursive_collapse_dir(),
         Action::OpenFile => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {

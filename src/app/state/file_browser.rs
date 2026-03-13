@@ -52,6 +52,63 @@ impl App {
         self.invalidate_file_tree();
     }
 
+    /// Recursively expand a directory and all its subdirectories
+    pub fn recursive_expand_dir(&mut self) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        if !entry.is_dir { return; }
+
+        self.file_tree_receiver = None;
+        let selected_path = entry.path.clone();
+
+        // Walk filesystem recursively, adding all subdirs to expanded set
+        fn expand_all(dir: &Path, expanded: &mut std::collections::HashSet<std::path::PathBuf>, hidden_dirs: &std::collections::HashSet<String>) {
+            expanded.insert(dir.to_path_buf());
+            let Ok(read_dir) = std::fs::read_dir(dir) else { return };
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == "target" || name == "node_modules" || hidden_dirs.contains(&name) { continue; }
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    expand_all(&entry.path(), expanded, hidden_dirs);
+                }
+            }
+        }
+        expand_all(&selected_path, &mut self.file_tree_expanded, &self.file_tree_hidden_dirs);
+
+        let Some(session) = self.current_worktree() else { return };
+        let Some(ref worktree_path) = session.worktree_path else { return };
+
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
+        self.file_tree_selected = self.file_tree_entries
+            .iter()
+            .position(|e| e.path == selected_path)
+            .or(Some(0));
+        self.invalidate_file_tree();
+    }
+
+    /// Recursively collapse a directory and all its subdirectories
+    pub fn recursive_collapse_dir(&mut self) {
+        let Some(idx) = self.file_tree_selected else { return };
+        let Some(entry) = self.file_tree_entries.get(idx) else { return };
+        if !entry.is_dir { return; }
+
+        self.file_tree_receiver = None;
+        let selected_path = entry.path.clone();
+
+        // Remove the dir and any expanded path that starts with it
+        self.file_tree_expanded.retain(|p| !p.starts_with(&selected_path));
+
+        let Some(session) = self.current_worktree() else { return };
+        let Some(ref worktree_path) = session.worktree_path else { return };
+
+        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
+        self.file_tree_selected = self.file_tree_entries
+            .iter()
+            .position(|e| e.path == selected_path)
+            .or(Some(0));
+        self.invalidate_file_tree();
+    }
+
     /// Select next file tree entry
     pub fn file_tree_next(&mut self) {
         if let Some(idx) = self.file_tree_selected {

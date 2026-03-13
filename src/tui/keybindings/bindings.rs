@@ -36,6 +36,15 @@ static ALT_MACOS_T: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, c
 // Shift+[ → '{' — some terminals send (SHIFT, '{'), others (NONE, '{')
 static ALT_LBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('{') }];
 static ALT_RBRACE: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('}') }];
+// Alt+J/K recursive expand/collapse: primary Alt+Right/Left, alts for ⌥j(∆)/⌥k(˚) on macOS
+static ALT_RECURSIVE_EXPAND: [KeyCombo; 2] = [
+    KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Char('j') },
+    KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('∆') }, // macOS ⌥j
+];
+static ALT_RECURSIVE_COLLAPSE: [KeyCombo; 2] = [
+    KeyCombo { modifiers: KeyModifiers::ALT, code: KeyCode::Char('k') },
+    KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('˚') }, // macOS ⌥k
+];
 
 // Modifier combos
 #[cfg(target_os = "macos")]
@@ -129,11 +138,13 @@ pub static GLOBAL: [Keybinding; 21] = [
 pub static WORKTREES: [Keybinding; 0] = [];
 
 /// FileTree bindings
-pub static FILE_TREE: [Keybinding; 15] = [
+pub static FILE_TREE: [Keybinding; 17] = [
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('k')), &ALT_UP, "Navigate", Action::NavUp),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('h')), &ALT_LEFT, "Collapse", Action::NavLeft).paired(),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('l')), &ALT_RIGHT, "Expand", Action::NavRight),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Right), &ALT_RECURSIVE_EXPAND, "Expand all", Action::RecursiveExpand).paired(),
+    Keybinding::with_alt(KeyCombo::alt(KeyCode::Left), &ALT_RECURSIVE_COLLAPSE, "Collapse all", Action::RecursiveCollapse),
     Keybinding::new(KeyCombo::alt(KeyCode::Up), "First in folder", Action::GoToTop).paired(),
     Keybinding::new(KeyCombo::alt(KeyCode::Down), "Last in folder", Action::GoToBottom),
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Open/toggle", Action::OpenFile),
@@ -356,7 +367,7 @@ mod tests {
     fn worktrees_length() { assert_eq!(WORKTREES.len(), 0); }
 
     #[test]
-    fn file_tree_length() { assert_eq!(FILE_TREE.len(), 15); }
+    fn file_tree_length() { assert_eq!(FILE_TREE.len(), 17); }
 
     #[test]
     fn viewer_length() { assert_eq!(VIEWER.len(), 14); }

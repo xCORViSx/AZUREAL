@@ -186,6 +186,8 @@ pub enum Action {
 
     // FileTree
     ToggleDir,
+    RecursiveExpand,
+    RecursiveCollapse,
     OpenFile,
     AddFile,
     DeleteFile,

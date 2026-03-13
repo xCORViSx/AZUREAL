@@ -1809,6 +1809,8 @@ azureal
 | `⌥↑/⌥↓` (`Alt+↑/↓`) | Jump to first/last sibling in current folder |
 | `Enter` | Open file in Viewer / Expand directory |
 | `h/l` | Collapse/Expand directory |
+| `⌥→/⌥j` (`Alt+→/j`) | Recursive expand directory and all subdirs |
+| `⌥←/⌥k` (`Alt+←/k`) | Recursive collapse directory and all subdirs |
 | `Space` | Toggle directory expand |
 | `a` | Add file (trailing `/` creates directory) |
 | `d` | Delete selected file/directory (y/N confirm) |
