@@ -1819,6 +1819,7 @@ azureal
 | `J/K` | Page scroll (viewport minus 2 overlap) |
 | `⌥↑/⌥↓` (`Alt+↑/↓`) | Jump to top/bottom |
 | `a` | Add session (clear state, enter prompt mode — also works from session list overlay) |
+| `r` | Rename selected session (in session list overlay — centered dialog, Enter saves, Esc cancels) |
 | `s` | Toggle Session list overlay (browse all session files) |
 | `/` | Search text in current session (yellow highlights, `[N/M]` counter) |
 | `n/N` | Next/prev search match (after `/` search confirmed with Enter) |

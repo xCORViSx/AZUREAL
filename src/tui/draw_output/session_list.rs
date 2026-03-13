@@ -87,6 +87,11 @@ pub fn draw_session_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Session list scoped to current worktree only — no wt_name column needed
     draw_name_list(f, app, list_area, viewport_height, inner_width, is_focused);
+
+    // Rename dialog: draw a centered input box over the session list
+    if app.session_rename_active {
+        draw_rename_dialog(f, app, list_area);
+    }
 }
 
 /// Render content search results (triggered by "//" prefix in filter)
@@ -249,6 +254,42 @@ fn draw_name_list(
 
     let widget = Paragraph::new(display).block(block);
     f.render_widget(widget, list_area);
+}
+
+/// Draw a centered rename dialog over the session list.
+/// Shows a single-line text input with the current rename buffer.
+fn draw_rename_dialog(f: &mut Frame, app: &App, area: Rect) {
+    let input = &app.session_rename_input;
+    // Size: enough for the input + some padding, clamped to area
+    let w = (input.chars().count() as u16 + 6).max(30).min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let dialog_area = Rect::new(x, y, w, h);
+
+    // Clear background behind dialog
+    let clear = Paragraph::new("")
+        .block(Block::default().style(Style::default().bg(Color::Black)));
+    f.render_widget(clear, dialog_area);
+
+    let widget = Paragraph::new(input.as_str())
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title(Span::styled(" Rename ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .title(Line::from(Span::styled(
+                " Enter:save  Esc:cancel ",
+                Style::default().fg(Color::DarkGray),
+            )).alignment(Alignment::Right)),
+        );
+    f.render_widget(widget, dialog_area);
+
+    // Position cursor
+    let cursor_x = dialog_area.x + 1 + app.session_rename_cursor as u16;
+    let cursor_y = dialog_area.y + 1;
+    if cursor_x < dialog_area.right() {
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
 }
 
 #[cfg(test)]

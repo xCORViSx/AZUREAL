@@ -35,6 +35,7 @@
 - **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
 - **Model Switcher** — Cycle between Claude models with `⌃m` / `Ctrl+M`
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
+- **Session Rename** — `r` in the session list to rename the selected session (persisted in `azufig.toml`)
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions
 
 ### Git

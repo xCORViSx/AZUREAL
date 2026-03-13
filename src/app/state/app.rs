@@ -487,6 +487,16 @@ pub struct App {
     /// Filter text for session list name search
     pub session_filter: String,
 
+    // ── Session rename (inline rename in session list overlay) ──
+    /// Whether the rename input is active in session list overlay
+    pub session_rename_active: bool,
+    /// Text buffer for the rename input
+    pub session_rename_input: String,
+    /// Cursor position within the rename input
+    pub session_rename_cursor: usize,
+    /// Session ID being renamed (resolved when 'r' is pressed)
+    pub session_rename_id: Option<String>,
+
     // ── Cross-session content search (double `//`) ──
     /// True when in "//" content search mode vs "/" name filter mode
     pub session_content_search: bool,
@@ -721,6 +731,10 @@ impl App {
             session_find_current: 0,
             session_filter_active: false,
             session_filter: String::new(),
+            session_rename_active: false,
+            session_rename_input: String::new(),
+            session_rename_cursor: 0,
+            session_rename_id: None,
             session_content_search: false,
             session_search_results: Vec::new(),
             selected_model: Some("opus".to_string()),

@@ -167,6 +167,11 @@ pub fn jump_prev_match(app: &mut App) {
 fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     use event::{KeyCode, KeyModifiers};
 
+    // Session rename input is active: route text input to the rename handler
+    if app.session_rename_active {
+        return handle_session_rename_input(key, app);
+    }
+
     // Session filter bar is active: route text input to the filter
     if app.session_filter_active {
         return handle_session_filter_input(key, app);
@@ -209,6 +214,10 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         // Enter: load the selected session file
         (KeyModifiers::NONE, KeyCode::Enter) => {
             select_session_at_row(app);
+        }
+        // r: rename selected session
+        (KeyModifiers::NONE, KeyCode::Char('r')) => {
+            start_session_rename(app);
         }
         // a: add new session (same as 'a' from session view)
         (KeyModifiers::NONE, KeyCode::Char('a')) => {
@@ -294,6 +303,89 @@ fn handle_session_filter_input(key: event::KeyEvent, app: &mut App) -> Result<()
         }
         KeyCode::Up => {
             app.session_list_selected = app.session_list_selected.saturating_sub(1);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Enter rename mode for the currently selected session in the list.
+/// Pre-fills the input with the current display name (custom name or session ID).
+fn start_session_rename(app: &mut App) {
+    let branch = match app.current_worktree() {
+        Some(s) => s.branch_name.clone(),
+        None => return,
+    };
+    let files = match app.session_files.get(&branch) {
+        Some(f) => f,
+        None => return,
+    };
+    if app.session_list_selected >= files.len() { return; }
+    let (session_id, _, _) = &files[app.session_list_selected];
+    let session_names = app.load_all_session_names();
+    let current_name = session_names.get(session_id.as_str())
+        .cloned()
+        .unwrap_or_else(|| session_id.clone());
+    app.session_rename_id = Some(session_id.clone());
+    app.session_rename_input = current_name;
+    app.session_rename_cursor = app.session_rename_input.chars().count();
+    app.session_rename_active = true;
+}
+
+/// Handle text input for the inline session rename dialog.
+/// Enter confirms, Esc cancels, Backspace/chars edit the name.
+fn handle_session_rename_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use event::KeyCode;
+
+    match key.code {
+        KeyCode::Char(c) => {
+            app.session_rename_input.insert(
+                app.session_rename_input.char_indices()
+                    .nth(app.session_rename_cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(app.session_rename_input.len()),
+                c,
+            );
+            app.session_rename_cursor += 1;
+        }
+        KeyCode::Backspace => {
+            if app.session_rename_cursor > 0 {
+                let byte_pos = app.session_rename_input.char_indices()
+                    .nth(app.session_rename_cursor - 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                app.session_rename_input.remove(byte_pos);
+                app.session_rename_cursor -= 1;
+            }
+        }
+        KeyCode::Left => {
+            app.session_rename_cursor = app.session_rename_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            let max = app.session_rename_input.chars().count();
+            if app.session_rename_cursor < max {
+                app.session_rename_cursor += 1;
+            }
+        }
+        KeyCode::Enter => {
+            // Confirm rename: save to azufig.toml
+            let name = app.session_rename_input.trim().to_string();
+            if let Some(ref session_id) = app.session_rename_id.clone() {
+                if !name.is_empty() {
+                    app.save_session_name(session_id, &name);
+                }
+            }
+            app.session_rename_active = false;
+            app.session_rename_input.clear();
+            app.session_rename_cursor = 0;
+            app.session_rename_id = None;
+        }
+        KeyCode::Esc => {
+            // Cancel rename
+            app.session_rename_active = false;
+            app.session_rename_input.clear();
+            app.session_rename_cursor = 0;
+            app.session_rename_id = None;
         }
         _ => {}
     }

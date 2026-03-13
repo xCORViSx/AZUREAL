@@ -84,7 +84,11 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Cl
             else { app.enter_main_browse(); }
         }
         Action::ToggleSessionList => {
-            if app.show_session_list { app.show_session_list = false; }
+            if app.show_session_list {
+                app.show_session_list = false;
+                app.session_rename_active = false;
+                app.session_rename_id = None;
+            }
             else { open_session_list(app); }
         }
 

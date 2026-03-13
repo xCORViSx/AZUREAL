@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Session rename in session list** — Press `r` in the session list overlay to rename the selected session. Opens a centered dialog pre-filled with the current name (custom name or session ID). Enter saves to `azufig.toml`, Esc cancels. Supports cursor movement with left/right arrows.
 - **Stale branch pruning on startup** — On project load and project switch, `Git::prune_remote_refs()` runs `git remote prune origin` to remove remote-tracking refs deleted on other machines, then deletes local `azureal/*` branches that are fully merged to main and have no remote counterpart. Prevents worktrees deleted on one machine from reappearing as archived entries on another.
 - **Self-installing binaries** — Downloaded binaries detect first run (not in PATH, not a cargo build), copy themselves to `/usr/local/bin/` (macOS/Linux) or `%USERPROFILE%\.azureal\bin\` (Windows), update shell profile / user PATH, and print a success message. No manual `chmod`/`mv`/`sudo` needed — just download and run. Skips silently when already installed or running from `target/debug`/`target/release`.
 - **Clickable status bar message** — Clicking the status bar copies the current status message to the system clipboard.
