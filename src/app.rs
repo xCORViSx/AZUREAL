@@ -10,6 +10,7 @@
 
 pub(crate) mod codex_session_parser;
 mod input;
+pub(crate) mod session_cache;
 pub(crate) mod session_parser;
 pub(crate) mod state;
 mod terminal;

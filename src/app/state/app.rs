@@ -119,6 +119,9 @@ pub struct App {
     pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
+    /// When set, the raw session file is gone but we loaded from cache.
+    /// Holds the missing file's path. Input is blocked (session is read-only).
+    pub source_file_missing: Option<std::path::PathBuf>,
     /// Signals the event loop to reset the background ClaudeProcessor's parser
     /// state (e.g., on session switch). The event loop checks and clears this.
     pub agent_processor_needs_reset: bool,
@@ -571,6 +574,7 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
+            source_file_missing: None,
             agent_processor_needs_reset: false,
             viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),

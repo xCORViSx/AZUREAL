@@ -3,7 +3,7 @@
 //! Processed events ready for the UI, transformed from raw Claude Code events.
 
 /// Parsed and displayable event for the UI
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DisplayEvent {
     /// System initialization
     Init {

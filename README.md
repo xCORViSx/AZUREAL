@@ -147,7 +147,7 @@ azureal
 
 ## Architecture
 
-Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and agent session files (Claude: `~/.claude/projects/`, Codex: `~/.codex/sessions/`). No database. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`.
+Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and agent session files (Claude: `~/.claude/projects/`, Codex: `~/.codex/sessions/`). No database. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`. Parsed session data is cached in `.azureal/sessions/` as an intermediate format for faster loads and backend-agnostic replay.
 
 All keybindings are defined once in a central module. Press `?` for the full help overlay.
 

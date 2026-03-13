@@ -157,6 +157,10 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
             app.input_char('\n');
         }
         (KeyModifiers::NONE, KeyCode::Enter) => {
+            if app.source_file_missing.is_some() {
+                app.set_status("Cannot send: session file missing");
+                return Ok(());
+            }
             if !app.input.is_empty() {
                 let input = app.input.clone();
                 app.clear_input();

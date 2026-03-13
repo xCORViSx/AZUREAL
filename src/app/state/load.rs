@@ -291,6 +291,7 @@ impl App {
         self.session_file_modified = None;
         self.session_file_size = 0;
         self.session_file_dirty = false;
+        self.source_file_missing = None;
         self.session_file_parse_offset = 0;
         self.invalidate_render_cache();
         // Immediately clear rendered content so no stale lines from the
@@ -377,20 +378,44 @@ impl App {
                 }
             }
 
-            // Try loading from Claude's session files
+            // Try loading session — check cache first, fall back to raw parse,
+            // or load from orphan cache if the source file is missing.
             if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
-                if let Some(session_file) = crate::config::session_file(self.backend, wt_path, &claude_id) {
-                    // Track file for live polling
+                let session_file_opt = crate::config::session_file(self.backend, wt_path, &claude_id);
+                let parsed = if let Some(ref session_file) = session_file_opt {
+                    // Source exists — try cache, then raw parse
                     self.session_file_path = Some(session_file.clone());
-                    if let Ok(meta) = std::fs::metadata(&session_file) {
-                        self.session_file_modified = meta.modified().ok();
-                        self.session_file_size = meta.len();
-                    }
+                    let source_size = std::fs::metadata(session_file)
+                        .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
+                        .unwrap_or(0);
+                    self.session_file_size = source_size;
 
-                    let parsed = match self.backend {
-                        crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(&session_file),
-                        crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(&session_file),
-                    };
+                    if let Some(cached) = crate::app::session_cache::read_cache(wt_path, &claude_id, session_file, source_size) {
+                        // Cache hit — skip raw parse
+                        Some(cached.into_parsed())
+                    } else {
+                        // Cache miss — parse raw JSONL, write cache
+                        let parsed = match self.backend {
+                            crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(session_file),
+                            crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(session_file),
+                        };
+                        let cached = crate::app::session_cache::CachedSession::from_parsed(
+                            &parsed, session_file.clone(), source_size,
+                        );
+                        let _ = crate::app::session_cache::write_cache(wt_path, &claude_id, &cached);
+                        Some(parsed)
+                    }
+                } else {
+                    // Source file missing — try orphan cache (read-only mode)
+                    if let Some(cached) = crate::app::session_cache::read_cache_orphan(wt_path, &claude_id) {
+                        self.source_file_missing = Some(cached.source_path.clone());
+                        Some(cached.into_parsed())
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(parsed) = parsed {
                     self.display_events = parsed.events;
                     self.pending_tool_calls = parsed.pending_tools;
                     self.failed_tool_calls = parsed.failed_tools;
@@ -404,22 +429,17 @@ impl App {
                     self.session_tokens = parsed.session_tokens;
                     self.model_context_window = parsed.context_window;
                     self.update_token_badge();
-                    // Extract latest TodoWrite and AskUserQuestion state from parsed events
                     self.extract_skill_tools_from_events();
-                    // Store byte offset for incremental parsing on subsequent polls
                     self.session_file_parse_offset = parsed.end_offset;
 
-                    // Clear pending message once it appears in the parsed events.
-                    // Scan all events from the end — Claude may have emitted many
-                    // events (hooks, tool calls, text) after the user message, pushing
-                    // it far from the tail.
+                    // Clear pending message once it appears in the parsed events
                     if let Some(ref pending) = self.pending_user_message {
                         for event in self.display_events.iter().rev() {
                             if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
                                 if content == pending {
                                     self.pending_user_message = None;
                                 }
-                                break; // stop at first UserMessage either way
+                                break;
                             }
                         }
                     }
@@ -512,8 +532,21 @@ impl App {
     }
 
     /// Check if session file changed (lightweight - just checks file size)
-    /// Marks dirty if changed, but doesn't parse yet
+    /// Marks dirty if changed, but doesn't parse yet.
+    /// Also recovers from missing-file state if the source reappears.
     pub fn check_session_file(&mut self) {
+        // Auto-recovery: if source was missing and has reappeared, restore normal mode
+        if let Some(ref missing) = self.source_file_missing {
+            if missing.exists() {
+                let path = missing.clone();
+                self.source_file_missing = None;
+                self.session_file_path = Some(path);
+                self.session_file_parse_offset = 0; // force full re-parse
+                self.session_file_dirty = true;
+                return;
+            }
+        }
+
         let Some(path) = &self.session_file_path else { return };
         let Ok(metadata) = std::fs::metadata(path) else { return };
         let new_size = metadata.len();
@@ -608,6 +641,33 @@ impl App {
         }
         if tokens_changed { self.update_token_badge(); }
         self.session_file_parse_offset = parsed.end_offset;
+
+        // Write updated cache — rebuild from merged state after incremental parse
+        if let Some(ref wt_path) = self.current_worktree().and_then(|w| w.worktree_path.clone()) {
+            if let Some(session_id) = self.viewed_session_id(
+                &self.current_worktree().map(|w| w.branch_name.clone()).unwrap_or_default()
+            ) {
+                let cached = crate::app::session_cache::CachedSession {
+                    source_path: path.clone(),
+                    source_size: self.session_file_size,
+                    parse_offset: self.session_file_parse_offset,
+                    events: self.display_events.clone(),
+                    pending_tools: self.pending_tool_calls.clone(),
+                    failed_tools: self.failed_tool_calls.clone(),
+                    session_tokens: self.session_tokens,
+                    context_window: self.model_context_window,
+                    model: self.selected_model.clone(),
+                    total_lines: self.parse_total_lines,
+                    parse_errors: self.parse_errors,
+                    assistant_total: self.assistant_total,
+                    assistant_no_message: self.assistant_no_message,
+                    assistant_no_content_arr: self.assistant_no_content_arr,
+                    assistant_text_blocks: self.assistant_text_blocks,
+                    awaiting_plan_approval: self.awaiting_plan_approval,
+                };
+                let _ = crate::app::session_cache::write_cache(wt_path, &session_id, &cached);
+            }
+        }
 
         // Clear pending message once it appears in the parsed events.
         // Scan all events from the end — Claude may have emitted many
