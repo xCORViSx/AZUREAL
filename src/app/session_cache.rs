@@ -76,6 +76,19 @@ pub fn lookup_cache_name(project_root: &Path, session_id: &str) -> Option<String
     index.map.get(session_id).cloned()
 }
 
+/// Infer backend from a session file path.
+/// Claude sessions live under `~/.claude/`, Codex under `~/.codex/`.
+pub fn backend_from_path(path: &Path, fallback: Backend) -> Backend {
+    let s = path.to_str().unwrap_or("");
+    if s.contains("/.codex/") || s.contains("\\.codex\\") {
+        Backend::Codex
+    } else if s.contains("/.claude/") || s.contains("\\.claude\\") {
+        Backend::Claude
+    } else {
+        fallback
+    }
+}
+
 /// Get or assign a cache name for a session UUID
 pub fn resolve_cache_name(project_root: &Path, session_id: &str, backend: Backend) -> io::Result<String> {
     let mut index = read_index(project_root);
@@ -1319,6 +1332,29 @@ mod tests {
         assert_eq!(resolve_cache_name(root, "x2", Backend::Codex).unwrap(), "codex-2");
         assert_eq!(resolve_cache_name(root, "x3", Backend::Codex).unwrap(), "codex-3");
         assert_eq!(resolve_cache_name(root, "c3", Backend::Claude).unwrap(), "claude-3");
+    }
+
+    // =====================================================================
+    // backend_from_path — infer backend from session file path
+    // =====================================================================
+
+    #[test]
+    fn backend_from_path_claude() {
+        let path = Path::new("/Users/me/.claude/projects/-Users-me-myapp/abc.jsonl");
+        assert_eq!(backend_from_path(path, Backend::Codex), Backend::Claude);
+    }
+
+    #[test]
+    fn backend_from_path_codex() {
+        let path = Path::new("/Users/me/.codex/sessions/2026/03/13/abc.jsonl");
+        assert_eq!(backend_from_path(path, Backend::Claude), Backend::Codex);
+    }
+
+    #[test]
+    fn backend_from_path_unknown_falls_back() {
+        let path = Path::new("/tmp/random/session.jsonl");
+        assert_eq!(backend_from_path(path, Backend::Claude), Backend::Claude);
+        assert_eq!(backend_from_path(path, Backend::Codex), Backend::Codex);
     }
 
     // =====================================================================

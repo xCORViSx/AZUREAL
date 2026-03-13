@@ -396,7 +396,8 @@ impl App {
                     self.session_file_size = source_size;
 
                     // Resolve or assign a sequential cache name (e.g. "claude-3")
-                    let cache_name = crate::app::session_cache::resolve_cache_name(wt_path, &claude_id, self.backend).ok();
+                    let file_backend = crate::app::session_cache::backend_from_path(session_file, self.backend);
+                    let cache_name = crate::app::session_cache::resolve_cache_name(wt_path, &claude_id, file_backend).ok();
 
                     if let Some(cached) = cache_name.as_deref().and_then(|cn| {
                         crate::app::session_cache::read_cache(wt_path, cn, session_file, source_size)
@@ -681,7 +682,8 @@ impl App {
                     awaiting_plan_approval: self.awaiting_plan_approval,
                 };
                 cached.compact();
-                if let Ok(cache_name) = crate::app::session_cache::resolve_cache_name(wt_path, &session_id, self.backend) {
+                let file_backend = crate::app::session_cache::backend_from_path(&path, self.backend);
+                if let Ok(cache_name) = crate::app::session_cache::resolve_cache_name(wt_path, &session_id, file_backend) {
                     let _ = crate::app::session_cache::write_cache(wt_path, &cache_name, &cached);
                 }
             }
