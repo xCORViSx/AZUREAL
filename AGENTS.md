@@ -223,6 +223,8 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - fast_draw (`src/tui/event_loop/fast_draw.rs`): Both `fast_draw_input()` and `fast_draw_session()` gated to `#[cfg(target_os = "macos")]`. Direct VT writes to stdout bypass ratatui's buffer and corrupt Windows Terminal's console input parser.
 - Path canonicalization: All `std::fs::canonicalize()` calls replaced with `dunce::canonicalize()` to strip `\\?\` extended-length path prefix on Windows.
 - Cross-platform session linking (`src/config.rs`): `find_foreign_project_dir()` + `link_project_dir()` create NTFS junctions (Windows, no elevation) or symlinks (Unix) to share session directories across platforms.
+- Terminal title reassertion (`src/tui/event_loop.rs`): `#[cfg(target_os = "windows")]` — Claude CLI inherits the console and overwrites the title via `SetConsoleTitle()`. After each draw frame, `update_terminal_title()` is called while Claude receivers are active.
+- Embedded terminal Enter key (`src/tui/input_terminal.rs`): Sends `\r` (carriage return) instead of `\n` (linefeed). PowerShell treats bare `\n` as line continuation.
 
 **Already cross-platform** (no guards needed): `portable-pty` (ConPTY on Windows), `notify` (ReadDirectoryChangesW), `arboard`, `dirs`, `notify-rust`, `ratatui`/`crossterm`, `dunce`, all path handling via `PathBuf`.
 

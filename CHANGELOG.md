@@ -21,6 +21,12 @@ All notable changes to Azureal will be documented in this file.
 - **CPU meter showing 3-5% on idle** — Two causes: (1) debounce-managed flags (`session_file_dirty`, `file_tree_refresh_pending`, `health_refresh_pending`) in `is_busy` check caused the event loop to busy-spin with `try_recv()` instead of blocking `recv_timeout()`. Removed from `is_busy`. (2) `GetProcessTimes` 15.6ms timer granularity caused noisy readings. Increased sampling window to 3 seconds with EMA smoothing (alpha=0.2) and 0.5% floor.
 - **Escape sequences in input box during streaming** — Claude subprocess inherited the console stdin handle via `Stdio::inherit()` (default), causing input event competition between the parent TUI and child process. Fixed with `.stdin(Stdio::null())`.
 - **`\\?\C:\` path prefix on Windows** — `std::fs::canonicalize()` returns extended-length paths (`\\?\C:\...`) on Windows. Replaced all 5 call sites with `dunce::canonicalize()` which strips the prefix when safe.
+- **Terminal Enter key not executing commands on Windows** — Embedded terminal sent `\n` (linefeed) for Enter, which PowerShell interprets as line continuation (`>>` prompt). Changed to `\r` (carriage return), the standard PTY Enter key sequence.
+- **Window title overwritten by Claude on Windows** — Claude CLI inherits the console handle and calls `SetConsoleTitle("claude")`, replacing our custom "AZUREAL @ project : branch" title. On macOS titles are set via stdout OSC sequences (piped away). Fix: reassert `update_terminal_title()` after each draw frame while Claude receivers are active, gated to `#[cfg(target_os = "windows")]`.
+
+### Removed
+
+- **PTY debug channel** — Removed the temporary `terminal_debug_rx` diagnostic channel that printed `[PTY] read#N ...` hex dumps to the status bar during terminal development. Reader thread is now minimal (read → forward).
 
 ### Changed
 - **CPU/PID badge always Azure** — Removed debug/release color distinction for the CPU/PID badge. Previously Azure in debug builds and DarkGray in release; now always Azure.
