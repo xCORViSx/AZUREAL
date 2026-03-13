@@ -133,6 +133,7 @@ fn main() {
                 .expect("Failed to copy bindings.rs");
         }
     } else {
+        #[allow(unused_mut)]
         let mut bindings = bindgen::Builder::default().header("wrapper.h");
 
         #[cfg(feature = "metal")]

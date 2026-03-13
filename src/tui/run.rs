@@ -4,14 +4,12 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{
-        DisableMouseCapture, EnableMouseCapture,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
-    },
+    event::{DisableMouseCapture, EnableMouseCapture, PopKeyboardEnhancementFlags},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+#[cfg(not(target_os = "windows"))]
+use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
