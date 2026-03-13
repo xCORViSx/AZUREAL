@@ -318,6 +318,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if let Some((ref branch, _)) = app.auto_rebase_success_until {
         draw_auto_rebase_dialog(f, branch, true);
     }
+    // Welcome modal — no worktrees and not browsing main
+    if app.needs_welcome_modal() {
+        draw_dialogs::draw_welcome_modal(f);
+    }
     // Generic loading indicator — highest z-order, shown while a deferred action runs next frame
     if let Some(ref msg) = app.loading_indicator {
         draw_loading_indicator(f, msg);

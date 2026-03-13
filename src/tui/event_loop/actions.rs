@@ -59,6 +59,20 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
         return Ok(());
     }
 
+    // Welcome modal — only Browse Main and Add Worktree pass through (Quit handled above)
+    if app.needs_welcome_modal() {
+        let ctx = KeyContext::from_app(app);
+        if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
+            match action {
+                Action::BrowseMain | Action::AddWorktree => {
+                    execute_action(action, app, claude_process)?;
+                }
+                _ => {}
+            }
+        }
+        return Ok(());
+    }
+
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
 
     // RCR approval dialog — highest priority modal (conflict resolution decision)

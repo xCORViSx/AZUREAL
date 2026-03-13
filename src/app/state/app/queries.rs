@@ -41,6 +41,12 @@ impl App {
             .any(|(slot, sid)| sid == claude_session_id && self.running_sessions.contains(slot))
     }
 
+    /// True when no worktrees exist and main is not being browsed — the welcome
+    /// modal should block all input except Browse Main, Add Worktree, and Quit.
+    pub fn needs_welcome_modal(&self) -> bool {
+        self.project.is_some() && self.worktrees.is_empty() && !self.browsing_main
+    }
+
     pub fn set_status(&mut self, msg: impl Into<String>) { self.status_message = Some(msg.into()); }
     pub fn clear_status(&mut self) { self.status_message = None; }
 
