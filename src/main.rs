@@ -1,8 +1,10 @@
 // AZUREAL: multi-agent development environment
 mod app;
 mod azufig;
+mod backend;
 mod claude;
 mod cli;
+mod codex;
 mod cmd;
 mod config;
 mod events;

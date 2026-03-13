@@ -9,7 +9,7 @@ use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
 use crate::app::{App, Focus, RunCommand};
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use crate::git::Git;
 use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog, is_git_safe_char};
 use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
@@ -187,7 +187,7 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
 /// In Prompt mode, Enter spawns a Claude session on the main branch to generate the command.
 /// ⌃s toggles global/project scope (works from any field).
 /// Text input keys stay raw — not rebindable.
-pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     let Some(ref mut dialog) = app.run_command_dialog else { return Ok(()) };
 
     // ⌃s toggles global/project scope (works from any field)
@@ -503,7 +503,7 @@ fn format_run_cmd_display_name(cmd_name: &str) -> String {
 
 /// Spawn a Claude session on the main branch to generate a run command from a prompt.
 /// Claude reads/writes `.azureal/runcmds` and adds the new entry.
-fn spawn_run_command_prompt(app: &mut App, claude_process: &ClaudeProcess, cmd_name: &str, user_prompt: &str) {
+fn spawn_run_command_prompt(app: &mut App, claude_process: &AgentProcess, cmd_name: &str, user_prompt: &str) {
     if app.project.is_none() {
         app.set_status("No project loaded");
         return;

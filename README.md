@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  A multi-session Claude Code manager with git worktree isolation
+  A multi-session AI agent manager with git worktree isolation
 </p>
 
 ---
@@ -18,7 +18,7 @@
 
 ### Workspace
 
-- **Multi-Worktree Sessions** — Run multiple Claude agents concurrently, each in its own git worktree with independent sessions
+- **Multi-Worktree Sessions** — Run multiple AI agents (Claude Code or OpenAI Codex) concurrently, each in its own git worktree with independent sessions
 - **3-Pane Layout** — File tree, viewer, and session panes with Tab cycling and proportional sizing
 - **Viewer Tabs** — Tab up to 12 files for quick switching between references
 - **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews; markdown files render with styled headers, tables, code blocks, and lists
@@ -33,7 +33,7 @@
 - **Clickable Tables** — Click any table to expand it in a full-width popup
 - **Todo Widget** — Live task progress from Claude's TodoWrite calls (checkboxes with subagent nesting)
 - **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
-- **Model Switcher** — Cycle between Claude models with `⌃m` / `Ctrl+M`
+- **Model Switcher** — Cycle between backend models with `⌃m` / `Ctrl+M` (Claude: opus/sonnet/haiku; Codex: o3/o4-mini/codex-mini)
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
 - **Session Rename** — `r` in the session list to rename the selected session (persisted in `azufig.toml`)
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions
@@ -71,7 +71,8 @@
 ## Requirements
 
 - **Rust** (latest stable) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Claude Code CLI** — macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash` · Windows: `irm https://claude.ai/install.ps1 | iex`
+- **Claude Code CLI** (for Claude backend) — macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash` · Windows: `irm https://claude.ai/install.ps1 | iex`
+- **Codex CLI** (for Codex backend, optional) — `npm install -g @openai/codex`
 - **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons; emoji fallback when not detected
 - **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
@@ -146,7 +147,7 @@ azureal
 
 ## Architecture
 
-Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and Claude's session files at `~/.claude/projects/`. No database. Persistent config lives in two `azufig.toml` files (global + project-local).
+Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and agent session files (Claude: `~/.claude/projects/`, Codex: `~/.codex/sessions/`). No database. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`.
 
 All keybindings are defined once in a central module. Press `?` for the full help overlay.
 

@@ -36,7 +36,7 @@ impl App {
 
     /// Check if a Claude session UUID has a running process (for status dots in session list)
     pub fn is_claude_session_running(&self, claude_session_id: &str) -> bool {
-        self.claude_session_ids.iter()
+        self.agent_session_ids.iter()
             .any(|(slot, sid)| sid == claude_session_id && self.running_sessions.contains(slot))
     }
 

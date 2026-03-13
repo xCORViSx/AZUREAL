@@ -4,11 +4,11 @@ use anyhow::Result;
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use crate::tui::keybindings::{macos_opt_key, is_cmd};
 
 /// Handle keyboard input when Input field is focused (terminal mode or Claude prompt)
-pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     // PTY Terminal mode - forward keys directly to shell
     if app.terminal_mode {
         if app.prompt_mode {

@@ -7,7 +7,7 @@
 use anyhow::Result;
 
 use crate::app::{App, Focus};
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use crate::tui::keybindings::Action;
 use super::super::mouse::{copy_viewer_selection, copy_session_selection};
 use super::navigation::{
@@ -19,7 +19,7 @@ use super::session_list::open_session_list;
 
 /// Execute a resolved keybinding action. Called by handle_key_event() after
 /// lookup_action() identifies WHAT to do. This function handles the HOW.
-pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &ClaudeProcess) -> Result<()> {
+pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &AgentProcess) -> Result<()> {
     match action {
         // --- Global actions ---
         Action::Quit => {

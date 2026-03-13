@@ -1,16 +1,17 @@
 # SUMMARY
 
-Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a Rust TUI application that wraps Claude Code CLI to enable multi-agent development workflows. Each **worktree** is a git worktree with its own Claude **session**, allowing concurrent AI-assisted development across multiple feature branches.
+Azureal (Asynchronous Zoned Unified Runtime Environment for Agentic LLMs) is a Rust TUI application that wraps Claude Code CLI and OpenAI Codex CLI to enable multi-agent development workflows. Each **worktree** is a git worktree with its own agent **session**, allowing concurrent AI-assisted development across multiple feature branches.
 
 **Terminology:**
 - **Worktree**: A git worktree with its own working directory and branch (displayed in left panel)
-- **Session**: A Claude Code conversation (stored in `~/.claude/projects/`, displayed in Session pane)
+- **Session**: An agent conversation — Claude sessions stored in `~/.claude/projects/`, Codex sessions in `~/.codex/sessions/YYYY/MM/DD/` (displayed in Session pane)
+- **Backend**: `Backend::Claude` or `Backend::Codex` — selected via `[config] backend = "claude"` in `azufig.toml`
 
 **Mostly Stateless Architecture:** All runtime state is derived from:
 - Git repository info via `git rev-parse --git-common-dir` (resolves to main worktree root, not worktree-local)
 - Git worktrees via `git worktree list`, filtered to only include worktrees under `<repo_root>/worktrees/` (the project's `worktrees_dir()`). External worktrees (e.g. Claude Code subagent worktrees in `.git/worktrees/` or `.claude/worktrees/`) are excluded.
 - Git branches via `git branch | grep {BRANCH_PREFIX}/` for archived worktrees (prefix defined in `src/models.rs::BRANCH_PREFIX`)
-- Claude's session files in `~/.claude/projects/` for conversation history and `--resume` IDs
+- Agent session files: Claude in `~/.claude/projects/` (path-encoded directories), Codex in `~/.codex/sessions/YYYY/MM/DD/` (date-based hierarchy, CWD matched from first line's `session_meta.payload.cwd`)
 
 **Persistent State (azufig.toml):**
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
@@ -20,21 +21,24 @@ All sections use single-bracket `[section]` headers with flat `key = "value"` pa
 
 # FEATURES
 
-### Multi-Worktree Claude Management
+### Multi-Worktree Agent Management
 
-The core feature enabling multiple concurrent Claude Code CLI instances. Each worktree supports **multiple simultaneous Claude processes** via PID-keyed session slots.
+The core feature enabling multiple concurrent agent CLI instances. Each worktree supports **multiple simultaneous agent processes** via PID-keyed session slots. Backend selection (`Backend::Claude` or `Backend::Codex`) determines which CLI is spawned.
 
 **Architecture:**
-- Each prompt spawns a new process: `claude -p "prompt" --verbose --output-format stream-json`
+- `AgentProcess` enum wraps `ClaudeProcess` or `CodexProcess` — dispatch via `AgentProcess::spawn()` / `AgentProcess::kill()`
+- Claude: `claude -p "prompt" --verbose --output-format stream-json` (+ `--resume <id>`)
+- Codex: `codex exec --json "prompt"` (new) or `codex exec --json resume <UUID> "prompt"` (resume)
 - `spawn()` accepts optional `model: Option<&str>` — when set, adds `--model <name>` to the CLI args
-- `spawn()` returns `(Receiver<ClaudeEvent>, u32)` — the event channel and the OS PID
-- First prompt: captures `session_id` from init event in stream-json output
-- Follow-up prompts: add `--resume <session_id>` for conversation context
-- Model override: `⌃m` cycles `selected_model` through opus → sonnet → haiku → opus. Always set (never None) — the displayed name is exactly what gets passed as `--model` to `spawn()`. Initialized to "opus". `detected_model` (separate field, populated from stream's `assistant` event) is used only for context window heuristics, not display. Bottom border of Session pane shows `⌃m:model_name` (color-coded: magenta=opus, cyan=sonnet, yellow=haiku)
+- `spawn()` returns `(Receiver<AgentEvent>, u32)` — the event channel and the OS PID
+- First prompt: captures `session_id` from init event (Claude: `subtype:init` + `session_id`, Codex: `thread.started` + `thread_id`)
+- Follow-up prompts: add resume flag for conversation context
+- Model override: `⌃m` cycles `selected_model` through backend-specific models. Claude: opus → sonnet → haiku → opus (magenta/cyan/yellow). Codex: o3 → o4-mini → codex-mini → o3 (green/blue/lightcyan). Always set (never None) — the displayed name is exactly what gets passed as `--model` to `spawn()`. `detected_model` (separate field) is used only for context window heuristics, not display.
+- Permission mapping: Claude `--dangerously-skip-permissions` → Codex `--dangerously-bypass-approvals-and-sandbox`; Claude Approve → Codex `--full-auto`
 - Process exits after each response; new process for next prompt
 
 **PID-Keyed Session Slots:**
-All session state maps (`claude_receivers`, `running_sessions`, `claude_exit_codes`, `claude_session_ids`) are keyed by **PID string** (not branch name). This enables multiple concurrent Claude processes per worktree. Two additional maps track the relationship:
+All session state maps (`agent_receivers`, `running_sessions`, `agent_exit_codes`, `agent_session_ids`) are keyed by **PID string** (not branch name). This enables multiple concurrent Claude processes per worktree. Two additional maps track the relationship:
 - `branch_slots: HashMap<String, Vec<String>>` — branch → list of active PID strings (spawn order)
 - `active_slot: HashMap<String, String>` — branch → which PID's output is displayed in the session pane
 
@@ -59,7 +63,7 @@ Claude Code's interactive mode uses a full TUI that cannot be driven by simple s
 
 Current approach (`-p --resume`) works reliably with ~100-200ms process spawn overhead per prompt.
 
-Implementation: `src/claude.rs` spawns processes (returns `(Receiver, PID)`), `src/app/state/claude.rs` manages PID-keyed slots, `src/app/state/app.rs` tracks `branch_slots`/`active_slot` maps.
+Implementation: `src/claude.rs` (Claude) and `src/codex.rs` (Codex) spawn processes. `src/backend.rs` defines `Backend` enum + `AgentProcess` wrapper. `src/app/state/claude.rs` manages PID-keyed slots, `src/app/state/app.rs` tracks `branch_slots`/`active_slot` maps + `backend: Backend` field.
 
 ### Git Worktree Isolation
 
@@ -1434,7 +1438,7 @@ azureal/
 │   │   │   ├── app/        # App submodules (file-based module root)
 │   │   │   │   ├── cpu.rs       # CPU usage monitoring (get_cpu_time_micros + update_cpu_usage)
 │   │   │   │   ├── deferred.rs  # DeferredAction enum (two-phase draw pattern)
-│   │   │   │   ├── model.rs     # Model selection (cycle_model, display_model_name, update_token_badge)
+│   │   │   │   ├── model.rs     # Backend-aware model selection (cycle_model per backend, display_model_name, update_token_badge)
 │   │   │   │   ├── queries.rs   # Session status queries + project/worktree accessors (current_worktree, is_session_running, set_status, open_table_popup)
 │   │   │   │   ├── stt.rs       # Speech-to-text integration (toggle_stt, poll_stt, insert_stt_text)
 │   │   │   │   └── todo.rs      # TodoItem + TodoStatus types from Claude's TodoWrite tool call
@@ -1452,7 +1456,8 @@ azureal/
 │   │   │   │   ├── god_files.rs     # God File System: scan, scope mode, parallel modularize, module style selector
 │   │   │   │   └── documentation.rs # Doc coverage scanner, DH session spawning, doc toggle/view
 │   │   │   └── helpers.rs  # Utility functions
-│   │   ├── session_parser.rs # Claude session file parsing
+│   │   ├── session_parser.rs # Claude session file parsing (pub(crate))
+│   │   ├── codex_session_parser.rs # Codex session file parsing (pub(crate))
 │   │   ├── terminal.rs     # PTY terminal management
 │   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main + squash_merge_receiver, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, SquashMergeProgress, SquashMergeOutcome, WorktreeRefreshResult, dialogs)
 │   │   ├── input.rs        # Input handling methods
@@ -1470,7 +1475,7 @@ azureal/
 │   │   │   │   ├── session_list.rs # Session list overlay open, finish load, JSONL message counting
 │   │   │   │   ├── deferred.rs     # Deferred action execution (post-loading-indicator dispatch)
 │   │   │   │   └── rcr.rs          # RCR acceptance (cleanup, merge continuation)
-│   │   │   ├── claude_events.rs # Claude process event handling + staged prompt
+│   │   │   ├── agent_events.rs # Agent process event handling + staged prompt (Claude + Codex dispatch)
 │   │   │   ├── coords.rs   # Screen-to-content coordinate mapping
 │   │   │   ├── fast_draw.rs # Fast-path input (~0.1ms) + session rendering (~2-5ms direct cell writes)
 │   │   │   └── mouse.rs    # Click, drag, scroll, selection copy
@@ -1526,7 +1531,8 @@ azureal/
 │   ├── events/             # Stream-JSON events module
 │   │   ├── types.rs        # Raw Claude Code event types
 │   │   ├── display.rs      # DisplayEvent enum
-│   │   └── parser.rs       # EventParser + tests
+│   │   ├── parser.rs       # Claude EventParser + tests
+│   │   └── codex_parser.rs # Codex streaming parser (CodexEventParser → DisplayEvent)
 │   ├── git.rs              # Module root (re-exports only)
 │   ├── git/                # Git operations module
 │   │   ├── core.rs         # Git struct, repo detection, diffs, SquashMergeResult enum
@@ -1538,9 +1544,11 @@ azureal/
 │   │   ├── session.rs      # Session list/show commands
 │   │   └── project.rs      # Project info command
 │   ├── azufig.rs           # Unified config: GlobalAzufig + ProjectAzufig structs (HashMap-based flat sections), load/save/update helpers (TOML I/O with bare-key post-processing), auto-rebase helpers (set_auto_rebase, load_auto_rebase_branches)
+│   ├── backend.rs          # Backend enum (Claude/Codex) + AgentProcess wrapper enum
 │   ├── claude.rs           # Claude CLI process management
+│   ├── codex.rs            # Codex CLI process management
 │   ├── cli.rs              # CLI argument parsing (clap definitions)
-│   ├── config.rs           # Configuration (permissions, API key), Claude session discovery, projects persistence (reads from azufig)
+│   ├── config.rs           # Configuration (permissions, API key), session discovery (Claude + Codex), projects persistence (reads from azufig)
 │   ├── main.rs             # Entry point
 │   ├── models.rs           # Domain models (Worktree, WorktreeStatus, Project, RebaseResult, OutputType, DiffInfo)
 │   ├── stt.rs              # Speech-to-text engine (cpal + whisper-rs + background thread)
@@ -1595,6 +1603,7 @@ azureal/
 - [x] Git panel (reuses existing panes: Actions+Files in sidebar, diffs in viewer, Commits in session pane; full-width status box with prompt-style keybind hints)
 - [x] Git panel worktree tab bar (mirrors normal tab row design: ★ main tab, status symbols, archived styling, mouse clicks; GIT_ORANGE/GIT_BROWN theme; paginated; `[`/`]` cycles worktrees (skips main), `{`/`}` jumps pages; ★ main via click/Shift+M; focused pane preserved)
 - [x] Debug dump shortcut (⌃d: creates debug output snapshot with naming dialog)
+- [x] Multi-backend support — OpenAI Codex CLI as second backend alongside Claude Code CLI. Backend enum dispatch (`AgentProcess::Claude`/`AgentProcess::Codex`), Codex streaming parser, Codex session file parser, Codex session discovery, backend-aware model cycling, backend-dispatched session loading. Both backends produce `DisplayEvent` for rendering — TUI layer unchanged.
 - [ ] Session export/reporting
 - [ ] Cross-session context sharing
 - [ ] Agent orchestration (one agent spawns tasks for others)
@@ -1606,17 +1615,17 @@ azureal/
 
 This is a TUI + CLI wrapper application with stateless architecture. Testing focuses on:
 
-1. **Process Management**: Verify Claude processes spawn, communicate, and terminate correctly
-2. **State Discovery**: Ensure app correctly discovers sessions from git worktrees and branches
-3. **Event Parsing**: Validate stream-json parsing handles all event types
-4. **Concurrent Operations**: Test multiple sessions running Claude simultaneously
-5. **Error Recovery**: Verify graceful handling of Claude exits and git errors
+1. **Process Management**: Verify agent processes (Claude + Codex) spawn, communicate, and terminate correctly
+2. **State Discovery**: Ensure app correctly discovers sessions from git worktrees and branches (both Claude and Codex session formats)
+3. **Event Parsing**: Validate stream-json parsing handles all event types for both backends
+4. **Concurrent Operations**: Test multiple sessions running agents simultaneously
+5. **Error Recovery**: Verify graceful handling of agent exits and git errors
 
-## Test Coverage (6155+ tests)
+## Test Coverage (6213+ tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|
-| config | `src/config.rs` | 70 | `encode_project_path` (20 -- ASCII, unicode, emoji, special chars +/@/spaces, consecutive specials, boundary 199/200/201 chars, deterministic hashing, empty/root), `radix_36` (11 -- 0, single digits, boundaries 35/36/1295/1296, powers of 36, u64::MAX, char validation), `display_path` (8 -- home dir, nested, outside home, root, spaces), `Config` serde (6 -- roundtrip, defaults, partial deserialize), `PermissionMode` serde (10 -- serialize/deserialize all variants, unknown/empty rejection, roundtrip, Copy/Clone/Debug), `ProjectEntry` (3 -- construction, clone, debug), `claude_executable()` (3 -- default, custom, empty) |
+| config | `src/config.rs` | 104 | `encode_project_path` (20 -- ASCII, unicode, emoji, special chars +/@/spaces, consecutive specials, boundary 199/200/201 chars, deterministic hashing, empty/root), `radix_36` (11 -- 0, single digits, boundaries 35/36/1295/1296, powers of 36, u64::MAX, char validation), `display_path` (8 -- home dir, nested, outside home, root, spaces), `Config` serde (6 -- roundtrip, defaults, partial deserialize), `PermissionMode` serde (10 -- serialize/deserialize all variants, unknown/empty rejection, roundtrip, Copy/Clone/Debug), `ProjectEntry` (3 -- construction, clone, debug), `claude_executable()` (3 -- default, custom, empty), `codex_session_cwd` (6 -- valid/invalid-json/no-cwd/not-session-meta/empty-line/nested-payload), `codex_session_id_from_filename` (5 -- valid-rollout/no-suffix/short/invalid-hyphens/no-jsonl), `list_codex_sessions` (5 -- empty/nonexistent/cwd-mismatch/valid-sessions/multiple-date-dirs), `codex_session_file` (3 -- found/not-found/multiple-dirs), `find_latest_codex_session` (3 -- found/empty/no-match), `list_sessions`/`find_latest_session`/`session_file` backend dispatch (9 -- Claude/Codex dispatch for each function), `codex_executable()` (3 -- default, custom, empty) |
 | models | `src/models.rs` | 68 | `strip_branch_prefix` (16 -- prefix/no-prefix/empty/nested/different/unicode/emoji/double-prefix/case-sensitive/dots/dashes/partial-match/whitespace/slash-only), `WorktreeStatus` (12 -- as_str/symbol/color all variants, PartialEq exhaustive 6x6, Eq, Copy, Clone, Debug, serde roundtrip, lowercase/non-empty validation), `Worktree` (17 -- name edge cases, construction variations, full 8-combination status truth table, clone, debug, serde roundtrip with/without None fields), `DiffInfo` (4 -- construction, empty, clone, serde roundtrip), `OutputType` (7 -- all variants, PartialEq exhaustive, Copy, Clone, Debug, serde roundtrip), `RebaseResult` (5 -- Aborted, Failed with/without message, clone, debug), `BRANCH_PREFIX` (1) |
 | git/core | `src/git/core.rs` | 62 | `SquashMergeResult` (11 -- Success construction/extraction/empty/multiline/pull-note/already-up-to-date, Conflict construction/fields/empty-vecs/many-files/paths-with-subdirs, variant discrimination Success-not-Conflict/Conflict-not-Success, match exhaustiveness), `WorktreeInfo` (17 -- construction with-branch/main/master/no-branch/detached, Clone/Clone-with-None, Debug format all-fields/None-branch, path components, long 40-char commit hash, empty commit, is_main true-for-path/false-for-feature/true-without-main-name), `Git` struct (2 -- exists, zero-sized), size_of checks (2), commit log parsing (4 -- 3-field/extra-tabs/too-few-fields/empty-subject), divergence parsing (3 -- zeros/only-behind/only-ahead), merge message (3 -- no-log/with-log/line-count), status unmerged detection (4 -- UU/AA/DD vs clean/added), CONFLICT path extraction (2), Auto-merging strip_prefix (1), real-repo smoke tests (4 -- staged_diff/staged_stat/commit_log/main_divergence) |
 | git/branch | `src/git/branch.rs` | 52 | Remote branch local name extraction (8 -- simple/nested/upstream/no-slash/multiple-slashes/single-segment/double-segment/zero-segments), branch filter patterns (3 -- excludes-HEAD/requires-slash/excludes-empty), main/master filtering (3 -- excludes-exact/keeps-similar-names/case-sensitive), porcelain output parsing (4 -- trim-and-filter/empty/whitespace-only/single), branch dedup (4 -- no-local-equivalent/has-local-equivalent/exact-remote-ref/main-remote-skipped), checked_out tracking (3 -- collects/empty/contains-current), Git struct (2 -- accessible/zero-sized), Path compatibility (2 -- from-string/with-spaces), combined filter exhaustiveness (3), newline-free branch names (2), non-existent path smoke tests (3) |
@@ -1631,7 +1640,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | state/viewer_edit | `src/app/state/viewer_edit.rs` | 110 | `word_wrap_breaks` (15 -- empty/zero-width/fits/exact/one-over/word-boundary/width-1/width-2/single-char/unicode/long-word-forced/multiple-spaces/first-always-zero/monotonically-increasing/huge-width), `viewer_edit_char` (7 -- empty-line/end/middle/unicode/dirty-flag/undo-push/multibyte-position/CJK/tab), `viewer_edit_backspace` (7 -- start-first-line/middle/end/joins-lines/join-unicode-cursor/single-char/unicode), `viewer_edit_delete` (5 -- end-last-line/middle/start/joins-next/empty-line-joins), `viewer_edit_enter` (6 -- end/start/splits/empty/dirty/unicode-split), cursor movement (12 -- left-start/normal/wrap-prev/wrap-multi, right-end/normal/wrap-next/wrap-multi, home/home-already/end/end-empty/end-unicode), up/down (5 -- up-first/up-simple/down-last/down-simple/down-clamps), `clamp_edit_cursor` (4 -- beyond-lines/beyond-col/valid/single-empty), undo/redo (7 -- restore/reapply/empty-noop/empty-redo-noop/clears-redo/multiple-undo/stack-cap), selection (16 -- start/extend/clear/has-none/has-zero-width/has-true/normalized-backward/normalized-forward/text-single/text-multi/text-zero/text-none/text-entire/text-backward/text-three-lines/select-all-multi/single/empty/unicode), delete-selection (4 -- single-line/multi-line/clears/zero-width-noop), scroll-to-cursor (3 -- at-top/below/above), selection-aware movement (6 -- left-no-extend/left-extend/right-no-extend/right-extend/up-extend/down-extend), roundtrip/edge (7 -- insert-undo-all/enter-backspace-roundtrip/delete-undo/version-increments-edit/undo/redo) |
 | state/scroll | `src/app/state/scroll.rs` | 75 | `session_natural_bottom` (6 -- normal/exact/fewer/zero-lines/zero-viewport/single-line), `session_max_scroll` (3 -- normal/single/zero), `clamp_session_scroll` (5 -- sentinel/within-range/beyond-max/at-zero/empty-sentinel), `scroll_session_down` (8 -- one/from-sentinel/past-max/zero/reengage-sentinel/returns-true/large-small-content), `scroll_session_up` (7 -- one/from-sentinel/past-zero/zero/already-at-zero/to-zero-dirty/to-zero-no-dirty), `scroll_session_to_bottom` (2 -- from-zero/from-mid), `viewer_natural_bottom` (3 -- normal/fewer/zero), `viewer_max_scroll` (2 -- normal/zero), `clamp_viewer_scroll` (4 -- sentinel/within/beyond/at-zero), `scroll_viewer_down` (5 -- one/from-sentinel/past-max/zero/at-max), `scroll_viewer_up` (5 -- one/from-sentinel/past-zero/zero/at-zero), `scroll_viewer_to_bottom` (1), `jump_to_next_bubble` (8 -- user-only/include-assistant/no-more/from-sentinel/empty-list/skip-assistant/clamp-to-max/at-line-zero), `jump_to_prev_bubble` (7 -- from-end/user-only/none-goes-to-zero/from-sentinel/empty-list/triggers-dirty/no-dirty-without-deferred), combined scenarios (9 -- session-down-up-roundtrip/viewer-down-up-roundtrip/session-down-accumulates/session-up-accumulates/viewer-single-line/session-exact-viewport/page-down/page-up/bubble-walk-forward/bubble-walk-backward) |
 | state/claude | `src/app/state/claude.rs` | 64 | `parse_todos_from_input` (64 -- real data, empty, missing fields, unknown status, missing content, null/bool/number/string/array root values, todos field wrong types, all status strings including case-sensitive/capitalized/empty/null, content null/number/bool/empty/unicode/special/very-long, activeForm null/number/bool/unicode, mixed valid/invalid entries, 50/100 item stress tests, order preservation, extra fields, whitespace, realistic payloads, code snippets) |
-| state/app | `src/app/state/app.rs` | 122 | `App::new()` field defaults (60+ -- project/worktrees/focus/view_mode/session/terminal/viewer/render/parse_stats/tokens/todos/stt/file_tree/health/git/browsing/session_list/find/filter/model), `invalidate_render_cache` (2 -- sets dirty, idempotent), `invalidate_file_tree` (1), `set_status`/`clear_status` (6 -- stores/overwrites/String/format/clears/noop), `current_project`/`current_worktree` (5 -- none defaults, selected index, browsing_main returns main, out of bounds), `is_session_running` (3 -- no slots, running slot, stopped slot), `is_current_session_running` (2 -- no worktree, true), `is_active_slot_running` (3 -- no worktree, running, stopped), `branch_for_slot` (3 -- found, not found, empty), `is_claude_session_running` (3 -- true, not running, no match), `display_model_name` (3 -- default opus, custom, None fallback), `cycle_model` (6 -- opus->sonnet->haiku->opus, unknown->opus, None->opus, full cycle), `update_token_badge` (6 -- no tokens, low/medium/high usage, default 200k window, drop below threshold), `TodoItem`/`TodoStatus` (6 -- equality, construction, clone, debug), `DeferredAction` (7 -- all variant construction), `cancel_all_claude` (1 -- clears all state), `git_action_in_progress` (4 -- default false, deferred commit/commit+push, non-git deferred), `get_cpu_time_micros` (1 -- returns nonzero) |
+| state/app | `src/app/state/app.rs` | 122 | `App::new()` field defaults (60+ -- project/worktrees/focus/view_mode/session/terminal/viewer/render/parse_stats/tokens/todos/stt/file_tree/health/git/browsing/session_list/find/filter/model/backend), `invalidate_render_cache` (2 -- sets dirty, idempotent), `invalidate_file_tree` (1), `set_status`/`clear_status` (6 -- stores/overwrites/String/format/clears/noop), `current_project`/`current_worktree` (5 -- none defaults, selected index, browsing_main returns main, out of bounds), `is_session_running` (3 -- no slots, running slot, stopped slot), `is_current_session_running` (2 -- no worktree, true), `is_active_slot_running` (3 -- no worktree, running, stopped), `branch_for_slot` (3 -- found, not found, empty), `is_claude_session_running` (3 -- true, not running, no match), `display_model_name` (3 -- default opus/o3 by backend, custom, None fallback), `cycle_model` (12 -- Claude: opus→sonnet→haiku→opus, unknown→sonnet, full cycle; Codex: o3→o4-mini→codex-mini→o3, unknown→o4-mini, full cycle), `update_token_badge` (6 -- no tokens, low/medium/high usage, default 200k window, drop below threshold), `TodoItem`/`TodoStatus` (6 -- equality, construction, clone, debug), `DeferredAction` (7 -- all variant construction), `cancel_all_claude` (1 -- clears all state), `git_action_in_progress` (4 -- default false, deferred commit/commit+push, non-git deferred), `get_cpu_time_micros` (1 -- returns nonzero) |
 | state/ui | `src/app/state/ui.rs` | 73 | `focus_next` (9 -- all 5 pane transitions, full cycle, WorktreeCreation/BranchDialog stay, clears session_list), `focus_prev` (9 -- all 5 reverse transitions, full cycle, WorktreeCreation/BranchDialog stay, clears session_list), focus_next/prev inverses (2 -- roundtrip both directions), `toggle_help` (3 -- on/off/double), `exit_worktree_creation_mode` (1 -- sets focus+clears input+clears status), `open_branch_dialog` (2 -- empty branches sets status, with branches opens dialog), `close_branch_dialog` (1 -- clears and refocuses), `close_projects_panel` (1), `is_projects_panel_active` (2 -- false/true), `open_run_command_dialog` (1), `open_run_command_picker` (3 -- empty sets status, single executes, multiple opens picker), `open_preset_prompt_picker` (2 -- no presets opens dialog, with presets opens picker), `select_preset_prompt` (3 -- valid index populates input, invalid noop, sets status), `viewer_tab_current` (3 -- no content noop, adds tab, max 12 tabs), `toggle_viewer_tab_dialog` (1), `viewer_close_current_tab` (2 -- empty noop, last tab clears viewer), `load_tab_to_viewer` (1 -- restores state), `enter_main_browse`/`exit_main_browse` (2 -- no main sets status, exit restores), `git_action_in_progress_rcr` (1), `parse_ordered_key` (8 -- valid, large number, no underscore, non-numeric, zero, multiple underscores, empty after prefix, empty string), `load_ordered_map` (4 -- empty, single, preserves order, no prefix), `load_ordered_presets` (2 -- empty, sorted), `find_edit_line` (10 -- new string found, old string found, both empty, new preferred, significant lines, trimmed match, identifier fallback, no match, empty content, first line) |
 | state/load | `src/app/state/load.rs` | 52 | `format_uuid_short` (12 -- standard UUID, 8-char prefix, short prefix, long no dash, short no dash, empty, exactly 12/13 chars, dash at position 8, multiple dashes, dash only, dash at end), `viewed_session_id` (5 -- no data, correct id, second selection, out of bounds idx, no idx, empty branch), `extract_skill_tools_from_events` (10 -- no events, TodoWrite parses todos, cleared by user message, AskUserQuestion awaiting, answered clears awaiting, no ask clears cache, multiple TodoWrites uses last, resets scroll, ignores other tools, mixed event types), `check_session_file` (2 -- no path noop, nonexistent path noop), `poll_session_file` (1 -- not dirty returns false), `load_session_output` state reset (10 -- resets session state, render caches, token state, historic flag, ask_user state, clickable paths, selected_event, pending_message, active_task_ids, render_seq), `load_session_output` preservation (2 -- preserves compaction flag, plan approval from events), `load_file_tree` (2 -- clears when no worktree, nonexistent path), `refresh_worktrees` (1 -- no project ok) |
 | state/helpers | `src/app/state/helpers.rs` | 50 | `build_file_tree` (50 -- returns entries, top-level-only collapsed, dirs-before-files sort, hidden-after-non-hidden sort, expansion adds children, expanded children depth, non-expanded no children, skips target dir, skips node_modules, hidden_dirs filter single/multiple, empty dir, is_dir flag, is_hidden dot-prefix, non-dot not hidden, children of hidden inherit hidden, path is absolute, name matches filename, alphabetical within category, dirs alphabetical, nested expansion, partial expansion, nonexistent root empty, hidden dir no sibling effect, mixed dirs-and-files sort, hidden files after non-hidden files, hidden dirs after non-hidden dirs, entry count no expansion, expand src adds children, expand all dirs, hidden dir exact name match, FileTreeEntry fields/clone/debug, symlinks no crash, deeply nested 5-level, expanding nonexistent dir noop, unicode filenames, hidden via custom config, empty expanded set, empty hidden set, only hidden files, only dirs, only files, many files sorted, multiple hidden dirs, target filter applies to files, special chars in name, three-level depth, node_modules filter applies to files) |
@@ -1678,7 +1687,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/event_loop/actions/session_list | `src/tui/event_loop/actions/session_list.rs` | 54 | Session list navigation, selection, filtering |
 | tui/event_loop/actions/deferred | `src/tui/event_loop/actions/deferred.rs` | 50 | `DeferredAction` execution (50 -- LoadSession with slashes/unicode, session_search_results clearing, field extraction all 7 variants, LoadFile/OpenHealthPanel/GitCommit/GitCommitAndPush/RescanHealthScope/SwitchProject state effects, idx=usize::MAX, 50-dir stress, deep nested path, repeated calls, no-panel guards) |
 | tui/event_loop/actions/rcr | `src/tui/event_loop/actions/rcr.rs` | 51 | `RcrSession` clone/fields, `make_rcr` helper consistency, status non-empty after no-merge, `accept_rcr` session clearing for both merge paths, `PostMergeDialog` field construction/selected values, focus preservation, session_id set, approval_pending, multiple independent sessions, empty slot_id, absolute path assertions |
-| tui/event_loop/claude_events | `src/tui/event_loop/claude_events.rs` | 50 | `handle_claude_event` output/started/session_id/exited routing, slot independence, exit code storage, staged prompt consumption/preservation, running session tracking, multiple session IDs, large PIDs, unicode session IDs |
+| tui/event_loop/agent_events | `src/tui/event_loop/agent_events.rs` | 50 | `handle_agent_event` output/started/session_id/exited routing, slot independence, exit code storage, staged prompt consumption/preservation, running session tracking, multiple session IDs, large PIDs, unicode session IDs |
 | tui/event_loop/fast_draw | `src/tui/event_loop/fast_draw.rs` | 53 | `word_wrap_break_points` (newline/long-line/multiple/width-1), `display_width` (single/CJK/mixed), scroll offset edge cases, padded text, adjusted row underflow, Rect coordinate math, unicode_width fallback, input_area defaults, cursor row assignment, `ratatui_to_crossterm` color mapping (ANSI/RGB/indexed), `fast_draw_session` direct cell write output |
 | tui/event_loop/mouse | `src/tui/event_loop/mouse.rs` | 75 | Mouse event handling, click regions, drag selection |
 | tui/input_output | `src/tui/input_output.rs` | 56 | `recompute_session_find_matches` (6 -- clears-empty-query/resets-index/finds-matches/case-insensitive/no-match-empty-cache/multiple-same-line), `jump_next/prev_match` (8 -- empty-noop/advances/wraps-end/wraps-start/updates-scroll/invalidates-viewport), `handle_session_input` routing (5 -- find-active/show-list/n-forward/N-backward/Esc-clears) |
@@ -1698,7 +1707,11 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/render_thread | `src/tui/render_thread.rs` | 50 | Render thread message passing, try_recv |
 | tui/util | `src/tui/util.rs` | 50 | TUI utility functions, truncation, formatting |
 | tui/run | `src/tui/run.rs` | 70 | TUI run loop, event dispatch, initialization |
+| backend | `src/backend.rs` | 10 | `Backend` default (Claude), Copy/Clone/Debug/PartialEq, display format, `AgentProcess` spawn dispatch, kill dispatch, backend accessor |
 | claude | `src/claude.rs` | 52 | Init-line substring detection, session_id extraction from JSON, missing session_id, output data with tabs/special chars, verbose default, no API key default, SessionId UUID format/unicode |
+| codex | `src/codex.rs` | 12 | Thread-started session_id extraction, missing thread_id, non-thread.started events, output data forwarding, permission flag mapping (Ignore/Approve/Ask), executable default/custom |
+| codex_parser | `src/events/codex_parser.rs` | 24 | `CodexEventParser` thread.started→Init, item.started command→ToolCall, item.completed command→ToolResult, item.completed file_change→ToolResult, item.completed reasoning→AssistantText, item.completed agent_message→AssistantText, turn.completed→Complete with usage, error/turn.failed→Complete(false), partial line buffering, multi-line output, unknown event types ignored |
+| codex_session_parser | `src/app/codex_session_parser.rs` | 45 | `parse_codex_session_file` session_meta→Init, user message→UserMessage, assistant message→AssistantText, function_call→ToolCall (shell_command/apply_patch/custom_tool), function_call_output→ToolResult (matched by call_id), agent_reasoning→AssistantText, task_complete→Complete, turn_context→model extraction, incremental parsing with end_offset, empty/nonexistent/invalid-json files, array vs string content formats, workdir extraction from shell_command, file path extraction from apply_patch |
 | cli | `src/cli.rs` | 51 | CLI argument parsing, subcommand routing |
 | stt | `src/stt.rs` | 51 | Speech-to-text event handling |
 | syntax | `src/syntax.rs` | 50 | Syntax highlighting, theme loading |
@@ -1713,7 +1726,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 ### Test Categories
 
 - **Pure function unit tests** -- Parsing, formatting, ANSI stripping, TOML key validation, branch prefix handling, config defaults, JSON deserialization/round-trips, markdown span parsing, text wrapping, output colorization, tool result rendering, type constructors/methods/trait impls, path noise classification, event classification, coordinate mapping, viewer text wrapping with styled spans, selection highlighting with gutter offsets, tab bar row calculation, UUID formatting, ordered key parsing, file tree building/sorting/filtering, source extension/skip dir constants, god file scanning/threshold/prompt generation, doc coverage scanning/heuristics, image extension detection, modularize prompt language-specific style embedding
-- **State logic tests** -- Plan approval detection, worktree status derivation, incremental parser state, todo parsing, dialog navigation/filtering/input editing, App constructor defaults, focus cycling, model cycling, token badge computation, session/slot running queries, branch-for-slot lookup, viewer tab management, run command/preset prompt pickers, edit line finding, session output state reset, skill tool extraction from events, file tree navigation next/prev/first-sibling/last-sibling, file operations add/rename/delete/copy/move, session navigation next/prev/first/last with wrap-around, main branch archive/delete guards, collect_source_files recursive scanning with skip dirs
+- **State logic tests** -- Plan approval detection, worktree status derivation, incremental parser state, todo parsing, dialog navigation/filtering/input editing, App constructor defaults, focus cycling, backend-aware model cycling (Claude + Codex), token badge computation, session/slot running queries, branch-for-slot lookup, viewer tab management, run command/preset prompt pickers, edit line finding, session output state reset, skill tool extraction from events, file tree navigation next/prev/first-sibling/last-sibling, file operations add/rename/delete/copy/move, session navigation next/prev/first/last with wrap-around, main branch archive/delete guards, collect_source_files recursive scanning with skip dirs, backend dispatch for session discovery
 - Integration tests for git operations (worktree create/delete/list) — future
 - Integration tests for session discovery from git state — future
 - E2E tests for TUI event handling (would require mock terminal) — future

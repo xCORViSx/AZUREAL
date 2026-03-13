@@ -3,7 +3,7 @@
 use std::sync::mpsc::Receiver;
 
 use crate::app::util::display_text_from_json;
-use crate::claude::ClaudeEvent;
+use crate::claude::AgentEvent;
 use crate::events::DisplayEvent;
 use crate::models::OutputType;
 
@@ -19,7 +19,7 @@ impl App {
     }
 
     /// Apply pre-parsed Claude output to app state. Called with results from
-    /// the background ClaudeProcessor thread — all JSON parsing already done.
+    /// the background AgentProcessor thread — all JSON parsing already done.
     pub fn apply_parsed_output(
         &mut self,
         events: Vec<DisplayEvent>,
@@ -135,7 +135,7 @@ impl App {
     /// the process is alive and clears stale exit codes.
     pub fn handle_claude_started(&mut self, slot_id: &str, _pid: u32) {
         self.running_sessions.insert(slot_id.to_string());
-        self.claude_exit_codes.remove(slot_id);
+        self.agent_exit_codes.remove(slot_id);
         self.invalidate_sidebar();
         let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
         self.set_status(format!("Claude started in {}", branch));
@@ -154,9 +154,9 @@ impl App {
 
         // Remove slot from all process-tracking maps
         self.running_sessions.remove(slot_id);
-        self.claude_receivers.remove(slot_id);
+        self.agent_receivers.remove(slot_id);
         if let Some(c) = code {
-            self.claude_exit_codes.insert(slot_id.to_string(), c);
+            self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
 
         // Remove slot from its branch's slot list
@@ -182,8 +182,8 @@ impl App {
                         // Promote session ID from slot-key to branch-key so the
                         // fallback path in get_claude_session_id() can resume
                         // this conversation on the next prompt.
-                        if let Some(sid) = self.claude_session_ids.get(slot_id).cloned() {
-                            self.claude_session_ids.insert(branch.clone(), sid);
+                        if let Some(sid) = self.agent_session_ids.get(slot_id).cloned() {
+                            self.agent_session_ids.insert(branch.clone(), sid);
                         }
                         self.active_slot.remove(branch);
                     }
@@ -216,7 +216,7 @@ impl App {
         let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
         if !(is_current && was_active) {
             if let Some(ref b) = branch {
-                if let Some(uuid) = self.claude_session_ids.get(slot_id) {
+                if let Some(uuid) = self.agent_session_ids.get(slot_id) {
                     self.unread_session_ids.insert(uuid.clone());
                 }
                 self.unread_sessions.insert(b.clone());
@@ -230,9 +230,9 @@ impl App {
         // Without this guard, the re-parse would reload the OLD session file and
         // clobber the streaming output that the user is viewing.
         if is_current && was_active {
-            let session_file_exists = self.claude_session_ids.get(slot_id)
+            let session_file_exists = self.agent_session_ids.get(slot_id)
                 .and_then(|sid| self.current_worktree().and_then(|wt| wt.worktree_path.as_deref().map(|p| (sid, p))))
-                .and_then(|(sid, path)| crate::config::claude_session_file(path, sid))
+                .and_then(|(sid, path)| crate::config::session_file(self.backend, path, sid))
                 .is_some();
             if session_file_exists {
                 self.session_file_parse_offset = 0;
@@ -269,7 +269,7 @@ impl App {
             self.title_session_name.clone()
         } else {
             // Try to find Claude session UUID for this slot, then look up its name
-            let session_id = self.claude_session_ids.get(slot_id).cloned();
+            let session_id = self.agent_session_ids.get(slot_id).cloned();
             match session_id {
                 Some(id) => {
                     let names = self.load_all_session_names();
@@ -478,9 +478,9 @@ impl App {
 
     /// Register a newly spawned Claude process. The PID is used as the slot key.
     /// Newest spawn becomes the active slot (its output appears in session pane).
-    pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<ClaudeEvent>) {
+    pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<AgentEvent>) {
         let slot = pid.to_string();
-        self.claude_receivers.insert(slot.clone(), receiver);
+        self.agent_receivers.insert(slot.clone(), receiver);
         self.running_sessions.insert(slot.clone());
         // Track this slot under its branch (append = spawn order preserved)
         self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
@@ -501,17 +501,17 @@ impl App {
                 rcr.session_id = Some(claude_session_id.clone());
             }
         }
-        self.claude_session_ids.insert(slot_id.to_string(), claude_session_id);
+        self.agent_session_ids.insert(slot_id.to_string(), claude_session_id);
     }
 
     /// Get the Claude session UUID for the active slot of a branch (for --resume)
     pub fn get_claude_session_id(&self, branch_name: &str) -> Option<&String> {
         // Look up the active slot's Claude session UUID
         self.active_slot.get(branch_name)
-            .and_then(|slot| self.claude_session_ids.get(slot))
+            .and_then(|slot| self.agent_session_ids.get(slot))
             // Fallback: check if there's a session_id stored directly by branch
             // (from load_worktrees at startup, before any slot was created)
-            .or_else(|| self.claude_session_ids.get(branch_name))
+            .or_else(|| self.agent_session_ids.get(branch_name))
     }
 
 }

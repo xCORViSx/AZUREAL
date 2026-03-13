@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::app::types::DocEntry;
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 
 use super::super::App;
 use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, load_health_scope, collect_source_files};
@@ -160,7 +160,7 @@ impl App {
     /// Spawn [DH] (Documentation Health) Claude sessions for all checked doc entries.
     /// Each checked file gets its own concurrent Claude process with a prompt
     /// instructing Claude to add missing doc comments to all documentable items.
-    pub fn doc_health_spawn(&mut self, claude_process: &ClaudeProcess) {
+    pub fn doc_health_spawn(&mut self, claude_process: &AgentProcess) {
         let checked: Vec<(String, usize, usize)> = match self.health_panel {
             Some(ref panel) => panel.doc_entries.iter()
                 .filter(|e| e.checked)
@@ -219,7 +219,7 @@ impl App {
             self.render_in_flight = false;
             self.invalidate_render_cache();
             self.event_parser = crate::events::EventParser::new();
-            self.claude_processor_needs_reset = true;
+            self.agent_processor_needs_reset = true;
             self.session_file_path = None;
             self.session_file_modified = None;
             self.session_file_size = 0;

@@ -28,15 +28,18 @@ use portable_pty::{Child as PtyChild, MasterPty};
 
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
+use crate::backend::Backend;
 use crate::events::EventParser;
 use crate::models::{Project, Worktree};
 use crate::syntax::SyntaxHighlighter;
 use crate::tui::render_thread::RenderThread;
-use super::ClaudeEvent;
+use super::AgentEvent;
 use super::DisplayEvent;
 
 /// Application state
 pub struct App {
+    /// Which agent backend is active (Claude or Codex)
+    pub backend: Backend,
     pub project: Option<Project>,
     pub worktrees: Vec<Worktree>,
     pub selected_worktree: Option<usize>,
@@ -62,7 +65,7 @@ pub struct App {
     pub should_quit: bool,
     pub status_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
-    pub claude_receivers: HashMap<String, Receiver<ClaudeEvent>>,
+    pub agent_receivers: HashMap<String, Receiver<AgentEvent>>,
     /// Set of currently running slot_ids (PID strings)
     pub running_sessions: HashSet<String>,
     /// Branches with at least one unread finished session (for tab rendering)
@@ -70,9 +73,9 @@ pub struct App {
     /// Individual session UUIDs that finished while user wasn't viewing them
     pub unread_session_ids: HashSet<String>,
     /// Last exit code per slot_id (shown in session pane title after Claude exits)
-    pub claude_exit_codes: HashMap<String, i32>,
+    pub agent_exit_codes: HashMap<String, i32>,
     /// Claude API session UUIDs per slot_id (for --resume)
-    pub claude_session_ids: HashMap<String, String>,
+    pub agent_session_ids: HashMap<String, String>,
     /// Maps branch_name → list of active slot_ids (PID strings, spawn order)
     pub branch_slots: HashMap<String, Vec<String>>,
     /// Which slot_id is actively displayed per branch (its output feeds display_events)
@@ -118,7 +121,7 @@ pub struct App {
     pub session_file_dirty: bool,
     /// Signals the event loop to reset the background ClaudeProcessor's parser
     /// state (e.g., on session switch). The event loop checks and clears this.
-    pub claude_processor_needs_reset: bool,
+    pub agent_processor_needs_reset: bool,
     /// True when the user is viewing a session file that doesn't match the
     /// active slot's Claude session. Suppresses live event display and PID badge
     /// so content from a running process doesn't bleed into a historic view.
@@ -513,6 +516,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
+            backend: Backend::Claude,
             project: None,
             worktrees: Vec::new(),
             selected_worktree: None,
@@ -533,12 +537,12 @@ impl App {
             prompt_mode: false,
             should_quit: false,
             status_message: None,
-            claude_receivers: HashMap::new(),
+            agent_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
             unread_sessions: HashSet::new(),
             unread_session_ids: HashSet::new(),
-            claude_exit_codes: HashMap::new(),
-            claude_session_ids: HashMap::new(),
+            agent_exit_codes: HashMap::new(),
+            agent_session_ids: HashMap::new(),
             branch_slots: HashMap::new(),
             active_slot: HashMap::new(),
             session_scroll: usize::MAX, // Start at bottom (most recent messages)
@@ -567,7 +571,7 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
-            claude_processor_needs_reset: false,
+            agent_processor_needs_reset: false,
             viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),
             file_tree_refresh_pending: false,

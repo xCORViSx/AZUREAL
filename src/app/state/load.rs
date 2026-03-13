@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::app::types::WorktreeRefreshResult;
+use crate::backend::Backend;
 use crate::git::Git;
 use crate::models::{Project, Worktree};
 
@@ -16,6 +17,7 @@ pub fn compute_worktree_refresh(
     project_path: PathBuf,
     main_branch: String,
     worktrees_dir: PathBuf,
+    backend: Backend,
 ) -> anyhow::Result<WorktreeRefreshResult> {
     let worktrees = Git::list_worktrees_detailed(&project_path)?;
 
@@ -98,7 +100,7 @@ pub fn compute_worktree_refresh(
 
     let mut result_worktrees = Vec::new();
     let mut result_main: Option<Worktree> = None;
-    let mut claude_session_ids: HashMap<String, String> = HashMap::new();
+    let mut agent_session_ids: HashMap<String, String> = HashMap::new();
     let mut session_files: HashMap<String, Vec<(String, PathBuf, String)>> = HashMap::new();
     let mut active_branches: HashSet<String> = HashSet::new();
 
@@ -106,9 +108,9 @@ pub fn compute_worktree_refresh(
     for wt in &worktrees {
         if wt.is_main {
             let branch_name = wt.branch.clone().unwrap_or_else(|| main_branch.clone());
-            let claude_id = crate::config::find_latest_claude_session(&wt.path);
+            let claude_id = crate::config::find_latest_session(backend, &wt.path);
             if let Some(ref id) = claude_id {
-                claude_session_ids.insert(branch_name.clone(), id.clone());
+                agent_session_ids.insert(branch_name.clone(), id.clone());
             }
             result_main = Some(Worktree {
                 branch_name: branch_name.clone(),
@@ -116,7 +118,7 @@ pub fn compute_worktree_refresh(
                 claude_session_id: claude_id,
                 archived: false,
             });
-            let files = crate::config::list_claude_sessions(&wt.path);
+            let files = crate::config::list_sessions(backend, &wt.path);
             session_files.insert(branch_name.clone(), files);
             active_branches.insert(branch_name);
         }
@@ -126,9 +128,9 @@ pub fn compute_worktree_refresh(
     for wt in &worktrees {
         if !wt.is_main && wt.path.starts_with(&worktrees_dir) {
             let branch_name = wt.branch.clone().unwrap_or_default();
-            let claude_id = crate::config::find_latest_claude_session(&wt.path);
+            let claude_id = crate::config::find_latest_session(backend, &wt.path);
             if let Some(ref id) = claude_id {
-                claude_session_ids.insert(branch_name.clone(), id.clone());
+                agent_session_ids.insert(branch_name.clone(), id.clone());
             }
             result_worktrees.push(Worktree {
                 branch_name: branch_name.clone(),
@@ -136,7 +138,7 @@ pub fn compute_worktree_refresh(
                 claude_session_id: claude_id,
                 archived: false,
             });
-            let files = crate::config::list_claude_sessions(&wt.path);
+            let files = crate::config::list_sessions(backend, &wt.path);
             session_files.insert(branch_name.clone(), files);
             active_branches.insert(branch_name);
         }
@@ -157,7 +159,7 @@ pub fn compute_worktree_refresh(
     Ok(WorktreeRefreshResult {
         main_worktree: result_main,
         worktrees: result_worktrees,
-        claude_session_ids,
+        agent_session_ids,
         session_files,
     })
 }
@@ -223,6 +225,7 @@ impl App {
             project.path.clone(),
             project.main_branch.clone(),
             project.worktrees_dir(),
+            self.backend,
         )?;
         self.apply_worktree_result(result);
         Ok(())
@@ -232,8 +235,8 @@ impl App {
     /// Handles selection preservation and session file index fixup.
     pub fn apply_worktree_result(&mut self, result: WorktreeRefreshResult) {
         // Apply claude session IDs
-        for (branch, id) in result.claude_session_ids {
-            self.claude_session_ids.insert(branch, id);
+        for (branch, id) in result.agent_session_ids {
+            self.agent_session_ids.insert(branch, id);
         }
 
         // Apply main worktree
@@ -310,7 +313,7 @@ impl App {
         self.rendered_content_line_count = 0;
         self.rendered_events_start = 0;
         self.event_parser = crate::events::EventParser::new();
-        self.claude_processor_needs_reset = true;
+        self.agent_processor_needs_reset = true;
         self.selected_event = None;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
@@ -344,14 +347,14 @@ impl App {
             // Fall back to stored session ID or cached ID
             if claude_session_id.is_none() {
                 claude_session_id = session_id_from_wt
-                    .or_else(|| self.claude_session_ids.get(&branch_name).cloned());
+                    .or_else(|| self.agent_session_ids.get(&branch_name).cloned());
             }
 
             // Auto-discover Claude session ID if not set and we have a worktree
             if claude_session_id.is_none() {
                 if let Some(ref wt_path) = worktree_path {
-                    if let Some(discovered_id) = crate::config::find_latest_claude_session(wt_path) {
-                        self.claude_session_ids.insert(branch_name.clone(), discovered_id.clone());
+                    if let Some(discovered_id) = crate::config::find_latest_session(self.backend, wt_path) {
+                        self.agent_session_ids.insert(branch_name.clone(), discovered_id.clone());
                         claude_session_id = Some(discovered_id);
                     }
                 }
@@ -376,7 +379,7 @@ impl App {
 
             // Try loading from Claude's session files
             if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
-                if let Some(session_file) = crate::config::claude_session_file(wt_path, &claude_id) {
+                if let Some(session_file) = crate::config::session_file(self.backend, wt_path, &claude_id) {
                     // Track file for live polling
                     self.session_file_path = Some(session_file.clone());
                     if let Ok(meta) = std::fs::metadata(&session_file) {
@@ -384,7 +387,10 @@ impl App {
                         self.session_file_size = meta.len();
                     }
 
-                    let parsed = crate::app::session_parser::parse_session_file(&session_file);
+                    let parsed = match self.backend {
+                        crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(&session_file),
+                        crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(&session_file),
+                    };
                     self.display_events = parsed.events;
                     self.pending_tool_calls = parsed.pending_tools;
                     self.failed_tool_calls = parsed.failed_tools;
@@ -429,7 +435,7 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch = session.branch_name.clone();
             if let Some(active_slot) = self.active_slot.get(&branch) {
-                if let Some(active_sid) = self.claude_session_ids.get(active_slot) {
+                if let Some(active_sid) = self.agent_session_ids.get(active_slot) {
                     if let Some(viewed_sid) = self.viewed_session_id(&branch) {
                         self.viewing_historic_session = active_sid != &viewed_sid;
                     }
@@ -498,7 +504,7 @@ impl App {
             .map(|(id, _, _)| id.clone())
             .or_else(|| self.worktrees.get(self.selected_worktree?)
                 .and_then(|s| s.claude_session_id.clone()))
-            .or_else(|| self.claude_session_ids.get(&branch).cloned());
+            .or_else(|| self.agent_session_ids.get(&branch).cloned());
         self.title_session_name = match session_id {
             Some(id) => names.get(&id).cloned().unwrap_or_else(|| format_uuid_short(&id)),
             None => String::new(),
@@ -546,13 +552,22 @@ impl App {
 
         // Incremental parse: only read new bytes since last offset
         let was_full_reparse = self.session_file_parse_offset == 0;
-        let parsed = crate::app::session_parser::parse_session_file_incremental(
-            &path,
-            self.session_file_parse_offset,
-            &self.display_events,
-            &self.pending_tool_calls,
-            &self.failed_tool_calls,
-        );
+        let parsed = match self.backend {
+            crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file_incremental(
+                &path,
+                self.session_file_parse_offset,
+                &self.display_events,
+                &self.pending_tool_calls,
+                &self.failed_tool_calls,
+            ),
+            crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                &path,
+                self.session_file_parse_offset,
+                &self.display_events,
+                &self.pending_tool_calls,
+                &self.failed_tool_calls,
+            ),
+        };
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
         // or deleted during Claude Code compaction). Preserve existing display

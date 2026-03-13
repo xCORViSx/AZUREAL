@@ -8,13 +8,13 @@ use crossterm::event;
 
 use crate::app::{App, Focus};
 use crate::app::types::RcrSession;
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use crate::git::Git;
 
 /// Handle input while the conflict resolution overlay is open.
 /// j/k or Up/Down navigate between "Resolve with Claude" and "Abort rebase".
 /// Enter/y resolves, n/Esc aborts the rebase and closes the overlay.
-pub(super) fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub(super) fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     let (sel, wt_path, repo_root, branch, conflicted, auto_merged, continue_merge) = match app.git_actions_panel.as_ref() {
@@ -119,7 +119,7 @@ fn build_conflict_prompt(display: &str, conflicted: &[String], auto_merged: &[St
 #[allow(clippy::too_many_arguments)]
 fn spawn_conflict_claude(
     app: &mut App,
-    claude_process: &ClaudeProcess,
+    claude_process: &AgentProcess,
     wt_path: &std::path::Path,
     repo_root: &std::path::Path,
     branch: &str,
@@ -237,9 +237,9 @@ mod tests {
         app
     }
 
-    /// Build a ClaudeProcess for tests (spawn will fail since no real executable)
-    fn test_claude() -> ClaudeProcess {
-        ClaudeProcess::new(Config::default())
+    /// Build an AgentProcess for tests (spawn will fail since no real executable)
+    fn test_claude() -> AgentProcess {
+        AgentProcess::new(Config::default(), crate::backend::Backend::Claude)
     }
 
     /// Helper: get the conflict overlay from the app (panics if missing)

@@ -8,8 +8,9 @@
 //! - `util`: Utility functions (ANSI stripping, JSON parsing)
 //! - `session_parser`: Claude session file parsing
 
+pub(crate) mod codex_session_parser;
 mod input;
-mod session_parser;
+pub(crate) mod session_parser;
 pub(crate) mod state;
 mod terminal;
 pub(crate) mod types;

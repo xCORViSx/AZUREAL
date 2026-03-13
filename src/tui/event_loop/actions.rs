@@ -24,7 +24,7 @@ use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
 use crate::app::{App, Focus};
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 
 use super::super::keybindings::{Action, KeyContext, lookup_action};
 use super::super::input_dialogs::{handle_branch_dialog_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
@@ -45,7 +45,7 @@ use rcr::accept_rcr;
 /// Modal overlays (help, wizard, dialogs) bypass this and consume
 /// all input directly. Focus-specific handlers only see keys that lookup_action()
 /// didn't resolve (text input, dialog nav, etc.).
-pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     // Bare modifier presses (Shift, Ctrl, Alt) arrive via Kitty protocol — ignore globally
     if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
 
@@ -72,7 +72,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                     app.invalidate_sidebar();
                     let rcr = app.rcr_session.take().unwrap();
                     if let Some(ref sid) = rcr.session_id {
-                        if let Some(path) = crate::config::claude_session_file(&rcr.worktree_path, sid) {
+                        if let Some(path) = crate::config::session_file(app.backend, &rcr.worktree_path, sid) {
                             let _ = std::fs::remove_file(path);
                         }
                     }
@@ -177,14 +177,14 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                         // Clean up state immediately (fast)
                         app.session_files.remove(&branch);
                         app.session_selected_file_idx.remove(&branch);
-                        app.claude_session_ids.retain(|k, _| k != &branch);
+                        app.agent_session_ids.retain(|k, _| k != &branch);
                         app.unread_sessions.remove(&branch);
                         if let Some(slots) = app.branch_slots.remove(&branch) {
                             for slot in &slots {
                                 app.running_sessions.remove(slot);
-                                app.claude_receivers.remove(slot);
-                                app.claude_exit_codes.remove(slot);
-                                app.claude_session_ids.remove(slot);
+                                app.agent_receivers.remove(slot);
+                                app.agent_exit_codes.remove(slot);
+                                app.agent_session_ids.remove(slot);
                             }
                         }
                         app.active_slot.remove(&branch);
@@ -289,14 +289,14 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
                         // Clean up stale session state immediately
                         app.session_files.remove(&d.branch);
                         app.session_selected_file_idx.remove(&d.branch);
-                        app.claude_session_ids.retain(|k, _| k != &d.branch);
+                        app.agent_session_ids.retain(|k, _| k != &d.branch);
                         app.unread_sessions.remove(&d.branch);
                         if let Some(slots) = app.branch_slots.remove(&d.branch) {
                             for slot in &slots {
                                 app.running_sessions.remove(slot);
-                                app.claude_receivers.remove(slot);
-                                app.claude_exit_codes.remove(slot);
-                                app.claude_session_ids.remove(slot);
+                                app.agent_receivers.remove(slot);
+                                app.agent_exit_codes.remove(slot);
+                                app.agent_session_ids.remove(slot);
                             }
                         }
                         app.active_slot.remove(&d.branch);
@@ -342,6 +342,7 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Cl
     if app.is_projects_panel_active() { return handle_projects_input(key, app); }
     if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
     if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
+
 
     // Debug dump naming dialog — text input for the dump file suffix
     if let Some(ref mut naming) = app.debug_dump_naming {

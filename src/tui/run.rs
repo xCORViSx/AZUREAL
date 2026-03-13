@@ -70,6 +70,12 @@ pub async fn run() -> Result<()> {
     app.load_preset_prompts();
     app.load_session_output();
     let config = Config::load().unwrap_or_default();
+    app.backend = config.backend;
+    // Set default model for the active backend
+    app.selected_model = Some(match config.backend {
+        crate::backend::Backend::Claude => "opus",
+        crate::backend::Backend::Codex => "o3",
+    }.to_string());
     // Auto-detect Nerd Font support by probing a PUA glyph during splash
     app.nerd_fonts = super::file_icons::detect_nerd_font();
     if !app.nerd_fonts {

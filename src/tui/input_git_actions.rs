@@ -27,7 +27,7 @@ use crossterm::event;
 use crossterm::event::KeyModifiers;
 
 use crate::app::App;
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use super::keybindings::{lookup_git_actions_action, Action, is_cmd};
 use super::event_loop::copy_viewer_selection;
 
@@ -43,7 +43,7 @@ fn action_count(is_on_main: bool) -> usize { if is_on_main { 3 } else { 4 } }
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
-pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     let panel = match app.git_actions_panel.as_mut() {
         Some(p) => p,
         None => return Ok(()),

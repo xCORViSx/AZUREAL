@@ -27,6 +27,7 @@ fn discover_project() -> Result<Project> {
 fn discover_worktrees(project: &Project) -> Result<Vec<Worktree>> {
     let worktrees = Git::list_worktrees_detailed(&project.path)?;
     let azureal_branches = Git::list_azureal_branches(&project.path)?;
+    let backend = crate::config::Config::load().map(|c| c.backend).unwrap_or_default();
 
     let mut sessions = Vec::new();
     let mut active_branches: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -34,7 +35,7 @@ fn discover_worktrees(project: &Project) -> Result<Vec<Worktree>> {
     // Add all worktrees as sessions
     for wt in &worktrees {
         let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
-        let claude_id = crate::config::find_latest_claude_session(&wt.path);
+        let claude_id = crate::config::find_latest_session(backend, &wt.path);
 
         sessions.push(Worktree {
             branch_name: branch_name.clone(),
@@ -305,7 +306,8 @@ pub fn handle_session_logs(session_query: &str, _follow: bool, _lines: usize) ->
     if let Some(ref id) = session.claude_session_id {
         println!("Claude session ID: {}", id);
         if let Some(ref wt) = session.worktree_path {
-            if let Some(file) = crate::config::claude_session_file(wt, id) {
+            let backend = crate::config::Config::load().map(|c| c.backend).unwrap_or_default();
+            if let Some(file) = crate::config::session_file(backend, wt, id) {
                 println!("Session file: {}", file.display());
             }
         }

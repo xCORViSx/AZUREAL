@@ -11,15 +11,15 @@ use crate::models::OutputType;
 
 /// Output from Claude Code process
 #[derive(Debug, Clone)]
-pub struct ClaudeOutput {
+pub struct AgentOutput {
     pub output_type: OutputType,
     pub data: String,
 }
 
 /// Events from Claude Code process
 #[derive(Debug)]
-pub enum ClaudeEvent {
-    Output(ClaudeOutput),
+pub enum AgentEvent {
+    Output(AgentOutput),
     Started { pid: u32 },
     /// Claude's session ID from init event (for --resume)
     SessionId(String),
@@ -46,7 +46,7 @@ impl ClaudeProcess {
         prompt: &str,
         resume_session_id: Option<&str>,
         model: Option<&str>,
-    ) -> Result<(mpsc::Receiver<ClaudeEvent>, u32)> {
+    ) -> Result<(mpsc::Receiver<AgentEvent>, u32)> {
         if prompt.is_empty() {
             anyhow::bail!("Prompt cannot be empty");
         }
@@ -94,7 +94,7 @@ impl ClaudeProcess {
             .context("Failed to spawn Claude")?;
 
         let pid = child.id();
-        let _ = tx.send(ClaudeEvent::Started { pid });
+        let _ = tx.send(AgentEvent::Started { pid });
 
         // Read stdout
         let stdout = child.stdout.take().context("Failed to get stdout")?;
@@ -116,16 +116,16 @@ impl ClaudeProcess {
                 if line.contains("\"subtype\":\"init\"") {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
                         if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
-                            let _ = tx_stdout.send(ClaudeEvent::SessionId(session_id.to_string()));
+                            let _ = tx_stdout.send(AgentEvent::SessionId(session_id.to_string()));
                         }
                     }
                 }
 
-                let output = ClaudeOutput {
+                let output = AgentOutput {
                     output_type: OutputType::Stdout,
                     data: format!("{}\n", line),
                 };
-                if tx_stdout.send(ClaudeEvent::Output(output)).is_err() {
+                if tx_stdout.send(AgentEvent::Output(output)).is_err() {
                     break;
                 }
             }
@@ -147,11 +147,11 @@ impl ClaudeProcess {
                 }
 
                 // Send stderr output (might contain hooks)
-                let output = ClaudeOutput {
+                let output = AgentOutput {
                     output_type: OutputType::Stderr,
                     data: format!("{}\n", line),
                 };
-                if tx_stderr.send(ClaudeEvent::Output(output)).is_err() {
+                if tx_stderr.send(AgentEvent::Output(output)).is_err() {
                     break;
                 }
             }
@@ -161,7 +161,7 @@ impl ClaudeProcess {
         thread::spawn(move || {
             let status = child.wait();
             let code = status.ok().and_then(|s| s.code());
-            let _ = tx.send(ClaudeEvent::Exited { code });
+            let _ = tx.send(AgentEvent::Exited { code });
         });
 
         Ok((rx, pid))
@@ -173,11 +173,11 @@ mod tests {
     use super::*;
     use crate::config::PermissionMode;
 
-    // ── ClaudeOutput construction ──
+    // ── AgentOutput construction ──
 
     #[test]
     fn test_claude_output_stdout() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "hello\n".to_string(),
         };
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_stderr() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stderr,
             data: "error message\n".to_string(),
         };
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_system() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::System,
             data: "system event".to_string(),
         };
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_json() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Json,
             data: r#"{"type":"text"}"#.to_string(),
         };
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_error() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Error,
             data: "fatal error".to_string(),
         };
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_hook() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Hook,
             data: "hook output".to_string(),
         };
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_empty_data() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: String::new(),
         };
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_clone() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "test".to_string(),
         };
@@ -252,12 +252,12 @@ mod tests {
 
     #[test]
     fn test_claude_output_debug() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "debug test".to_string(),
         };
         let debug = format!("{:?}", output);
-        assert!(debug.contains("ClaudeOutput"));
+        assert!(debug.contains("AgentOutput"));
         assert!(debug.contains("Stdout"));
         assert!(debug.contains("debug test"));
     }
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn test_claude_output_large_data() {
         let large = "x".repeat(100_000);
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: large.clone(),
         };
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_unicode_data() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "日本語テスト 🚀".to_string(),
         };
@@ -284,28 +284,28 @@ mod tests {
 
     #[test]
     fn test_claude_output_multiline_data() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "line1\nline2\nline3\n".to_string(),
         };
         assert_eq!(output.data.lines().count(), 3);
     }
 
-    // ── ClaudeEvent variants ──
+    // ── AgentEvent variants ──
 
     #[test]
     fn test_claude_event_output() {
-        let event = ClaudeEvent::Output(ClaudeOutput {
+        let event = AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: "test".to_string(),
         });
-        assert!(matches!(event, ClaudeEvent::Output(_)));
+        assert!(matches!(event, AgentEvent::Output(_)));
     }
 
     #[test]
     fn test_claude_event_started() {
-        let event = ClaudeEvent::Started { pid: 12345 };
-        if let ClaudeEvent::Started { pid } = event {
+        let event = AgentEvent::Started { pid: 12345 };
+        if let AgentEvent::Started { pid } = event {
             assert_eq!(pid, 12345);
         } else {
             panic!("expected Started");
@@ -314,24 +314,24 @@ mod tests {
 
     #[test]
     fn test_claude_event_started_zero_pid() {
-        let event = ClaudeEvent::Started { pid: 0 };
-        if let ClaudeEvent::Started { pid } = event {
+        let event = AgentEvent::Started { pid: 0 };
+        if let AgentEvent::Started { pid } = event {
             assert_eq!(pid, 0);
         }
     }
 
     #[test]
     fn test_claude_event_started_large_pid() {
-        let event = ClaudeEvent::Started { pid: u32::MAX };
-        if let ClaudeEvent::Started { pid } = event {
+        let event = AgentEvent::Started { pid: u32::MAX };
+        if let AgentEvent::Started { pid } = event {
             assert_eq!(pid, u32::MAX);
         }
     }
 
     #[test]
     fn test_claude_event_session_id() {
-        let event = ClaudeEvent::SessionId("sess-abc-123-def".to_string());
-        if let ClaudeEvent::SessionId(id) = event {
+        let event = AgentEvent::SessionId("sess-abc-123-def".to_string());
+        if let AgentEvent::SessionId(id) = event {
             assert_eq!(id, "sess-abc-123-def");
         } else {
             panic!("expected SessionId");
@@ -340,16 +340,16 @@ mod tests {
 
     #[test]
     fn test_claude_event_session_id_empty() {
-        let event = ClaudeEvent::SessionId(String::new());
-        if let ClaudeEvent::SessionId(id) = event {
+        let event = AgentEvent::SessionId(String::new());
+        if let AgentEvent::SessionId(id) = event {
             assert!(id.is_empty());
         }
     }
 
     #[test]
     fn test_claude_event_exited_success() {
-        let event = ClaudeEvent::Exited { code: Some(0) };
-        if let ClaudeEvent::Exited { code } = event {
+        let event = AgentEvent::Exited { code: Some(0) };
+        if let AgentEvent::Exited { code } = event {
             assert_eq!(code, Some(0));
         } else {
             panic!("expected Exited");
@@ -358,31 +358,31 @@ mod tests {
 
     #[test]
     fn test_claude_event_exited_failure() {
-        let event = ClaudeEvent::Exited { code: Some(1) };
-        if let ClaudeEvent::Exited { code } = event {
+        let event = AgentEvent::Exited { code: Some(1) };
+        if let AgentEvent::Exited { code } = event {
             assert_eq!(code, Some(1));
         }
     }
 
     #[test]
     fn test_claude_event_exited_signal() {
-        let event = ClaudeEvent::Exited { code: None };
-        if let ClaudeEvent::Exited { code } = event {
+        let event = AgentEvent::Exited { code: None };
+        if let AgentEvent::Exited { code } = event {
             assert!(code.is_none());
         }
     }
 
     #[test]
     fn test_claude_event_exited_error_code() {
-        let event = ClaudeEvent::Exited { code: Some(127) };
-        if let ClaudeEvent::Exited { code } = event {
+        let event = AgentEvent::Exited { code: Some(127) };
+        if let AgentEvent::Exited { code } = event {
             assert_eq!(code, Some(127));
         }
     }
 
     #[test]
     fn test_claude_event_debug() {
-        let event = ClaudeEvent::Started { pid: 42 };
+        let event = AgentEvent::Started { pid: 42 };
         let debug = format!("{:?}", event);
         assert!(debug.contains("Started"));
         assert!(debug.contains("42"));
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_claude_event_output_debug() {
-        let event = ClaudeEvent::Output(ClaudeOutput {
+        let event = AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stderr,
             data: "err".to_string(),
         });
@@ -483,34 +483,34 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
 
-    // ── ClaudeEvent channel communication ──
+    // ── AgentEvent channel communication ──
 
     #[test]
     fn test_claude_event_channel_send_receive() {
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(ClaudeEvent::Started { pid: 100 }).unwrap();
-        tx.send(ClaudeEvent::Output(ClaudeOutput {
+        tx.send(AgentEvent::Started { pid: 100 }).unwrap();
+        tx.send(AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: "test\n".to_string(),
         })).unwrap();
-        tx.send(ClaudeEvent::Exited { code: Some(0) }).unwrap();
-        assert!(matches!(rx.recv().unwrap(), ClaudeEvent::Started { pid: 100 }));
-        assert!(matches!(rx.recv().unwrap(), ClaudeEvent::Output(_)));
-        assert!(matches!(rx.recv().unwrap(), ClaudeEvent::Exited { code: Some(0) }));
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        assert!(matches!(rx.recv().unwrap(), AgentEvent::Started { pid: 100 }));
+        assert!(matches!(rx.recv().unwrap(), AgentEvent::Output(_)));
+        assert!(matches!(rx.recv().unwrap(), AgentEvent::Exited { code: Some(0) }));
     }
 
     #[test]
     fn test_claude_event_channel_session_id() {
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(ClaudeEvent::SessionId("uuid-test".to_string())).unwrap();
-        if let ClaudeEvent::SessionId(id) = rx.recv().unwrap() {
+        tx.send(AgentEvent::SessionId("uuid-test".to_string())).unwrap();
+        if let AgentEvent::SessionId(id) = rx.recv().unwrap() {
             assert_eq!(id, "uuid-test");
         }
     }
 
     #[test]
     fn test_claude_event_channel_try_recv_empty() {
-        let (_tx, rx) = std::sync::mpsc::channel::<ClaudeEvent>();
+        let (_tx, rx) = std::sync::mpsc::channel::<AgentEvent>();
         assert!(rx.try_recv().is_err());
     }
 
@@ -527,7 +527,7 @@ mod tests {
             OutputType::Hook,
         ];
         for ot in types {
-            let output = ClaudeOutput {
+            let output = AgentOutput {
                 output_type: ot,
                 data: "test".to_string(),
             };
@@ -542,6 +542,8 @@ mod tests {
         let config = Config {
             anthropic_api_key: Some("key".to_string()),
             claude_executable: Some("/bin/claude".to_string()),
+            codex_executable: None,
+            backend: crate::backend::Backend::Claude,
             default_permission_mode: PermissionMode::Approve,
             verbose: true,
         };
@@ -558,33 +560,33 @@ mod tests {
         assert_eq!(process.config.claude_executable(), "claude");
     }
 
-    // ── ClaudeEvent: all variants constructable ──
+    // ── AgentEvent: all variants constructable ──
 
     #[test]
     fn test_all_claude_event_variants_exist() {
-        let events: Vec<ClaudeEvent> = vec![
-            ClaudeEvent::Output(ClaudeOutput { output_type: OutputType::Stdout, data: String::new() }),
-            ClaudeEvent::Started { pid: 1 },
-            ClaudeEvent::SessionId("id".to_string()),
-            ClaudeEvent::Exited { code: Some(0) },
+        let events: Vec<AgentEvent> = vec![
+            AgentEvent::Output(AgentOutput { output_type: OutputType::Stdout, data: String::new() }),
+            AgentEvent::Started { pid: 1 },
+            AgentEvent::SessionId("id".to_string()),
+            AgentEvent::Exited { code: Some(0) },
         ];
         assert_eq!(events.len(), 4);
     }
 
     #[test]
     fn test_claude_event_exited_negative_code() {
-        let event = ClaudeEvent::Exited { code: Some(-1) };
-        if let ClaudeEvent::Exited { code } = event {
+        let event = AgentEvent::Exited { code: Some(-1) };
+        if let AgentEvent::Exited { code } = event {
             assert_eq!(code, Some(-1));
         }
     }
 
-    // ── ClaudeOutput data formatting ──
+    // ── AgentOutput data formatting ──
 
     #[test]
     fn test_claude_output_data_with_newline_suffix() {
         // The spawn method appends \n to each line
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: format!("{}\n", r#"{"type":"text","text":"hello"}"#),
         };
@@ -594,7 +596,7 @@ mod tests {
     #[test]
     fn test_claude_output_json_parsing() {
         let json_line = r#"{"type":"assistant","subtype":"init","session_id":"abc"}"#;
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: format!("{}\n", json_line),
         };
@@ -635,11 +637,11 @@ mod tests {
         assert!(session_id.is_none());
     }
 
-    // ── ClaudeOutput data with special characters ──
+    // ── AgentOutput data with special characters ──
 
     #[test]
     fn test_claude_output_data_with_tabs() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stdout,
             data: "col1\tcol2\tcol3\n".to_string(),
         };
@@ -648,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_claude_output_data_with_json_special_chars() {
-        let output = ClaudeOutput {
+        let output = AgentOutput {
             output_type: OutputType::Stderr,
             data: r#"{"key":"value with \"quotes\""}"#.to_string(),
         };
@@ -671,13 +673,13 @@ mod tests {
         assert!(process.config.anthropic_api_key.is_none());
     }
 
-    // ── ClaudeEvent: SessionId with special chars ──
+    // ── AgentEvent: SessionId with special chars ──
 
     #[test]
     fn test_session_id_with_uuid_format() {
         let uuid = "550e8400-e29b-41d4-a716-446655440000";
-        let event = ClaudeEvent::SessionId(uuid.to_string());
-        if let ClaudeEvent::SessionId(id) = event {
+        let event = AgentEvent::SessionId(uuid.to_string());
+        if let AgentEvent::SessionId(id) = event {
             assert_eq!(id.len(), 36);
             assert!(id.contains('-'));
         }
@@ -685,8 +687,8 @@ mod tests {
 
     #[test]
     fn test_session_id_unicode() {
-        let event = ClaudeEvent::SessionId("日本語".to_string());
-        if let ClaudeEvent::SessionId(id) = event {
+        let event = AgentEvent::SessionId("日本語".to_string());
+        if let AgentEvent::SessionId(id) = event {
             assert_eq!(id, "日本語");
         }
     }

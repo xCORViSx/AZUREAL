@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::backend::Backend;
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -9,12 +11,17 @@ pub struct Config {
     pub anthropic_api_key: Option<String>,
     /// Custom path to Claude Code executable
     pub claude_executable: Option<String>,
+    /// Custom path to Codex CLI executable
+    pub codex_executable: Option<String>,
     /// Default permission mode for new sessions
     #[serde(default)]
     pub default_permission_mode: PermissionMode,
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
+    /// Which backend to use (claude or codex)
+    #[serde(default)]
+    pub backend: Backend,
 }
 
 impl Default for Config {
@@ -22,8 +29,10 @@ impl Default for Config {
         Self {
             anthropic_api_key: None,
             claude_executable: None,
+            codex_executable: None,
             default_permission_mode: PermissionMode::default(),
             verbose: false,
+            backend: Backend::default(),
         }
     }
 }
@@ -48,17 +57,25 @@ impl Config {
         Ok(Self {
             anthropic_api_key: az.config.anthropic_api_key,
             claude_executable: az.config.claude_executable,
+            codex_executable: az.config.codex_executable,
             default_permission_mode: match az.config.default_permission_mode.as_str() {
                 "approve" => PermissionMode::Approve,
                 "ask" => PermissionMode::Ask,
                 _ => PermissionMode::Ignore,
             },
             verbose: az.config.verbose,
+            backend: Backend::from_str_loose(
+                az.config.backend.as_deref().unwrap_or("claude"),
+            ),
         })
     }
 
     pub fn claude_executable(&self) -> &str {
         self.claude_executable.as_deref().unwrap_or("claude")
+    }
+
+    pub fn codex_executable(&self) -> &str {
+        self.codex_executable.as_deref().unwrap_or("codex")
     }
 }
 
@@ -307,6 +324,146 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
 /// Find the most recent Claude session for a worktree
 pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<String> {
     list_claude_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
+}
+
+// ── Codex session discovery ──
+
+/// Codex sessions dir: ~/.codex/sessions/
+fn codex_sessions_root() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let dir = home.join(".codex").join("sessions");
+    if dir.exists() { Some(dir) } else { None }
+}
+
+/// Extract CWD from a Codex session file's first line (session_meta event).
+/// Returns None if the file can't be read or the first line doesn't contain a cwd.
+fn codex_session_cwd(path: &std::path::Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    use std::io::BufRead;
+    let first_line = reader.lines().next()?.ok()?;
+    let json: serde_json::Value = serde_json::from_str(&first_line).ok()?;
+    // session_meta format: {"type":"session_meta","payload":{"cwd":"..."}}
+    json.get("payload")
+        .and_then(|p| p.get("cwd"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Extract the UUID session ID from a Codex session filename.
+/// Format: rollout-YYYY-MM-DDThh-mm-ss-<UUID>.jsonl
+/// The UUID is the last 36 characters before .jsonl
+fn codex_session_id_from_filename(filename: &str) -> Option<String> {
+    let stem = filename.strip_suffix(".jsonl")?;
+    // UUID is 36 chars (8-4-4-4-12 with hyphens)
+    if stem.len() < 36 { return None; }
+    let uuid = &stem[stem.len() - 36..];
+    // Validate UUID shape (basic check: has 4 hyphens at correct positions)
+    if uuid.chars().filter(|&c| c == '-').count() == 4 { Some(uuid.to_string()) } else { None }
+}
+
+/// Get the Codex session file path for a given session ID.
+/// Scans ~/.codex/sessions/YYYY/MM/DD/ directories for a matching UUID in the filename.
+pub fn codex_session_file(session_id: &str) -> Option<PathBuf> {
+    let root = codex_sessions_root()?;
+    // Walk year/month/day directories
+    for year_entry in std::fs::read_dir(&root).ok()?.flatten() {
+        if !year_entry.path().is_dir() { continue; }
+        for month_entry in std::fs::read_dir(year_entry.path()).ok()?.flatten() {
+            if !month_entry.path().is_dir() { continue; }
+            for day_entry in std::fs::read_dir(month_entry.path()).ok()?.flatten() {
+                if !day_entry.path().is_dir() { continue; }
+                for file_entry in std::fs::read_dir(day_entry.path()).ok()?.flatten() {
+                    let path = file_entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.ends_with(".jsonl") && name.contains(session_id) {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// List all Codex session files whose CWD matches a worktree path, newest first.
+/// Returns (session_id, path, pre-formatted_time_string) — same shape as list_claude_sessions.
+pub fn list_codex_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
+    let Some(root) = codex_sessions_root() else { return Vec::new() };
+
+    // Canonicalize the target path for reliable comparison
+    let target = dunce::canonicalize(worktree_path)
+        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let target_str = target.to_string_lossy();
+
+    let mut sessions: Vec<(String, PathBuf, std::time::SystemTime)> = Vec::new();
+
+    // Walk year/month/day directories
+    for year_entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        if !year_entry.path().is_dir() { continue; }
+        for month_entry in std::fs::read_dir(year_entry.path()).into_iter().flatten().flatten() {
+            if !month_entry.path().is_dir() { continue; }
+            for day_entry in std::fs::read_dir(month_entry.path()).into_iter().flatten().flatten() {
+                if !day_entry.path().is_dir() { continue; }
+                for file_entry in std::fs::read_dir(day_entry.path()).into_iter().flatten().flatten() {
+                    let path = file_entry.path();
+                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+                    if !name.ends_with(".jsonl") { continue; }
+
+                    // Extract session ID from filename
+                    let Some(sid) = codex_session_id_from_filename(name) else { continue };
+
+                    // Match CWD from session_meta first line
+                    let Some(cwd) = codex_session_cwd(&path) else { continue };
+                    let cwd_canonical = dunce::canonicalize(&cwd)
+                        .unwrap_or_else(|_| PathBuf::from(&cwd));
+                    if cwd_canonical.to_string_lossy() != *target_str { continue; }
+
+                    let mtime = file_entry.metadata()
+                        .and_then(|m| m.modified())
+                        .unwrap_or(std::time::UNIX_EPOCH);
+                    sessions.push((sid, path, mtime));
+                }
+            }
+        }
+    }
+
+    sessions.sort_by(|a, b| b.2.cmp(&a.2));
+    sessions.into_iter().map(|(id, path, mtime)| (id, path, format_time(mtime))).collect()
+}
+
+/// Find the most recent Codex session for a worktree
+pub fn find_latest_codex_session(worktree_path: &std::path::Path) -> Option<String> {
+    list_codex_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
+}
+
+// ── Backend-dispatched session discovery ──
+
+/// List sessions for the active backend, newest first.
+/// Dispatches to list_claude_sessions or list_codex_sessions.
+pub fn list_sessions(backend: Backend, worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
+    match backend {
+        Backend::Claude => list_claude_sessions(worktree_path),
+        Backend::Codex => list_codex_sessions(worktree_path),
+    }
+}
+
+/// Find the most recent session for the active backend.
+pub fn find_latest_session(backend: Backend, worktree_path: &std::path::Path) -> Option<String> {
+    match backend {
+        Backend::Claude => find_latest_claude_session(worktree_path),
+        Backend::Codex => find_latest_codex_session(worktree_path),
+    }
+}
+
+/// Get a session file path for the active backend.
+/// Claude needs project_path to locate the encoded directory; Codex scans by UUID.
+pub fn session_file(backend: Backend, project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
+    match backend {
+        Backend::Claude => claude_session_file(project_path, session_id),
+        Backend::Codex => codex_session_file(session_id),
+    }
 }
 
 // ── Projects persistence (~/.azureal/projects) ──
@@ -811,6 +968,8 @@ mod tests {
         let cfg = Config {
             anthropic_api_key: Some("sk-test-123".to_string()),
             claude_executable: Some("/usr/bin/claude".to_string()),
+            codex_executable: None,
+            backend: crate::backend::Backend::Claude,
             default_permission_mode: PermissionMode::Approve,
             verbose: true,
         };
@@ -983,4 +1142,300 @@ mod tests {
         };
         assert_eq!(cfg.anthropic_api_key.as_deref(), Some("sk-ant-api03-test"));
     }
+
+    // ── codex_session_id_from_filename ──
+
+    #[test]
+    fn test_codex_session_id_standard_filename() {
+        let name = "rollout-2026-03-12T22-10-34-019ce52c-a49e-76d0-871b-cf0ca4ce00e4.jsonl";
+        let id = codex_session_id_from_filename(name).unwrap();
+        assert_eq!(id, "019ce52c-a49e-76d0-871b-cf0ca4ce00e4");
+    }
+
+    #[test]
+    fn test_codex_session_id_different_uuid() {
+        let name = "rollout-2025-12-28T22-59-42-019b6730-5ff2-7e20-99de-191362bfc47f.jsonl";
+        let id = codex_session_id_from_filename(name).unwrap();
+        assert_eq!(id, "019b6730-5ff2-7e20-99de-191362bfc47f");
+    }
+
+    #[test]
+    fn test_codex_session_id_no_jsonl_extension() {
+        let id = codex_session_id_from_filename("rollout-2026-01-01-abcdef12-3456-7890-abcd-ef1234567890.txt");
+        assert!(id.is_none());
+    }
+
+    #[test]
+    fn test_codex_session_id_too_short() {
+        let id = codex_session_id_from_filename("short.jsonl");
+        assert!(id.is_none());
+    }
+
+    #[test]
+    fn test_codex_session_id_no_hyphens_in_uuid_position() {
+        // 36 chars but not UUID format (no hyphens)
+        let name = "rollout-2026-01-01T00-00-00-abcdefghijklmnopqrstuvwxyz1234567890.jsonl";
+        let id = codex_session_id_from_filename(name);
+        // UUID validation checks for 4 hyphens — this has none in the last 36 chars
+        assert!(id.is_none());
+    }
+
+    #[test]
+    fn test_codex_session_id_empty_string() {
+        assert!(codex_session_id_from_filename("").is_none());
+    }
+
+    #[test]
+    fn test_codex_session_id_just_jsonl() {
+        assert!(codex_session_id_from_filename(".jsonl").is_none());
+    }
+
+    // ── codex_session_cwd (with temp files) ──
+
+    #[test]
+    fn test_codex_session_cwd_valid_session_meta() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, r#"{"timestamp":"2026-03-13T03:31:31.785Z","type":"session_meta","payload":{"id":"abc-123","cwd":"/Users/dev/myproject"}}"#).unwrap();
+        let cwd = codex_session_cwd(&file).unwrap();
+        assert_eq!(cwd, "/Users/dev/myproject");
+    }
+
+    #[test]
+    fn test_codex_session_cwd_no_cwd_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, r#"{"type":"session_meta","payload":{"id":"abc"}}"#).unwrap();
+        assert!(codex_session_cwd(&file).is_none());
+    }
+
+    #[test]
+    fn test_codex_session_cwd_no_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, r#"{"type":"session_meta"}"#).unwrap();
+        assert!(codex_session_cwd(&file).is_none());
+    }
+
+    #[test]
+    fn test_codex_session_cwd_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, "not json at all").unwrap();
+        assert!(codex_session_cwd(&file).is_none());
+    }
+
+    #[test]
+    fn test_codex_session_cwd_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, "").unwrap();
+        assert!(codex_session_cwd(&file).is_none());
+    }
+
+    #[test]
+    fn test_codex_session_cwd_nonexistent_file() {
+        assert!(codex_session_cwd(Path::new("/nonexistent/path.jsonl")).is_none());
+    }
+
+    #[test]
+    fn test_codex_session_cwd_multiline_reads_first_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        let content = r#"{"type":"session_meta","payload":{"id":"abc","cwd":"/first/path"}}
+{"type":"response_item","payload":{"cwd":"/second/path"}}"#;
+        std::fs::write(&file, content).unwrap();
+        let cwd = codex_session_cwd(&file).unwrap();
+        assert_eq!(cwd, "/first/path");
+    }
+
+    #[test]
+    fn test_codex_session_cwd_windows_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.jsonl");
+        std::fs::write(&file, r#"{"type":"session_meta","payload":{"id":"abc","cwd":"C:\\Users\\dev\\project"}}"#).unwrap();
+        let cwd = codex_session_cwd(&file).unwrap();
+        assert_eq!(cwd, "C:\\Users\\dev\\project");
+    }
+
+    // ── codex_sessions_root ──
+
+    #[test]
+    fn test_codex_sessions_root_returns_path_if_exists() {
+        // This test relies on the actual ~/.codex/sessions/ directory existing
+        let root = codex_sessions_root();
+        if let Some(ref path) = root {
+            assert!(path.ends_with("sessions"));
+            assert!(path.is_dir());
+        }
+        // If the directory doesn't exist, None is also valid
+    }
+
+    // ── Backend-dispatched wrappers ──
+
+    #[test]
+    fn test_list_sessions_claude_dispatches() {
+        // Non-existent path: should return empty for both backends
+        let fake_path = Path::new("/nonexistent/project/path");
+        let claude_result = list_sessions(Backend::Claude, fake_path);
+        assert!(claude_result.is_empty());
+    }
+
+    #[test]
+    fn test_list_sessions_codex_dispatches() {
+        let fake_path = Path::new("/nonexistent/project/path");
+        let codex_result = list_sessions(Backend::Codex, fake_path);
+        assert!(codex_result.is_empty());
+    }
+
+    #[test]
+    fn test_find_latest_session_claude_dispatches() {
+        let fake_path = Path::new("/nonexistent/project/path");
+        assert!(find_latest_session(Backend::Claude, fake_path).is_none());
+    }
+
+    #[test]
+    fn test_find_latest_session_codex_dispatches() {
+        let fake_path = Path::new("/nonexistent/project/path");
+        assert!(find_latest_session(Backend::Codex, fake_path).is_none());
+    }
+
+    #[test]
+    fn test_session_file_claude_dispatches() {
+        let fake_path = Path::new("/nonexistent/project");
+        assert!(session_file(Backend::Claude, fake_path, "nonexistent-id").is_none());
+    }
+
+    #[test]
+    fn test_session_file_codex_dispatches() {
+        let fake_path = Path::new("/nonexistent/project");
+        assert!(session_file(Backend::Codex, fake_path, "nonexistent-id").is_none());
+    }
+
+    // ── codex_session_file ──
+
+    #[test]
+    fn test_codex_session_file_nonexistent_id() {
+        // Should return None for a UUID that doesn't exist in any session file
+        assert!(codex_session_file("00000000-0000-0000-0000-000000000000").is_none());
+    }
+
+    // ── list_codex_sessions / find_latest_codex_session ──
+
+    #[test]
+    fn test_list_codex_sessions_nonexistent_worktree() {
+        let fake = Path::new("/definitely/not/a/real/project");
+        assert!(list_codex_sessions(fake).is_empty());
+    }
+
+    #[test]
+    fn test_find_latest_codex_session_nonexistent() {
+        let fake = Path::new("/definitely/not/a/real/project");
+        assert!(find_latest_codex_session(fake).is_none());
+    }
+
+    // ── Integration test with real Codex sessions on this machine ──
+
+    #[test]
+    fn test_list_codex_sessions_real_worktree() {
+        // Test against the actual AZUREAL project if sessions exist
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        // All returned sessions should have valid UUIDs (36 chars with hyphens)
+        for (id, path, time_str) in &sessions {
+            assert_eq!(id.len(), 36, "Session ID should be 36-char UUID: {}", id);
+            assert!(path.exists(), "Session file should exist: {:?}", path);
+            assert!(!time_str.is_empty(), "Time string should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_codex_session_file_real_session() {
+        // If there are real Codex sessions for AZUREAL, we should be able to find them by ID
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        for (id, expected_path, _) in &sessions {
+            let found = codex_session_file(id);
+            assert_eq!(found.as_ref(), Some(expected_path), "codex_session_file should find: {}", id);
+        }
+    }
+
+    #[test]
+    fn test_codex_session_cwd_matches_real_files() {
+        // Verify that CWD extraction matches the actual worktree path
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        for (_id, path, _) in &sessions {
+            let cwd = codex_session_cwd(path);
+            assert!(cwd.is_some(), "Session file should have CWD: {:?}", path);
+            let cwd_path = PathBuf::from(cwd.unwrap());
+            let canonical = dunce::canonicalize(&cwd_path).unwrap_or(cwd_path);
+            let target = dunce::canonicalize(azureal).unwrap_or_else(|_| azureal.to_path_buf());
+            assert_eq!(canonical, target, "CWD should match AZUREAL path");
+        }
+    }
+
+    #[test]
+    fn test_codex_session_ids_are_unique() {
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        let ids: HashSet<&str> = sessions.iter().map(|(id, _, _)| id.as_str()).collect();
+        assert_eq!(ids.len(), sessions.len(), "Session IDs should be unique");
+    }
+
+    #[test]
+    fn test_codex_sessions_sorted_newest_first() {
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        if sessions.len() < 2 { return; }
+        // Verify mtime ordering by checking file metadata directly
+        for pair in sessions.windows(2) {
+            let mtime_a = std::fs::metadata(&pair[0].1).and_then(|m| m.modified()).unwrap();
+            let mtime_b = std::fs::metadata(&pair[1].1).and_then(|m| m.modified()).unwrap();
+            assert!(mtime_a >= mtime_b, "Sessions should be sorted newest first");
+        }
+    }
+
+    #[test]
+    fn test_find_latest_codex_session_matches_first() {
+        let azureal = Path::new("/Users/macbookpro/AZUREAL");
+        if !azureal.exists() { return; }
+        let sessions = list_codex_sessions(azureal);
+        let latest = find_latest_codex_session(azureal);
+        if sessions.is_empty() {
+            assert!(latest.is_none());
+        } else {
+            assert_eq!(latest, Some(sessions[0].0.clone()));
+        }
+    }
+
+    // ── Config default backend ──
+
+    #[test]
+    fn test_config_default_backend_is_claude() {
+        let cfg = Config::default();
+        assert_eq!(cfg.backend, Backend::Claude);
+    }
+
+    #[test]
+    fn test_config_codex_executable_default() {
+        let cfg = Config::default();
+        assert_eq!(cfg.codex_executable(), "codex");
+    }
+
+    #[test]
+    fn test_config_codex_executable_custom() {
+        let cfg = Config {
+            codex_executable: Some("/usr/local/bin/codex-cli".into()),
+            ..Config::default()
+        };
+        assert_eq!(cfg.codex_executable(), "/usr/local/bin/codex-cli");
+    }
+
+    use std::collections::HashSet;
 }

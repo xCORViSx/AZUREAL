@@ -581,7 +581,7 @@ impl App {
         self.pending_user_message = None;
         self.staged_prompt = None;
         self.event_parser = crate::events::EventParser::new();
-        self.claude_processor_needs_reset = true;
+        self.agent_processor_needs_reset = true;
         self.selected_event = None;
         self.session_file_path = None;
         self.session_file_modified = None;
@@ -590,8 +590,8 @@ impl App {
         self.session_file_dirty = false;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
-        self.claude_session_ids.clear();
-        self.claude_exit_codes.clear();
+        self.agent_session_ids.clear();
+        self.agent_exit_codes.clear();
         self.unread_sessions.clear();
         self.unread_session_ids.clear();
         self.session_files.clear();
@@ -659,7 +659,7 @@ impl App {
                 #[cfg(windows)]
                 { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
             }
-            self.claude_receivers.remove(slot);
+            self.agent_receivers.remove(slot);
         }
         self.branch_slots.clear();
         self.active_slot.clear();

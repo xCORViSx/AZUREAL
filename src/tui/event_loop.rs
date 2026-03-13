@@ -2,16 +2,16 @@
 //!
 //! Split into focused submodules:
 //! - `actions`: Keyboard action dispatch (6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr)
-//! - `claude_events`: Claude process event handling
-//! - `claude_processor`: Background JSON parsing for Claude streaming events
+//! - `agent_events`: Agent process event handling
+//! - `agent_processor`: Background JSON parsing for agent streaming events
 //! - `coords`: Screen-to-content coordinate mapping
 //! - `fast_draw`: Fast-path input rendering (~0.1ms bypass)
 //! - `input_thread`: Dedicated stdin reader thread
 //! - `mouse`: Mouse click, drag, scroll, and selection copy
 
 mod actions;
-mod claude_events;
-mod claude_processor;
+mod agent_events;
+mod agent_processor;
 mod coords;
 #[allow(dead_code)] // macOS-only fast paths; compiled on all platforms for tests
 mod fast_draw;
@@ -31,14 +31,14 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use crate::app::App;
 #[cfg(any(target_os = "macos", test))]
 use crate::app::Focus;
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use crate::config::Config;
 
 use super::draw_output::{submit_render_request, poll_render_result};
 use super::run::ui;
 
 use actions::handle_key_event;
-use claude_events::handle_claude_event;
+use agent_events::handle_claude_event;
 use coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
 #[cfg(target_os = "macos")]
 use fast_draw::{fast_draw_input, fast_draw_session};
@@ -50,7 +50,7 @@ pub async fn run_app(
     app: &mut App,
     config: Config,
 ) -> Result<()> {
-    let claude_process = ClaudeProcess::new(config);
+    let claude_process = AgentProcess::new(config.clone(), config.backend);
 
     // Event loop profiler: log slow iterations (>5ms) to find input blockers
     let mut profile_log = {
@@ -95,7 +95,7 @@ pub async fn run_app(
     // Background JSON parser: Claude streaming events get parsed off the main
     // thread. Eliminates 10-50ms of serde_json::from_str() per tick that was
     // blocking input during Claude streaming.
-    let claude_proc = claude_processor::ClaudeProcessor::spawn();
+    let claude_proc = agent_processor::AgentProcessor::spawn(config.backend);
 
     // Initial draw
     terminal.draw(|f| ui(f, app))?;
@@ -138,7 +138,7 @@ pub async fn run_app(
         // are NOT included — they have their own debounce timers and don't need
         // the main loop to busy-spin. Including them caused sustained high CPU
         // when file watchers fired frequently (the debounce kept resetting).
-        let is_busy = app.draw_pending || app.render_in_flight || !app.claude_receivers.is_empty() || app.stt_recording || app.stt_transcribing || commit_generating || squash_merging || bg_pending || app.terminal_mode;
+        let is_busy = app.draw_pending || app.render_in_flight || !app.agent_receivers.is_empty() || app.stt_recording || app.stt_transcribing || commit_generating || squash_merging || bg_pending || app.terminal_mode;
 
         // First event: block briefly when idle so we don't spin the CPU
         let first_event = if is_busy {
@@ -199,29 +199,29 @@ pub async fn run_app(
         }
 
         // Compute ONCE per iteration. 300ms covers ~3 chars/sec typing with margin.
-        let streaming = !app.claude_receivers.is_empty();
+        let streaming = !app.agent_receivers.is_empty();
         let typing_recently = last_key_time.elapsed() < Duration::from_millis(300);
 
         let _t_input = _loop_start.elapsed();
 
         // Reset the background JSON parser when session changed (flag set by
         // load_session_output / clear_session_state). Drain stale results too.
-        if app.claude_processor_needs_reset {
-            claude_proc.reset();
+        if app.agent_processor_needs_reset {
+            claude_proc.reset(claude_process.backend());
             claude_proc.drain();
-            app.claude_processor_needs_reset = false;
+            app.agent_processor_needs_reset = false;
         }
 
         // Process Claude events — drain raw events from Claude subprocess channels.
-        // Output events are forwarded to the background ClaudeProcessor for JSON
+        // Output events are forwarded to the background AgentProcessor for JSON
         // parsing (non-blocking send). Non-Output events (Started, SessionId,
         // Exited) are handled directly — they're instant. This moves 10-50ms of
         // serde_json::from_str() per tick off the main thread entirely.
         const MAX_CLAUDE_EVENTS_PER_TICK: usize = 10;
-        if !app.claude_receivers.is_empty() {
+        if !app.agent_receivers.is_empty() {
             let mut count = 0;
-            let mut claude_events: Vec<(String, crate::claude::ClaudeEvent)> = Vec::new();
-            'outer: for (sid, rx) in &app.claude_receivers {
+            let mut claude_events: Vec<(String, crate::claude::AgentEvent)> = Vec::new();
+            'outer: for (sid, rx) in &app.agent_receivers {
                 while let Ok(event) = rx.try_recv() {
                     claude_events.push((sid.clone(), event));
                     count += 1;
@@ -230,7 +230,7 @@ pub async fn run_app(
             }
             for (session_id, event) in claude_events {
                 match event {
-                    crate::claude::ClaudeEvent::Output(output) => {
+                    crate::claude::AgentEvent::Output(output) => {
                         // Only parse output for the active/viewed slot — other
                         // slots' output is discarded (no display needed)
                         if app.is_viewing_slot(&session_id) {
@@ -251,7 +251,7 @@ pub async fn run_app(
 
         let _t_claude = _loop_start.elapsed();
 
-        // Poll parsed results from the background ClaudeProcessor. Each result
+        // Poll parsed results from the background AgentProcessor. Each result
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
         // Capped to prevent unbounded drain when parser batches many results.
@@ -586,9 +586,10 @@ pub async fn run_app(
                 let path = project.path.clone();
                 let main_branch = project.main_branch.clone();
                 let wt_dir = project.worktrees_dir();
+                let backend = app.backend;
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
-                    let result = crate::app::state::load::compute_worktree_refresh(path, main_branch, wt_dir);
+                    let result = crate::app::state::load::compute_worktree_refresh(path, main_branch, wt_dir, backend);
                     let _ = tx.send(result);
                 });
                 app.worktree_refresh_receiver = Some(rx);
@@ -613,7 +614,7 @@ pub async fn run_app(
         // walk (10-200ms) would block the event loop and cause input hiccups.
         // Panel refreshes once streaming finishes.
         if app.health_refresh_pending
-            && app.claude_receivers.is_empty()
+            && app.agent_receivers.is_empty()
             && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
         {
             app.refresh_health_panel();
@@ -630,7 +631,7 @@ pub async fn run_app(
         // inject a "may be compacting" banner so the user knows why session pane is frozen
         if app.context_pct_high
             && !app.compaction_banner_injected
-            && !app.claude_receivers.is_empty()
+            && !app.agent_receivers.is_empty()
             && now_poll.duration_since(app.last_session_event_time) >= Duration::from_secs(20)
         {
             app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
@@ -651,7 +652,7 @@ pub async fn run_app(
         // Skip during active Claude streaming — git subprocess calls (git status
         // --porcelain per worktree) block 5-50ms, and rebasing while Claude is
         // modifying files would fail with dirty working tree anyway.
-        if app.claude_receivers.is_empty()
+        if app.agent_receivers.is_empty()
             && now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2)
         {
             app.last_auto_rebase_check = now_poll;
@@ -767,7 +768,7 @@ pub async fn run_app(
                 // SetConsoleTitle (inherits the console even with piped stdio).
                 // Reassert our title after each draw to keep it correct.
                 #[cfg(target_os = "windows")]
-                if !app.claude_receivers.is_empty() {
+                if !app.agent_receivers.is_empty() {
                     app.update_terminal_title();
                 }
 
@@ -823,7 +824,7 @@ pub async fn run_app(
 fn process_input_event(
     evt: Event,
     app: &mut App,
-    claude_process: &ClaudeProcess,
+    claude_process: &AgentProcess,
     needs_redraw: &mut bool,
     scroll_delta: &mut i32,
     scroll_col: &mut u16,
@@ -905,7 +906,7 @@ fn process_input_event(
 
 /// Check all auto-rebase-enabled worktrees and rebase the first eligible one.
 /// Returns true if any state changed (needs redraw).
-fn check_auto_rebase(app: &mut App, _claude_process: &ClaudeProcess) -> bool {
+fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
     use super::input_git_actions::{exec_rebase_inner, RebaseOutcome};
     use crate::app::types::GitConflictOverlay;
 

@@ -9,13 +9,13 @@ use crossterm::event::{self, KeyCode};
 
 use crate::app::App;
 use crate::app::types::{RustModuleStyle, PythonModuleStyle};
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 use super::keybindings::{lookup_health_action, Action};
 
 /// Handle keyboard input when the Worktree Health panel is active.
 /// Module style dialog takes priority when shown (pre-modularize selector).
 /// Otherwise all keys resolved through keybindings.rs.
-pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     // Module style dialog intercepts all input when active
     // (transient sub-state like confirm-delete y/n — raw key matching)
     if let Some(ref panel) = app.health_panel {
@@ -161,7 +161,7 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
 ///   Space/Left/Right: toggle style for current language
 ///   Enter: confirm and spawn GFM sessions with chosen styles
 ///   Esc: cancel back to god files list
-fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process: &ClaudeProcess) -> Result<()> {
+fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
     match key.code {
         // Navigate between language rows
         KeyCode::Char('j') | KeyCode::Down => {

@@ -10,7 +10,7 @@ use crate::app::types::{
     GodFileEntry, HealthPanel,
     ModuleStyleDialog, RustModuleStyle, PythonModuleStyle,
 };
-use crate::claude::ClaudeProcess;
+use crate::backend::AgentProcess;
 
 use super::super::App;
 use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, SKIP_DIRS, load_health_scope};
@@ -263,7 +263,7 @@ impl App {
     /// Entry point for modularize action (Enter/m on God Files tab).
     /// If checked files include .rs or .py, shows the module style selector
     /// dialog first. Otherwise spawns immediately with generic prompts.
-    pub fn god_file_start_modularize(&mut self, claude_process: &ClaudeProcess) {
+    pub fn god_file_start_modularize(&mut self, claude_process: &AgentProcess) {
         let checked: Vec<(String, usize)> = match self.health_panel {
             Some(ref panel) => panel.god_files.iter()
                 .filter(|e| e.checked)
@@ -298,7 +298,7 @@ impl App {
     /// Each file gets its own concurrent Claude process on the main worktree.
     pub fn god_file_modularize(
         &mut self,
-        claude_process: &ClaudeProcess,
+        claude_process: &AgentProcess,
         rust_style: Option<RustModuleStyle>,
         python_style: Option<PythonModuleStyle>,
     ) {
@@ -361,7 +361,7 @@ impl App {
             self.render_in_flight = false;
             self.invalidate_render_cache();
             self.event_parser = crate::events::EventParser::new();
-            self.claude_processor_needs_reset = true;
+            self.agent_processor_needs_reset = true;
             self.session_file_path = None;
             self.session_file_modified = None;
             self.session_file_size = 0;

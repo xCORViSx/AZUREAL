@@ -148,14 +148,14 @@ impl App {
         // Clean up stale session state immediately
         self.session_files.remove(&branch);
         self.session_selected_file_idx.remove(&branch);
-        self.claude_session_ids.retain(|k, _| k != &branch);
+        self.agent_session_ids.retain(|k, _| k != &branch);
         self.unread_sessions.remove(&branch);
         if let Some(slots) = self.branch_slots.remove(&branch) {
             for slot in &slots {
                 self.running_sessions.remove(slot);
-                self.claude_receivers.remove(slot);
-                self.claude_exit_codes.remove(slot);
-                self.claude_session_ids.remove(slot);
+                self.agent_receivers.remove(slot);
+                self.agent_exit_codes.remove(slot);
+                self.agent_session_ids.remove(slot);
             }
         }
         self.active_slot.remove(&branch);
@@ -219,9 +219,9 @@ impl App {
                 // and the next prompt starts a fresh conversation.
                 if let Some(slot) = self.active_slot.get(&branch) {
                     let slot = slot.clone();
-                    self.claude_session_ids.remove(&slot);
+                    self.agent_session_ids.remove(&slot);
                 }
-                self.claude_session_ids.remove(&branch);
+                self.agent_session_ids.remove(&branch);
                 self.display_events.clear();
                 self.session_lines.clear();
                 self.session_buffer.clear();

@@ -18,7 +18,7 @@ pub(super) fn open_session_list(app: &mut App) {
     if let Some(session) = app.current_worktree() {
         let branch = session.branch_name.clone();
         if let Some(ref wt_path) = app.worktrees[app.selected_worktree.unwrap()].worktree_path {
-            let files = crate::config::list_claude_sessions(wt_path);
+            let files = crate::config::list_sessions(app.backend, wt_path);
             app.session_files.insert(branch, files);
         }
     }

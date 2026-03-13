@@ -17,7 +17,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
             let branch_name = session.branch_name.clone();
             let session_name = session.name().to_string();
             if app.running_sessions.remove(&branch_name) {
-                app.claude_receivers.remove(&branch_name);
+                app.agent_receivers.remove(&branch_name);
                 app.invalidate_sidebar();
                 app.set_status(format!("Stopped tracking: {}", session_name));
             }

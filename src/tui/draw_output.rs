@@ -454,8 +454,8 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                     ));
                 } else if let Some(&code) = app.active_slot.get(b)
-                    .and_then(|slot| app.claude_exit_codes.get(slot))
-                    .or_else(|| app.claude_exit_codes.get(b)) {
+                    .and_then(|slot| app.agent_exit_codes.get(slot))
+                    .or_else(|| app.agent_exit_codes.get(b)) {
                     let (text, color) = if code == 0 {
                         (" exit:0 ".to_string(), Color::Green)
                     } else {
@@ -519,9 +519,14 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     {
         let model_name = app.display_model_name();
         let model_color = match model_name {
+            // Claude models
             "opus" => Color::Magenta,
             "sonnet" => Color::Cyan,
             "haiku" => Color::Yellow,
+            // Codex models
+            "o3" => Color::Green,
+            "o4-mini" => Color::Blue,
+            "codex-mini" => Color::LightCyan,
             _ => Color::DarkGray,
         };
         let model_key = crate::tui::keybindings::find_key_for_action(

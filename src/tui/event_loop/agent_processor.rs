@@ -1,14 +1,17 @@
-//! Background thread for Claude output JSON parsing
+//! Background thread for agent output JSON parsing
 //!
 //! Moves serde_json::from_str() off the main event loop thread. The main
 //! thread sends raw output strings; the processor parses them and returns
 //! DisplayEvents + pre-parsed JSON values. This eliminates 10-50ms of
 //! JSON parsing per tick that was blocking input during streaming.
+//!
+//! Backend-aware: resets create the correct parser (Claude or Codex).
 
 use std::sync::mpsc;
 use std::thread;
 
-use crate::events::{DisplayEvent, EventParser};
+use crate::backend::Backend;
+use crate::events::{CodexEventParser, DisplayEvent, EventParser};
 use crate::models::OutputType;
 
 /// Parsed result from the processor thread
@@ -23,32 +26,57 @@ pub struct ProcessedOutput {
 
 /// Commands sent to the processor thread
 enum ProcessorInput {
-    /// Raw Claude output to parse
+    /// Raw agent output to parse
     Parse {
         slot_id: String,
         output_type: OutputType,
         data: String,
     },
-    /// Reset parser state (session changed)
-    Reset,
+    /// Reset parser state (session changed or backend switched)
+    Reset { backend: Backend },
 }
 
-/// Background JSON parser for Claude streaming events
-pub struct ClaudeProcessor {
+/// Trait for streaming event parsers (used only inside processor thread)
+trait StreamParser: Send {
+    fn parse(&mut self, data: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>);
+}
+
+impl StreamParser for EventParser {
+    fn parse(&mut self, data: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
+        EventParser::parse(self, data)
+    }
+}
+
+impl StreamParser for CodexEventParser {
+    fn parse(&mut self, data: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
+        CodexEventParser::parse(self, data)
+    }
+}
+
+/// Create the correct parser for a given backend
+fn create_parser(backend: Backend) -> Box<dyn StreamParser> {
+    match backend {
+        Backend::Claude => Box::new(EventParser::new()),
+        Backend::Codex => Box::new(CodexEventParser::new()),
+    }
+}
+
+/// Background JSON parser for agent streaming events
+pub struct AgentProcessor {
     tx: mpsc::Sender<ProcessorInput>,
     rx: mpsc::Receiver<ProcessedOutput>,
 }
 
-impl ClaudeProcessor {
-    /// Spawn the processor background thread
-    pub fn spawn() -> Self {
+impl AgentProcessor {
+    /// Spawn the processor background thread with a given backend
+    pub fn spawn(backend: Backend) -> Self {
         let (input_tx, input_rx) = mpsc::channel();
         let (output_tx, output_rx) = mpsc::channel();
 
         thread::Builder::new()
-            .name("claude-parser".into())
+            .name("agent-parser".into())
             .spawn(move || {
-                let mut parser = EventParser::new();
+                let mut parser = create_parser(backend);
                 while let Ok(input) = input_rx.recv() {
                     match input {
                         ProcessorInput::Parse { slot_id, output_type, data } => {
@@ -57,15 +85,15 @@ impl ClaudeProcessor {
                                 slot_id, events, parsed_json, output_type, data,
                             });
                         }
-                        ProcessorInput::Reset => {
-                            parser = EventParser::new();
+                        ProcessorInput::Reset { backend } => {
+                            parser = create_parser(backend);
                         }
                     }
                 }
             })
-            .expect("failed to spawn claude-parser thread");
+            .expect("failed to spawn agent-parser thread");
 
-        ClaudeProcessor { tx: input_tx, rx: output_rx }
+        AgentProcessor { tx: input_tx, rx: output_rx }
     }
 
     /// Send raw output to the processor for JSON parsing (non-blocking)
@@ -73,9 +101,9 @@ impl ClaudeProcessor {
         let _ = self.tx.send(ProcessorInput::Parse { slot_id, output_type, data });
     }
 
-    /// Reset parser state (call on session switch)
-    pub fn reset(&self) {
-        let _ = self.tx.send(ProcessorInput::Reset);
+    /// Reset parser state with a specific backend (call on session switch)
+    pub fn reset(&self, backend: Backend) {
+        let _ = self.tx.send(ProcessorInput::Reset { backend });
     }
 
     /// Drain all pending results, discarding them (call after session switch

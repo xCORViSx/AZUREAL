@@ -642,7 +642,7 @@ pub struct WorktreeRefreshResult {
     /// Feature + archived worktrees (sidebar entries)
     pub worktrees: Vec<crate::models::Worktree>,
     /// Branch name → latest Claude session ID
-    pub claude_session_ids: std::collections::HashMap<String, String>,
+    pub agent_session_ids: std::collections::HashMap<String, String>,
     /// Branch name → list of (uuid, path, formatted_time)
     pub session_files: std::collections::HashMap<String, Vec<(String, PathBuf, String)>>,
 }

@@ -29,7 +29,7 @@ mod ui;
 mod viewer_edit;
 
 // Re-export types used by submodules
-use crate::claude::ClaudeEvent;
+use crate::claude::AgentEvent;
 use crate::events::DisplayEvent;
 
 // Re-export FileTreeEntry for helpers module
