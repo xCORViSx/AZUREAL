@@ -85,6 +85,7 @@ notify-rust = "4.12"
 whisper-rs = "0.15"
 cpal = "0.17"
 dunce = "1.0.5"
+flate2 = "1"
 
 # Platform-specific
 [target.'cfg(unix)'.dependencies]

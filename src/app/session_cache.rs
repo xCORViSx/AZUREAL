@@ -1,13 +1,17 @@
 //! Session cache — intermediate translation layer
 //!
-//! Writes parsed session data to `.azureal/sessions/<session-id>.json` so the
+//! Writes parsed session data to `.azureal/sessions/<session-id>.json.gz` so the
 //! TUI reads from a unified format instead of backend-specific JSONL files.
+//! Cache files are gzip-compressed for minimal disk footprint.
 
 use std::collections::HashSet;
 use std::fs;
-use std::io;
+use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use serde::{Deserialize, Serialize};
 
 use crate::app::session_parser::ParsedSession;
@@ -198,22 +202,33 @@ fn compact_tool_input(tool_name: &str, input: &mut serde_json::Value) {
     }
 }
 
-/// Returns `.azureal/sessions/<session-id>.json`
+/// Returns `.azureal/sessions/<session-id>.json.gz`
 pub fn cache_path(project_root: &Path, session_id: &str) -> PathBuf {
-    project_root.join(".azureal").join("sessions").join(format!("{session_id}.json"))
+    project_root.join(".azureal").join("sessions").join(format!("{session_id}.json.gz"))
 }
 
-/// Write parsed session to cache (atomic: write tmp then rename)
+/// Write parsed session to cache (gzip-compressed, atomic: write tmp then rename)
 pub fn write_cache(project_root: &Path, session_id: &str, cached: &CachedSession) -> io::Result<()> {
     let path = cache_path(project_root, session_id);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("json.tmp");
-    let data = serde_json::to_vec(cached)?;
-    fs::write(&tmp, &data)?;
+    let tmp = path.with_extension("tmp");
+    let json = serde_json::to_vec(cached)?;
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(&json)?;
+    let compressed = encoder.finish()?;
+    fs::write(&tmp, &compressed)?;
     fs::rename(&tmp, &path)?;
     Ok(())
+}
+
+/// Decompress gzip data and deserialize
+fn decompress_cache(compressed: &[u8]) -> Option<CachedSession> {
+    let mut decoder = GzDecoder::new(compressed);
+    let mut json = Vec::new();
+    decoder.read_to_end(&mut json).ok()?;
+    serde_json::from_slice(&json).ok()
 }
 
 /// Read cache if valid — source_path and source_size must both match
@@ -225,7 +240,7 @@ pub fn read_cache(
 ) -> Option<CachedSession> {
     let path = cache_path(project_root, session_id);
     let data = fs::read(&path).ok()?;
-    let cached: CachedSession = serde_json::from_slice(&data).ok()?;
+    let cached = decompress_cache(&data)?;
     if cached.source_path != source_path || cached.source_size != current_source_size {
         return None;
     }
@@ -236,7 +251,7 @@ pub fn read_cache(
 pub fn read_cache_orphan(project_root: &Path, session_id: &str) -> Option<CachedSession> {
     let path = cache_path(project_root, session_id);
     let data = fs::read(&path).ok()?;
-    serde_json::from_slice(&data).ok()
+    decompress_cache(&data)
 }
 
 #[cfg(test)]
@@ -459,13 +474,13 @@ mod tests {
     #[test]
     fn cache_path_structure() {
         let path = cache_path(Path::new("/projects/myapp"), "abc-123");
-        assert_eq!(path, PathBuf::from("/projects/myapp/.azureal/sessions/abc-123.json"));
+        assert_eq!(path, PathBuf::from("/projects/myapp/.azureal/sessions/abc-123.json.gz"));
     }
 
     #[test]
     fn cache_path_uuid_with_special_chars() {
         let path = cache_path(Path::new("/proj"), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
-        assert!(path.to_str().unwrap().ends_with("a1b2c3d4-e5f6-7890-abcd-ef1234567890.json"));
+        assert!(path.to_str().unwrap().ends_with("a1b2c3d4-e5f6-7890-abcd-ef1234567890.json.gz"));
     }
 
     // =====================================================================
@@ -948,5 +963,72 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+    }
+
+    // =====================================================================
+    // Compression — gzip round-trip and size reduction
+    // =====================================================================
+
+    #[test]
+    fn compressed_cache_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+        let source = project_root.join("raw.jsonl");
+        std::fs::write(&source, "fake data").unwrap();
+
+        let parsed = sample_parsed();
+        let cached = CachedSession::from_parsed(&parsed, source.clone(), 9);
+        write_cache(project_root, "gz-test", &cached).unwrap();
+
+        // File should be gzip (magic bytes 1f 8b)
+        let raw = std::fs::read(cache_path(project_root, "gz-test")).unwrap();
+        assert_eq!(raw[0], 0x1f);
+        assert_eq!(raw[1], 0x8b);
+
+        // Should read back correctly
+        let restored = read_cache(project_root, "gz-test", &source, 9).unwrap();
+        assert_eq!(restored.events.len(), cached.events.len());
+        assert_eq!(restored.total_lines, 20);
+    }
+
+    #[test]
+    fn compressed_smaller_than_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+
+        // Build a session with repetitive content (compresses well)
+        let mut parsed = sample_parsed();
+        for i in 0..50 {
+            parsed.events.push(DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: format!("This is assistant response number {} with some repetitive content that compresses well.", i),
+            });
+        }
+        let cached = CachedSession::from_parsed(&parsed, PathBuf::from("/x.jsonl"), 1);
+
+        // Write compressed
+        write_cache(project_root, "size-test", &cached).unwrap();
+        let compressed_size = std::fs::metadata(cache_path(project_root, "size-test")).unwrap().len();
+
+        // Compare to uncompressed JSON size
+        let json_size = serde_json::to_vec(&cached).unwrap().len() as u64;
+
+        // Gzip should be significantly smaller
+        assert!(compressed_size < json_size, "compressed {} should be < json {}", compressed_size, json_size);
+        // Typically 3-10x smaller for JSON
+        assert!(compressed_size < json_size / 2, "compression ratio should be at least 2x: {} vs {}", compressed_size, json_size);
+    }
+
+    #[test]
+    fn corrupted_gzip_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_root = dir.path();
+        let sessions_dir = project_root.join(".azureal").join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write garbage data
+        std::fs::write(sessions_dir.join("bad.json.gz"), b"not gzip data").unwrap();
+        assert!(read_cache_orphan(project_root, "bad").is_none());
     }
 }
