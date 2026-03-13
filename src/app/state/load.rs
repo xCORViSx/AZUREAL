@@ -1459,6 +1459,7 @@ mod tests {
             tool_use_id: "t".to_string(),
             content: "done".to_string(),
             file_path: None,
+            is_error: false,
         });
         app.extract_skill_tools_from_events();
         assert_eq!(app.current_todos.len(), 1);

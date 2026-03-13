@@ -170,6 +170,7 @@ impl EventParser {
                     "tool_result" => {
                         let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
                         let (tool_name, file_path) = self.tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
+                        let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
                         let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
                             s.to_string()
                         } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
@@ -180,7 +181,7 @@ impl EventParser {
 
                         events.extend(Self::extract_hooks_from_content(&content));
                         if !content.is_empty() {
-                            events.push(DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content });
+                            events.push(DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error });
                         }
                     }
                     "text" => {

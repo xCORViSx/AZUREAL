@@ -508,32 +508,14 @@ fn parse_tool_result_block(
 
     pending_tools.remove(&tool_use_id);
 
-    // Check for error conditions
-    let is_error = match tool_name.as_str() {
-        "Read" | "Write" | "Edit" | "Glob" | "Grep" => {
-            let first = content.lines().next().unwrap_or("").to_lowercase();
-            first.starts_with("error") || first.contains("enoent")
-                || first.contains("file does not exist")
-                || first.contains("does not exist")
-                || first.contains("<tool_use_error>")
-        }
-        "Bash" => content.lines().any(|line| {
-            let l = line.to_lowercase();
-            l.contains(": no such file") || l.contains(": permission denied")
-                || l.contains(": command not found")
-                || ((l.contains("exit code") || l.contains("exit status"))
-                    && !l.ends_with("0") && !l.ends_with("0\n"))
-        }),
-        "WebFetch" => {
-            let first = content.lines().next().unwrap_or("").to_lowercase();
-            first.contains("status code 4") || first.contains("status code 5")
-                || first.contains("failed") || first.starts_with("error")
-        }
-        _ => {
-            let first = content.lines().next().unwrap_or("").to_lowercase();
-            first.starts_with("error")
-        }
-    };
+    // Use is_error from Claude Code's JSON when available (authoritative).
+    // Fall back to conservative heuristic for older session files that lack the field.
+    let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or_else(|| {
+        let first = content.lines().next().unwrap_or("").to_lowercase();
+        first.contains("<tool_use_error>")
+            || (first.starts_with("error") && !first.starts_with("error:"))
+            || first.contains("enoent")
+    });
 
     if is_error {
         failed_tools.insert(tool_use_id.clone());
@@ -565,6 +547,7 @@ fn parse_tool_result_block(
             tool_name,
             file_path,
             content,
+            is_error,
         }));
     }
 
@@ -1239,6 +1222,7 @@ mod tests {
                 tool_name: "Read".into(),
                 file_path: Some("/test".into()),
                 content: "data".into(),
+                is_error: false,
             },
         ];
         assert!(check_plan_approval(&events));
@@ -1527,6 +1511,7 @@ mod tests {
                 tool_name: "Read".into(),
                 file_path: Some("/file.rs".into()),
                 content: "data".into(),
+                is_error: false,
             },
         ];
         let state = IncrementalParserState::from_events(&events, None);
@@ -1609,6 +1594,7 @@ mod tests {
                 tool_name: "Read".into(),
                 file_path: Some("/main.rs".into()),
                 content: "fn main() {}".into(),
+                is_error: false,
             },
             DisplayEvent::AssistantText {
                 _uuid: "u3".into(),

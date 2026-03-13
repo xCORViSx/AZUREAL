@@ -60,6 +60,8 @@ pub enum DisplayEvent {
         file_path: Option<String>,
         /// The raw output content from the tool
         content: String,
+        /// Whether Claude Code flagged this result as an error
+        is_error: bool,
     },
     /// Session complete
     Complete {
@@ -464,9 +466,10 @@ mod tests {
             tool_name: "Read".into(),
             file_path: Some("/src/main.rs".into()),
             content: "fn main() {}".into(),
+            is_error: false,
         };
         match ev {
-            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content } => {
+            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
                 assert_eq!(tool_use_id, "tu1");
                 assert_eq!(tool_name, "Read");
                 assert_eq!(file_path, Some("/src/main.rs".into()));
@@ -483,6 +486,7 @@ mod tests {
             tool_name: "Bash".into(),
             file_path: None,
             content: "OK".into(),
+            is_error: false,
         };
         match ev {
             DisplayEvent::ToolResult { file_path, .. } => assert!(file_path.is_none()),
@@ -497,6 +501,7 @@ mod tests {
             tool_name: "Bash".into(),
             file_path: None,
             content: String::new(),
+            is_error: false,
         };
         match ev {
             DisplayEvent::ToolResult { content, .. } => assert!(content.is_empty()),
@@ -754,6 +759,7 @@ mod tests {
             tool_name: "Grep".into(),
             file_path: Some("/file.rs".into()),
             content: "match found".into(),
+            is_error: false,
         };
         let cloned = ev.clone();
         match cloned {

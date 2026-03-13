@@ -840,7 +840,7 @@ Claude output is received in `stream-json` format and parsed for clean display:
 
 Status circles update in real-time as tools complete — `animation_line_indices` tracks ALL tool positions with their `tool_use_id`, and the viewport patching step checks current `pending_tool_calls`/`failed_tool_calls` to set the correct indicator text and color. `tool_status_generation` increments on every status change, invalidating the viewport cache.
 
-Error detection checks for: "error:", "failed", "ENOENT", "permission denied", "No such file", "command failed", non-zero exit codes.
+Error detection uses the `is_error` field from Claude Code's stream-json `tool_result` blocks (authoritative). `DisplayEvent::ToolResult` carries `is_error: bool` populated from the raw JSON. For older session files lacking `is_error`, a conservative fallback heuristic checks: `<tool_use_error>`, first-line `"Error..."` prefix, `"ENOENT"`.
 
 **Tool Result Display Formats:**
 | Tool | Format | Description |

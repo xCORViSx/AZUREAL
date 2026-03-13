@@ -222,6 +222,7 @@ mod tests {
             tool_name: name.into(),
             file_path: None,
             content: content.into(),
+            is_error: false,
         }
     }
 
@@ -889,6 +890,7 @@ mod tests {
             tool_name: "Read".into(),
             file_path: Some("/src/main.rs".into()),
             content: "fn main() {}".into(),
+            is_error: false,
         }];
         let state = pre_scan_events(&events);
         assert!(state.saw_content);

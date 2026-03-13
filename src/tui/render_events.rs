@@ -194,12 +194,12 @@ fn render_display_events_with_state(
                 if tool_name == "TodoWrite" { continue; }
                 render_tool_call(&mut lines, &mut animation_indices, &mut clickable_paths, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
             }
-            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
+            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error, .. } => {
                 saw_content = true;
                 last_hook = None;
                 // TodoWrite result is noise ("Todos have been modified successfully"), skip it
                 if tool_name == "TodoWrite" { continue; }
-                let is_failed = failed_tools.contains(tool_use_id);
+                let is_failed = *is_error || failed_tools.contains(tool_use_id);
                 let tool_max = bubble_width + 10;
                 lines.extend(render_tool_result(tool_name, file_path.as_deref(), content, is_failed, tool_max));
                 // Show approval prompt immediately after ExitPlanMode result
@@ -1614,6 +1614,7 @@ mod tests {
             tool_name: "TodoWrite".into(),
             file_path: None,
             content: "Todos have been modified successfully".into(),
+            is_error: false,
         }];
         let (lines, _, _, _, _) = render_display_events(
             &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,

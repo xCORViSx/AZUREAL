@@ -53,17 +53,14 @@ impl App {
                         self.ask_user_questions_cache = Some(input.clone());
                     }
                 }
-                DisplayEvent::ToolResult { tool_use_id, content, .. } => {
+                DisplayEvent::ToolResult { tool_use_id, is_error, .. } => {
                     self.pending_tool_calls.remove(tool_use_id);
                     self.tool_status_generation += 1;
                     if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
                         self.subagent_todos.clear();
                         self.subagent_parent_idx = None;
                     }
-                    let lower = content.to_lowercase();
-                    if lower.contains("error:") || lower.contains("failed")
-                        || lower.starts_with("error") || content.contains("ENOENT")
-                        || content.contains("permission denied") {
+                    if *is_error {
                         self.failed_tool_calls.insert(tool_use_id.clone());
                         self.tool_status_generation += 1;
                     }
@@ -383,7 +380,7 @@ impl App {
                             self.ask_user_questions_cache = Some(input.clone());
                         }
                     }
-                    DisplayEvent::ToolResult { tool_use_id, content, .. } => {
+                    DisplayEvent::ToolResult { tool_use_id, is_error, .. } => {
                         self.pending_tool_calls.remove(tool_use_id);
                         self.tool_status_generation += 1;
                         // When a Task (subagent) completes, clear subagent state
@@ -391,10 +388,7 @@ impl App {
                             self.subagent_todos.clear();
                             self.subagent_parent_idx = None;
                         }
-                        let lower = content.to_lowercase();
-                        if lower.contains("error:") || lower.contains("failed")
-                            || lower.starts_with("error") || content.contains("ENOENT")
-                            || content.contains("permission denied") {
+                        if *is_error {
                             self.failed_tool_calls.insert(tool_use_id.clone());
                             self.tool_status_generation += 1;
                         }
