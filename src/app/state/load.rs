@@ -462,6 +462,12 @@ impl App {
             }
         }
 
+        // Reset compaction watcher so loading a high-context session doesn't
+        // immediately trigger the banner (stale last_session_event_time from
+        // a previous session would satisfy the 30s threshold on first tick).
+        self.last_session_event_time = std::time::Instant::now();
+        self.compaction_banner_injected = false;
+
         // Determine if we're viewing a non-active (historic) session.
         // When true, live events from the running process are suppressed.
         self.viewing_historic_session = false;
@@ -1602,16 +1608,18 @@ mod tests {
         assert!(app.subagent_parent_idx.is_none());
     }
 
-    // ── load_session_output compaction state preserved ──
+    // ── load_session_output resets compaction state ──
 
     #[test]
-    fn load_session_output_preserves_compaction_flag() {
+    fn load_session_output_resets_compaction_flag() {
         let mut app = App::new();
         app.compaction_banner_injected = true;
+        let before = std::time::Instant::now();
         app.load_session_output();
-        // compaction_banner_injected is NOT reset by load_session_output —
-        // it's only reset by activity detection or context pct drop
-        assert!(app.compaction_banner_injected);
+        // load_session_output resets compaction watcher so a high-context
+        // session doesn't trigger the banner from a stale timer
+        assert!(!app.compaction_banner_injected);
+        assert!(app.last_session_event_time >= before);
     }
 
     // ── load_file_tree: with worktree but nonexistent path ──

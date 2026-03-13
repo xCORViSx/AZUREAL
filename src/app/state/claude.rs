@@ -583,6 +583,10 @@ impl App {
         self.active_slot.insert(branch_name, slot);
         // New process = user wants live output, not a historic view
         self.viewing_historic_session = false;
+        // Reset compaction inactivity watcher so the 30s timer starts from NOW,
+        // not from the last event of the previous response (which may be >30s ago)
+        self.last_session_event_time = std::time::Instant::now();
+        self.compaction_banner_injected = false;
         self.invalidate_sidebar();
     }
 

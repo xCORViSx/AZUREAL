@@ -630,12 +630,15 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
-        // Compaction inactivity watcher: when context ≥ 90% and no events for 20s,
-        // inject a "may be compacting" banner so the user knows why session pane is frozen
+        // Compaction inactivity watcher: when context ≥ 90% and the VIEWED session's
+        // active slot has been silent for 30s, inject a "may be compacting" banner.
+        // Uses is_active_slot_running() instead of !agent_receivers.is_empty() so
+        // background processes (health, god-file) don't trigger the banner for an
+        // unrelated session that happens to have high context.
         if app.context_pct_high
             && !app.compaction_banner_injected
-            && !app.agent_receivers.is_empty()
-            && now_poll.duration_since(app.last_session_event_time) >= Duration::from_secs(20)
+            && app.is_active_slot_running()
+            && now_poll.duration_since(app.last_session_event_time) >= Duration::from_secs(30)
         {
             app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
             app.invalidate_render_cache();
@@ -1245,9 +1248,9 @@ mod tests {
     // -- Compaction watcher timing --
 
     #[test]
-    fn test_compaction_timeout_20s() {
-        let timeout = Duration::from_secs(20);
-        assert_eq!(timeout.as_secs(), 20);
+    fn test_compaction_timeout_30s() {
+        let timeout = Duration::from_secs(30);
+        assert_eq!(timeout.as_secs(), 30);
     }
 
     // -- Auto-rebase check interval --
