@@ -642,19 +642,6 @@ impl Git {
         Ok(())
     }
 
-    /// Unstage a single file via `git restore --staged <path>`
-    pub fn unstage_file(worktree_path: &Path, file_path: &str) -> Result<()> {
-        let output = Command::new("git")
-            .args(["restore", "--staged", "--", file_path])
-            .current_dir(worktree_path)
-            .output()
-            .context("Failed to unstage file")?;
-        if !output.status.success() {
-            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
-        }
-        Ok(())
-    }
-
     /// Discard working tree changes for a single file (revert to HEAD).
     /// For untracked files, uses `git clean -f <path>` instead.
     pub fn discard_file(worktree_path: &Path, file_path: &str, is_untracked: bool) -> Result<()> {
