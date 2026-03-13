@@ -711,6 +711,7 @@ pub async fn run_app(
                 && app.pane_session_content.width > 2 && app.pane_session_content.height > 2
                 && app.git_actions_panel.is_none()
                 && !app.show_session_list
+                && !app.is_projects_panel_active()
             {
                 fast_draw_session(app, new_line_count);
             }

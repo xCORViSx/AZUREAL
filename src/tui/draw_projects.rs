@@ -34,8 +34,8 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
         modal_h,
     );
 
-    // Clear the background behind the modal
-    f.render_widget(Clear, modal);
+    // Clear the entire screen so conversation pane doesn't bleed through
+    f.render_widget(Clear, area);
 
     // Build the project list lines
     let inner_w = modal.width.saturating_sub(4) as usize; // 2 border + 2 padding
