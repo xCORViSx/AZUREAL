@@ -150,7 +150,7 @@ impl KeyCombo {
 }
 
 /// All possible keybinding actions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
     // Global
     Quit,
@@ -271,6 +271,9 @@ pub enum Action {
     GitPush,
     GitAutoRebase,
     GitAutoResolveSettings,
+    GitToggleStage,
+    GitStageAll,
+    GitDiscardFile,
     GitPrevWorktree,
     GitNextWorktree,
     GitPrevPage,

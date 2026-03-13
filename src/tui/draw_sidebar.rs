@@ -136,8 +136,22 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     // Stash for writeback after this borrow ends
     let file_scroll_writeback = scroll;
 
+    let discard_idx = panel.discard_confirm;
+
     for (i, file) in panel.changed_files.iter().enumerate().skip(scroll).take(visible_files) {
         let selected = files_focused && i == panel.selected_file;
+
+        // Discard confirmation replaces the file line
+        if discard_idx == Some(i) {
+            let msg = format!(" Discard {}? [y/n] ", file.path);
+            let trunc = if msg.len() > inner_w { &msg[..inner_w] } else { &msg };
+            file_lines.push(Line::from(Span::styled(
+                trunc.to_string(),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+            continue;
+        }
+
         let prefix = if selected { " \u{25b8} " } else { "   " };
 
         let status_color = match file.status {
@@ -160,18 +174,24 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         };
         let padding = inner_w.saturating_sub(prefix.len() + 2 + path_display.len() + stat_len);
 
+        // Unstaged files get strikethrough on the path, dimmed colors
         let path_style = if selected {
-            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-        } else {
+            let mut s = Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            if !file.staged { s = s.add_modifier(Modifier::CROSSED_OUT); }
+            s
+        } else if file.staged {
             Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT)
         };
-        let add_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Green) };
-        let del_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(Color::Red) };
+        let add_style = if selected { Style::default().fg(GIT_ORANGE) } else if file.staged { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) };
+        let del_style = if selected { Style::default().fg(GIT_ORANGE) } else if file.staged { Style::default().fg(Color::Red) } else { Style::default().fg(Color::DarkGray) };
         let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(GIT_BROWN) };
+        let status_style = if !file.staged && !selected { Style::default().fg(Color::DarkGray) } else { Style::default().fg(status_color) };
 
         file_lines.push(Line::from(vec![
             Span::styled(prefix, Style::default()),
-            Span::styled(format!("{} ", file.status), Style::default().fg(status_color)),
+            Span::styled(format!("{} ", file.status), status_style),
             Span::styled(path_display, path_style),
             Span::raw(" ".repeat(padding)),
             Span::styled(add_str, add_style),
@@ -180,13 +200,18 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         ]));
     }
 
-    // Title with file count and +/- stats
+    // Title with file count, staged count, and +/- stats
     let files_title = if panel.changed_files.is_empty() {
         " Changed Files (none) ".to_string()
     } else {
+        let staged_count = panel.changed_files.iter().filter(|f| f.staged).count();
         let total_add: usize = panel.changed_files.iter().map(|f| f.additions).sum();
         let total_del: usize = panel.changed_files.iter().map(|f| f.deletions).sum();
-        format!(" Changed Files ({}, +{}/-{}) ", panel.changed_files.len(), total_add, total_del)
+        if staged_count > 0 {
+            format!(" Changed Files ({}, {}\u{2713}, +{}/-{}) ", panel.changed_files.len(), staged_count, total_add, total_del)
+        } else {
+            format!(" Changed Files ({}, +{}/-{}) ", panel.changed_files.len(), total_add, total_del)
+        }
     };
 
     let files_block = Block::default()
@@ -625,8 +650,8 @@ mod tests {
     #[test]
     fn files_title_with_files() {
         let files = vec![
-            GitChangedFile { path: "a.rs".into(), status: 'M', additions: 10, deletions: 5 },
-            GitChangedFile { path: "b.rs".into(), status: 'A', additions: 20, deletions: 0 },
+            GitChangedFile { path: "a.rs".into(), status: 'M', additions: 10, deletions: 5, staged: false },
+            GitChangedFile { path: "b.rs".into(), status: 'A', additions: 20, deletions: 0, staged: false },
         ];
         let total_add: usize = files.iter().map(|f| f.additions).sum();
         let total_del: usize = files.iter().map(|f| f.deletions).sum();
@@ -711,6 +736,7 @@ mod tests {
             status: 'M',
             additions: 15,
             deletions: 3,
+            staged: false,
         };
         assert_eq!(f.path, "src/lib.rs");
         assert_eq!(f.status, 'M');
@@ -725,6 +751,7 @@ mod tests {
             status: 'A',
             additions: 100,
             deletions: 0,
+            staged: false,
         };
         let cloned = f.clone();
         assert_eq!(f.path, cloned.path);
@@ -738,6 +765,7 @@ mod tests {
             status: 'D',
             additions: 0,
             deletions: 50,
+            staged: false,
         };
         let dbg = format!("{:?}", f);
         assert!(dbg.contains("x.rs"));

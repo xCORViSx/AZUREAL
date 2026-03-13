@@ -262,9 +262,10 @@ impl Git {
     }
 
     /// Get per-file diff stats against main branch.
-    /// Returns Vec<(path, status_char, additions, deletions)> by combining
+    /// Returns Vec<(path, status_char, additions, deletions, staged)> by combining
     /// `git diff --name-status` (M/A/D/R) with `git diff --numstat` (+/-).
-    pub fn get_diff_files(worktree_path: &Path, _main_branch: &str) -> Result<Vec<(String, char, usize, usize)>> {
+    /// The `staged` bool is true if the file has staged changes (in the index).
+    pub fn get_diff_files(worktree_path: &Path, _main_branch: &str) -> Result<Vec<(String, char, usize, usize, bool)>> {
         // Show working tree changes (staged + unstaged) — this is what the user
         // is actively working on. Uses `git diff HEAD` to compare working tree
         // against last commit, capturing both staged and unstaged modifications.
@@ -286,6 +287,16 @@ impl Git {
             .context("Failed to get diff numstat")?;
         let numstat_text = String::from_utf8_lossy(&numstat_out.stdout);
 
+        // Build set of staged file paths (files in the index that differ from HEAD)
+        let staged_out = Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to get staged files")?;
+        let staged_set: std::collections::HashSet<String> =
+            String::from_utf8_lossy(&staged_out.stdout)
+                .lines().map(|l| l.to_string()).collect();
+
         // Build path → (additions, deletions) lookup from numstat
         let mut stats: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
         for line in numstat_text.lines() {
@@ -305,12 +316,13 @@ impl Git {
                 let status = parts[0].chars().next().unwrap_or('M');
                 let path = parts.last().unwrap().to_string();
                 let (add, del) = stats.get(&path).copied().unwrap_or((0, 0));
+                let staged = staged_set.contains(&path);
                 seen.insert(path.clone());
-                result.push((path, status, add, del));
+                result.push((path, status, add, del, staged));
             }
         }
 
-        // Also pick up untracked files (shown as '?' status, 0/0 stats)
+        // Also pick up untracked files (shown as '?' status, 0/0 stats, never staged)
         let untracked_out = Command::new("git")
             .args(["ls-files", "--others", "--exclude-standard"])
             .current_dir(worktree_path)
@@ -319,7 +331,7 @@ impl Git {
         for line in String::from_utf8_lossy(&untracked_out.stdout).lines() {
             let path = line.trim().to_string();
             if !path.is_empty() && !seen.contains(&path) {
-                result.push((path, '?', 0, 0));
+                result.push((path, '?', 0, 0, false));
             }
         }
 
@@ -624,6 +636,75 @@ impl Git {
             anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
         }
         Self::untrack_gitignored_files(worktree_path);
+        Ok(())
+    }
+
+    /// Stage a single file via `git add <path>`
+    pub fn stage_file(worktree_path: &Path, file_path: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(["add", "--", file_path])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to stage file")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Ok(())
+    }
+
+    /// Unstage a single file via `git restore --staged <path>`
+    pub fn unstage_file(worktree_path: &Path, file_path: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(["restore", "--staged", "--", file_path])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to unstage file")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Ok(())
+    }
+
+    /// Discard working tree changes for a single file (revert to HEAD).
+    /// For untracked files, uses `git clean -f <path>` instead.
+    pub fn discard_file(worktree_path: &Path, file_path: &str, is_untracked: bool) -> Result<()> {
+        if is_untracked {
+            let output = Command::new("git")
+                .args(["clean", "-f", "--", file_path])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to clean untracked file")?;
+            if !output.status.success() {
+                anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+            }
+        } else {
+            // Unstage first (if staged), then restore working tree
+            let _ = Command::new("git")
+                .args(["restore", "--staged", "--", file_path])
+                .current_dir(worktree_path)
+                .output();
+            let output = Command::new("git")
+                .args(["restore", "--", file_path])
+                .current_dir(worktree_path)
+                .output()
+                .context("Failed to discard file changes")?;
+            if !output.status.success() {
+                anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+            }
+        }
+        Ok(())
+    }
+
+    /// Unstage all files via `git reset HEAD`
+    pub fn unstage_all(worktree_path: &Path) -> Result<()> {
+        let output = Command::new("git")
+            .args(["reset", "HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to unstage all")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
         Ok(())
     }
 

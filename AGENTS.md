@@ -1204,10 +1204,15 @@ Actions change based on whether the current worktree is the main/master branch o
 **Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
 
 **File list (when files pane focused, focused_pane==1):**
-- Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), underlined path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). Title shows total file count and +/- stats.
+- Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). **Staged files** show underlined path with normal colors; **unstaged files** show strikethrough path in DarkGray with dimmed stats. Title shows total file count, staged count (e.g. `3✓`), and +/- stats.
 - `j/k` — navigate files (auto-loads diff in viewer pane via `load_file_diff_inline()`); `Enter`/`d` — also loads diff inline
+- `s` — toggle stage/unstage for selected file (`Git::stage_file` / `Git::unstage_file`). Same key as `GitAutoResolveSettings` but pane-gated: `s` fires auto-resolve in actions pane (focused_pane==0), toggle-stage in files pane (focused_pane==1)
+- `Shift+S` — stage all / unstage all toggle. If all files are staged, unstages all (`Git::unstage_all`); otherwise stages all (`Git::stage_all`)
+- `x` — discard changes for selected file. Shows inline confirmation (`Discard <path>? [y/n]`) in red bold, replacing the file's row. `y` confirms (`Git::discard_file` — `git restore` for tracked, `git clean -f` for untracked), `n`/`Esc` cancels. State: `panel.discard_confirm: Option<usize>` (file index)
+- **Selective commit:** When user has manually staged files (any `staged == true`), the commit flow (`exec_commit_start`) uses only those staged files. When no files are staged (default state), falls back to `stage_all` for the traditional "commit everything" behavior.
 - Mouse wheel scrolls selection (moves `selected_file`, auto-loads diff)
 - Scroll maintained via `file_scroll` field (written back from draw function each frame)
+- `GitChangedFile.staged` field populated from `git diff --cached --name-only` in `get_diff_files()`
 
 **Commits list (when commits pane focused, focused_pane==2):**
 - Each commit shows hash (green=unpushed, gray=pushed) and subject line. Selected row highlighted in orange+bold.
@@ -1468,7 +1473,7 @@ azureal/
 │   │   ├── codex_session_parser.rs # Codex session file parsing (pub(crate))
 │   │   ├── session_cache.rs # Intermediate session cache — gzip-compressed CachedSession with CacheIndex sequential naming (claude-N/codex-N), migrate_legacy_caches() auto-migration, backend_from_path() infers backend from session file path — .azureal/sessions/*.json.gz (pub(crate))
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main + squash_merge_receiver, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, SquashMergeProgress, SquashMergeOutcome, WorktreeRefreshResult, dialogs)
+│   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main + squash_merge_receiver + discard_confirm, GitChangedFile with staged field, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, SquashMergeProgress, SquashMergeOutcome, WorktreeRefreshResult, dialogs)
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)

@@ -449,20 +449,26 @@ pub(super) fn exec_push(app: &mut App) {
     });
 }
 
-/// Start the commit flow: stage all changes, get the diff, spawn Claude one-shot
+/// Start the commit flow: stage changes, get the diff, spawn Claude one-shot
 /// to generate a commit message, and open the commit overlay.
+/// If user has manually staged files (any `staged == true`), only those are committed.
+/// Otherwise falls back to `stage_all` for the traditional "commit everything" flow.
 pub(super) fn exec_commit_start(app: &mut App) {
-    let wt = match app.git_actions_panel.as_ref() {
-        Some(p) => p.worktree_path.clone(),
+    let (wt, has_staged_files) = match app.git_actions_panel.as_ref() {
+        Some(p) => (p.worktree_path.clone(), p.changed_files.iter().any(|f| f.staged)),
         None => return,
     };
 
-    if let Err(e) = Git::stage_all(&wt) {
-        if let Some(ref mut p) = app.git_actions_panel {
-            p.result_message = Some((format!("Stage failed: {}", e), true));
+    if !has_staged_files {
+        // No manual staging — stage everything (original behavior)
+        if let Err(e) = Git::stage_all(&wt) {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("Stage failed: {}", e), true));
+            }
+            return;
         }
-        return;
     }
+    // else: user has already staged specific files via 's' — commit only those
     let diff = match Git::get_staged_diff(&wt) {
         Ok(d) if d.trim().is_empty() => {
             if let Some(ref mut p) = app.git_actions_panel {
@@ -529,8 +535,8 @@ pub(super) fn exec_commit_start(app: &mut App) {
 pub(crate) fn refresh_changed_files(panel: &mut GitActionsPanel) {
     match Git::get_diff_files(&panel.worktree_path, &panel.main_branch) {
         Ok(files) => {
-            panel.changed_files = files.into_iter().map(|(path, status, add, del)| {
-                GitChangedFile { path, status, additions: add, deletions: del }
+            panel.changed_files = files.into_iter().map(|(path, status, add, del, staged)| {
+                GitChangedFile { path, status, additions: add, deletions: del, staged }
             }).collect();
             if panel.selected_file >= panel.changed_files.len() {
                 panel.selected_file = panel.changed_files.len().saturating_sub(1);
@@ -762,7 +768,7 @@ mod tests {
     #[test]
     fn changed_file_from_tuple() {
         let (path, status, add, del) = ("src/lib.rs".to_string(), 'M', 5usize, 3usize);
-        let f = GitChangedFile { path, status, additions: add, deletions: del };
+        let f = GitChangedFile { path, status, additions: add, deletions: del, staged: false };
         assert_eq!(f.path, "src/lib.rs");
         assert_eq!(f.additions, 5);
         assert_eq!(f.deletions, 3);
@@ -1067,6 +1073,7 @@ mod tests {
             status: 'A',
             additions: 100,
             deletions: 0,
+            staged: false,
         };
         assert_eq!(f.status, 'A');
         assert_eq!(f.deletions, 0);
@@ -1079,6 +1086,7 @@ mod tests {
             status: 'D',
             additions: 0,
             deletions: 50,
+            staged: false,
         };
         assert_eq!(f.status, 'D');
         assert_eq!(f.additions, 0);

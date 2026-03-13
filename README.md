@@ -41,6 +41,8 @@
 ### Git
 
 - **Git Panel** — Full git workflow in one view: changed files, diffs, commit log, and context-aware actions
+- **File Staging** — Stage/unstage individual files (`s`) or all at once (`S`); unstaged files shown with strikethrough
+- **Discard Changes** — Revert individual files (`x`) with inline confirmation prompt
 - **Squash Merge** — One-key squash merge with auto-rebase onto main and rich commit messages
 - **AI Commit Messages** — Claude generates conventional commit messages from your staged changes
 - **Auto-Rebase** — Keep feature branches up-to-date automatically with configurable auto-resolve files

@@ -62,6 +62,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         return handle_commit_overlay(key, app);
     }
 
+    // Discard confirmation intercepts input: y=confirm, n/Esc=cancel
+    if panel.discard_confirm.is_some() {
+        return handle_discard_confirm(key, app);
+    }
+
     // Auto-resolve overlay intercepts all input when open (file list editing)
     if panel.auto_resolve_overlay.is_some() {
         return handle_auto_resolve_overlay(key, app);
@@ -289,7 +294,108 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::GitPrevPage => { switch_git_panel_page(app, false); }
         Action::GitNextPage => { switch_git_panel_page(app, true); }
         Action::BrowseMain => { switch_git_panel_to_main(app); }
+
+        // ── File staging actions (only fire when focused_pane==1, enforced by lookup guard) ──
+        Action::GitToggleStage => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let idx = p.selected_file;
+                if idx < p.changed_files.len() {
+                    let file = &p.changed_files[idx];
+                    let path = file.path.clone();
+                    let was_staged = file.staged;
+                    let wt = p.worktree_path.clone();
+                    let result = if was_staged {
+                        crate::git::Git::unstage_file(&wt, &path)
+                    } else {
+                        crate::git::Git::stage_file(&wt, &path)
+                    };
+                    match result {
+                        Ok(()) => {
+                            p.changed_files[idx].staged = !was_staged;
+                            p.result_message = Some((
+                                if was_staged { format!("Unstaged: {}", path) }
+                                else { format!("Staged: {}", path) },
+                                false,
+                            ));
+                        }
+                        Err(e) => {
+                            p.result_message = Some((format!("Stage error: {}", e), true));
+                        }
+                    }
+                }
+            }
+        }
+        Action::GitStageAll => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let wt = p.worktree_path.clone();
+                // If all files are staged, unstage all; otherwise stage all
+                let all_staged = !p.changed_files.is_empty()
+                    && p.changed_files.iter().all(|f| f.staged);
+                let result = if all_staged {
+                    crate::git::Git::unstage_all(&wt)
+                } else {
+                    crate::git::Git::stage_all(&wt)
+                };
+                match result {
+                    Ok(()) => {
+                        let new_staged = !all_staged;
+                        for f in &mut p.changed_files { f.staged = new_staged; }
+                        p.result_message = Some((
+                            if new_staged { "Staged all files".into() }
+                            else { "Unstaged all files".into() },
+                            false,
+                        ));
+                    }
+                    Err(e) => {
+                        p.result_message = Some((format!("Stage error: {}", e), true));
+                    }
+                }
+            }
+        }
+        Action::GitDiscardFile => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let idx = p.selected_file;
+                if idx < p.changed_files.len() {
+                    p.discard_confirm = Some(idx);
+                }
+            }
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Handle discard confirmation: y=confirm discard, n/Esc=cancel
+fn handle_discard_confirm(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    match key.code {
+        event::KeyCode::Char('y') | event::KeyCode::Char('Y') => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                if let Some(idx) = p.discard_confirm.take() {
+                    if idx < p.changed_files.len() {
+                        let file = &p.changed_files[idx];
+                        let path = file.path.clone();
+                        let is_untracked = file.status == '?';
+                        let wt = p.worktree_path.clone();
+                        match crate::git::Git::discard_file(&wt, &path, is_untracked) {
+                            Ok(()) => {
+                                refresh_changed_files(p);
+                                load_file_diff_inline(p);
+                                p.result_message = Some((format!("Discarded: {}", path), false));
+                            }
+                            Err(e) => {
+                                p.result_message = Some((format!("Discard failed: {}", e), true));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        event::KeyCode::Char('n') | event::KeyCode::Char('N') | event::KeyCode::Esc => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.discard_confirm = None;
+            }
+        }
+        _ => {} // Ignore other keys while confirming
     }
     Ok(())
 }

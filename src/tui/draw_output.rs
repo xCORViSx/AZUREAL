@@ -825,11 +825,11 @@ mod tests {
 
     // ── GitChangedFile ──
     #[test]
-    fn test_file_modified() { let f = GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 5 }; assert_eq!(f.status, 'M'); }
+    fn test_file_modified() { let f = GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 5, staged: false }; assert_eq!(f.status, 'M'); }
     #[test]
-    fn test_file_added() { let f = GitChangedFile { path: "b".into(), status: 'A', additions: 50, deletions: 0 }; assert_eq!(f.status, 'A'); }
+    fn test_file_added() { let f = GitChangedFile { path: "b".into(), status: 'A', additions: 50, deletions: 0, staged: false }; assert_eq!(f.status, 'A'); }
     #[test]
-    fn test_file_deleted() { let f = GitChangedFile { path: "c".into(), status: 'D', additions: 0, deletions: 30 }; assert_eq!(f.status, 'D'); }
+    fn test_file_deleted() { let f = GitChangedFile { path: "c".into(), status: 'D', additions: 0, deletions: 30, staged: false }; assert_eq!(f.status, 'D'); }
 
     // ── Status colors ──
     #[test]
@@ -870,7 +870,7 @@ mod tests {
     }
     #[test]
     fn test_cf_title_stats() {
-        let files = vec![GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 3 }];
+        let files = vec![GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 3, staged: false }];
         let ta: usize = files.iter().map(|f| f.additions).sum();
         let td: usize = files.iter().map(|f| f.deletions).sum();
         let t = format!(" Changed Files ({}, +{}/-{}) ", files.len(), ta, td);

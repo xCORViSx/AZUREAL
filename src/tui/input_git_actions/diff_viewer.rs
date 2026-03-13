@@ -106,6 +106,7 @@ mod tests {
             auto_resolve_files: Vec::new(),
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
+            discard_confirm: None,
         }
     }
 
@@ -115,6 +116,7 @@ mod tests {
             status: 'M',
             additions: 10,
             deletions: 5,
+            staged: false,
         }
     }
 
@@ -383,19 +385,19 @@ mod tests {
 
     #[test]
     fn test_changed_file_added_status() {
-        let f = GitChangedFile { path: "new.rs".into(), status: 'A', additions: 50, deletions: 0 };
+        let f = GitChangedFile { path: "new.rs".into(), status: 'A', additions: 50, deletions: 0, staged: false };
         assert_eq!(f.status, 'A');
     }
 
     #[test]
     fn test_changed_file_deleted_status() {
-        let f = GitChangedFile { path: "old.rs".into(), status: 'D', additions: 0, deletions: 30 };
+        let f = GitChangedFile { path: "old.rs".into(), status: 'D', additions: 0, deletions: 30, staged: false };
         assert_eq!(f.status, 'D');
     }
 
     #[test]
     fn test_changed_file_renamed_status() {
-        let f = GitChangedFile { path: "new.rs".into(), status: 'R', additions: 5, deletions: 5 };
+        let f = GitChangedFile { path: "new.rs".into(), status: 'R', additions: 5, deletions: 5, staged: false };
         assert_eq!(f.status, 'R');
     }
 

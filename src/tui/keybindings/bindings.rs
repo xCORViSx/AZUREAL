@@ -271,7 +271,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 21] = [
+pub static GIT_ACTIONS: [Keybinding; 24] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(KeyCombo::plain(KeyCode::Tab), "Switch focus", Action::GitToggleFocus),
     Keybinding::with_alt(KeyCombo::plain(KeyCode::Char('j')), &ALT_DOWN, "Navigate", Action::NavDown).paired(),
@@ -288,6 +288,9 @@ pub static GIT_ACTIONS: [Keybinding; 21] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Char('d')), "View diff", Action::GitViewDiff),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('a')), "Auto-rebase", Action::GitAutoRebase),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Auto-resolve files", Action::GitAutoResolveSettings),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('s')), "Stage/unstage", Action::GitToggleStage),
+    Keybinding::new(KeyCombo::shift(KeyCode::Char('S')), "Stage/unstage all", Action::GitStageAll),
+    Keybinding::new(KeyCombo::plain(KeyCode::Char('x')), "Discard changes", Action::GitDiscardFile),
     Keybinding::new(KeyCombo::plain(KeyCode::Char('[')), "Prev worktree", Action::GitPrevWorktree).paired(),
     Keybinding::new(KeyCombo::plain(KeyCode::Char(']')), "Next worktree", Action::GitNextWorktree),
     Keybinding::with_alt(KeyCombo::shift(KeyCode::Char('{')), &ALT_LBRACE, "Prev page", Action::GitPrevPage).paired(),
@@ -394,7 +397,7 @@ mod tests {
     fn health_docs_length() { assert_eq!(HEALTH_DOCS.len(), 4); }
 
     #[test]
-    fn git_actions_length() { assert_eq!(GIT_ACTIONS.len(), 21); }
+    fn git_actions_length() { assert_eq!(GIT_ACTIONS.len(), 24); }
 
     #[test]
     fn projects_browse_length() { assert_eq!(PROJECTS_BROWSE.len(), 9); }
@@ -492,7 +495,15 @@ mod tests {
     fn health_docs_no_duplicate_primaries() { assert_no_duplicate_primaries("HEALTH_DOCS", &HEALTH_DOCS); }
 
     #[test]
-    fn git_actions_no_duplicate_primaries() { assert_no_duplicate_primaries("GIT_ACTIONS", &GIT_ACTIONS); }
+    fn git_actions_no_duplicate_primaries() {
+        // GIT_ACTIONS has intentional pane-specific key overloads (e.g. 's' = auto-resolve in
+        // actions pane, toggle-stage in files pane). Check (key, action) uniqueness instead.
+        let mut seen = HashSet::new();
+        for b in &GIT_ACTIONS {
+            let key = (b.primary.modifiers.bits(), format!("{:?}", b.primary.code), b.action);
+            assert!(seen.insert(key.clone()), "duplicate primary+action in GIT_ACTIONS: {:?}", key);
+        }
+    }
 
     #[test]
     fn projects_browse_no_duplicate_primaries() { assert_no_duplicate_primaries("PROJECTS_BROWSE", &PROJECTS_BROWSE); }

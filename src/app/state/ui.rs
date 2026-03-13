@@ -67,8 +67,8 @@ impl App {
 
         // Load changed files — typically <100ms, fine for modal open
         let changed_files = match Git::get_diff_files(&wt_path, &main_branch) {
-            Ok(files) => files.into_iter().map(|(path, status, add, del)| {
-                GitChangedFile { path, status, additions: add, deletions: del }
+            Ok(files) => files.into_iter().map(|(path, status, add, del, staged)| {
+                GitChangedFile { path, status, additions: add, deletions: del, staged }
             }).collect(),
             Err(_) => Vec::new(),
         };
@@ -118,6 +118,7 @@ impl App {
             auto_resolve_files,
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
+            discard_confirm: None,
         });
     }
 

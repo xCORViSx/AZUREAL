@@ -130,6 +130,7 @@ pub fn lookup_git_actions_action(
     code: KeyCode,
 ) -> Option<Action> {
     let actions_focused = focused_pane == 0;
+    let files_focused = focused_pane == 1;
     for b in &GIT_ACTIONS {
         let skip = match b.action {
             // Squash merge + rebase + auto-rebase only available on feature branches (not main)
@@ -140,6 +141,8 @@ pub fn lookup_git_actions_action(
             Action::GitCommit | Action::GitPush | Action::GitAutoResolveSettings if !actions_focused => true,
             // Diff only from file list
             Action::GitViewDiff if actions_focused => true,
+            // Stage/unstage/discard only available in files pane
+            Action::GitToggleStage | Action::GitStageAll | Action::GitDiscardFile if !files_focused => true,
             _ => false,
         };
         if !skip && b.matches(modifiers, code) { return Some(b.action); }

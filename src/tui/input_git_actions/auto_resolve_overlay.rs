@@ -165,6 +165,7 @@ mod tests {
                 input_cursor: 0,
             }),
             squash_merge_receiver: None,
+            discard_confirm: None,
         });
         app
     }

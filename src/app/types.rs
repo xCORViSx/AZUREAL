@@ -397,6 +397,8 @@ pub struct GitChangedFile {
     pub additions: usize,
     /// Lines deleted in this file
     pub deletions: usize,
+    /// Whether the file is staged (git add) — unstaged files shown with strikethrough
+    pub staged: bool,
 }
 
 /// Commit message overlay state — shown when pressing `c` in the Git panel.
@@ -560,6 +562,8 @@ pub struct GitActionsPanel {
     pub auto_resolve_overlay: Option<AutoResolveOverlay>,
     /// Receiver for squash merge progress from a background thread
     pub squash_merge_receiver: Option<std::sync::mpsc::Receiver<SquashMergeProgress>>,
+    /// When Some, a discard confirmation is pending for the file at this index
+    pub discard_confirm: Option<usize>,
 }
 
 /// Progress update from the squash merge background thread
@@ -1728,6 +1732,7 @@ mod tests {
             status: 'M',
             additions: 10,
             deletions: 3,
+            staged: false,
         };
         let cloned = f.clone();
         assert_eq!(cloned.path, "src/main.rs");
@@ -1743,6 +1748,7 @@ mod tests {
             status: 'A',
             additions: 50,
             deletions: 0,
+            staged: false,
         };
         assert_eq!(f.status, 'A');
         assert_eq!(f.deletions, 0);
@@ -1755,6 +1761,7 @@ mod tests {
             status: 'D',
             additions: 0,
             deletions: 100,
+            staged: false,
         };
         assert_eq!(f.status, 'D');
         assert_eq!(f.additions, 0);
@@ -1980,6 +1987,7 @@ mod tests {
             auto_resolve_files: vec![],
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
+            discard_confirm: None,
         };
         assert_eq!(p.worktree_name, "feat-api");
         assert!(!p.is_on_main);

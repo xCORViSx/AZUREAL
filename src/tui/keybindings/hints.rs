@@ -173,7 +173,9 @@ pub fn git_actions_footer() -> String {
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
     let (prev, next) = find_key_pair(&GIT_ACTIONS, Action::GitPrevWorktree, Action::GitNextWorktree, "[", "]");
     let (pprev, pnext) = find_key_pair(&GIT_ACTIONS, Action::GitPrevPage, Action::GitNextPage, "{", "}");
-    format!("{}:cycle panes | {}:exec/view | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab, enter, refresh, prev, next, pprev, pnext, esc)
+    let stage = find_key_for_action(&GIT_ACTIONS, Action::GitToggleStage).unwrap_or("s".into());
+    let discard = find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
+    format!("{}:cycle panes | {}:exec/view | {}:stage | {}:discard | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab, enter, stage, discard, refresh, prev, next, pprev, pnext, esc)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.

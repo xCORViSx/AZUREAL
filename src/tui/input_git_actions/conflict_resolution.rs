@@ -233,6 +233,7 @@ mod tests {
             auto_resolve_files: Vec::new(),
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
+            discard_confirm: None,
         });
         app
     }
