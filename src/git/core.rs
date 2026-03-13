@@ -109,6 +109,54 @@ impl Git {
         Ok(branches)
     }
 
+    /// Prune stale branch refs from other machines.
+    /// 1. Prunes remote-tracking refs that no longer exist on origin.
+    /// 2. Deletes local azureal/* branches that are fully merged to main
+    ///    AND have no remote counterpart (deleted on another machine).
+    /// Best-effort: silently ignored if offline or no remote configured.
+    pub fn prune_remote_refs(repo_path: &Path) {
+        // Prune stale origin/* refs
+        let _ = Command::new("git")
+            .args(["remote", "prune", "origin"])
+            .current_dir(repo_path)
+            .output();
+
+        // Find local azureal/* branches with no remote counterpart
+        let prefix = crate::models::BRANCH_PREFIX;
+        let pattern = format!("{}/*", prefix);
+        let local = Command::new("git")
+            .args(["branch", "--list", &pattern, "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output();
+        let remote = Command::new("git")
+            .args(["branch", "-r", "--list", &format!("origin/{}/*", prefix), "--format=%(refname:short)"])
+            .current_dir(repo_path)
+            .output();
+        let (Ok(local), Ok(remote)) = (local, remote) else { return };
+        let remote_names: std::collections::HashSet<String> = String::from_utf8_lossy(&remote.stdout)
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("origin/"))
+            .map(|s| s.to_string())
+            .collect();
+        for line in String::from_utf8_lossy(&local.stdout).lines() {
+            let branch = line.trim();
+            if branch.is_empty() || remote_names.contains(branch) { continue; }
+            // Only delete if fully merged to main (safe — no unmerged work lost)
+            let merged = Command::new("git")
+                .args(["branch", "--merged", "main", "--list", branch])
+                .current_dir(repo_path)
+                .output()
+                .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+                .unwrap_or(false);
+            if merged {
+                let _ = Command::new("git")
+                    .args(["branch", "-d", branch])
+                    .current_dir(repo_path)
+                    .output();
+            }
+        }
+    }
+
     /// Get the main branch name (main or master)
     pub fn get_main_branch(repo_path: &Path) -> Result<String> {
         for branch in ["main", "master"] {

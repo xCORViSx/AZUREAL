@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Stale branch pruning on startup** — On project load and project switch, `Git::prune_remote_refs()` runs `git remote prune origin` to remove remote-tracking refs deleted on other machines, then deletes local `azureal/*` branches that are fully merged to main and have no remote counterpart. Prevents worktrees deleted on one machine from reappearing as archived entries on another.
 - **Self-installing binaries** — Downloaded binaries detect first run (not in PATH, not a cargo build), copy themselves to `/usr/local/bin/` (macOS/Linux) or `%USERPROFILE%\.azureal\bin\` (Windows), update shell profile / user PATH, and print a success message. No manual `chmod`/`mv`/`sudo` needed — just download and run. Skips silently when already installed or running from `target/debug`/`target/release`.
 - **Clickable status bar message** — Clicking the status bar copies the current status message to the system clipboard.
 - **Cross-platform session directory linking** — Sessions created on macOS are now accessible on Windows (and vice versa) via NTFS junctions (Windows) or symlinks (Unix). `find_foreign_project_dir()` matches worktree suffixes across platform-specific encoded paths; `link_project_dir()` creates the appropriate link type. No elevation required on Windows.

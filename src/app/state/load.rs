@@ -200,6 +200,10 @@ impl App {
         // (e.g. .DS_Store committed before gitignore was added).
         Git::untrack_gitignored_files(&repo_root);
 
+        // Prune stale remote-tracking refs so branches deleted on other machines
+        // don't appear as archived worktrees. Best-effort (no-op if offline).
+        Git::prune_remote_refs(&repo_root);
+
         // Detached HEAD repair and orphaned rebase cleanup now handled
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;

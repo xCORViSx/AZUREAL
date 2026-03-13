@@ -620,6 +620,9 @@ impl App {
         let az = crate::azufig::load_project_azufig(&path);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
+        // Prune stale remote-tracking refs before loading worktrees
+        Git::prune_remote_refs(&path);
+
         // Reload sessions and output
         let _ = self.load_worktrees();
         self.load_session_output();
