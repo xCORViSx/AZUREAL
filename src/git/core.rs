@@ -751,7 +751,6 @@ impl Git {
     /// Each tuple: (canonical form to write, all accepted variants).
     const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[
         ("worktrees/", &["worktrees", "worktrees/", "/worktrees", "/worktrees/"]),
-        (".azureal/sessions/", &[".azureal/sessions", ".azureal/sessions/"]),
     ];
 
     pub fn ensure_worktrees_gitignored(repo_root: &Path) {

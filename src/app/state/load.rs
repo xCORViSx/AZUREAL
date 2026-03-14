@@ -213,20 +213,6 @@ impl App {
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;
 
-        // Migrate legacy .json.gz caches into the SQLite store (one-time, idempotent)
-        if let Some(ref store) = self.session_store {
-            let sessions_dir = repo_root.join(".azureal").join("sessions");
-            let mut uuid_wt: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-            for wt in &self.worktrees {
-                if let Some(ref wt_path) = wt.worktree_path {
-                    for (uuid, _, _) in crate::config::list_sessions(self.backend, wt_path) {
-                        uuid_wt.insert(uuid, wt.branch_name.clone());
-                    }
-                }
-            }
-            let _ = store.migrate_from_legacy(&sessions_dir, &uuid_wt);
-        }
-
         Ok(())
     }
 

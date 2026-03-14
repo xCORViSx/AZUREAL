@@ -60,7 +60,7 @@ pub struct AzufigConfig {
 /// Top-level structure for the project-local azufig file.
 /// Stores per-project settings like filetree filters, run commands, etc.
 /// Each section uses single-bracket `[section]` with flat `key = "value"` pairs.
-/// Session names are stored in `.azureal/sessions/index.json`, not here.
+/// Session names are stored in the SQLite session store (`.azureal/sessions.azs`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectAzufig {
     /// FileTree display options (hidden entry names)

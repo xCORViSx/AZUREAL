@@ -413,7 +413,6 @@ dependencies = [
  "crossterm",
  "dirs",
  "dunce",
- "flate2",
  "image",
  "libc",
  "notify",

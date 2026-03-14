@@ -696,20 +696,6 @@ impl App {
             Git::prune_remote_refs(&path);
             let _ = self.load_worktrees();
 
-            // Migrate legacy caches (idempotent, skips if already done)
-            if let Some(ref store) = self.session_store {
-                let sessions_dir = path.join(".azureal").join("sessions");
-                let mut uuid_wt: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-                for wt in &self.worktrees {
-                    if let Some(ref wt_path) = wt.worktree_path {
-                        for (uuid, _, _) in crate::config::list_sessions(self.backend, wt_path) {
-                            uuid_wt.insert(uuid, wt.branch_name.clone());
-                        }
-                    }
-                }
-                let _ = store.migrate_from_legacy(&sessions_dir, &uuid_wt);
-            }
-
             self.load_session_output();
             self.load_run_commands();
             self.load_preset_prompts();
