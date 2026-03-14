@@ -17,23 +17,33 @@ pub fn default_model(backend: Backend) -> &'static str {
 }
 
 impl App {
-    /// Recompute the cached token usage badge from current session_tokens + model_context_window.
-    /// Call this whenever session_tokens or model_context_window changes — draw path just reads the cache.
+    /// Recompute the cached context usage badge from session store character count.
+    /// Percentage = chars_since_compaction / COMPACTION_THRESHOLD (400k).
+    /// Call after store append or compaction — draw path just reads the cache.
     pub fn update_token_badge(&mut self) {
-        let mut pct_value = 0.0_f64;
-        self.token_badge_cache = self.session_tokens.map(|(ctx_tokens, _)| {
-            let base_window = self.model_context_window.unwrap_or(200_000);
-            let window = if ctx_tokens > base_window { 1_000_000 } else { base_window };
-            // Claude reserves ~33k tokens as auto-compact buffer (compacts at ~83.5% raw).
-            // Subtract the buffer so percentage reflects usable context, not total window.
-            let usable = window.saturating_sub(33_000);
-            let pct = (ctx_tokens as f64 / usable as f64 * 100.0).min(100.0);
-            pct_value = pct;
-            let color = if pct < 60.0 { ratatui::style::Color::Green }
-                else if pct < 90.0 { ratatui::style::Color::Yellow }
-                else { ratatui::style::Color::Red };
-            (format!(" {:.0}% ", pct), color)
-        });
+        let pct_value = match (&self.session_store, self.current_session_id) {
+            (Some(store), Some(sid)) => {
+                match store.total_chars_since_compaction(sid) {
+                    Ok(chars) => {
+                        let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
+                        let pct = (chars as f64 / threshold * 100.0).min(100.0);
+                        let color = if pct < 60.0 { ratatui::style::Color::Green }
+                            else if pct < 90.0 { ratatui::style::Color::Yellow }
+                            else { ratatui::style::Color::Red };
+                        self.token_badge_cache = Some((format!(" {:.0}% ", pct), color));
+                        pct
+                    }
+                    Err(_) => {
+                        self.token_badge_cache = None;
+                        0.0
+                    }
+                }
+            }
+            _ => {
+                self.token_badge_cache = None;
+                0.0
+            }
+        };
         // Track 90% threshold for compaction inactivity watcher
         let was_high = self.context_pct_high;
         self.context_pct_high = pct_value >= 90.0;
@@ -221,31 +231,61 @@ mod tests {
         assert_eq!(CODEX_MODELS[0], default_model(Backend::Codex));
     }
 
-    // ── update_token_badge ──
+    // ── update_token_badge (sourced from session store chars / 400k threshold) ──
+
+    /// Helper: create an App with an in-memory session store and a session with
+    /// the given total character count (via a single UserMessage event).
+    fn app_with_store_chars(chars: usize) -> App {
+        use crate::app::session_store::SessionStore;
+        use crate::events::DisplayEvent;
+
+        let mut app = App::new();
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("test").unwrap();
+        if chars > 0 {
+            let content = "x".repeat(chars);
+            let events = vec![DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content,
+            }];
+            store.append_events(sid, &events).unwrap();
+        }
+        app.session_store = Some(store);
+        app.current_session_id = Some(sid);
+        app
+    }
 
     #[test]
-    fn test_token_badge_none_without_tokens() {
+    fn test_token_badge_none_without_store() {
         let mut app = App::new();
-        app.session_tokens = None;
+        app.update_token_badge();
+        assert!(app.token_badge_cache.is_none());
+    }
+
+    #[test]
+    fn test_token_badge_none_without_session_id() {
+        use crate::app::session_store::SessionStore;
+        let mut app = App::new();
+        app.session_store = Some(SessionStore::open_memory().unwrap());
+        app.current_session_id = None;
         app.update_token_badge();
         assert!(app.token_badge_cache.is_none());
     }
 
     #[test]
     fn test_token_badge_green_low_usage() {
-        let mut app = App::new();
-        app.session_tokens = Some((50_000, 1_000));
-        app.model_context_window = Some(200_000);
+        // 100k chars out of 400k = 25%
+        let mut app = app_with_store_chars(100_000);
         app.update_token_badge();
-        let (_, color) = app.token_badge_cache.unwrap();
+        let (text, color) = app.token_badge_cache.unwrap();
         assert_eq!(color, ratatui::style::Color::Green);
+        assert!(text.contains("25"));
     }
 
     #[test]
     fn test_token_badge_yellow_medium_usage() {
-        let mut app = App::new();
-        app.session_tokens = Some((120_000, 1_000));
-        app.model_context_window = Some(200_000);
+        // 280k chars out of 400k = 70%
+        let mut app = app_with_store_chars(280_000);
         app.update_token_badge();
         let (_, color) = app.token_badge_cache.unwrap();
         assert_eq!(color, ratatui::style::Color::Yellow);
@@ -253,11 +293,58 @@ mod tests {
 
     #[test]
     fn test_token_badge_red_high_usage() {
-        let mut app = App::new();
-        app.session_tokens = Some((165_000, 1_000));
-        app.model_context_window = Some(200_000);
+        // 380k chars out of 400k = 95%
+        let mut app = app_with_store_chars(380_000);
         app.update_token_badge();
         let (_, color) = app.token_badge_cache.unwrap();
         assert_eq!(color, ratatui::style::Color::Red);
+        assert!(app.context_pct_high);
+    }
+
+    #[test]
+    fn test_token_badge_capped_at_100() {
+        // 500k chars out of 400k — should cap at 100%
+        let mut app = app_with_store_chars(500_000);
+        app.update_token_badge();
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert_eq!(color, ratatui::style::Color::Red);
+        assert!(text.contains("100"));
+    }
+
+    #[test]
+    fn test_token_badge_zero_chars() {
+        let mut app = app_with_store_chars(0);
+        app.update_token_badge();
+        let (text, _) = app.token_badge_cache.unwrap();
+        assert!(text.contains("0"));
+    }
+
+    #[test]
+    fn test_token_badge_compaction_resets_pct() {
+        use crate::app::session_store::SessionStore;
+        use crate::events::DisplayEvent;
+
+        let mut app = App::new();
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("test").unwrap();
+        // Add 380k chars (95%)
+        let events = vec![DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "x".repeat(380_000),
+        }];
+        store.append_events(sid, &events).unwrap();
+        app.session_store = Some(store);
+        app.current_session_id = Some(sid);
+        app.update_token_badge();
+        assert!(app.context_pct_high);
+
+        // Store compaction — chars_since_compaction drops to 0
+        let max_seq = app.session_store.as_ref().unwrap().max_seq(sid).unwrap();
+        app.session_store.as_ref().unwrap().store_compaction(sid, max_seq, "summary").unwrap();
+        app.update_token_badge();
+        assert!(!app.context_pct_high);
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert!(text.contains("0"));
+        assert_eq!(color, ratatui::style::Color::Green);
     }
 }

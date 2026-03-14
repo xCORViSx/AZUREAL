@@ -32,7 +32,7 @@
 - **Clickable File Paths** — Click tool file paths to open files or view diffs directly in the viewer
 - **Clickable Tables** — Click any table to expand it in a full-width popup
 - **Todo Widget** — Live task progress from Claude's TodoWrite calls (checkboxes with subagent nesting)
-- **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
+- **Context Meter** — Color-coded session store usage on the session border (chars / 400k compaction threshold)
 - **Model Switcher** — Cycle between backend models with `⌃m` / `Ctrl+M` (Claude: opus/sonnet/haiku; Codex: o3/o4-mini/codex-mini)
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
 - **Session Rename** — `r` in the session list to rename the selected session (persisted in SQLite store)

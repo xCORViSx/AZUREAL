@@ -972,18 +972,18 @@ Color-coded context window usage percentage displayed on the Session pane's righ
 
 Stored as `model_context_window: Option<u64>` on App state — `None` until first event is parsed.
 
-**Data flow:**
-1. **Session file parse:** `parse_assistant_event()` in `src/app/session_parser.rs` extracts `message.usage` → `ParsedSession.session_tokens` and `message.model` → `ParsedSession.context_window` (heuristic). `parse_result_event()` extracts `modelUsage.*.contextWindow` → `ParsedSession.context_window` (authoritative, overwrites heuristic).
-2. **Load propagation:** `load_session_output()` and `refresh_session_events()` in `src/app/state/load.rs` copy to `app.session_tokens` and `app.model_context_window`, then call `update_token_badge()`
-3. **Live stream:** `handle_claude_output()` in `src/app/state/claude.rs` extracts usage + model from assistant events (heuristic) and contextWindow from result events (authoritative), then calls `update_token_badge()`
-4. **Badge cache:** `update_token_badge()` in `src/app/state/app.rs` precomputes `(String, Color)` from session_tokens + model_context_window. Only called when token data changes — draw path reads the cached value with zero computation
+**Data flow (session store sourced):**
+1. **Store append:** `store_append_from_jsonl()` in `src/app/state/claude.rs` parses JSONL → strips injected context → appends to SQLite store → calls `update_token_badge()`
+2. **Compaction stored:** `poll_compaction_agents()` in `src/tui/event_loop/agent_events.rs` stores the compaction summary → calls `update_token_badge()` (chars drop, percentage resets)
+3. **Load propagation:** `load_session_output()` and `refresh_session_events()` in `src/app/state/load.rs` call `update_token_badge()` which reads from the store
+4. **Badge cache:** `update_token_badge()` in `src/app/state/app/model.rs` queries `store.total_chars_since_compaction(session_id)` and computes `(chars / COMPACTION_THRESHOLD) * 100%` (400k chars = 100%). Precomputes `(String, Color)` — draw path reads the cached value with zero computation
 5. **Display:** `draw_output_pane()` in `src/tui/draw_output.rs` reads `token_badge_cache` and renders as right-aligned spans before PID/exit code
 
-**Reset:** `session_tokens` and `model_context_window` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no token data available.
+**Reset:** `token_badge_cache` cleared to `None` on session switch (in `load_session_output()`). Badge hidden when no store/session available.
 
 **Compaction inactivity watcher:** When context usage ≥ 90%, `update_token_badge()` sets `context_pct_high = true`. The event loop checks: if `context_pct_high && !compaction_banner_injected && is_active_slot_running() && last_session_event_time elapsed ≥ 30s`, it injects a `DisplayEvent::MayBeCompacting` banner. Uses `is_active_slot_running()` (not `!agent_receivers.is_empty()`) so background processes on other branches don't trigger the banner for the viewed session. When new events arrive (in `apply_parsed_output()` or `refresh_session_events()`), both `last_session_event_time` and `compaction_banner_injected` are reset. `load_session_output()` also resets both to prevent stale timers from triggering on session switch. When context drops below 90% (e.g. after compaction completes), `compaction_banner_injected` is cleared.
 
-Implementation: `session_tokens: Option<(u64, u64)>`, `model_context_window: Option<u64>`, `token_badge_cache: Option<(String, Color)>`, `context_pct_high: bool`, `last_session_event_time: Instant`, `compaction_banner_injected: bool`, `selected_model: Option<String>`, `detected_model: Option<String>` in `src/app/state/app.rs`, `update_token_badge()` / `display_model_name()` / `cycle_model()` methods, `context_window_for_model()` in `src/app/session_parser.rs`, display in `src/tui/draw_output.rs`, inactivity check in `src/tui/event_loop.rs`
+Implementation: `token_badge_cache: Option<(String, Color)>`, `context_pct_high: bool`, `last_session_event_time: Instant`, `compaction_banner_injected: bool`, `selected_model: Option<String>`, `detected_model: Option<String>` in `src/app/state/app.rs`, `update_token_badge()` / `display_model_name()` / `cycle_model()` methods in `src/app/state/app/model.rs`, `total_chars_since_compaction()` + `COMPACTION_THRESHOLD` in `src/app/session_store.rs`, display in `src/tui/draw_output.rs`, inactivity check in `src/tui/event_loop.rs`
 
 ### TodoWrite Sticky Widget
 

@@ -153,6 +153,8 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
                 if let Some(ref store) = app.session_store {
                     // Store compaction at the boundary — events after this seq remain as raw events
                     let _ = store.store_compaction(session_id, boundary_seq, summary);
+                    // Refresh badge — chars_since_compaction just dropped
+                    app.update_token_badge();
                 }
             }
         }

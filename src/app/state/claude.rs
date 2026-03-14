@@ -69,47 +69,16 @@ impl App {
             }
         }
 
+        // Extract detected model from assistant events (for display, not badge)
         if let Some(ref json) = parsed_json {
-            let mut tokens_changed = false;
-            match json.get("type").and_then(|t| t.as_str()) {
-                Some("assistant") => if let Some(msg) = json.get("message") {
-                    if let Some(usage) = msg.get("usage") {
-                        let input_t = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let output_t = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        self.session_tokens = Some((input_t + cache_read + cache_create, output_t));
-                        tokens_changed = true;
-                    }
-                    if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
-                        self.detected_model = Some(model.to_string());
-                        if self.model_context_window.is_none() {
-                            self.model_context_window = Some(
-                                crate::app::session_parser::context_window_for_model(model)
-                            );
-                            tokens_changed = true;
-                        }
-                    }
-                },
-                Some("result") => {
-                    if let Some(obj) = json.get("model_usage")
-                        .or_else(|| json.get("modelUsage"))
-                        .and_then(|v| v.as_object())
-                    {
-                        for (_model, usage) in obj {
-                            if let Some(cw) = usage.get("context_window")
-                                .or_else(|| usage.get("contextWindow"))
-                                .and_then(|v| v.as_u64())
-                            {
-                                self.model_context_window = Some(cw);
-                                tokens_changed = true;
-                            }
-                        }
-                    }
-                },
-                _ => {}
+            if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
+                if let Some(model) = json.get("message")
+                    .and_then(|m| m.get("model"))
+                    .and_then(|m| m.as_str())
+                {
+                    self.detected_model = Some(model.to_string());
+                }
             }
-            if tokens_changed { self.update_token_badge(); }
         }
 
         if !events.is_empty() {
@@ -319,6 +288,8 @@ impl App {
                         }
                     }
                 }
+                // Update context percentage badge from store character count
+                self.update_token_badge();
             }
         }
     }
@@ -587,53 +558,16 @@ impl App {
             // Reuse the JSON value that EventParser already parsed — zero additional
             // serde_json::from_str calls. EventParser returns it alongside events.
 
-            // Extract token usage, model, and context window from live stream events.
-            // assistant events give us token counts + model heuristic (available mid-turn).
-            // result events give us the authoritative contextWindow from the API (end of turn).
+            // Extract detected model from live stream events (for display, not badge)
             if let Some(ref json) = parsed_json {
-                let mut tokens_changed = false;
-                match json.get("type").and_then(|t| t.as_str()) {
-                    Some("assistant") => if let Some(msg) = json.get("message") {
-                        if let Some(usage) = msg.get("usage") {
-                            let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            self.session_tokens = Some((input + cache_read + cache_create, output));
-                            tokens_changed = true;
-                        }
-                        // Heuristic fallback — result event will overwrite with exact value
-                        if let Some(model) = msg.get("model").and_then(|m| m.as_str()) {
-                            self.detected_model = Some(model.to_string());
-                            if self.model_context_window.is_none() {
-                                self.model_context_window = Some(
-                                    crate::app::session_parser::context_window_for_model(model)
-                                );
-                                tokens_changed = true;
-                            }
-                        }
-                    },
-                    // result event contains modelUsage.<model_id>.contextWindow — the
-                    // exact context window from the API, overriding any heuristic guess
-                    Some("result") => {
-                        if let Some(obj) = json.get("model_usage")
-                            .or_else(|| json.get("modelUsage"))
-                            .and_then(|v| v.as_object())
-                        {
-                            for (_model, usage) in obj {
-                                if let Some(cw) = usage.get("context_window")
-                                    .or_else(|| usage.get("contextWindow"))
-                                    .and_then(|v| v.as_u64())
-                                {
-                                    self.model_context_window = Some(cw);
-                                    tokens_changed = true;
-                                }
-                            }
-                        }
-                    },
-                    _ => {}
+                if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
+                    if let Some(model) = json.get("message")
+                        .and_then(|m| m.get("model"))
+                        .and_then(|m| m.as_str())
+                    {
+                        self.detected_model = Some(model.to_string());
+                    }
                 }
-                if tokens_changed { self.update_token_badge(); }
             }
 
             // Only extend + invalidate when we actually got events. Many stdout lines

@@ -1709,4 +1709,380 @@ mod tests {
         let post = store.load_events_range(sid, boundary + 1, 10).unwrap();
         assert_eq!(post.len(), 6); // 3 user + 3 assistant
     }
+
+    // =====================================================================
+    // Integration: store → build_context → inject → strip → re-store
+    // =====================================================================
+
+    #[test]
+    fn integration_full_round_trip_no_compaction() {
+        // Simulate: first exchange stored, second prompt uses context injection,
+        // agent response stored with injected context stripped.
+        use crate::app::context_injection::{build_context_prompt, strip_injected_context};
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        // First exchange: user prompt + assistant reply
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "fix the auth bug".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "I'll check the auth module.".into() },
+            DisplayEvent::ToolCall {
+                _uuid: String::new(), tool_use_id: "tc1".into(), tool_name: "Read".into(),
+                file_path: Some("/src/auth.rs".into()),
+                input: serde_json::json!({"file_path": "/src/auth.rs"}),
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "tc1".into(), tool_name: "Read".into(),
+                file_path: Some("/src/auth.rs".into()),
+                content: "fn authenticate() { todo!() }".into(), is_error: false,
+            },
+            DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 3000, cost_usd: 0.02 },
+        ]).unwrap();
+
+        // Build context for second prompt
+        let payload = store.build_context(sid).unwrap().unwrap();
+        assert!(payload.compaction_summary.is_none());
+        assert_eq!(payload.events.len(), 5);
+
+        // Inject context into second prompt
+        let user_prompt = "now add error handling";
+        let injected = build_context_prompt(&payload, user_prompt);
+        assert!(injected.contains("<azureal-session-context>"));
+        assert!(injected.contains("fix the auth bug"));
+        assert!(injected.contains("I'll check the auth module."));
+        assert!(injected.ends_with(user_prompt));
+
+        // Simulate: agent sees injected prompt, produces response.
+        // On exit, we strip the context and store the clean exchange.
+        let stripped = strip_injected_context(&injected);
+        assert_eq!(stripped, user_prompt);
+
+        // Store the second exchange with clean user message
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: stripped.to_string() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Added error handling.".into() },
+        ]).unwrap();
+
+        // Verify all 7 events stored, no context tags leaked
+        let all = store.load_events(sid).unwrap();
+        assert_eq!(all.len(), 7);
+        for ev in &all {
+            if let DisplayEvent::UserMessage { content, .. } = ev {
+                assert!(!content.contains("<azureal-session-context>"));
+                assert!(!content.contains("</azureal-session-context>"));
+            }
+        }
+    }
+
+    #[test]
+    fn integration_context_injection_preserves_tool_calls() {
+        // Verify tool calls in context build are present in the injected prompt
+        use crate::app::context_injection::build_context_prompt;
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("feat").unwrap();
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "search for main".into() },
+            DisplayEvent::ToolCall {
+                _uuid: String::new(), tool_use_id: "tc1".into(), tool_name: "Grep".into(),
+                file_path: None,
+                input: serde_json::json!({"pattern": "fn main"}),
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "tc1".into(), tool_name: "Grep".into(),
+                file_path: None, content: "src/main.rs:1:fn main()".into(), is_error: false,
+            },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Found it in main.rs".into() },
+        ]).unwrap();
+
+        let payload = store.build_context(sid).unwrap().unwrap();
+        let injected = build_context_prompt(&payload, "next step");
+
+        // Tool call and result should appear in context
+        assert!(injected.contains("## Tool: Grep (fn main)"));
+        assert!(injected.contains("[Result: Grep]"));
+        assert!(injected.contains("src/main.rs:1:fn main()"));
+    }
+
+    #[test]
+    fn integration_compaction_full_cycle() {
+        // Simulate the complete compaction lifecycle:
+        // 1. Multiple exchanges build up content
+        // 2. Compaction boundary computed
+        // 3. Pre-boundary events used for compaction prompt
+        // 4. Summary stored
+        // 5. build_context returns summary + recent events
+        // 6. Context injection includes summary prefix
+        use crate::app::context_injection::{build_context_prompt, build_compaction_prompt};
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        // Insert 6 exchanges (12 events)
+        for i in 1..=6 {
+            store.append_events(sid, &[
+                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("question {}", i) },
+                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("answer {}", i) },
+            ]).unwrap();
+        }
+
+        // Find boundary (keep last 3 user messages)
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap().unwrap();
+        // UserMessages at seqs 1, 3, 5, 7, 9, 11
+        // keep=3 → keep 7, 9, 11 → boundary = 7 - 1 = 6
+        assert_eq!(boundary, 6);
+
+        // Load pre-boundary events for compaction
+        let pre_events = store.load_events_range(sid, 1, boundary).unwrap();
+        assert_eq!(pre_events.len(), 6); // q1, a1, q2, a2, q3, a3
+
+        // Build compaction prompt (what the summarization agent would see)
+        let compact_payload = ContextPayload {
+            compaction_summary: None,
+            events: pre_events,
+        };
+        let compact_prompt = build_compaction_prompt(&compact_payload);
+        assert!(compact_prompt.contains("question 1"));
+        assert!(compact_prompt.contains("answer 3"));
+        assert!(!compact_prompt.contains("question 4")); // not in pre-boundary
+
+        // Simulate: compaction agent returns summary
+        let summary = "User asked 3 questions about the system. All were answered.";
+        store.store_compaction(sid, boundary, summary).unwrap();
+
+        // Now build_context should return summary + post-boundary events
+        let payload = store.build_context(sid).unwrap().unwrap();
+        assert_eq!(payload.compaction_summary.as_deref(), Some(summary));
+        assert_eq!(payload.events.len(), 6); // q4, a4, q5, a5, q6, a6
+
+        // Context injection should include summary prefix + recent events
+        let injected = build_context_prompt(&payload, "question 7");
+        assert!(injected.contains("[Previous conversation summary]"));
+        assert!(injected.contains(summary));
+        assert!(injected.contains("[Conversation continues]"));
+        assert!(injected.contains("question 4"));
+        assert!(injected.contains("answer 6"));
+        assert!(injected.ends_with("question 7"));
+        // Old questions should NOT appear (they're summarized)
+        assert!(!injected.contains("question 1"));
+    }
+
+    #[test]
+    fn integration_multiple_compactions() {
+        // Verify that a second compaction replaces the first in build_context
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        // First batch: 5 exchanges
+        insert_conversation(&store, sid, 5);
+        store.store_compaction(sid, 4, "First summary").unwrap();
+
+        // Second batch: 5 more exchanges (seqs 11..=20)
+        for i in 6..=10 {
+            store.append_events(sid, &[
+                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("prompt {}", i) },
+                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("reply {}", i) },
+            ]).unwrap();
+        }
+
+        // Second compaction at seq 14
+        store.store_compaction(sid, 14, "Second summary (includes first)").unwrap();
+
+        // build_context should use the latest compaction
+        let payload = store.build_context(sid).unwrap().unwrap();
+        assert_eq!(payload.compaction_summary.as_deref(), Some("Second summary (includes first)"));
+
+        // Events should be from seq 15 onward only
+        let events = &payload.events;
+        // Verify first event is from a later prompt (not prompt 1-7)
+        if let DisplayEvent::UserMessage { content, .. } = &events[0] {
+            assert!(content.starts_with("prompt "));
+            let num: usize = content.strip_prefix("prompt ").unwrap().parse().unwrap();
+            assert!(num >= 8, "expected prompt 8+, got prompt {}", num);
+        } else {
+            panic!("expected UserMessage first");
+        }
+    }
+
+    #[test]
+    fn integration_strip_preserves_multiline_user_prompt() {
+        // Verify stripping works with complex multi-line prompts
+        use crate::app::context_injection::{build_context_prompt, strip_injected_context};
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+        ]).unwrap();
+
+        let multiline_prompt = "fix this:\n\n```rust\nfn main() {\n    panic!()\n}\n```\n\nalso update tests";
+        let payload = store.build_context(sid).unwrap().unwrap();
+        let injected = build_context_prompt(&payload, multiline_prompt);
+        let stripped = strip_injected_context(&injected);
+        assert_eq!(stripped, multiline_prompt);
+    }
+
+    #[test]
+    fn integration_compaction_threshold_detection() {
+        // Verify total_chars_since_compaction correctly tracks accumulation
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        // Insert a large message (simulate 100K chars worth of content)
+        let big_msg = "x".repeat(200_000);
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: big_msg.clone() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: big_msg },
+        ]).unwrap();
+
+        let chars = store.total_chars_since_compaction(sid).unwrap();
+        assert_eq!(chars, 400_000);
+        assert!(chars >= COMPACTION_THRESHOLD);
+
+        // After compaction, counter resets
+        store.store_compaction(sid, store.max_seq(sid).unwrap(), "summary").unwrap();
+        let chars_after = store.total_chars_since_compaction(sid).unwrap();
+        assert_eq!(chars_after, 0);
+
+        // New events accumulate fresh
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "short".into() },
+        ]).unwrap();
+        let chars_new = store.total_chars_since_compaction(sid).unwrap();
+        assert_eq!(chars_new, 5);
+    }
+
+    #[test]
+    fn integration_empty_session_context_injection_passthrough() {
+        // First prompt on a new session: no context, prompt passes through unchanged
+        use crate::app::context_injection::build_context_prompt;
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        let payload = store.build_context(sid).unwrap();
+        assert!(payload.is_none());
+
+        // When payload is None, the caller doesn't inject — prompt goes through raw.
+        // Simulate that logic:
+        let prompt = "hello world";
+        let result = match payload {
+            Some(p) => build_context_prompt(&p, prompt),
+            None => prompt.to_string(),
+        };
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn integration_compaction_only_summary_no_events() {
+        // Edge case: all events are compacted, only summary remains
+        use crate::app::context_injection::build_context_prompt;
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "old work".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "done".into() },
+        ]).unwrap();
+        store.store_compaction(sid, store.max_seq(sid).unwrap(), "All prior work summarized.").unwrap();
+
+        let payload = store.build_context(sid).unwrap().unwrap();
+        assert_eq!(payload.compaction_summary.as_deref(), Some("All prior work summarized."));
+        assert!(payload.events.is_empty());
+
+        let injected = build_context_prompt(&payload, "continue");
+        assert!(injected.contains("[Previous conversation summary]"));
+        assert!(injected.contains("All prior work summarized."));
+        assert!(injected.ends_with("continue"));
+    }
+
+    #[test]
+    fn integration_store_compact_event_reduces_size() {
+        // Verify that storing compacted events uses less space than raw
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+
+        // Big Read result (100 lines)
+        let big_content = (0..100).map(|i| format!("line {}: {}", i, "x".repeat(80))).collect::<Vec<_>>().join("\n");
+        store.append_events(sid, &[
+            DisplayEvent::ToolResult {
+                tool_use_id: "t".into(), tool_name: "Read".into(),
+                file_path: None, content: big_content.clone(), is_error: false,
+            },
+        ]).unwrap();
+
+        // Load back — should be compacted (first + last line + count)
+        let loaded = store.load_events(sid).unwrap();
+        match &loaded[0] {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.len() < big_content.len() / 2, "compacted content should be much smaller");
+                assert!(content.contains("(100 lines)"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn integration_three_prompt_session_full_flow() {
+        // Simulate a realistic 3-prompt session lifecycle
+        use crate::app::context_injection::{build_context_prompt, strip_injected_context};
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("feat-x").unwrap();
+
+        // === Prompt 1: no context ===
+        let p1 = "create a new module";
+        // No payload for first prompt
+        assert!(store.build_context(sid).unwrap().is_none());
+
+        // Store prompt 1 exchange
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: p1.into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Created src/module.rs".into() },
+            DisplayEvent::ToolCall {
+                _uuid: String::new(), tool_use_id: "tc1".into(), tool_name: "Write".into(),
+                file_path: Some("/src/module.rs".into()),
+                input: serde_json::json!({"file_path": "/src/module.rs", "content": "pub fn hello() {}"}),
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "tc1".into(), tool_name: "Write".into(),
+                file_path: Some("/src/module.rs".into()), content: "OK".into(), is_error: false,
+            },
+            DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 2000, cost_usd: 0.01 },
+        ]).unwrap();
+
+        // === Prompt 2: with context from prompt 1 ===
+        let p2 = "add tests for the module";
+        let payload2 = store.build_context(sid).unwrap().unwrap();
+        assert_eq!(payload2.events.len(), 5);
+        let injected2 = build_context_prompt(&payload2, p2);
+        assert!(injected2.contains("create a new module"));
+        let stripped2 = strip_injected_context(&injected2);
+        assert_eq!(stripped2, p2);
+
+        // Store prompt 2 exchange (with clean prompt)
+        store.append_events(sid, &[
+            DisplayEvent::UserMessage { _uuid: String::new(), content: stripped2.to_string() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Added tests.".into() },
+            DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 1500, cost_usd: 0.008 },
+        ]).unwrap();
+
+        // === Prompt 3: with context from prompts 1+2 ===
+        let p3 = "run cargo test";
+        let payload3 = store.build_context(sid).unwrap().unwrap();
+        assert_eq!(payload3.events.len(), 8); // 5 from p1 + 3 from p2
+        let injected3 = build_context_prompt(&payload3, p3);
+        assert!(injected3.contains("create a new module"));
+        assert!(injected3.contains("add tests for the module"));
+        assert!(injected3.contains("Added tests."));
+        let stripped3 = strip_injected_context(&injected3);
+        assert_eq!(stripped3, p3);
+
+        // Verify total event count in store
+        assert_eq!(store.load_events(sid).unwrap().len(), 8);
+        assert_eq!(store.message_count(sid).unwrap(), 4); // 3 user + 1 assistant (UserMessage + AssistantText kinds)
+    }
 }
