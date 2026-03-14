@@ -254,8 +254,9 @@ impl SessionStore {
         let mut count = 0usize;
         for event in events {
             if matches!(event, DisplayEvent::Filtered) { continue; }
-            let kind = event_kind(event);
-            let data = serde_json::to_string(event).unwrap_or_default();
+            let compacted = compact_event(event);
+            let kind = event_kind(&compacted);
+            let data = serde_json::to_string(&compacted).unwrap_or_default();
             let char_len = event_char_len(event) as i64;
             stmt.execute(params![session_id, seq, kind, data, char_len])?;
             seq += 1;
@@ -434,6 +435,145 @@ fn event_kind(event: &DisplayEvent) -> &'static str {
         DisplayEvent::ToolResult { .. } => "ToolResult",
         DisplayEvent::Complete { .. } => "Complete",
         DisplayEvent::Filtered => "Filtered",
+    }
+}
+
+/// Compact a DisplayEvent for storage, minimizing JSON size while preserving
+/// everything the render pipeline needs. Mirrors the display rules in
+/// `render_tools.rs`: ToolResult content is truncated to what's actually shown,
+/// ToolCall input is stripped to only the key field `extract_tool_param` reads.
+fn compact_event(event: &DisplayEvent) -> DisplayEvent {
+    match event {
+        DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error } => {
+            // Strip system-reminder blocks first
+            let content = if let Some(start) = content.find("<system-reminder>") {
+                &content[..start]
+            } else {
+                content.as_str()
+            }.trim_end();
+
+            let lines: Vec<&str> = content.lines().collect();
+            let compacted = match tool_name.as_str() {
+                "Read" | "read" => {
+                    // First + last non-empty line
+                    if lines.len() <= 2 {
+                        content.to_string()
+                    } else {
+                        let first = lines[0];
+                        let last = lines.iter().rev().find(|l| !l.trim().is_empty()).unwrap_or(&"");
+                        format!("{}\n  ({} lines)\n{}", first, lines.len(), last)
+                    }
+                }
+                "Bash" | "bash" => {
+                    // Last 2 non-empty lines
+                    let non_empty: Vec<&str> = lines.iter().filter(|l| !l.trim().is_empty()).copied().collect();
+                    non_empty.iter().rev().take(2).rev().copied().collect::<Vec<_>>().join("\n")
+                }
+                "Grep" | "grep" => {
+                    // First 3 lines
+                    if lines.len() <= 3 {
+                        content.to_string()
+                    } else {
+                        let mut s: String = lines[..3].join("\n");
+                        s.push_str(&format!("\n  (+{} more)", lines.len() - 3));
+                        s
+                    }
+                }
+                "Glob" | "glob" => {
+                    // Just file count
+                    format!("{} files", lines.len())
+                }
+                "Task" | "task" => {
+                    // First 5 lines
+                    if lines.len() <= 5 {
+                        content.to_string()
+                    } else {
+                        let mut s: String = lines[..5].join("\n");
+                        s.push_str(&format!("\n  (+{} more lines)", lines.len() - 5));
+                        s
+                    }
+                }
+                _ => {
+                    // Default: first 3 lines
+                    if lines.len() <= 3 {
+                        content.to_string()
+                    } else {
+                        let mut s: String = lines[..3].join("\n");
+                        s.push_str(&format!("\n  (+{} more)", lines.len() - 3));
+                        s
+                    }
+                }
+            };
+
+            DisplayEvent::ToolResult {
+                tool_use_id: tool_use_id.clone(),
+                tool_name: tool_name.clone(),
+                file_path: file_path.clone(),
+                content: compacted,
+                is_error: *is_error,
+            }
+        }
+        DisplayEvent::ToolCall { _uuid, tool_use_id, tool_name, file_path, input } => {
+            // Strip input to only the key field the render pipeline reads.
+            // Edit is kept fully (needed for inline diff rendering).
+            let compacted_input = match tool_name.as_str() {
+                "Edit" | "edit" => input.clone(),
+                "Write" | "write" => {
+                    // Replace content with line count + purpose line summary
+                    let mut obj = serde_json::Map::new();
+                    if let Some(fp) = input.get("file_path").or_else(|| input.get("path")) {
+                        obj.insert("file_path".into(), fp.clone());
+                    }
+                    if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
+                        let content_lines: Vec<&str> = content.lines().collect();
+                        let purpose = content_lines.iter()
+                            .find(|l| {
+                                let t = l.trim();
+                                t.starts_with("//") || t.starts_with('#') ||
+                                t.starts_with("/*") || t.starts_with("\"\"\"") ||
+                                t.starts_with("///") || t.starts_with("//!")
+                            })
+                            .or(content_lines.first()).copied()
+                            .unwrap_or("");
+                        obj.insert("_lines".into(), serde_json::json!(content_lines.len()));
+                        if !purpose.is_empty() {
+                            obj.insert("_purpose".into(), serde_json::json!(purpose.trim()));
+                        }
+                    }
+                    serde_json::Value::Object(obj)
+                }
+                _ => {
+                    // Keep only the key field extract_tool_param reads
+                    let key_fields: &[&str] = match tool_name.as_str() {
+                        "Read" | "read" => &["file_path", "path"],
+                        "Bash" | "bash" => &["command"],
+                        "Glob" | "glob" | "Grep" | "grep" => &["pattern"],
+                        "WebFetch" | "webfetch" => &["url"],
+                        "WebSearch" | "websearch" => &["query"],
+                        "Task" | "task" => &["subagent_type", "description"],
+                        "LSP" | "lsp" => &["operation", "filePath"],
+                        _ => &["file_path", "path", "command", "query", "pattern"],
+                    };
+                    let mut obj = serde_json::Map::new();
+                    for &k in key_fields {
+                        if let Some(v) = input.get(k) {
+                            obj.insert(k.into(), v.clone());
+                        }
+                    }
+                    serde_json::Value::Object(obj)
+                }
+            };
+
+            DisplayEvent::ToolCall {
+                _uuid: String::new(),
+                tool_use_id: tool_use_id.clone(),
+                tool_name: tool_name.clone(),
+                file_path: file_path.clone(),
+                input: compacted_input,
+            }
+        }
+        // All other variants pass through unchanged
+        _ => event.clone(),
     }
 }
 
@@ -1000,24 +1140,25 @@ mod tests {
     // ── serde round-trip fidelity ──
 
     #[test]
-    fn round_trip_preserves_tool_call_input() {
+    fn round_trip_preserves_tool_call_key_field() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        let input_json = serde_json::json!({"file_path": "/src/main.rs", "offset": 10});
         store.append_events(id, &[
             DisplayEvent::ToolCall {
                 _uuid: String::new(),
                 tool_use_id: "tc1".into(),
                 tool_name: "Read".into(),
                 file_path: Some("/src/main.rs".into()),
-                input: input_json.clone(),
+                input: serde_json::json!({"file_path": "/src/main.rs", "offset": 10}),
             },
         ]).unwrap();
         let loaded = store.load_events(id).unwrap();
         match &loaded[0] {
             DisplayEvent::ToolCall { input, tool_name, .. } => {
                 assert_eq!(tool_name, "Read");
-                assert_eq!(input, &input_json);
+                // Compaction keeps file_path but strips offset
+                assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
+                assert!(input.get("offset").is_none());
             }
             _ => panic!("wrong variant"),
         }
@@ -1113,5 +1254,268 @@ mod tests {
         assert!(store.latest_compaction(s2).unwrap().is_none());
     }
 
+    // ── compact_event — ToolResult.content ──
 
+    #[test]
+    fn compact_read_truncates_large() {
+        let content = (0..100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Read".into(),
+            file_path: None, content, is_error: false,
+        };
+        let c = compact_event(&ev);
+        match &c {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("line 0"));
+                assert!(content.contains("(100 lines)"));
+                assert!(content.contains("line 99"));
+                assert!(!content.contains("line 50"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn compact_read_preserves_small() {
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Read".into(),
+            file_path: None, content: "only line".into(), is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => assert_eq!(content, "only line"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_bash_keeps_last_two() {
+        let content = "line1\n\nline2\nline3\nline4";
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Bash".into(),
+            file_path: None, content: content.into(), is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("line3"));
+                assert!(content.contains("line4"));
+                assert!(!content.contains("line1"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_grep_keeps_first_three() {
+        let content = (0..10).map(|i| format!("match {}", i)).collect::<Vec<_>>().join("\n");
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Grep".into(),
+            file_path: None, content, is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("match 0"));
+                assert!(content.contains("match 2"));
+                assert!(content.contains("+7 more"));
+                assert!(!content.contains("match 5"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_glob_shows_count() {
+        let content = "a.rs\nb.rs\nc.rs\nd.rs\ne.rs";
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Glob".into(),
+            file_path: None, content: content.into(), is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => assert_eq!(content, "5 files"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_task_keeps_first_five() {
+        let content = (0..20).map(|i| format!("output {}", i)).collect::<Vec<_>>().join("\n");
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Task".into(),
+            file_path: None, content, is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("output 0"));
+                assert!(content.contains("output 4"));
+                assert!(content.contains("+15 more lines"));
+                assert!(!content.contains("output 10"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_default_keeps_first_three() {
+        let content = "a\nb\nc\nd\ne";
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "WebFetch".into(),
+            file_path: None, content: content.into(), is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(content.contains("a\nb\nc"));
+                assert!(content.contains("+2 more"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_strips_system_reminder() {
+        let content = "real output\n<system-reminder>secret stuff</system-reminder>";
+        let ev = DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Read".into(),
+            file_path: None, content: content.into(), is_error: false,
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolResult { content, .. } => {
+                assert!(!content.contains("system-reminder"));
+                assert!(content.contains("real output"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    // ── compact_event — ToolCall.input ──
+
+    #[test]
+    fn compact_write_summarizes_content() {
+        let code = "// Main entry point\nfn main() {\n    println!(\"hello\");\n}\n";
+        let ev = DisplayEvent::ToolCall {
+            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Write".into(),
+            file_path: Some("/src/main.rs".into()),
+            input: serde_json::json!({"file_path": "/src/main.rs", "content": code}),
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
+                assert_eq!(input.get("_lines").unwrap().as_u64().unwrap(), 4);
+                assert!(input.get("_purpose").unwrap().as_str().unwrap().contains("Main entry point"));
+                assert!(input.get("content").is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_edit_preserved() {
+        let ev = DisplayEvent::ToolCall {
+            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Edit".into(),
+            file_path: Some("/f.rs".into()),
+            input: serde_json::json!({"file_path": "/f.rs", "old_string": "a", "new_string": "b"}),
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert!(input.get("old_string").is_some());
+                assert!(input.get("new_string").is_some());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_bash_strips_extras() {
+        let ev = DisplayEvent::ToolCall {
+            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Bash".into(),
+            file_path: None,
+            input: serde_json::json!({"command": "cargo build", "timeout": 120000, "description": "Build"}),
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert_eq!(input.get("command").unwrap().as_str().unwrap(), "cargo build");
+                assert!(input.get("timeout").is_none());
+                assert!(input.get("description").is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_read_strips_extras() {
+        let ev = DisplayEvent::ToolCall {
+            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Read".into(),
+            file_path: Some("/f.rs".into()),
+            input: serde_json::json!({"file_path": "/f.rs", "offset": 100, "limit": 50}),
+        };
+        match &compact_event(&ev) {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert!(input.get("file_path").is_some());
+                assert!(input.get("offset").is_none());
+                assert!(input.get("limit").is_none());
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_passthrough_user_message() {
+        let ev = DisplayEvent::UserMessage { _uuid: "u".into(), content: "hello".into() };
+        match &compact_event(&ev) {
+            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "hello"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn compact_passthrough_assistant_text() {
+        let ev = DisplayEvent::AssistantText { _uuid: "u".into(), _message_id: "m".into(), text: "reply".into() };
+        match &compact_event(&ev) {
+            DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "reply"),
+            _ => panic!(),
+        }
+    }
+
+    // ── compact integration with append_events ──
+
+    #[test]
+    fn append_events_compacts_tool_result() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("test").unwrap();
+        let big_content = (0..100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let events = vec![DisplayEvent::ToolResult {
+            tool_use_id: "t".into(), tool_name: "Read".into(),
+            file_path: None, content: big_content, is_error: false,
+        }];
+        store.append_events(sid, &events).unwrap();
+
+        let loaded = store.load_events(sid).unwrap();
+        match &loaded[0] {
+            DisplayEvent::ToolResult { content, .. } => {
+                // Should be compacted, not the full 100 lines
+                assert!(content.contains("(100 lines)"));
+                assert!(!content.contains("line 50"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn append_events_compacts_tool_call_input() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("test").unwrap();
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Bash".into(),
+            file_path: None,
+            input: serde_json::json!({"command": "ls", "timeout": 120000}),
+        }];
+        store.append_events(sid, &events).unwrap();
+
+        let loaded = store.load_events(sid).unwrap();
+        match &loaded[0] {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert!(input.get("command").is_some());
+                assert!(input.get("timeout").is_none());
+            }
+            _ => panic!(),
+        }
+    }
 }
