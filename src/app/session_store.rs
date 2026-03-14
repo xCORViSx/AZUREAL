@@ -5,7 +5,7 @@
 //! backend-agnostic — a single session can span Claude and Codex prompts.
 //!
 //! The `.azs` extension discourages users from trying to open or tamper with the
-//! binary file directly. Internally it is a standard SQLite database with WAL mode.
+//! binary file directly. Internally it is a standard SQLite database (DELETE journal mode).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -97,7 +97,7 @@ impl SessionStore {
         }
         let conn = Connection::open(&path)?;
         conn.execute_batch(
-            "PRAGMA journal_mode = WAL;\
+            "PRAGMA journal_mode = DELETE;\
              PRAGMA synchronous = NORMAL;\
              PRAGMA foreign_keys = ON;"
         )?;
@@ -382,6 +382,28 @@ impl SessionStore {
         Ok(rows.next().transpose()?)
     }
 
+    /// Find the compaction boundary: the seq just before the Nth-to-last UserMessage.
+    /// Returns `None` if there are fewer than `keep` UserMessages since `from_seq`,
+    /// meaning there's not enough old content to compact.
+    pub fn compaction_boundary(&self, session_id: i64, from_seq: i64, keep: usize) -> anyhow::Result<Option<i64>> {
+        // Get seqs of all UserMessage events since from_seq, ordered newest first
+        let mut stmt = self.conn.prepare(
+            "SELECT seq FROM events WHERE session_id = ?1 AND seq >= ?2 AND kind = 'UserMessage' ORDER BY seq DESC"
+        )?;
+        let seqs: Vec<i64> = stmt.query_map(params![session_id, from_seq], |row| {
+            row.get(0)
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        if seqs.len() <= keep {
+            return Ok(None); // Not enough user messages to justify compaction
+        }
+
+        // The boundary is one less than the seq of the (keep+1)th-from-last UserMessage
+        // i.e. we keep the last `keep` UserMessages and everything after them as raw events
+        let boundary_user_seq = seqs[keep - 1]; // seq of the Nth-to-last UserMessage (keep=3 → 3rd from end)
+        Ok(Some(boundary_user_seq - 1))
+    }
+
     /// Maximum event sequence number for a session.
     pub fn max_seq(&self, session_id: i64) -> anyhow::Result<i64> {
         let max: Option<i64> = self.conn.query_row(
@@ -390,6 +412,24 @@ impl SessionStore {
             |row| row.get(0),
         )?;
         Ok(max.unwrap_or(0))
+    }
+
+    /// Load events in a range [from_seq, through_seq] (inclusive).
+    pub fn load_events_range(&self, session_id: i64, from_seq: i64, through_seq: i64) -> anyhow::Result<Vec<DisplayEvent>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 AND seq <= ?3 ORDER BY seq"
+        )?;
+        let rows = stmt.query_map(params![session_id, from_seq, through_seq], |row| {
+            let json: String = row.get(0)?;
+            Ok(json)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        let mut events = Vec::with_capacity(rows.len());
+        for json in rows {
+            if let Ok(ev) = serde_json::from_str::<DisplayEvent>(&json) {
+                events.push(ev);
+            }
+        }
+        Ok(events)
     }
 
     /// Build the context payload for context injection.
@@ -1517,5 +1557,156 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    // ── compaction_boundary ──
+
+    fn insert_conversation(store: &SessionStore, sid: i64, user_count: usize) {
+        // Insert alternating User/Assistant messages
+        for i in 0..user_count {
+            store.append_events(sid, &[
+                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("prompt {}", i + 1) },
+                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("reply {}", i + 1) },
+            ]).unwrap();
+        }
+    }
+
+    #[test]
+    fn boundary_none_when_fewer_than_keep() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 2); // Only 2 user messages
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap();
+        assert!(boundary.is_none());
+    }
+
+    #[test]
+    fn boundary_none_when_exactly_keep() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 3); // Exactly 3
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap();
+        assert!(boundary.is_none());
+    }
+
+    #[test]
+    fn boundary_returns_seq_before_third_to_last_user() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 5);
+        // 10 events: seqs 1..=10
+        // UserMessages at seqs 1, 3, 5, 7, 9
+        // keep=3 → keep seqs 5, 7, 9 (3rd, 4th, 5th user msgs)
+        // boundary = seq 5 - 1 = 4
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap();
+        assert_eq!(boundary, Some(4));
+    }
+
+    #[test]
+    fn boundary_with_four_user_msgs() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 4);
+        // 8 events: seqs 1..=8
+        // UserMessages at seqs 1, 3, 5, 7
+        // keep=3 → keep seqs 3, 5, 7
+        // boundary = 3 - 1 = 2
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap();
+        assert_eq!(boundary, Some(2));
+    }
+
+    #[test]
+    fn boundary_respects_from_seq() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 6);
+        // UserMessages at seqs 1, 3, 5, 7, 9, 11
+        // from_seq=5 → only considers seqs 5, 7, 9, 11 (4 user msgs)
+        // keep=3 → keep 7, 9, 11; boundary = 7 - 1 = 6
+        let boundary = store.compaction_boundary(sid, 5, 3).unwrap();
+        assert_eq!(boundary, Some(6));
+    }
+
+    #[test]
+    fn boundary_from_seq_too_late_returns_none() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 5);
+        // UserMessages at seqs 1, 3, 5, 7, 9
+        // from_seq=7 → only seqs 7, 9 (2 user msgs) < keep=3
+        let boundary = store.compaction_boundary(sid, 7, 3).unwrap();
+        assert!(boundary.is_none());
+    }
+
+    // ── load_events_range ──
+
+    #[test]
+    fn load_range_returns_subset() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 5); // 10 events, seqs 1..=10
+
+        let events = store.load_events_range(sid, 3, 6).unwrap();
+        assert_eq!(events.len(), 4); // seqs 3, 4, 5, 6
+    }
+
+    #[test]
+    fn load_range_single_event() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 3);
+
+        let events = store.load_events_range(sid, 1, 1).unwrap();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "prompt 1"),
+            _ => panic!("expected UserMessage"),
+        }
+    }
+
+    #[test]
+    fn load_range_empty_when_no_match() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 2);
+
+        let events = store.load_events_range(sid, 100, 200).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn load_range_preserves_order() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 3);
+        // seqs 1..=6: User1, Asst1, User2, Asst2, User3, Asst3
+
+        let events = store.load_events_range(sid, 1, 6).unwrap();
+        assert_eq!(events.len(), 6);
+        // First should be UserMessage, second AssistantText, alternating
+        assert!(matches!(&events[0], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(&events[1], DisplayEvent::AssistantText { .. }));
+        assert!(matches!(&events[4], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(&events[5], DisplayEvent::AssistantText { .. }));
+    }
+
+    #[test]
+    fn boundary_and_range_integration() {
+        // End-to-end: insert 5 exchanges, find boundary, load pre-boundary events
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        insert_conversation(&store, sid, 5);
+        // UserMessages at seqs 1, 3, 5, 7, 9
+        // boundary(keep=3) = seq 4 (everything before 3rd-to-last UserMessage)
+
+        let boundary = store.compaction_boundary(sid, 1, 3).unwrap().unwrap();
+        assert_eq!(boundary, 4);
+
+        let pre = store.load_events_range(sid, 1, boundary).unwrap();
+        assert_eq!(pre.len(), 4); // seqs 1, 2, 3, 4
+
+        // Post-boundary = seqs 5..=10 (the 3 kept user+assistant pairs)
+        let post = store.load_events_range(sid, boundary + 1, 10).unwrap();
+        assert_eq!(post.len(), 6); // 3 user + 3 assistant
     }
 }

@@ -72,18 +72,41 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
 /// The agent's receiver goes into `compaction_receivers` (not `agent_receivers`)
 /// so its output is captured separately and never displayed in the session pane.
 fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_id: i64, wt_path: &std::path::Path) {
-    // Build the compaction prompt from the store
-    let prompt = match app.session_store.as_ref()
-        .and_then(|store| store.build_context(session_id).ok().flatten())
-    {
-        Some(payload) => crate::app::context_injection::build_compaction_prompt(&payload),
+    let store = match app.session_store.as_ref() {
+        Some(s) => s,
         None => return,
     };
 
-    match claude_process.spawn(wt_path, &prompt, None, Some("haiku")) {
+    // Find where the last compaction ended
+    let last_compaction = store.latest_compaction(session_id).ok().flatten();
+    let from_seq = last_compaction.as_ref().map(|c| c.after_seq + 1).unwrap_or(1);
+
+    // Find boundary: compact everything BEFORE the last 3 user messages
+    let boundary_seq = match store.compaction_boundary(session_id, from_seq, 3) {
+        Ok(Some(b)) => b,
+        _ => return, // Not enough user messages to compact
+    };
+
+    // Build payload with only the events to be summarized (before boundary)
+    let events = match store.load_events_range(session_id, from_seq, boundary_seq) {
+        Ok(e) if !e.is_empty() => e,
+        _ => return,
+    };
+
+    let payload = crate::app::session_store::ContextPayload {
+        compaction_summary: last_compaction.map(|c| c.summary),
+        events,
+    };
+    let prompt = crate::app::context_injection::build_compaction_prompt(&payload);
+
+    let compaction_model = match app.backend {
+        crate::backend::Backend::Claude => "haiku",
+        crate::backend::Backend::Codex => "codex-mini",
+    };
+    match claude_process.spawn(wt_path, &prompt, None, Some(compaction_model)) {
         Ok((rx, pid)) => {
             let pid_str = pid.to_string();
-            app.compaction_receivers.insert(pid_str, (rx, session_id));
+            app.compaction_receivers.insert(pid_str, (rx, session_id, boundary_seq));
         }
         Err(_) => {} // Compaction is best-effort
     }
@@ -95,10 +118,10 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
         return false;
     }
 
-    let mut completed: Vec<(String, i64)> = Vec::new();
+    let mut completed: Vec<(String, i64, i64)> = Vec::new();
     let mut had_events = false;
 
-    for (pid, (rx, session_id)) in &app.compaction_receivers {
+    for (pid, (rx, session_id, _boundary)) in &app.compaction_receivers {
         while let Ok(event) = rx.try_recv() {
             had_events = true;
             match event {
@@ -114,7 +137,7 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
                     }
                 }
                 crate::claude::AgentEvent::Exited { .. } => {
-                    completed.push((pid.clone(), *session_id));
+                    completed.push((pid.clone(), *session_id, *_boundary));
                 }
                 _ => {}
             }
@@ -122,14 +145,14 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
     }
 
     // Process completed compaction agents
-    for (pid, session_id) in completed {
+    for (pid, session_id, boundary_seq) in completed {
         app.compaction_receivers.remove(&pid);
         if let Some(summary) = app.compaction_output.remove(&pid) {
             let summary = summary.trim();
             if !summary.is_empty() {
                 if let Some(ref store) = app.session_store {
-                    let max_seq = store.max_seq(session_id).unwrap_or(0);
-                    let _ = store.store_compaction(session_id, max_seq, summary);
+                    // Store compaction at the boundary — events after this seq remain as raw events
+                    let _ = store.store_compaction(session_id, boundary_seq, summary);
                 }
             }
         }
@@ -814,7 +837,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("99".into(), (rx, sid));
+        app.compaction_receivers.insert("99".into(), (rx, sid, 0));
 
         assert!(poll_compaction_agents(&mut app));
         assert!(app.compaction_receivers.is_empty());
@@ -839,7 +862,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("88".into(), (rx, sid));
+        app.compaction_receivers.insert("88".into(), (rx, sid, 0));
 
         poll_compaction_agents(&mut app);
 
@@ -859,7 +882,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("77".into(), (rx, sid));
+        app.compaction_receivers.insert("77".into(), (rx, sid, 0));
 
         poll_compaction_agents(&mut app);
 
@@ -891,7 +914,7 @@ mod tests {
         })).unwrap();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("66".into(), (rx, sid));
+        app.compaction_receivers.insert("66".into(), (rx, sid, 0));
 
         // First poll accumulates output
         poll_compaction_agents(&mut app);

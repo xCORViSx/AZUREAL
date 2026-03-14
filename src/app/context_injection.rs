@@ -131,21 +131,25 @@ fn compact_result(content: &str) -> String {
 }
 
 /// Build the prompt for a background compaction agent. The agent receives the
-/// full conversation transcript since the last compaction and returns a summary.
+/// older portion of the conversation (everything before the last 3 user
+/// exchanges) and returns a summary. Recent exchanges are preserved verbatim.
 pub fn build_compaction_prompt(payload: &ContextPayload) -> String {
     let transcript = build_transcript(payload);
     format!(
-        "You are summarizing a conversation for future context injection. \
-The transcript below represents the conversation since the last summary point.\n\n\
+        "You are summarizing older conversation history for future context injection. \
+The transcript below contains messages that precede the most recent exchanges \
+(which are preserved verbatim elsewhere). Your summary will replace this older \
+content to keep the context window compact.\n\n\
 <transcript>\n{transcript}\n</transcript>\n\n\
 Produce a concise summary (2000-4000 characters) that preserves:\n\
 1. Key decisions made and their rationale\n\
 2. Files created, modified, or deleted (with paths)\n\
 3. Important technical context (architecture, patterns, constraints)\n\
-4. Current state of any in-progress work\n\
+4. Current state of work at the end of this transcript\n\
 5. Unresolved issues or agreed next steps\n\n\
-Write in third person, past tense. Focus on information needed to continue \
-this conversation effectively. Output ONLY the summary text, no preamble."
+Write in third person, past tense. Focus on information needed to understand \
+context that leads into the recent exchanges. Output ONLY the summary text, \
+no preamble."
     )
 }
 

@@ -109,9 +109,9 @@ pub struct App {
     /// Consumed by the event loop to spawn a background compaction agent.
     /// (session_id, worktree_path)
     pub compaction_needed: Option<(i64, PathBuf)>,
-    /// Compaction agent receivers: PID string → (receiver, session_id).
+    /// Compaction agent receivers: PID string → (receiver, session_id, boundary_seq).
     /// Polled separately from agent_receivers — output is captured, not displayed.
-    pub compaction_receivers: HashMap<String, (Receiver<crate::claude::AgentEvent>, i64)>,
+    pub compaction_receivers: HashMap<String, (Receiver<crate::claude::AgentEvent>, i64, i64)>,
     /// Accumulated assistant text from compaction agents: PID string → text buffer
     pub compaction_output: HashMap<String, String>,
     pub terminal_mode: bool,
