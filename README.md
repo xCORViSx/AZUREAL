@@ -35,7 +35,7 @@
 - **Token Counter** — Color-coded context window usage on the session border to anticipate compaction
 - **Model Switcher** — Cycle between backend models with `⌃m` / `Ctrl+M` (Claude: opus/sonnet/haiku; Codex: o3/o4-mini/codex-mini)
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
-- **Session Rename** — `r` in the session list to rename the selected session (persisted in session cache index)
+- **Session Rename** — `r` in the session list to rename the selected session (persisted in SQLite store)
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions
 
 ### Git
@@ -68,7 +68,7 @@
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
 - **Fast Input & Session** (macOS) — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using direct cursor positioning (~2-5ms for session column only vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing. Disabled on Windows where direct VT writes conflict with the console input parser
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
-- **Minimal Footprint** — No database; two small TOML config files and runtime git/Claude discovery
+- **Minimal Footprint** — Single-file SQLite session store (`.azs`), two small TOML config files, and runtime git/Claude discovery
 
 ## Requirements
 
@@ -149,7 +149,7 @@ azureal
 
 ## Architecture
 
-Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and agent session files (Claude: `~/.claude/projects/`, Codex: `~/.codex/sessions/`). No database. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`. Parsed session data is cached in `.azureal/sessions/` as an intermediate format for faster loads and backend-agnostic replay.
+Azureal is **mostly stateless** — runtime state is derived from git worktrees, branches, and agent session files (Claude: `~/.claude/projects/`, Codex: `~/.codex/sessions/`). Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`. Sessions are stored in a single SQLite database (`.azureal/sessions.azs`) — portable, self-contained, and transferable between machines by copying one file.
 
 All keybindings are defined once in a central module. Press `?` for the full help overlay.
 

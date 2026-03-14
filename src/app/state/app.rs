@@ -96,6 +96,24 @@ pub struct App {
     /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
     /// Multiple concurrent spawns (e.g. GFM) can each register their own pending name.
     pub pending_session_names: Vec<(String, String)>,
+    /// SQLite session store — opened when a project is loaded
+    pub session_store: Option<crate::app::session_store::SessionStore>,
+    /// PID string → (S-number, worktree_path) of the session this agent's results
+    /// should write to. Set at spawn time, consumed at exit time.
+    /// The worktree_path is the CWD used when spawning Claude (needed to locate
+    /// the JSONL session file under `~/.claude/projects/<encoded_path>/`).
+    pub pid_session_target: HashMap<String, (i64, PathBuf)>,
+    /// S-number of the currently viewed/active session in the session pane
+    pub current_session_id: Option<i64>,
+    /// Set by store_append_from_jsonl when compaction threshold is exceeded.
+    /// Consumed by the event loop to spawn a background compaction agent.
+    /// (session_id, worktree_path)
+    pub compaction_needed: Option<(i64, PathBuf)>,
+    /// Compaction agent receivers: PID string → (receiver, session_id).
+    /// Polled separately from agent_receivers — output is captured, not displayed.
+    pub compaction_receivers: HashMap<String, (Receiver<crate::claude::AgentEvent>, i64)>,
+    /// Accumulated assistant text from compaction agents: PID string → text buffer
+    pub compaction_output: HashMap<String, String>,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
     pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
@@ -126,9 +144,6 @@ pub struct App {
     pub session_file_parse_offset: u64,
     /// Session file needs re-parse (deferred during user interaction)
     pub session_file_dirty: bool,
-    /// When set, the raw session file is gone but we loaded from cache.
-    /// Holds the missing file's path. Input is blocked (session is read-only).
-    pub source_file_missing: Option<std::path::PathBuf>,
     /// Signals the event loop to reset the background ClaudeProcessor's parser
     /// state (e.g., on session switch). The event loop checks and clears this.
     pub agent_processor_needs_reset: bool,
@@ -563,6 +578,12 @@ impl App {
             project_snapshots: HashMap::new(),
             slot_to_project: HashMap::new(),
             pending_session_names: Vec::new(),
+            session_store: None,
+            pid_session_target: HashMap::new(),
+            current_session_id: None,
+            compaction_needed: None,
+            compaction_receivers: HashMap::new(),
+            compaction_output: HashMap::new(),
             terminal_mode: false,
             terminal_pty: None,
             terminal_child: None,
@@ -583,7 +604,6 @@ impl App {
             session_file_size: 0,
             session_file_parse_offset: 0,
             session_file_dirty: false,
-            source_file_missing: None,
             agent_processor_needs_reset: false,
             viewing_historic_session: false,
             file_watcher: crate::watcher::FileWatcher::spawn(),

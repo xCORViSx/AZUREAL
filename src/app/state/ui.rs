@@ -581,6 +581,8 @@ impl App {
                 branch_slots: std::mem::take(&mut self.branch_slots),
                 active_slot: std::mem::take(&mut self.active_slot),
                 pending_session_names: std::mem::take(&mut self.pending_session_names),
+                pid_session_target: std::mem::take(&mut self.pid_session_target),
+                current_session_id: self.current_session_id.take(),
                 session_files: std::mem::take(&mut self.session_files),
                 session_selected_file_idx: std::mem::take(&mut self.session_selected_file_idx),
                 unread_sessions: std::mem::take(&mut self.unread_sessions),
@@ -617,6 +619,8 @@ impl App {
         self.session_file_dirty = false;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
+        self.pid_session_target.clear();
+        self.current_session_id = None;
         self.title_session_name.clear();
         self.current_todos.clear();
         self.subagent_todos.clear();
@@ -639,6 +643,8 @@ impl App {
             self.browsing_main = snapshot.browsing_main;
             self.pre_main_browse_selection = snapshot.pre_main_browse_selection;
             self.pending_session_names = snapshot.pending_session_names;
+            self.pid_session_target = snapshot.pid_session_target;
+            self.current_session_id = snapshot.current_session_id;
             self.session_files = snapshot.session_files;
             self.session_selected_file_idx = snapshot.session_selected_file_idx;
             self.unread_sessions = snapshot.unread_sessions;
@@ -670,6 +676,9 @@ impl App {
             self.branch_slots = branch_slots;
             self.active_slot = active_slot;
 
+            // Reopen session store for restored project
+            self.session_store = crate::app::session_store::SessionStore::open(&path).ok();
+
             // Rebuild session display from file (picks up any output from background Claude)
             self.load_session_output();
         } else {
@@ -681,8 +690,26 @@ impl App {
             let az = crate::azufig::load_project_azufig(&path);
             self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
+            // Open session store for fresh project
+            self.session_store = crate::app::session_store::SessionStore::open(&path).ok();
+
             Git::prune_remote_refs(&path);
             let _ = self.load_worktrees();
+
+            // Migrate legacy caches (idempotent, skips if already done)
+            if let Some(ref store) = self.session_store {
+                let sessions_dir = path.join(".azureal").join("sessions");
+                let mut uuid_wt: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                for wt in &self.worktrees {
+                    if let Some(ref wt_path) = wt.worktree_path {
+                        for (uuid, _, _) in crate::config::list_sessions(self.backend, wt_path) {
+                            uuid_wt.insert(uuid, wt.branch_name.clone());
+                        }
+                    }
+                }
+                let _ = store.migrate_from_legacy(&sessions_dir, &uuid_wt);
+            }
+
             self.load_session_output();
             self.load_run_commands();
             self.load_preset_prompts();

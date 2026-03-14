@@ -249,6 +249,11 @@ pub async fn run_app(
             }
         }
 
+        // Poll compaction agents (background summarization, invisible to UI)
+        if agent_events::poll_compaction_agents(app) {
+            // No redraw needed — compaction is invisible
+        }
+
         let _t_claude = _loop_start.elapsed();
 
         // Poll parsed results from the background AgentProcessor. Each result

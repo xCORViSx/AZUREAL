@@ -191,6 +191,9 @@ impl App {
         let main_branch = Git::get_main_branch(&repo_root)?;
         self.project = Some(Project::from_path(repo_root.clone(), main_branch));
 
+        // Open the SQLite session store (.azs file)
+        self.session_store = crate::app::session_store::SessionStore::open(&repo_root).ok();
+
         // Load filetree hidden dirs from project azufig (persisted Options overlay state)
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
@@ -209,6 +212,20 @@ impl App {
         // Detached HEAD repair and orphaned rebase cleanup now handled
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;
+
+        // Migrate legacy .json.gz caches into the SQLite store (one-time, idempotent)
+        if let Some(ref store) = self.session_store {
+            let sessions_dir = repo_root.join(".azureal").join("sessions");
+            let mut uuid_wt: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            for wt in &self.worktrees {
+                if let Some(ref wt_path) = wt.worktree_path {
+                    for (uuid, _, _) in crate::config::list_sessions(self.backend, wt_path) {
+                        uuid_wt.insert(uuid, wt.branch_name.clone());
+                    }
+                }
+            }
+            let _ = store.migrate_from_legacy(&sessions_dir, &uuid_wt);
+        }
 
         Ok(())
     }
@@ -291,7 +308,6 @@ impl App {
         self.session_file_modified = None;
         self.session_file_size = 0;
         self.session_file_dirty = false;
-        self.source_file_missing = None;
         self.session_file_parse_offset = 0;
         self.invalidate_render_cache();
         // Immediately clear rendered content so no stale lines from the
@@ -380,84 +396,84 @@ impl App {
                 }
             }
 
-            // Try loading session — check cache first, fall back to raw parse,
-            // or load from orphan cache if the source file is missing.
-            if let (Some(claude_id), Some(ref wt_path)) = (claude_session_id, &worktree_path) {
-                let session_file_opt = crate::config::session_file(self.backend, wt_path, &claude_id);
-                let parsed = if let Some(ref session_file) = session_file_opt {
-                    // Source exists — try cache, then raw parse
-                    self.session_file_path = Some(session_file.clone());
-                    let source_size = std::fs::metadata(session_file)
-                        .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
-                        .unwrap_or(0);
-                    self.session_file_size = source_size;
+            // Try loading session from SQLite store (numeric IDs) or legacy JSONL path
+            if let Some(ref claude_id) = claude_session_id {
+                let loaded_from_store = if let Ok(store_id) = claude_id.parse::<i64>() {
+                    // Numeric ID → load from SQLite store
+                    if let Some(ref store) = self.session_store {
+                        if let Ok(events) = store.load_events(store_id) {
+                            self.current_session_id = Some(store_id);
+                            self.display_events = events;
+                            self.invalidate_render_cache();
 
-                    // Resolve or assign a sequential cache name (e.g. "claude-3")
-                    let file_backend = crate::app::session_cache::backend_from_path(session_file, self.backend);
-                    let cache_name = crate::app::session_cache::resolve_cache_name(wt_path, &claude_id, file_backend).ok();
-
-                    if let Some(cached) = cache_name.as_deref().and_then(|cn| {
-                        crate::app::session_cache::read_cache(wt_path, cn, session_file, source_size)
-                    }) {
-                        // Cache hit — skip raw parse
-                        Some(cached.into_parsed())
-                    } else {
-                        // Cache miss — parse raw JSONL, write cache
-                        let parsed = match self.backend {
-                            crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(session_file),
-                            crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(session_file),
-                        };
-                        let cached = crate::app::session_cache::CachedSession::from_parsed(
-                            &parsed, session_file.clone(), source_size,
-                        );
-                        if let Some(ref cn) = cache_name {
-                            let _ = crate::app::session_cache::write_cache(wt_path, cn, &cached);
-                        }
-                        Some(parsed)
-                    }
-                } else {
-                    // Source file missing — try orphan cache (read-only mode)
-                    let cache_name = crate::app::session_cache::lookup_cache_name(wt_path, &claude_id);
-                    if let Some(cached) = cache_name.as_deref().and_then(|cn| {
-                        crate::app::session_cache::read_cache_orphan(wt_path, cn)
-                    }) {
-                        self.source_file_missing = Some(cached.source_path.clone());
-                        Some(cached.into_parsed())
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(parsed) = parsed {
-                    self.display_events = parsed.events;
-                    self.pending_tool_calls = parsed.pending_tools;
-                    self.failed_tool_calls = parsed.failed_tools;
-                    self.parse_total_lines = parsed.total_lines;
-                    self.parse_errors = parsed.parse_errors;
-                    self.assistant_total = parsed.assistant_total;
-                    self.assistant_no_message = parsed.assistant_no_message;
-                    self.assistant_no_content_arr = parsed.assistant_no_content_arr;
-                    self.assistant_text_blocks = parsed.assistant_text_blocks;
-                    self.awaiting_plan_approval = parsed.awaiting_plan_approval;
-                    self.session_tokens = parsed.session_tokens;
-                    self.model_context_window = parsed.context_window;
-                    self.update_token_badge();
-                    self.extract_skill_tools_from_events();
-                    self.session_file_parse_offset = parsed.end_offset;
-
-                    // Clear pending message once it appears in the parsed events
-                    if let Some(ref pending) = self.pending_user_message {
-                        for event in self.display_events.iter().rev() {
-                            if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
-                                if content == pending {
-                                    self.pending_user_message = None;
+                            // Clear pending message if it appears in loaded events
+                            if let Some(ref pending) = self.pending_user_message {
+                                for event in self.display_events.iter().rev() {
+                                    if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                        if content == pending {
+                                            self.pending_user_message = None;
+                                        }
+                                        break;
+                                    }
                                 }
-                                break;
                             }
+                            true
+                        } else { false }
+                    } else { false }
+                } else { false };
+
+                // Legacy JSONL path for UUID-based session IDs
+                if !loaded_from_store {
+                    if let Some(ref wt_path) = worktree_path {
+                        let session_file_opt = crate::config::session_file(self.backend, wt_path, claude_id);
+                        let parsed = if let Some(ref session_file) = session_file_opt {
+                            self.session_file_path = Some(session_file.clone());
+                            let source_size = std::fs::metadata(session_file)
+                                .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
+                                .unwrap_or(0);
+                            self.session_file_size = source_size;
+
+                            let parsed = match self.backend {
+                                crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(session_file),
+                                crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(session_file),
+                            };
+                            Some(parsed)
+                        } else {
+                            None
+                        };
+
+                        if let Some(parsed) = parsed {
+                            self.display_events = parsed.events;
+                            self.pending_tool_calls = parsed.pending_tools;
+                            self.failed_tool_calls = parsed.failed_tools;
+                            self.parse_total_lines = parsed.total_lines;
+                            self.parse_errors = parsed.parse_errors;
+                            self.assistant_total = parsed.assistant_total;
+                            self.assistant_no_message = parsed.assistant_no_message;
+                            self.assistant_no_content_arr = parsed.assistant_no_content_arr;
+                            self.assistant_text_blocks = parsed.assistant_text_blocks;
+                            self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+                            self.session_tokens = parsed.session_tokens;
+                            self.model_context_window = parsed.context_window;
+                            self.update_token_badge();
+                            self.extract_skill_tools_from_events();
+                            self.session_file_parse_offset = parsed.end_offset;
+
+                            // Clear pending message once it appears in the parsed events
+                            if let Some(ref pending) = self.pending_user_message {
+                                for event in self.display_events.iter().rev() {
+                                    if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                        if content == pending {
+                                            self.pending_user_message = None;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+
+                            self.invalidate_render_cache();
                         }
                     }
-
-                    self.invalidate_render_cache();
                 }
             }
         }
@@ -549,17 +565,6 @@ impl App {
     /// Also recovers from missing-file state if the source reappears.
     pub fn check_session_file(&mut self) {
         // Auto-recovery: if source was missing and has reappeared, restore normal mode
-        if let Some(ref missing) = self.source_file_missing {
-            if missing.exists() {
-                let path = missing.clone();
-                self.source_file_missing = None;
-                self.session_file_path = Some(path);
-                self.session_file_parse_offset = 0; // force full re-parse
-                self.session_file_dirty = true;
-                return;
-            }
-        }
-
         let Some(path) = &self.session_file_path else { return };
         let Ok(metadata) = std::fs::metadata(path) else { return };
         let new_size = metadata.len();
@@ -654,37 +659,6 @@ impl App {
         }
         if tokens_changed { self.update_token_badge(); }
         self.session_file_parse_offset = parsed.end_offset;
-
-        // Write updated cache — rebuild from merged state after incremental parse
-        if let Some(ref wt_path) = self.current_worktree().and_then(|w| w.worktree_path.clone()) {
-            if let Some(session_id) = self.viewed_session_id(
-                &self.current_worktree().map(|w| w.branch_name.clone()).unwrap_or_default()
-            ) {
-                let mut cached = crate::app::session_cache::CachedSession {
-                    source_path: path.clone(),
-                    source_size: self.session_file_size,
-                    parse_offset: self.session_file_parse_offset,
-                    events: self.display_events.clone(),
-                    pending_tools: self.pending_tool_calls.clone(),
-                    failed_tools: self.failed_tool_calls.clone(),
-                    session_tokens: self.session_tokens,
-                    context_window: self.model_context_window,
-                    model: self.selected_model.clone(),
-                    total_lines: self.parse_total_lines,
-                    parse_errors: self.parse_errors,
-                    assistant_total: self.assistant_total,
-                    assistant_no_message: self.assistant_no_message,
-                    assistant_no_content_arr: self.assistant_no_content_arr,
-                    assistant_text_blocks: self.assistant_text_blocks,
-                    awaiting_plan_approval: self.awaiting_plan_approval,
-                };
-                cached.compact();
-                let file_backend = crate::app::session_cache::backend_from_path(&path, self.backend);
-                if let Ok(cache_name) = crate::app::session_cache::resolve_cache_name(wt_path, &session_id, file_backend) {
-                    let _ = crate::app::session_cache::write_cache(wt_path, &cache_name, &cached);
-                }
-            }
-        }
 
         // Clear pending message once it appears in the parsed events.
         // Scan all events from the end — Claude may have emitted many

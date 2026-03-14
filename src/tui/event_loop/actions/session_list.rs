@@ -17,10 +17,27 @@ pub(super) fn open_session_list(app: &mut App) {
     // Refresh file list immediately (cheap directory listing)
     if let Some(session) = app.current_worktree() {
         let branch = session.branch_name.clone();
-        if let Some(ref wt_path) = app.worktrees[app.selected_worktree.unwrap()].worktree_path {
-            let files = crate::config::list_sessions(app.backend, wt_path);
-            app.session_files.insert(branch, files);
+        let mut files = Vec::new();
+
+        // Include SQLite store sessions (S-numbered) for this worktree
+        if let Some(ref store) = app.session_store {
+            if let Ok(sessions) = store.list_sessions(Some(&branch)) {
+                for s in &sessions {
+                    // Use integer ID as string key — never collides with UUIDs
+                    files.push((s.id.to_string(), std::path::PathBuf::new(), s.created.clone()));
+                    // Pre-populate msg counts from store metadata (avoids JSONL I/O)
+                    app.session_msg_counts.insert(s.id.to_string(), (s.message_count, 0));
+                }
+            }
         }
+
+        // Append legacy JSONL sessions
+        if let Some(ref wt_path) = app.worktrees[app.selected_worktree.unwrap()].worktree_path {
+            let legacy = crate::config::list_sessions(app.backend, wt_path);
+            files.extend(legacy);
+        }
+
+        app.session_files.insert(branch, files);
     }
 }
 
@@ -31,6 +48,9 @@ pub fn finish_session_list_load(app: &mut App) {
         let branch = session.branch_name.clone();
         if let Some(files) = app.session_files.get(&branch) {
             for (session_id, path, _) in files.iter() {
+                // Store sessions (numeric IDs) already have counts from open_session_list
+                if session_id.parse::<i64>().is_ok() { continue; }
+
                 let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
                 if let Some(&(_, cached_size)) = app.session_msg_counts.get(session_id.as_str()) {
                     if cached_size == file_size { continue; }

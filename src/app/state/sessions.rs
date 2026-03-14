@@ -237,6 +237,15 @@ impl App {
                 self.session_tokens = None;
                 self.token_badge_cache = None;
                 self.invalidate_render_cache();
+
+                // Create a new session in the SQLite store
+                if let Some(ref store) = self.session_store {
+                    match store.create_session(&branch) {
+                        Ok(id) => self.current_session_id = Some(id),
+                        Err(_) => self.current_session_id = None,
+                    }
+                }
+
                 self.focus = Focus::Input;
                 self.prompt_mode = true;
                 self.set_status("Add session — type your prompt and press Enter");

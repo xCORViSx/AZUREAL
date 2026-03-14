@@ -157,10 +157,6 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
             app.input_char('\n');
         }
         (KeyModifiers::NONE, KeyCode::Enter) => {
-            if app.source_file_missing.is_some() {
-                app.set_status("Cannot send: session file missing");
-                return Ok(());
-            }
             if !app.input.is_empty() {
                 let input = app.input.clone();
                 app.clear_input();
@@ -229,9 +225,25 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                                 input.clone()
                             };
 
-                            let resume_id = app.get_claude_session_id(&branch_name).cloned();
-                            match claude_process.spawn(&wt_path, &actual_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
+                            // Context injection: if we have a store session, build
+                            // conversation context and skip --resume entirely.
+                            // Empty sessions (first prompt) get the prompt unchanged.
+                            let (send_prompt, resume_id) = if app.current_session_id.is_some() {
+                                let injected = app.current_session_id
+                                    .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
+                                    .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
+                                    .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &actual_prompt))
+                                    .unwrap_or_else(|| actual_prompt.clone());
+                                (injected, None) // No --resume for store sessions
+                            } else {
+                                (actual_prompt.clone(), app.get_claude_session_id(&branch_name).cloned())
+                            };
+                            match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
                                 Ok((rx, pid)) => {
+                                    // Set pid → session target so post-exit flow writes to correct session
+                                    if let Some(sid) = app.current_session_id {
+                                        app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone()));
+                                    }
                                     app.register_claude(branch_name, pid, rx);
                                     app.set_status("Running...");
                                 }

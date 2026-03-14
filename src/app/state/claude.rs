@@ -253,6 +253,9 @@ impl App {
             self.load_run_commands();
         }
 
+        // Post-exit store flow: parse JSONL → strip injected context → append to SQLite
+        self.store_append_from_jsonl(slot_id);
+
         // If a staged prompt exists, leave it for the event loop to auto-send.
         if self.staged_prompt.is_some() {
             self.set_status("Sending staged prompt...");
@@ -264,6 +267,94 @@ impl App {
                 None => "exited".to_string(),
             };
             self.set_status(format!("{} {}", display, exit_str));
+        }
+    }
+
+    /// Parse the JSONL session file for a completed process and append its events
+    /// to the SQLite session store. Strips any injected context prefix from the
+    /// first UserMessage so the store contains clean conversation history.
+    fn store_append_from_jsonl(&mut self, slot_id: &str) {
+        // Only process if this slot was targeting a store session
+        let (session_id, wt_path) = match self.pid_session_target.remove(slot_id) {
+            Some(pair) => pair,
+            None => return,
+        };
+
+        // Resolve JSONL file path: slot_id → Claude UUID → file path
+        let jsonl_path = self.agent_session_ids.get(slot_id)
+            .and_then(|uuid| crate::config::session_file(self.backend, &wt_path, uuid));
+        let jsonl_path = match jsonl_path {
+            Some(p) if p.exists() => p,
+            _ => return,
+        };
+
+        // Parse the JSONL file into DisplayEvents
+        let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+        if parsed.events.is_empty() {
+            return;
+        }
+
+        // Strip injected context from the first UserMessage (if present)
+        let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
+            match ev {
+                crate::events::DisplayEvent::UserMessage { _uuid, content } => {
+                    let stripped = crate::app::context_injection::strip_injected_context(&content);
+                    crate::events::DisplayEvent::UserMessage {
+                        _uuid,
+                        content: stripped.to_string(),
+                    }
+                }
+                other => other,
+            }
+        }).collect();
+
+        // Append to SQLite store and check compaction threshold
+        if let Some(ref store) = self.session_store {
+            if store.append_events(session_id, &events).is_ok() {
+                // Check if compaction is needed (only if not already pending)
+                if self.compaction_needed.is_none() {
+                    if let Ok(chars) = store.total_chars_since_compaction(session_id) {
+                        if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
+                            self.compaction_needed = Some((session_id, wt_path));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse JSONL and append to store for a background (non-active) project.
+    /// Opens a temporary store connection to the background project's .azs file.
+    fn store_append_background(&self, slot_id: &str, session_id: i64, wt_path: &std::path::Path, project_path: &std::path::Path) {
+        let jsonl_path = match self.agent_session_ids.get(slot_id) {
+            Some(uuid) => crate::config::session_file(self.backend, wt_path, uuid),
+            None => return,
+        };
+        let jsonl_path = match jsonl_path {
+            Some(p) if p.exists() => p,
+            _ => return,
+        };
+
+        let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+        if parsed.events.is_empty() {
+            return;
+        }
+
+        let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
+            match ev {
+                crate::events::DisplayEvent::UserMessage { _uuid, content } => {
+                    let stripped = crate::app::context_injection::strip_injected_context(&content);
+                    crate::events::DisplayEvent::UserMessage {
+                        _uuid,
+                        content: stripped.to_string(),
+                    }
+                }
+                other => other,
+            }
+        }).collect();
+
+        if let Ok(store) = crate::app::session_store::SessionStore::open(project_path) {
+            let _ = store.append_events(session_id, &events);
         }
     }
 
@@ -333,6 +424,11 @@ impl App {
                 snapshot.unread_session_ids.insert(uuid.clone());
             }
             snapshot.unread_sessions.insert(b.clone());
+        }
+
+        // Post-exit store flow for background project
+        if let Some((session_id, wt_path)) = snapshot.pid_session_target.remove(slot_id) {
+            self.store_append_background(slot_id, session_id, &wt_path, &project_path);
         }
 
         // Status message

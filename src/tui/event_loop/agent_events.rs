@@ -33,15 +33,135 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
                 app.add_user_message(prompt.clone());
                 app.process_session_chunk(&format!("You: {}\n", prompt));
                 app.current_todos.clear();
-                let resume_id = app.get_claude_session_id(&branch).cloned();
-                match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
-                    Ok((rx, pid)) => { app.register_claude(branch, pid, rx); app.set_status("Running..."); }
+                // Context injection for staged prompts (same as normal prompt flow)
+                let (send_prompt, resume_id) = if app.current_session_id.is_some() {
+                    let injected = app.current_session_id
+                        .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
+                        .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
+                        .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
+                        .unwrap_or_else(|| prompt.clone());
+                    (injected, None) // No --resume for store sessions
+                } else {
+                    (prompt.clone(), app.get_claude_session_id(&branch).cloned())
+                };
+                match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
+                    Ok((rx, pid)) => {
+                        if let Some(sid) = app.current_session_id {
+                            app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone()));
+                        }
+                        app.register_claude(branch, pid, rx);
+                        app.set_status("Running...");
+                    }
                     Err(e) => app.set_status(format!("Failed to start: {}", e)),
                 }
             }
         }
     }
+
+    // Spawn compaction agent if threshold was exceeded during store_append_from_jsonl
+    if is_exit {
+        if let Some((session_id, wt_path)) = app.compaction_needed.take() {
+            spawn_compaction_agent(app, claude_process, session_id, &wt_path);
+        }
+    }
+
     Ok(())
+}
+
+/// Spawn a background Claude agent to summarize the conversation for compaction.
+/// The agent's receiver goes into `compaction_receivers` (not `agent_receivers`)
+/// so its output is captured separately and never displayed in the session pane.
+fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_id: i64, wt_path: &std::path::Path) {
+    // Build the compaction prompt from the store
+    let prompt = match app.session_store.as_ref()
+        .and_then(|store| store.build_context(session_id).ok().flatten())
+    {
+        Some(payload) => crate::app::context_injection::build_compaction_prompt(&payload),
+        None => return,
+    };
+
+    match claude_process.spawn(wt_path, &prompt, None, Some("haiku")) {
+        Ok((rx, pid)) => {
+            let pid_str = pid.to_string();
+            app.compaction_receivers.insert(pid_str, (rx, session_id));
+        }
+        Err(_) => {} // Compaction is best-effort
+    }
+}
+
+/// Handle events from compaction agents. Returns true if any events were processed.
+pub fn poll_compaction_agents(app: &mut App) -> bool {
+    if app.compaction_receivers.is_empty() {
+        return false;
+    }
+
+    let mut completed: Vec<(String, i64)> = Vec::new();
+    let mut had_events = false;
+
+    for (pid, (rx, session_id)) in &app.compaction_receivers {
+        while let Ok(event) = rx.try_recv() {
+            had_events = true;
+            match event {
+                crate::claude::AgentEvent::Output(output) => {
+                    if matches!(output.output_type, crate::models::OutputType::Stdout) {
+                        // Parse streaming JSON for assistant text content
+                        if let Some(text) = extract_assistant_text(&output.data) {
+                            app.compaction_output
+                                .entry(pid.clone())
+                                .or_default()
+                                .push_str(&text);
+                        }
+                    }
+                }
+                crate::claude::AgentEvent::Exited { .. } => {
+                    completed.push((pid.clone(), *session_id));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Process completed compaction agents
+    for (pid, session_id) in completed {
+        app.compaction_receivers.remove(&pid);
+        if let Some(summary) = app.compaction_output.remove(&pid) {
+            let summary = summary.trim();
+            if !summary.is_empty() {
+                if let Some(ref store) = app.session_store {
+                    let max_seq = store.max_seq(session_id).unwrap_or(0);
+                    let _ = store.store_compaction(session_id, max_seq, summary);
+                }
+            }
+        }
+    }
+
+    had_events
+}
+
+/// Extract assistant text content from a streaming JSON line.
+/// Claude CLI outputs `{"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}`.
+fn extract_assistant_text(data: &str) -> Option<String> {
+    for line in data.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let v: serde_json::Value = serde_json::from_str(line).ok()?;
+        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+            continue;
+        }
+        let content = v.get("message")?.get("content")?.as_array()?;
+        let mut text = String::new();
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                    text.push_str(t);
+                }
+            }
+        }
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -605,5 +725,180 @@ mod tests {
         let cp = AgentProcess::new(crate::config::Config::default(), crate::backend::Backend::Claude);
         handle_claude_event("s", AgentEvent::Started { pid: 999 }, &mut app, &cp).unwrap();
         assert_eq!(app.staged_prompt.as_deref(), Some("pending"));
+    }
+
+    // ── extract_assistant_text ──
+
+    #[test]
+    fn test_extract_assistant_text_valid() {
+        let data = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hello world"}]}}"#;
+        assert_eq!(extract_assistant_text(data), Some("hello world".into()));
+    }
+
+    #[test]
+    fn test_extract_assistant_text_multiple_blocks() {
+        let data = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"part1"},{"type":"text","text":" part2"}]}}"#;
+        assert_eq!(extract_assistant_text(data), Some("part1 part2".into()));
+    }
+
+    #[test]
+    fn test_extract_assistant_text_non_assistant() {
+        let data = r#"{"type":"user","message":{"content":"hello"}}"#;
+        assert!(extract_assistant_text(data).is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_empty() {
+        assert!(extract_assistant_text("").is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_invalid_json() {
+        assert!(extract_assistant_text("not json").is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_tool_use_block_skipped() {
+        let data = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"x","name":"Read","input":{}}]}}"#;
+        assert!(extract_assistant_text(data).is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_multiline_picks_assistant() {
+        let data = r#"{"type":"system","message":{}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"found it"}]}}"#;
+        assert_eq!(extract_assistant_text(data), Some("found it".into()));
+    }
+
+    #[test]
+    fn test_extract_assistant_text_no_content() {
+        let data = r#"{"type":"assistant","message":{}}"#;
+        assert!(extract_assistant_text(data).is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_empty_content() {
+        let data = r#"{"type":"assistant","message":{"content":[]}}"#;
+        assert!(extract_assistant_text(data).is_none());
+    }
+
+    #[test]
+    fn test_extract_assistant_text_empty_text() {
+        let data = r#"{"type":"assistant","message":{"content":[{"type":"text","text":""}]}}"#;
+        assert!(extract_assistant_text(data).is_none());
+    }
+
+    // ── poll_compaction_agents ──
+
+    #[test]
+    fn test_poll_compaction_no_receivers() {
+        let mut app = App::new();
+        assert!(!poll_compaction_agents(&mut app));
+    }
+
+    #[test]
+    fn test_poll_compaction_exit_stores_summary() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        // Append some events so store_compaction has a valid max_seq
+        store.append_events(sid, &[
+            crate::events::DisplayEvent::UserMessage { _uuid: String::new(), content: "test".into() },
+        ]).unwrap();
+        app.session_store = Some(store);
+
+        // Simulate compaction output already accumulated
+        app.compaction_output.insert("99".into(), "The conversation covered X, Y, Z.".into());
+
+        // Create a channel and send exit event
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        drop(tx);
+        app.compaction_receivers.insert("99".into(), (rx, sid));
+
+        assert!(poll_compaction_agents(&mut app));
+        assert!(app.compaction_receivers.is_empty());
+        assert!(app.compaction_output.is_empty());
+
+        // Verify compaction was stored
+        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        assert!(compaction.is_some());
+        assert_eq!(compaction.unwrap().summary, "The conversation covered X, Y, Z.");
+    }
+
+    #[test]
+    fn test_poll_compaction_empty_summary_not_stored() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+
+        // Empty compaction output
+        app.compaction_output.insert("88".into(), "   ".into());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        drop(tx);
+        app.compaction_receivers.insert("88".into(), (rx, sid));
+
+        poll_compaction_agents(&mut app);
+
+        // Should NOT store an empty/whitespace-only summary
+        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        assert!(compaction.is_none());
+    }
+
+    #[test]
+    fn test_poll_compaction_no_output_no_store() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+
+        // No compaction_output entry at all
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        drop(tx);
+        app.compaction_receivers.insert("77".into(), (rx, sid));
+
+        poll_compaction_agents(&mut app);
+
+        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        assert!(compaction.is_none());
+    }
+
+    #[test]
+    fn test_poll_compaction_accumulates_output() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        store.append_events(sid, &[
+            crate::events::DisplayEvent::UserMessage { _uuid: String::new(), content: "x".into() },
+        ]).unwrap();
+        app.session_store = Some(store);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        // Send two output events then exit
+        let assistant_json_1 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 1. "}]}}"#;
+        let assistant_json_2 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 2."}]}}"#;
+        tx.send(AgentEvent::Output(AgentOutput {
+            output_type: OutputType::Stdout,
+            data: assistant_json_1.into(),
+        })).unwrap();
+        tx.send(AgentEvent::Output(AgentOutput {
+            output_type: OutputType::Stdout,
+            data: assistant_json_2.into(),
+        })).unwrap();
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        drop(tx);
+        app.compaction_receivers.insert("66".into(), (rx, sid));
+
+        // First poll accumulates output
+        poll_compaction_agents(&mut app);
+
+        // Should have processed exit and stored compaction
+        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        assert!(compaction.is_some());
+        assert_eq!(compaction.unwrap().summary, "Part 1. Part 2.");
     }
 }

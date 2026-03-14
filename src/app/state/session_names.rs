@@ -1,23 +1,33 @@
-//! Session name storage in `index.json` (alongside cache index entries).
+//! Session name storage via SQLite session store.
 //!
 //! Allows users to assign custom names to sessions that are stored
-//! locally and displayed in the UI instead of the cryptic session IDs.
+//! locally and displayed in the UI instead of the S-number IDs.
 
 use std::collections::HashMap;
 
 use super::App;
 
 impl App {
-    /// Save a custom session name to the cache index.
+    /// Save a custom session name. For store sessions (numeric IDs),
+    /// saves directly to the SQLite store. Non-numeric IDs are ignored
+    /// (legacy UUID sessions no longer support renaming after migration).
     pub fn save_session_name(&self, session_id: &str, custom_name: &str) {
-        let Some(ref project) = self.project else { return };
-        crate::app::session_cache::save_session_name(&project.path, session_id, custom_name);
+        if let Ok(id) = session_id.parse::<i64>() {
+            if let Some(ref store) = self.session_store {
+                let _ = store.rename_session(id, custom_name);
+            }
+        }
     }
 
-    /// Load all custom session name mappings (session_id → custom_name)
+    /// Load all session display names (session_id string → display_name).
     pub fn load_all_session_names(&self) -> HashMap<String, String> {
-        let Some(ref project) = self.project else { return HashMap::new() };
-        crate::app::session_cache::load_all_session_names(&project.path)
+        let mut names = HashMap::new();
+        if let Some(ref store) = self.session_store {
+            for (id, display) in store.load_all_session_names() {
+                names.insert(id.to_string(), display);
+            }
+        }
+        names
     }
 
     /// Check if there's a pending session name for this slot and save it.
@@ -33,611 +43,393 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::app::session_store::SessionStore;
 
-    // ── load_all_session_names: no project ──
+    /// Helper: create an App with a store backed by an in-memory SQLite database.
+    fn app_with_store() -> App {
+        let mut app = App::new();
+        app.session_store = Some(SessionStore::open_memory().unwrap());
+        app
+    }
+
+    /// Helper: create a store session and return its numeric ID as a string.
+    fn create_session(app: &App, worktree: &str) -> String {
+        let store = app.session_store.as_ref().unwrap();
+        let id = store.create_session(worktree).unwrap();
+        id.to_string()
+    }
+
+    // ── load_all_session_names: no store ──
 
     #[test]
-    fn test_load_session_names_no_project() {
+    fn load_session_names_no_store() {
         let app = App::new();
+        assert!(app.load_all_session_names().is_empty());
+    }
+
+    // ── save_session_name: no store / non-numeric ──
+
+    #[test]
+    fn save_no_store_no_panic() {
+        let app = App::new();
+        app.save_session_name("1", "My Session");
+    }
+
+    #[test]
+    fn save_non_numeric_id_ignored() {
+        let app = app_with_store();
+        app.save_session_name("uuid-abc", "Should Not Save");
+        assert!(app.load_all_session_names().is_empty());
+    }
+
+    // ── save + load round-trip ──
+
+    #[test]
+    fn save_then_load() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Test Name");
         let names = app.load_all_session_names();
-        assert!(names.is_empty());
+        assert_eq!(names.get(&id), Some(&"Test Name".to_string()));
     }
 
-    // ── save_session_name: no project ──
-
     #[test]
-    fn test_save_session_name_no_project_no_panic() {
-        let app = App::new();
-        // Should return early without panicking when no project
-        app.save_session_name("session-123", "My Session");
+    fn save_multiple() {
+        let app = app_with_store();
+        let id1 = create_session(&app, "main");
+        let id2 = create_session(&app, "feat");
+        let id3 = create_session(&app, "fix");
+        app.save_session_name(&id1, "First");
+        app.save_session_name(&id2, "Second");
+        app.save_session_name(&id3, "Third");
+        let names = app.load_all_session_names();
+        assert_eq!(names.len(), 3);
+        assert_eq!(names.get(&id1), Some(&"First".to_string()));
+        assert_eq!(names.get(&id2), Some(&"Second".to_string()));
+        assert_eq!(names.get(&id3), Some(&"Third".to_string()));
     }
 
-    // ── check_pending_session_name: no pending ──
+    #[test]
+    fn save_overwrites() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Original");
+        app.save_session_name(&id, "Updated");
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&"Updated".to_string()));
+    }
 
     #[test]
-    fn test_check_pending_no_pending_names() {
+    fn save_empty_name_clears() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "");
+        let names = app.load_all_session_names();
+        // Empty name → store returns S-number default
+        assert_eq!(names.get(&id), Some(&format!("S{id}")));
+    }
+
+    #[test]
+    fn save_unicode_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "功能测试");
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&"功能测试".to_string()));
+    }
+
+    #[test]
+    fn save_name_with_spaces() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "My Feature Work Session");
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&"My Feature Work Session".to_string()));
+    }
+
+    #[test]
+    fn save_emoji_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Bug Fix 🐛");
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&"Bug Fix 🐛".to_string()));
+    }
+
+    #[test]
+    fn save_newlines_in_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Line1\nLine2");
+        let names = app.load_all_session_names();
+        assert!(names.contains_key(&id));
+    }
+
+    #[test]
+    fn save_long_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        let long_name = "Session ".to_string() + &"X".repeat(500);
+        app.save_session_name(&id, &long_name);
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&long_name));
+    }
+
+    #[test]
+    fn save_tabs_in_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Name\twith\ttabs");
+        let names = app.load_all_session_names();
+        assert!(names.contains_key(&id));
+    }
+
+    #[test]
+    fn save_special_chars_in_name() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        app.save_session_name(&id, "Name with \"quotes\" & <brackets>");
+        let names = app.load_all_session_names();
+        assert!(names.contains_key(&id));
+    }
+
+    // ── unnamed sessions get S-number default ──
+
+    #[test]
+    fn unnamed_session_gets_s_number() {
+        let app = app_with_store();
+        let id = create_session(&app, "main");
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&format!("S{id}")));
+    }
+
+    // ── check_pending_session_name ──
+
+    #[test]
+    fn check_pending_no_pending() {
         let mut app = App::new();
-        app.check_pending_session_name("slot-1", "session-abc");
-        // Should do nothing — no pending names
+        app.check_pending_session_name("slot-1", "1");
         assert!(app.pending_session_names.is_empty());
     }
 
-    // ── check_pending_session_name: with pending ──
-
     #[test]
-    fn test_check_pending_matching_slot() {
+    fn check_pending_matching_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".to_string(), "My Custom Name".to_string()));
-        app.check_pending_session_name("slot-1", "session-xyz");
-        // The pending name should be removed
+        app.pending_session_names.push(("slot-1".into(), "Custom".into()));
+        app.check_pending_session_name("slot-1", "1");
         assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_check_pending_non_matching_slot() {
+    fn check_pending_non_matching_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".to_string(), "Name A".to_string()));
-        app.check_pending_session_name("slot-2", "session-xyz");
-        // Should not remove the non-matching pending name
+        app.pending_session_names.push(("slot-1".into(), "Name".into()));
+        app.check_pending_session_name("slot-2", "1");
         assert_eq!(app.pending_session_names.len(), 1);
     }
 
     #[test]
-    fn test_check_pending_multiple_slots() {
+    fn check_pending_multiple_slots() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".to_string(), "Name A".to_string()));
-        app.pending_session_names.push(("slot-2".to_string(), "Name B".to_string()));
-        app.pending_session_names.push(("slot-3".to_string(), "Name C".to_string()));
-        app.check_pending_session_name("slot-2", "session-xyz");
+        app.pending_session_names.push(("slot-1".into(), "A".into()));
+        app.pending_session_names.push(("slot-2".into(), "B".into()));
+        app.pending_session_names.push(("slot-3".into(), "C".into()));
+        app.check_pending_session_name("slot-2", "1");
         assert_eq!(app.pending_session_names.len(), 2);
-        // slot-2 should be removed, slot-1 and slot-3 remain
         assert!(app.pending_session_names.iter().any(|(s, _)| s == "slot-1"));
         assert!(app.pending_session_names.iter().any(|(s, _)| s == "slot-3"));
         assert!(!app.pending_session_names.iter().any(|(s, _)| s == "slot-2"));
     }
 
     #[test]
-    fn test_check_pending_removes_only_first_match() {
+    fn check_pending_removes_only_first_match() {
         let mut app = App::new();
-        // Two entries with same slot
-        app.pending_session_names.push(("slot-1".to_string(), "Name First".to_string()));
-        app.pending_session_names.push(("slot-1".to_string(), "Name Second".to_string()));
-        app.check_pending_session_name("slot-1", "session-abc");
-        // Only the first match should be removed
+        app.pending_session_names.push(("slot-1".into(), "First".into()));
+        app.pending_session_names.push(("slot-1".into(), "Second".into()));
+        app.check_pending_session_name("slot-1", "1");
         assert_eq!(app.pending_session_names.len(), 1);
-        assert_eq!(app.pending_session_names[0].1, "Name Second");
+        assert_eq!(app.pending_session_names[0].1, "Second");
     }
 
     #[test]
-    fn test_check_pending_empty_slot_id() {
+    fn check_pending_empty_slot_id() {
         let mut app = App::new();
-        app.pending_session_names.push(("".to_string(), "Empty Slot".to_string()));
-        app.check_pending_session_name("", "session-abc");
+        app.pending_session_names.push(("".into(), "Empty".into()));
+        app.check_pending_session_name("", "1");
         assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_check_pending_empty_session_id() {
-        let mut app = App::new();
-        app.pending_session_names.push(("slot-1".to_string(), "Name".to_string()));
-        // Empty session_id is still valid — save_session_name will handle it
-        app.check_pending_session_name("slot-1", "");
-        assert!(app.pending_session_names.is_empty());
-    }
-
-    // ── pending_session_names field ──
-
-    #[test]
-    fn test_pending_session_names_initially_empty() {
-        let app = App::new();
+    fn check_pending_saves_to_store() {
+        let mut app = app_with_store();
+        let id = create_session(&app, "main");
+        app.pending_session_names.push(("slot-1".into(), "Saved Name".into()));
+        app.check_pending_session_name("slot-1", &id);
+        let names = app.load_all_session_names();
+        assert_eq!(names.get(&id), Some(&"Saved Name".to_string()));
         assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_pending_session_names_push_and_access() {
+    fn check_pending_called_twice_same_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("pid-123".to_string(), "Feature Work".to_string()));
-        assert_eq!(app.pending_session_names.len(), 1);
-        assert_eq!(app.pending_session_names[0].0, "pid-123");
-        assert_eq!(app.pending_session_names[0].1, "Feature Work");
-    }
-
-    #[test]
-    fn test_pending_session_names_multiple_entries() {
-        let mut app = App::new();
-        for i in 0..10 {
-            app.pending_session_names.push((format!("pid-{}", i), format!("Session {}", i)));
-        }
-        assert_eq!(app.pending_session_names.len(), 10);
-    }
-
-    // ── load_all_session_names with project ──
-
-    #[test]
-    fn test_load_session_names_with_project_returns_map() {
-        let mut app = App::new();
-        app.project = Some(crate::models::Project {
-            name: "test".to_string(),
-            path: PathBuf::from("/tmp/nonexistent-project-test"),
-            main_branch: "main".to_string(),
-        });
-        let names = app.load_all_session_names();
-        // With a non-existent project path, should return empty map
-        assert!(names.is_empty());
-    }
-
-    // ── save_session_name with project (no side effects verification) ──
-
-    #[test]
-    fn test_save_session_name_with_project_no_crash() {
-        let mut app = App::new();
-        // Use a tempdir to avoid polluting the real filesystem
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "test".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        // Should not crash even if index doesn't exist
-        app.save_session_name("sess-123", "My Session Name");
-    }
-
-    #[test]
-    fn test_save_then_load_session_name() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "roundtrip".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-abc", "Test Name");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-abc"), Some(&"Test Name".to_string()));
-    }
-
-    #[test]
-    fn test_save_multiple_session_names() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "multi".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "First");
-        app.save_session_name("sess-2", "Second");
-        app.save_session_name("sess-3", "Third");
-        let names = app.load_all_session_names();
-        assert_eq!(names.len(), 3);
-        assert_eq!(names.get("sess-1"), Some(&"First".to_string()));
-        assert_eq!(names.get("sess-2"), Some(&"Second".to_string()));
-        assert_eq!(names.get("sess-3"), Some(&"Third".to_string()));
-    }
-
-    #[test]
-    fn test_save_session_name_overwrites() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "overwrite".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "Original");
-        app.save_session_name("sess-1", "Updated");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&"Updated".to_string()));
-    }
-
-    #[test]
-    fn test_save_session_name_empty_name() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "empty".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&String::new()));
-    }
-
-    #[test]
-    fn test_save_session_name_unicode() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "unicode".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "功能测试");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&"功能测试".to_string()));
-    }
-
-    #[test]
-    fn test_save_session_name_with_spaces() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "spaces".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "My Feature Work Session");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&"My Feature Work Session".to_string()));
-    }
-
-    // ── check_pending_session_name with project (integration) ──
-
-    #[test]
-    fn test_check_pending_saves_to_project() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "integration".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.pending_session_names.push(("slot-1".to_string(), "Saved Name".to_string()));
-        app.check_pending_session_name("slot-1", "sess-real-id");
-        // Verify the name was saved
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-real-id"), Some(&"Saved Name".to_string()));
-        // Verify pending was cleared
+        app.pending_session_names.push(("slot-1".into(), "Name".into()));
+        app.check_pending_session_name("slot-1", "1");
         assert!(app.pending_session_names.is_empty());
-    }
-
-    // ── Edge cases ──
-
-    #[test]
-    fn test_check_pending_special_chars_in_slot() {
-        let mut app = App::new();
-        app.pending_session_names.push(("slot/with/slashes".to_string(), "Name".to_string()));
-        app.check_pending_session_name("slot/with/slashes", "sess-1");
+        app.check_pending_session_name("slot-1", "2");
         assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_check_pending_special_chars_in_name() {
+    fn check_pending_no_match_preserves_all() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "special".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.pending_session_names.push(("slot-1".to_string(), "Name with \"quotes\" & <brackets>".to_string()));
-        app.check_pending_session_name("slot-1", "sess-1");
-        let names = app.load_all_session_names();
-        // JSON should handle special chars
-        assert!(names.contains_key("sess-1"));
-    }
-
-    #[test]
-    fn test_load_session_names_returns_hashmap() {
-        let app = App::new();
-        let names = app.load_all_session_names();
-        // Should always return a HashMap, even if empty
-        let _ = names.len();
-        let _ = names.is_empty();
-    }
-
-    #[test]
-    fn test_pending_names_are_vec_of_tuples() {
-        let mut app = App::new();
-        app.pending_session_names.push(("a".to_string(), "b".to_string()));
-        let (slot, name) = &app.pending_session_names[0];
-        assert_eq!(slot, "a");
-        assert_eq!(name, "b");
-    }
-
-    #[test]
-    fn test_check_pending_no_match_preserves_all() {
-        let mut app = App::new();
-        app.pending_session_names.push(("x".to_string(), "X".to_string()));
-        app.pending_session_names.push(("y".to_string(), "Y".to_string()));
-        app.check_pending_session_name("z", "sess-1");
+        app.pending_session_names.push(("x".into(), "X".into()));
+        app.pending_session_names.push(("y".into(), "Y".into()));
+        app.check_pending_session_name("z", "1");
         assert_eq!(app.pending_session_names.len(), 2);
     }
 
     #[test]
-    fn test_check_pending_called_twice_same_slot() {
+    fn check_pending_first_element() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".to_string(), "Name".to_string()));
-        app.check_pending_session_name("slot-1", "sess-1");
-        assert!(app.pending_session_names.is_empty());
-        // Second call should be a no-op
-        app.check_pending_session_name("slot-1", "sess-2");
-        assert!(app.pending_session_names.is_empty());
+        app.pending_session_names.push(("first".into(), "F".into()));
+        app.pending_session_names.push(("second".into(), "S".into()));
+        app.check_pending_session_name("first", "1");
+        assert_eq!(app.pending_session_names.len(), 1);
+        assert_eq!(app.pending_session_names[0].0, "second");
     }
 
     #[test]
-    fn test_save_session_name_long_id() {
+    fn check_pending_last_element() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "long".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        let long_id = "a".repeat(200);
-        app.save_session_name(&long_id, "Long ID Session");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get(&long_id), Some(&"Long ID Session".to_string()));
+        app.pending_session_names.push(("first".into(), "F".into()));
+        app.pending_session_names.push(("last".into(), "L".into()));
+        app.check_pending_session_name("last", "1");
+        assert_eq!(app.pending_session_names.len(), 1);
+        assert_eq!(app.pending_session_names[0].0, "first");
     }
 
     #[test]
-    fn test_save_session_name_long_name() {
+    fn check_pending_middle_element() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "long-name".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        let long_name = "Session ".to_string() + &"X".repeat(500);
-        app.save_session_name("sess-1", &long_name);
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&long_name));
-    }
-
-    #[test]
-    fn test_save_session_name_numeric_id() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "numeric".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("12345", "Numeric ID");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("12345"), Some(&"Numeric ID".to_string()));
-    }
-
-    #[test]
-    fn test_save_session_name_uuid_format() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "uuid".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("550e8400-e29b-41d4-a716-446655440000", "UUID Session");
-        let names = app.load_all_session_names();
-        assert!(names.contains_key("550e8400-e29b-41d4-a716-446655440000"));
-    }
-
-    #[test]
-    fn test_load_session_names_empty_project_path() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: String::new(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        let names = app.load_all_session_names();
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn test_save_and_load_many_session_names() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "many".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        for i in 0..20 {
-            app.save_session_name(&format!("sess-{}", i), &format!("Name {}", i));
-        }
-        let names = app.load_all_session_names();
-        assert_eq!(names.len(), 20);
-        for i in 0..20 {
-            assert_eq!(names.get(&format!("sess-{}", i)), Some(&format!("Name {}", i)));
-        }
-    }
-
-    #[test]
-    fn test_check_pending_with_multiple_different_slots() {
-        let mut app = App::new();
-        for i in 0..5 {
-            app.pending_session_names.push((format!("slot-{}", i), format!("Name {}", i)));
-        }
-        app.check_pending_session_name("slot-3", "sess-3");
-        assert_eq!(app.pending_session_names.len(), 4);
-        assert!(!app.pending_session_names.iter().any(|(s, _)| s == "slot-3"));
-    }
-
-    #[test]
-    fn test_pending_session_names_order_preserved() {
-        let mut app = App::new();
-        app.pending_session_names.push(("a".to_string(), "A".to_string()));
-        app.pending_session_names.push(("b".to_string(), "B".to_string()));
-        app.pending_session_names.push(("c".to_string(), "C".to_string()));
-        assert_eq!(app.pending_session_names[0].0, "a");
-        assert_eq!(app.pending_session_names[1].0, "b");
-        assert_eq!(app.pending_session_names[2].0, "c");
-    }
-
-    #[test]
-    fn test_check_pending_middle_element_removal() {
-        let mut app = App::new();
-        app.pending_session_names.push(("first".to_string(), "F".to_string()));
-        app.pending_session_names.push(("middle".to_string(), "M".to_string()));
-        app.pending_session_names.push(("last".to_string(), "L".to_string()));
-        app.check_pending_session_name("middle", "sess-m");
+        app.pending_session_names.push(("first".into(), "F".into()));
+        app.pending_session_names.push(("middle".into(), "M".into()));
+        app.pending_session_names.push(("last".into(), "L".into()));
+        app.check_pending_session_name("middle", "1");
         assert_eq!(app.pending_session_names.len(), 2);
         assert_eq!(app.pending_session_names[0].0, "first");
         assert_eq!(app.pending_session_names[1].0, "last");
     }
 
     #[test]
-    fn test_save_session_name_emoji_in_name() {
+    fn check_pending_all_elements() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "emoji".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "Bug Fix 🐛");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("sess-1"), Some(&"Bug Fix 🐛".to_string()));
+        for i in 0..5 {
+            app.pending_session_names.push((format!("slot-{i}"), format!("Name-{i}")));
+        }
+        for i in 0..5 {
+            app.check_pending_session_name(&format!("slot-{i}"), &format!("{i}"));
+        }
+        assert!(app.pending_session_names.is_empty());
+    }
+
+    // ── pending_session_names field ──
+
+    #[test]
+    fn pending_initially_empty() {
+        let app = App::new();
+        assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_save_session_name_newlines_in_name() {
+    fn pending_push_and_access() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "newlines".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-1", "Line1\nLine2");
-        let names = app.load_all_session_names();
-        assert!(names.contains_key("sess-1"));
-    }
-
-    #[test]
-    fn test_load_all_session_names_independent_apps() {
-        // Two separate App instances with same project should see same data
-        let tmp = tempfile::TempDir::new().unwrap();
-        let project = crate::models::Project {
-            name: "shared".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        };
-
-        let mut app1 = App::new();
-        app1.project = Some(project.clone());
-        app1.save_session_name("sess-shared", "Shared Name");
-
-        let mut app2 = App::new();
-        app2.project = Some(project);
-        let names = app2.load_all_session_names();
-        assert_eq!(names.get("sess-shared"), Some(&"Shared Name".to_string()));
-    }
-
-    #[test]
-    fn test_check_pending_first_element_removal() {
-        let mut app = App::new();
-        app.pending_session_names.push(("first".to_string(), "F".to_string()));
-        app.pending_session_names.push(("second".to_string(), "S".to_string()));
-        app.check_pending_session_name("first", "sess-1");
+        app.pending_session_names.push(("pid-123".into(), "Feature Work".into()));
         assert_eq!(app.pending_session_names.len(), 1);
-        assert_eq!(app.pending_session_names[0].0, "second");
+        assert_eq!(app.pending_session_names[0].0, "pid-123");
+        assert_eq!(app.pending_session_names[0].1, "Feature Work");
     }
 
     #[test]
-    fn test_check_pending_last_element_removal() {
+    fn pending_multiple_entries() {
         let mut app = App::new();
-        app.pending_session_names.push(("first".to_string(), "F".to_string()));
-        app.pending_session_names.push(("last".to_string(), "L".to_string()));
-        app.check_pending_session_name("last", "sess-1");
-        assert_eq!(app.pending_session_names.len(), 1);
-        assert_eq!(app.pending_session_names[0].0, "first");
+        for i in 0..10 {
+            app.pending_session_names.push((format!("pid-{i}"), format!("Session {i}")));
+        }
+        assert_eq!(app.pending_session_names.len(), 10);
     }
 
     #[test]
-    fn test_save_session_name_dashes_in_id() {
+    fn pending_order_preserved() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "dashes".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("a-b-c-d-e", "Dashed");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("a-b-c-d-e"), Some(&"Dashed".to_string()));
+        app.pending_session_names.push(("a".into(), "A".into()));
+        app.pending_session_names.push(("b".into(), "B".into()));
+        app.pending_session_names.push(("c".into(), "C".into()));
+        assert_eq!(app.pending_session_names[0].0, "a");
+        assert_eq!(app.pending_session_names[1].0, "b");
+        assert_eq!(app.pending_session_names[2].0, "c");
     }
 
     #[test]
-    fn test_save_session_name_dots_in_id() {
-        let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "dots".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("v1.2.3", "Version Session");
-        let names = app.load_all_session_names();
-        assert_eq!(names.get("v1.2.3"), Some(&"Version Session".to_string()));
-    }
-
-    #[test]
-    fn test_pending_session_names_capacity_growth() {
+    fn pending_capacity_growth() {
         let mut app = App::new();
         for i in 0..100 {
-            app.pending_session_names.push((format!("{}", i), format!("{}", i)));
+            app.pending_session_names.push((format!("{i}"), format!("{i}")));
         }
         assert_eq!(app.pending_session_names.len(), 100);
     }
 
     #[test]
-    fn test_check_pending_all_elements() {
+    fn pending_are_vec_of_tuples() {
         let mut app = App::new();
-        for i in 0..5 {
-            app.pending_session_names.push((format!("slot-{}", i), format!("Name-{}", i)));
+        app.pending_session_names.push(("a".into(), "b".into()));
+        let (slot, name) = &app.pending_session_names[0];
+        assert_eq!(slot, "a");
+        assert_eq!(name, "b");
+    }
+
+    // ── load returns hashmap ──
+
+    #[test]
+    fn load_returns_hashmap() {
+        let app = App::new();
+        let names = app.load_all_session_names();
+        let _ = names.len();
+        let _ = names.is_empty();
+    }
+
+    // ── many sessions ──
+
+    #[test]
+    fn save_and_load_many() {
+        let app = app_with_store();
+        let ids: Vec<String> = (0..20).map(|_| create_session(&app, "main")).collect();
+        for (i, id) in ids.iter().enumerate() {
+            app.save_session_name(id, &format!("Name {i}"));
         }
-        for i in 0..5 {
-            app.check_pending_session_name(&format!("slot-{}", i), &format!("sess-{}", i));
+        let names = app.load_all_session_names();
+        assert_eq!(names.len(), 20);
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(names.get(id), Some(&format!("Name {i}")));
         }
+    }
+
+    #[test]
+    fn check_pending_special_chars_in_slot() {
+        let mut app = App::new();
+        app.pending_session_names.push(("slot/with/slashes".into(), "Name".into()));
+        app.check_pending_session_name("slot/with/slashes", "1");
         assert!(app.pending_session_names.is_empty());
     }
 
     #[test]
-    fn test_save_session_name_tab_in_name() {
+    fn check_pending_with_multiple_different_slots() {
         let mut app = App::new();
-        let tmp = tempfile::TempDir::new().unwrap();
-        app.project = Some(crate::models::Project {
-            name: "tab".to_string(),
-            path: tmp.path().to_path_buf(),
-            main_branch: "main".to_string(),
-        });
-        app.save_session_name("sess-tab", "Name\twith\ttabs");
-        let names = app.load_all_session_names();
-        assert!(names.contains_key("sess-tab"));
-    }
-
-    #[test]
-    fn test_empty_session_id_save() {
-        let app = App::new();
-        app.save_session_name("", "name");
-        let names = app.load_all_session_names();
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn test_empty_name_save() {
-        let app = App::new();
-        app.save_session_name("id", "");
-        let names = app.load_all_session_names();
-        assert!(names.is_empty());
-    }
-
-    #[test]
-    fn test_session_names_hashmap_default_empty() {
-        let map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        assert!(map.is_empty());
-    }
-
-    #[test]
-    fn test_pathbuf_join_sessions() {
-        let base = PathBuf::from("/tmp");
-        let joined = base.join("sessions.json");
-        assert!(joined.to_string_lossy().ends_with("sessions.json"));
+        for i in 0..5 {
+            app.pending_session_names.push((format!("slot-{i}"), format!("Name {i}")));
+        }
+        app.check_pending_session_name("slot-3", "3");
+        assert_eq!(app.pending_session_names.len(), 4);
+        assert!(!app.pending_session_names.iter().any(|(s, _)| s == "slot-3"));
     }
 }

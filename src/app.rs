@@ -9,9 +9,10 @@
 //! - `session_parser`: Claude session file parsing
 
 pub(crate) mod codex_session_parser;
+pub(crate) mod context_injection;
 mod input;
-pub(crate) mod session_cache;
 pub(crate) mod session_parser;
+pub(crate) mod session_store;
 pub(crate) mod state;
 mod terminal;
 pub(crate) mod types;

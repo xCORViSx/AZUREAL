@@ -29,6 +29,10 @@ pub struct ProjectSnapshot {
     pub active_slot: HashMap<String, String>,
     pub pending_session_names: Vec<(String, String)>,
 
+    // ── Session store state ──
+    pub pid_session_target: HashMap<String, (i64, PathBuf)>,
+    pub current_session_id: Option<i64>,
+
     // ── Session list state ──
     pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
     pub session_selected_file_idx: HashMap<String, usize>,

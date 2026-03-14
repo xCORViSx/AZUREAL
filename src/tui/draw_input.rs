@@ -81,24 +81,6 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let is_focused = app.focus == Focus::Input;
     let inner_width = area.width.saturating_sub(2) as usize;
 
-    // When the raw session file is missing, show a bold red warning instead
-    // of the normal input. The session is read-only (loaded from cache).
-    if let Some(ref missing_path) = app.source_file_missing {
-        let msg = format!("SESSION FILE MISSING @ {}", missing_path.display());
-        let warning = Paragraph::new(Line::from(Span::styled(
-            msg,
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red))
-                .title(Span::styled(" READ-ONLY ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))),
-        );
-        f.render_widget(warning, area);
-        return;
-    }
-
     let visible_rows = area.height.saturating_sub(2) as usize;
 
     // Split hints across top and bottom borders
