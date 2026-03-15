@@ -252,10 +252,12 @@ impl App {
         // Restore terminal for new session (save was done before selection changed)
         self.restore_session_terminal();
 
+        // Save live display_events in case we're reloading the same active session
+        let saved_display_events = std::mem::take(&mut self.display_events);
+
         self.session_lines.clear();
         self.session_buffer.clear();
         self.session_scroll = usize::MAX; // Start at bottom (most recent messages)
-        self.display_events.clear();
         self.session_file_path = None;
         self.session_file_modified = None;
         self.session_file_size = 0;
@@ -334,50 +336,23 @@ impl App {
                 .unwrap_or(false);
 
             if is_live {
-                // Live session: load from JSONL for real-time display
-                // (store doesn't have events yet — they're ingested on exit)
-                if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
-                    if let Some(uuid) = self.agent_session_ids.get(&slot) {
-                        if let Some(ref wt_path) = worktree_path {
-                            if let Some(jsonl_path) = crate::config::session_file(self.backend, wt_path, uuid) {
-                                if jsonl_path.exists() {
-                                    self.session_file_path = Some(jsonl_path.clone());
-                                    let source_size = std::fs::metadata(&jsonl_path)
-                                        .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
-                                        .unwrap_or(0);
-                                    self.session_file_size = source_size;
-
-                                    let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
-                                    self.display_events = parsed.events;
-                                    self.pending_tool_calls = parsed.pending_tools;
-                                    self.failed_tool_calls = parsed.failed_tools;
-                                    self.session_tokens = parsed.session_tokens;
-                                    self.model_context_window = parsed.context_window;
-                                    self.update_token_badge();
-                                    self.extract_skill_tools_from_events();
-                                    self.session_file_parse_offset = parsed.end_offset;
-                                    self.awaiting_plan_approval = parsed.awaiting_plan_approval;
-
-                                    if let Some(ref pending) = self.pending_user_message {
-                                        for event in self.display_events.iter().rev() {
-                                            if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
-                                                if content == pending {
-                                                    self.pending_user_message = None;
-                                                }
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    self.invalidate_render_cache();
-                                }
-                            }
-                        }
-                    }
-                }
-                // Set current_session_id from the store target if available
+                // Live session: restore display_events from the agent processor
+                // (clean prompts, no context injection). Don't re-parse the JSONL.
+                self.display_events = saved_display_events;
+                self.invalidate_render_cache();
                 if let Some(slot) = self.active_slot.get(&branch_name) {
                     if let Some((sid, _, _)) = self.pid_session_target.get(slot) {
                         self.current_session_id = Some(*sid);
+                    }
+                    // Set up JSONL watching for the watcher thread
+                    if let Some(uuid) = self.agent_session_ids.get(slot) {
+                        if let Some(ref wt_path) = worktree_path {
+                            if let Some(jsonl_path) = crate::config::session_file(self.backend, wt_path, uuid) {
+                                if jsonl_path.exists() {
+                                    self.session_file_path = Some(jsonl_path);
+                                }
+                            }
+                        }
                     }
                 }
             } else if let Some(sid) = store_session_id {
