@@ -240,6 +240,10 @@ fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Lin
     let model = model.filter(|m| !m.is_empty());
     let (assistant_name, assistant_color) = assistant_identity(model);
     let header_style = Style::default().fg(Color::Black).bg(assistant_color).add_modifier(Modifier::BOLD);
+    let model_style = Style::default()
+        .fg(Color::Black)
+        .bg(assistant_color)
+        .add_modifier(Modifier::BOLD | Modifier::DIM);
     let fill_style = Style::default().bg(assistant_color);
 
     let left = format!(" {} ▶ ", assistant_name);
@@ -256,7 +260,7 @@ fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Lin
         Span::styled(" ".repeat(gap), fill_style),
     ];
     if !right.is_empty() {
-        spans.push(Span::styled(right, header_style));
+        spans.push(Span::styled(right, model_style));
     }
 
     Line::from(spans)
@@ -1581,6 +1585,17 @@ mod tests {
         assert_eq!(text.chars().count(), 16);
         assert!(text.starts_with(" Claude ▶ "));
         assert!(text.ends_with(" cl… "));
+    }
+
+    #[test]
+    fn test_render_assistant_header_line_dims_model_span() {
+        let line = render_assistant_header_line(Some("gpt-5.4"), 24);
+        let model_span = line
+            .spans
+            .iter()
+            .find(|span| span.content.contains("gpt-5.4"))
+            .expect("expected model span");
+        assert!(model_span.style.add_modifier.contains(Modifier::DIM));
     }
 
     #[test]
