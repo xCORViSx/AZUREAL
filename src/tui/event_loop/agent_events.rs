@@ -33,17 +33,13 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
                 app.add_user_message(prompt.clone());
                 app.process_session_chunk(&format!("You: {}\n", prompt));
                 app.current_todos.clear();
-                // Context injection for staged prompts (same as normal prompt flow)
-                let (send_prompt, resume_id) = if app.current_session_id.is_some() {
-                    let injected = app.current_session_id
-                        .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                        .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                        .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
-                        .unwrap_or_else(|| prompt.clone());
-                    (injected, None) // No --resume for store sessions
-                } else {
-                    (prompt.clone(), app.get_claude_session_id(&branch).cloned())
-                };
+                // Context injection for staged prompts
+                let send_prompt = app.current_session_id
+                    .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
+                    .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
+                    .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
+                    .unwrap_or_else(|| prompt.clone());
+                let resume_id: Option<String> = None;
                 match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {

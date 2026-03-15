@@ -14,6 +14,19 @@ use rusqlite::{params, Connection};
 
 use crate::events::DisplayEvent;
 
+/// Compress JSON string with zstd (level 3 — fast, good ratio).
+fn compress_data(json: &str) -> Vec<u8> {
+    zstd::encode_all(json.as_bytes(), 3).unwrap_or_else(|_| json.as_bytes().to_vec())
+}
+
+/// Decompress zstd-compressed event data back to JSON string.
+fn decompress_data(blob: &[u8]) -> String {
+    zstd::decode_all(blob)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default()
+}
+
 /// Compaction threshold: when characters since last compaction exceed this,
 /// a background agent summarizes the conversation. ~100K tokens at 4 chars/token.
 pub const COMPACTION_THRESHOLD: usize = 400_000;
@@ -22,12 +35,15 @@ pub const COMPACTION_THRESHOLD: usize = 400_000;
 // Schema
 // =========================================================================
 
-const SCHEMA_V1: &str = "
+const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS sessions (
-    id       INTEGER PRIMARY KEY,
-    name     TEXT NOT NULL DEFAULT '',
-    worktree TEXT NOT NULL DEFAULT '',
-    created  TEXT NOT NULL DEFAULT (datetime('now'))
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL DEFAULT '',
+    worktree    TEXT NOT NULL DEFAULT '',
+    created     TEXT NOT NULL DEFAULT (datetime('now')),
+    completed   INTEGER,
+    duration_ms INTEGER,
+    cost_usd    REAL
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -54,15 +70,17 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');
 ";
 
 // =========================================================================
 // Public types
 // =========================================================================
 
-/// Summary info for a session (used in session list)
+/// Summary info for a session (used in session list).
+/// Completion fields are display-only metadata — never injected into prompts.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SessionInfo {
     pub id: i64,
     pub name: String,
@@ -70,6 +88,12 @@ pub struct SessionInfo {
     pub created: String,
     pub event_count: usize,
     pub message_count: usize,
+    /// Whether the session completed (true = success, false = failed, None = still running/unknown)
+    pub completed: Option<bool>,
+    /// Session duration in milliseconds (from Complete event)
+    pub duration_ms: Option<u64>,
+    /// API cost in USD (from Complete event)
+    pub cost_usd: Option<f64>,
 }
 
 /// Compaction summary record
@@ -101,7 +125,7 @@ impl SessionStore {
              PRAGMA synchronous = NORMAL;\
              PRAGMA foreign_keys = ON;"
         )?;
-        conn.execute_batch(SCHEMA_V1)?;
+        conn.execute_batch(SCHEMA)?;
         Ok(Self { conn })
     }
 
@@ -110,7 +134,7 @@ impl SessionStore {
     pub fn open_memory() -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-        conn.execute_batch(SCHEMA_V1)?;
+        conn.execute_batch(SCHEMA)?;
         Ok(Self { conn })
     }
 
@@ -132,6 +156,15 @@ impl SessionStore {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Next S-number: `max(id) + 1` across all sessions, defaulting to 1.
+    pub fn next_s_number(&self) -> i64 {
+        self.conn.query_row(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM sessions",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(1)
+    }
+
     /// Rename a session (set user-assigned display name).
     pub fn rename_session(&self, id: i64, name: &str) -> anyhow::Result<()> {
         self.conn.execute(
@@ -141,9 +174,22 @@ impl SessionStore {
         Ok(())
     }
 
+    /// Mark a session as completed with duration and cost (display-only metadata).
+    #[allow(dead_code)]
+    pub fn mark_completed(&self, id: i64, success: bool, duration_ms: u64, cost_usd: f64) -> anyhow::Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET completed = ?1, duration_ms = ?2, cost_usd = ?3 WHERE id = ?4",
+            params![success as i64, duration_ms as i64, cost_usd, id],
+        )?;
+        Ok(())
+    }
+
     /// Delete a session and all its events/compactions (CASCADE).
+    /// Runs VACUUM afterward to reclaim disk space from deleted rows.
+    #[allow(dead_code)]
     pub fn delete_session(&self, id: i64) -> anyhow::Result<()> {
         self.conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
+        let _ = self.conn.execute_batch("VACUUM;");
         Ok(())
     }
 
@@ -152,7 +198,8 @@ impl SessionStore {
         let (sql, filter): (&str, Box<dyn rusqlite::ToSql>) = match worktree {
             Some(wt) => (
                 "SELECT s.id, s.name, s.worktree, s.created, \
-                    COALESCE(e.cnt, 0), COALESCE(m.cnt, 0) \
+                    COALESCE(e.cnt, 0), COALESCE(m.cnt, 0), \
+                    s.completed, s.duration_ms, s.cost_usd \
                  FROM sessions s \
                  LEFT JOIN (SELECT session_id, COUNT(*) as cnt FROM events GROUP BY session_id) e \
                     ON e.session_id = s.id \
@@ -165,7 +212,8 @@ impl SessionStore {
             ),
             None => (
                 "SELECT s.id, s.name, s.worktree, s.created, \
-                    COALESCE(e.cnt, 0), COALESCE(m.cnt, 0) \
+                    COALESCE(e.cnt, 0), COALESCE(m.cnt, 0), \
+                    s.completed, s.duration_ms, s.cost_usd \
                  FROM sessions s \
                  LEFT JOIN (SELECT session_id, COUNT(*) as cnt FROM events GROUP BY session_id) e \
                     ON e.session_id = s.id \
@@ -177,24 +225,9 @@ impl SessionStore {
             ),
         };
 
-        let mut stmt = if worktree.is_some() {
-            let mut s = self.conn.prepare(sql)?;
-            let rows = s.query_map(params![&*filter], |row| {
-                Ok(SessionInfo {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    worktree: row.get(2)?,
-                    created: row.get(3)?,
-                    event_count: row.get::<_, i64>(4)? as usize,
-                    message_count: row.get::<_, i64>(5)? as usize,
-                })
-            })?.collect::<Result<Vec<_>, _>>()?;
-            return Ok(rows);
-        } else {
-            self.conn.prepare(sql)?
-        };
-
-        let rows = stmt.query_map([], |row| {
+        let map_row = |row: &rusqlite::Row| -> rusqlite::Result<SessionInfo> {
+            let completed_raw: Option<i64> = row.get(6)?;
+            let duration_raw: Option<i64> = row.get(7)?;
             Ok(SessionInfo {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -202,8 +235,22 @@ impl SessionStore {
                 created: row.get(3)?,
                 event_count: row.get::<_, i64>(4)? as usize,
                 message_count: row.get::<_, i64>(5)? as usize,
+                completed: completed_raw.map(|v| v != 0),
+                duration_ms: duration_raw.map(|v| v as u64),
+                cost_usd: row.get(8)?,
             })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        };
+
+        if worktree.is_some() {
+            let mut s = self.conn.prepare(sql)?;
+            let rows = s.query_map(params![&*filter], map_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(rows);
+        }
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map([], map_row)?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -244,7 +291,8 @@ impl SessionStore {
     }
 
     /// Append display events to a session. Returns the number of events inserted.
-    /// Skips `Filtered` events.
+    /// Skips `Filtered` events. Data is zstd-compressed before storage.
+    /// Automatically updates session completion metadata when a `Complete` event is stored.
     pub fn append_events(&self, session_id: i64, events: &[DisplayEvent]) -> anyhow::Result<usize> {
         let mut seq = self.next_seq(session_id)?;
         let tx = self.conn.unchecked_transaction()?;
@@ -252,17 +300,28 @@ impl SessionStore {
             "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, ?2, ?3, ?4, ?5)"
         )?;
         let mut count = 0usize;
+        let mut completion: Option<(bool, u64, f64)> = None;
         for event in events {
             if matches!(event, DisplayEvent::Filtered) { continue; }
+            if let DisplayEvent::Complete { success, duration_ms, cost_usd, .. } = event {
+                completion = Some((*success, *duration_ms, *cost_usd));
+            }
             let compacted = compact_event(event);
             let kind = event_kind(&compacted);
-            let data = serde_json::to_string(&compacted).unwrap_or_default();
+            let json = serde_json::to_string(&compacted).unwrap_or_default();
+            let data = compress_data(&json);
             let char_len = event_char_len(event) as i64;
             stmt.execute(params![session_id, seq, kind, data, char_len])?;
             seq += 1;
             count += 1;
         }
         drop(stmt);
+        if let Some((success, duration_ms, cost_usd)) = completion {
+            tx.execute(
+                "UPDATE sessions SET completed = ?1, duration_ms = ?2, cost_usd = ?3 WHERE id = ?4",
+                params![success as i64, duration_ms as i64, cost_usd, session_id],
+            )?;
+        }
         tx.commit()?;
         Ok(count)
     }
@@ -273,12 +332,13 @@ impl SessionStore {
             "SELECT data FROM events WHERE session_id = ?1 ORDER BY seq"
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
-            let json: String = row.get(0)?;
-            Ok(json)
+            let blob: Vec<u8> = row.get(0)?;
+            Ok(blob)
         })?.collect::<Result<Vec<_>, _>>()?;
 
         let mut events = Vec::with_capacity(rows.len());
-        for json in rows {
+        for blob in rows {
+            let json = decompress_data(&blob);
             if let Ok(ev) = serde_json::from_str::<DisplayEvent>(&json) {
                 events.push(ev);
             }
@@ -292,12 +352,13 @@ impl SessionStore {
             "SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 ORDER BY seq"
         )?;
         let rows = stmt.query_map(params![session_id, from_seq], |row| {
-            let json: String = row.get(0)?;
-            Ok(json)
+            let blob: Vec<u8> = row.get(0)?;
+            Ok(blob)
         })?.collect::<Result<Vec<_>, _>>()?;
 
         let mut events = Vec::with_capacity(rows.len());
-        for json in rows {
+        for blob in rows {
+            let json = decompress_data(&blob);
             if let Ok(ev) = serde_json::from_str::<DisplayEvent>(&json) {
                 events.push(ev);
             }
@@ -306,6 +367,7 @@ impl SessionStore {
     }
 
     /// Count events, optionally filtered by kind(s).
+    #[allow(dead_code)]
     pub fn count_events(&self, session_id: i64, kinds: Option<&[&str]>) -> anyhow::Result<usize> {
         let count: i64 = match kinds {
             Some(ks) if !ks.is_empty() => {
@@ -338,6 +400,7 @@ impl SessionStore {
     }
 
     /// Message count (UserMessage + AssistantText only).
+    #[allow(dead_code)]
     pub fn message_count(&self, session_id: i64) -> anyhow::Result<usize> {
         self.count_events(session_id, Some(&["UserMessage", "AssistantText"]))
     }
@@ -405,6 +468,7 @@ impl SessionStore {
     }
 
     /// Maximum event sequence number for a session.
+    #[allow(dead_code)]
     pub fn max_seq(&self, session_id: i64) -> anyhow::Result<i64> {
         let max: Option<i64> = self.conn.query_row(
             "SELECT MAX(seq) FROM events WHERE session_id = ?1",
@@ -420,16 +484,52 @@ impl SessionStore {
             "SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 AND seq <= ?3 ORDER BY seq"
         )?;
         let rows = stmt.query_map(params![session_id, from_seq, through_seq], |row| {
-            let json: String = row.get(0)?;
-            Ok(json)
+            let blob: Vec<u8> = row.get(0)?;
+            Ok(blob)
         })?.collect::<Result<Vec<_>, _>>()?;
         let mut events = Vec::with_capacity(rows.len());
-        for json in rows {
+        for blob in rows {
+            let json = decompress_data(&blob);
             if let Ok(ev) = serde_json::from_str::<DisplayEvent>(&json) {
                 events.push(ev);
             }
         }
         Ok(events)
+    }
+
+    /// Search event data across sessions for a query string. Returns up to `limit`
+    /// results as (session_id, preview_text). Searches only text-bearing event kinds.
+    /// Decompresses each event and filters in Rust (data column is zstd-compressed).
+    pub fn search_events(&self, worktree: Option<&str>, query: &str, limit: usize) -> anyhow::Result<Vec<(i64, String)>> {
+        let query_lower = query.to_lowercase();
+        let sql = match worktree {
+            Some(_) => "SELECT e.session_id, e.data FROM events e \
+                        JOIN sessions s ON s.id = e.session_id \
+                        WHERE s.worktree = ?1 AND e.kind IN ('UserMessage','AssistantText') \
+                        ORDER BY e.session_id, e.seq",
+            None =>    "SELECT e.session_id, e.data FROM events e \
+                        WHERE e.kind IN ('UserMessage','AssistantText') \
+                        ORDER BY e.session_id, e.seq",
+        };
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows: Vec<(i64, Vec<u8>)> = if let Some(wt) = worktree {
+            stmt.query_map(params![wt], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?.filter_map(|r| r.ok()).collect()
+        } else {
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?.filter_map(|r| r.ok()).collect()
+        };
+        let mut results = Vec::new();
+        for (session_id, blob) in rows {
+            if results.len() >= limit { break; }
+            let json = decompress_data(&blob);
+            if json.to_lowercase().contains(&query_lower) {
+                results.push((session_id, json));
+            }
+        }
+        Ok(results)
     }
 
     /// Build the context payload for context injection.
@@ -618,7 +718,8 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
 }
 
 /// Estimate the displayable character count of an event (for compaction threshold).
-fn event_char_len(event: &DisplayEvent) -> usize {
+/// Character count for a display event (used for context tracking).
+pub fn event_char_len(event: &DisplayEvent) -> usize {
     match event {
         DisplayEvent::UserMessage { content, .. } => content.len(),
         DisplayEvent::AssistantText { text, .. } => text.len(),
@@ -685,7 +786,7 @@ mod tests {
     #[test]
     fn open_memory_idempotent() {
         let store = SessionStore::open_memory().unwrap();
-        store.conn.execute_batch(SCHEMA_V1).unwrap();
+        store.conn.execute_batch(SCHEMA).unwrap();
         let version: String = store.conn.query_row(
             "SELECT value FROM meta WHERE key = 'schema_version'",
             [],

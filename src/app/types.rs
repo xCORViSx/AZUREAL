@@ -645,10 +645,6 @@ pub struct WorktreeRefreshResult {
     pub main_worktree: Option<crate::models::Worktree>,
     /// Feature + archived worktrees (sidebar entries)
     pub worktrees: Vec<crate::models::Worktree>,
-    /// Branch name → latest Claude session ID
-    pub agent_session_ids: std::collections::HashMap<String, String>,
-    /// Branch name → list of (uuid, path, formatted_time)
-    pub session_files: std::collections::HashMap<String, Vec<(String, PathBuf, String)>>,
 }
 
 /// Auto-resolve settings overlay — manage which files are auto-resolved during

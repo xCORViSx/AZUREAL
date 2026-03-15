@@ -442,6 +442,7 @@ pub fn find_latest_codex_session(worktree_path: &std::path::Path) -> Option<Stri
 
 /// List sessions for the active backend, newest first.
 /// Dispatches to list_claude_sessions or list_codex_sessions.
+#[allow(dead_code)]
 pub fn list_sessions(backend: Backend, worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
     match backend {
         Backend::Claude => list_claude_sessions(worktree_path),

@@ -19,30 +19,40 @@ pub fn default_model(backend: Backend) -> &'static str {
 impl App {
     /// Recompute the cached context usage badge from session store character count.
     /// Percentage = chars_since_compaction / COMPACTION_THRESHOLD (400k).
-    /// Call after store append or compaction — draw path just reads the cache.
+    /// Call after store append or compaction — the draw path just reads the cache.
+    /// For live updates during streaming, use `update_token_badge_live()` instead.
     pub fn update_token_badge(&mut self) {
-        let pct_value = match (&self.session_store, self.current_session_id) {
+        let store_chars = match (&self.session_store, self.current_session_id) {
             (Some(store), Some(sid)) => {
-                match store.total_chars_since_compaction(sid) {
-                    Ok(chars) => {
-                        let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
-                        let pct = (chars as f64 / threshold * 100.0).min(100.0);
-                        let color = if pct < 60.0 { ratatui::style::Color::Green }
-                            else if pct < 90.0 { ratatui::style::Color::Yellow }
-                            else { ratatui::style::Color::Red };
-                        self.token_badge_cache = Some((format!(" {:.0}% ", pct), color));
-                        pct
-                    }
-                    Err(_) => {
-                        self.token_badge_cache = None;
-                        0.0
-                    }
-                }
+                store.total_chars_since_compaction(sid).unwrap_or(0)
             }
-            _ => {
-                self.token_badge_cache = None;
-                0.0
-            }
+            _ => 0,
+        };
+        self.store_chars_cached = store_chars;
+        self.apply_token_badge(store_chars);
+    }
+
+    /// Lightweight badge update during streaming — uses cached store chars plus
+    /// live display_events char count. No store I/O.
+    pub fn update_token_badge_live(&mut self) {
+        let live_chars: usize = self.display_events.iter()
+            .map(crate::app::session_store::event_char_len)
+            .sum();
+        self.apply_token_badge(self.store_chars_cached + live_chars);
+    }
+
+    fn apply_token_badge(&mut self, total_chars: usize) {
+        let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
+        let pct_value = if total_chars > 0 || self.current_session_id.is_some() {
+            let pct = (total_chars as f64 / threshold * 100.0).min(100.0);
+            let color = if pct < 60.0 { ratatui::style::Color::Green }
+                else if pct < 90.0 { ratatui::style::Color::Yellow }
+                else { ratatui::style::Color::Red };
+            self.token_badge_cache = Some((format!(" {:.0}% ", pct), color));
+            pct
+        } else {
+            self.token_badge_cache = None;
+            0.0
         };
         // Track 90% threshold for compaction inactivity watcher
         let was_high = self.context_pct_high;

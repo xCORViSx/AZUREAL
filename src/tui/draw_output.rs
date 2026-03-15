@@ -120,6 +120,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
+    // New session name dialog (centered overlay)
+    if app.new_session_dialog_active {
+        draw_new_session_dialog(f, app, area);
+    }
+
     // Split area for sticky todo widget at bottom (visible whenever todos exist —
     // stays visible even when all completed, cleared on next user prompt or session switch)
     let has_todos = !app.current_todos.is_empty() || !app.subagent_todos.is_empty();
@@ -410,16 +415,25 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     " Session ".to_string()
                 };
                 (title, lines)
+            } else if app.current_session_id.is_some() {
+                // Active session with no events yet — blank pane, ready for input
+                (" Session ".to_string(), vec![])
             } else {
-                // Empty session pane — show hint to open session list
+                // No session selected — show hint to open session list
                 let key = crate::tui::keybindings::find_key_for_action(
                     &crate::tui::keybindings::SESSION,
                     crate::tui::keybindings::Action::ToggleSessionList,
                 ).unwrap_or_else(|| "s".into());
+                let add_key = crate::tui::keybindings::find_key_for_action(
+                    &crate::tui::keybindings::SESSION,
+                    crate::tui::keybindings::Action::NewSession,
+                ).unwrap_or_else(|| "a".into());
                 let hint = vec![Line::from(vec![
                     Span::styled("Press ", Style::default().fg(Color::DarkGray)),
                     Span::styled(key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                    Span::styled(" to choose a session", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" to choose a session or ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(add_key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+                    Span::styled(" to create one", Style::default().fg(Color::DarkGray)),
                 ])];
                 (" Session ".to_string(), hint)
             }
@@ -593,6 +607,41 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         // No todos visible — clear cached rect so mouse scroll won't hit-test stale area
         app.pane_todo = Rect::default();
+    }
+}
+
+/// Draw the new session name dialog — centered input box over the session pane.
+fn draw_new_session_dialog(f: &mut Frame, app: &App, area: Rect) {
+    let input = &app.new_session_name_input;
+    let w = (input.chars().count() as u16 + 6).max(42).min(area.width.saturating_sub(4));
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let dialog_area = ratatui::layout::Rect::new(x, y, w, h);
+
+    let clear = ratatui::widgets::Paragraph::new("")
+        .block(ratatui::widgets::Block::default().style(ratatui::style::Style::default().bg(ratatui::style::Color::Black)));
+    f.render_widget(clear, dialog_area);
+
+    let widget = ratatui::widgets::Paragraph::new(input.as_str())
+        .block(ratatui::widgets::Block::default()
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_style(ratatui::style::Style::default().fg(super::util::AZURE))
+            .title(ratatui::text::Span::styled(
+                " New Session ",
+                ratatui::style::Style::default().fg(super::util::AZURE).add_modifier(ratatui::style::Modifier::BOLD),
+            ))
+            .title(ratatui::text::Line::from(ratatui::text::Span::styled(
+                " Enter:create  Esc:cancel ",
+                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+            )).alignment(ratatui::layout::Alignment::Right)),
+        );
+    f.render_widget(widget, dialog_area);
+
+    let cursor_x = dialog_area.x + 1 + app.new_session_name_cursor as u16;
+    let cursor_y = dialog_area.y + 1;
+    if cursor_x < dialog_area.right() {
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 }
 

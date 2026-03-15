@@ -10,6 +10,11 @@ use crate::app::App;
 /// is called. This handler only receives keys that weren't mapped — meaning only
 /// session list overlay, session find, and rebase mode input reach here.
 pub fn handle_session_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    // New session name dialog: text input → Enter creates, Esc cancels
+    if app.new_session_dialog_active {
+        return handle_new_session_dialog_input(key, app);
+    }
+
     // Session find bar: typing search text bypasses keybinding system
     if app.session_find_active {
         return handle_session_find_input(key, app);
@@ -177,7 +182,7 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         return handle_session_filter_input(key, app);
     }
 
-    // Count session files for current worktree only (matches draw_session_list scope)
+    // Count sessions for current worktree (from store-backed session_files cache)
     let total_rows: usize = app.current_worktree()
         .and_then(|s| app.session_files.get(&s.branch_name))
         .map(|f| f.len())
@@ -392,15 +397,59 @@ fn handle_session_rename_input(key: event::KeyEvent, app: &mut App) -> Result<()
     Ok(())
 }
 
-/// Load the session file at session_list_selected (scoped to current worktree).
-/// Uses two-phase deferred draw: sets loading indicator → draw renders popup →
-/// actual session parse runs on next frame via DeferredAction::LoadSession.
+/// Handle text input for the new session name dialog.
+fn handle_new_session_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    use event::KeyCode;
+    match key.code {
+        KeyCode::Char(c) => {
+            app.new_session_name_input.insert(
+                app.new_session_name_input.char_indices()
+                    .nth(app.new_session_name_cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(app.new_session_name_input.len()),
+                c,
+            );
+            app.new_session_name_cursor += 1;
+        }
+        KeyCode::Backspace => {
+            if app.new_session_name_cursor > 0 {
+                let byte_pos = app.new_session_name_input.char_indices()
+                    .nth(app.new_session_name_cursor - 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                app.new_session_name_input.remove(byte_pos);
+                app.new_session_name_cursor -= 1;
+            }
+        }
+        KeyCode::Left => {
+            app.new_session_name_cursor = app.new_session_name_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            let max = app.new_session_name_input.chars().count();
+            if app.new_session_name_cursor < max {
+                app.new_session_name_cursor += 1;
+            }
+        }
+        KeyCode::Enter => {
+            app.confirm_new_session();
+        }
+        KeyCode::Esc => {
+            app.cancel_new_session_dialog();
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Load the session at session_list_selected (scoped to current worktree).
+/// Uses deferred draw: sets loading indicator → draw renders popup →
+/// actual session load runs on next frame via DeferredAction::LoadSession.
 fn select_session_at_row(app: &mut App) {
     let Some(session) = app.current_worktree() else { return };
     let branch = session.branch_name.clone();
     let file_count = app.session_files.get(&branch).map(|f| f.len()).unwrap_or(0);
     if app.session_list_selected < file_count {
-        app.loading_indicator = Some("Loading session…".into());
+        app.loading_indicator = Some("Loading session\u{2026}".into());
         app.deferred_action = Some(crate::app::DeferredAction::LoadSession {
             branch,
             idx: app.session_list_selected,
@@ -408,9 +457,8 @@ fn select_session_at_row(app: &mut App) {
     }
 }
 
-/// Load the session from the selected content search result (current worktree only).
-/// Same deferred pattern as select_session_at_row — resolves session ID → file index,
-/// then defers the actual parse via DeferredAction::LoadSession.
+/// Load the session from the selected content search result.
+/// Resolves session ID from search results → finds index in session_files cache.
 fn select_content_search_result(app: &mut App) {
     let sel = app.session_list_selected;
     if sel >= app.session_search_results.len() { return; }
@@ -420,7 +468,7 @@ fn select_content_search_result(app: &mut App) {
     let branch = session.branch_name.clone();
     if let Some(files) = app.session_files.get(&branch) {
         if let Some(file_idx) = files.iter().position(|(sid, _, _)| sid == session_id) {
-            app.loading_indicator = Some("Loading session…".into());
+            app.loading_indicator = Some("Loading session\u{2026}".into());
             app.deferred_action = Some(crate::app::DeferredAction::LoadSession {
                 branch,
                 idx: file_idx,
@@ -429,8 +477,8 @@ fn select_content_search_result(app: &mut App) {
     }
 }
 
-/// Search current worktree's session JSONL files for the query text.
-/// Inline (not background thread) — JSONL files are small. Caps at 100 results.
+/// Search current worktree's sessions in the SQLite store for the query text.
+/// Caps at 100 results.
 fn run_cross_session_search(app: &mut App) {
     app.session_search_results.clear();
     let query = app.session_filter.to_lowercase();
@@ -440,30 +488,14 @@ fn run_cross_session_search(app: &mut App) {
         Some(s) => s.branch_name.clone(),
         None => return,
     };
-    let files = match app.session_files.get(&branch) {
-        Some(f) => f,
-        None => return,
-    };
-    let mut result_idx = 0usize;
-    for (session_id, path, _) in files.iter() {
-        // Skip files > 5MB for safety
-        if let Ok(meta) = std::fs::metadata(path) {
-            if meta.len() > 5_000_000 { continue; }
-        }
-        // Read file and search line-by-line
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            for line in contents.lines() {
-                let lower = line.to_lowercase();
-                if lower.contains(&query) {
-                    let preview = extract_search_preview(line, &query);
-                    app.session_search_results.push((result_idx, session_id.clone(), preview));
-                    result_idx += 1;
-                    if app.session_search_results.len() >= 100 { return; }
-                    // One match per session file is enough for listing
-                    break;
-                }
-            }
-        }
+
+    let results = app.session_store.as_ref()
+        .and_then(|store| store.search_events(Some(&branch), &query, 100).ok())
+        .unwrap_or_default();
+
+    for (idx, (session_id, data)) in results.into_iter().enumerate() {
+        let preview = extract_search_preview(&data, &query);
+        app.session_search_results.push((idx, session_id.to_string(), preview));
     }
 }
 

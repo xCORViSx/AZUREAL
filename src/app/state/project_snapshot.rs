@@ -34,8 +34,6 @@ pub struct ProjectSnapshot {
     pub current_session_id: Option<i64>,
 
     // ── Session list state ──
-    pub session_files: HashMap<String, Vec<(String, PathBuf, String)>>,
-    pub session_selected_file_idx: HashMap<String, usize>,
     pub unread_sessions: HashSet<String>,
     pub unread_session_ids: HashSet<String>,
 

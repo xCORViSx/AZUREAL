@@ -190,9 +190,19 @@ fn draw_name_list(
             }
 
             let msg_count = app.session_msg_counts.get(session_id).map(|&(c, _)| c).unwrap_or(0);
+            let completion = app.session_completion.get(session_id);
             let msg_badge = format!("[{} msgs]", msg_count);
-            let suffix = format!(" {} {} ", time_str, msg_badge);
-            // Row: " ● session_name    mtime [N msgs]"
+
+            // Build duration badge for completed sessions (e.g. "3.5s")
+            let duration_badge = completion.map(|&(_, ms, _)| {
+                let secs = ms as f64 / 1000.0;
+                if secs >= 60.0 { format!("{:.0}m", secs / 60.0) } else { format!("{:.0}s", secs) }
+            });
+            let suffix = match &duration_badge {
+                Some(d) => format!(" {} {} {} ", time_str, d, msg_badge),
+                None => format!(" {} {} ", time_str, msg_badge),
+            };
+            // Row: " ● session_name    mtime 3s [N msgs]"
             let name_space = inner_width.saturating_sub(3 + suffix.chars().count());
             let truncated_name = if name_display.chars().count() > name_space {
                 let trunc: String = name_display.chars().take(name_space.saturating_sub(1)).collect();
@@ -214,19 +224,34 @@ fn draw_name_list(
                 Style::default()
             };
 
-            // Green dot for running sessions, dim circle for idle
+            // Status indicator: running > completed/failed > idle
             let running = app.is_claude_session_running(session_id);
-            let (dot, dot_color) = if running { ("●", Color::Green) } else { ("○", Color::DarkGray) };
+            let (dot, dot_color) = if running {
+                ("\u{25cf}", Color::Green)        // ● green = running
+            } else if let Some(&(success, _, _)) = completion {
+                if success { ("\u{2713}", Color::Green) } else { ("\u{2717}", Color::Red) } // ✓ green / ✗ red
+            } else {
+                ("\u{25cb}", Color::DarkGray)     // ○ dim = idle/unknown
+            };
 
-            rows.push(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(" ", bg_style),
                 Span::styled(dot, if is_selected { bg_style } else { Style::default().fg(dot_color) }),
                 Span::styled(" ", bg_style),
                 Span::styled(truncated_name, name_style),
                 Span::styled(" ".repeat(pad), bg_style),
                 Span::styled(format!(" {} ", time_str), if is_selected { bg_style } else { Style::default().fg(Color::DarkGray) }),
-                Span::styled(msg_badge, if is_selected { bg_style } else { Style::default().fg(AZURE) }),
-            ]));
+            ];
+            if let Some(d) = &duration_badge {
+                let dur_color = if completion.map(|c| c.0).unwrap_or(true) { Color::Green } else { Color::Red };
+                spans.push(Span::styled(
+                    format!("{} ", d),
+                    if is_selected { bg_style } else { Style::default().fg(dur_color) },
+                ));
+            }
+            spans.push(Span::styled(msg_badge, if is_selected { bg_style } else { Style::default().fg(AZURE) }));
+
+            rows.push(Line::from(spans));
         }
     }
 

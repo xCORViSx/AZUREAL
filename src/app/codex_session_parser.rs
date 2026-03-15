@@ -14,6 +14,7 @@ use crate::app::session_parser::ParsedSession;
 use crate::events::DisplayEvent;
 
 /// Parse a Codex session JSONL file into display events (full parse from byte 0)
+#[allow(dead_code)]
 pub fn parse_codex_session_file(session_file: &Path) -> ParsedSession {
     parse_from(session_file, 0, None)
 }

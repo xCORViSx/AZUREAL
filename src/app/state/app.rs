@@ -98,6 +98,8 @@ pub struct App {
     pub pending_session_names: Vec<(String, String)>,
     /// SQLite session store — opened when a project is loaded
     pub session_store: Option<crate::app::session_store::SessionStore>,
+    /// Which worktree path the current session_store belongs to (for reopen on switch)
+    pub session_store_path: Option<PathBuf>,
     /// PID string → (S-number, worktree_path) of the session this agent's results
     /// should write to. Set at spawn time, consumed at exit time.
     /// The worktree_path is the CWD used when spawning Claude (needed to locate
@@ -404,6 +406,8 @@ pub struct App {
     pub model_context_window: Option<u64>,
     /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
     pub token_badge_cache: Option<(String, ratatui::style::Color)>,
+    /// Cached store char count (avoids store I/O during live badge updates)
+    pub store_chars_cached: usize,
     /// True when computed context usage ≥ 90% (triggers compaction inactivity watcher)
     pub context_pct_high: bool,
     /// Last time display_events were extended (new events parsed from session or stream)
@@ -498,6 +502,8 @@ pub struct App {
     pub session_list_scroll: usize,
     /// Cached message counts per session_id → (count, file_size) — only recomputed when size changes
     pub session_msg_counts: HashMap<String, (usize, u64)>,
+    /// Cached completion status per session_id → (success, duration_ms, cost_usd) — display-only
+    pub session_completion: HashMap<String, (bool, u64, f64)>,
 
     // ── Session find (find text in current session's rendered output) ──
     /// Whether the search bar is active (accepting keystrokes)
@@ -524,6 +530,14 @@ pub struct App {
     pub session_rename_cursor: usize,
     /// Session ID being renamed (resolved when 'r' is pressed)
     pub session_rename_id: Option<String>,
+
+    // ── New session name dialog (shown when pressing 'a') ──
+    /// Whether the new session name dialog is active
+    pub new_session_dialog_active: bool,
+    /// Text buffer for the new session name input
+    pub new_session_name_input: String,
+    /// Cursor position within the name input
+    pub new_session_name_cursor: usize,
 
     // ── Cross-session content search (double `//`) ──
     /// True when in "//" content search mode vs "/" name filter mode
@@ -579,6 +593,7 @@ impl App {
             slot_to_project: HashMap::new(),
             pending_session_names: Vec::new(),
             session_store: None,
+            session_store_path: None,
             pid_session_target: HashMap::new(),
             current_session_id: None,
             compaction_needed: None,
@@ -722,6 +737,7 @@ impl App {
             session_tokens: None,
             model_context_window: None,
             token_badge_cache: None,
+            store_chars_cached: 0,
             context_pct_high: false,
             last_session_event_time: std::time::Instant::now(),
             compaction_banner_injected: false,
@@ -762,6 +778,7 @@ impl App {
             session_list_selected: 0,
             session_list_scroll: 0,
             session_msg_counts: HashMap::new(),
+            session_completion: HashMap::new(),
             session_find_active: false,
             session_find: String::new(),
             session_find_matches: Vec::new(),
@@ -772,6 +789,9 @@ impl App {
             session_rename_input: String::new(),
             session_rename_cursor: 0,
             session_rename_id: None,
+            new_session_dialog_active: false,
+            new_session_name_input: String::new(),
+            new_session_name_cursor: 0,
             session_content_search: false,
             session_search_results: Vec::new(),
             selected_model: Some("opus".to_string()),

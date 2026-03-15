@@ -8,6 +8,43 @@ use crate::models::Worktree;
 use super::App;
 
 impl App {
+    /// Get the current worktree's path (used for per-worktree session store).
+    fn current_worktree_path(&self) -> Option<std::path::PathBuf> {
+        self.current_worktree()
+            .and_then(|wt| wt.worktree_path.clone())
+    }
+
+    /// Open the session store (.azs file) for the current worktree, creating it
+    /// if it doesn't exist. Each worktree has its own store so sessions are
+    /// deleted with the worktree.
+    pub fn ensure_session_store(&mut self) {
+        let Some(wt_path) = self.current_worktree_path() else { return; };
+        // Reopen if we switched worktrees
+        if let Some(ref store_path) = self.session_store_path {
+            if *store_path == wt_path && self.session_store.is_some() { return; }
+        }
+        self.session_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
+        self.session_store_path = Some(wt_path);
+    }
+
+    /// Open the session store only if the .azs file already exists for the
+    /// current worktree. Avoids creating the file on startup.
+    pub fn try_open_session_store(&mut self) {
+        let Some(wt_path) = self.current_worktree_path() else { return; };
+        // Reopen if we switched worktrees
+        if let Some(ref store_path) = self.session_store_path {
+            if *store_path == wt_path && self.session_store.is_some() { return; }
+        }
+        let db_path = crate::app::session_store::SessionStore::db_path(&wt_path);
+        if db_path.exists() {
+            self.session_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
+            self.session_store_path = Some(wt_path);
+        } else {
+            self.session_store = None;
+            self.session_store_path = None;
+        }
+    }
+
     pub fn select_next_session(&mut self) {
         if self.worktrees.is_empty() { return; }
         let next = match self.selected_worktree {
@@ -206,51 +243,89 @@ impl App {
         }
     }
 
-    /// Start a fresh Claude session on the current worktree (clears state, enters prompt mode)
+    /// Open the new session name dialog. Computes the default S-number placeholder.
     pub fn start_new_session(&mut self) {
         if let Some(wt) = self.current_worktree().cloned() {
             if wt.archived {
                 let key = if cfg!(target_os = "macos") { "⌘a" } else { "Ctrl+Shift+A" };
                 self.set_status(&format!("Worktree is archived — unarchive first ({key})"));
-            } else if wt.worktree_path.is_some() {
-                let branch = wt.branch_name.clone();
-                // Clear session ID from both the branch-key fallback AND the
-                // active slot's key so get_claude_session_id() returns None
-                // and the next prompt starts a fresh conversation.
-                if let Some(slot) = self.active_slot.get(&branch) {
-                    let slot = slot.clone();
-                    self.agent_session_ids.remove(&slot);
-                }
-                self.agent_session_ids.remove(&branch);
-                self.display_events.clear();
-                self.session_lines.clear();
-                self.session_buffer.clear();
-                self.session_scroll = usize::MAX;
-                self.session_file_parse_offset = 0;
-                self.rendered_events_count = 0;
-                self.rendered_content_line_count = 0;
-                self.rendered_events_start = 0;
-                self.event_parser = crate::events::EventParser::new();
-                self.selected_event = None;
-                self.current_todos.clear();
-                self.subagent_todos.clear();
-                self.session_tokens = None;
-                self.token_badge_cache = None;
-                self.invalidate_render_cache();
+                return;
+            }
+            if wt.worktree_path.is_none() { return; }
 
-                // Create a new session in the SQLite store
-                if let Some(ref store) = self.session_store {
-                    match store.create_session(&branch) {
-                        Ok(id) => self.current_session_id = Some(id),
-                        Err(_) => self.current_session_id = None,
+            // Compute default name: S{next_id}
+            self.ensure_session_store();
+            let next = self.session_store.as_ref()
+                .map(|s| s.next_s_number())
+                .unwrap_or(1);
+            let default_name = format!("S{}", next);
+
+            self.new_session_name_input = default_name;
+            self.new_session_name_cursor = self.new_session_name_input.chars().count();
+            self.new_session_dialog_active = true;
+        }
+    }
+
+    /// Confirm the new session dialog — creates the session in the store and enters prompt mode.
+    pub fn confirm_new_session(&mut self) {
+        let name = self.new_session_name_input.trim().to_string();
+        self.new_session_dialog_active = false;
+        self.new_session_name_input.clear();
+        self.new_session_name_cursor = 0;
+
+        if name.is_empty() { return; }
+
+        let Some(wt) = self.current_worktree().cloned() else { return };
+        let branch = wt.branch_name.clone();
+
+        // Clear active session state for fresh start
+        if let Some(slot) = self.active_slot.get(&branch) {
+            let slot = slot.clone();
+            self.agent_session_ids.remove(&slot);
+        }
+        self.agent_session_ids.remove(&branch);
+        self.display_events.clear();
+        self.session_lines.clear();
+        self.session_buffer.clear();
+        self.session_scroll = usize::MAX;
+        self.rendered_events_count = 0;
+        self.rendered_content_line_count = 0;
+        self.rendered_events_start = 0;
+        self.event_parser = crate::events::EventParser::new();
+        self.selected_event = None;
+        self.current_todos.clear();
+        self.subagent_todos.clear();
+        self.session_tokens = None;
+        self.token_badge_cache = None;
+        self.invalidate_render_cache();
+
+        // Create the session in the SQLite store with the chosen name
+        self.ensure_session_store();
+        if let Some(ref store) = self.session_store {
+            match store.create_session(&branch) {
+                Ok(id) => {
+                    // Set custom name if it differs from the default S{id}
+                    let default = format!("S{}", id);
+                    if name != default {
+                        let _ = store.rename_session(id, &name);
                     }
+                    self.current_session_id = Some(id);
                 }
-
-                self.focus = Focus::Input;
-                self.prompt_mode = true;
-                self.set_status("Add session — type your prompt and press Enter");
+                Err(_) => self.current_session_id = None,
             }
         }
+
+        self.load_session_output();
+        self.focus = Focus::Input;
+        self.prompt_mode = true;
+        self.set_status("New session — type your prompt and press Enter");
+    }
+
+    /// Cancel the new session dialog.
+    pub fn cancel_new_session_dialog(&mut self) {
+        self.new_session_dialog_active = false;
+        self.new_session_name_input.clear();
+        self.new_session_name_cursor = 0;
     }
 
     /// Jump to last session
@@ -848,12 +923,22 @@ mod tests {
     // ── start_new_session ──
 
     #[test]
-    fn test_start_new_session_enters_prompt_mode() {
+    fn test_start_new_session_opens_name_dialog() {
         let mut app = app_with_worktrees(1);
         app.start_new_session();
+        assert!(app.new_session_dialog_active);
+        assert!(app.new_session_name_input.starts_with("S"));
+    }
+
+    #[test]
+    fn test_confirm_new_session_enters_prompt_mode() {
+        let mut app = app_with_worktrees(1);
+        app.new_session_name_input = "S1".to_string();
+        app.new_session_dialog_active = true;
+        app.confirm_new_session();
+        assert!(!app.new_session_dialog_active);
         assert!(app.prompt_mode);
         assert_eq!(app.focus, Focus::Input);
-        assert_eq!(app.session_scroll, usize::MAX);
     }
 
     #[test]

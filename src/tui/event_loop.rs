@@ -243,6 +243,7 @@ pub async fn run_app(
                     }
                     other => {
                         handle_claude_event(&session_id, other, app, &claude_process)?;
+                        app.update_token_badge_live();
                         needs_redraw = true;
                     }
                 }

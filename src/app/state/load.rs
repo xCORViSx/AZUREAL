@@ -1,6 +1,6 @@
 //! Session loading and discovery
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::app::types::WorktreeRefreshResult;
@@ -17,7 +17,7 @@ pub fn compute_worktree_refresh(
     project_path: PathBuf,
     main_branch: String,
     worktrees_dir: PathBuf,
-    backend: Backend,
+    _backend: Backend,
 ) -> anyhow::Result<WorktreeRefreshResult> {
     let worktrees = Git::list_worktrees_detailed(&project_path)?;
 
@@ -100,26 +100,18 @@ pub fn compute_worktree_refresh(
 
     let mut result_worktrees = Vec::new();
     let mut result_main: Option<Worktree> = None;
-    let mut agent_session_ids: HashMap<String, String> = HashMap::new();
-    let mut session_files: HashMap<String, Vec<(String, PathBuf, String)>> = HashMap::new();
     let mut active_branches: HashSet<String> = HashSet::new();
 
     // Main worktree
     for wt in &worktrees {
         if wt.is_main {
             let branch_name = wt.branch.clone().unwrap_or_else(|| main_branch.clone());
-            let claude_id = crate::config::find_latest_session(backend, &wt.path);
-            if let Some(ref id) = claude_id {
-                agent_session_ids.insert(branch_name.clone(), id.clone());
-            }
             result_main = Some(Worktree {
                 branch_name: branch_name.clone(),
                 worktree_path: Some(wt.path.clone()),
-                claude_session_id: claude_id,
+                claude_session_id: None,
                 archived: false,
             });
-            let files = crate::config::list_sessions(backend, &wt.path);
-            session_files.insert(branch_name.clone(), files);
             active_branches.insert(branch_name);
         }
     }
@@ -128,18 +120,12 @@ pub fn compute_worktree_refresh(
     for wt in &worktrees {
         if !wt.is_main && wt.path.starts_with(&worktrees_dir) {
             let branch_name = wt.branch.clone().unwrap_or_default();
-            let claude_id = crate::config::find_latest_session(backend, &wt.path);
-            if let Some(ref id) = claude_id {
-                agent_session_ids.insert(branch_name.clone(), id.clone());
-            }
             result_worktrees.push(Worktree {
                 branch_name: branch_name.clone(),
                 worktree_path: Some(wt.path.clone()),
-                claude_session_id: claude_id,
+                claude_session_id: None,
                 archived: false,
             });
-            let files = crate::config::list_sessions(backend, &wt.path);
-            session_files.insert(branch_name.clone(), files);
             active_branches.insert(branch_name);
         }
     }
@@ -159,8 +145,6 @@ pub fn compute_worktree_refresh(
     Ok(WorktreeRefreshResult {
         main_worktree: result_main,
         worktrees: result_worktrees,
-        agent_session_ids,
-        session_files,
     })
 }
 
@@ -191,8 +175,8 @@ impl App {
         let main_branch = Git::get_main_branch(&repo_root)?;
         self.project = Some(Project::from_path(repo_root.clone(), main_branch));
 
-        // Open the SQLite session store (.azs file)
-        self.session_store = crate::app::session_store::SessionStore::open(&repo_root).ok();
+        // Session store is opened lazily on first use (ensure_session_store)
+        // to avoid creating the .azs file for projects that haven't used sessions yet.
 
         // Load filetree hidden dirs from project azufig (persisted Options overlay state)
         let az = crate::azufig::load_project_azufig(&repo_root);
@@ -235,31 +219,10 @@ impl App {
     }
 
     /// Apply pre-computed worktree data to App state.
-    /// Handles selection preservation and session file index fixup.
+    /// Handles selection preservation.
     pub fn apply_worktree_result(&mut self, result: WorktreeRefreshResult) {
-        // Apply claude session IDs
-        for (branch, id) in result.agent_session_ids {
-            self.agent_session_ids.insert(branch, id);
-        }
-
         // Apply main worktree
         self.main_worktree = result.main_worktree;
-
-        // Apply session files with UUID-based selection preservation
-        for (branch, files) in &result.session_files {
-            if let Some(&old_idx) = self.session_selected_file_idx.get(branch) {
-                if let Some(old_files) = self.session_files.get(branch) {
-                    if let Some((old_uuid, _, _)) = old_files.get(old_idx) {
-                        let old_uuid = old_uuid.clone();
-                        if let Some(new_idx) = files.iter().position(|(id, _, _)| *id == old_uuid) {
-                            self.session_selected_file_idx.insert(branch.clone(), new_idx);
-                        }
-                    }
-                }
-            }
-            self.session_selected_file_idx.entry(branch.clone()).or_insert(0);
-        }
-        self.session_files = result.session_files;
 
         // Preserve current selection by branch name
         let prev_branch = self.selected_worktree
@@ -283,6 +246,9 @@ impl App {
     }
 
     pub fn load_session_output(&mut self) {
+        // Open session store if the .azs file exists (don't create it)
+        self.try_open_session_store();
+
         // Restore terminal for new session (save was done before selection changed)
         self.restore_session_terminal();
 
@@ -335,129 +301,99 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
-            let session_id_from_wt = session.claude_session_id.clone();
 
-            // Try to get Claude session ID: check selected file first, then cached, then auto-discover
-            let mut claude_session_id = None;
+            // Determine store session ID:
+            // 1. From session list selection (numeric string from session_files cache)
+            // 2. From current_session_id (set by start_new_session or prior load)
+            // 3. Auto-discover latest session from store for this branch
+            let store_session_id = self.session_selected_file_idx.get(&branch_name)
+                .and_then(|idx| self.session_files.get(&branch_name)
+                    .and_then(|f| f.get(*idx))
+                    .and_then(|(id, _, _)| id.parse::<i64>().ok()))
+                .or(self.current_session_id)
+                .or_else(|| self.session_store.as_ref()
+                    .and_then(|store| store.list_sessions(Some(&branch_name)).ok())
+                    .and_then(|sessions| sessions.last().map(|s| s.id)));
 
-            // First check if user selected a specific session file from the dropdown
-            if let Some(idx) = self.session_selected_file_idx.get(&branch_name) {
-                if let Some(files) = self.session_files.get(&branch_name) {
-                    if let Some((id, _, _)) = files.get(*idx) {
-                        claude_session_id = Some(id.clone());
-                    }
-                }
-            }
-
-            // Fall back to stored session ID or cached ID
-            if claude_session_id.is_none() {
-                claude_session_id = session_id_from_wt
-                    .or_else(|| self.agent_session_ids.get(&branch_name).cloned());
-            }
-
-            // Auto-discover Claude session ID if not set and we have a worktree
-            if claude_session_id.is_none() {
-                if let Some(ref wt_path) = worktree_path {
-                    if let Some(discovered_id) = crate::config::find_latest_session(self.backend, wt_path) {
-                        self.agent_session_ids.insert(branch_name.clone(), discovered_id.clone());
-                        claude_session_id = Some(discovered_id);
-                    }
-                }
-            }
-
-            // Clear unread for the specific session being viewed, but only when the
-            // session pane is visible (not in git mode where commits replace it).
-            // Recompute branch-level unread: remove branch only if no more unread UUIDs
-            // belong to any of its sessions.
+            // Clear unread for the viewed session
             if self.git_actions_panel.is_none() {
-                if let Some(ref viewed_id) = claude_session_id {
-                    self.unread_session_ids.remove(viewed_id);
+                if let Some(sid) = store_session_id {
+                    self.unread_session_ids.remove(&sid.to_string());
                 }
-                // Check if any remaining unread UUIDs belong to this branch's sessions
-                let still_unread = self.session_files.get(&branch_name)
-                    .map(|files| files.iter().any(|(uuid, _, _)| self.unread_session_ids.contains(uuid)))
-                    .unwrap_or(false);
-                if !still_unread {
+                if self.unread_session_ids.is_empty() {
                     self.unread_sessions.remove(&branch_name);
                 }
             }
 
-            // Try loading session from SQLite store (numeric IDs) or legacy JSONL path
-            if let Some(ref claude_id) = claude_session_id {
-                let loaded_from_store = if let Ok(store_id) = claude_id.parse::<i64>() {
-                    // Numeric ID → load from SQLite store
-                    if let Some(ref store) = self.session_store {
-                        if let Ok(events) = store.load_events(store_id) {
-                            self.current_session_id = Some(store_id);
-                            self.display_events = events;
-                            self.invalidate_render_cache();
+            // Check if there's an active Claude process on this branch
+            let is_live = self.active_slot.get(&branch_name)
+                .map(|slot| self.running_sessions.contains(slot))
+                .unwrap_or(false);
 
-                            // Clear pending message if it appears in loaded events
-                            if let Some(ref pending) = self.pending_user_message {
-                                for event in self.display_events.iter().rev() {
-                                    if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
-                                        if content == pending {
-                                            self.pending_user_message = None;
+            if is_live {
+                // Live session: load from JSONL for real-time display
+                // (store doesn't have events yet — they're ingested on exit)
+                if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
+                    if let Some(uuid) = self.agent_session_ids.get(&slot) {
+                        if let Some(ref wt_path) = worktree_path {
+                            if let Some(jsonl_path) = crate::config::session_file(self.backend, wt_path, uuid) {
+                                if jsonl_path.exists() {
+                                    self.session_file_path = Some(jsonl_path.clone());
+                                    let source_size = std::fs::metadata(&jsonl_path)
+                                        .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
+                                        .unwrap_or(0);
+                                    self.session_file_size = source_size;
+
+                                    let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+                                    self.display_events = parsed.events;
+                                    self.pending_tool_calls = parsed.pending_tools;
+                                    self.failed_tool_calls = parsed.failed_tools;
+                                    self.session_tokens = parsed.session_tokens;
+                                    self.model_context_window = parsed.context_window;
+                                    self.update_token_badge();
+                                    self.extract_skill_tools_from_events();
+                                    self.session_file_parse_offset = parsed.end_offset;
+                                    self.awaiting_plan_approval = parsed.awaiting_plan_approval;
+
+                                    if let Some(ref pending) = self.pending_user_message {
+                                        for event in self.display_events.iter().rev() {
+                                            if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                                if content == pending {
+                                                    self.pending_user_message = None;
+                                                }
+                                                break;
+                                            }
                                         }
-                                        break;
                                     }
+                                    self.invalidate_render_cache();
                                 }
                             }
-                            true
-                        } else { false }
-                    } else { false }
-                } else { false };
+                        }
+                    }
+                }
+                // Set current_session_id from the store target if available
+                if let Some(slot) = self.active_slot.get(&branch_name) {
+                    if let Some((sid, _)) = self.pid_session_target.get(slot) {
+                        self.current_session_id = Some(*sid);
+                    }
+                }
+            } else if let Some(sid) = store_session_id {
+                // Historic session: load from SQLite store
+                self.current_session_id = Some(sid);
+                if let Some(ref store) = self.session_store {
+                    if let Ok(events) = store.load_events(sid) {
+                        self.display_events = events;
+                        self.invalidate_render_cache();
 
-                // Legacy JSONL path for UUID-based session IDs
-                if !loaded_from_store {
-                    if let Some(ref wt_path) = worktree_path {
-                        let session_file_opt = crate::config::session_file(self.backend, wt_path, claude_id);
-                        let parsed = if let Some(ref session_file) = session_file_opt {
-                            self.session_file_path = Some(session_file.clone());
-                            let source_size = std::fs::metadata(session_file)
-                                .map(|m| { self.session_file_modified = m.modified().ok(); m.len() })
-                                .unwrap_or(0);
-                            self.session_file_size = source_size;
-
-                            let parsed = match self.backend {
-                                crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file(session_file),
-                                crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file(session_file),
-                            };
-                            Some(parsed)
-                        } else {
-                            None
-                        };
-
-                        if let Some(parsed) = parsed {
-                            self.display_events = parsed.events;
-                            self.pending_tool_calls = parsed.pending_tools;
-                            self.failed_tool_calls = parsed.failed_tools;
-                            self.parse_total_lines = parsed.total_lines;
-                            self.parse_errors = parsed.parse_errors;
-                            self.assistant_total = parsed.assistant_total;
-                            self.assistant_no_message = parsed.assistant_no_message;
-                            self.assistant_no_content_arr = parsed.assistant_no_content_arr;
-                            self.assistant_text_blocks = parsed.assistant_text_blocks;
-                            self.awaiting_plan_approval = parsed.awaiting_plan_approval;
-                            self.session_tokens = parsed.session_tokens;
-                            self.model_context_window = parsed.context_window;
-                            self.update_token_badge();
-                            self.extract_skill_tools_from_events();
-                            self.session_file_parse_offset = parsed.end_offset;
-
-                            // Clear pending message once it appears in the parsed events
-                            if let Some(ref pending) = self.pending_user_message {
-                                for event in self.display_events.iter().rev() {
-                                    if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
-                                        if content == pending {
-                                            self.pending_user_message = None;
-                                        }
-                                        break;
+                        if let Some(ref pending) = self.pending_user_message {
+                            for event in self.display_events.iter().rev() {
+                                if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                    if content == pending {
+                                        self.pending_user_message = None;
                                     }
+                                    break;
                                 }
                             }
-
-                            self.invalidate_render_cache();
                         }
                     }
                 }
@@ -497,11 +433,14 @@ impl App {
         self.update_terminal_title();
     }
 
-    /// Get the Claude session UUID of the currently viewed session file for a branch
+    /// Get the session ID string of the currently viewed session for a branch.
+    /// Returns the store ID as a string (from session_files cache) or falls
+    /// back to current_session_id.
     pub fn viewed_session_id(&self, branch: &str) -> Option<String> {
         self.session_selected_file_idx.get(branch)
             .and_then(|idx| self.session_files.get(branch).and_then(|f| f.get(*idx)))
             .map(|(id, _, _)| id.clone())
+            .or_else(|| self.current_session_id.map(|id| id.to_string()))
     }
 
     /// Tell the file watcher thread to watch the current session file and
@@ -522,10 +461,9 @@ impl App {
     }
 
     /// Cache the session display name for the title bar.
-    /// Reads session_names TOML once here so draw_title_bar() is zero I/O.
+    /// Reads session names from store so draw_title_bar() is zero I/O.
     /// During RCR, the title is locked to "[RCR] <name>" and won't be overwritten.
     pub fn update_title_session_name(&mut self) {
-        // RCR mode locks the title — don't let normal session logic overwrite it
         if self.rcr_session.is_some() { return; }
         let Some(session) = self.current_worktree() else {
             self.title_session_name.clear();
@@ -533,13 +471,7 @@ impl App {
         };
         let branch = session.branch_name.clone();
         let names = self.load_all_session_names();
-        // Resolve the active claude session ID for this worktree
-        let session_id = self.session_selected_file_idx.get(&branch)
-            .and_then(|idx| self.session_files.get(&branch).and_then(|f| f.get(*idx)))
-            .map(|(id, _, _)| id.clone())
-            .or_else(|| self.worktrees.get(self.selected_worktree?)
-                .and_then(|s| s.claude_session_id.clone()))
-            .or_else(|| self.agent_session_ids.get(&branch).cloned());
+        let session_id = self.viewed_session_id(&branch);
         self.title_session_name = match session_id {
             Some(id) => names.get(&id).cloned().unwrap_or_else(|| format_uuid_short(&id)),
             None => String::new(),

@@ -583,8 +583,6 @@ impl App {
                 pending_session_names: std::mem::take(&mut self.pending_session_names),
                 pid_session_target: std::mem::take(&mut self.pid_session_target),
                 current_session_id: self.current_session_id.take(),
-                session_files: std::mem::take(&mut self.session_files),
-                session_selected_file_idx: std::mem::take(&mut self.session_selected_file_idx),
                 unread_sessions: std::mem::take(&mut self.unread_sessions),
                 unread_session_ids: std::mem::take(&mut self.unread_session_ids),
                 file_tree_entries: std::mem::take(&mut self.file_tree_entries),
@@ -645,8 +643,6 @@ impl App {
             self.pending_session_names = snapshot.pending_session_names;
             self.pid_session_target = snapshot.pid_session_target;
             self.current_session_id = snapshot.current_session_id;
-            self.session_files = snapshot.session_files;
-            self.session_selected_file_idx = snapshot.session_selected_file_idx;
             self.unread_sessions = snapshot.unread_sessions;
             self.unread_session_ids = snapshot.unread_session_ids;
             self.file_tree_entries = snapshot.file_tree_entries;
@@ -676,8 +672,9 @@ impl App {
             self.branch_slots = branch_slots;
             self.active_slot = active_slot;
 
-            // Reopen session store for restored project
-            self.session_store = crate::app::session_store::SessionStore::open(&path).ok();
+            // Session store reopened lazily (try_open if .azs exists)
+            self.session_store = None;
+            self.session_store_path = None;
 
             // Rebuild session display from file (picks up any output from background Claude)
             self.load_session_output();
@@ -690,8 +687,7 @@ impl App {
             let az = crate::azufig::load_project_azufig(&path);
             self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
-            // Open session store for fresh project
-            self.session_store = crate::app::session_store::SessionStore::open(&path).ok();
+            // Session store opened lazily via ensure_session_store()
 
             Git::prune_remote_refs(&path);
             let _ = self.load_worktrees();

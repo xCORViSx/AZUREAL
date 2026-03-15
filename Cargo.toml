@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["full"] }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
+zstd = "0.13"
 
 # PTY for process management
 portable-pty = "0.9"

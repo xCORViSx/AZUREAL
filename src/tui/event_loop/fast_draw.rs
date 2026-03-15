@@ -157,7 +157,22 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
         let _ = queue!(stdout, cursor::MoveTo(left, row));
         let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
 
+        // Handle centered lines: compute content width and add left padding
+        let line_align = line.alignment.unwrap_or(ratatui::layout::Alignment::Left);
+        let content_width: usize = line.spans.iter()
+            .map(|s| s.content.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>())
+            .sum();
+        let align_pad = match line_align {
+            ratatui::layout::Alignment::Center => inner_width.saturating_sub(content_width) / 2,
+            ratatui::layout::Alignment::Right => inner_width.saturating_sub(content_width),
+            _ => 0,
+        };
+
         let mut col = 0usize;
+        if align_pad > 0 {
+            let _ = queue!(stdout, style::Print(" ".repeat(align_pad)));
+            col += align_pad;
+        }
         for span in &line.spans {
             if col >= inner_width { break; }
 

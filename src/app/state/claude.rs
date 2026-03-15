@@ -200,28 +200,11 @@ impl App {
             }
         }
 
-        // Post-exit session file refresh.
-        // When using the session store (no --resume), the JSONL only contains the
-        // current turn. A full re-parse (offset=0) would replace display_events
-        // with just that turn, wiping the multi-turn conversation the user sees.
-        // Instead, do an incremental parse to finalize pending tool calls etc.
-        // without clobbering previous turns' display events.
-        //
-        // For non-store sessions (legacy --resume flow), the JSONL has all turns,
-        // so a full re-parse is safe and gives the canonical post-streaming view.
-        if is_current && was_active {
-            let session_file_exists = self.agent_session_ids.get(slot_id)
-                .and_then(|sid| self.current_worktree().and_then(|wt| wt.worktree_path.as_deref().map(|p| (sid, p))))
-                .and_then(|(sid, path)| crate::config::session_file(self.backend, path, sid))
-                .is_some();
-            if session_file_exists {
-                // Store-backed session: incremental parse only (preserve display_events)
-                // Legacy session: full re-parse from offset 0
-                if self.current_session_id.is_none() {
-                    self.session_file_parse_offset = 0;
-                }
-                self.session_file_dirty = true;
-            }
+        // Post-exit: mark session file dirty for a final incremental parse
+        // to finalize any pending tool calls. The JSONL will be deleted by
+        // store_append_from_jsonl shortly after, which clears session_file_path.
+        if is_current && was_active && self.session_file_path.is_some() {
+            self.session_file_dirty = true;
         }
 
         // If this was a [NewRunCmd] session, auto-reload runcmds
@@ -284,26 +267,50 @@ impl App {
             }
         }).collect();
 
-        // Append to SQLite store and check compaction threshold
-        if let Some(ref store) = self.session_store {
-            if store.append_events(session_id, &events).is_ok() {
-                // Check if compaction is needed (only if not already pending)
-                if self.compaction_needed.is_none() {
-                    if let Ok(chars) = store.total_chars_since_compaction(session_id) {
-                        if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
-                            self.compaction_needed = Some((session_id, wt_path));
-                        }
+        // Open store at the target worktree path (may differ from current worktree
+        // if the user switched away while the process was running)
+        let store = if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
+            self.session_store.as_ref()
+        } else {
+            None
+        };
+        // Use current store if it matches, otherwise open a temporary one
+        let temp_store;
+        let store = match store {
+            Some(s) => s,
+            None => {
+                temp_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
+                match temp_store.as_ref() {
+                    Some(s) => s,
+                    None => return,
+                }
+            }
+        };
+        if store.append_events(session_id, &events).is_ok() {
+            // Source JSONL ingested — delete the original file
+            let _ = std::fs::remove_file(&jsonl_path);
+            // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
+            if self.session_file_path.as_ref() == Some(&jsonl_path) {
+                self.session_file_path = None;
+                self.session_file_dirty = false;
+            }
+
+            // Check if compaction is needed (only if not already pending)
+            if self.compaction_needed.is_none() {
+                if let Ok(chars) = store.total_chars_since_compaction(session_id) {
+                    if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
+                        self.compaction_needed = Some((session_id, wt_path));
                     }
                 }
-                // Update context percentage badge from store character count
-                self.update_token_badge();
             }
+            // Update context percentage badge from store character count
+            self.update_token_badge();
         }
     }
 
     /// Parse JSONL and append to store for a background (non-active) project.
-    /// Opens a temporary store connection to the background project's .azs file.
-    fn store_append_background(&self, slot_id: &str, session_id: i64, wt_path: &std::path::Path, project_path: &std::path::Path) {
+    /// Opens a temporary store connection to the worktree's .azs file.
+    fn store_append_background(&self, slot_id: &str, session_id: i64, wt_path: &std::path::Path, _project_path: &std::path::Path) {
         let jsonl_path = match self.agent_session_ids.get(slot_id) {
             Some(uuid) => crate::config::session_file(self.backend, wt_path, uuid),
             None => return,
@@ -331,8 +338,11 @@ impl App {
             }
         }).collect();
 
-        if let Ok(store) = crate::app::session_store::SessionStore::open(project_path) {
-            let _ = store.append_events(session_id, &events);
+        if let Ok(store) = crate::app::session_store::SessionStore::open(wt_path) {
+            if store.append_events(session_id, &events).is_ok() {
+                // Source JSONL ingested — delete the original file
+                let _ = std::fs::remove_file(&jsonl_path);
+            }
         }
     }
 

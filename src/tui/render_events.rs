@@ -411,13 +411,12 @@ fn render_tool_call(
     }
 }
 
-fn render_complete(lines: &mut Vec<Line<'static>>, duration_ms: u64, cost_usd: f64, success: bool) {
+fn render_complete(lines: &mut Vec<Line<'static>>, duration_ms: u64, _cost_usd: f64, success: bool) {
     lines.push(Line::from(""));
     let (status, color) = if success { ("Completed", Color::Green) } else { ("Failed", Color::Red) };
     lines.push(Line::from(vec![
         Span::styled(format!(" ● {} ", status), Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)),
         Span::styled(format!(" {:.1}s ", duration_ms as f64 / 1000.0), Style::default().fg(Color::White)),
-        Span::styled(format!("${:.4}", cost_usd), Style::default().fg(Color::Yellow)),
     ]).alignment(Alignment::Center));
     lines.push(Line::from(""));
 }
