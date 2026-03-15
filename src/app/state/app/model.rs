@@ -3,16 +3,33 @@
 use crate::backend::Backend;
 use super::App;
 
-/// Claude model cycle: opus → sonnet → haiku → opus
-const CLAUDE_MODELS: &[&str] = &["opus", "sonnet", "haiku"];
-/// Codex model cycle: o3 → o4-mini → codex-mini → o3
-const CODEX_MODELS: &[&str] = &["o3", "o4-mini", "codex-mini"];
+/// Unified model pool — Claude models first, then Codex models.
+/// Ctrl+M cycles through the entire pool regardless of backend.
+/// opus → sonnet → haiku → gpt-5.4 → gpt-5.3-codex → gpt-5.2-codex → gpt-5.2 → gpt-5.1-codex-max → gpt-5.1-codex-mini → wrap
+const ALL_MODELS: &[&str] = &[
+    "opus",
+    "sonnet",
+    "haiku",
+    "gpt-5.4",
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.2",
+    "gpt-5.1-codex-max",
+    "gpt-5.1-codex-mini",
+];
 
-/// Default model for each backend
-pub fn default_model(backend: Backend) -> &'static str {
-    match backend {
-        Backend::Claude => "opus",
-        Backend::Codex => "o3",
+/// Default model (first in the unified pool)
+pub fn default_model() -> &'static str {
+    ALL_MODELS[0]
+}
+
+/// Determine which backend a model belongs to.
+/// gpt-* models → Codex, everything else → Claude.
+pub fn backend_for_model(model: &str) -> Backend {
+    if model.starts_with("gpt-") {
+        Backend::Codex
+    } else {
+        Backend::Claude
     }
 }
 
@@ -66,21 +83,18 @@ impl App {
     /// Short display name for the active model. Always returns the selected_model
     /// alias since it's always set (never None).
     pub fn display_model_name(&self) -> &str {
-        self.selected_model.as_deref().unwrap_or(default_model(self.backend))
+        self.selected_model.as_deref().unwrap_or(default_model())
     }
 
-    /// Cycle selected_model through the backend's model list.
-    /// Claude: opus → sonnet → haiku → opus
-    /// Codex: o3 → o4-mini → codex-mini → o3
+    /// Cycle selected_model through the unified model pool.
+    /// opus → sonnet → haiku → gpt-5.4 → … → gpt-5.1-codex-mini → wrap
+    /// Also updates self.backend to match the new model.
     pub fn cycle_model(&mut self) {
-        let models = match self.backend {
-            Backend::Claude => CLAUDE_MODELS,
-            Backend::Codex => CODEX_MODELS,
-        };
-        let current = self.selected_model.as_deref().unwrap_or(models[0]);
-        let idx = models.iter().position(|&m| m == current).unwrap_or(0);
-        let next = models[(idx + 1) % models.len()];
+        let current = self.selected_model.as_deref().unwrap_or(ALL_MODELS[0]);
+        let idx = ALL_MODELS.iter().position(|&m| m == current).unwrap_or(0);
+        let next = ALL_MODELS[(idx + 1) % ALL_MODELS.len()];
         self.selected_model = Some(next.to_string());
+        self.backend = backend_for_model(next);
     }
 }
 
@@ -88,157 +102,140 @@ impl App {
 mod tests {
     use super::*;
 
-    fn app_with_backend(backend: Backend) -> App {
+    fn app_default() -> App {
         let mut app = App::new();
-        app.backend = backend;
-        app.selected_model = Some(default_model(backend).to_string());
+        app.selected_model = Some(default_model().to_string());
         app
     }
 
     // ── default_model ──
 
     #[test]
-    fn test_default_model_claude() {
-        assert_eq!(default_model(Backend::Claude), "opus");
+    fn test_default_model_is_opus() {
+        assert_eq!(default_model(), "opus");
+    }
+
+    // ── backend_for_model ──
+
+    #[test]
+    fn test_backend_for_claude_models() {
+        assert_eq!(backend_for_model("opus"), Backend::Claude);
+        assert_eq!(backend_for_model("sonnet"), Backend::Claude);
+        assert_eq!(backend_for_model("haiku"), Backend::Claude);
     }
 
     #[test]
-    fn test_default_model_codex() {
-        assert_eq!(default_model(Backend::Codex), "o3");
+    fn test_backend_for_codex_models() {
+        assert_eq!(backend_for_model("gpt-5.4"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.3-codex"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.2-codex"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.2"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.1-codex-max"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.1-codex-mini"), Backend::Codex);
     }
 
-    // ── Claude model cycling ──
+    #[test]
+    fn test_backend_for_unknown_defaults_claude() {
+        assert_eq!(backend_for_model("unknown"), Backend::Claude);
+    }
+
+    // ── Unified model cycling ──
 
     #[test]
-    fn test_claude_cycle_opus_to_sonnet() {
-        let mut app = app_with_backend(Backend::Claude);
+    fn test_cycle_opus_to_sonnet() {
+        let mut app = app_default();
         assert_eq!(app.display_model_name(), "opus");
         app.cycle_model();
         assert_eq!(app.display_model_name(), "sonnet");
+        assert_eq!(app.backend, Backend::Claude);
     }
 
     #[test]
-    fn test_claude_cycle_sonnet_to_haiku() {
-        let mut app = app_with_backend(Backend::Claude);
-        app.selected_model = Some("sonnet".to_string());
-        app.cycle_model();
-        assert_eq!(app.display_model_name(), "haiku");
-    }
-
-    #[test]
-    fn test_claude_cycle_haiku_to_opus() {
-        let mut app = app_with_backend(Backend::Claude);
+    fn test_cycle_haiku_to_gpt54() {
+        let mut app = app_default();
         app.selected_model = Some("haiku".to_string());
         app.cycle_model();
-        assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.display_model_name(), "gpt-5.4");
+        assert_eq!(app.backend, Backend::Codex);
     }
 
     #[test]
-    fn test_claude_full_cycle_wraps() {
-        let mut app = app_with_backend(Backend::Claude);
-        app.cycle_model(); // opus → sonnet
-        app.cycle_model(); // sonnet → haiku
-        app.cycle_model(); // haiku → opus
+    fn test_cycle_last_codex_wraps_to_opus() {
+        let mut app = app_default();
+        app.selected_model = Some("gpt-5.1-codex-mini".to_string());
+        app.backend = Backend::Codex;
+        app.cycle_model();
         assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.backend, Backend::Claude);
     }
 
     #[test]
-    fn test_claude_unknown_model_defaults_to_sonnet() {
-        let mut app = app_with_backend(Backend::Claude);
+    fn test_full_cycle_all_nine() {
+        let mut app = app_default();
+        let expected = [
+            ("sonnet", Backend::Claude),
+            ("haiku", Backend::Claude),
+            ("gpt-5.4", Backend::Codex),
+            ("gpt-5.3-codex", Backend::Codex),
+            ("gpt-5.2-codex", Backend::Codex),
+            ("gpt-5.2", Backend::Codex),
+            ("gpt-5.1-codex-max", Backend::Codex),
+            ("gpt-5.1-codex-mini", Backend::Codex),
+            ("opus", Backend::Claude),
+        ];
+        for &(name, backend) in &expected {
+            app.cycle_model();
+            assert_eq!(app.display_model_name(), name);
+            assert_eq!(app.backend, backend);
+        }
+    }
+
+    #[test]
+    fn test_cycle_unknown_model_defaults_to_sonnet() {
+        let mut app = app_default();
         app.selected_model = Some("unknown".to_string());
         app.cycle_model();
-        // Unknown position defaults to index 0 (opus), cycles to index 1 (sonnet)
+        // Unknown defaults to index 0 (opus), cycles to index 1 (sonnet)
         assert_eq!(app.display_model_name(), "sonnet");
-    }
-
-    // ── Codex model cycling ──
-
-    #[test]
-    fn test_codex_cycle_o3_to_o4mini() {
-        let mut app = app_with_backend(Backend::Codex);
-        assert_eq!(app.display_model_name(), "o3");
-        app.cycle_model();
-        assert_eq!(app.display_model_name(), "o4-mini");
-    }
-
-    #[test]
-    fn test_codex_cycle_o4mini_to_codexmini() {
-        let mut app = app_with_backend(Backend::Codex);
-        app.selected_model = Some("o4-mini".to_string());
-        app.cycle_model();
-        assert_eq!(app.display_model_name(), "codex-mini");
-    }
-
-    #[test]
-    fn test_codex_cycle_codexmini_to_o3() {
-        let mut app = app_with_backend(Backend::Codex);
-        app.selected_model = Some("codex-mini".to_string());
-        app.cycle_model();
-        assert_eq!(app.display_model_name(), "o3");
-    }
-
-    #[test]
-    fn test_codex_full_cycle_wraps() {
-        let mut app = app_with_backend(Backend::Codex);
-        app.cycle_model(); // o3 → o4-mini
-        app.cycle_model(); // o4-mini → codex-mini
-        app.cycle_model(); // codex-mini → o3
-        assert_eq!(app.display_model_name(), "o3");
-    }
-
-    #[test]
-    fn test_codex_unknown_model_defaults_to_o4mini() {
-        let mut app = app_with_backend(Backend::Codex);
-        app.selected_model = Some("gpt-5".to_string());
-        app.cycle_model();
-        assert_eq!(app.display_model_name(), "o4-mini");
     }
 
     // ── display_model_name ──
 
     #[test]
-    fn test_display_model_none_claude() {
+    fn test_display_model_none_defaults_opus() {
         let mut app = App::new();
-        app.backend = Backend::Claude;
         app.selected_model = None;
         assert_eq!(app.display_model_name(), "opus");
     }
 
     #[test]
-    fn test_display_model_none_codex() {
-        let mut app = App::new();
-        app.backend = Backend::Codex;
-        app.selected_model = None;
-        assert_eq!(app.display_model_name(), "o3");
-    }
-
-    #[test]
     fn test_display_model_set_value() {
         let mut app = App::new();
-        app.selected_model = Some("sonnet".to_string());
-        assert_eq!(app.display_model_name(), "sonnet");
+        app.selected_model = Some("gpt-5.4".to_string());
+        assert_eq!(app.display_model_name(), "gpt-5.4");
     }
 
-    // ── CLAUDE_MODELS / CODEX_MODELS constants ──
+    // ── ALL_MODELS constant ──
 
     #[test]
-    fn test_claude_models_has_three() {
-        assert_eq!(CLAUDE_MODELS.len(), 3);
-    }
-
-    #[test]
-    fn test_codex_models_has_three() {
-        assert_eq!(CODEX_MODELS.len(), 3);
+    fn test_all_models_has_nine() {
+        assert_eq!(ALL_MODELS.len(), 9);
     }
 
     #[test]
-    fn test_claude_models_first_is_default() {
-        assert_eq!(CLAUDE_MODELS[0], default_model(Backend::Claude));
+    fn test_all_models_first_is_default() {
+        assert_eq!(ALL_MODELS[0], default_model());
     }
 
     #[test]
-    fn test_codex_models_first_is_default() {
-        assert_eq!(CODEX_MODELS[0], default_model(Backend::Codex));
+    fn test_all_models_claude_then_codex() {
+        // First 3 are Claude, rest are Codex
+        for &m in &ALL_MODELS[..3] {
+            assert_eq!(backend_for_model(m), Backend::Claude);
+        }
+        for &m in &ALL_MODELS[3..] {
+            assert_eq!(backend_for_model(m), Backend::Codex);
+        }
     }
 
     // ── update_token_badge (sourced from session store chars / 400k threshold) ──

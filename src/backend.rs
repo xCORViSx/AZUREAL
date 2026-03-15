@@ -47,22 +47,24 @@ impl Backend {
     }
 }
 
-/// Wrapper that dispatches spawn() to the correct backend process
-pub enum AgentProcess {
-    Claude(ClaudeProcess),
-    Codex(CodexProcess),
+/// Holds both backend processes and dispatches spawn() based on model selection.
+/// The backend is determined at spawn time from the model name, not at construction.
+pub struct AgentProcess {
+    claude: ClaudeProcess,
+    codex: CodexProcess,
 }
 
 impl AgentProcess {
-    /// Create from config and backend selection
-    pub fn new(config: Config, backend: Backend) -> Self {
-        match backend {
-            Backend::Claude => AgentProcess::Claude(ClaudeProcess::new(config)),
-            Backend::Codex => AgentProcess::Codex(CodexProcess::new(config)),
+    /// Create with both backends available
+    pub fn new(config: Config) -> Self {
+        AgentProcess {
+            claude: ClaudeProcess::new(config.clone()),
+            codex: CodexProcess::new(config),
         }
     }
 
-    /// Spawn a new agent process with the given prompt
+    /// Spawn a new agent process. The backend is selected automatically
+    /// based on the model name (gpt-* → Codex, else → Claude).
     pub fn spawn(
         &self,
         working_dir: &Path,
@@ -70,17 +72,12 @@ impl AgentProcess {
         resume_session_id: Option<&str>,
         model: Option<&str>,
     ) -> Result<(mpsc::Receiver<AgentEvent>, u32)> {
-        match self {
-            AgentProcess::Claude(p) => p.spawn(working_dir, prompt, resume_session_id, model),
-            AgentProcess::Codex(p) => p.spawn(working_dir, prompt, resume_session_id, model),
-        }
-    }
-
-    /// Get the active backend kind
-    pub fn backend(&self) -> Backend {
-        match self {
-            AgentProcess::Claude(_) => Backend::Claude,
-            AgentProcess::Codex(_) => Backend::Codex,
+        let backend = model
+            .map(crate::app::state::backend_for_model)
+            .unwrap_or(Backend::Claude);
+        match backend {
+            Backend::Claude => self.claude.spawn(working_dir, prompt, resume_session_id, model),
+            Backend::Codex => self.codex.spawn(working_dir, prompt, resume_session_id, model),
         }
     }
 }
@@ -182,42 +179,33 @@ mod tests {
     // ── AgentProcess ──
 
     #[test]
-    fn agent_process_new_claude() {
-        let config = Config::default();
-        let ap = AgentProcess::new(config, Backend::Claude);
-        assert_eq!(ap.backend(), Backend::Claude);
-    }
-
-    #[test]
-    fn agent_process_new_codex() {
-        let config = Config::default();
-        let ap = AgentProcess::new(config, Backend::Codex);
-        assert_eq!(ap.backend(), Backend::Codex);
+    fn agent_process_new() {
+        let _ap = AgentProcess::new(Config::default());
+        // Both backends available — no panic
     }
 
     #[test]
     fn agent_process_spawn_empty_prompt_fails_claude() {
-        let config = Config::default();
-        let ap = AgentProcess::new(config, Backend::Claude);
-        let result = ap.spawn(Path::new("/tmp"), "", None, None);
+        let ap = AgentProcess::new(Config::default());
+        let result = ap.spawn(Path::new("/tmp"), "", None, Some("opus"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
 
     #[test]
     fn agent_process_spawn_empty_prompt_fails_codex() {
-        let config = Config::default();
-        let ap = AgentProcess::new(config, Backend::Codex);
-        let result = ap.spawn(Path::new("/tmp"), "", None, None);
+        let ap = AgentProcess::new(Config::default());
+        let result = ap.spawn(Path::new("/tmp"), "", None, Some("gpt-5.4"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
 
     #[test]
-    fn agent_process_backend_matches_construction() {
-        let claude = AgentProcess::new(Config::default(), Backend::Claude);
-        let codex = AgentProcess::new(Config::default(), Backend::Codex);
-        assert_eq!(claude.backend(), Backend::Claude);
-        assert_eq!(codex.backend(), Backend::Codex);
+    fn agent_process_spawn_no_model_defaults_claude() {
+        let ap = AgentProcess::new(Config::default());
+        let result = ap.spawn(Path::new("/tmp"), "", None, None);
+        assert!(result.is_err());
+        // Default (None) → Claude backend, which rejects empty prompts
+        assert!(result.unwrap_err().to_string().contains("empty"));
     }
 }

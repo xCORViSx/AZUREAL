@@ -10,7 +10,7 @@
 
 mod cpu;
 mod deferred;
-mod model;
+pub(crate) mod model;
 mod queries;
 mod stt;
 mod todo;

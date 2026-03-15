@@ -26,7 +26,7 @@ impl CodexProcess {
 
     /// Spawn Codex with the given prompt
     /// resume_session_id: Codex thread_id from previous prompt (for `exec resume`)
-    /// model: optional model override (e.g. "o3", "o4-mini") — passed as --model flag
+    /// model: optional model override (e.g. "gpt-5.4", "gpt-5.3-codex") — passed as --model flag
     pub fn spawn(
         &self,
         working_dir: &Path,

@@ -812,11 +812,11 @@ mod tests {
     #[test]
     fn test_turn_context_model_updates() {
         let result = parse_lines(&[
-            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:13Z","payload":{"model":"o3"}}"#,
-            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:14Z","payload":{"model":"o4-mini"}}"#,
+            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:13Z","payload":{"model":"gpt-5.4"}}"#,
+            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:14Z","payload":{"model":"gpt-5.3-codex"}}"#,
         ]);
         // Last model wins
-        assert_eq!(result.model.as_deref(), Some("o4-mini"));
+        assert_eq!(result.model.as_deref(), Some("gpt-5.3-codex"));
     }
 
     // ── reasoning response_item ──
@@ -897,7 +897,7 @@ mod tests {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/home/user/project","originator":"codex_cli","cli_version":"0.77.0"}}"#,
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"fix the tests"}}"#,
-            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:02Z","payload":{"model":"o3","cwd":"/home/user/project"}}"#,
+            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:02Z","payload":{"model":"gpt-5.4","cwd":"/home/user/project"}}"#,
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"shell_command","call_id":"call_1","arguments":"{\"command\":\"cargo test\",\"workdir\":\"/home/user/project\"}"}}"#,
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:04Z","payload":{"type":"function_call_output","call_id":"call_1","output":"Exit code: 0\ntest result: ok. 5 passed"}}"#,
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:05Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"All tests pass."}]}}"#,
@@ -912,7 +912,7 @@ mod tests {
         assert!(matches!(&result.events[4], DisplayEvent::AssistantText { .. }));
         assert!(matches!(&result.events[5], DisplayEvent::Complete { .. }));
 
-        assert_eq!(result.model.as_deref(), Some("o3"));
+        assert_eq!(result.model.as_deref(), Some("gpt-5.4"));
         assert_eq!(result.parse_errors, 0);
         assert_eq!(result.total_lines, 7);
     }

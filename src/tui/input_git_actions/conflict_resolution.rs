@@ -240,7 +240,7 @@ mod tests {
 
     /// Build an AgentProcess for tests (spawn will fail since no real executable)
     fn test_claude() -> AgentProcess {
-        AgentProcess::new(Config::default(), crate::backend::Backend::Claude)
+        AgentProcess::new(Config::default())
     }
 
     /// Helper: get the conflict overlay from the app (panics if missing)

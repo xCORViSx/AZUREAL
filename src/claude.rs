@@ -39,7 +39,7 @@ impl ClaudeProcess {
 
     /// Spawn Claude Code with the given prompt via PTY
     /// resume_session_id: Claude session ID from previous prompt's init event (for --resume)
-    /// model: optional model override (e.g. "opus", "sonnet", "haiku") — passed as --model flag
+    /// model: optional model override (e.g. "opus", "sonnet") — passed as --model flag
     pub fn spawn(
         &self,
         working_dir: &Path,

@@ -549,9 +549,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             "sonnet" => Color::Cyan,
             "haiku" => Color::Yellow,
             // Codex models
-            "o3" => Color::Green,
-            "o4-mini" => Color::Blue,
-            "codex-mini" => Color::LightCyan,
+            "gpt-5.4" => Color::Green,
+            "gpt-5.3-codex" => Color::LightGreen,
+            "gpt-5.2-codex" => Color::Rgb(0, 200, 200),
+            "gpt-5.2" => Color::LightCyan,
+            "gpt-5.1-codex-max" => Color::Blue,
+            "gpt-5.1-codex-mini" => Color::LightBlue,
             _ => Color::DarkGray,
         };
         let model_key = crate::tui::keybindings::find_key_for_action(
@@ -972,13 +975,15 @@ mod tests {
     #[test]
     fn test_session_title_empty() { assert_eq!(" Session ".to_string(), " Session "); }
 
-    // ── Model colors ──
+    // ── Model colors (unified pool) ──
     #[test]
     fn test_mc_opus() { assert_eq!(match "opus" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Magenta); }
     #[test]
     fn test_mc_sonnet() { assert_eq!(match "sonnet" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Cyan); }
     #[test]
     fn test_mc_haiku() { assert_eq!(match "haiku" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Yellow); }
+    #[test]
+    fn test_mc_gpt54() { assert_eq!(match "gpt-5.4" { "gpt-5.4"=>Color::Green, _=>Color::DarkGray }, Color::Green); }
     #[test]
     fn test_mc_unknown() { assert_eq!(match "x" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::DarkGray); }
 
