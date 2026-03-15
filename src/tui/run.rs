@@ -70,9 +70,12 @@ pub async fn run() -> Result<()> {
     app.load_preset_prompts();
     app.load_session_output();
     let config = Config::load().unwrap_or_default();
-    // Default model is opus (Claude) — backend derived from selected model
-    app.selected_model = Some(crate::app::state::default_model().to_string());
-    app.backend = crate::app::state::backend_for_model(app.display_model_name());
+    // Restore model from session event stream (ModelSwitch tag → Init event).
+    // Only defaults to Opus when the session is brand-new / empty.
+    let restored = app.last_session_model()
+        .unwrap_or(crate::app::state::default_model());
+    app.selected_model = Some(restored.to_string());
+    app.backend = crate::app::state::backend_for_model(restored);
     // Auto-detect Nerd Font support by probing a PUA glyph during splash
     app.nerd_fonts = super::file_icons::detect_nerd_font();
     if !app.nerd_fonts {

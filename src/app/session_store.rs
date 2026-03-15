@@ -606,6 +606,7 @@ fn event_kind(event: &DisplayEvent) -> &'static str {
         DisplayEvent::ToolCall { .. } => "ToolCall",
         DisplayEvent::ToolResult { .. } => "ToolResult",
         DisplayEvent::Complete { .. } => "Complete",
+        DisplayEvent::ModelSwitch { .. } => "ModelSwitch",
         DisplayEvent::Filtered => "Filtered",
     }
 }
@@ -1261,6 +1262,7 @@ mod tests {
         assert_eq!(event_kind(&DisplayEvent::MayBeCompacting), "MayBeCompacting");
         assert_eq!(event_kind(&DisplayEvent::Plan { name: String::new(), content: String::new() }), "Plan");
         assert_eq!(event_kind(&DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 0, cost_usd: 0.0 }), "Complete");
+        assert_eq!(event_kind(&DisplayEvent::ModelSwitch { model: String::new() }), "ModelSwitch");
         assert_eq!(event_kind(&DisplayEvent::Filtered), "Filtered");
     }
 
@@ -1387,16 +1389,16 @@ mod tests {
     fn round_trip_preserves_unit_variants() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
+        // MayBeCompacting and Filtered are skipped by append_events
         store.append_events(id, &[
             DisplayEvent::Compacting,
             DisplayEvent::Compacted,
             DisplayEvent::MayBeCompacting,
         ]).unwrap();
         let loaded = store.load_events(id).unwrap();
-        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded.len(), 2);
         assert!(matches!(loaded[0], DisplayEvent::Compacting));
         assert!(matches!(loaded[1], DisplayEvent::Compacted));
-        assert!(matches!(loaded[2], DisplayEvent::MayBeCompacting));
     }
 
     // ── isolation between sessions ──

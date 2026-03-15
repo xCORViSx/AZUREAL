@@ -23,6 +23,31 @@ pub fn default_model() -> &'static str {
     ALL_MODELS[0]
 }
 
+/// Map a model string from an Init event back to an ALL_MODELS alias.
+/// Handles exact matches ("gpt-5.4"), Claude API names ("claude-3-5-sonnet-20241022" → "sonnet"),
+/// and short aliases passed through `--model`.
+pub fn model_alias_from_init(model: &str) -> Option<&'static str> {
+    // Exact match first
+    if let Some(&m) = ALL_MODELS.iter().find(|&&m| m == model) {
+        return Some(m);
+    }
+    // Claude API model names contain the alias as a substring
+    for &alias in &["opus", "sonnet", "haiku"] {
+        if model.contains(alias) {
+            return Some(alias);
+        }
+    }
+    // Codex models start with gpt- but might not be in ALL_MODELS
+    if model.starts_with("gpt-") {
+        return ALL_MODELS.iter().find(|&&m| m.starts_with("gpt-")).copied();
+    }
+    // Legacy: old sessions stored "codex" as the model string — map to first Codex model
+    if model == "codex" {
+        return ALL_MODELS.iter().find(|&&m| m.starts_with("gpt-")).copied();
+    }
+    None
+}
+
 /// Determine which backend a model belongs to.
 /// gpt-* models → Codex, everything else → Claude.
 pub fn backend_for_model(model: &str) -> Backend {
@@ -34,6 +59,30 @@ pub fn backend_for_model(model: &str) -> Backend {
 }
 
 impl App {
+    /// Extract the model from the loaded session's event stream.
+    /// Scans backward for `ModelSwitch` tags first (user explicitly changed the
+    /// model), then falls back to `Init` events (model from session start).
+    /// Returns `None` if the session is empty or the model string is unrecognized.
+    pub fn last_session_model(&self) -> Option<&'static str> {
+        // ModelSwitch tags take priority — they represent explicit user choice
+        for e in self.display_events.iter().rev() {
+            match e {
+                crate::events::DisplayEvent::ModelSwitch { model } => {
+                    if let Some(alias) = model_alias_from_init(model) {
+                        return Some(alias);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Fall back to the last Init event (model the session was started with)
+        self.display_events.iter().rev()
+            .find_map(|e| match e {
+                crate::events::DisplayEvent::Init { model, .. } => model_alias_from_init(model),
+                _ => None,
+            })
+    }
+
     /// Recompute the cached context usage badge from session store character count.
     /// Percentage = chars_since_compaction / COMPACTION_THRESHOLD (400k).
     /// Call after store append or compaction — the draw path just reads the cache.
@@ -88,7 +137,8 @@ impl App {
 
     /// Cycle selected_model through the unified model pool.
     /// opus → sonnet → haiku → gpt-5.4 → … → gpt-5.1-codex-mini → wrap
-    /// Also updates self.backend to match the new model.
+    /// Also updates self.backend to match the new model and injects a
+    /// `ModelSwitch` tag into the session store for persistence.
     pub fn cycle_model(&mut self) {
         let current = self.selected_model.as_deref().unwrap_or(ALL_MODELS[0]);
         let idx = ALL_MODELS.iter().position(|&m| m == current).unwrap_or(0);
@@ -99,6 +149,12 @@ impl App {
             self.backend = new_backend;
             // Reset the background parser so it uses the new backend's format
             self.agent_processor_needs_reset = true;
+        }
+        // Inject ModelSwitch tag into the event stream + persist to session store
+        let tag = crate::events::DisplayEvent::ModelSwitch { model: next.to_string() };
+        self.display_events.push(tag.clone());
+        if let (Some(store), Some(sid)) = (&self.session_store, self.current_session_id) {
+            let _ = store.append_events(sid, &[tag]);
         }
     }
 }
@@ -142,6 +198,112 @@ mod tests {
     #[test]
     fn test_backend_for_unknown_defaults_claude() {
         assert_eq!(backend_for_model("unknown"), Backend::Claude);
+    }
+
+    // ── model_alias_from_init ──
+
+    #[test]
+    fn test_alias_exact_match() {
+        assert_eq!(model_alias_from_init("opus"), Some("opus"));
+        assert_eq!(model_alias_from_init("gpt-5.4"), Some("gpt-5.4"));
+        assert_eq!(model_alias_from_init("gpt-5.1-codex-mini"), Some("gpt-5.1-codex-mini"));
+    }
+
+    #[test]
+    fn test_alias_claude_api_name() {
+        assert_eq!(model_alias_from_init("claude-3-5-sonnet-20241022"), Some("sonnet"));
+        assert_eq!(model_alias_from_init("claude-opus-4-6"), Some("opus"));
+        assert_eq!(model_alias_from_init("claude-3-haiku-20240307"), Some("haiku"));
+    }
+
+    #[test]
+    fn test_alias_unknown_returns_none() {
+        assert_eq!(model_alias_from_init("unknown"), None);
+        assert_eq!(model_alias_from_init(""), None);
+    }
+
+    #[test]
+    fn test_alias_unknown_gpt_falls_back_to_first_codex() {
+        // An unlisted gpt model still maps to a Codex entry
+        assert!(model_alias_from_init("gpt-99").unwrap().starts_with("gpt-"));
+    }
+
+    #[test]
+    fn test_alias_legacy_codex_string() {
+        // Old sessions stored "codex" as the model — should map to first Codex model
+        let result = model_alias_from_init("codex");
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("gpt-"));
+    }
+
+    // ── last_session_model ──
+
+    #[test]
+    fn test_last_session_model_empty_events() {
+        let app = App::new();
+        assert_eq!(app.last_session_model(), None);
+    }
+
+    #[test]
+    fn test_last_session_model_from_init() {
+        use crate::events::DisplayEvent;
+        let mut app = App::new();
+        app.display_events = vec![
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "gpt-5.4".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+        ];
+        assert_eq!(app.last_session_model(), Some("gpt-5.4"));
+    }
+
+    #[test]
+    fn test_last_session_model_picks_last_init() {
+        use crate::events::DisplayEvent;
+        let mut app = App::new();
+        app.display_events = vec![
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "first".into() },
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "sonnet".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "second".into() },
+        ];
+        assert_eq!(app.last_session_model(), Some("sonnet"));
+    }
+
+    #[test]
+    fn test_last_session_model_model_switch_overrides_init() {
+        use crate::events::DisplayEvent;
+        let mut app = App::new();
+        app.display_events = vec![
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+            DisplayEvent::ModelSwitch { model: "gpt-5.4".into() },
+        ];
+        // ModelSwitch should take priority over Init
+        assert_eq!(app.last_session_model(), Some("gpt-5.4"));
+    }
+
+    #[test]
+    fn test_last_session_model_picks_last_model_switch() {
+        use crate::events::DisplayEvent;
+        let mut app = App::new();
+        app.display_events = vec![
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
+            DisplayEvent::ModelSwitch { model: "sonnet".into() },
+            DisplayEvent::ModelSwitch { model: "gpt-5.4".into() },
+            DisplayEvent::ModelSwitch { model: "haiku".into() },
+        ];
+        assert_eq!(app.last_session_model(), Some("haiku"));
+    }
+
+    #[test]
+    fn test_last_session_model_no_switch_falls_back_to_init() {
+        use crate::events::DisplayEvent;
+        let mut app = App::new();
+        app.display_events = vec![
+            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "sonnet".into() },
+            DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() },
+            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+        ];
+        assert_eq!(app.last_session_model(), Some("sonnet"));
     }
 
     // ── Unified model cycling ──
@@ -202,6 +364,37 @@ mod tests {
         app.cycle_model();
         // Unknown defaults to index 0 (opus), cycles to index 1 (sonnet)
         assert_eq!(app.display_model_name(), "sonnet");
+    }
+
+    #[test]
+    fn test_cycle_injects_model_switch_event() {
+        use crate::events::DisplayEvent;
+        let mut app = app_default();
+        assert!(app.display_events.is_empty());
+        app.cycle_model();
+        assert_eq!(app.display_events.len(), 1);
+        match &app.display_events[0] {
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            other => panic!("expected ModelSwitch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_cycle_model_switch_persists_to_store() {
+        use crate::app::session_store::SessionStore;
+        let mut app = app_default();
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("test").unwrap();
+        app.session_store = Some(store);
+        app.current_session_id = Some(sid);
+        app.cycle_model(); // opus → sonnet
+        // Verify the ModelSwitch event was persisted to the store
+        let events = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            other => panic!("expected ModelSwitch, got {:?}", other),
+        }
     }
 
     // ── display_model_name ──

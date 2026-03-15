@@ -850,6 +850,7 @@ impl App {
                 DisplayEvent::Compacted => "Compacted".to_string(),
                 DisplayEvent::MayBeCompacting => "MayBeCompacting".to_string(),
                 DisplayEvent::Plan { name, .. } => format!("Plan: {}", ob.text(name)),
+                DisplayEvent::ModelSwitch { model } => format!("ModelSwitch: {}", model),
                 DisplayEvent::Filtered => "Filtered".to_string(),
             };
             writeln!(file, "  [{}] {}", start + i, preview)?;

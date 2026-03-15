@@ -76,6 +76,12 @@ pub enum DisplayEvent {
         duration_ms: u64,
         cost_usd: f64,
     },
+    /// Model switch tag — injected into the event stream when the user cycles
+    /// models via Ctrl+M. Stripped from LLM context injection but persisted in
+    /// the session store so the app can restore the model on reload.
+    ModelSwitch {
+        model: String,
+    },
     /// Filtered out (used for rewound/edited messages that were superseded)
     Filtered,
 }
@@ -821,5 +827,53 @@ mod tests {
     fn filtered_is_not_compacted() {
         let ev = DisplayEvent::Filtered;
         assert!(!matches!(ev, DisplayEvent::Compacted));
+    }
+
+    // =====================================================================
+    // ModelSwitch variant
+    // =====================================================================
+
+    #[test]
+    fn model_switch_basic() {
+        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
+        match ev {
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.4"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn model_switch_clone() {
+        let ev = DisplayEvent::ModelSwitch { model: "sonnet".into() };
+        let cloned = ev.clone();
+        match cloned {
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn model_switch_debug() {
+        let ev = DisplayEvent::ModelSwitch { model: "opus".into() };
+        let dbg = format!("{:?}", ev);
+        assert!(dbg.contains("ModelSwitch"));
+        assert!(dbg.contains("opus"));
+    }
+
+    #[test]
+    fn model_switch_is_not_init() {
+        let ev = DisplayEvent::ModelSwitch { model: "opus".into() };
+        assert!(!matches!(ev, DisplayEvent::Init { .. }));
+    }
+
+    #[test]
+    fn model_switch_serde_roundtrip() {
+        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
+        let json = serde_json::to_string(&ev).unwrap();
+        let parsed: DisplayEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.4"),
+            _ => panic!("wrong variant"),
+        }
     }
 }

@@ -216,7 +216,7 @@ fn render_display_events_with_state(
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
                 render_complete(&mut lines, *duration_ms, *cost_usd, *success);
             }
-            DisplayEvent::Filtered => {}
+            DisplayEvent::ModelSwitch { .. } | DisplayEvent::Filtered => {}
         }
     }
 
@@ -241,9 +241,8 @@ fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Lin
     let (assistant_name, assistant_color) = assistant_identity(model);
     let header_style = Style::default().fg(Color::Black).bg(assistant_color).add_modifier(Modifier::BOLD);
     let model_style = Style::default()
-        .fg(Color::Black)
-        .bg(assistant_color)
-        .add_modifier(Modifier::BOLD | Modifier::DIM);
+        .fg(Color::DarkGray)
+        .bg(assistant_color);
     let fill_style = Style::default().bg(assistant_color);
 
     let left = format!(" {} ▶ ", assistant_name);
@@ -1588,14 +1587,15 @@ mod tests {
     }
 
     #[test]
-    fn test_render_assistant_header_line_dims_model_span() {
+    fn test_render_assistant_header_line_model_span_is_subdued() {
         let line = render_assistant_header_line(Some("gpt-5.4"), 24);
         let model_span = line
             .spans
             .iter()
             .find(|span| span.content.contains("gpt-5.4"))
             .expect("expected model span");
-        assert!(model_span.style.add_modifier.contains(Modifier::DIM));
+        assert_eq!(model_span.style.fg, Some(Color::DarkGray));
+        assert!(!model_span.style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]

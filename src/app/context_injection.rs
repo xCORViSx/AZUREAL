@@ -89,6 +89,7 @@ fn format_event(event: &DisplayEvent) -> Option<String> {
         // Omit non-content events
         DisplayEvent::Init { .. }
         | DisplayEvent::Hook { .. }
+        | DisplayEvent::ModelSwitch { .. }
         | DisplayEvent::Compacting
         | DisplayEvent::Compacted
         | DisplayEvent::MayBeCompacting
@@ -323,6 +324,12 @@ mod tests {
     #[test]
     fn format_hook_returns_none() {
         let ev = DisplayEvent::Hook { name: "x".into(), output: "y".into() };
+        assert!(format_event(&ev).is_none());
+    }
+
+    #[test]
+    fn format_model_switch_returns_none() {
+        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
         assert!(format_event(&ev).is_none());
     }
 
