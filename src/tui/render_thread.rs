@@ -28,6 +28,7 @@ use super::render_events::{ClickablePath, ClickableTable};
 pub struct PreScanState {
     pub saw_init: bool,
     pub saw_content: bool,
+    pub current_model: Option<String>,
     pub last_hook: Option<(String, String)>,
     pub saw_exit_plan_mode: bool,
     pub saw_user_after_exit_plan: bool,
@@ -202,6 +203,7 @@ mod tests {
         let ps = PreScanState::default();
         assert!(!ps.saw_init);
         assert!(!ps.saw_content);
+        assert!(ps.current_model.is_none());
         assert!(ps.last_hook.is_none());
         assert!(!ps.saw_exit_plan_mode);
         assert!(!ps.saw_user_after_exit_plan);
@@ -222,6 +224,13 @@ mod tests {
         let mut ps = PreScanState::default();
         ps.saw_content = true;
         assert!(ps.saw_content);
+    }
+
+    #[test]
+    fn test_pre_scan_state_current_model() {
+        let mut ps = PreScanState::default();
+        ps.current_model = Some("gpt-5.4".into());
+        assert_eq!(ps.current_model.as_deref(), Some("gpt-5.4"));
     }
 
     #[test]

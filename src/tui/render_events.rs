@@ -9,10 +9,12 @@ use ratatui::{
 };
 use std::collections::HashSet;
 
+use crate::app::state::backend_for_model;
+use crate::backend::Backend;
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
-use super::util::AZURE;
+use super::util::{truncate, AZURE};
 use super::markdown::parse_markdown_spans;
 use super::render_markdown::render_assistant_text;
 use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview, tool_display_name};
@@ -85,6 +87,7 @@ fn render_display_events_with_state(
     // for incremental renders they come from pre_scan_events() on the main thread.
     let mut saw_init = pre_scan.saw_init;
     let mut saw_content = pre_scan.saw_content;
+    let mut current_model = pre_scan.current_model;
     let mut last_hook = pre_scan.last_hook;
     let mut saw_exit_plan_mode = pre_scan.saw_exit_plan_mode;
     let mut saw_user_after_exit_plan = pre_scan.saw_user_after_exit_plan;
@@ -95,6 +98,7 @@ fn render_display_events_with_state(
     for event in events.iter() {
         match event {
             DisplayEvent::Init { model, cwd, .. } => {
+                current_model = Some(model.clone());
                 if saw_init || saw_content { continue; }
                 saw_init = true;
                 render_init(&mut lines, model, cwd);
@@ -159,12 +163,8 @@ fn render_display_events_with_state(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let header = " Claude ▶ ".to_string();
-                let header_pad = " ".repeat(bubble_width.saturating_sub(header.len()));
-                lines.push(Line::from(vec![
-                    Span::styled(header, Style::default().fg(Color::Black).bg(ORANGE).add_modifier(Modifier::BOLD)),
-                    Span::styled(header_pad, Style::default().bg(ORANGE)),
-                ]));
+                let (_, assistant_color) = assistant_identity(current_model.as_deref().filter(|m| !m.is_empty()));
+                lines.push(render_assistant_header_line(current_model.as_deref(), bubble_width));
 
                 let base_offset = lines.len();
                 let (text_lines, table_regions) = render_assistant_text(text, bubble_width, syntax_highlighter);
@@ -175,7 +175,7 @@ fn render_display_events_with_state(
                 }
 
                 lines.push(Line::from(vec![
-                    Span::styled(format!("└{}", "─".repeat(bubble_width - 1)), Style::default().fg(ORANGE)),
+                    Span::styled(format!("└{}", "─".repeat(bubble_width - 1)), Style::default().fg(assistant_color)),
                 ]));
             }
             DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
@@ -227,6 +227,39 @@ fn render_display_events_with_state(
     }
 
     (lines, animation_indices, bubble_positions, clickable_paths, clickable_tables)
+}
+
+fn assistant_identity(model: Option<&str>) -> (&'static str, Color) {
+    match model.map(backend_for_model).unwrap_or(Backend::Claude) {
+        Backend::Codex => ("Codex", Color::Cyan),
+        Backend::Claude => ("Claude", ORANGE),
+    }
+}
+
+fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Line<'static> {
+    let model = model.filter(|m| !m.is_empty());
+    let (assistant_name, assistant_color) = assistant_identity(model);
+    let header_style = Style::default().fg(Color::Black).bg(assistant_color).add_modifier(Modifier::BOLD);
+    let fill_style = Style::default().bg(assistant_color);
+
+    let left = format!(" {} ▶ ", assistant_name);
+    let right = model.map(|model| {
+        let max_model_width = bubble_width
+            .saturating_sub(left.chars().count() + 3)
+            .max(1);
+        format!(" {} ", truncate(model, max_model_width))
+    }).unwrap_or_default();
+    let gap = bubble_width.saturating_sub(left.chars().count() + right.chars().count());
+
+    let mut spans = vec![
+        Span::styled(left, header_style),
+        Span::styled(" ".repeat(gap), fill_style),
+    ];
+    if !right.is_empty() {
+        spans.push(Span::styled(right, header_style));
+    }
+
+    Line::from(spans)
 }
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
@@ -1463,6 +1496,117 @@ mod tests {
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
         assert!(!bubbles[0].1, "Assistant bubble should NOT be marked as user");
+    }
+
+    #[test]
+    fn test_render_events_codex_assistant_header_uses_codex_label() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/project".into(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a1".into(),
+                _message_id: "m1".into(),
+                text: "I can help with that.".into(),
+            },
+        ];
+        let (lines, _, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|line| line.contains("Codex")));
+    }
+
+    #[test]
+    fn test_render_events_codex_assistant_header_right_aligns_model() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/project".into(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a1".into(),
+                _message_id: "m1".into(),
+                text: "I can help with that.".into(),
+            },
+        ];
+        let (lines, _, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+        );
+        let header = lines_to_text(&lines)
+            .into_iter()
+            .find(|line| line.contains("Codex"))
+            .expect("assistant header line");
+        assert!(header.starts_with(" Codex ▶ "));
+        assert!(header.ends_with(" gpt-5.4 "));
+        assert_eq!(header.chars().count(), (80usize * 2 / 3).max(40));
+    }
+
+    #[test]
+    fn test_render_events_codex_assistant_header_uses_cyan() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/project".into(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a1".into(),
+                _message_id: "m1".into(),
+                text: "I can help with that.".into(),
+            },
+        ];
+        let (lines, _, _, _, _) = render_display_events(
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+        );
+        let codex_header = lines.iter().find_map(|line| {
+            line.spans
+                .iter()
+                .find(|span| span.content.contains("Codex"))
+                .map(|span| span.style.bg)
+        });
+        assert_eq!(codex_header, Some(Some(Color::Cyan)));
+    }
+
+    #[test]
+    fn test_render_assistant_header_line_truncates_model_to_fit() {
+        let line = render_assistant_header_line(Some("claude-opus-4-6-extra-long-model"), 16);
+        let text = line.spans.iter().map(|span| span.content.as_ref()).collect::<String>();
+        assert_eq!(text.chars().count(), 16);
+        assert!(text.starts_with(" Claude ▶ "));
+        assert!(text.ends_with(" cl… "));
+    }
+
+    #[test]
+    fn test_render_events_incremental_preserves_codex_identity() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::AssistantText {
+            _uuid: "a1".into(),
+            _message_id: "m1".into(),
+            text: "Incremental render".into(),
+        }];
+        let pre_scan = super::super::render_thread::PreScanState {
+            saw_init: true,
+            saw_content: false,
+            current_model: Some("gpt-5.4".into()),
+            last_hook: None,
+            saw_exit_plan_mode: false,
+            saw_user_after_exit_plan: false,
+            saw_ask_user_question: false,
+            saw_user_after_ask: false,
+            last_ask_input: None,
+        };
+        let (lines, _, _, _, _) = render_display_events_incremental(
+            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None, pre_scan,
+        );
+        let text = lines_to_text(&lines);
+        assert!(text.iter().any(|line| line.contains("Codex")));
     }
 
     /// Hook event renders hook name.

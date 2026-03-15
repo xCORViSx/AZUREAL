@@ -22,7 +22,10 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
     let mut s = PreScanState::default();
     for event in events {
         match event {
-            DisplayEvent::Init { .. } => { s.saw_init = true; }
+            DisplayEvent::Init { model, .. } => {
+                s.saw_init = true;
+                s.current_model = Some(model.clone());
+            }
             DisplayEvent::Hook { name, output } => {
                 s.last_hook = Some((name.clone(), output.clone()));
             }
@@ -259,6 +262,7 @@ mod tests {
         }];
         let state = pre_scan_events(&events);
         assert!(state.saw_init);
+        assert_eq!(state.current_model.as_deref(), Some("opus"));
     }
 
     #[test]
@@ -270,6 +274,24 @@ mod tests {
         }];
         let state = pre_scan_events(&events);
         assert!(!state.saw_content);
+    }
+
+    #[test]
+    fn test_pre_scan_last_init_model_wins() {
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/tmp".into(),
+                model: "claude-opus-4-6".into(),
+            },
+            DisplayEvent::Init {
+                _session_id: "s2".into(),
+                cwd: "/tmp".into(),
+                model: "gpt-5.4".into(),
+            },
+        ];
+        let state = pre_scan_events(&events);
+        assert_eq!(state.current_model.as_deref(), Some("gpt-5.4"));
     }
 
     // ── 4. pre_scan_events: Hook event ──
