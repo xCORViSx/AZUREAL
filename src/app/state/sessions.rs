@@ -273,7 +273,10 @@ impl App {
         self.new_session_name_input.clear();
         self.new_session_name_cursor = 0;
 
-        if name.is_empty() { return; }
+        if name.is_empty() {
+            self.staged_prompt = None;
+            return;
+        }
 
         let Some(wt) = self.current_worktree().cloned() else { return };
         let branch = wt.branch_name.clone();
@@ -316,15 +319,23 @@ impl App {
         }
 
         self.load_session_output();
-        self.focus = Focus::Input;
-        self.prompt_mode = true;
-        self.set_status("New session — type your prompt and press Enter");
+        if self.staged_prompt.is_some() {
+            // A prompt was stashed before the dialog — it'll be sent automatically
+            self.focus = Focus::Input;
+            self.prompt_mode = false;
+            self.set_status("Sending prompt...");
+        } else {
+            self.focus = Focus::Input;
+            self.prompt_mode = true;
+            self.set_status("New session — type your prompt and press Enter");
+        }
     }
 
-    /// Cancel the new session dialog.
+    /// Cancel the new session dialog. Also clears any stashed prompt.
     pub fn cancel_new_session_dialog(&mut self) {
         self.new_session_dialog_active = false;
         self.new_session_name_input.clear();
+        self.staged_prompt = None;
         self.new_session_name_cursor = 0;
     }
 

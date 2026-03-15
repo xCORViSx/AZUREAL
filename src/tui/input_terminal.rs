@@ -192,6 +192,14 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
 
                     if let Some((branch_name, worktree_opt)) = session_data {
                         if let Some(wt_path) = worktree_opt {
+                            // Auto-create session if none exists — show name dialog
+                            // with the prompt stashed for sending after confirmation
+                            if app.current_session_id.is_none() {
+                                app.staged_prompt = Some(input);
+                                app.start_new_session();
+                                return Ok(());
+                            }
+
                             // Capture offset before adding user message so the
                             // store append captures the UserMessage too
                             let events_offset = app.display_events.len();
