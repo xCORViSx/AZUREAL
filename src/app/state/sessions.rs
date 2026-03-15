@@ -263,6 +263,9 @@ impl App {
             self.new_session_name_input = default_name;
             self.new_session_name_cursor = self.new_session_name_input.chars().count();
             self.new_session_dialog_active = true;
+            // Focus session pane and exit prompt mode so the dialog receives input
+            self.focus = Focus::Session;
+            self.prompt_mode = false;
         }
     }
 
@@ -319,8 +322,24 @@ impl App {
         }
 
         self.load_session_output();
+
+        // Populate session_files cache so the session list shows the new session
+        if let Some(ref store) = self.session_store {
+            if let Some(wt) = self.current_worktree() {
+                let branch = wt.branch_name.clone();
+                let mut files = Vec::new();
+                if let Ok(sessions) = store.list_sessions(Some(&branch)) {
+                    for s in &sessions {
+                        let key = s.id.to_string();
+                        files.push((key.clone(), std::path::PathBuf::new(), s.created.clone()));
+                        self.session_msg_counts.insert(key, (s.message_count, 0));
+                    }
+                }
+                self.session_files.insert(branch, files);
+            }
+        }
+
         if self.staged_prompt.is_some() {
-            // A prompt was stashed before the dialog — it'll be sent automatically
             self.focus = Focus::Input;
             self.prompt_mode = false;
             self.set_status("Sending prompt...");
