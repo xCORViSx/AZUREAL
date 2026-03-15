@@ -216,7 +216,10 @@ fn render_display_events_with_state(
             DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
                 render_complete(&mut lines, *duration_ms, *cost_usd, *success);
             }
-            DisplayEvent::ModelSwitch { .. } | DisplayEvent::Filtered => {}
+            DisplayEvent::ModelSwitch { model } => {
+                current_model = Some(model.clone());
+            }
+            DisplayEvent::Filtered => {}
         }
     }
 
