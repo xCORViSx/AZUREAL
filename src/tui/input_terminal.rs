@@ -200,6 +200,15 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                                 return Ok(());
                             }
 
+                            // If there's a running process on this branch, store its
+                            // events now before we advance the offset for the new turn.
+                            // Prevents double-storing when the old process exits later.
+                            if let Some(prev_slot) = app.active_slot.get(&branch_name).cloned() {
+                                if app.running_sessions.contains(&prev_slot) {
+                                    app.store_append_from_display(&prev_slot);
+                                }
+                            }
+
                             // Capture offset before adding user message so the
                             // store append captures the UserMessage too
                             let events_offset = app.display_events.len();

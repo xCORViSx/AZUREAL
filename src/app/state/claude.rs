@@ -229,6 +229,32 @@ impl App {
         }
     }
 
+    /// Store a running slot's display events early (before exit), e.g. when
+    /// a new prompt supersedes a still-running process. Removes the slot from
+    /// pid_session_target so the exit handler doesn't double-store.
+    pub fn store_append_from_display(&mut self, slot_id: &str) {
+        let (session_id, wt_path, events_offset) = match self.pid_session_target.remove(slot_id) {
+            Some(triple) => triple,
+            None => return,
+        };
+        let end = self.display_events.len();
+        if events_offset >= end { return; }
+        let events = self.display_events[events_offset..end].to_vec();
+
+        let store = if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
+            self.session_store.as_ref()
+        } else { None };
+        let temp_store;
+        let store = match store {
+            Some(s) => s,
+            None => {
+                temp_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
+                match temp_store.as_ref() { Some(s) => s, None => return }
+            }
+        };
+        let _ = store.append_events(session_id, &events);
+    }
+
     /// Store the current turn's display events into the SQLite session store.
     /// Uses the live display_events (which match what the user saw) rather than
     /// re-parsing the JSONL file. Deletes the source JSONL after successful ingestion.
