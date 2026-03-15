@@ -200,19 +200,26 @@ impl App {
             }
         }
 
-        // Force a full re-parse from the session file now that streaming is done.
-        // Skip re-parse if the exiting slot's session file isn't in the current
-        // worktree's directory (e.g. merge resolution spawned from main's repo
-        // root — its session file lives under main's path, not the feature branch's).
-        // Without this guard, the re-parse would reload the OLD session file and
-        // clobber the streaming output that the user is viewing.
+        // Post-exit session file refresh.
+        // When using the session store (no --resume), the JSONL only contains the
+        // current turn. A full re-parse (offset=0) would replace display_events
+        // with just that turn, wiping the multi-turn conversation the user sees.
+        // Instead, do an incremental parse to finalize pending tool calls etc.
+        // without clobbering previous turns' display events.
+        //
+        // For non-store sessions (legacy --resume flow), the JSONL has all turns,
+        // so a full re-parse is safe and gives the canonical post-streaming view.
         if is_current && was_active {
             let session_file_exists = self.agent_session_ids.get(slot_id)
                 .and_then(|sid| self.current_worktree().and_then(|wt| wt.worktree_path.as_deref().map(|p| (sid, p))))
                 .and_then(|(sid, path)| crate::config::session_file(self.backend, path, sid))
                 .is_some();
             if session_file_exists {
-                self.session_file_parse_offset = 0;
+                // Store-backed session: incremental parse only (preserve display_events)
+                // Legacy session: full re-parse from offset 0
+                if self.current_session_id.is_none() {
+                    self.session_file_parse_offset = 0;
+                }
                 self.session_file_dirty = true;
             }
         }

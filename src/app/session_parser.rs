@@ -428,6 +428,9 @@ fn parse_user_event(
 
     if let Some(content) = content_val.and_then(|c| c.as_str()) {
         if content.contains("<local-command-caveat>") { return; }
+        // Task notifications are injected by Claude Code as user-role messages
+        // when background commands complete — filter them from display.
+        if content.contains("<task-notification>") { return; }
 
         if content.contains("<local-command-stdout>") {
             if content.contains("Compacted") {
@@ -1770,6 +1773,16 @@ mod tests {
         std::fs::write(&file_path, format!("{}\n", line)).unwrap();
         let result = parse_session_file(&file_path);
         assert!(result.events.is_empty());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_parse_session_file_task_notification_filtered() {
+        let file_path = test_file("task_notif");
+        let line = r#"{"type":"user","message":{"content":"<task-notification><task-id>abc123</task-id><status>completed</status><summary>Background command completed</summary></task-notification>Read the output file"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
+        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
+        let result = parse_session_file(&file_path);
+        assert!(result.events.is_empty(), "task-notification should be filtered from display");
         let _ = std::fs::remove_file(&file_path);
     }
 
