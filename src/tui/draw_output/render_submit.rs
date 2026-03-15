@@ -50,6 +50,9 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
                     if s.saw_ask_user_question { s.saw_user_after_ask = true; }
                 }
             }
+            DisplayEvent::ModelSwitch { model } => {
+                s.current_model = Some(model.clone());
+            }
             _ => {}
         }
     }
