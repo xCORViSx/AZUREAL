@@ -250,6 +250,35 @@ pub async fn run_app(
             }
         }
 
+        // Send staged prompt when no agent is running (e.g. first prompt after session creation)
+        if app.staged_prompt.is_some() && !app.is_active_slot_running() {
+            if let Some(prompt) = app.staged_prompt.take() {
+                if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
+                    let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
+                    let events_offset = app.display_events.len();
+                    app.add_user_message(prompt.clone());
+                    app.process_session_chunk(&format!("You: {}\n", prompt));
+                    app.current_todos.clear();
+                    let send_prompt = app.current_session_id
+                        .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
+                        .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
+                        .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
+                        .unwrap_or_else(|| prompt.clone());
+                    match claude_process.spawn(&wt_path, &send_prompt, None, app.selected_model.as_deref()) {
+                        Ok((rx, pid)) => {
+                            if let Some(sid) = app.current_session_id {
+                                app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                            }
+                            app.register_claude(branch, pid, rx);
+                            app.set_status("Running...");
+                        }
+                        Err(e) => app.set_status(format!("Failed to start: {}", e)),
+                    }
+                    needs_redraw = true;
+                }
+            }
+        }
+
         // Poll compaction agents (background summarization, invisible to UI)
         if agent_events::poll_compaction_agents(app) {
             // No redraw needed — compaction is invisible
