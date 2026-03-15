@@ -250,8 +250,8 @@ pub async fn run_app(
             }
         }
 
-        // Send staged prompt when no agent is running (e.g. first prompt after session creation)
-        if app.staged_prompt.is_some() && !app.is_active_slot_running() {
+        // Send staged prompt when no agent is running and no dialog is blocking
+        if app.staged_prompt.is_some() && !app.is_active_slot_running() && !app.new_session_dialog_active {
             if let Some(prompt) = app.staged_prompt.take() {
                 if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
                     let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
