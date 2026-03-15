@@ -95,7 +95,7 @@ pub async fn run_app(
     // Background JSON parser: Claude streaming events get parsed off the main
     // thread. Eliminates 10-50ms of serde_json::from_str() per tick that was
     // blocking input during Claude streaming.
-    let claude_proc = agent_processor::AgentProcessor::spawn(app.backend);
+    let claude_proc = agent_processor::AgentProcessor::spawn(app.backend, app.display_model_name().to_string());
 
     // Initial draw
     terminal.draw(|f| ui(f, app))?;
@@ -207,7 +207,7 @@ pub async fn run_app(
         // Reset the background JSON parser when session changed (flag set by
         // load_session_output / clear_session_state). Drain stale results too.
         if app.agent_processor_needs_reset {
-            claude_proc.reset(app.backend);
+            claude_proc.reset(app.backend, app.display_model_name().to_string());
             claude_proc.drain();
             app.agent_processor_needs_reset = false;
         }

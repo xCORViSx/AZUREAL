@@ -12,13 +12,16 @@ pub struct CodexEventParser {
     buffer: String,
     /// Track items by ID for matching started → completed
     items: HashMap<String, String>,
+    /// Model ID to embed in Init events (e.g. "gpt-5.4")
+    model: String,
 }
 
 impl CodexEventParser {
-    pub fn new() -> Self {
+    pub fn new(model: String) -> Self {
         Self {
             buffer: String::new(),
             items: HashMap::new(),
+            model,
         }
     }
 
@@ -83,7 +86,7 @@ impl CodexEventParser {
         vec![DisplayEvent::Init {
             _session_id: thread_id,
             cwd: String::new(),
-            model: "codex".to_string(),
+            model: self.model.clone(),
         }]
     }
 
@@ -288,7 +291,7 @@ mod tests {
 
     #[test]
     fn parser_new() {
-        let p = CodexEventParser::new();
+        let p = CodexEventParser::new("gpt-5.4".to_string());
         assert!(p.buffer.is_empty());
         assert!(p.items.is_empty());
     }
@@ -297,7 +300,7 @@ mod tests {
 
     #[test]
     fn parse_thread_started() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse(r#"{"type":"thread.started","thread_id":"abc-123"}"#);
         // No newline yet — should be buffered
         assert!(events.is_empty());
@@ -310,7 +313,7 @@ mod tests {
         match &events[0] {
             DisplayEvent::Init { _session_id, model, .. } => {
                 assert_eq!(_session_id, "abc-123");
-                assert_eq!(model, "codex");
+                assert_eq!(model, "gpt-5.4");
             }
             _ => panic!("expected Init"),
         }
@@ -318,7 +321,7 @@ mod tests {
 
     #[test]
     fn parse_thread_started_missing_thread_id() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"thread.started\"}\n");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -331,7 +334,7 @@ mod tests {
 
     #[test]
     fn parse_turn_started_is_noop() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"turn.started\"}\n");
         assert!(events.is_empty());
     }
@@ -340,7 +343,7 @@ mod tests {
 
     #[test]
     fn parse_command_execution_started() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls -la","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -357,7 +360,7 @@ mod tests {
 
     #[test]
     fn parse_command_execution_completed_with_started() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let started = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#;
         let completed = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"ls","aggregated_output":"file1\nfile2\n","exit_code":0,"status":"completed"}}"#;
         let (_, _) = p.parse(&format!("{}\n", started));
@@ -376,7 +379,7 @@ mod tests {
 
     #[test]
     fn parse_command_execution_completed_without_started() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let completed = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"ls","aggregated_output":"output","exit_code":0,"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", completed));
         // Should emit both ToolCall and ToolResult
@@ -387,7 +390,7 @@ mod tests {
 
     #[test]
     fn parse_command_execution_failed() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"false","aggregated_output":"","exit_code":1,"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
@@ -399,7 +402,7 @@ mod tests {
 
     #[test]
     fn parse_command_execution_empty_output() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"true","aggregated_output":"","exit_code":0,"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
@@ -413,7 +416,7 @@ mod tests {
 
     #[test]
     fn parse_reasoning() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"Thinking about it..."}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -425,7 +428,7 @@ mod tests {
 
     #[test]
     fn parse_reasoning_empty_text() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":""}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
@@ -435,7 +438,7 @@ mod tests {
 
     #[test]
     fn parse_agent_message() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hello world"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -447,7 +450,7 @@ mod tests {
 
     #[test]
     fn parse_agent_message_with_markdown() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r##"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"# Title\n\n```rust\nfn main() {}\n```"}}"##;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -463,7 +466,7 @@ mod tests {
 
     #[test]
     fn parse_file_change_single() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"src/main.rs","kind":"update"}],"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2); // ToolCall + ToolResult
@@ -485,7 +488,7 @@ mod tests {
 
     #[test]
     fn parse_file_change_multiple() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"a.rs","kind":"create"},{"path":"b.rs","kind":"update"}],"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 4); // 2 ToolCall + 2 ToolResult
@@ -493,7 +496,7 @@ mod tests {
 
     #[test]
     fn parse_file_change_empty_changes() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[],"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
@@ -503,7 +506,7 @@ mod tests {
 
     #[test]
     fn parse_mcp_tool_call() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"docs","tool":"search","arguments":{"query":"help"},"result":"Found docs","error":null}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2);
@@ -525,7 +528,7 @@ mod tests {
 
     #[test]
     fn parse_mcp_tool_call_with_error() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"s","tool":"t","arguments":null,"result":"","error":"timeout"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
@@ -542,7 +545,7 @@ mod tests {
 
     #[test]
     fn parse_turn_completed() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.completed","usage":{"input_tokens":32607,"cached_input_tokens":32384,"output_tokens":87}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -557,7 +560,7 @@ mod tests {
 
     #[test]
     fn parse_turn_completed_no_usage() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.completed"}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -571,7 +574,7 @@ mod tests {
 
     #[test]
     fn parse_error_event() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"error","message":"Model not supported"}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
@@ -585,7 +588,7 @@ mod tests {
 
     #[test]
     fn parse_turn_failed() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.failed","error":{"message":"API error"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2);
@@ -600,14 +603,14 @@ mod tests {
 
     #[test]
     fn parse_invalid_json() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("not json\n");
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_json_without_type() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse("{\"foo\":\"bar\"}\n");
         assert!(events.is_empty());
         assert!(json.is_some());
@@ -615,14 +618,14 @@ mod tests {
 
     #[test]
     fn parse_unknown_event_type() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"future.event\"}\n");
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_empty_input() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse("");
         assert!(events.is_empty());
         assert!(json.is_none());
@@ -630,7 +633,7 @@ mod tests {
 
     #[test]
     fn parse_multiple_lines() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let input = concat!(
             "{\"type\":\"thread.started\",\"thread_id\":\"t1\"}\n",
             "{\"type\":\"turn.started\"}\n",
@@ -643,7 +646,7 @@ mod tests {
 
     #[test]
     fn parse_partial_then_complete() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         // Feed partial line
         let (events, _) = p.parse("{\"type\":\"thread.");
         assert!(events.is_empty());
@@ -657,7 +660,7 @@ mod tests {
 
     #[test]
     fn parse_full_codex_session() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
 
         // thread.started
         let (e, _) = p.parse("{\"type\":\"thread.started\",\"thread_id\":\"uuid-1\"}\n");
@@ -716,7 +719,7 @@ mod tests {
 
     #[test]
     fn parse_unknown_item_type() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"i99","type":"future_tool","data":"x"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
@@ -726,7 +729,7 @@ mod tests {
 
     #[test]
     fn parse_item_started_no_item() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"item.started\"}\n");
         assert!(events.is_empty());
     }
@@ -735,7 +738,7 @@ mod tests {
 
     #[test]
     fn parse_item_completed_no_item() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"item.completed\"}\n");
         assert!(events.is_empty());
     }
@@ -744,7 +747,7 @@ mod tests {
 
     #[test]
     fn parse_preserves_buffer_across_calls() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         p.parse("{\"type\":\"thread.star");
         p.parse("ted\",\"thread_id\":\"x\"}\n");
         // Buffer should be empty after consuming complete line
@@ -753,7 +756,7 @@ mod tests {
 
     #[test]
     fn parse_handles_multiple_newlines() {
-        let mut p = CodexEventParser::new();
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("\n\n{\"type\":\"turn.started\"}\n\n");
         assert!(events.is_empty()); // turn.started produces no events
     }

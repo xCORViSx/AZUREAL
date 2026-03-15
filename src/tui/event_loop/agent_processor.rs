@@ -33,7 +33,7 @@ enum ProcessorInput {
         data: String,
     },
     /// Reset parser state (session changed or backend switched)
-    Reset { backend: Backend },
+    Reset { backend: Backend, model: String },
 }
 
 /// Trait for streaming event parsers (used only inside processor thread)
@@ -54,10 +54,10 @@ impl StreamParser for CodexEventParser {
 }
 
 /// Create the correct parser for a given backend
-fn create_parser(backend: Backend) -> Box<dyn StreamParser> {
+fn create_parser(backend: Backend, model: String) -> Box<dyn StreamParser> {
     match backend {
         Backend::Claude => Box::new(EventParser::new()),
-        Backend::Codex => Box::new(CodexEventParser::new()),
+        Backend::Codex => Box::new(CodexEventParser::new(model)),
     }
 }
 
@@ -69,14 +69,14 @@ pub struct AgentProcessor {
 
 impl AgentProcessor {
     /// Spawn the processor background thread with a given backend
-    pub fn spawn(backend: Backend) -> Self {
+    pub fn spawn(backend: Backend, model: String) -> Self {
         let (input_tx, input_rx) = mpsc::channel();
         let (output_tx, output_rx) = mpsc::channel();
 
         thread::Builder::new()
             .name("agent-parser".into())
             .spawn(move || {
-                let mut parser = create_parser(backend);
+                let mut parser = create_parser(backend, model);
                 while let Ok(input) = input_rx.recv() {
                     match input {
                         ProcessorInput::Parse { slot_id, output_type, data } => {
@@ -85,8 +85,8 @@ impl AgentProcessor {
                                 slot_id, events, parsed_json, output_type, data,
                             });
                         }
-                        ProcessorInput::Reset { backend } => {
-                            parser = create_parser(backend);
+                        ProcessorInput::Reset { backend, model } => {
+                            parser = create_parser(backend, model);
                         }
                     }
                 }
@@ -102,8 +102,8 @@ impl AgentProcessor {
     }
 
     /// Reset parser state with a specific backend (call on session switch)
-    pub fn reset(&self, backend: Backend) {
-        let _ = self.tx.send(ProcessorInput::Reset { backend });
+    pub fn reset(&self, backend: Backend, model: String) {
+        let _ = self.tx.send(ProcessorInput::Reset { backend, model });
     }
 
     /// Drain all pending results, discarding them (call after session switch
