@@ -104,7 +104,10 @@ pub struct App {
     /// should write to. Set at spawn time, consumed at exit time.
     /// The worktree_path is the CWD used when spawning Claude (needed to locate
     /// the JSONL session file under `~/.claude/projects/<encoded_path>/`).
-    pub pid_session_target: HashMap<String, (i64, PathBuf)>,
+    /// PID string → (S-number, worktree_path, display_events_offset) of the session
+    /// this agent's results should write to. The offset is the display_events.len()
+    /// at spawn time — only events after this index are from the current turn.
+    pub pid_session_target: HashMap<String, (i64, PathBuf, usize)>,
     /// S-number of the currently viewed/active session in the session pane
     pub current_session_id: Option<i64>,
     /// Set by store_append_from_jsonl when compaction threshold is exceeded.

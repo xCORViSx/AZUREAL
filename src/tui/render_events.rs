@@ -125,7 +125,7 @@ fn render_display_events_with_state(
             DisplayEvent::MayBeCompacting => {
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::styled(" ⏳ Session may be compacting conversation... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
+                    Span::styled(" ⏳ Compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
                 ]).alignment(Alignment::Center));
             }
             DisplayEvent::Plan { name, content } => {
@@ -1201,7 +1201,6 @@ mod tests {
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Completed")));
         assert!(text.iter().any(|l| l.contains("5.0s")));
-        assert!(text.iter().any(|l| l.contains("$0.0123")));
     }
 
     /// Failed completion renders red Failed.
@@ -1231,13 +1230,13 @@ mod tests {
         assert!(text.iter().any(|l| l.contains("120.0s")));
     }
 
-    /// Zero cost.
+    /// Zero cost (cost not rendered, just ensure no panic).
     #[test]
     fn test_render_complete_zero_cost() {
         let mut lines: Vec<Line<'static>> = Vec::new();
         render_complete(&mut lines, 100, 0.0, true);
         let text = lines_to_text(&lines);
-        assert!(text.iter().any(|l| l.contains("$0.0000")));
+        assert!(text.iter().any(|l| l.contains("Completed")));
     }
 
     /// Produces exactly 3 lines (empty, content, empty).

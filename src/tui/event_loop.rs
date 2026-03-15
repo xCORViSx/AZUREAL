@@ -636,22 +636,6 @@ pub async fn run_app(
             last_session_poll = now_poll;
         }
 
-        // Compaction inactivity watcher: when context ≥ 90% and the VIEWED session's
-        // active slot has been silent for 30s, inject a "may be compacting" banner.
-        // Uses is_active_slot_running() instead of !agent_receivers.is_empty() so
-        // background processes (health, god-file) don't trigger the banner for an
-        // unrelated session that happens to have high context.
-        if app.context_pct_high
-            && !app.compaction_banner_injected
-            && app.is_active_slot_running()
-            && now_poll.duration_since(app.last_session_event_time) >= Duration::from_secs(30)
-        {
-            app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
-            app.invalidate_render_cache();
-            app.compaction_banner_injected = true;
-            needs_redraw = true;
-        }
-
         // Dismiss auto-rebase success dialog after 2 seconds
         if let Some((_, until)) = &app.auto_rebase_success_until {
             if now_poll >= *until {

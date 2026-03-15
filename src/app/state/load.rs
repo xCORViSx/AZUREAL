@@ -373,7 +373,7 @@ impl App {
                 }
                 // Set current_session_id from the store target if available
                 if let Some(slot) = self.active_slot.get(&branch_name) {
-                    if let Some((sid, _)) = self.pid_session_target.get(slot) {
+                    if let Some((sid, _, _)) = self.pid_session_target.get(slot) {
                         self.current_session_id = Some(*sid);
                     }
                 }
@@ -384,6 +384,7 @@ impl App {
                     if let Ok(events) = store.load_events(sid) {
                         self.display_events = events;
                         self.invalidate_render_cache();
+                        self.update_token_badge();
 
                         if let Some(ref pending) = self.pending_user_message {
                             for event in self.display_events.iter().rev() {

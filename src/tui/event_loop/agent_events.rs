@@ -30,6 +30,7 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
         if let Some(prompt) = app.staged_prompt.take() {
             if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
                 let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
+                let events_offset = app.display_events.len();
                 app.add_user_message(prompt.clone());
                 app.process_session_chunk(&format!("You: {}\n", prompt));
                 app.current_todos.clear();
@@ -43,7 +44,7 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
                 match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
-                            app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone()));
+                            app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                         }
                         app.register_claude(branch, pid, rx);
                         app.set_status("Running...");
@@ -103,6 +104,9 @@ fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_
         Ok((rx, pid)) => {
             let pid_str = pid.to_string();
             app.compaction_receivers.insert(pid_str, (rx, session_id, boundary_seq));
+            // Show "Compacting" banner in the session pane
+            app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
+            app.invalidate_render_cache();
         }
         Err(_) => {} // Compaction is best-effort
     }
@@ -151,6 +155,9 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
                     let _ = store.store_compaction(session_id, boundary_seq, summary);
                     // Refresh badge — chars_since_compaction just dropped
                     app.update_token_badge();
+                    // Show "Compacted" banner in the session pane
+                    app.display_events.push(crate::events::DisplayEvent::Compacting);
+                    app.invalidate_render_cache();
                 }
             }
         }

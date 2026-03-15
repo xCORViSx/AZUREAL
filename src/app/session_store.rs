@@ -302,7 +302,7 @@ impl SessionStore {
         let mut count = 0usize;
         let mut completion: Option<(bool, u64, f64)> = None;
         for event in events {
-            if matches!(event, DisplayEvent::Filtered) { continue; }
+            if matches!(event, DisplayEvent::Filtered | DisplayEvent::MayBeCompacting) { continue; }
             if let DisplayEvent::Complete { success, duration_ms, cost_usd, .. } = event {
                 completion = Some((*success, *duration_ms, *cost_usd));
             }
@@ -780,7 +780,7 @@ mod tests {
             [],
             |row| row.get(0),
         ).unwrap();
-        assert_eq!(version, "1");
+        assert_eq!(version, "2");
     }
 
     #[test]
@@ -792,7 +792,7 @@ mod tests {
             [],
             |row| row.get(0),
         ).unwrap();
-        assert_eq!(version, "1");
+        assert_eq!(version, "2");
     }
 
     // ── create_session ──

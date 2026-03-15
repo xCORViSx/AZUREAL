@@ -229,43 +229,34 @@ impl App {
         }
     }
 
-    /// Parse the JSONL session file for a completed process and append its events
-    /// to the SQLite session store. Strips any injected context prefix from the
-    /// first UserMessage so the store contains clean conversation history.
+    /// Store the current turn's display events into the SQLite session store.
+    /// Uses the live display_events (which match what the user saw) rather than
+    /// re-parsing the JSONL file. Deletes the source JSONL after successful ingestion.
     fn store_append_from_jsonl(&mut self, slot_id: &str) {
         // Only process if this slot was targeting a store session
-        let (session_id, wt_path) = match self.pid_session_target.remove(slot_id) {
-            Some(pair) => pair,
+        let (session_id, wt_path, events_offset) = match self.pid_session_target.remove(slot_id) {
+            Some(triple) => triple,
             None => return,
         };
 
-        // Resolve JSONL file path: slot_id → Claude UUID → file path
+        // Resolve JSONL file path for deletion
         let jsonl_path = self.agent_session_ids.get(slot_id)
             .and_then(|uuid| crate::config::session_file(self.backend, &wt_path, uuid));
-        let jsonl_path = match jsonl_path {
-            Some(p) if p.exists() => p,
-            _ => return,
+
+        // Collect current turn's events from display_events (after the offset)
+        let events: Vec<crate::events::DisplayEvent> = if events_offset < self.display_events.len() {
+            self.display_events[events_offset..].to_vec()
+        } else {
+            Vec::new()
         };
 
-        // Parse the JSONL file into DisplayEvents
-        let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
-        if parsed.events.is_empty() {
+        if events.is_empty() {
+            // Still delete the JSONL even if no events to store
+            if let Some(p) = jsonl_path.filter(|p| p.exists()) {
+                let _ = std::fs::remove_file(&p);
+            }
             return;
         }
-
-        // Strip injected context from the first UserMessage (if present)
-        let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
-            match ev {
-                crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                    let stripped = crate::app::context_injection::strip_injected_context(&content);
-                    crate::events::DisplayEvent::UserMessage {
-                        _uuid,
-                        content: stripped.to_string(),
-                    }
-                }
-                other => other,
-            }
-        }).collect();
 
         // Open store at the target worktree path (may differ from current worktree
         // if the user switched away while the process was running)
@@ -288,11 +279,15 @@ impl App {
         };
         if store.append_events(session_id, &events).is_ok() {
             // Source JSONL ingested — delete the original file
-            let _ = std::fs::remove_file(&jsonl_path);
-            // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
-            if self.session_file_path.as_ref() == Some(&jsonl_path) {
-                self.session_file_path = None;
-                self.session_file_dirty = false;
+            if let Some(ref p) = jsonl_path {
+                if p.exists() {
+                    let _ = std::fs::remove_file(p);
+                }
+                // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
+                if self.session_file_path.as_ref() == Some(p) {
+                    self.session_file_path = None;
+                    self.session_file_dirty = false;
+                }
             }
 
             // Check if compaction is needed (only if not already pending)
@@ -415,7 +410,7 @@ impl App {
         }
 
         // Post-exit store flow for background project
-        if let Some((session_id, wt_path)) = snapshot.pid_session_target.remove(slot_id) {
+        if let Some((session_id, wt_path, _)) = snapshot.pid_session_target.remove(slot_id) {
             self.store_append_background(slot_id, session_id, &wt_path, &project_path);
         }
 

@@ -192,6 +192,9 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
 
                     if let Some((branch_name, worktree_opt)) = session_data {
                         if let Some(wt_path) = worktree_opt {
+                            // Capture offset before adding user message so the
+                            // store append captures the UserMessage too
+                            let events_offset = app.display_events.len();
                             let prompt_text = format!("You: {}\n", input.clone());
                             app.add_user_message(input.clone());
                             app.process_session_chunk(&prompt_text);
@@ -237,7 +240,7 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                                 Ok((rx, pid)) => {
                                     // Set pid → session target so post-exit flow writes to correct session
                                     if let Some(sid) = app.current_session_id {
-                                        app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone()));
+                                        app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                                     }
                                     app.register_claude(branch_name, pid, rx);
                                     app.set_status("Running...");

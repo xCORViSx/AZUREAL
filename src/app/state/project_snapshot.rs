@@ -30,7 +30,7 @@ pub struct ProjectSnapshot {
     pub pending_session_names: Vec<(String, String)>,
 
     // ── Session store state ──
-    pub pid_session_target: HashMap<String, (i64, PathBuf)>,
+    pub pid_session_target: HashMap<String, (i64, PathBuf, usize)>,
     pub current_session_id: Option<i64>,
 
     // ── Session list state ──
