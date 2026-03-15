@@ -291,6 +291,7 @@ impl App {
         self.session_tokens = None;
         self.model_context_window = None;
         self.token_badge_cache = None;
+        self.store_chars_cached = 0;
         self.current_todos.clear();
         self.subagent_todos.clear();
         self.active_task_tool_ids.clear();
@@ -302,15 +303,17 @@ impl App {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
 
+            // Reset current_session_id — it belongs to the previous worktree.
+            // Will be set below if a session is found for this worktree.
+            self.current_session_id = None;
+
             // Determine store session ID:
             // 1. From session list selection (numeric string from session_files cache)
-            // 2. From current_session_id (set by start_new_session or prior load)
-            // 3. Auto-discover latest session from store for this branch
+            // 2. Auto-discover latest session from store for this branch
             let store_session_id = self.session_selected_file_idx.get(&branch_name)
                 .and_then(|idx| self.session_files.get(&branch_name)
                     .and_then(|f| f.get(*idx))
                     .and_then(|(id, _, _)| id.parse::<i64>().ok()))
-                .or(self.current_session_id)
                 .or_else(|| self.session_store.as_ref()
                     .and_then(|store| store.list_sessions(Some(&branch_name)).ok())
                     .and_then(|sessions| sessions.last().map(|s| s.id)));
