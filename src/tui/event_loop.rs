@@ -270,6 +270,7 @@ pub async fn run_app(
                                 app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                             }
                             app.register_claude(branch, pid, rx);
+                            app.update_title_session_name();
                             app.set_status("Running...");
                         }
                         Err(e) => app.set_status(format!("Failed to start: {}", e)),
