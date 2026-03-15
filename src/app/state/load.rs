@@ -412,13 +412,16 @@ impl App {
 
         // Determine if we're viewing a non-active (historic) session.
         // When true, live events from the running process are suppressed.
+        // Compare by store session ID: the active slot's pid_session_target
+        // vs the currently viewed session's store ID.
         self.viewing_historic_session = false;
         if let Some(session) = self.current_worktree() {
             let branch = session.branch_name.clone();
             if let Some(active_slot) = self.active_slot.get(&branch) {
-                if let Some(active_sid) = self.agent_session_ids.get(active_slot) {
-                    if let Some(viewed_sid) = self.viewed_session_id(&branch) {
-                        self.viewing_historic_session = active_sid != &viewed_sid;
+                let active_store_id = self.pid_session_target.get(active_slot).map(|(sid, _, _)| *sid);
+                if let Some(active_sid) = active_store_id {
+                    if let Some(viewed_sid) = self.current_session_id {
+                        self.viewing_historic_session = active_sid != viewed_sid;
                     }
                 }
             }
