@@ -107,7 +107,11 @@ impl App {
         self.agent_exit_codes.remove(slot_id);
         self.invalidate_sidebar();
         let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
-        self.set_status(format!("Claude started in {}", branch));
+        let agent = match self.backend {
+            crate::backend::Backend::Claude => "Claude",
+            crate::backend::Backend::Codex => "Codex",
+        };
+        self.set_status(format!("{} started in {}", agent, branch));
     }
 
     /// Called when a Claude process exits. Cleans up slot state, switches active

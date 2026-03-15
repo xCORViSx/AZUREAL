@@ -94,7 +94,12 @@ impl App {
         let idx = ALL_MODELS.iter().position(|&m| m == current).unwrap_or(0);
         let next = ALL_MODELS[(idx + 1) % ALL_MODELS.len()];
         self.selected_model = Some(next.to_string());
-        self.backend = backend_for_model(next);
+        let new_backend = backend_for_model(next);
+        if new_backend != self.backend {
+            self.backend = new_backend;
+            // Reset the background parser so it uses the new backend's format
+            self.agent_processor_needs_reset = true;
+        }
     }
 }
 
