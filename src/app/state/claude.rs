@@ -304,6 +304,9 @@ impl App {
             }
         };
         if store.append_events(session_id, &events).is_ok() {
+            // Clear the persisted UUID — ingestion complete, no recovery needed
+            let _ = store.clear_session_uuid(session_id);
+
             // Source JSONL ingested — delete the original file
             if let Some(ref p) = jsonl_path {
                 if p.exists() {
@@ -668,7 +671,14 @@ impl App {
                 rcr.session_id = Some(claude_session_id.clone());
             }
         }
-        self.agent_session_ids.insert(slot_id.to_string(), claude_session_id);
+        self.agent_session_ids.insert(slot_id.to_string(), claude_session_id.clone());
+
+        // Persist UUID in the store so orphaned JSOLNs can be recovered on restart
+        if let Some((session_id, _, _)) = self.pid_session_target.get(slot_id) {
+            if let Some(ref store) = self.session_store {
+                let _ = store.set_session_uuid(*session_id, &claude_session_id);
+            }
+        }
     }
 
     /// Get the Claude session UUID for the active slot of a branch (for --resume)

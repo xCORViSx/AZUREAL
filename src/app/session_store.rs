@@ -37,13 +37,14 @@ pub const COMPACTION_THRESHOLD: usize = 400_000;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS sessions (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL DEFAULT '',
-    worktree    TEXT NOT NULL DEFAULT '',
-    created     TEXT NOT NULL DEFAULT (datetime('now')),
-    completed   INTEGER,
-    duration_ms INTEGER,
-    cost_usd    REAL
+    id               INTEGER PRIMARY KEY,
+    name             TEXT NOT NULL DEFAULT '',
+    worktree         TEXT NOT NULL DEFAULT '',
+    created          TEXT NOT NULL DEFAULT (datetime('now')),
+    completed        INTEGER,
+    duration_ms      INTEGER,
+    cost_usd         REAL,
+    last_claude_uuid TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -126,6 +127,8 @@ impl SessionStore {
              PRAGMA foreign_keys = ON;"
         )?;
         conn.execute_batch(SCHEMA)?;
+        // Migration: add last_claude_uuid column if missing (existing databases)
+        let _ = conn.execute_batch("ALTER TABLE sessions ADD COLUMN last_claude_uuid TEXT NOT NULL DEFAULT '';");
         Ok(Self { conn })
     }
 
@@ -163,6 +166,35 @@ impl SessionStore {
             [],
             |row| row.get(0),
         ).unwrap_or(1)
+    }
+
+    /// Update the last Claude UUID for a session (for JSONL recovery on restart).
+    pub fn set_session_uuid(&self, id: i64, uuid: &str) -> anyhow::Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET last_claude_uuid = ?1 WHERE id = ?2",
+            params![uuid, id],
+        )?;
+        Ok(())
+    }
+
+    /// Get sessions with non-empty last_claude_uuid (for orphan recovery).
+    pub fn sessions_with_uuid(&self) -> anyhow::Result<Vec<(i64, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, worktree, last_claude_uuid FROM sessions WHERE last_claude_uuid != ''"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Clear the Claude UUID for a session (after successful JSONL ingestion).
+    pub fn clear_session_uuid(&self, id: i64) -> anyhow::Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET last_claude_uuid = '' WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
     }
 
     /// Rename a session (set user-assigned display name).

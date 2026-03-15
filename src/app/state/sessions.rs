@@ -45,6 +45,51 @@ impl App {
         }
     }
 
+    /// Recover orphaned JSONL files on startup. Checks sessions with a
+    /// persisted `last_claude_uuid` — if the JSONL exists, parses it and
+    /// appends the events to the store, then deletes the JSONL.
+    pub fn recover_orphaned_jsonls(&mut self) {
+        let Some(ref wt_path) = self.current_worktree_path() else { return; };
+        let Some(ref store) = self.session_store else { return; };
+        let sessions = store.sessions_with_uuid().unwrap_or_default();
+        if sessions.is_empty() { return; }
+
+        for (session_id, _worktree, uuid) in &sessions {
+            let jsonl_path = crate::config::session_file(self.backend, wt_path, uuid);
+            let Some(jsonl_path) = jsonl_path.filter(|p| p.exists()) else {
+                // JSONL gone (already deleted or never written) — clear stale UUID
+                let _ = store.clear_session_uuid(*session_id);
+                continue;
+            };
+
+            let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+            if !parsed.events.is_empty() {
+                // Strip injected context from UserMessage events
+                let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
+                    match ev {
+                        crate::events::DisplayEvent::UserMessage { _uuid, content } => {
+                            let stripped = crate::app::context_injection::strip_injected_context(&content);
+                            crate::events::DisplayEvent::UserMessage {
+                                _uuid,
+                                content: stripped.to_string(),
+                            }
+                        }
+                        other => other,
+                    }
+                }).collect();
+
+                if store.append_events(*session_id, &events).is_ok() {
+                    let _ = std::fs::remove_file(&jsonl_path);
+                    let _ = store.clear_session_uuid(*session_id);
+                }
+            } else {
+                // Empty JSONL — just clean up
+                let _ = std::fs::remove_file(&jsonl_path);
+                let _ = store.clear_session_uuid(*session_id);
+            }
+        }
+    }
+
     pub fn select_next_session(&mut self) {
         if self.worktrees.is_empty() { return; }
         let next = match self.selected_worktree {

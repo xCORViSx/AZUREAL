@@ -248,6 +248,8 @@ impl App {
     pub fn load_session_output(&mut self) {
         // Open session store if the .azs file exists (don't create it)
         self.try_open_session_store();
+        // Recover any orphaned JSOLNs from a previous crash/restart
+        self.recover_orphaned_jsonls();
 
         // Restore terminal for new session (save was done before selection changed)
         self.restore_session_terminal();
