@@ -3,7 +3,7 @@
 //! Submodules handle specific concerns:
 //! - `cpu`: CPU usage monitoring for the status bar
 //! - `deferred`: Deferred actions for two-phase draw pattern
-//! - `model`: Model selection and token usage badge
+//! - `model`: Model selection and context usage badge
 //! - `queries`: Session status queries and project/worktree accessors
 //! - `stt`: Speech-to-text integration
 //! - `todo`: Todo item types from Claude's TodoWrite tool call
@@ -276,9 +276,8 @@ pub struct App {
     /// are arriving (to avoid the ~18ms terminal.draw() blocking window).
     pub draw_pending: bool,
     /// When true, next terminal.draw() calls terminal.clear() first to reset
-    /// ratatui's internal buffer. Needed after fast_draw_session() writes
-    /// directly to the terminal — ratatui doesn't know those cells changed,
-    /// so its diff misses them when switching to a different layout (e.g. git panel).
+    /// ratatui's internal buffer after any direct terminal writes or major
+    /// layout transitions, so the next frame repaints from a clean slate.
     pub force_full_redraw: bool,
     /// Cached CPU usage string for status bar (updated every ~1s via getrusage delta)
     pub cpu_usage_text: String,
@@ -295,7 +294,7 @@ pub struct App {
     pub pane_viewer: ratatui::layout::Rect,
     pub pane_session: ratatui::layout::Rect,
     /// The actual session content rect (excludes todo widget and search bar at bottom).
-    /// Used by fast_draw_session to avoid overwriting those sub-areas.
+    /// Used for mouse hit-testing and scroll behavior within the visible session area.
     pub pane_session_content: ratatui::layout::Rect,
     /// Cached rect for the worktree tab row (mouse click hit-testing)
     pub pane_worktree_tabs: ratatui::layout::Rect,
@@ -438,12 +437,7 @@ pub struct App {
     pub preset_prompt_picker: Option<PresetPromptPicker>,
     /// Preset prompt add/edit dialog
     pub preset_prompt_dialog: Option<PresetPromptDialog>,
-    /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
-    /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
-    pub session_tokens: Option<(u64, u64)>,
-    /// Context window size detected from model string (None = not yet known, default 200k)
-    pub model_context_window: Option<u64>,
-    /// Cached token usage badge: (formatted_string, color) — only recomputed when token data changes
+    /// Cached context usage badge: (formatted_string, color) — only recomputed when usage changes
     pub token_badge_cache: Option<(String, ratatui::style::Color)>,
     /// Cached store char count (avoids store I/O during live badge updates)
     pub store_chars_cached: usize,
@@ -589,8 +583,6 @@ pub struct App {
     // ── Model selection (⌃m cycle) ──
     /// User-selected model override (None = use Claude CLI default)
     pub selected_model: Option<String>,
-    /// Model detected from the live stream's assistant event (e.g. "claude-opus-4-6")
-    pub detected_model: Option<String>,
 }
 
 impl App {
@@ -780,8 +772,6 @@ impl App {
             preset_prompts: Vec::new(),
             preset_prompt_picker: None,
             preset_prompt_dialog: None,
-            session_tokens: None,
-            model_context_window: None,
             token_badge_cache: None,
             store_chars_cached: 0,
             context_pct_high: false,
@@ -841,7 +831,6 @@ impl App {
             session_content_search: false,
             session_search_results: Vec::new(),
             selected_model: Some("opus".to_string()),
-            detected_model: None,
         }
     }
 

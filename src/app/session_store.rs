@@ -30,6 +30,8 @@ fn decompress_data(blob: &[u8]) -> String {
 /// Compaction threshold: when characters since last compaction exceed this,
 /// a background agent summarizes the conversation. ~100K tokens at 4 chars/token.
 pub const COMPACTION_THRESHOLD: usize = 400_000;
+const SCHEMA_VERSION: &str = "3";
+const LEGACY_SESSION_COLUMNS: [&str; 3] = ["context_tokens", "output_tokens", "context_window"];
 
 // =========================================================================
 // Schema
@@ -71,7 +73,7 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '3');
 ";
 
 // =========================================================================
@@ -127,10 +129,7 @@ impl SessionStore {
              PRAGMA foreign_keys = ON;",
         )?;
         conn.execute_batch(SCHEMA)?;
-        // Migration: add last_claude_uuid column if missing (existing databases)
-        let _ = conn.execute_batch(
-            "ALTER TABLE sessions ADD COLUMN last_claude_uuid TEXT NOT NULL DEFAULT '';",
-        );
+        Self::migrate_schema(&conn)?;
         Ok(Self { conn })
     }
 
@@ -140,7 +139,38 @@ impl SessionStore {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        Self::migrate_schema(&conn)?;
         Ok(Self { conn })
+    }
+
+    fn migrate_schema(conn: &Connection) -> anyhow::Result<()> {
+        if !Self::column_exists(conn, "sessions", "last_claude_uuid")? {
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN last_claude_uuid TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
+        for column in LEGACY_SESSION_COLUMNS {
+            if Self::column_exists(conn, "sessions", column)? {
+                conn.execute_batch(&format!("ALTER TABLE sessions DROP COLUMN {column};"))?;
+            }
+        }
+        conn.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+            params![SCHEMA_VERSION],
+        )?;
+        Ok(())
+    }
+
+    fn column_exists(conn: &Connection, table: &str, column: &str) -> anyhow::Result<bool> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Path to the `.azs` database file.
@@ -922,13 +952,17 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "2");
+        assert_eq!(version, SCHEMA_VERSION);
+        for column in LEGACY_SESSION_COLUMNS {
+            assert!(!SessionStore::column_exists(&store.conn, "sessions", column).unwrap());
+        }
     }
 
     #[test]
     fn open_memory_idempotent() {
         let store = SessionStore::open_memory().unwrap();
         store.conn.execute_batch(SCHEMA).unwrap();
+        SessionStore::migrate_schema(&store.conn).unwrap();
         let version: String = store
             .conn
             .query_row(
@@ -937,7 +971,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "2");
+        assert_eq!(version, SCHEMA_VERSION);
+        for column in LEGACY_SESSION_COLUMNS {
+            assert!(!SessionStore::column_exists(&store.conn, "sessions", column).unwrap());
+        }
     }
 
     // ── create_session ──
@@ -1590,6 +1627,54 @@ mod tests {
             let loaded = store.load_events(1).unwrap();
             assert_eq!(loaded.len(), 4);
         }
+    }
+
+    #[test]
+    fn open_migrates_legacy_usage_columns_out_of_existing_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = SessionStore::db_path(dir.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE sessions (
+                id               INTEGER PRIMARY KEY,
+                name             TEXT NOT NULL DEFAULT '',
+                worktree         TEXT NOT NULL DEFAULT '',
+                created          TEXT NOT NULL DEFAULT (datetime('now')),
+                completed        INTEGER,
+                duration_ms      INTEGER,
+                cost_usd         REAL,
+                last_claude_uuid TEXT NOT NULL DEFAULT '',
+                context_tokens   INTEGER,
+                output_tokens    INTEGER,
+                context_window   INTEGER
+            );
+            CREATE TABLE meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO meta(key, value) VALUES ('schema_version', '2');
+            ",
+        )
+        .unwrap();
+        drop(conn);
+
+        let store = SessionStore::open(dir.path()).unwrap();
+        let version: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        for column in LEGACY_SESSION_COLUMNS {
+            assert!(!SessionStore::column_exists(&store.conn, "sessions", column).unwrap());
+        }
+        assert!(SessionStore::column_exists(&store.conn, "sessions", "last_claude_uuid").unwrap());
     }
 
     // ── serde round-trip fidelity ──

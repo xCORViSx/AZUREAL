@@ -1,4 +1,4 @@
-//! Model selection and token usage badge
+//! Model selection and context usage badge
 
 use super::App;
 use crate::backend::Backend;
@@ -82,8 +82,8 @@ impl App {
         })
     }
 
-    /// Recompute the cached context usage badge from session store character count.
-    /// Percentage = chars_since_compaction / COMPACTION_THRESHOLD (400k).
+    /// Recompute the cached context usage badge from Azureal's custom
+    /// compaction counter: chars since last compaction / 400k threshold.
     /// Call after store append or compaction — the draw path just reads the cache.
     /// For live updates during streaming, use `update_token_badge_live()` instead.
     pub fn update_token_badge(&mut self) {
@@ -114,21 +114,16 @@ impl App {
         }
     }
 
-    /// Lightweight badge update during streaming — uses cached store chars plus
-    /// live display_events char count. No store I/O.
+    /// Lightweight badge update during streaming — uses the authoritative live
+    /// char counter (synced from store on load, then incremented as prompts and
+    /// parsed output arrive). No store I/O.
     pub fn update_token_badge_live(&mut self) {
-        let live_chars: usize = self
-            .display_events
-            .iter()
-            .map(crate::app::session_store::event_char_len)
-            .sum();
-        self.apply_token_badge(self.store_chars_cached + live_chars);
+        self.apply_token_badge(self.chars_since_compaction);
     }
 
     fn apply_token_badge(&mut self, total_chars: usize) {
-        let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
-        let pct_value = if total_chars > 0 || self.current_session_id.is_some() {
-            let pct = (total_chars as f64 / threshold * 100.0).min(100.0);
+        let pct_value = self.char_usage_pct(total_chars);
+        let pct_value = if let Some(pct) = pct_value {
             let color = if pct < 60.0 {
                 ratatui::style::Color::Green
             } else if pct < 90.0 {
@@ -148,6 +143,15 @@ impl App {
         // Reset banner state when context drops below threshold (e.g. after compaction)
         if was_high && !self.context_pct_high {
             self.compaction_banner_injected = false;
+        }
+    }
+
+    fn char_usage_pct(&self, total_chars: usize) -> Option<f64> {
+        if total_chars > 0 || self.current_session_id.is_some() {
+            let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
+            Some((total_chars as f64 / threshold * 100.0).min(100.0))
+        } else {
+            None
         }
     }
 
@@ -619,6 +623,17 @@ mod tests {
     }
 
     #[test]
+    fn test_token_badge_ignores_session_token_metadata() {
+        let mut app = app_with_store_chars(500_000);
+
+        app.update_token_badge();
+
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert_eq!(color, ratatui::style::Color::Red);
+        assert!(text.contains("100"));
+    }
+
+    #[test]
     fn test_token_badge_compaction_resets_pct() {
         use crate::app::session_store::SessionStore;
         use crate::events::DisplayEvent;
@@ -648,6 +663,24 @@ mod tests {
         assert!(!app.context_pct_high);
         let (text, color) = app.token_badge_cache.unwrap();
         assert!(text.contains("0"));
+        assert_eq!(color, ratatui::style::Color::Green);
+    }
+
+    #[test]
+    fn test_token_badge_live_does_not_double_count_loaded_display_events() {
+        use crate::events::DisplayEvent;
+
+        let mut app = app_with_store_chars(200_000);
+        app.display_events = vec![DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "x".repeat(200_000),
+        }];
+
+        app.update_token_badge();
+        app.update_token_badge_live();
+
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert!(text.contains("50"));
         assert_eq!(color, ratatui::style::Color::Green);
     }
 }

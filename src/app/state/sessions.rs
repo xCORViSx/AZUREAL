@@ -425,7 +425,6 @@ impl App {
         self.selected_event = None;
         self.current_todos.clear();
         self.subagent_todos.clear();
-        self.session_tokens = None;
         self.token_badge_cache = None;
         self.invalidate_render_cache();
 

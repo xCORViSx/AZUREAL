@@ -194,8 +194,6 @@ fn spawn_conflict_claude(
             app.selected_event = None;
             app.pending_tool_calls.clear();
             app.failed_tool_calls.clear();
-            app.session_tokens = None;
-            app.model_context_window = None;
             app.token_badge_cache = None;
             app.current_todos.clear();
             app.subagent_todos.clear();

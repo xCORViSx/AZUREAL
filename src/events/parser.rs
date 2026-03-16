@@ -21,7 +21,7 @@ impl EventParser {
     }
 
     /// Feed raw data and get parsed display events + the last parsed JSON value.
-    /// The JSON value is returned so callers can extract token usage without re-parsing.
+    /// The JSON value is returned so callers can reuse the parsed payload if needed.
     /// Collects complete line ranges first, then drains consumed bytes in one shot —
     /// O(n) total instead of O(n²) re-allocation on every newline.
     pub fn parse(&mut self, data: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {

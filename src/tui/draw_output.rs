@@ -557,12 +557,12 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::White)
     };
 
-    // Build right-aligned title: token percentage + PID/exit code
+    // Build right-aligned title: context percentage + PID/exit code
     let branch = app.current_worktree().map(|s| s.branch_name.clone());
     let right_title: Option<Line<'static>> = {
         let mut spans: Vec<Span<'static>> = Vec::new();
 
-        // Token usage percentage badge — pre-computed in update_token_badge(), just read the cache
+        // Context usage badge — pre-computed in update_token_badge(), just read the cache
         if let Some((ref text, color)) = app.token_badge_cache {
             spans.push(Span::styled(
                 text.clone(),

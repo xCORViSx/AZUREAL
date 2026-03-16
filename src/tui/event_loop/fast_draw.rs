@@ -1,13 +1,12 @@
 //! Fast-path rendering bypasses (macOS only)
 //!
-//! Two fast paths that bypass terminal.draw() (~18ms) for instant feedback:
-//! - `fast_draw_input`: writes input box content via crossterm (~0.1ms)
-//! - `fast_draw_session`: rewrites session pane via direct cursor positioning (~2-5ms)
+//! Only the input fast path remains enabled. A previous session-pane fast path
+//! used direct terminal writes and desynchronized ratatui's screen buffer,
+//! which produced border gaps and stale session content artifacts.
 //!
 //! Disabled on Windows — direct CSI writes corrupt the console input parser.
 
-use crossterm::{cursor, execute, queue, style};
-use ratatui::style::Modifier;
+use crossterm::{cursor, execute, style};
 use std::io::{self, Write};
 
 use super::super::draw_input::{display_width, word_wrap_break_points};
@@ -102,164 +101,6 @@ pub fn fast_draw_input(app: &App) {
     } else {
         let _ = execute!(stdout, cursor::Hide);
     }
-    let _ = stdout.flush();
-}
-
-/// Convert ratatui Color to crossterm Color.
-/// Mapping matches ratatui's internal crossterm backend (map_color).
-fn ratatui_to_crossterm(c: ratatui::style::Color) -> style::Color {
-    use ratatui::style::Color as RC;
-    match c {
-        RC::Reset => style::Color::Reset,
-        RC::Black => style::Color::Black,
-        RC::Red => style::Color::DarkRed,
-        RC::Green => style::Color::DarkGreen,
-        RC::Yellow => style::Color::DarkYellow,
-        RC::Blue => style::Color::DarkBlue,
-        RC::Magenta => style::Color::DarkMagenta,
-        RC::Cyan => style::Color::DarkCyan,
-        RC::Gray => style::Color::Grey,
-        RC::DarkGray => style::Color::DarkGrey,
-        RC::LightRed => style::Color::Red,
-        RC::LightGreen => style::Color::Green,
-        RC::LightYellow => style::Color::Yellow,
-        RC::LightBlue => style::Color::Blue,
-        RC::LightMagenta => style::Color::Magenta,
-        RC::LightCyan => style::Color::Cyan,
-        RC::White => style::Color::White,
-        RC::Rgb(r, g, b) => style::Color::Rgb { r, g, b },
-        RC::Indexed(i) => style::Color::AnsiValue(i),
-    }
-}
-
-/// Fast-path: rewrite visible session lines via direct cursor positioning.
-///
-/// Instead of ratatui's full cell-by-cell diff (~87KB for the whole terminal),
-/// rewrites only the session pane's content area (~10-15KB). No DECSTBM scroll
-/// regions — those are full-width and would scroll the file tree / viewer columns
-/// too, leaving blank gaps until the next full draw.
-///
-/// Only used during streaming follow-bottom when incremental lines arrive.
-/// The next full terminal.draw() reconciles ratatui's buffer naturally.
-pub fn fast_draw_session(app: &App, _new_line_count: usize) {
-    // Use the actual session content rect (excludes todo widget and search bar)
-    // to avoid overwriting those sub-areas with session content.
-    let rect = app.pane_session_content;
-    let inner_height = rect.height.saturating_sub(2) as usize;
-    let inner_width = rect.width.saturating_sub(2) as usize;
-
-    if inner_width == 0 || inner_height == 0 {
-        return;
-    }
-
-    let total = app.rendered_lines_cache.len();
-    if total == 0 {
-        return;
-    }
-
-    // Follow-bottom: show last inner_height lines from cache
-    let start_idx = total.saturating_sub(inner_height);
-    let visible_lines = &app.rendered_lines_cache[start_idx..];
-
-    let mut stdout = io::stdout();
-    let left = rect.x + 1;
-    let first_row = rect.y + 1; // inside top border
-
-    for (i, line) in visible_lines.iter().enumerate() {
-        let row = first_row + i as u16;
-        let _ = queue!(stdout, cursor::MoveTo(left, row));
-        let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
-
-        // Handle centered lines: compute content width and add left padding
-        let line_align = line.alignment.unwrap_or(ratatui::layout::Alignment::Left);
-        let content_width: usize = line
-            .spans
-            .iter()
-            .map(|s| {
-                s.content
-                    .chars()
-                    .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
-                    .sum::<usize>()
-            })
-            .sum();
-        let align_pad = match line_align {
-            ratatui::layout::Alignment::Center => inner_width.saturating_sub(content_width) / 2,
-            ratatui::layout::Alignment::Right => inner_width.saturating_sub(content_width),
-            _ => 0,
-        };
-
-        let mut col = 0usize;
-        if align_pad > 0 {
-            let _ = queue!(stdout, style::Print(" ".repeat(align_pad)));
-            col += align_pad;
-        }
-        for span in &line.spans {
-            if col >= inner_width {
-                break;
-            }
-
-            // Apply span style (fg, bg, modifiers)
-            if let Some(fg) = span.style.fg {
-                let _ = queue!(stdout, style::SetForegroundColor(ratatui_to_crossterm(fg)));
-            }
-            if let Some(bg) = span.style.bg {
-                let _ = queue!(stdout, style::SetBackgroundColor(ratatui_to_crossterm(bg)));
-            }
-            let m = span.style.add_modifier;
-            if m.contains(Modifier::BOLD) {
-                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Bold));
-            }
-            if m.contains(Modifier::DIM) {
-                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Dim));
-            }
-            if m.contains(Modifier::ITALIC) {
-                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Italic));
-            }
-            if m.contains(Modifier::UNDERLINED) {
-                let _ = queue!(stdout, style::SetAttribute(style::Attribute::Underlined));
-            }
-            if m.contains(Modifier::CROSSED_OUT) {
-                let _ = queue!(stdout, style::SetAttribute(style::Attribute::CrossedOut));
-            }
-
-            // Print text truncated to remaining display width
-            let remaining = inner_width - col;
-            let mut width_used = 0;
-            let mut byte_end = 0;
-            for c in span.content.chars() {
-                let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if width_used + w > remaining {
-                    break;
-                }
-                width_used += w;
-                byte_end += c.len_utf8();
-            }
-            if byte_end > 0 {
-                let _ = queue!(stdout, style::Print(&span.content[..byte_end]));
-            }
-            col += width_used;
-
-            // Reset after each span to prevent style leaking
-            let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
-        }
-
-        // Pad remaining width
-        if col < inner_width {
-            let _ = queue!(stdout, style::Print(" ".repeat(inner_width - col)));
-        }
-    }
-
-    // Pad empty rows below content (cache has fewer lines than viewport)
-    for i in visible_lines.len()..inner_height {
-        let row = first_row + i as u16;
-        let _ = queue!(stdout, cursor::MoveTo(left, row));
-        let _ = queue!(stdout, style::SetAttribute(style::Attribute::Reset));
-        let _ = queue!(stdout, style::Print(" ".repeat(inner_width)));
-    }
-
-    // Hide cursor after session draw — ratatui's draw() manages visibility,
-    // but fast_draw bypasses it, so we must hide explicitly.
-    let _ = queue!(stdout, cursor::Hide);
     let _ = stdout.flush();
 }
 

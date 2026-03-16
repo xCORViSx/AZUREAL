@@ -214,8 +214,6 @@ fn parse_from(
         assistant_text_blocks: 0,
         awaiting_plan_approval: false,
         end_offset: byte_offset,
-        session_tokens: None,
-        context_window: None,
         model,
     }
 }
@@ -485,8 +483,7 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
                 });
             }
         }
-
-        _ => {} // token_count, etc. — skip
+        _ => {}
     }
 }
 
@@ -673,8 +670,6 @@ fn empty_parsed() -> ParsedSession {
         assistant_text_blocks: 0,
         awaiting_plan_approval: false,
         end_offset: 0,
-        session_tokens: None,
-        context_window: None,
         model: None,
     }
 }
@@ -1063,14 +1058,6 @@ mod tests {
     fn test_event_msg_empty_message_skipped() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":""}}"#,
-        ]);
-        assert_eq!(result.events.len(), 0);
-    }
-
-    #[test]
-    fn test_event_msg_token_count_ignored() {
-        let result = parse_lines(&[
-            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:12Z","payload":{"type":"token_count","info":{"tokens":500}}}"#,
         ]);
         assert_eq!(result.events.len(), 0);
     }

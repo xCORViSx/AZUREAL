@@ -29,11 +29,6 @@ pub struct ParsedSession {
     pub awaiting_plan_approval: bool,
     /// Byte offset after the last successfully parsed line (for incremental parsing)
     pub end_offset: u64,
-    /// Latest token usage from most recent assistant event: (context_tokens, output_tokens)
-    /// context_tokens = input_tokens + cache_read + cache_creation (effective context size)
-    pub session_tokens: Option<(u64, u64)>,
-    /// Model context window size detected from assistant events' message.model field
-    pub context_window: Option<u64>,
     /// Model string from the last assistant event (e.g. "claude-opus-4-6")
     pub model: Option<String>,
 }
@@ -115,8 +110,6 @@ pub fn parse_session_file_incremental(
             assistant_text_blocks: 0,
             awaiting_plan_approval: check_plan_approval(existing_events),
             end_offset: start_offset,
-            session_tokens: None,
-            context_window: None,
             model: None,
         };
     }
@@ -174,9 +167,6 @@ pub fn parse_session_file_incremental(
         assistant_no_content_arr: result.assistant_no_content_arr,
         assistant_text_blocks: result.assistant_text_blocks,
         end_offset: result.end_offset,
-        // Use new parse's tokens/model if present, otherwise keep None (no assistant events in this batch)
-        session_tokens: result.session_tokens,
-        context_window: result.context_window,
         model: result.model,
     }
 }
@@ -224,8 +214,6 @@ fn parse_session_file_from(
                 assistant_text_blocks: 0,
                 awaiting_plan_approval: false,
                 end_offset: 0,
-                session_tokens: None,
-                context_window: None,
                 model: None,
             }
         }
@@ -256,10 +244,6 @@ fn parse_session_file_from(
     let mut total_lines = 0;
     let mut parse_errors = 0;
     let mut bytes_read: u64 = 0;
-    // Tracks latest assistant event's token usage (overwritten each time, last wins)
-    let mut session_tokens: Option<(u64, u64)> = None;
-    // Context window detected from model string (overwritten each assistant event, last wins)
-    let mut context_window: Option<u64> = None;
     // Model string from the last assistant event (e.g. "claude-opus-4-6")
     let mut model: Option<String> = None;
 
@@ -323,14 +307,10 @@ fn parse_session_file_from(
                     &mut timed_events,
                     &mut tool_calls,
                     &mut pending_tools,
-                    &mut session_tokens,
-                    &mut context_window,
                     &mut model,
                 );
             }
-            "result" => {
-                parse_result_event(&json, timestamp, &mut timed_events, &mut context_window)
-            }
+            "result" => parse_result_event(&json, timestamp, &mut timed_events),
             "system" => parse_system_event(&json, timestamp, &mut timed_events),
             "progress" => parse_progress_event(&json, timestamp, &mut timed_events),
             _ => {}
@@ -373,8 +353,6 @@ fn parse_session_file_from(
         assistant_text_blocks: ast_text,
         awaiting_plan_approval,
         end_offset: start_offset + bytes_read,
-        session_tokens,
-        context_window,
         model,
     }
 }
@@ -691,45 +669,12 @@ thread_local! {
     pub static PARSE_DIAGNOSTICS: std::cell::RefCell<ParseDiagnostics> = std::cell::RefCell::new(ParseDiagnostics::default());
 }
 
-/// Map a Claude model string to its context window size in tokens.
-/// Model strings from message.model look like "claude-opus-4-6", "claude-sonnet-4-5-20250929", etc.
-/// Falls back to 200k for unknown models — safe default since all Claude models have at least 200k.
-pub fn context_window_for_model(model: &str) -> u64 {
-    // Claude 3.5 and earlier: 200k across the board
-    // Claude 4.x family: default 200k, but Opus 4.6 and Sonnet 4.5 support 1M (beta)
-    // We use 200k as default since 1M beta requires special access and we auto-detect
-    // via actual token counts if they exceed 200k (see draw_output.rs)
-    if model.contains("opus-4-6") {
-        return 200_000;
-    }
-    if model.contains("sonnet-4-5") {
-        return 200_000;
-    }
-    if model.contains("haiku-4-5") {
-        return 200_000;
-    }
-    if model.contains("sonnet-4-") {
-        return 200_000;
-    }
-    if model.contains("opus-4-") {
-        return 200_000;
-    }
-    // Claude 3.x family
-    if model.contains("claude-3") {
-        return 200_000;
-    }
-    // Unknown model — safe default
-    200_000
-}
-
 fn parse_assistant_event(
     json: &serde_json::Value,
     timestamp: DateTime<Utc>,
     events: &mut Vec<(DateTime<Utc>, DisplayEvent)>,
     tool_calls: &mut HashMap<String, (String, Option<String>)>,
     pending_tools: &mut HashSet<String>,
-    session_tokens: &mut Option<(u64, u64)>,
-    context_window: &mut Option<u64>,
     model_out: &mut Option<String>,
 ) {
     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
@@ -743,30 +688,7 @@ fn parse_assistant_event(
         return;
     };
 
-    // Extract token usage — each assistant event overwrites previous (last = most recent context)
-    if let Some(usage) = message.get("usage") {
-        let input = usage
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let output = usage
-            .get("output_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cache_read = usage
-            .get("cache_read_input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cache_create = usage
-            .get("cache_creation_input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        *session_tokens = Some((input + cache_read + cache_create, output));
-    }
-
-    // Extract model string → context window size (each assistant event has message.model)
     if let Some(model_str) = message.get("model").and_then(|m| m.as_str()) {
-        *context_window = Some(context_window_for_model(model_str));
         *model_out = Some(model_str.to_string());
     }
 
@@ -852,7 +774,6 @@ fn parse_result_event(
     json: &serde_json::Value,
     timestamp: DateTime<Utc>,
     events: &mut Vec<(DateTime<Utc>, DisplayEvent)>,
-    context_window: &mut Option<u64>,
 ) {
     if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
         let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
@@ -869,15 +790,6 @@ fn parse_result_event(
                 success: true,
             },
         ));
-    }
-    // modelUsage contains the authoritative contextWindow from the API — overrides
-    // the heuristic from context_window_for_model(). Session JSONL uses camelCase.
-    if let Some(obj) = json.get("modelUsage").and_then(|v| v.as_object()) {
-        for (_model, usage) in obj {
-            if let Some(cw) = usage.get("contextWindow").and_then(|v| v.as_u64()) {
-                *context_window = Some(cw);
-            }
-        }
     }
 }
 
@@ -1165,42 +1077,6 @@ mod tests {
         assert!(hooks.is_empty());
     }
 
-    // ── context_window_for_model ──
-
-    #[test]
-    fn test_context_window_opus() {
-        assert_eq!(context_window_for_model("claude-opus-4-6"), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_sonnet() {
-        assert_eq!(
-            context_window_for_model("claude-sonnet-4-5-20250929"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_haiku() {
-        assert_eq!(
-            context_window_for_model("claude-haiku-4-5-20251001"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_claude3() {
-        assert_eq!(
-            context_window_for_model("claude-3-5-sonnet-20241022"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_unknown() {
-        assert_eq!(context_window_for_model("some-future-model"), 200_000);
-    }
-
     // ── IncrementalParserState::from_events ──
 
     #[test]
@@ -1244,78 +1120,6 @@ mod tests {
         assert_eq!(state.tool_calls.get("tc-2").unwrap().0, "Write");
         assert_eq!(state.tool_calls.get("tc-2").unwrap().1, None);
         assert_eq!(state.session_slug, Some("slug".to_string()));
-    }
-
-    // ── context_window_for_model: more edge cases ──
-
-    #[test]
-    fn test_context_window_sonnet_4_generic() {
-        // "sonnet-4-" matches any sonnet-4 variant
-        assert_eq!(context_window_for_model("claude-sonnet-4-0"), 200_000);
-        assert_eq!(
-            context_window_for_model("claude-sonnet-4-1-20260101"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_opus_4_generic() {
-        // "opus-4-" matches any opus-4 variant
-        assert_eq!(context_window_for_model("claude-opus-4-0"), 200_000);
-        assert_eq!(
-            context_window_for_model("claude-opus-4-1-20260301"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_empty_string() {
-        assert_eq!(context_window_for_model(""), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_partial_match_not_model_name() {
-        // Contains "opus-4-6" as substring, still matches
-        assert_eq!(context_window_for_model("prefix-opus-4-6-suffix"), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_case_sensitive() {
-        // Uppercase should NOT match the contains checks
-        assert_eq!(context_window_for_model("CLAUDE-OPUS-4-6"), 200_000); // falls through to default
-    }
-
-    #[test]
-    fn test_context_window_claude_3_variants() {
-        assert_eq!(
-            context_window_for_model("claude-3-5-sonnet-20241022"),
-            200_000
-        );
-        assert_eq!(context_window_for_model("claude-3-opus-20240229"), 200_000);
-        assert_eq!(context_window_for_model("claude-3-haiku-20240307"), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_haiku_4_5_with_date() {
-        assert_eq!(
-            context_window_for_model("claude-haiku-4-5-20260101"),
-            200_000
-        );
-    }
-
-    #[test]
-    fn test_context_window_random_future_model() {
-        assert_eq!(context_window_for_model("claude-wizard-9-0"), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_whitespace_model() {
-        assert_eq!(context_window_for_model("  "), 200_000);
-    }
-
-    #[test]
-    fn test_context_window_numeric_only() {
-        assert_eq!(context_window_for_model("12345"), 200_000);
     }
 
     // ── extract_hooks_from_content: more edge cases ──
@@ -1855,8 +1659,6 @@ mod tests {
         assert_eq!(result.parse_errors, 0);
         assert!(!result.awaiting_plan_approval);
         assert_eq!(result.end_offset, 0);
-        assert!(result.session_tokens.is_none());
-        assert!(result.context_window.is_none());
         assert!(result.model.is_none());
     }
 
@@ -1944,8 +1746,6 @@ mod tests {
             DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "Response text"),
             other => panic!("expected AssistantText, got {:?}", other),
         }
-        assert!(result.session_tokens.is_some());
-        assert_eq!(result.context_window, Some(200_000));
         assert_eq!(result.model, Some("claude-opus-4-6".to_string()));
         let _ = std::fs::remove_file(&file_path);
     }
@@ -2098,28 +1898,6 @@ mod tests {
         assert_eq!(result.total_lines, 1);
         assert_eq!(result.parse_errors, 0);
         assert_eq!(result.events.len(), 1);
-        let _ = std::fs::remove_file(&file_path);
-    }
-
-    #[test]
-    fn test_parse_session_file_token_usage_extraction() {
-        let file_path = test_file("token_usage");
-        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}],"model":"claude-opus-4-6","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":200,"cache_creation_input_tokens":100}},"timestamp":"2026-01-01T00:00:00Z"}"#;
-        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
-        let result = parse_session_file(&file_path);
-        let (context, output) = result.session_tokens.unwrap();
-        assert_eq!(context, 1300);
-        assert_eq!(output, 500);
-        let _ = std::fs::remove_file(&file_path);
-    }
-
-    #[test]
-    fn test_parse_session_file_model_usage_context_window() {
-        let file_path = test_file("model_usage");
-        let line = r#"{"type":"result","durationMs":1000,"costUsd":0.01,"sessionId":"s1","modelUsage":{"claude-opus-4-6":{"contextWindow":1000000}},"timestamp":"2026-01-01T00:00:00Z"}"#;
-        std::fs::write(&file_path, format!("{}\n", line)).unwrap();
-        let result = parse_session_file(&file_path);
-        assert_eq!(result.context_window, Some(1_000_000));
         let _ = std::fs::remove_file(&file_path);
     }
 

@@ -127,24 +127,36 @@ impl App {
             }
         }
 
-        // Extract detected model from assistant events (for display, not badge)
-        if let Some(ref json) = parsed_json {
-            if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
-                if let Some(model) = json
-                    .get("message")
-                    .and_then(|m| m.get("model"))
-                    .and_then(|m| m.as_str())
-                {
-                    self.detected_model = Some(model.to_string());
-                }
-            }
-        }
-
         if !events.is_empty() {
+            let added_chars: usize = events
+                .iter()
+                .map(crate::app::session_store::event_char_len)
+                .sum();
+            self.chars_since_compaction += added_chars;
             self.display_events.extend(events);
             self.invalidate_render_cache();
             self.last_session_event_time = std::time::Instant::now();
             self.compaction_banner_injected = false;
+            self.update_token_badge_live();
+
+            if self.compaction_needed.is_none()
+                && self.compaction_receivers.is_empty()
+                && self.chars_since_compaction >= crate::app::session_store::COMPACTION_THRESHOLD
+            {
+                if let Some(sid) = self.current_session_id {
+                    if let Some(wt_path) = self
+                        .current_worktree()
+                        .and_then(|s| s.worktree_path.clone())
+                    {
+                        let turn_backend = self.backend;
+                        self.compaction_needed = Some((sid, wt_path, turn_backend));
+                        self.store_append_from_display(slot_id);
+                        self.auto_continue_after_compaction = true;
+                        self.cancel_current_claude();
+                        self.set_status("Compacting context — will auto-continue...");
+                    }
+                }
+            }
         }
 
         if self.rendered_lines_cache.is_empty() {
@@ -375,7 +387,6 @@ impl App {
             } else {
                 Vec::new()
             };
-
         if events.is_empty() {
             // Still delete the JSONL even if no events to store
             if let Some(p) = jsonl_path.filter(|p| p.exists()) {
@@ -457,8 +468,10 @@ impl App {
                     }
                 }
             }
-            // Update context percentage badge from store character count
-            self.update_token_badge();
+            if self.current_session_id == Some(session_id) {
+                // Update context percentage badge from store character count
+                self.update_token_badge();
+            }
         }
     }
 
@@ -816,22 +829,6 @@ impl App {
                         }
                     }
                     _ => {}
-                }
-            }
-
-            // Reuse the JSON value that EventParser already parsed — zero additional
-            // serde_json::from_str calls. EventParser returns it alongside events.
-
-            // Extract detected model from live stream events (for display, not badge)
-            if let Some(ref json) = parsed_json {
-                if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
-                    if let Some(model) = json
-                        .get("message")
-                        .and_then(|m| m.get("model"))
-                        .and_then(|m| m.as_str())
-                    {
-                        self.detected_model = Some(model.to_string());
-                    }
                 }
             }
 
@@ -1810,6 +1807,30 @@ mod tests {
     }
 
     #[test]
+    fn apply_parsed_output_updates_live_context_counter_and_badge() {
+        let mut app = App::new();
+        app.current_session_id = Some(1);
+        app.chars_since_compaction = 200_000;
+
+        app.apply_parsed_output(
+            "7",
+            vec![DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "x".repeat(10_000),
+            }],
+            None,
+            OutputType::Json,
+            "",
+        );
+
+        assert_eq!(app.chars_since_compaction, 210_000);
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert!(!text.contains("100"));
+        assert_eq!(color, ratatui::style::Color::Green);
+    }
+
+    #[test]
     fn handle_claude_exited_clears_codex_slot_timer() {
         let mut app = App::new();
         let (_tx, rx) = mpsc::channel();
@@ -1933,7 +1954,6 @@ mod tests {
             })
         )
         .unwrap();
-
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.agent_session_ids

@@ -319,8 +319,6 @@ impl App {
         self.selected_event = None;
         self.pending_tool_calls.clear();
         self.failed_tool_calls.clear();
-        self.session_tokens = None;
-        self.model_context_window = None;
         self.token_badge_cache = None;
         self.store_chars_cached = 0;
         self.current_todos.clear();
@@ -627,19 +625,6 @@ impl App {
         self.awaiting_plan_approval = parsed.awaiting_plan_approval;
         // Extract latest TodoWrite and AskUserQuestion state from parsed events
         self.extract_skill_tools_from_events();
-        // Update tokens, context window, and model if the new parse found assistant events
-        let mut tokens_changed = false;
-        if parsed.session_tokens.is_some() {
-            self.session_tokens = parsed.session_tokens;
-            tokens_changed = true;
-        }
-        if parsed.context_window.is_some() {
-            self.model_context_window = parsed.context_window;
-            tokens_changed = true;
-        }
-        if tokens_changed {
-            self.update_token_badge();
-        }
         self.session_file_parse_offset = parsed.end_offset;
 
         // Clear pending message once it appears in the parsed events.
@@ -1552,15 +1537,13 @@ mod tests {
     }
 
     #[test]
-    fn load_session_output_clears_token_state() {
+    fn load_session_output_clears_context_badge_cache() {
         let mut app = App::new();
-        app.session_tokens = Some((100_000, 5000));
-        app.model_context_window = Some(200_000);
         app.token_badge_cache = Some(("50%".to_string(), ratatui::style::Color::Green));
+        app.store_chars_cached = 123_456;
         app.load_session_output();
-        assert!(app.session_tokens.is_none());
-        assert!(app.model_context_window.is_none());
         assert!(app.token_badge_cache.is_none());
+        assert_eq!(app.store_chars_cached, 0);
     }
 
     #[test]
@@ -1644,6 +1627,49 @@ mod tests {
         // Should reset everything without panic
         assert!(app.session_file_path.is_none());
         assert!(app.display_events.is_empty());
+    }
+
+    #[test]
+    fn load_session_output_historic_recomputes_badge_from_store_chars() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("azureal/test").unwrap();
+        store
+            .append_events(
+                sid,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "x".repeat(100_000),
+                }],
+            )
+            .unwrap();
+
+        app.session_store = Some(store);
+        app.session_store_path = Some(PathBuf::from("/tmp/nonexistent-wt"));
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "azureal/test".to_string(),
+            worktree_path: Some(PathBuf::from("/tmp/nonexistent-wt")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.session_files.insert(
+            "azureal/test".to_string(),
+            vec![(
+                sid.to_string(),
+                PathBuf::from("/tmp/session"),
+                String::new(),
+            )],
+        );
+        app.session_selected_file_idx
+            .insert("azureal/test".to_string(), 0);
+        app.selected_worktree = Some(0);
+
+        app.load_session_output();
+
+        assert_eq!(app.current_session_id, Some(sid));
+        let (text, color) = app.token_badge_cache.unwrap();
+        assert!(text.contains("25"), "unexpected badge text: {text:?}");
+        assert_eq!(color, ratatui::style::Color::Green);
     }
 
     // ── load_session_output clears selected_event ──

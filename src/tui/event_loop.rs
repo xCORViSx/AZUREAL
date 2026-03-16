@@ -41,7 +41,7 @@ use actions::handle_key_event;
 use agent_events::handle_claude_event;
 use coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
 #[cfg(target_os = "macos")]
-use fast_draw::{fast_draw_input, fast_draw_session};
+use fast_draw::fast_draw_input;
 use mouse::{apply_scroll_cached, handle_mouse_click, handle_mouse_drag};
 
 /// Main TUI event loop
@@ -919,31 +919,10 @@ pub async fn run_app(
 
         // Poll for completed render results from the background thread (non-blocking).
         // Always apply results immediately — session content stays up-to-date.
-        // On macOS: fast_draw_session (direct cell writes, ~10-15KB) updates the
-        // session pane without a full terminal.draw() (~87KB). Skipped during
-        // typing so escape sequences don't compete with keystroke processing.
-        // On Windows: disabled — direct CSI writes corrupt the console input
-        // parser, causing escape sequences to appear as text and broken cursor.
-        #[cfg(target_os = "macos")]
-        let old_cache_len = app.rendered_lines_cache.len();
+        // Session updates now rely on normal ratatui draws only. The old macOS
+        // direct-write fast path caused terminal/buffer desync, which manifested
+        // as missing border cells and stale session fragments left on screen.
         if poll_render_result(app) {
-            #[cfg(target_os = "macos")]
-            {
-                let new_line_count = app.rendered_lines_cache.len().saturating_sub(old_cache_len);
-                let follow_bottom = app.session_scroll == usize::MAX;
-                if streaming
-                    && follow_bottom
-                    && new_line_count > 0
-                    && !typing_recently
-                    && app.pane_session_content.width > 2
-                    && app.pane_session_content.height > 2
-                    && app.git_actions_panel.is_none()
-                    && !app.show_session_list
-                    && !app.is_projects_panel_active()
-                {
-                    fast_draw_session(app, new_line_count);
-                }
-            } // #[cfg(target_os = "macos")]
             needs_redraw = true;
         }
 
