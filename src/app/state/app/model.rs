@@ -108,7 +108,7 @@ impl App {
                     .current_worktree()
                     .and_then(|s| s.worktree_path.clone())
                 {
-                    self.compaction_needed = Some((sid, wt_path, self.backend));
+                    self.compaction_needed = Some((sid, wt_path));
                 }
             }
         }

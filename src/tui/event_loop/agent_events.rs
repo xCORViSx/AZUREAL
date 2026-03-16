@@ -94,7 +94,6 @@ pub fn spawn_compaction_agent(
     claude_process: &AgentProcess,
     session_id: i64,
     wt_path: &std::path::Path,
-    turn_backend: crate::backend::Backend,
 ) -> bool {
     let store = match app.session_store.as_ref() {
         Some(s) => s,
@@ -129,20 +128,18 @@ pub fn spawn_compaction_agent(
     };
     let prompt = crate::app::context_injection::build_compaction_prompt(&payload);
 
-    let primary_model = compaction_model_for_backend(turn_backend);
-    let spawn_result = claude_process.spawn(wt_path, &prompt, None, Some(primary_model));
+    // Use whatever model is currently selected in the session pane
+    let selected_model = app.selected_model.as_deref();
+    let spawn_result = claude_process.spawn(wt_path, &prompt, None, selected_model);
 
-    // If primary backend spawn fails, try the alternate
+    // If primary spawn fails, try the alternate backend with no specific model
+    let primary_backend = app.backend;
     let (rx, pid, used_fallback) = match spawn_result {
         Ok((rx, pid)) => (rx, pid, false),
-        Err(_) => {
-            let alt = turn_backend.alternate();
-            let alt_model = compaction_model_for_backend(alt);
-            match claude_process.spawn(wt_path, &prompt, None, Some(alt_model)) {
-                Ok((rx, pid)) => (rx, pid, true),
-                Err(_) => return false, // Both backends failed to spawn
-            }
-        }
+        Err(_) => match claude_process.spawn(wt_path, &prompt, None, None) {
+            Ok((rx, pid)) => (rx, pid, true),
+            Err(_) => return false,
+        },
     };
 
     let pid_str = pid.to_string();
@@ -153,28 +150,20 @@ pub fn spawn_compaction_agent(
             session_id,
             boundary_seq,
             wt_path: wt_path.to_path_buf(),
-            turn_backend,
         },
     );
     // Show "Compacting" banner in the session pane
     app.display_events
         .push(crate::events::DisplayEvent::MayBeCompacting);
     if used_fallback {
-        let alt = turn_backend.alternate();
         app.set_status(format!(
             "Compaction: {} failed to spawn — fell back to {}",
-            turn_backend, alt
+            primary_backend,
+            primary_backend.alternate()
         ));
     }
     app.invalidate_render_cache();
     true
-}
-
-fn compaction_model_for_backend(backend: crate::backend::Backend) -> &'static str {
-    match backend {
-        crate::backend::Backend::Claude => "haiku",
-        crate::backend::Backend::Codex => "gpt-5.1-codex-mini",
-    }
 }
 
 /// Handle events from compaction agents. Returns true if any events were processed.
@@ -231,12 +220,12 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
             }
         } else {
             // Compaction produced no output (e.g. backend hit usage limit).
-            // Queue a retry with the alternate backend.
-            let alt = job.turn_backend.alternate();
-            app.compaction_retry_needed = Some((job.session_id, job.wt_path.clone(), alt));
+            // Queue a retry — spawn_compaction_agent will use the current selected model.
+            app.compaction_retry_needed = Some((job.session_id, job.wt_path.clone()));
+            let model_label = app.selected_model.as_deref().unwrap_or("default");
             app.set_status(format!(
-                "Compaction: {} produced no output — retrying with {}",
-                job.turn_backend, alt
+                "Compaction: {} produced no output — retrying",
+                model_label
             ));
         }
     }
@@ -290,7 +279,6 @@ mod tests {
             session_id,
             boundary_seq,
             wt_path: std::path::PathBuf::from("/tmp/test-wt"),
-            turn_backend: crate::backend::Backend::Claude,
         }
     }
 
@@ -935,18 +923,6 @@ mod tests {
     fn test_extract_assistant_text_empty_text() {
         let data = r#"{"type":"assistant","message":{"content":[{"type":"text","text":""}]}}"#;
         assert!(extract_assistant_text(data).is_none());
-    }
-
-    #[test]
-    fn test_compaction_model_for_backend() {
-        assert_eq!(
-            compaction_model_for_backend(crate::backend::Backend::Claude),
-            "haiku"
-        );
-        assert_eq!(
-            compaction_model_for_backend(crate::backend::Backend::Codex),
-            "gpt-5.1-codex-mini"
-        );
     }
 
     // ── poll_compaction_agents ──

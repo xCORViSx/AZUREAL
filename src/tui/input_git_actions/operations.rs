@@ -26,29 +26,10 @@ pub(crate) enum RebaseOutcome {
     Failed(String),
 }
 
-fn commit_message_backend_for_selected_model(selected_model: Option<&str>) -> Backend {
-    selected_model
-        .map(crate::app::state::backend_for_model)
-        .unwrap_or(Backend::Claude)
-}
-
-fn commit_message_model_for_backend(backend: Backend) -> Option<&'static str> {
-    match backend {
-        // Preserve the existing Claude-side behavior: let Claude CLI use its
-        // configured/default model for commit-message generation.
-        Backend::Claude => None,
-        // Rough Sonnet-tier Codex pair for the same helper flow.
-        Backend::Codex => Some("gpt-5.2"),
-    }
-}
-
-fn commit_message_generator_label(backend: Backend) -> String {
-    commit_message_model_for_backend(backend)
+fn commit_message_generator_label(model: Option<&str>) -> String {
+    model
         .map(str::to_string)
-        .unwrap_or_else(|| match backend {
-            Backend::Claude => "Claude default model".to_string(),
-            Backend::Codex => "Codex default model".to_string(),
-        })
+        .unwrap_or_else(|| "default model".to_string())
 }
 
 fn strip_commit_message_fences(raw: &str) -> String {
@@ -735,7 +716,9 @@ pub(super) fn exec_commit_start(app: &mut App) {
 
     let stat = Git::get_staged_stat(&wt).unwrap_or_default();
     let config = crate::config::Config::load().unwrap_or_default();
-    let commit_backend = commit_message_backend_for_selected_model(app.selected_model.as_deref());
+    let selected_model = app.selected_model.clone();
+    let commit_backend =
+        crate::app::state::backend_for_model(selected_model.as_deref().unwrap_or("opus"));
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();
@@ -750,38 +733,37 @@ pub(super) fn exec_commit_start(app: &mut App) {
             "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
             stat, diff_trimmed
         );
-        let generate = |backend: Backend| -> Result<String, String> {
-            let model = commit_message_model_for_backend(backend).map(str::to_string);
+        let generate = |backend: Backend, model: Option<&str>| -> Result<String, String> {
             match backend {
                 Backend::Claude => generate_commit_message_with_claude(
                     config.claude_executable(),
                     &wt_clone,
                     &prompt,
-                    model.as_deref(),
+                    model,
                 ),
                 Backend::Codex => generate_commit_message_with_codex(
                     config.codex_executable(),
                     &wt_clone,
                     &prompt,
-                    model.as_deref(),
+                    model,
                 ),
             }
         };
 
-        let result = match generate(commit_backend) {
+        let result = match generate(commit_backend, selected_model.as_deref()) {
             Ok(msg) => Ok(GeneratedCommitMessage {
                 message: msg,
-                generator_label: commit_message_generator_label(commit_backend),
+                generator_label: commit_message_generator_label(selected_model.as_deref()),
                 fallback_notice: None,
             }),
             Err(primary_err) => {
                 let alt = commit_backend.alternate();
-                match generate(alt) {
+                match generate(alt, None) {
                     Ok(msg) => {
                         let notice = format!("{} failed — fell back to {}", commit_backend, alt);
                         Ok(GeneratedCommitMessage {
                             message: msg,
-                            generator_label: commit_message_generator_label(alt),
+                            generator_label: format!("{} default", alt),
                             fallback_notice: Some(notice),
                         })
                     }
@@ -1401,16 +1383,10 @@ mod tests {
     }
 
     #[test]
-    fn commit_message_generator_label_for_claude() {
-        assert_eq!(
-            commit_message_generator_label(Backend::Claude),
-            "Claude default model"
-        );
-    }
-
-    #[test]
-    fn commit_message_generator_label_for_codex() {
-        assert_eq!(commit_message_generator_label(Backend::Codex), "gpt-5.2");
+    fn commit_message_generator_label_shows_selected_model() {
+        assert_eq!(commit_message_generator_label(Some("opus")), "opus");
+        assert_eq!(commit_message_generator_label(Some("gpt-5.4")), "gpt-5.4");
+        assert_eq!(commit_message_generator_label(None), "default model");
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1462,27 +1438,6 @@ mod tests {
         assert_eq!(
             strip_commit_message_fences(raw),
             "feat: add thing\nbody here"
-        );
-    }
-
-    #[test]
-    fn commit_message_backend_uses_selected_model_family() {
-        assert_eq!(
-            commit_message_backend_for_selected_model(Some("sonnet")),
-            Backend::Claude
-        );
-        assert_eq!(
-            commit_message_backend_for_selected_model(Some("gpt-5.4")),
-            Backend::Codex
-        );
-    }
-
-    #[test]
-    fn commit_message_model_for_backend_codex_pair() {
-        assert_eq!(commit_message_model_for_backend(Backend::Claude), None);
-        assert_eq!(
-            commit_message_model_for_backend(Backend::Codex),
-            Some("gpt-5.2")
         );
     }
 

@@ -363,9 +363,9 @@ pub async fn run_app(
         // user messages for boundary) set compaction_spawn_deferred to avoid retrying
         // every tick. The deferred flag is cleared when a new user message is stored.
         if !app.compaction_spawn_deferred {
-            if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.as_ref() {
-                let (sid, wtp, tb) = (*session_id, wt_path.clone(), *turn_backend);
-                if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp, tb) {
+            if let Some((session_id, wt_path)) = app.compaction_needed.as_ref() {
+                let (sid, wtp) = (*session_id, wt_path.clone());
+                if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp) {
                     app.compaction_needed = None;
                 } else {
                     app.compaction_spawn_deferred = true;
@@ -373,10 +373,10 @@ pub async fn run_app(
             }
         }
 
-        // Retry compaction with alternate backend if the primary produced no output
-        if let Some((session_id, wt_path, alt_backend)) = app.compaction_retry_needed.as_ref() {
-            let (sid, wtp, ab) = (*session_id, wt_path.clone(), *alt_backend);
-            if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp, ab) {
+        // Retry compaction if the primary produced no output
+        if let Some((session_id, wt_path)) = app.compaction_retry_needed.as_ref() {
+            let (sid, wtp) = (*session_id, wt_path.clone());
+            if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp) {
                 app.compaction_retry_needed = None;
             }
         }

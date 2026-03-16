@@ -44,7 +44,7 @@
 - **File Staging** — Stage/unstage individual files (`s`) or all at once (`S`); unstaged files shown with strikethrough
 - **Discard Changes** — Revert individual files (`x`) with inline confirmation prompt
 - **Squash Merge** — One-key squash merge with auto-rebase onto main and rich commit messages
-- **AI Commit Messages** — Claude or Codex generates conventional commit messages from your staged changes, with automatic cross-backend fallback
+- **AI Commit Messages** — Generates conventional commit messages using the currently selected model, with automatic cross-backend fallback
 - **Auto-Rebase** — Keep feature branches up-to-date automatically with configurable auto-resolve files
 - **Conflict Resolution** — Structured conflict overlay with Claude-assisted resolution (RCR)
 
@@ -66,7 +66,7 @@
 ### Performance
 
 - **Non-blocking UI** — All expensive work (rendering, parsing, file I/O) runs on background threads
-- **Fast Input & Session** (macOS) — Prompt keystrokes render via `fast_draw_input()` (~0.1ms); session pane streams via `fast_draw_session()` using direct cursor positioning (~2-5ms for session column only vs ~87KB for full ratatui diff); both update simultaneously during typing+streaming with zero session pane freezing. Disabled on Windows where direct VT writes conflict with the console input parser
+- **Fast Input** (macOS) — Prompt keystrokes render via `fast_draw_input()` (~0.1ms) bypassing ratatui's full diff for instant typing feedback. Disabled on Windows where direct VT writes conflict with the console input parser
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — Single-file SQLite session store (`.azs`), two small TOML config files, and runtime git/Claude discovery
 

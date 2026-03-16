@@ -148,8 +148,7 @@ impl App {
                         .current_worktree()
                         .and_then(|s| s.worktree_path.clone())
                     {
-                        let turn_backend = self.backend;
-                        self.compaction_needed = Some((sid, wt_path, turn_backend));
+                        self.compaction_needed = Some((sid, wt_path));
                         self.store_append_from_display(slot_id);
                         self.auto_continue_after_compaction = true;
                         self.cancel_current_claude();
@@ -464,7 +463,7 @@ impl App {
             if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
                 if let Ok(chars) = store.total_chars_since_compaction(session_id) {
                     if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
-                        self.compaction_needed = Some((session_id, wt_path, turn_backend));
+                        self.compaction_needed = Some((session_id, wt_path));
                     }
                 }
             }
@@ -862,8 +861,7 @@ impl App {
                             .current_worktree()
                             .and_then(|s| s.worktree_path.clone())
                         {
-                            let turn_backend = self.backend;
-                            self.compaction_needed = Some((sid, wt_path, turn_backend));
+                            self.compaction_needed = Some((sid, wt_path));
                             // Store partial turn events before killing so compaction
                             // has the latest data. Uses store_append_from_display
                             // which removes the slot from pid_session_target (the
@@ -2017,7 +2015,7 @@ mod tests {
     }
 
     #[test]
-    fn store_append_from_jsonl_captures_turn_backend_for_compaction() {
+    fn store_append_from_jsonl_triggers_compaction_at_threshold() {
         let mut app = App::new();
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
         let wt_path = std::path::PathBuf::from("/tmp/compaction-backend");
@@ -2034,6 +2032,6 @@ mod tests {
 
         app.store_append_from_jsonl("55", Backend::Codex);
 
-        assert_eq!(app.compaction_needed, Some((sid, wt_path, Backend::Codex)));
+        assert_eq!(app.compaction_needed, Some((sid, wt_path)));
     }
 }

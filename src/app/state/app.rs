@@ -47,7 +47,6 @@ pub struct CompactionJob {
     pub session_id: i64,
     pub boundary_seq: i64,
     pub wt_path: PathBuf,
-    pub turn_backend: Backend,
 }
 
 /// Application state
@@ -128,17 +127,17 @@ pub struct App {
     pub current_session_id: Option<i64>,
     /// Set by store_append_from_jsonl when compaction threshold is exceeded.
     /// Consumed by the event loop to spawn a background compaction agent.
-    /// (session_id, worktree_path, backend_of_turn_that_triggered_compaction)
-    pub compaction_needed: Option<(i64, PathBuf, Backend)>,
+    /// (session_id, worktree_path)
+    pub compaction_needed: Option<(i64, PathBuf)>,
     /// Compaction agent receivers: PID string → metadata.
     /// Polled separately from agent_receivers — output is captured, not displayed.
     pub compaction_receivers: HashMap<String, CompactionJob>,
     /// Accumulated assistant text from compaction agents: PID string → text buffer
     pub compaction_output: HashMap<String, String>,
     /// Set by poll_compaction_agents when a compaction completes with no output.
-    /// The event loop re-spawns with the alternate backend.
-    /// (session_id, worktree_path, alternate_backend)
-    pub compaction_retry_needed: Option<(i64, PathBuf, Backend)>,
+    /// The event loop re-spawns on next tick.
+    /// (session_id, worktree_path)
+    pub compaction_retry_needed: Option<(i64, PathBuf)>,
     /// Live character count since last compaction. Initialized from the store at
     /// session load/switch, incremented during handle_claude_output as events stream
     /// in, and reset after a successful compaction. Enables mid-turn compaction
