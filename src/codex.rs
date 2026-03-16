@@ -14,6 +14,26 @@ use crate::claude::{AgentEvent, AgentOutput};
 use crate::config::{Config, PermissionMode};
 use crate::models::OutputType;
 
+fn extract_codex_session_id(line: &str) -> Option<String> {
+    if !(line.contains("\"thread.started\"") || line.contains("\"type\":\"session_meta\"")) {
+        return None;
+    }
+
+    let json = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    match json.get("type").and_then(|v| v.as_str()) {
+        Some("thread.started") => json
+            .get("thread_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        Some("session_meta") => json
+            .get("payload")
+            .and_then(|p| p.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
 /// Manages OpenAI Codex CLI processes
 pub struct CodexProcess {
     config: Config,
@@ -100,13 +120,8 @@ impl CodexProcess {
                     continue;
                 }
 
-                // Extract session ID from thread.started event
-                if line.contains("\"thread.started\"") {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                        if let Some(thread_id) = json.get("thread_id").and_then(|v| v.as_str()) {
-                            let _ = tx_stdout.send(AgentEvent::SessionId(thread_id.to_string()));
-                        }
-                    }
+                if let Some(session_id) = extract_codex_session_id(&line) {
+                    let _ = tx_stdout.send(AgentEvent::SessionId(session_id));
                 }
 
                 let output = AgentOutput {
@@ -281,27 +296,34 @@ mod tests {
 
     #[test]
     fn codex_thread_id_extraction_logic() {
-        // Verify the substring detection used in spawn()
         let line =
             r#"{"type":"thread.started","thread_id":"019ce52c-cfe9-7d13-869a-cf0ca4ce00e4"}"#;
-        assert!(line.contains("\"thread.started\""));
-        let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
-        let thread_id = parsed.get("thread_id").and_then(|v| v.as_str()).unwrap();
-        assert_eq!(thread_id, "019ce52c-cfe9-7d13-869a-cf0ca4ce00e4");
+        assert_eq!(
+            extract_codex_session_id(line).as_deref(),
+            Some("019ce52c-cfe9-7d13-869a-cf0ca4ce00e4")
+        );
+    }
+
+    #[test]
+    fn codex_session_meta_id_extraction_logic() {
+        let line =
+            r#"{"type":"session_meta","payload":{"id":"019cf628-b245-7a21-ae00-bbaf2cd408dc","cwd":"/tmp"}}"#;
+        assert_eq!(
+            extract_codex_session_id(line).as_deref(),
+            Some("019cf628-b245-7a21-ae00-bbaf2cd408dc")
+        );
     }
 
     #[test]
     fn codex_non_thread_started_line_not_detected() {
         let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}"#;
-        assert!(!line.contains("\"thread.started\""));
+        assert!(extract_codex_session_id(line).is_none());
     }
 
     #[test]
     fn codex_thread_id_missing_from_json() {
         let line = r#"{"type":"thread.started"}"#;
-        let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
-        let thread_id = parsed.get("thread_id").and_then(|v| v.as_str());
-        assert!(thread_id.is_none());
+        assert!(extract_codex_session_id(line).is_none());
     }
 
     // ── Config field access ──

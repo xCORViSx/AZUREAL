@@ -1,8 +1,8 @@
 //! Event parser for Codex CLI `--json` JSONL output
 //!
 //! Parses Codex stdout JSONL events into DisplayEvents.
-//! Event types: thread.started, turn.started, item.started, item.completed,
-//! turn.completed, error, turn.failed.
+//! Supports both the legacy streaming schema (`thread.started`, `item.*`) and
+//! the newer OpenAI-style schema (`session_meta`, `response_item`, `event_msg`).
 
 use super::display::DisplayEvent;
 use std::collections::HashMap;
@@ -12,8 +12,12 @@ pub struct CodexEventParser {
     buffer: String,
     /// Track items by ID for matching started → completed
     items: HashMap<String, String>,
+    /// Track tool calls so later outputs keep the original display metadata.
+    tool_calls: HashMap<String, (String, Option<String>)>,
     /// Model ID to embed in Init events (e.g. "gpt-5.4")
     model: String,
+    /// Prevent duplicate Init events when both legacy and modern schemas appear.
+    init_emitted: bool,
 }
 
 impl CodexEventParser {
@@ -21,7 +25,9 @@ impl CodexEventParser {
         Self {
             buffer: String::new(),
             items: HashMap::new(),
+            tool_calls: HashMap::new(),
             model,
+            init_emitted: false,
         }
     }
 
@@ -71,8 +77,12 @@ impl CodexEventParser {
         };
 
         let events = match event_type {
+            "session_meta" => self.parse_session_meta(&json),
             "thread.started" => self.parse_thread_started(&json),
             "turn.started" => Vec::new(),
+            "turn_context" => self.parse_turn_context(&json),
+            "response_item" => self.parse_response_item(&json),
+            "event_msg" => self.parse_event_msg(&json),
             "item.started" => self.parse_item_started(&json),
             "item.updated" => Vec::new(),
             "item.completed" => self.parse_item_completed(&json),
@@ -85,17 +95,239 @@ impl CodexEventParser {
         (events, Some(json))
     }
 
-    fn parse_thread_started(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+    fn emit_init(&mut self, session_id: String, cwd: String) -> Vec<DisplayEvent> {
+        if self.init_emitted {
+            return Vec::new();
+        }
+        self.init_emitted = true;
+        vec![DisplayEvent::Init {
+            _session_id: session_id,
+            cwd,
+            model: self.model.clone(),
+        }]
+    }
+
+    fn parse_session_meta(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+        let payload = match json.get("payload") {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let session_id = payload
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let cwd = payload
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        self.emit_init(session_id, cwd)
+    }
+
+    fn parse_thread_started(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let thread_id = json
             .get("thread_id")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        vec![DisplayEvent::Init {
-            _session_id: thread_id,
-            cwd: String::new(),
-            model: self.model.clone(),
+        self.emit_init(thread_id, String::new())
+    }
+
+    fn parse_turn_context(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+        if let Some(model) = json
+            .get("payload")
+            .and_then(|p| p.get("model"))
+            .and_then(|v| v.as_str())
+            .filter(|m| !m.is_empty())
+        {
+            self.model = model.to_string();
+        }
+        Vec::new()
+    }
+
+    fn parse_response_item(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+        let payload = match json.get("payload") {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let item_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+        match item_type {
+            "message" => self.parse_response_message(payload),
+            "function_call" | "shell_command" => {
+                self.parse_response_tool_call(payload, "shell_command")
+            }
+            "custom_tool_call" => self.parse_response_tool_call(payload, "custom_tool"),
+            "function_call_output" => self.parse_response_tool_output(payload, "unknown"),
+            "custom_tool_call_output" => self.parse_response_tool_output(payload, "custom_tool"),
+            "reasoning" => self.parse_response_reasoning(payload),
+            _ => Vec::new(),
+        }
+    }
+
+    fn parse_response_message(&self, payload: &serde_json::Value) -> Vec<DisplayEvent> {
+        let role = payload.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        let text = extract_message_text(payload.get("content"));
+        if text.is_empty() {
+            return Vec::new();
+        }
+
+        match role {
+            "user" | "developer" => vec![DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: text,
+            }],
+            "assistant" => vec![DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text,
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn parse_response_tool_call(
+        &mut self,
+        payload: &serde_json::Value,
+        default_name: &str,
+    ) -> Vec<DisplayEvent> {
+        let call_id = payload
+            .get("call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = payload
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(default_name);
+        let (tool_name, file_path) = map_codex_tool(name, payload);
+        let input = build_tool_input(name, payload);
+
+        self.tool_calls
+            .insert(call_id.clone(), (tool_name.clone(), file_path.clone()));
+
+        vec![DisplayEvent::ToolCall {
+            _uuid: String::new(),
+            tool_use_id: call_id,
+            tool_name,
+            file_path,
+            input,
         }]
+    }
+
+    fn parse_response_tool_output(
+        &mut self,
+        payload: &serde_json::Value,
+        fallback_tool_name: &str,
+    ) -> Vec<DisplayEvent> {
+        let call_id = payload
+            .get("call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let output = payload
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let (tool_name, file_path) = self
+            .tool_calls
+            .remove(&call_id)
+            .unwrap_or((fallback_tool_name.to_string(), None));
+        let is_error = output.starts_with("Error") || output.contains("Exit code: 1");
+
+        vec![DisplayEvent::ToolResult {
+            tool_use_id: call_id,
+            tool_name,
+            file_path,
+            content: output,
+            is_error,
+        }]
+    }
+
+    fn parse_response_reasoning(&self, payload: &serde_json::Value) -> Vec<DisplayEvent> {
+        let mut events = Vec::new();
+        if let Some(summary) = payload.get("summary").and_then(|v| v.as_array()) {
+            for item in summary {
+                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        events.push(DisplayEvent::AssistantText {
+                            _uuid: String::new(),
+                            _message_id: String::new(),
+                            text: text.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        events
+    }
+
+    fn parse_event_msg(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+        let payload = match json.get("payload") {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let msg_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+        match msg_type {
+            "user_message" => {
+                let text = payload
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: text,
+                    }]
+                }
+            }
+            "agent_message" => {
+                let text = payload
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text,
+                    }]
+                }
+            }
+            "agent_reasoning" => {
+                let text = payload
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text,
+                    }]
+                }
+            }
+            "task_complete" => vec![DisplayEvent::Complete {
+                _session_id: String::new(),
+                success: true,
+                duration_ms: 0,
+                cost_usd: 0.0,
+            }],
+            "function_call_output" => self.parse_response_tool_output(payload, "Bash"),
+            _ => Vec::new(),
+        }
     }
 
     fn parse_item_started(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
@@ -374,6 +606,91 @@ fn estimate_codex_cost(input_tokens: u64, output_tokens: u64) -> f64 {
     (input_tokens as f64 * 10.0 + output_tokens as f64 * 30.0) / 1_000_000.0
 }
 
+fn extract_message_text(content: Option<&serde_json::Value>) -> String {
+    match content {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(arr)) => {
+            let mut texts = Vec::new();
+            for item in arr {
+                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                    texts.push(text);
+                }
+            }
+            texts.join("\n")
+        }
+        _ => String::new(),
+    }
+}
+
+fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<String>) {
+    match name {
+        "shell_command" => {
+            let args = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            let workdir = args
+                .as_ref()
+                .and_then(|a| a.get("workdir"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            ("Bash".to_string(), workdir)
+        }
+        "apply_patch" => {
+            let args = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .or_else(|| payload.get("input").and_then(|v| v.as_str()));
+            let file_path = args.and_then(extract_patch_file_path);
+            ("Edit".to_string(), file_path)
+        }
+        _ => (name.to_string(), None),
+    }
+}
+
+fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Value {
+    match name {
+        "shell_command" => {
+            let args_str = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
+        }
+        "apply_patch" => {
+            let patch = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .or_else(|| payload.get("input").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            serde_json::json!({ "patch": patch })
+        }
+        _ => {
+            let args_str = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .or_else(|| payload.get("input").and_then(|v| v.as_str()))
+                .unwrap_or("{}");
+            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
+        }
+    }
+}
+
+fn extract_patch_file_path(patch: &str) -> Option<String> {
+    for line in patch.lines() {
+        if let Some(rest) = line.strip_prefix("*** Update File: ") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix("*** Add File: ") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix("*** Delete File: ") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,6 +702,8 @@ mod tests {
         let p = CodexEventParser::new("gpt-5.4".to_string());
         assert!(p.buffer.is_empty());
         assert!(p.items.is_empty());
+        assert!(p.tool_calls.is_empty());
+        assert!(!p.init_emitted);
     }
 
     // ── thread.started ──
@@ -419,6 +738,26 @@ mod tests {
         assert_eq!(events.len(), 1);
         match &events[0] {
             DisplayEvent::Init { _session_id, .. } => assert!(_session_id.is_empty()),
+            _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn parse_session_meta_emits_init() {
+        let mut p = CodexEventParser::new("gpt-5.1-codex-mini".to_string());
+        let line = r#"{"type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp/project"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
+                assert_eq!(_session_id, "sess-1");
+                assert_eq!(cwd, "/tmp/project");
+                assert_eq!(model, "gpt-5.1-codex-mini");
+            }
             _ => panic!("expected Init"),
         }
     }
@@ -567,6 +906,60 @@ mod tests {
                 assert!(text.contains("# Title"));
             }
             _ => panic!("expected AssistantText"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_custom_tool_call_apply_patch_preserves_patch() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_patch","input":"*** Begin Patch\n*** Update File: /tmp/probe.txt\n@@\n-old\n+new\n*** End Patch"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolCall {
+                tool_name,
+                tool_use_id,
+                file_path,
+                input,
+                ..
+            } => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(tool_use_id, "call_patch");
+                assert_eq!(file_path.as_deref(), Some("/tmp/probe.txt"));
+                assert_eq!(
+                    input.get("patch").and_then(|v| v.as_str()),
+                    Some(
+                        "*** Begin Patch\n*** Update File: /tmp/probe.txt\n@@\n-old\n+new\n*** End Patch"
+                    )
+                );
+            }
+            _ => panic!("expected ToolCall"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_custom_tool_call_output_uses_edit_metadata() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let call = r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_patch","input":"*** Begin Patch\n*** Update File: /tmp/probe.txt\n@@\n-old\n+new\n*** End Patch"}}"#;
+        let output = r#"{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_patch","output":"{\"output\":\"Success. Updated the following files:\\nM /tmp/probe.txt\\n\",\"metadata\":{\"exit_code\":0}}"}}"#;
+        let (_, _) = p.parse(&format!("{}\n", call));
+        let (events, _) = p.parse(&format!("{}\n", output));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                file_path,
+                content,
+                is_error,
+            } => {
+                assert_eq!(tool_use_id, "call_patch");
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(file_path.as_deref(), Some("/tmp/probe.txt"));
+                assert!(content.contains("Success. Updated the following files"));
+                assert!(!is_error);
+            }
+            _ => panic!("expected ToolResult"),
         }
     }
 
