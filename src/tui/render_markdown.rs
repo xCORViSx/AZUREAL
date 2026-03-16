@@ -34,14 +34,28 @@ pub fn render_assistant_text(
     highlighter: &mut SyntaxHighlighter,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>) {
     let (lines, table_regions, _) =
-        render_assistant_text_with_paths(text, bubble_width, highlighter);
+        render_assistant_text_with_paths_colored(text, bubble_width, highlighter, ORANGE);
     (lines, table_regions)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn render_assistant_text_with_paths(
     text: &str,
     bubble_width: usize,
     highlighter: &mut SyntaxHighlighter,
+) -> (
+    Vec<Line<'static>>,
+    Vec<(usize, usize, String)>,
+    Vec<AssistantPathRegion>,
+) {
+    render_assistant_text_with_paths_colored(text, bubble_width, highlighter, ORANGE)
+}
+
+pub(super) fn render_assistant_text_with_paths_colored(
+    text: &str,
+    bubble_width: usize,
+    highlighter: &mut SyntaxHighlighter,
+    accent_color: Color,
 ) -> (
     Vec<Line<'static>>,
     Vec<(usize, usize, String)>,
@@ -77,7 +91,7 @@ pub fn render_assistant_text_with_paths(
                 in_code_block = true;
                 code_block_lang = trimmed.trim_start_matches('`').trim().to_string();
                 code_block_lines.clear();
-                let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+                let mut spans = vec![gutter_span(accent_color)];
                 if !code_block_lang.is_empty() {
                     spans.push(Span::styled("┌─ ", Style::default().fg(Color::DarkGray)));
                     spans.push(Span::styled(
@@ -100,10 +114,11 @@ pub fn render_assistant_text_with_paths(
                     &code_block_lang,
                     bubble_width,
                     highlighter,
+                    accent_color,
                 );
                 in_code_block = false;
                 lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                    gutter_span(accent_color),
                     Span::styled("└──────", Style::default().fg(Color::DarkGray)),
                 ]));
             }
@@ -134,6 +149,7 @@ pub fn render_assistant_text_with_paths(
                         *table_end,
                         col_widths,
                         &text_lines,
+                        accent_color,
                     );
                 }
                 let output_end = lines.len();
@@ -148,14 +164,26 @@ pub fn render_assistant_text_with_paths(
         // Headers
         if trimmed.starts_with('#') {
             in_verification_paragraph = false;
-            render_header(&mut lines, &mut clickable_paths, trimmed, bubble_width);
+            render_header(
+                &mut lines,
+                &mut clickable_paths,
+                trimmed,
+                bubble_width,
+                accent_color,
+            );
             continue;
         }
 
         // Bullet lists
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
             in_verification_paragraph = false;
-            render_bullet(&mut lines, &mut clickable_paths, trimmed, bubble_width);
+            render_bullet(
+                &mut lines,
+                &mut clickable_paths,
+                trimmed,
+                bubble_width,
+                accent_color,
+            );
             continue;
         }
 
@@ -168,14 +196,26 @@ pub fn render_assistant_text_with_paths(
             && trimmed.contains(". ")
         {
             in_verification_paragraph = false;
-            render_numbered(&mut lines, &mut clickable_paths, trimmed, bubble_width);
+            render_numbered(
+                &mut lines,
+                &mut clickable_paths,
+                trimmed,
+                bubble_width,
+                accent_color,
+            );
             continue;
         }
 
         // Blockquotes
         if trimmed.starts_with("> ") {
             in_verification_paragraph = false;
-            render_quote(&mut lines, &mut clickable_paths, trimmed, bubble_width);
+            render_quote(
+                &mut lines,
+                &mut clickable_paths,
+                trimmed,
+                bubble_width,
+                accent_color,
+            );
             continue;
         }
 
@@ -194,8 +234,8 @@ pub fn render_assistant_text_with_paths(
             &mut clickable_paths,
             line,
             bubble_width.saturating_sub(2),
-            vec![Span::styled("│ ", Style::default().fg(ORANGE))],
-            vec![Span::styled("│ ", Style::default().fg(ORANGE))],
+            vec![gutter_span(accent_color)],
+            vec![gutter_span(accent_color)],
             base_style,
         );
 
@@ -214,10 +254,15 @@ pub fn render_assistant_text_with_paths(
             &code_block_lang,
             bubble_width,
             highlighter,
+            accent_color,
         );
     }
 
     (lines, table_regions, clickable_paths)
+}
+
+fn gutter_span(accent_color: Color) -> Span<'static> {
+    Span::styled("│ ", Style::default().fg(accent_color))
 }
 
 /// Re-render a table at wider width for the popup overlay.
@@ -238,6 +283,7 @@ pub fn render_table_for_popup(raw_markdown: &str, width: usize) -> Vec<Line<'sta
                 *end,
                 col_widths,
                 &text_lines,
+                ORANGE,
             );
         }
     }
@@ -252,6 +298,7 @@ fn emit_code_block(
     lang: &str,
     bubble_width: usize,
     highlighter: &mut SyntaxHighlighter,
+    accent_color: Color,
 ) {
     let code_max = bubble_width.saturating_sub(4);
     if code_max == 0 {
@@ -269,7 +316,7 @@ fn emit_code_block(
         if char_count <= code_max {
             // Single line — use syntax-highlighted spans
             let mut spans = vec![
-                Span::styled("│ ", Style::default().fg(ORANGE)),
+                gutter_span(accent_color),
                 Span::styled("│ ", Style::default().fg(Color::DarkGray)),
             ];
             spans.extend(highlighted_spans.iter().cloned());
@@ -283,7 +330,7 @@ fn emit_code_block(
                 .unwrap_or(Color::Yellow);
             for wrapped in wrap_text(raw_line, code_max) {
                 lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(ORANGE)),
+                    gutter_span(accent_color),
                     Span::styled("│ ", Style::default().fg(Color::DarkGray)),
                     Span::styled(wrapped, Style::default().fg(fallback_color)),
                 ]));
@@ -294,7 +341,7 @@ fn emit_code_block(
 
 /// Pre-scan text to identify table ranges and calculate column widths.
 /// Column widths are clamped so the total table fits within bubble_width.
-/// Layout budget: 2 (orange gutter "│ ") + 1 (left border) + sum(col+2) + (ncols-1) separators + 1 (right border)
+/// Layout budget: 2 (assistant gutter "│ ") + 1 (left border) + sum(col+2) + (ncols-1) separators + 1 (right border)
 fn scan_tables(text_lines: &[&str], bubble_width: usize) -> Vec<(usize, usize, Vec<usize>)> {
     let mut table_info = Vec::new();
     let mut table_start: Option<usize> = None;
@@ -394,6 +441,7 @@ fn render_table_row(
     table_end: usize,
     col_widths: &[usize],
     text_lines: &[&str],
+    accent_color: Color,
 ) {
     let is_sep = is_table_separator(trimmed);
     let cells: Vec<&str> = trimmed.split('|').filter(|s| !s.is_empty()).collect();
@@ -407,7 +455,7 @@ fn render_table_row(
 
     // Top border
     if is_first_row {
-        let mut top = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+        let mut top = vec![gutter_span(accent_color)];
         top.push(Span::styled("┌", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
             top.push(Span::styled(
@@ -423,7 +471,7 @@ fn render_table_row(
     }
 
     if is_sep {
-        let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+        let mut spans = vec![gutter_span(accent_color)];
         spans.push(Span::styled("├", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
             spans.push(Span::styled(
@@ -437,7 +485,7 @@ fn render_table_row(
         spans.push(Span::styled("┤", Style::default().fg(Color::DarkGray)));
         lines.push(Line::from(spans));
     } else {
-        let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+        let mut spans = vec![gutter_span(accent_color)];
         spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
         for (j, cell) in cells.iter().enumerate() {
             let w = col_widths.get(j).copied().unwrap_or(cell.trim().len());
@@ -468,7 +516,7 @@ fn render_table_row(
 
     // Bottom border
     if is_last_row {
-        let mut bot = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
+        let mut bot = vec![gutter_span(accent_color)];
         bot.push(Span::styled("└", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
             bot.push(Span::styled(
@@ -618,6 +666,7 @@ fn render_header(
     clickable_paths: &mut Vec<AssistantPathRegion>,
     trimmed: &str,
     bubble_width: usize,
+    accent_color: Color,
 ) {
     let header_level = trimmed.chars().take_while(|&c| c == '#').count();
     let header_text = trimmed.trim_start_matches('#').trim();
@@ -645,12 +694,9 @@ fn render_header(
         clickable_paths,
         header_text,
         bubble_width.saturating_sub(4),
+        vec![gutter_span(accent_color), Span::styled(prefix, style)],
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
-            Span::styled(prefix, style),
-        ],
-        vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled("  ", Style::default()),
         ],
         style,
@@ -662,6 +708,7 @@ fn render_bullet(
     clickable_paths: &mut Vec<AssistantPathRegion>,
     trimmed: &str,
     bubble_width: usize,
+    accent_color: Color,
 ) {
     let bullet_content = trimmed
         .trim_start_matches("- ")
@@ -673,11 +720,11 @@ fn render_bullet(
         bullet_content,
         bubble_width.saturating_sub(6),
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled("  • ", Style::default().fg(AZURE)),
         ],
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled("    ", Style::default()),
         ],
         Style::default().fg(Color::White),
@@ -689,6 +736,7 @@ fn render_numbered(
     clickable_paths: &mut Vec<AssistantPathRegion>,
     trimmed: &str,
     bubble_width: usize,
+    accent_color: Color,
 ) {
     let num_end = trimmed.find(". ").unwrap_or(0);
     let num = &trimmed[..num_end];
@@ -700,11 +748,11 @@ fn render_numbered(
         content,
         bubble_width.saturating_sub(2 + num_prefix.len()),
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled(num_prefix.clone(), Style::default().fg(AZURE)),
         ],
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled(" ".repeat(num_prefix.len()), Style::default()),
         ],
         Style::default().fg(Color::White),
@@ -716,6 +764,7 @@ fn render_quote(
     clickable_paths: &mut Vec<AssistantPathRegion>,
     trimmed: &str,
     bubble_width: usize,
+    accent_color: Color,
 ) {
     let quote_content = trimmed.trim_start_matches("> ");
     render_wrapped_markdown(
@@ -724,11 +773,11 @@ fn render_quote(
         quote_content,
         bubble_width.saturating_sub(4),
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
         ],
         vec![
-            Span::styled("│ ", Style::default().fg(ORANGE)),
+            gutter_span(accent_color),
             Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
         ],
         Style::default()
@@ -969,6 +1018,23 @@ mod tests {
         assert!(paths
             .iter()
             .all(|(_, _, _, path)| path == "/Users/test/very_long_file_name.rs#L142"));
+    }
+
+    #[test]
+    fn render_assistant_text_colored_uses_requested_gutter_color() {
+        let text = "Paragraph line\n```rust\nfn main() {}\n```";
+        let (lines, _tables, _paths) =
+            render_assistant_text_with_paths_colored(text, 80, &mut hl(), Color::Cyan);
+        let gutter_colors: Vec<_> = lines
+            .iter()
+            .filter_map(|line| line.spans.first())
+            .filter(|span| span.content.as_ref() == "│ ")
+            .map(|span| span.style.fg)
+            .collect();
+        assert!(!gutter_colors.is_empty(), "expected colored gutter lines");
+        assert!(gutter_colors
+            .iter()
+            .all(|color| *color == Some(Color::Cyan)));
     }
 
     #[test]

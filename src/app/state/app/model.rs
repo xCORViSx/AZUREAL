@@ -51,7 +51,7 @@ pub fn model_alias_from_init(model: &str) -> Option<&'static str> {
 /// Determine which backend a model belongs to.
 /// gpt-* models → Codex, everything else → Claude.
 pub fn backend_for_model(model: &str) -> Backend {
-    if model.starts_with("gpt-") {
+    if model.starts_with("gpt-") || model == "codex" {
         Backend::Codex
     } else {
         Backend::Claude
@@ -217,6 +217,7 @@ mod tests {
         assert_eq!(backend_for_model("gpt-5.2"), Backend::Codex);
         assert_eq!(backend_for_model("gpt-5.1-codex-max"), Backend::Codex);
         assert_eq!(backend_for_model("gpt-5.1-codex-mini"), Backend::Codex);
+        assert_eq!(backend_for_model("codex"), Backend::Codex);
     }
 
     #[test]

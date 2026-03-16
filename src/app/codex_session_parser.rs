@@ -165,6 +165,17 @@ fn parse_from(
                 if let Some(p) = payload {
                     if let Some(m) = p.get("model").and_then(|v| v.as_str()) {
                         model = Some(m.to_string());
+                        if events
+                            .iter()
+                            .all(|event| matches!(event, DisplayEvent::Init { .. }))
+                        {
+                            for event in &mut events {
+                                if let DisplayEvent::Init { model, .. } = event {
+                                    *model = m.to_string();
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1082,6 +1093,20 @@ mod tests {
         ]);
         // Last model wins
         assert_eq!(result.model.as_deref(), Some("gpt-5.3-codex"));
+    }
+
+    #[test]
+    fn test_turn_context_upgrades_initial_codex_placeholder_model() {
+        let result = parse_lines(&[
+            r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"abc-123","cwd":"/home/user/project"}}"#,
+            r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:13Z","payload":{"model":"gpt-5.4","cwd":"/home/user/project"}}"#,
+        ]);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::Init { model, .. } => assert_eq!(model, "gpt-5.4"),
+            other => panic!("Expected Init event, got {:?}", other),
+        }
+        assert_eq!(result.model.as_deref(), Some("gpt-5.4"));
     }
 
     // ── reasoning response_item ──

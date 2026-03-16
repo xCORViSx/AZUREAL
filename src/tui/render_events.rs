@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use super::colorize::ORANGE;
 use super::markdown::parse_markdown_spans;
-use super::render_markdown::render_assistant_text_with_paths;
+use super::render_markdown::render_assistant_text_with_paths_colored;
 use super::render_tools::{
     extract_edit_preview_strings, extract_tool_param, render_edit_diff, render_tool_result,
     render_write_preview, tool_display_name,
@@ -245,7 +245,12 @@ fn render_display_events_with_state(
 
                 let base_offset = lines.len();
                 let (text_lines, table_regions, path_regions) =
-                    render_assistant_text_with_paths(text, bubble_width, syntax_highlighter);
+                    render_assistant_text_with_paths_colored(
+                        text,
+                        bubble_width,
+                        syntax_highlighter,
+                        assistant_color,
+                    );
                 lines.extend(text_lines);
                 // Offset table regions to absolute cache line positions
                 for (start, end, raw) in table_regions {
@@ -2082,6 +2087,82 @@ mod tests {
                 .map(|span| span.style.bg)
         });
         assert_eq!(codex_header, Some(Some(Color::Cyan)));
+    }
+
+    #[test]
+    fn test_render_events_codex_assistant_body_gutter_uses_cyan() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/project".into(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a1".into(),
+                _message_id: "m1".into(),
+                text: "Paragraph line\n```rust\nfn main() {}\n```".into(),
+            },
+        ];
+        let (lines, _, _, _, _) = render_display_events(
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+        );
+        let gutter_colors: Vec<_> = lines
+            .iter()
+            .filter_map(|line| line.spans.first())
+            .filter(|span| span.content.as_ref() == "│ ")
+            .map(|span| span.style.fg)
+            .collect();
+        assert!(!gutter_colors.is_empty(), "expected assistant gutter lines");
+        assert!(gutter_colors
+            .iter()
+            .all(|color| *color == Some(Color::Cyan)));
+
+        let footer = lines
+            .iter()
+            .find(|line| {
+                line.spans
+                    .first()
+                    .map(|span| span.content.starts_with('└'))
+                    .unwrap_or(false)
+            })
+            .expect("assistant footer line");
+        assert_eq!(footer.spans[0].style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn test_render_events_legacy_codex_model_still_renders_codex_header() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/project".into(),
+                model: "codex".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a1".into(),
+                _message_id: "m1".into(),
+                text: "Stored legacy Codex turn".into(),
+            },
+        ];
+        let (lines, _, _, _, _) = render_display_events(
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+        );
+        let header = lines_to_text(&lines)
+            .into_iter()
+            .find(|line| line.contains("Codex"))
+            .expect("assistant header line");
+        assert!(header.starts_with(" Codex ▶ "));
     }
 
     #[test]
