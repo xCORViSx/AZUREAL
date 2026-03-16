@@ -9,6 +9,9 @@ All notable changes to Azureal will be documented in this file.
 - **Codex bubble identity from selected model** — `CodexEventParser::new()` now takes a `model: String` parameter. `AgentProcessor::spawn()`/`reset()` thread the selected model through so Init events carry the real model ID (e.g. "gpt-5.4") instead of hardcoded "codex". The renderer derives the correct agent label ("Claude"/"Codex") and color from the model string. Modified: `codex_parser.rs`, `agent_processor.rs`, `event_loop.rs`. 37 codex_parser tests updated.
 - **Assistant bubble model ID in header** — Chat bubble headers now show agent name (left-aligned, bold) and model ID (right-aligned, subdued) on the same header strip. Width-aware layout truncates the model when the bubble is narrow. Modified: `render_events.rs`. 4 new tests.
 
+### Changed
+- **Bubble header model name contrast** — Model ID in assistant bubble headers changed from `DarkGray` to `Rgb(60, 60, 60)` (dark charcoal) for better readability while remaining visually distinct from the bold black agent name. Modified: `render_events.rs`.
+
 ### Fixed
 - **Model name missing from bubble header after ModelSwitch** — `ModelSwitch` events were silently ignored in both the render loop (`render_events.rs`) and the pre-scan fast-forward (`render_submit.rs`), so `current_model` was never updated after a model cycle. All subsequent `AssistantText` bubble headers showed the old/empty model name. Now `ModelSwitch` updates `current_model` in both paths.
 

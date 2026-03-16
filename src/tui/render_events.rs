@@ -244,7 +244,7 @@ fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Lin
     let (assistant_name, assistant_color) = assistant_identity(model);
     let header_style = Style::default().fg(Color::Black).bg(assistant_color).add_modifier(Modifier::BOLD);
     let model_style = Style::default()
-        .fg(Color::DarkGray)
+        .fg(Color::Rgb(60, 60, 60))
         .bg(assistant_color);
     let fill_style = Style::default().bg(assistant_color);
 
