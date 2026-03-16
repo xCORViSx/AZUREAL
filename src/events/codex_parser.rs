@@ -226,7 +226,7 @@ impl CodexEventParser {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let output = payload
+        let raw_output = payload
             .get("output")
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -235,7 +235,11 @@ impl CodexEventParser {
             .tool_calls
             .remove(&call_id)
             .unwrap_or((fallback_tool_name.to_string(), None));
-        let is_error = output.starts_with("Error") || output.contains("Exit code: 1");
+        let output = normalize_tool_output(&tool_name, raw_output);
+        let is_error = output.starts_with("Error")
+            || output.starts_with("write_stdin failed:")
+            || output.starts_with("exec_command failed:")
+            || (output.starts_with("Exit code: ") && !output.starts_with("Exit code: 0"));
 
         vec![DisplayEvent::ToolResult {
             tool_use_id: call_id,
@@ -625,17 +629,15 @@ fn extract_message_text(content: Option<&serde_json::Value>) -> String {
 fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<String>) {
     match name {
         "shell_command" => {
-            let args = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            let args = parse_tool_args(payload);
             let workdir = args
-                .as_ref()
+                .as_object()
                 .and_then(|a| a.get("workdir"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
             ("Bash".to_string(), workdir)
         }
+        "exec_command" | "write_stdin" => ("Bash".to_string(), None),
         "apply_patch" => {
             let args = payload
                 .get("arguments")
@@ -650,13 +652,9 @@ fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<St
 
 fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Value {
     match name {
-        "shell_command" => {
-            let args_str = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .unwrap_or("{}");
-            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
-        }
+        "shell_command" => parse_tool_args(payload),
+        "exec_command" => normalize_exec_command_input(parse_tool_args(payload)),
+        "write_stdin" => normalize_write_stdin_input(parse_tool_args(payload)),
         "apply_patch" => {
             let patch = payload
                 .get("arguments")
@@ -665,14 +663,7 @@ fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Valu
                 .unwrap_or("");
             serde_json::json!({ "patch": patch })
         }
-        _ => {
-            let args_str = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .or_else(|| payload.get("input").and_then(|v| v.as_str()))
-                .unwrap_or("{}");
-            serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
-        }
+        _ => parse_tool_args(payload),
     }
 }
 
@@ -689,6 +680,102 @@ fn extract_patch_file_path(patch: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn parse_tool_args(payload: &serde_json::Value) -> serde_json::Value {
+    let args_str = payload
+        .get("arguments")
+        .and_then(|v| v.as_str())
+        .or_else(|| payload.get("input").and_then(|v| v.as_str()))
+        .unwrap_or("{}");
+    serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
+}
+
+fn normalize_exec_command_input(mut args: serde_json::Value) -> serde_json::Value {
+    let command = args
+        .get("command")
+        .or_else(|| args.get("cmd"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    insert_command_field(&mut args, command);
+    args
+}
+
+fn normalize_write_stdin_input(mut args: serde_json::Value) -> serde_json::Value {
+    let command = describe_write_stdin_action(&args);
+    insert_command_field(&mut args, command);
+    args
+}
+
+fn insert_command_field(args: &mut serde_json::Value, command: String) {
+    match args {
+        serde_json::Value::Object(map) => {
+            map.insert("command".into(), serde_json::json!(command));
+        }
+        _ => {
+            *args = serde_json::json!({ "command": command });
+        }
+    }
+}
+
+fn describe_write_stdin_action(args: &serde_json::Value) -> String {
+    let session_suffix = args
+        .get("session_id")
+        .map(|v| match v {
+            serde_json::Value::String(s) => format!(" {}", s),
+            serde_json::Value::Number(n) => format!(" {}", n),
+            _ => String::new(),
+        })
+        .unwrap_or_default();
+    let chars = args.get("chars").and_then(|v| v.as_str()).unwrap_or("");
+    if chars.is_empty() {
+        return format!("poll session{session_suffix}");
+    }
+    if chars == "\u{3}" {
+        return format!("send Ctrl-C to session{session_suffix}");
+    }
+    let escaped = chars.escape_default().to_string();
+    let preview = if escaped.chars().count() > 32 {
+        format!("{}...", escaped.chars().take(29).collect::<String>())
+    } else {
+        escaped
+    };
+    format!("send \"{preview}\" to session{session_suffix}")
+}
+
+fn normalize_tool_output(tool_name: &str, output: String) -> String {
+    if !matches!(tool_name, "Bash" | "bash") || !output.starts_with("Chunk ID:") {
+        return output;
+    }
+
+    if let Some((_, tail)) = output.split_once("\nOutput:\n") {
+        let actual = tail.trim_end_matches('\n');
+        if !actual.trim().is_empty() {
+            return actual.to_string();
+        }
+    }
+
+    if let Some(code) = output
+        .lines()
+        .find_map(|line| line.strip_prefix("Process exited with code "))
+    {
+        let code = code.trim();
+        return if code == "0" {
+            String::new()
+        } else {
+            format!("Exit code: {code}")
+        };
+    }
+
+    if let Some(session_id) = output
+        .lines()
+        .find_map(|line| line.strip_prefix("Process running with session ID "))
+    {
+        return format!("Process running with session ID {}", session_id.trim());
+    }
+
+    output
 }
 
 #[cfg(test)]
@@ -957,6 +1044,71 @@ mod tests {
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(file_path.as_deref(), Some("/tmp/probe.txt"));
                 assert!(content.contains("Success. Updated the following files"));
+                assert!(!is_error);
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_exec_command_maps_to_bash_command() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\",\"workdir\":\"/tmp\",\"yield_time_ms\":1000}"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                ..
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert!(file_path.is_none());
+                assert_eq!(input.get("command").and_then(|v| v.as_str()), Some("pwd"));
+                assert_eq!(input.get("workdir").and_then(|v| v.as_str()), Some("/tmp"));
+            }
+            _ => panic!("expected ToolCall"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_write_stdin_maps_to_bash_poll_command() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"response_item","payload":{"type":"function_call","name":"write_stdin","call_id":"call_poll","arguments":"{\"session_id\":98333,\"chars\":\"\",\"yield_time_ms\":1000}"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolCall {
+                tool_name, input, ..
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert_eq!(
+                    input.get("command").and_then(|v| v.as_str()),
+                    Some("poll session 98333")
+                );
+            }
+            _ => panic!("expected ToolCall"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_exec_command_output_strips_exec_wrapper() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let call = r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\"}"}}"#;
+        let output = r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_exec","output":"Chunk ID: 6bf9d8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 7\nOutput:\n/Users/macbookpro/AZUREAL\n"}}"#;
+        let (_, _) = p.parse(&format!("{}\n", call));
+        let (events, _) = p.parse(&format!("{}\n", output));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::ToolResult {
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert_eq!(content, "/Users/macbookpro/AZUREAL");
                 assert!(!is_error);
             }
             _ => panic!("expected ToolResult"),

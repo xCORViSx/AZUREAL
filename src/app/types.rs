@@ -532,8 +532,7 @@ pub struct GitCommitOverlay {
     pub scroll: usize,
     /// Receiver for the generated message from the background thread.
     /// Ok(message + generator metadata), Err(error_if_both_backends_failed).
-    pub receiver:
-        Option<std::sync::mpsc::Receiver<Result<GeneratedCommitMessage, String>>>,
+    pub receiver: Option<std::sync::mpsc::Receiver<Result<GeneratedCommitMessage, String>>>,
 }
 
 /// Conflict resolution overlay — shown when squash merge encounters conflicts.

@@ -778,10 +778,7 @@ pub(super) fn exec_commit_start(app: &mut App) {
                 let alt = commit_backend.alternate();
                 match generate(alt) {
                     Ok(msg) => {
-                        let notice = format!(
-                            "{} failed — fell back to {}",
-                            commit_backend, alt
-                        );
+                        let notice = format!("{} failed — fell back to {}", commit_backend, alt);
                         Ok(GeneratedCommitMessage {
                             message: msg,
                             generator_label: commit_message_generator_label(alt),

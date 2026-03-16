@@ -337,12 +337,7 @@ pub async fn run_app(
                             if let Some(sid) = app.current_session_id {
                                 app.pid_session_target.insert(
                                     pid.to_string(),
-                                    (
-                                        sid,
-                                        wt_path.clone(),
-                                        events_offset,
-                                        app.session_file_size,
-                                    ),
+                                    (sid, wt_path.clone(), events_offset, app.session_file_size),
                                 );
                             }
                             app.register_claude(branch, pid, rx, selected_model.as_deref());
@@ -395,9 +390,7 @@ pub async fn run_app(
             && app.compaction_retry_needed.is_none()
         {
             app.auto_continue_after_compaction = false;
-            if let Some(wt_path) =
-                app.current_worktree().and_then(|s| s.worktree_path.clone())
-            {
+            if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
                 let branch = app
                     .current_worktree()
                     .map(|s| s.branch_name.clone())
@@ -414,12 +407,8 @@ pub async fn run_app(
                     })
                     .unwrap_or_else(|| prompt.clone());
                 let selected_model = app.selected_model.clone();
-                match claude_process.spawn(
-                    &wt_path,
-                    &send_prompt,
-                    None,
-                    selected_model.as_deref(),
-                ) {
+                match claude_process.spawn(&wt_path, &send_prompt, None, selected_model.as_deref())
+                {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
                             app.pid_session_target.insert(

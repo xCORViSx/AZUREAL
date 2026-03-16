@@ -67,12 +67,7 @@ pub fn handle_claude_event(
                         if let Some(sid) = app.current_session_id {
                             app.pid_session_target.insert(
                                 pid.to_string(),
-                                (
-                                    sid,
-                                    wt_path.clone(),
-                                    events_offset,
-                                    app.session_file_size,
-                                ),
+                                (sid, wt_path.clone(), events_offset, app.session_file_size),
                             );
                         }
                         app.register_claude(branch, pid, rx, selected_model.as_deref());
@@ -238,8 +233,7 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
             // Compaction produced no output (e.g. backend hit usage limit).
             // Queue a retry with the alternate backend.
             let alt = job.turn_backend.alternate();
-            app.compaction_retry_needed =
-                Some((job.session_id, job.wt_path.clone(), alt));
+            app.compaction_retry_needed = Some((job.session_id, job.wt_path.clone(), alt));
             app.set_status(format!(
                 "Compaction: {} produced no output — retrying with {}",
                 job.turn_backend, alt

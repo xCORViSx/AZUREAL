@@ -321,11 +321,11 @@ impl App {
     /// a new prompt supersedes a still-running process. Removes the slot from
     /// pid_session_target so the exit handler doesn't double-store.
     pub fn store_append_from_display(&mut self, slot_id: &str) {
-        let (session_id, wt_path, events_offset, _) =
-            match self.pid_session_target.remove(slot_id) {
-                Some(triple) => triple,
-                None => return,
-            };
+        let (session_id, wt_path, events_offset, _) = match self.pid_session_target.remove(slot_id)
+        {
+            Some(triple) => triple,
+            None => return,
+        };
         let end = self.display_events.len();
         if events_offset >= end {
             return;
@@ -358,8 +358,8 @@ impl App {
         // Only process if this slot was targeting a store session
         let (session_id, wt_path, events_offset, session_file_offset) =
             match self.pid_session_target.remove(slot_id) {
-            Some(triple) => triple,
-            None => return,
+                Some(triple) => triple,
+                None => return,
             };
 
         // Resolve JSONL file path for deletion
@@ -1958,7 +1958,12 @@ mod tests {
 
         app.store_append_from_jsonl("55", Backend::Codex);
 
-        let stored = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+        let stored = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
         let stored_tool_call = stored
             .iter()
             .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))

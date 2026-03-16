@@ -306,8 +306,7 @@ mod tests {
 
     #[test]
     fn codex_session_meta_id_extraction_logic() {
-        let line =
-            r#"{"type":"session_meta","payload":{"id":"019cf628-b245-7a21-ae00-bbaf2cd408dc","cwd":"/tmp"}}"#;
+        let line = r#"{"type":"session_meta","payload":{"id":"019cf628-b245-7a21-ae00-bbaf2cd408dc","cwd":"/tmp"}}"#;
         assert_eq!(
             extract_codex_session_id(line).as_deref(),
             Some("019cf628-b245-7a21-ae00-bbaf2cd408dc")

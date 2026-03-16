@@ -32,6 +32,7 @@ pub fn tool_display_name(tool_name: &str) -> &str {
     match tool_name {
         "Grep" | "grep" => "Search",
         "Glob" | "glob" => "Find",
+        "exec_command" | "write_stdin" => "Bash",
         _ => tool_name,
     }
 }
@@ -63,14 +64,20 @@ pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String 
                     .and_then(extract_apply_patch_file_path)
             })
             .unwrap_or_default(),
-        "Bash" | "bash" => {
+        "Bash" | "bash" | "exec_command" => {
             // Full command - no truncation
             input
                 .get("command")
+                .or_else(|| input.get("cmd"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string()
         }
+        "write_stdin" => input
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| describe_write_stdin_action(input)),
         "Glob" | "glob" => input
             .get("pattern")
             .and_then(|v| v.as_str())
@@ -118,6 +125,7 @@ pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String 
                 .get("file_path")
                 .or_else(|| input.get("path"))
                 .or_else(|| input.get("command"))
+                .or_else(|| input.get("cmd"))
                 .or_else(|| input.get("query"))
                 .or_else(|| input.get("pattern"))
                 .and_then(|v| v.as_str())
@@ -152,6 +160,69 @@ fn extract_apply_patch_file_path(patch: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn describe_write_stdin_action(input: &serde_json::Value) -> String {
+    let session_suffix = input
+        .get("session_id")
+        .map(|v| match v {
+            serde_json::Value::String(s) => format!(" {}", s),
+            serde_json::Value::Number(n) => format!(" {}", n),
+            _ => String::new(),
+        })
+        .unwrap_or_default();
+    let chars = input.get("chars").and_then(|v| v.as_str()).unwrap_or("");
+    if chars.is_empty() {
+        return format!("poll session{session_suffix}");
+    }
+    if chars == "\u{3}" {
+        return format!("send Ctrl-C to session{session_suffix}");
+    }
+    let escaped = chars.escape_default().to_string();
+    let preview = if escaped.chars().count() > 32 {
+        format!("{}...", escaped.chars().take(29).collect::<String>())
+    } else {
+        escaped
+    };
+    format!("send \"{preview}\" to session{session_suffix}")
+}
+
+fn is_bash_like_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "Bash" | "bash" | "exec_command" | "write_stdin")
+}
+
+fn normalize_bash_like_output(content: &str) -> String {
+    if !content.starts_with("Chunk ID:") {
+        return content.to_string();
+    }
+
+    if let Some((_, tail)) = content.split_once("\nOutput:\n") {
+        let actual = tail.trim_end_matches('\n');
+        if !actual.trim().is_empty() {
+            return actual.to_string();
+        }
+    }
+
+    if let Some(code) = content
+        .lines()
+        .find_map(|line| line.strip_prefix("Process exited with code "))
+    {
+        let code = code.trim();
+        return if code == "0" {
+            String::new()
+        } else {
+            format!("Exit code: {code}")
+        };
+    }
+
+    if let Some(session_id) = content
+        .lines()
+        .find_map(|line| line.strip_prefix("Process running with session ID "))
+    {
+        return format!("Process running with session ID {}", session_id.trim());
+    }
+
+    content.to_string()
 }
 
 pub fn extract_edit_preview_strings(input: &serde_json::Value) -> (String, String) {
@@ -484,12 +555,17 @@ pub fn render_tool_result(
     let mut lines = Vec::new();
     let tool_color = if is_failed { Color::Red } else { AZURE };
     let result_style = Style::default().fg(if is_failed { Color::Red } else { Color::Gray });
+    let content = if is_bash_like_tool(tool_name) {
+        normalize_bash_like_output(content)
+    } else {
+        content.to_string()
+    };
 
     // Filter out system-reminder blocks
     let content = if let Some(start) = content.find("<system-reminder>") {
         &content[..start]
     } else {
-        content
+        content.as_str()
     }
     .trim_end();
 
@@ -501,14 +577,14 @@ pub fn render_tool_result(
     if line_count == 0 {
         let msg = match tool_name {
             "Read" => "(empty file)",
-            "Bash" => "✓",
+            "Bash" | "exec_command" | "write_stdin" => "✓",
             _ => "✓",
         };
         lines.push(Line::from(vec![
             Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
             Span::styled(
                 msg,
-                if tool_name == "Bash" {
+                if is_bash_like_tool(tool_name) {
                     Style::default().fg(Color::Green)
                 } else {
                     result_style
@@ -555,7 +631,7 @@ pub fn render_tool_result(
                 });
             }
         }
-        "Bash" | "bash" => {
+        "Bash" | "bash" | "exec_command" | "write_stdin" => {
             // Last 2 non-empty lines (results usually at end)
             let non_empty: Vec<&str> = content_lines
                 .iter()
@@ -970,6 +1046,11 @@ mod tests {
     }
 
     #[test]
+    fn display_name_exec_command_maps_to_bash() {
+        assert_eq!(tool_display_name("exec_command"), "Bash");
+    }
+
+    #[test]
     fn display_name_edit_passthrough() {
         assert_eq!(tool_display_name("Edit"), "Edit");
     }
@@ -1088,6 +1169,21 @@ mod tests {
     fn extract_bash_command() {
         let input = json!({"command": "cargo build"});
         assert_eq!(extract_tool_param("Bash", &input), "cargo build");
+    }
+
+    #[test]
+    fn extract_exec_command_cmd_fallback() {
+        let input = json!({"cmd": "pwd"});
+        assert_eq!(extract_tool_param("exec_command", &input), "pwd");
+    }
+
+    #[test]
+    fn extract_write_stdin_poll_command() {
+        let input = json!({"session_id": 98333, "chars": ""});
+        assert_eq!(
+            extract_tool_param("write_stdin", &input),
+            "poll session 98333"
+        );
     }
 
     #[test]
@@ -1461,6 +1557,14 @@ mod tests {
         let lines = render_tool_result("Bash", None, "\n\n\n", false, 80);
         assert_eq!(lines.len(), 1);
         assert!(spans_text(&lines[0]).contains("\u{2713}"));
+    }
+
+    #[test]
+    fn render_result_exec_command_strips_exec_wrapper() {
+        let content = "Chunk ID: 6bf9d8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 7\nOutput:\n/Users/macbookpro/AZUREAL\n";
+        let lines = render_tool_result("exec_command", None, content, false, 80);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(spans_text(&lines[0]), " ┃  └─ /Users/macbookpro/AZUREAL");
     }
 
     // ═══════════════════════════════════════════════════════════════════
