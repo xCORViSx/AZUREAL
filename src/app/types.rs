@@ -506,6 +506,17 @@ pub struct GitChangedFile {
     pub staged: bool,
 }
 
+/// Result from the one-shot commit-message generator worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedCommitMessage {
+    /// The generated commit message text inserted into the editor.
+    pub message: String,
+    /// Human-readable model/helper label shown in the git status box.
+    pub generator_label: String,
+    /// Optional notice when generation succeeded only after backend fallback.
+    pub fallback_notice: Option<String>,
+}
+
 /// Commit message overlay state — shown when pressing `c` in the Git panel.
 /// Claude or Codex generates the message via a one-shot background CLI call,
 /// and the user can edit before committing.
@@ -520,8 +531,9 @@ pub struct GitCommitOverlay {
     /// Scroll offset for displaying long messages
     pub scroll: usize,
     /// Receiver for the generated message from the background thread.
-    /// Ok((message, optional_fallback_notice)), Err(error_if_both_backends_failed).
-    pub receiver: Option<std::sync::mpsc::Receiver<Result<(String, Option<String>), String>>>,
+    /// Ok(message + generator metadata), Err(error_if_both_backends_failed).
+    pub receiver:
+        Option<std::sync::mpsc::Receiver<Result<GeneratedCommitMessage, String>>>,
 }
 
 /// Conflict resolution overlay — shown when squash merge encounters conflicts.

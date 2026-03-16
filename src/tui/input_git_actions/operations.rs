@@ -5,7 +5,8 @@
 //! Auto-resolve logic uses union merge for configured files.
 
 use crate::app::types::{
-    BackgroundRebaseOutcome, GitActionsPanel, GitChangedFile, GitCommitOverlay,
+    BackgroundRebaseOutcome, GeneratedCommitMessage, GitActionsPanel, GitChangedFile,
+    GitCommitOverlay,
 };
 use crate::app::App;
 use crate::backend::Backend;
@@ -39,6 +40,15 @@ fn commit_message_model_for_backend(backend: Backend) -> Option<&'static str> {
         // Rough Sonnet-tier Codex pair for the same helper flow.
         Backend::Codex => Some("gpt-5.2"),
     }
+}
+
+fn commit_message_generator_label(backend: Backend) -> String {
+    commit_message_model_for_backend(backend)
+        .map(str::to_string)
+        .unwrap_or_else(|| match backend {
+            Backend::Claude => "Claude default model".to_string(),
+            Backend::Codex => "Codex default model".to_string(),
+        })
 }
 
 fn strip_commit_message_fences(raw: &str) -> String {
@@ -759,7 +769,11 @@ pub(super) fn exec_commit_start(app: &mut App) {
         };
 
         let result = match generate(commit_backend) {
-            Ok(msg) => Ok((msg, None)),
+            Ok(msg) => Ok(GeneratedCommitMessage {
+                message: msg,
+                generator_label: commit_message_generator_label(commit_backend),
+                fallback_notice: None,
+            }),
             Err(primary_err) => {
                 let alt = commit_backend.alternate();
                 match generate(alt) {
@@ -768,7 +782,11 @@ pub(super) fn exec_commit_start(app: &mut App) {
                             "{} failed — fell back to {}",
                             commit_backend, alt
                         );
-                        Ok((msg, Some(notice)))
+                        Ok(GeneratedCommitMessage {
+                            message: msg,
+                            generator_label: commit_message_generator_label(alt),
+                            fallback_notice: Some(notice),
+                        })
                     }
                     Err(alt_err) => Err(format!(
                         "{} failed: {}; {} also failed: {}",
@@ -1383,6 +1401,19 @@ mod tests {
             receiver: None,
         };
         assert!(!ov.generating);
+    }
+
+    #[test]
+    fn commit_message_generator_label_for_claude() {
+        assert_eq!(
+            commit_message_generator_label(Backend::Claude),
+            "Claude default model"
+        );
+    }
+
+    #[test]
+    fn commit_message_generator_label_for_codex() {
+        assert_eq!(commit_message_generator_label(Backend::Codex), "gpt-5.2");
     }
 
     // ══════════════════════════════════════════════════════════════════
