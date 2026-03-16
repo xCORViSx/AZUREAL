@@ -16,6 +16,15 @@ use crate::syntax::SyntaxHighlighter;
 
 pub type AssistantPathRegion = (usize, usize, usize, String);
 
+fn starts_verification_paragraph(trimmed: &str) -> bool {
+    if trimmed.starts_with("Verification:") {
+        return true;
+    }
+
+    let stripped = trimmed.trim_start_matches(|c| c == '*' || c == '_');
+    stripped != trimmed && stripped.starts_with("Verification:")
+}
+
 /// Render assistant markdown text into lines (with syntax-highlighted code blocks)
 /// Returns (rendered_lines, table_regions) where table_regions are
 /// (output_line_start, output_line_end, raw_markdown) for click-to-expand.
@@ -170,7 +179,7 @@ pub fn render_assistant_text_with_paths(
             continue;
         }
 
-        let starts_verification = trimmed.starts_with("Verification:");
+        let starts_verification = starts_verification_paragraph(trimmed);
         let base_style = if starts_verification || in_verification_paragraph {
             Style::default()
                 .fg(Color::White)
@@ -985,6 +994,41 @@ mod tests {
                     || span.content.contains("Second verification line.")
             })
             .all(|span| span.style.add_modifier.contains(Modifier::ITALIC)));
+    }
+
+    #[test]
+    fn render_emphasized_verification_prefix_keeps_following_line_italic() {
+        let text = "*Verification:* first line.\nSecond verification line.";
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
+        assert!(lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .filter(|span| span.content.contains("Second verification line."))
+            .all(|span| span.style.add_modifier.contains(Modifier::ITALIC)));
+    }
+
+    #[test]
+    fn render_verification_paragraph_keeps_inline_code_italic() {
+        let text = "Verification: `cargo check` passed.";
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
+        let code_span = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .find(|span| span.content.contains("cargo check"))
+            .expect("inline code span");
+        assert!(code_span.style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn render_verification_paragraph_keeps_file_link_italic() {
+        let text = "Verification: see [app.rs](/Users/test/app.rs#L42).";
+        let (lines, _table_regions, _paths) = render_assistant_text_with_paths(text, 80, &mut hl());
+        let link_span = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .find(|span| span.content.contains("app.rs"))
+            .expect("file link span");
+        assert!(link_span.style.add_modifier.contains(Modifier::ITALIC));
     }
 
     #[test]

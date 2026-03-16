@@ -31,10 +31,8 @@ fn push_text_segment(
     });
 }
 
-fn file_link_style() -> Style {
-    Style::default()
-        .fg(ORANGE)
-        .add_modifier(Modifier::UNDERLINED)
+fn file_link_style(base_style: Style) -> Style {
+    base_style.fg(ORANGE).add_modifier(Modifier::UNDERLINED)
 }
 
 pub(crate) fn parse_markdown_segments(text: &str, base_style: Style) -> Vec<MarkdownSegment> {
@@ -53,7 +51,7 @@ pub(crate) fn parse_markdown_segments(text: &str, base_style: Style) -> Vec<Mark
                     push_text_segment(
                         &mut segments,
                         label.to_string(),
-                        file_link_style(),
+                        file_link_style(base_style),
                         Some(target.to_string()),
                     );
                     let end = i + consumed;
@@ -84,9 +82,7 @@ pub(crate) fn parse_markdown_segments(text: &str, base_style: Style) -> Vec<Mark
                     push_text_segment(
                         &mut segments,
                         code,
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .bg(Color::Rgb(40, 40, 40)),
+                        base_style.fg(Color::Yellow).bg(Color::Rgb(40, 40, 40)),
                         None,
                     );
                 }
@@ -224,12 +220,6 @@ mod tests {
     fn italic(s: Style) -> Style {
         s.add_modifier(Modifier::ITALIC)
     }
-    fn file_link() -> Style {
-        Style::default()
-            .fg(ORANGE)
-            .add_modifier(Modifier::UNDERLINED)
-    }
-
     fn texts<'a>(spans: &'a [Span<'a>]) -> Vec<&'a str> {
         spans.iter().map(|s| s.content.as_ref()).collect()
     }
@@ -665,11 +655,33 @@ mod tests {
     }
 
     #[test]
+    fn custom_base_style_on_inline_code() {
+        let custom = Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::ITALIC);
+        let spans = parse_markdown_spans("`code`", custom);
+        assert_eq!(
+            spans[0].style,
+            custom.fg(Color::Yellow).bg(Color::Rgb(40, 40, 40))
+        );
+    }
+
+    #[test]
     fn local_file_link_renders_as_underlined_label() {
         let spans =
             parse_markdown_spans("[render_tools.rs](/Users/test/render_tools.rs#L42)", base());
         assert_eq!(texts(&spans), vec!["render_tools.rs"]);
-        assert_eq!(spans[0].style, file_link());
+        assert_eq!(spans[0].style, file_link_style(base()));
+    }
+
+    #[test]
+    fn custom_base_style_on_local_file_link() {
+        let custom = Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::ITALIC);
+        let spans =
+            parse_markdown_spans("[render_tools.rs](/Users/test/render_tools.rs#L42)", custom);
+        assert_eq!(spans[0].style, file_link_style(custom));
     }
 
     #[test]
