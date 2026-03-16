@@ -357,25 +357,26 @@ pub async fn run_app(
         // Spawn compaction agent when threshold is crossed (mid-turn or post-exit).
         // The live char counter in handle_claude_output sets compaction_needed as soon
         // as 400K chars is reached, so this fires without waiting for process exit.
-        if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.take() {
-            agent_events::spawn_compaction_agent(
-                app,
-                &claude_process,
-                session_id,
-                &wt_path,
-                turn_backend,
-            );
+        // Only consume the trigger if spawn succeeds — failed spawns (e.g. not enough
+        // user messages for boundary) set compaction_spawn_deferred to avoid retrying
+        // every tick. The deferred flag is cleared when a new user message is stored.
+        if !app.compaction_spawn_deferred {
+            if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.as_ref() {
+                let (sid, wtp, tb) = (*session_id, wt_path.clone(), *turn_backend);
+                if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp, tb) {
+                    app.compaction_needed = None;
+                } else {
+                    app.compaction_spawn_deferred = true;
+                }
+            }
         }
 
         // Retry compaction with alternate backend if the primary produced no output
-        if let Some((session_id, wt_path, alt_backend)) = app.compaction_retry_needed.take() {
-            agent_events::spawn_compaction_agent(
-                app,
-                &claude_process,
-                session_id,
-                &wt_path,
-                alt_backend,
-            );
+        if let Some((session_id, wt_path, alt_backend)) = app.compaction_retry_needed.as_ref() {
+            let (sid, wtp, ab) = (*session_id, wt_path.clone(), *alt_backend);
+            if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp, ab) {
+                app.compaction_retry_needed = None;
+            }
         }
 
         // Auto-continue after mid-turn compaction: once all compaction agents finish

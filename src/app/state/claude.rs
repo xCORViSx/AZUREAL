@@ -388,6 +388,9 @@ impl App {
                 }
             }
 
+            // New events stored (may include user messages) — retry deferred
+            // compaction spawns since a valid boundary may now exist.
+            self.compaction_spawn_deferred = false;
             // Check if compaction is needed (only if not already pending or in-flight)
             if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
                 if let Ok(chars) = store.total_chars_since_compaction(session_id) {

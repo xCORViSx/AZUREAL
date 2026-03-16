@@ -33,6 +33,9 @@ impl App {
         // User is manually sending a prompt — cancel any pending auto-continue
         // from a mid-turn compaction (the user's own prompt supersedes it).
         self.auto_continue_after_compaction = false;
+        // A new user message may create a valid compaction boundary where one
+        // didn't exist before — retry deferred compaction spawns.
+        self.compaction_spawn_deferred = false;
 
         // Compaction summaries are internal — show banner, not raw text
         if content.starts_with("This session is being continued from a previous conversation") {

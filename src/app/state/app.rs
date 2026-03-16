@@ -144,6 +144,11 @@ pub struct App {
     /// in, and reset after a successful compaction. Enables mid-turn compaction
     /// triggering instead of waiting for process exit.
     pub chars_since_compaction: usize,
+    /// Set when `spawn_compaction_agent` fails due to insufficient boundary
+    /// (not enough user messages). Prevents the event loop from retrying every
+    /// tick. Cleared when a new user message is stored (which may create a valid
+    /// boundary).
+    pub compaction_spawn_deferred: bool,
     /// Set when a mid-turn compaction kills the active process. After the compaction
     /// agent finishes, the event loop auto-sends a hidden "continue" prompt (no user
     /// bubble) with fresh context injection including the new compaction summary.
@@ -638,6 +643,7 @@ impl App {
             compaction_output: HashMap::new(),
             compaction_retry_needed: None,
             chars_since_compaction: 0,
+            compaction_spawn_deferred: false,
             auto_continue_after_compaction: false,
             terminal_mode: false,
             terminal_pty: None,

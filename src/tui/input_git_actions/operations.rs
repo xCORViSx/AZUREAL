@@ -37,7 +37,7 @@ fn commit_message_model_for_backend(backend: Backend) -> Option<&'static str> {
         // configured/default model for commit-message generation.
         Backend::Claude => None,
         // Rough Sonnet-tier Codex pair for the same helper flow.
-        Backend::Codex => Some("gpt-5.3-codex"),
+        Backend::Codex => Some("gpt-5.2"),
     }
 }
 
@@ -1454,7 +1454,7 @@ mod tests {
         assert_eq!(commit_message_model_for_backend(Backend::Claude), None);
         assert_eq!(
             commit_message_model_for_backend(Backend::Codex),
-            Some("gpt-5.3-codex")
+            Some("gpt-5.2")
         );
     }
 

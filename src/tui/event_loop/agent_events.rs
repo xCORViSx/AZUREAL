@@ -86,16 +86,17 @@ pub fn handle_claude_event(
 /// Spawn a background Claude agent to summarize the conversation for compaction.
 /// The agent's receiver goes into `compaction_receivers` (not `agent_receivers`)
 /// so its output is captured separately and never displayed in the session pane.
+/// Returns `true` if the agent was successfully spawned.
 pub fn spawn_compaction_agent(
     app: &mut App,
     claude_process: &AgentProcess,
     session_id: i64,
     wt_path: &std::path::Path,
     turn_backend: crate::backend::Backend,
-) {
+) -> bool {
     let store = match app.session_store.as_ref() {
         Some(s) => s,
-        None => return,
+        None => return false,
     };
 
     // Find where the last compaction ended
@@ -108,13 +109,16 @@ pub fn spawn_compaction_agent(
     // Find boundary: compact everything BEFORE the last 3 user messages
     let boundary_seq = match store.compaction_boundary(session_id, from_seq, 3) {
         Ok(Some(b)) => b,
-        _ => return, // Not enough user messages to compact
+        _ => {
+            app.set_status("Compaction skipped: not enough user messages for boundary");
+            return false;
+        }
     };
 
     // Build payload with only the events to be summarized (before boundary)
     let events = match store.load_events_range(session_id, from_seq, boundary_seq) {
         Ok(e) if !e.is_empty() => e,
-        _ => return,
+        _ => return false,
     };
 
     let payload = crate::app::session_store::ContextPayload {
@@ -134,7 +138,7 @@ pub fn spawn_compaction_agent(
             let alt_model = compaction_model_for_backend(alt);
             match claude_process.spawn(wt_path, &prompt, None, Some(alt_model)) {
                 Ok((rx, pid)) => (rx, pid, true),
-                Err(_) => return, // Both backends failed to spawn
+                Err(_) => return false, // Both backends failed to spawn
             }
         }
     };
@@ -161,6 +165,7 @@ pub fn spawn_compaction_agent(
         ));
     }
     app.invalidate_render_cache();
+    true
 }
 
 fn compaction_model_for_backend(backend: crate::backend::Backend) -> &'static str {

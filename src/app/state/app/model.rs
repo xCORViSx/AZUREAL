@@ -95,6 +95,23 @@ impl App {
         // Sync the live char counter from the store (authoritative at rest)
         self.chars_since_compaction = store_chars;
         self.apply_token_badge(store_chars);
+
+        // Startup/load-time compaction trigger: if the store already has chars
+        // above threshold (e.g. after app restart with uncompacted data), set
+        // compaction_needed so the event loop spawns the agent on next tick.
+        if store_chars >= crate::app::session_store::COMPACTION_THRESHOLD
+            && self.compaction_needed.is_none()
+            && self.compaction_receivers.is_empty()
+        {
+            if let Some(sid) = self.current_session_id {
+                if let Some(wt_path) = self
+                    .current_worktree()
+                    .and_then(|s| s.worktree_path.clone())
+                {
+                    self.compaction_needed = Some((sid, wt_path, self.backend));
+                }
+            }
+        }
     }
 
     /// Lightweight badge update during streaming — uses cached store chars plus
