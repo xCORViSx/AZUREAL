@@ -34,11 +34,14 @@ impl App {
     /// the background AgentProcessor thread — all JSON parsing already done.
     pub fn apply_parsed_output(
         &mut self,
+        slot_id: &str,
         events: Vec<DisplayEvent>,
         parsed_json: Option<serde_json::Value>,
         output_type: OutputType,
         data: &str,
     ) {
+        let mut events = events;
+        self.apply_slot_turn_duration(slot_id, &mut events);
         for event in &events {
             match event {
                 DisplayEvent::ToolCall {
@@ -135,9 +138,10 @@ impl App {
         let branch = self
             .branch_for_slot(slot_id)
             .unwrap_or_else(|| slot_id.to_string());
-        let agent = match self.backend {
-            crate::backend::Backend::Claude => "Claude",
-            crate::backend::Backend::Codex => "Codex",
+        let agent = if self.codex_slot_started_at.contains_key(slot_id) {
+            "Codex"
+        } else {
+            "Claude"
         };
         self.set_status(format!("{} started in {}", agent, branch));
     }
@@ -164,6 +168,7 @@ impl App {
         self.running_sessions.remove(slot_id);
         self.agent_receivers.remove(slot_id);
         self.slot_to_project.remove(slot_id);
+        self.codex_slot_started_at.remove(slot_id);
         if let Some(c) = code {
             self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -463,6 +468,7 @@ impl App {
         self.running_sessions.remove(slot_id);
         self.agent_receivers.remove(slot_id);
         self.slot_to_project.remove(slot_id);
+        self.codex_slot_started_at.remove(slot_id);
         if let Some(c) = code {
             self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -642,7 +648,8 @@ impl App {
             // Single JSON parse: EventParser returns both events AND the raw parsed
             // JSON value. We reuse that value for token/model extraction below instead
             // of calling serde_json::from_str again (was the #1 remaining CPU cost).
-            let (events, parsed_json) = self.event_parser.parse(&data);
+            let (mut events, parsed_json) = self.event_parser.parse(&data);
+            self.apply_slot_turn_duration(slot_id, &mut events);
 
             for event in &events {
                 match event {
@@ -756,10 +763,23 @@ impl App {
         branch_name: String,
         pid: u32,
         receiver: Receiver<AgentEvent>,
+        model: Option<&str>,
     ) {
         let slot = pid.to_string();
         self.agent_receivers.insert(slot.clone(), receiver);
         self.running_sessions.insert(slot.clone());
+        let backend = model
+            .map(crate::app::state::backend_for_model)
+            .unwrap_or(crate::backend::Backend::Claude);
+        match backend {
+            crate::backend::Backend::Codex => {
+                self.codex_slot_started_at
+                    .insert(slot.clone(), std::time::Instant::now());
+            }
+            crate::backend::Backend::Claude => {
+                self.codex_slot_started_at.remove(&slot);
+            }
+        }
         // Track slot→project for background event routing
         if let Some(ref project) = self.project {
             self.slot_to_project
@@ -779,6 +799,20 @@ impl App {
         self.last_session_event_time = std::time::Instant::now();
         self.compaction_banner_injected = false;
         self.invalidate_sidebar();
+    }
+
+    fn apply_slot_turn_duration(&self, slot_id: &str, events: &mut [DisplayEvent]) {
+        let Some(started_at) = self.codex_slot_started_at.get(slot_id) else {
+            return;
+        };
+        let elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        for event in events {
+            if let DisplayEvent::Complete { duration_ms, .. } = event {
+                if *duration_ms == 0 {
+                    *duration_ms = elapsed_ms;
+                }
+            }
+        }
     }
 
     /// Store Claude's real session UUID, keyed by slot_id (PID string).
@@ -852,6 +886,8 @@ mod tests {
     use super::super::app::TodoStatus;
     use super::*;
     use serde_json::json;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
 
     /// Verifies parse_todos_from_input correctly parses a real TodoWrite input
     /// with mixed statuses (in_progress, pending, completed).
@@ -1561,5 +1597,83 @@ mod tests {
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].content, "   \t\n   ");
+    }
+
+    #[test]
+    fn register_claude_tracks_only_codex_slots() {
+        let mut app = App::new();
+        let (_claude_tx, claude_rx) = mpsc::channel();
+        let (_codex_tx, codex_rx) = mpsc::channel();
+
+        app.register_claude("claude".into(), 10, claude_rx, None);
+        app.register_claude("codex".into(), 20, codex_rx, Some("gpt-5.4"));
+
+        assert!(!app.codex_slot_started_at.contains_key("10"));
+        assert!(app.codex_slot_started_at.contains_key("20"));
+    }
+
+    #[test]
+    fn apply_parsed_output_sets_codex_complete_duration_from_pid_lifetime() {
+        let mut app = App::new();
+        let (_tx, rx) = mpsc::channel();
+        app.register_claude("codex".into(), 42, rx, Some("gpt-5.4"));
+        app.codex_slot_started_at
+            .insert("42".into(), Instant::now() - Duration::from_secs(3));
+
+        app.apply_parsed_output(
+            "42",
+            vec![DisplayEvent::Complete {
+                _session_id: String::new(),
+                success: true,
+                duration_ms: 0,
+                cost_usd: 0.0,
+            }],
+            None,
+            OutputType::Json,
+            "",
+        );
+
+        match app.display_events.last() {
+            Some(DisplayEvent::Complete { duration_ms, .. }) => {
+                assert!(*duration_ms >= 3_000);
+            }
+            other => panic!("expected Complete event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn apply_parsed_output_preserves_existing_claude_duration() {
+        let mut app = App::new();
+
+        app.apply_parsed_output(
+            "7",
+            vec![DisplayEvent::Complete {
+                _session_id: String::new(),
+                success: true,
+                duration_ms: 1_234,
+                cost_usd: 0.0,
+            }],
+            None,
+            OutputType::Json,
+            "",
+        );
+
+        match app.display_events.last() {
+            Some(DisplayEvent::Complete { duration_ms, .. }) => {
+                assert_eq!(*duration_ms, 1_234);
+            }
+            other => panic!("expected Complete event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn handle_claude_exited_clears_codex_slot_timer() {
+        let mut app = App::new();
+        let (_tx, rx) = mpsc::channel();
+        app.register_claude("codex".into(), 88, rx, Some("gpt-5.4"));
+
+        app.handle_claude_exited("88", Some(0));
+
+        assert!(!app.codex_slot_started_at.contains_key("88"));
     }
 }

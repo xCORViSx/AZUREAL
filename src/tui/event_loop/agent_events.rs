@@ -56,18 +56,19 @@ pub fn handle_claude_event(
                     })
                     .unwrap_or_else(|| prompt.clone());
                 let resume_id: Option<String> = None;
+                let selected_model = app.selected_model.clone();
                 match claude_process.spawn(
                     &wt_path,
                     &send_prompt,
                     resume_id.as_deref(),
-                    app.selected_model.as_deref(),
+                    selected_model.as_deref(),
                 ) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
                             app.pid_session_target
                                 .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                         }
-                        app.register_claude(branch, pid, rx);
+                        app.register_claude(branch, pid, rx, selected_model.as_deref());
                         app.set_status("Running...");
                     }
                     Err(e) => app.set_status(format!("Failed to start: {}", e)),

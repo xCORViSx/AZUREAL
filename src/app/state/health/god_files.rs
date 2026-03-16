@@ -369,7 +369,7 @@ impl App {
                     let slot = pid.to_string();
                     self.pending_session_names
                         .push((slot, format!("[GFM] {}", filename)));
-                    self.register_claude(branch.clone(), pid, rx);
+                    self.register_claude(branch.clone(), pid, rx, None);
                     spawned += 1;
                 }
                 Err(_) => {

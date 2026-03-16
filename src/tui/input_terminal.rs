@@ -220,7 +220,7 @@ pub fn handle_input_mode(
                                 m.slot_id = slot;
                                 m.approval_pending = false;
                             }
-                            app.register_claude(branch, pid, rx);
+                            app.register_claude(branch, pid, rx, None);
                             app.set_status("[RCR] Running...");
                         }
                         Err(e) => app.set_status(format!("Failed to start: {}", e)),
@@ -303,11 +303,12 @@ pub fn handle_input_mode(
                                 })
                                 .unwrap_or_else(|| actual_prompt.clone());
                             let resume_id: Option<String> = None;
+                            let selected_model = app.selected_model.clone();
                             match claude_process.spawn(
                                 &wt_path,
                                 &send_prompt,
                                 resume_id.as_deref(),
-                                app.selected_model.as_deref(),
+                                selected_model.as_deref(),
                             ) {
                                 Ok((rx, pid)) => {
                                     // Set pid → session target so post-exit flow writes to correct session
@@ -317,7 +318,12 @@ pub fn handle_input_mode(
                                             (sid, wt_path.clone(), events_offset),
                                         );
                                     }
-                                    app.register_claude(branch_name, pid, rx);
+                                    app.register_claude(
+                                        branch_name,
+                                        pid,
+                                        rx,
+                                        selected_model.as_deref(),
+                                    );
                                     app.set_status("Running...");
                                 }
                                 Err(e) => app.set_status(format!("Failed to start: {}", e)),

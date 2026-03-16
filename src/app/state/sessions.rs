@@ -291,6 +291,7 @@ impl App {
                 self.agent_receivers.remove(slot);
                 self.agent_exit_codes.remove(slot);
                 self.agent_session_ids.remove(slot);
+                self.codex_slot_started_at.remove(slot);
             }
         }
         self.active_slot.remove(&branch);

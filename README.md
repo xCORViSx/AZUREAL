@@ -29,7 +29,7 @@
 ### Session
 
 - **Markdown Rendering** — Syntax-highlighted code blocks, tables, headers, lists, and inline formatting
-- **Clickable File Paths** — Click tool file paths to open files or view diffs directly in the viewer
+- **Clickable File Paths** — Click tool file paths or assistant markdown file links to open files or view diffs directly in the viewer
 - **Clickable Tables** — Click any table to expand it in a full-width popup
 - **Todo Widget** — Live task progress from Claude's TodoWrite calls (checkboxes with subagent nesting)
 - **Context Meter** — Color-coded session store usage on the session border (chars / 400k compaction threshold)
@@ -76,7 +76,7 @@
 - **Claude Code CLI** (for Claude backend) — macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash` · Windows: `irm https://claude.ai/install.ps1 | iex`
 - **Codex CLI** (for Codex backend, optional) — `npm install -g @openai/codex`
 - **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
-- **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) for file tree icons; emoji fallback when not detected
+- **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) with at least regular, bold, and italic variants installed, so AZUREAL can show file tree icons and the full range of text styling differences; emoji fallback when not detected
 - **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
 - **Whisper model** (optional, for speech) — Create `~/.azureal/speech/` and download [ggml-small.en.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin) into it
 

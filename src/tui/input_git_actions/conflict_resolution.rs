@@ -170,7 +170,7 @@ fn spawn_conflict_claude(
             let slot = pid.to_string();
             app.pending_session_names
                 .push((slot.clone(), format!("[RCR] {}", display)));
-            app.register_claude(branch.to_string(), pid, rx);
+            app.register_claude(branch.to_string(), pid, rx, None);
             app.rcr_session = Some(RcrSession {
                 branch: branch.to_string(),
                 display_name: display.to_string(),

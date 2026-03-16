@@ -869,6 +869,7 @@ impl App {
                 }
             }
             self.agent_receivers.remove(slot);
+            self.codex_slot_started_at.remove(slot);
         }
         self.branch_slots.clear();
         self.active_slot.clear();

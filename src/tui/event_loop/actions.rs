@@ -226,6 +226,7 @@ pub fn handle_key_event(
                                 app.agent_receivers.remove(slot);
                                 app.agent_exit_codes.remove(slot);
                                 app.agent_session_ids.remove(slot);
+                                app.codex_slot_started_at.remove(slot);
                             }
                         }
                         app.active_slot.remove(&branch);
@@ -368,6 +369,7 @@ pub fn handle_key_event(
                                 app.agent_receivers.remove(slot);
                                 app.agent_exit_codes.remove(slot);
                                 app.agent_session_ids.remove(slot);
+                                app.codex_slot_started_at.remove(slot);
                             }
                         }
                         app.active_slot.remove(&d.branch);

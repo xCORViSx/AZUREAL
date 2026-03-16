@@ -326,18 +326,19 @@ pub async fn run_app(
                             crate::app::context_injection::build_context_prompt(&payload, &prompt)
                         })
                         .unwrap_or_else(|| prompt.clone());
+                    let selected_model = app.selected_model.clone();
                     match claude_process.spawn(
                         &wt_path,
                         &send_prompt,
                         None,
-                        app.selected_model.as_deref(),
+                        selected_model.as_deref(),
                     ) {
                         Ok((rx, pid)) => {
                             if let Some(sid) = app.current_session_id {
                                 app.pid_session_target
                                     .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                             }
-                            app.register_claude(branch, pid, rx);
+                            app.register_claude(branch, pid, rx, selected_model.as_deref());
                             app.update_title_session_name();
                             app.set_status("Running...");
                         }
@@ -365,6 +366,7 @@ pub async fn run_app(
                 match claude_proc.try_recv() {
                     Some(result) => {
                         app.apply_parsed_output(
+                            &result.slot_id,
                             result.events,
                             result.parsed_json,
                             result.output_type,

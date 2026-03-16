@@ -42,6 +42,7 @@ pub fn render_assistant_text_with_paths(
     let mut table_regions: Vec<(usize, usize, String)> = Vec::new();
     let mut clickable_paths: Vec<AssistantPathRegion> = Vec::new();
     let mut in_code_block = false;
+    let mut in_verification_paragraph = false;
     let mut code_block_lang = String::new();
     let mut code_block_lines: Vec<&str> = Vec::new();
     let text_lines: Vec<&str> = text.lines().collect();
@@ -61,6 +62,7 @@ pub fn render_assistant_text_with_paths(
 
         // Code block delimiters
         if trimmed.starts_with("```") {
+            in_verification_paragraph = false;
             if !in_code_block {
                 // Opening fence
                 in_code_block = true;
@@ -107,6 +109,7 @@ pub fn render_assistant_text_with_paths(
 
         // Table rows — record region on first row of each table
         if let Some((table_start, table_end, col_widths)) = get_table_info(i) {
+            in_verification_paragraph = false;
             if !recorded_tables.contains(table_start) {
                 recorded_tables.insert(*table_start);
                 // Record output line index before rendering this table's first row
@@ -135,12 +138,14 @@ pub fn render_assistant_text_with_paths(
 
         // Headers
         if trimmed.starts_with('#') {
+            in_verification_paragraph = false;
             render_header(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
         // Bullet lists
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
+            in_verification_paragraph = false;
             render_bullet(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
@@ -153,15 +158,26 @@ pub fn render_assistant_text_with_paths(
             .unwrap_or(false)
             && trimmed.contains(". ")
         {
+            in_verification_paragraph = false;
             render_numbered(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
         // Blockquotes
         if trimmed.starts_with("> ") {
+            in_verification_paragraph = false;
             render_quote(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
+
+        let starts_verification = trimmed.starts_with("Verification:");
+        let base_style = if starts_verification || in_verification_paragraph {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::ITALIC)
+        } else {
+            Style::default().fg(Color::White)
+        };
 
         // Regular paragraph text
         render_wrapped_markdown(
@@ -171,8 +187,14 @@ pub fn render_assistant_text_with_paths(
             bubble_width.saturating_sub(2),
             vec![Span::styled("│ ", Style::default().fg(ORANGE))],
             vec![Span::styled("│ ", Style::default().fg(ORANGE))],
-            Style::default().fg(Color::White),
+            base_style,
         );
+
+        if trimmed.is_empty() {
+            in_verification_paragraph = false;
+        } else if starts_verification {
+            in_verification_paragraph = true;
+        }
     }
 
     // Handle unclosed code block — emit any remaining collected lines
@@ -938,6 +960,43 @@ mod tests {
         assert!(paths
             .iter()
             .all(|(_, _, _, path)| path == "/Users/test/very_long_file_name.rs#L142"));
+    }
+
+    #[test]
+    fn render_verification_paragraph_in_italics() {
+        let (lines, _table_regions) =
+            render_assistant_text("Verification: elapsed time recorded.", 80, &mut hl());
+        assert!(lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .any(|span| span.content.contains("Verification:")
+                && span.style.add_modifier.contains(Modifier::ITALIC)));
+    }
+
+    #[test]
+    fn render_multiline_verification_paragraph_in_italics() {
+        let text = "Verification: first line.\nSecond verification line.";
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
+        assert!(lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .filter(|span| {
+                span.content.contains("Verification:")
+                    || span.content.contains("Second verification line.")
+            })
+            .all(|span| span.style.add_modifier.contains(Modifier::ITALIC)));
+    }
+
+    #[test]
+    fn render_verification_paragraph_stops_after_blank_line() {
+        let text = "Verification: first line.\nSecond verification line.\n\nNormal paragraph.";
+        let (lines, _table_regions) = render_assistant_text(text, 80, &mut hl());
+        let normal_span = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .find(|span| span.content.contains("Normal paragraph."))
+            .expect("normal paragraph span");
+        assert!(!normal_span.style.add_modifier.contains(Modifier::ITALIC));
     }
 
     #[test]

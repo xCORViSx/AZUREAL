@@ -97,6 +97,9 @@ pub struct App {
     pub project_snapshots: HashMap<PathBuf, ProjectSnapshot>,
     /// Maps slot_id (PID string) → project path for routing background Claude events
     pub slot_to_project: HashMap<String, PathBuf>,
+    /// Codex turn start timestamps keyed by slot_id (PID string).
+    /// Used to derive wall-clock turn duration for the completed banner.
+    pub codex_slot_started_at: HashMap<String, std::time::Instant>,
     /// Pending session names to save when Claude returns session ID: Vec<(slot_id, custom_name)>.
     /// Multiple concurrent spawns (e.g. GFM) can each register their own pending name.
     pub pending_session_names: Vec<(String, String)>,
@@ -601,6 +604,7 @@ impl App {
             projects_panel: None,
             project_snapshots: HashMap::new(),
             slot_to_project: HashMap::new(),
+            codex_slot_started_at: HashMap::new(),
             pending_session_names: Vec::new(),
             session_store: None,
             session_store_path: None,
