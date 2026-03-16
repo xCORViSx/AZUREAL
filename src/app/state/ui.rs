@@ -10,6 +10,37 @@ use crate::models::Project;
 
 use super::{App, DeferredAction};
 
+fn split_file_reference(file_ref: &str) -> (String, Option<usize>) {
+    let trimmed = file_ref.trim();
+
+    if let Some(hash_idx) = trimmed.rfind("#L") {
+        let suffix = &trimmed[hash_idx + 2..];
+        let digits: String = suffix.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(line) = digits.parse::<usize>() {
+            return (trimmed[..hash_idx].to_string(), Some(line));
+        }
+    }
+
+    let mut parts = trimmed.rsplitn(3, ':');
+    let last = parts.next();
+    let middle = parts.next();
+    let first = parts.next();
+
+    if let (Some(column), Some(line), Some(path)) = (last, middle, first) {
+        if column.chars().all(|c| c.is_ascii_digit()) && line.chars().all(|c| c.is_ascii_digit()) {
+            return (path.to_string(), line.parse().ok());
+        }
+    }
+
+    if let (Some(line), Some(path)) = (last, middle) {
+        if line.chars().all(|c| c.is_ascii_digit()) {
+            return (path.to_string(), line.parse().ok());
+        }
+    }
+
+    (trimmed.to_string(), None)
+}
+
 impl App {
     pub fn focus_next(&mut self) {
         // Cycle: FileTree → Viewer → Session → Input → FileTree
@@ -204,14 +235,16 @@ impl App {
     /// Opens the file with syntax highlighting at the top of the file.
     pub fn load_file_at_path(&mut self, file_path: &str) {
         use std::path::PathBuf;
-        let path = PathBuf::from(file_path);
+        let (resolved_path, target_line) = split_file_reference(file_path);
+        let path = PathBuf::from(&resolved_path);
         if let Ok(content) = std::fs::read_to_string(&path) {
             self.viewer_content = Some(content);
             self.viewer_path = Some(path);
             self.viewer_mode = crate::app::ViewerMode::File;
             self.viewer_edit_diff = None;
             self.viewer_edit_diff_line = None;
-            self.viewer_scroll = 0;
+            self.viewer_scroll = target_line.unwrap_or(1).saturating_sub(1);
+            self.viewer_scroll_to_diff = false;
             self.viewer_lines_dirty = true;
             self.focus = Focus::Viewer;
         } else {
@@ -897,6 +930,29 @@ fn load_ordered_presets(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    // ── split_file_reference ──
+
+    #[test]
+    fn split_file_reference_plain_path() {
+        let (path, line) = split_file_reference("/tmp/example.rs");
+        assert_eq!(path, "/tmp/example.rs");
+        assert_eq!(line, None);
+    }
+
+    #[test]
+    fn split_file_reference_hash_anchor() {
+        let (path, line) = split_file_reference("/tmp/example.rs#L142");
+        assert_eq!(path, "/tmp/example.rs");
+        assert_eq!(line, Some(142));
+    }
+
+    #[test]
+    fn split_file_reference_colon_line_and_column() {
+        let (path, line) = split_file_reference("/tmp/example.rs:27:9");
+        assert_eq!(path, "/tmp/example.rs");
+        assert_eq!(line, Some(27));
+    }
 
     // ── focus_next ──
 

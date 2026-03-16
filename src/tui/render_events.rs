@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use super::colorize::ORANGE;
 use super::markdown::parse_markdown_spans;
-use super::render_markdown::render_assistant_text;
+use super::render_markdown::render_assistant_text_with_paths;
 use super::render_tools::{
     extract_edit_preview_strings, extract_tool_param, render_edit_diff, render_tool_result,
     render_write_preview, tool_display_name,
@@ -244,12 +244,23 @@ fn render_display_events_with_state(
                 ));
 
                 let base_offset = lines.len();
-                let (text_lines, table_regions) =
-                    render_assistant_text(text, bubble_width, syntax_highlighter);
+                let (text_lines, table_regions, path_regions) =
+                    render_assistant_text_with_paths(text, bubble_width, syntax_highlighter);
                 lines.extend(text_lines);
                 // Offset table regions to absolute cache line positions
                 for (start, end, raw) in table_regions {
                     clickable_tables.push((start + base_offset, end + base_offset, raw));
+                }
+                for (line_idx, start_col, end_col, file_path) in path_regions {
+                    clickable_paths.push((
+                        base_offset + line_idx,
+                        start_col,
+                        end_col,
+                        file_path,
+                        String::new(),
+                        String::new(),
+                        1,
+                    ));
                 }
 
                 lines.push(Line::from(vec![Span::styled(
@@ -1959,6 +1970,27 @@ mod tests {
             !bubbles[0].1,
             "Assistant bubble should NOT be marked as user"
         );
+    }
+
+    #[test]
+    fn test_render_events_assistant_file_link_adds_clickable_path() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::AssistantText {
+            _uuid: "a1".into(),
+            _message_id: "m1".into(),
+            text: "See [render_tools.rs](/Users/test/render_tools.rs#L42).".into(),
+        }];
+        let (_lines, _, _, clickable_paths, _) = render_display_events(
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+        );
+        assert_eq!(clickable_paths.len(), 1);
+        assert_eq!(clickable_paths[0].3, "/Users/test/render_tools.rs#L42");
+        assert_eq!(clickable_paths[0].6, 1);
     }
 
     #[test]

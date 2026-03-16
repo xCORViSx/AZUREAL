@@ -6,12 +6,15 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+use textwrap::Options;
 
 use super::colorize::ORANGE;
-use super::markdown::{is_table_separator, parse_markdown_spans};
+use super::markdown::{is_table_separator, parse_markdown_segments};
 use super::render_wrap::wrap_text;
 use super::util::AZURE;
 use crate::syntax::SyntaxHighlighter;
+
+pub type AssistantPathRegion = (usize, usize, usize, String);
 
 /// Render assistant markdown text into lines (with syntax-highlighted code blocks)
 /// Returns (rendered_lines, table_regions) where table_regions are
@@ -21,8 +24,23 @@ pub fn render_assistant_text(
     bubble_width: usize,
     highlighter: &mut SyntaxHighlighter,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>) {
+    let (lines, table_regions, _) =
+        render_assistant_text_with_paths(text, bubble_width, highlighter);
+    (lines, table_regions)
+}
+
+pub fn render_assistant_text_with_paths(
+    text: &str,
+    bubble_width: usize,
+    highlighter: &mut SyntaxHighlighter,
+) -> (
+    Vec<Line<'static>>,
+    Vec<(usize, usize, String)>,
+    Vec<AssistantPathRegion>,
+) {
     let mut lines = Vec::new();
     let mut table_regions: Vec<(usize, usize, String)> = Vec::new();
+    let mut clickable_paths: Vec<AssistantPathRegion> = Vec::new();
     let mut in_code_block = false;
     let mut code_block_lang = String::new();
     let mut code_block_lines: Vec<&str> = Vec::new();
@@ -117,13 +135,13 @@ pub fn render_assistant_text(
 
         // Headers
         if trimmed.starts_with('#') {
-            render_header(&mut lines, trimmed, bubble_width);
+            render_header(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
         // Bullet lists
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
-            render_bullet(&mut lines, trimmed, bubble_width);
+            render_bullet(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
@@ -135,26 +153,26 @@ pub fn render_assistant_text(
             .unwrap_or(false)
             && trimmed.contains(". ")
         {
-            render_numbered(&mut lines, trimmed, bubble_width);
+            render_numbered(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
         // Blockquotes
         if trimmed.starts_with("> ") {
-            render_quote(&mut lines, trimmed, bubble_width);
+            render_quote(&mut lines, &mut clickable_paths, trimmed, bubble_width);
             continue;
         }
 
         // Regular paragraph text
-        let content_width = bubble_width.saturating_sub(2);
-        for wrapped in wrap_text(line, content_width) {
-            let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-            spans.extend(parse_markdown_spans(
-                &wrapped,
-                Style::default().fg(Color::White),
-            ));
-            lines.push(Line::from(spans));
-        }
+        render_wrapped_markdown(
+            &mut lines,
+            &mut clickable_paths,
+            line,
+            bubble_width.saturating_sub(2),
+            vec![Span::styled("│ ", Style::default().fg(ORANGE))],
+            vec![Span::styled("│ ", Style::default().fg(ORANGE))],
+            Style::default().fg(Color::White),
+        );
     }
 
     // Handle unclosed code block — emit any remaining collected lines
@@ -168,7 +186,7 @@ pub fn render_assistant_text(
         );
     }
 
-    (lines, table_regions)
+    (lines, table_regions, clickable_paths)
 }
 
 /// Re-render a table at wider width for the popup overlay.
@@ -435,7 +453,141 @@ fn render_table_row(
     }
 }
 
-fn render_header(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usize) {
+fn render_wrapped_markdown(
+    lines: &mut Vec<Line<'static>>,
+    clickable_paths: &mut Vec<AssistantPathRegion>,
+    text: &str,
+    content_width: usize,
+    first_prefix: Vec<Span<'static>>,
+    rest_prefix: Vec<Span<'static>>,
+    base_style: Style,
+) {
+    let (wrapped_lines, wrapped_links) =
+        wrap_markdown_segments(parse_markdown_segments(text, base_style), content_width);
+    let first_prefix_width = prefix_width(&first_prefix);
+    let rest_prefix_width = prefix_width(&rest_prefix);
+
+    for (idx, spans) in wrapped_lines.into_iter().enumerate() {
+        let line_idx = lines.len();
+        let (prefix, prefix_width) = if idx == 0 {
+            (first_prefix.clone(), first_prefix_width)
+        } else {
+            (rest_prefix.clone(), rest_prefix_width)
+        };
+        let mut line_spans = prefix;
+        line_spans.extend(spans);
+        lines.push(Line::from(line_spans));
+
+        for (link_start, link_end, target) in wrapped_links
+            .iter()
+            .filter(|(line, _, _, _)| *line == idx)
+            .map(|(_, start, end, target)| (*start, *end, target.clone()))
+        {
+            clickable_paths.push((
+                line_idx,
+                prefix_width + link_start,
+                prefix_width + link_end,
+                target,
+            ));
+        }
+    }
+}
+
+fn wrap_markdown_segments(
+    segments: Vec<super::markdown::MarkdownSegment>,
+    max_width: usize,
+) -> (Vec<Vec<Span<'static>>>, Vec<(usize, usize, usize, String)>) {
+    if segments.is_empty() {
+        return (vec![vec![Span::styled("", Style::default())]], Vec::new());
+    }
+
+    let mut full_text = String::new();
+    let mut ranges: Vec<(usize, usize, Style, Option<String>, String)> = Vec::new();
+
+    for segment in segments {
+        let start = full_text.chars().count();
+        full_text.push_str(&segment.text);
+        let end = full_text.chars().count();
+        ranges.push((start, end, segment.style, segment.file_target, segment.text));
+    }
+
+    if full_text.is_empty() {
+        return (vec![vec![Span::styled("", Style::default())]], Vec::new());
+    }
+
+    let wrapped_text: Vec<String> = if max_width == 0 {
+        vec![full_text.clone()]
+    } else {
+        textwrap::wrap(&full_text, Options::new(max_width).break_words(true))
+            .into_iter()
+            .map(|cow| cow.into_owned())
+            .collect()
+    };
+
+    let full_chars: Vec<char> = full_text.chars().collect();
+    let mut wrapped_lines = Vec::with_capacity(wrapped_text.len());
+    let mut clickable_paths = Vec::new();
+    let mut char_offset = 0usize;
+
+    for (line_idx, wrapped) in wrapped_text.into_iter().enumerate() {
+        let line_len = wrapped.chars().count();
+        let line_start = char_offset;
+        let line_end = line_start + line_len;
+        let mut line_spans = Vec::new();
+
+        for (seg_start, seg_end, style, target, text) in &ranges {
+            if *seg_end <= line_start || *seg_start >= line_end {
+                continue;
+            }
+
+            let overlap_start = (*seg_start).max(line_start);
+            let overlap_end = (*seg_end).min(line_end);
+            let local_start = overlap_start.saturating_sub(*seg_start);
+            let local_len = overlap_end.saturating_sub(overlap_start);
+            let chunk: String = text.chars().skip(local_start).take(local_len).collect();
+            if chunk.is_empty() {
+                continue;
+            }
+
+            if let Some(target) = target {
+                clickable_paths.push((
+                    line_idx,
+                    overlap_start - line_start,
+                    overlap_end - line_start,
+                    target.clone(),
+                ));
+            }
+
+            line_spans.push(Span::styled(chunk, *style));
+        }
+
+        if line_spans.is_empty() {
+            line_spans.push(Span::styled("", Style::default()));
+        }
+        wrapped_lines.push(line_spans);
+        char_offset = line_end;
+        if full_chars.get(char_offset) == Some(&' ') {
+            char_offset += 1;
+        }
+    }
+
+    if wrapped_lines.is_empty() {
+        wrapped_lines.push(vec![Span::styled("", Style::default())]);
+    }
+
+    (wrapped_lines, clickable_paths)
+}
+
+fn prefix_width(spans: &[Span<'static>]) -> usize {
+    spans.iter().map(|span| span.content.chars().count()).sum()
+}
+
+fn render_header(
+    lines: &mut Vec<Line<'static>>,
+    clickable_paths: &mut Vec<AssistantPathRegion>,
+    trimmed: &str,
+    bubble_width: usize,
+) {
     let header_level = trimmed.chars().take_while(|&c| c == '#').count();
     let header_text = trimmed.trim_start_matches('#').trim();
     let (prefix, style) = match header_level {
@@ -457,85 +609,101 @@ fn render_header(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: us
         ),
         _ => ("░ ", Style::default().fg(Color::Green)),
     };
-    let header_max = bubble_width.saturating_sub(4);
-    for (i, wrapped) in wrap_text(header_text, header_max).into_iter().enumerate() {
-        if i == 0 {
-            lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(ORANGE)),
-                Span::styled(prefix, style),
-                Span::styled(wrapped, style),
-            ]));
-        } else {
-            lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(ORANGE)),
-                Span::styled("  ", Style::default()),
-                Span::styled(wrapped, style),
-            ]));
-        }
-    }
+    render_wrapped_markdown(
+        lines,
+        clickable_paths,
+        header_text,
+        bubble_width.saturating_sub(4),
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled(prefix, style),
+        ],
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled("  ", Style::default()),
+        ],
+        style,
+    );
 }
 
-fn render_bullet(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usize) {
+fn render_bullet(
+    lines: &mut Vec<Line<'static>>,
+    clickable_paths: &mut Vec<AssistantPathRegion>,
+    trimmed: &str,
+    bubble_width: usize,
+) {
     let bullet_content = trimmed
         .trim_start_matches("- ")
         .trim_start_matches("* ")
         .trim_start_matches("• ");
-    let bullet_max = bubble_width.saturating_sub(6);
-    for (i, wrapped) in wrap_text(bullet_content, bullet_max)
-        .into_iter()
-        .enumerate()
-    {
-        let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-        if i == 0 {
-            spans.push(Span::styled("  • ", Style::default().fg(AZURE)));
-        } else {
-            spans.push(Span::styled("    ", Style::default()));
-        }
-        spans.extend(parse_markdown_spans(
-            &wrapped,
-            Style::default().fg(Color::White),
-        ));
-        lines.push(Line::from(spans));
-    }
+    render_wrapped_markdown(
+        lines,
+        clickable_paths,
+        bullet_content,
+        bubble_width.saturating_sub(6),
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled("  • ", Style::default().fg(AZURE)),
+        ],
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled("    ", Style::default()),
+        ],
+        Style::default().fg(Color::White),
+    );
 }
 
-fn render_numbered(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usize) {
+fn render_numbered(
+    lines: &mut Vec<Line<'static>>,
+    clickable_paths: &mut Vec<AssistantPathRegion>,
+    trimmed: &str,
+    bubble_width: usize,
+) {
     let num_end = trimmed.find(". ").unwrap_or(0);
     let num = &trimmed[..num_end];
     let content = &trimmed[num_end + 2..];
     let num_prefix = format!("  {}. ", num);
-    let num_max = bubble_width.saturating_sub(2 + num_prefix.len());
-    for (i, wrapped) in wrap_text(content, num_max).into_iter().enumerate() {
-        let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-        if i == 0 {
-            spans.push(Span::styled(num_prefix.clone(), Style::default().fg(AZURE)));
-        } else {
-            spans.push(Span::styled(" ".repeat(num_prefix.len()), Style::default()));
-        }
-        spans.extend(parse_markdown_spans(
-            &wrapped,
-            Style::default().fg(Color::White),
-        ));
-        lines.push(Line::from(spans));
-    }
+    render_wrapped_markdown(
+        lines,
+        clickable_paths,
+        content,
+        bubble_width.saturating_sub(2 + num_prefix.len()),
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled(num_prefix.clone(), Style::default().fg(AZURE)),
+        ],
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled(" ".repeat(num_prefix.len()), Style::default()),
+        ],
+        Style::default().fg(Color::White),
+    );
 }
 
-fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usize) {
+fn render_quote(
+    lines: &mut Vec<Line<'static>>,
+    clickable_paths: &mut Vec<AssistantPathRegion>,
+    trimmed: &str,
+    bubble_width: usize,
+) {
     let quote_content = trimmed.trim_start_matches("> ");
-    let quote_max = bubble_width.saturating_sub(4);
-    for wrapped in wrap_text(quote_content, quote_max) {
-        let mut spans = vec![
+    render_wrapped_markdown(
+        lines,
+        clickable_paths,
+        quote_content,
+        bubble_width.saturating_sub(4),
+        vec![
             Span::styled("│ ", Style::default().fg(ORANGE)),
             Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
-        ];
-        spans.extend(parse_markdown_spans(
-            &wrapped,
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC),
-        ));
-        lines.push(Line::from(spans));
-    }
+        ],
+        vec![
+            Span::styled("│ ", Style::default().fg(ORANGE)),
+            Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
+        ],
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC),
+    );
 }
 
 /// Render markdown for the viewer pane (no session gutter prefix, full-width).
@@ -740,6 +908,36 @@ mod tests {
         // First span should be the orange gutter
         let first_span = &lines[0].spans[0];
         assert_eq!(first_span.content.as_ref(), "│ ");
+    }
+
+    #[test]
+    fn render_assistant_text_exposes_clickable_file_links() {
+        let text = "Open [render_tools.rs](/Users/test/render_tools.rs#L42)";
+        let (lines, _tables, paths) = render_assistant_text_with_paths(text, 80, &mut hl());
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].0, 0);
+        assert_eq!(paths[0].3, "/Users/test/render_tools.rs#L42");
+        let link_text: String = lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(link_text.contains("render_tools.rs"));
+    }
+
+    #[test]
+    fn render_assistant_text_wraps_file_links_into_multiple_hitboxes() {
+        let text =
+            "[very_long_file_name.rs](/Users/test/very_long_file_name.rs#L142) trailing text";
+        let (_lines, _tables, paths) = render_assistant_text_with_paths(text, 18, &mut hl());
+        assert!(
+            paths.len() >= 2,
+            "wrapped link should produce multiple hitboxes"
+        );
+        assert!(paths.iter().all(|(_, start, end, _)| end > start));
+        assert!(paths
+            .iter()
+            .all(|(_, _, _, path)| path == "/Users/test/very_long_file_name.rs#L142"));
     }
 
     #[test]

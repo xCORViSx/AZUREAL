@@ -2,22 +2,75 @@
 //!
 //! Handles inline markdown (bold, italic, code) and table formatting.
 
+use super::colorize::ORANGE;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::Span,
 };
 
-/// Parse inline markdown (bold, italic, inline code) into styled spans
-pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MarkdownSegment {
+    pub text: String,
+    pub style: Style,
+    pub file_target: Option<String>,
+}
+
+fn push_text_segment(
+    segments: &mut Vec<MarkdownSegment>,
+    text: String,
+    style: Style,
+    file_target: Option<String>,
+) {
+    if text.is_empty() && file_target.is_none() {
+        return;
+    }
+    segments.push(MarkdownSegment {
+        text,
+        style,
+        file_target,
+    });
+}
+
+fn file_link_style() -> Style {
+    Style::default()
+        .fg(ORANGE)
+        .add_modifier(Modifier::UNDERLINED)
+}
+
+pub(crate) fn parse_markdown_segments(text: &str, base_style: Style) -> Vec<MarkdownSegment> {
+    let mut segments = Vec::new();
     let mut chars = text.char_indices().peekable();
     let mut current_text = String::new();
 
     while let Some((i, c)) = chars.next() {
         match c {
+            '[' => {
+                if let Some((consumed, label, target)) = parse_clickable_file_link(&text[i..]) {
+                    if !current_text.is_empty() {
+                        push_text_segment(&mut segments, current_text.clone(), base_style, None);
+                        current_text.clear();
+                    }
+                    push_text_segment(
+                        &mut segments,
+                        label.to_string(),
+                        file_link_style(),
+                        Some(target.to_string()),
+                    );
+                    let end = i + consumed;
+                    while let Some((next_i, _)) = chars.peek() {
+                        if *next_i < end {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    current_text.push(c);
+                }
+            }
             '`' => {
                 if !current_text.is_empty() {
-                    spans.push(Span::styled(current_text.clone(), base_style));
+                    push_text_segment(&mut segments, current_text.clone(), base_style, None);
                     current_text.clear();
                 }
                 let mut code = String::new();
@@ -28,19 +81,21 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                     code.push(ch);
                 }
                 if !code.is_empty() {
-                    spans.push(Span::styled(
+                    push_text_segment(
+                        &mut segments,
                         code,
                         Style::default()
                             .fg(Color::Yellow)
                             .bg(Color::Rgb(40, 40, 40)),
-                    ));
+                        None,
+                    );
                 }
             }
             '*' => {
                 if chars.peek().map(|(_, ch)| *ch == '*').unwrap_or(false) {
                     chars.next();
                     if !current_text.is_empty() {
-                        spans.push(Span::styled(current_text.clone(), base_style));
+                        push_text_segment(&mut segments, current_text.clone(), base_style, None);
                         current_text.clear();
                     }
                     let mut bold_text = String::new();
@@ -52,10 +107,12 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                         bold_text.push(ch);
                     }
                     if !bold_text.is_empty() {
-                        spans.push(Span::styled(
+                        push_text_segment(
+                            &mut segments,
                             bold_text,
                             base_style.add_modifier(Modifier::BOLD),
-                        ));
+                            None,
+                        );
                     }
                 } else {
                     let rest: String = text[i + 1..]
@@ -64,7 +121,12 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                         .collect();
                     if rest.contains('*') && !rest.starts_with(' ') {
                         if !current_text.is_empty() {
-                            spans.push(Span::styled(current_text.clone(), base_style));
+                            push_text_segment(
+                                &mut segments,
+                                current_text.clone(),
+                                base_style,
+                                None,
+                            );
                             current_text.clear();
                         }
                         let mut italic_text = String::new();
@@ -75,10 +137,12 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                             italic_text.push(ch);
                         }
                         if !italic_text.is_empty() {
-                            spans.push(Span::styled(
+                            push_text_segment(
+                                &mut segments,
                                 italic_text,
                                 base_style.add_modifier(Modifier::ITALIC),
-                            ));
+                                None,
+                            );
                         }
                     } else {
                         current_text.push(c);
@@ -90,12 +154,46 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
     }
 
     if !current_text.is_empty() {
-        spans.push(Span::styled(current_text, base_style));
+        push_text_segment(&mut segments, current_text, base_style, None);
     }
-    if spans.is_empty() {
-        spans.push(Span::styled("", base_style));
+    if segments.is_empty() {
+        segments.push(MarkdownSegment {
+            text: String::new(),
+            style: base_style,
+            file_target: None,
+        });
     }
-    spans
+    segments
+}
+
+/// Parse inline markdown (bold, italic, inline code) into styled spans
+pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
+    parse_markdown_segments(text, base_style)
+        .into_iter()
+        .map(|segment| Span::styled(segment.text, segment.style))
+        .collect()
+}
+
+fn parse_clickable_file_link(text: &str) -> Option<(usize, &str, &str)> {
+    if !text.starts_with('[') {
+        return None;
+    }
+
+    let close_bracket = text.find("](")?;
+    let after_bracket = &text[close_bracket + 2..];
+    let close_paren = after_bracket.find(')')?;
+    let label = &text[1..close_bracket];
+    let target = &after_bracket[..close_paren];
+
+    if !is_clickable_file_target(target) {
+        return None;
+    }
+
+    Some((close_bracket + 2 + close_paren + 1, label, target))
+}
+
+fn is_clickable_file_target(target: &str) -> bool {
+    target.trim_start().starts_with('/')
 }
 
 /// Check if a line is a markdown table separator
@@ -125,6 +223,11 @@ mod tests {
     }
     fn italic(s: Style) -> Style {
         s.add_modifier(Modifier::ITALIC)
+    }
+    fn file_link() -> Style {
+        Style::default()
+            .fg(ORANGE)
+            .add_modifier(Modifier::UNDERLINED)
     }
 
     fn texts<'a>(spans: &'a [Span<'a>]) -> Vec<&'a str> {
@@ -559,6 +662,38 @@ mod tests {
         let custom = Style::default().fg(Color::Green);
         let spans = parse_markdown_spans("*italic*", custom);
         assert_eq!(spans[0].style, custom.add_modifier(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn local_file_link_renders_as_underlined_label() {
+        let spans =
+            parse_markdown_spans("[render_tools.rs](/Users/test/render_tools.rs#L42)", base());
+        assert_eq!(texts(&spans), vec!["render_tools.rs"]);
+        assert_eq!(spans[0].style, file_link());
+    }
+
+    #[test]
+    fn local_file_link_segments_preserve_target() {
+        let segments = parse_markdown_segments(
+            "See [render_tools.rs](/Users/test/render_tools.rs#L42)",
+            base(),
+        );
+        let link = segments
+            .iter()
+            .find(|segment| segment.file_target.is_some())
+            .expect("expected file link segment");
+        assert_eq!(link.text, "render_tools.rs");
+        assert_eq!(
+            link.file_target.as_deref(),
+            Some("/Users/test/render_tools.rs#L42")
+        );
+    }
+
+    #[test]
+    fn non_file_markdown_link_stays_literal() {
+        let spans = parse_markdown_spans("[docs](https://example.com)", base());
+        let full: String = spans.iter().map(|span| span.content.as_ref()).collect();
+        assert_eq!(full, "[docs](https://example.com)");
     }
 
     // ═══════════════════════════════════════════════════════════════════

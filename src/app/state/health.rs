@@ -40,7 +40,7 @@ pub(crate) const SOURCE_EXTENSIONS: &[&str] = &[
     "rkt",   // Racket
     // Shell / config-as-code
     "sh", "bash", "zsh", "fish", // Infrastructure / query
-    "sql", "tf", "hcl", // Markup-adjacent that can grow huge
+    "sql", "tf", "hcl",    // Markup-adjacent that can grow huge
     "proto",  // Protocol Buffers
     "thrift", // Apache Thrift
     "graphql", "gql", // GraphQL schemas
