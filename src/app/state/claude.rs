@@ -151,6 +151,7 @@ impl App {
     pub fn handle_claude_exited(&mut self, slot_id: &str, code: Option<i32>) {
         // Resolve branch — first in current project, then in background snapshots
         let branch = self.branch_for_slot(slot_id);
+        let was_codex = self.codex_slot_started_at.contains_key(slot_id);
 
         // If not in current project, check background project snapshots
         if branch.is_none() {
@@ -254,6 +255,9 @@ impl App {
         // store_append_from_jsonl shortly after, which clears session_file_path.
         if is_current && was_active && self.session_file_path.is_some() {
             self.session_file_dirty = true;
+            if was_codex {
+                self.session_file_parse_offset = 0;
+            }
         }
 
         // If this was a [NewRunCmd] session, auto-reload runcmds
@@ -1675,5 +1679,49 @@ mod tests {
         app.handle_claude_exited("88", Some(0));
 
         assert!(!app.codex_slot_started_at.contains_key("88"));
+    }
+
+    #[test]
+    fn handle_claude_exited_forces_full_codex_session_reparse() {
+        let mut app = App::new();
+        let (_tx, rx) = mpsc::channel();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "codex".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.register_claude("codex".into(), 91, rx, Some("gpt-5.4"));
+        app.session_file_path = Some("/tmp/codex-session.jsonl".into());
+        app.session_file_parse_offset = 1234;
+        app.session_file_dirty = false;
+
+        app.handle_claude_exited("91", Some(0));
+
+        assert!(app.session_file_dirty);
+        assert_eq!(app.session_file_parse_offset, 0);
+    }
+
+    #[test]
+    fn handle_claude_exited_keeps_incremental_parse_for_claude() {
+        let mut app = App::new();
+        let (_tx, rx) = mpsc::channel();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "claude".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.register_claude("claude".into(), 92, rx, None);
+        app.session_file_path = Some("/tmp/claude-session.jsonl".into());
+        app.session_file_parse_offset = 5678;
+        app.session_file_dirty = false;
+
+        app.handle_claude_exited("92", Some(0));
+
+        assert!(app.session_file_dirty);
+        assert_eq!(app.session_file_parse_offset, 5678);
     }
 }

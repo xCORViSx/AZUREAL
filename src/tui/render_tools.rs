@@ -167,6 +167,10 @@ pub fn extract_edit_preview_strings(input: &serde_json::Value) -> (String, Strin
         return (old.to_string(), new.to_string());
     }
 
+    if let Some(diff) = input.get("unified_diff").and_then(|v| v.as_str()) {
+        return extract_unified_diff_first_hunk(diff);
+    }
+
     let Some(patch) = input.get("patch").and_then(|v| v.as_str()) else {
         return (String::new(), String::new());
     };
@@ -268,6 +272,59 @@ fn extract_apply_patch_first_hunk(patch: &str) -> (String, String) {
     (old.join("\n"), new.join("\n"))
 }
 
+fn extract_unified_diff_first_hunk(diff: &str) -> (String, String) {
+    let mut old = Vec::new();
+    let mut new = Vec::new();
+    let mut in_hunk = false;
+    let mut started = false;
+
+    for raw in diff.lines() {
+        if raw.starts_with("diff --git ") {
+            if started {
+                break;
+            }
+            continue;
+        }
+        if raw.starts_with("@@") {
+            if started && (!old.is_empty() || !new.is_empty()) {
+                break;
+            }
+            in_hunk = true;
+            continue;
+        }
+        if !in_hunk || raw == "\\ No newline at end of file" {
+            continue;
+        }
+
+        if raw.starts_with("+++") || raw.starts_with("---") {
+            continue;
+        }
+
+        if let Some(rest) = raw.strip_prefix('+') {
+            new.push(rest.to_string());
+            started = true;
+            continue;
+        }
+        if let Some(rest) = raw.strip_prefix('-') {
+            old.push(rest.to_string());
+            started = true;
+            continue;
+        }
+        if let Some(rest) = raw.strip_prefix(' ') {
+            if started {
+                old.push(rest.to_string());
+                new.push(rest.to_string());
+            }
+            continue;
+        }
+        if started {
+            break;
+        }
+    }
+
+    (old.join("\n"), new.join("\n"))
+}
+
 fn parse_apply_patch_lines(patch: &str) -> Vec<ApplyPatchLine> {
     let mut lines = Vec::new();
 
@@ -314,6 +371,35 @@ fn parse_apply_patch_lines(patch: &str) -> Vec<ApplyPatchLine> {
     lines
 }
 
+fn parse_unified_diff_lines(diff: &str) -> Vec<ApplyPatchLine> {
+    let mut lines = Vec::new();
+
+    for raw in diff.lines() {
+        let kind = if raw.starts_with("diff --git ") {
+            ApplyPatchLineKind::Header
+        } else if raw.starts_with("index ") || raw.starts_with("--- ") || raw.starts_with("+++ ") {
+            ApplyPatchLineKind::Meta
+        } else if raw.starts_with("@@") {
+            ApplyPatchLineKind::Hunk
+        } else if raw.starts_with('+') {
+            ApplyPatchLineKind::Added
+        } else if raw.starts_with('-') {
+            ApplyPatchLineKind::Removed
+        } else if raw.starts_with(' ') {
+            ApplyPatchLineKind::Context
+        } else {
+            ApplyPatchLineKind::Meta
+        };
+
+        lines.push(ApplyPatchLine {
+            kind,
+            text: raw.to_string(),
+        });
+    }
+
+    lines
+}
+
 fn render_apply_patch_preview(
     lines: &mut Vec<Line<'static>>,
     patch: &str,
@@ -343,6 +429,42 @@ fn render_apply_patch_preview(
         };
 
         for wrapped_spans in wrap_spans(vec![Span::styled(patch_line.text, style)], content_max) {
+            let mut all_spans = vec![Span::styled(" ┃  ", Style::default().fg(tool_color))];
+            all_spans.extend(wrapped_spans);
+            lines.push(Line::from(all_spans));
+        }
+    }
+}
+
+fn render_unified_diff_preview(
+    lines: &mut Vec<Line<'static>>,
+    diff: &str,
+    tool_color: Color,
+    max_width: usize,
+) {
+    let dim_red_bg = Color::Rgb(60, 25, 25);
+    let dim_green_bg = Color::Rgb(25, 50, 25);
+    let removed_style = Style::default()
+        .fg(Color::Rgb(170, 170, 170))
+        .bg(dim_red_bg);
+    let added_style = Style::default().fg(Color::White).bg(dim_green_bg);
+    let content_max = max_width.saturating_sub(4);
+
+    for diff_line in parse_unified_diff_lines(diff) {
+        let style = match diff_line.kind {
+            ApplyPatchLineKind::Header => {
+                Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD)
+            }
+            ApplyPatchLineKind::Meta => Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+            ApplyPatchLineKind::Hunk => Style::default().fg(Color::Cyan),
+            ApplyPatchLineKind::Context => Style::default().fg(Color::DarkGray),
+            ApplyPatchLineKind::Added => added_style,
+            ApplyPatchLineKind::Removed => removed_style,
+        };
+
+        for wrapped_spans in wrap_spans(vec![Span::styled(diff_line.text, style)], content_max) {
             let mut all_spans = vec![Span::styled(" ┃  ", Style::default().fg(tool_color))];
             all_spans.extend(wrapped_spans);
             lines.push(Line::from(all_spans));
@@ -557,6 +679,10 @@ pub fn render_edit_diff(
 ) {
     if let Some(patch) = input.get("patch").and_then(|v| v.as_str()) {
         render_apply_patch_preview(lines, patch, tool_color, max_width);
+        return;
+    }
+    if let Some(diff) = input.get("unified_diff").and_then(|v| v.as_str()) {
+        render_unified_diff_preview(lines, diff, tool_color, max_width);
         return;
     }
 
@@ -1608,6 +1734,16 @@ mod tests {
     }
 
     #[test]
+    fn extract_edit_preview_strings_from_unified_diff() {
+        let input = json!({
+            "unified_diff": "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,3 @@\n fn main() {\n-    old_call();\n+    new_call();\n }\n"
+        });
+        let (old, new) = extract_edit_preview_strings(&input);
+        assert_eq!(old, "    old_call();\n}");
+        assert_eq!(new, "    new_call();\n}");
+    }
+
+    #[test]
     fn render_edit_diff_from_patch_shows_diff_lines() {
         let input = json!({
             "patch": "*** Begin Patch\n*** Update File: src/main.rs\n@@\n-old_value();\n+new_value();\n unchanged();\n*** End Patch"
@@ -1624,6 +1760,30 @@ mod tests {
         );
         let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
         assert!(rendered.contains("Update File: src/main.rs"));
+        assert!(rendered.contains("-old_value();"));
+        assert!(rendered.contains("+new_value();"));
+        assert!(rendered.contains(" unchanged();"));
+    }
+
+    #[test]
+    fn render_edit_diff_from_unified_diff_shows_diff_lines() {
+        let input = json!({
+            "unified_diff": "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,3 @@\n-old_value();\n+new_value();\n unchanged();\n"
+        });
+        let mut lines = Vec::new();
+        let mut highlighter = SyntaxHighlighter::new();
+        render_edit_diff(
+            &mut lines,
+            &input,
+            &Some("src/main.rs".to_string()),
+            AZURE,
+            80,
+            &mut highlighter,
+        );
+        let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
+        assert!(rendered.contains("diff --git a/src/main.rs b/src/main.rs"));
+        assert!(rendered.contains("--- a/src/main.rs"));
+        assert!(rendered.contains("+++ b/src/main.rs"));
         assert!(rendered.contains("-old_value();"));
         assert!(rendered.contains("+new_value();"));
         assert!(rendered.contains(" unchanged();"));

@@ -232,20 +232,43 @@ impl CodexEventParser {
                             .and_then(|v| v.as_str())
                             .unwrap_or("update")
                             .to_string();
+                        let move_path = change
+                            .get("move_path")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        let unified_diff = change
+                            .get("unified_diff")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string);
                         let change_id = format!("{}-{}", item_id, path);
+                        let mut input = serde_json::json!({
+                            "file_path": path,
+                            "kind": kind,
+                        });
+                        if let Some(ref move_path) = move_path {
+                            input["move_path"] = serde_json::Value::String(move_path.clone());
+                        }
+                        if let Some(ref unified_diff) = unified_diff {
+                            input["unified_diff"] = serde_json::Value::String(unified_diff.clone());
+                        }
+                        let result_content = match move_path {
+                            Some(ref dst) => format!("File {}: {} -> {}", kind, path, dst),
+                            None => format!("File {}: {}", kind, path),
+                        };
 
                         events.push(DisplayEvent::ToolCall {
                             _uuid: String::new(),
                             tool_use_id: change_id.clone(),
                             tool_name: "Edit".to_string(),
                             file_path: Some(path.clone()),
-                            input: serde_json::json!({ "file_path": path, "kind": kind }),
+                            input,
                         });
                         events.push(DisplayEvent::ToolResult {
                             tool_use_id: change_id,
                             tool_name: "Edit".to_string(),
                             file_path: Some(path.clone()),
-                            content: format!("File {}: {}", kind, path),
+                            content: result_content,
                             is_error: false,
                         });
                     }
@@ -591,6 +614,25 @@ mod tests {
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[],"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn parse_file_change_preserves_unified_diff() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"src/main.rs","kind":"update","unified_diff":"diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"}],"status":"completed"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert_eq!(
+                    input.get("unified_diff").and_then(|v| v.as_str()),
+                    Some(
+                        "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"
+                    )
+                );
+            }
+            _ => panic!("expected ToolCall"),
+        }
     }
 
     // ── item.completed (mcp_tool_call) ──
