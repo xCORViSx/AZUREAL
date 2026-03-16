@@ -138,6 +138,11 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
         } else {
             0
         };
+        let pre_scan = if deferred_start > 0 {
+            pre_scan_events(&app.display_events[..deferred_start])
+        } else {
+            PreScanState::default()
+        };
 
         // Clone only the events we'll actually render (from deferred_start onwards).
         RenderRequest {
@@ -147,7 +152,7 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: None,
             existing_line_count: 0,
-            pre_scan: PreScanState::default(),
+            pre_scan,
             total_events: event_count,
             deferred_start,
             seq: 0,
@@ -814,6 +819,48 @@ mod tests {
         submit_render_request(&mut app, 80);
         assert!(!app.rendered_lines_dirty);
         assert!(app.render_in_flight);
+    }
+
+    #[test]
+    fn test_submit_deferred_codex_tail_preserves_model_identity() {
+        use ratatui::style::Color;
+
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::Init {
+            _session_id: "s1".into(),
+            cwd: "/project".into(),
+            model: "gpt-5.4".into(),
+        });
+        for i in 0..=DEFERRED_RENDER_TAIL {
+            app.display_events.push(DisplayEvent::AssistantText {
+                _uuid: format!("a{}", i),
+                _message_id: format!("m{}", i),
+                text: format!("tail message {}", i),
+            });
+        }
+        app.rendered_lines_dirty = true;
+
+        submit_render_request(&mut app, 80);
+
+        let mut applied = false;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if poll_render_result(&mut app) {
+                applied = true;
+                break;
+            }
+        }
+
+        assert!(applied, "expected deferred tail render result");
+        assert_eq!(app.rendered_events_start, 2);
+
+        let codex_header = app.rendered_lines_cache.iter().find_map(|line| {
+            line.spans
+                .iter()
+                .find(|span| span.content.contains("Codex"))
+                .map(|span| span.style.bg)
+        });
+        assert_eq!(codex_header, Some(Some(Color::Cyan)));
     }
 
     // ── 34. submit_render_request: width=0 saturating sub ──
