@@ -51,8 +51,6 @@ pub struct AzufigConfig {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
-    /// Backend to use: "claude" (default) or "codex"
-    pub backend: Option<String>,
 }
 
 // ── Project-local azufig (.azureal/azufig.toml) ──
@@ -668,7 +666,6 @@ mod tests {
                 anthropic_api_key: Some("sk-test-123".to_string()),
                 claude_executable: Some("/usr/bin/claude".to_string()),
                 codex_executable: None,
-                backend: None,
                 default_permission_mode: "approve".to_string(),
                 verbose: true,
             },
@@ -746,7 +743,6 @@ mod tests {
             anthropic_api_key: Some("key".to_string()),
             claude_executable: Some("/bin/claude".to_string()),
             codex_executable: None,
-            backend: None,
             default_permission_mode: "ask".to_string(),
             verbose: true,
         };
@@ -940,7 +936,6 @@ verbose = true
             anthropic_api_key: Some("key".into()),
             claude_executable: None,
             codex_executable: None,
-            backend: None,
             default_permission_mode: "ignore".into(),
             verbose: false,
         };

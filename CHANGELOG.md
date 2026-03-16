@@ -12,6 +12,16 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - **Bubble header model name contrast** — Model ID in assistant bubble headers changed from `DarkGray` to `Rgb(60, 60, 60)` (dark charcoal) for better readability while remaining visually distinct from the bold black agent name. Modified: `render_events.rs`.
 
+### Added
+- **Cross-backend fallback for commit message generation** — When the primary backend (Claude or Codex, derived from selected model) fails to generate a commit message (e.g. usage limit hit), the thread automatically retries with the alternate backend. On success, a non-error fallback notice is shown in the git panel's result message. If both backends fail, the overlay closes with a combined error. Modified: `operations.rs`, `types.rs`, `event_loop.rs`.
+- **Cross-backend fallback for compaction agent** — Compaction agent spawn now retries with the alternate backend's model (haiku↔gpt-5.1-codex-mini) if the primary fails. Additionally, if a compaction completes with empty output (backend error at runtime), `poll_compaction_agents()` queues a retry with the alternate backend via `compaction_retry_needed` on App, and the event loop re-spawns on the next tick. Status messages inform the user when fallback occurs. New `CompactionJob` struct replaces the inline tuple in `compaction_receivers` to carry `wt_path` and `turn_backend` metadata needed for retry. Modified: `agent_events.rs`, `app.rs`, `event_loop.rs`.
+- **`Backend::alternate()` method** — Returns the other backend variant (Claude↔Codex). Used by both commit message and compaction fallback logic. Modified: `backend.rs`.
+
+### Changed
+- **Backend derived from session, not global config** — `backend` field removed from `azufig.toml` and `Config`. Backend is now derived at runtime from the selected model family (`gpt-*` → Codex, else → Claude). Session discovery is backend-agnostic, probing both Claude and Codex paths. Modified: `config.rs`, `azufig.rs`, `backend.rs`, `cmd/session.rs`, `claude.rs`, `codex.rs`.
+- **Commit message generation respects selected model** — `exec_commit_start()` now routes through `commit_message_backend_for_selected_model()` and `commit_message_model_for_backend()` to select the correct CLI (Claude or Codex) based on the active model. Codex uses `gpt-5.3-codex` as the helper model via `codex exec --ephemeral`. Modified: `operations.rs`.
+- **Compaction model matches turn backend** — Compaction agent model selection changed from always-haiku to matching the backend of the turn that triggered compaction (haiku for Claude turns, gpt-5.1-codex-mini for Codex turns). Modified: `agent_events.rs`.
+
 ### Fixed
 - **Model name missing from bubble header after ModelSwitch** — `ModelSwitch` events were silently ignored in both the render loop (`render_events.rs`) and the pre-scan fast-forward (`render_submit.rs`), so `current_model` was never updated after a model cycle. All subsequent `AssistantText` bubble headers showed the old/empty model name. Now `ModelSwitch` updates `current_model` in both paths.
 

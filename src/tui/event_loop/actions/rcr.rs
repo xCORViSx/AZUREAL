@@ -14,7 +14,7 @@ pub(super) fn accept_rcr(app: &mut App) {
         app.invalidate_sidebar();
         // Delete the RCR session file so it doesn't pollute the session list
         if let Some(ref sid) = rcr.session_id {
-            if let Some(path) = crate::config::session_file(app.backend, &rcr.worktree_path, sid) {
+            if let Some(path) = crate::config::session_file(&rcr.worktree_path, sid) {
                 let _ = std::fs::remove_file(path);
             }
         }

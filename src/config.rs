@@ -2,8 +2,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::backend::Backend;
-
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -19,9 +17,6 @@ pub struct Config {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
-    /// Which backend to use (claude or codex)
-    #[serde(default)]
-    pub backend: Backend,
 }
 
 impl Default for Config {
@@ -32,7 +27,6 @@ impl Default for Config {
             codex_executable: None,
             default_permission_mode: PermissionMode::default(),
             verbose: false,
-            backend: Backend::default(),
         }
     }
 }
@@ -63,7 +57,6 @@ impl Config {
                 _ => PermissionMode::Ignore,
             },
             verbose: az.config.verbose,
-            backend: Backend::from_str_loose(az.config.backend.as_deref().unwrap_or("claude")),
         })
     }
 
@@ -360,6 +353,7 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
 }
 
 /// Find the most recent Claude session for a worktree
+#[allow(dead_code)]
 pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<String> {
     list_claude_sessions(worktree_path)
         .first()
@@ -523,46 +517,72 @@ pub fn list_codex_sessions(worktree_path: &std::path::Path) -> Vec<(String, Path
 }
 
 /// Find the most recent Codex session for a worktree
+#[allow(dead_code)]
 pub fn find_latest_codex_session(worktree_path: &std::path::Path) -> Option<String> {
     list_codex_sessions(worktree_path)
         .first()
         .map(|(id, _, _)| id.clone())
 }
 
-// ── Backend-dispatched session discovery ──
+fn session_mtime(path: &std::path::Path) -> std::time::SystemTime {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .unwrap_or(std::time::UNIX_EPOCH)
+}
 
-/// List sessions for the active backend, newest first.
-/// Dispatches to list_claude_sessions or list_codex_sessions.
+/// Infer the session backend from its on-disk path.
+pub fn backend_from_session_path(path: &std::path::Path) -> Option<crate::backend::Backend> {
+    let path = path.to_string_lossy();
+    if path.contains("/.claude/") || path.contains("\\.claude\\") {
+        Some(crate::backend::Backend::Claude)
+    } else if path.contains("/.codex/") || path.contains("\\.codex\\") {
+        Some(crate::backend::Backend::Codex)
+    } else {
+        None
+    }
+}
+
+/// List sessions across both backends, newest first.
 #[allow(dead_code)]
-pub fn list_sessions(
-    backend: Backend,
-    worktree_path: &std::path::Path,
-) -> Vec<(String, PathBuf, String)> {
-    match backend {
-        Backend::Claude => list_claude_sessions(worktree_path),
-        Backend::Codex => list_codex_sessions(worktree_path),
-    }
+pub fn list_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
+    let mut sessions: Vec<(String, PathBuf, std::time::SystemTime)> =
+        list_claude_sessions(worktree_path)
+            .into_iter()
+            .chain(list_codex_sessions(worktree_path))
+            .map(|(id, path, _)| {
+                let mtime = session_mtime(&path);
+                (id, path, mtime)
+            })
+            .collect();
+
+    sessions.sort_by(|a, b| b.2.cmp(&a.2));
+    sessions
+        .into_iter()
+        .map(|(id, path, mtime)| (id, path, format_time(mtime)))
+        .collect()
 }
 
-/// Find the most recent session for the active backend.
-pub fn find_latest_session(backend: Backend, worktree_path: &std::path::Path) -> Option<String> {
-    match backend {
-        Backend::Claude => find_latest_claude_session(worktree_path),
-        Backend::Codex => find_latest_codex_session(worktree_path),
-    }
+/// Find the most recent session across both backends for a worktree.
+pub fn find_latest_session(worktree_path: &std::path::Path) -> Option<String> {
+    list_sessions(worktree_path)
+        .first()
+        .map(|(id, _, _)| id.clone())
 }
 
-/// Get a session file path for the active backend.
-/// Claude needs project_path to locate the encoded directory; Codex scans by UUID.
-pub fn session_file(
-    backend: Backend,
+/// Get a session file path and its backend by probing both backends.
+pub fn session_file_with_backend(
     project_path: &std::path::Path,
     session_id: &str,
-) -> Option<PathBuf> {
-    match backend {
-        Backend::Claude => claude_session_file(project_path, session_id),
-        Backend::Codex => codex_session_file(session_id),
+) -> Option<(crate::backend::Backend, PathBuf)> {
+    if let Some(path) = claude_session_file(project_path, session_id) {
+        return Some((crate::backend::Backend::Claude, path));
     }
+    codex_session_file(session_id).map(|path| (crate::backend::Backend::Codex, path))
+}
+
+/// Get a session file path by probing both backends.
+pub fn session_file(project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
+    session_file_with_backend(project_path, session_id).map(|(_, path)| path)
 }
 
 // ── Projects persistence (~/.azureal/projects) ──
@@ -699,6 +719,7 @@ fn repo_name_from_origin(repo_path: &std::path::Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::Backend;
     use std::path::Path;
 
     // ── encode_project_path ──
@@ -1115,7 +1136,6 @@ mod tests {
             anthropic_api_key: Some("sk-test-123".to_string()),
             claude_executable: Some("/usr/bin/claude".to_string()),
             codex_executable: None,
-            backend: crate::backend::Backend::Claude,
             default_permission_mode: PermissionMode::Approve,
             verbose: true,
         };
@@ -1433,45 +1453,34 @@ mod tests {
         // If the directory doesn't exist, None is also valid
     }
 
-    // ── Backend-dispatched wrappers ──
+    // ── Backend-agnostic wrappers ──
 
     #[test]
-    fn test_list_sessions_claude_dispatches() {
-        // Non-existent path: should return empty for both backends
+    fn test_list_sessions_empty_for_missing_path() {
         let fake_path = Path::new("/nonexistent/project/path");
-        let claude_result = list_sessions(Backend::Claude, fake_path);
-        assert!(claude_result.is_empty());
+        assert!(list_sessions(fake_path).is_empty());
     }
 
     #[test]
-    fn test_list_sessions_codex_dispatches() {
+    fn test_find_latest_session_empty_for_missing_path() {
         let fake_path = Path::new("/nonexistent/project/path");
-        let codex_result = list_sessions(Backend::Codex, fake_path);
-        assert!(codex_result.is_empty());
+        assert!(find_latest_session(fake_path).is_none());
     }
 
     #[test]
-    fn test_find_latest_session_claude_dispatches() {
-        let fake_path = Path::new("/nonexistent/project/path");
-        assert!(find_latest_session(Backend::Claude, fake_path).is_none());
-    }
-
-    #[test]
-    fn test_find_latest_session_codex_dispatches() {
-        let fake_path = Path::new("/nonexistent/project/path");
-        assert!(find_latest_session(Backend::Codex, fake_path).is_none());
-    }
-
-    #[test]
-    fn test_session_file_claude_dispatches() {
+    fn test_session_file_empty_for_missing_id() {
         let fake_path = Path::new("/nonexistent/project");
-        assert!(session_file(Backend::Claude, fake_path, "nonexistent-id").is_none());
+        assert!(session_file(fake_path, "nonexistent-id").is_none());
     }
 
     #[test]
-    fn test_session_file_codex_dispatches() {
-        let fake_path = Path::new("/nonexistent/project");
-        assert!(session_file(Backend::Codex, fake_path, "nonexistent-id").is_none());
+    fn test_backend_from_session_path_detects_claude_and_codex() {
+        let claude = Path::new("/Users/dev/.claude/projects/test/abc.jsonl");
+        let codex = Path::new("/Users/dev/.codex/sessions/2026/03/16/x.jsonl");
+        let other = Path::new("/tmp/nope.jsonl");
+        assert_eq!(backend_from_session_path(claude), Some(Backend::Claude));
+        assert_eq!(backend_from_session_path(codex), Some(Backend::Codex));
+        assert_eq!(backend_from_session_path(other), None);
     }
 
     // ── codex_session_file ──
@@ -1597,14 +1606,6 @@ mod tests {
         } else {
             assert_eq!(latest, Some(sessions[0].0.clone()));
         }
-    }
-
-    // ── Config default backend ──
-
-    #[test]
-    fn test_config_default_backend_is_claude() {
-        let cfg = Config::default();
-        assert_eq!(cfg.backend, Backend::Claude);
     }
 
     #[test]

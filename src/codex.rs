@@ -314,7 +314,6 @@ mod tests {
             codex_executable: Some("/bin/codex".into()),
             default_permission_mode: PermissionMode::Approve,
             verbose: true,
-            backend: crate::backend::Backend::Codex,
         };
         let process = CodexProcess::new(config);
         assert_eq!(process.config.codex_executable(), "/bin/codex");

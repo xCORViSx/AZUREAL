@@ -22,6 +22,16 @@ pub enum Backend {
     Codex,
 }
 
+impl Backend {
+    /// Return the other backend (Claude↔Codex).
+    pub fn alternate(self) -> Self {
+        match self {
+            Backend::Claude => Backend::Codex,
+            Backend::Codex => Backend::Claude,
+        }
+    }
+}
+
 impl Default for Backend {
     fn default() -> Self {
         Backend::Claude
@@ -39,6 +49,7 @@ impl std::fmt::Display for Backend {
 
 impl Backend {
     /// Parse from string (for config loading)
+    #[allow(dead_code)]
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "codex" | "openai" => Backend::Codex,

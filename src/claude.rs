@@ -570,7 +570,6 @@ mod tests {
             anthropic_api_key: Some("key".to_string()),
             claude_executable: Some("/bin/claude".to_string()),
             codex_executable: None,
-            backend: crate::backend::Backend::Claude,
             default_permission_mode: PermissionMode::Approve,
             verbose: true,
         };

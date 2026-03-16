@@ -69,14 +69,26 @@ impl App {
         }
 
         for (session_id, _worktree, uuid) in &sessions {
-            let jsonl_path = crate::config::session_file(self.backend, wt_path, uuid);
-            let Some(jsonl_path) = jsonl_path.filter(|p| p.exists()) else {
+            let Some((session_backend, jsonl_path)) =
+                crate::config::session_file_with_backend(wt_path, uuid)
+            else {
                 // JSONL gone (already deleted or never written) — clear stale UUID
                 let _ = store.clear_session_uuid(*session_id);
                 continue;
             };
+            if !jsonl_path.exists() {
+                let _ = store.clear_session_uuid(*session_id);
+                continue;
+            }
 
-            let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+            let parsed = match session_backend {
+                crate::backend::Backend::Claude => {
+                    crate::app::session_parser::parse_session_file(&jsonl_path)
+                }
+                crate::backend::Backend::Codex => {
+                    crate::app::codex_session_parser::parse_codex_session_file(&jsonl_path)
+                }
+            };
             if !parsed.events.is_empty() {
                 // Strip injected context from UserMessage events
                 let events: Vec<crate::events::DisplayEvent> = parsed

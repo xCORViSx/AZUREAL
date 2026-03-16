@@ -354,6 +354,17 @@ pub async fn run_app(
             // No redraw needed — compaction is invisible
         }
 
+        // Retry compaction with alternate backend if the primary produced no output
+        if let Some((session_id, wt_path, alt_backend)) = app.compaction_retry_needed.take() {
+            agent_events::spawn_compaction_agent(
+                app,
+                &claude_process,
+                session_id,
+                &wt_path,
+                alt_backend,
+            );
+        }
+
         let _t_claude = _loop_start.elapsed();
 
         // Poll parsed results from the background AgentProcessor. Each result
@@ -382,7 +393,7 @@ pub async fn run_app(
 
         let _t_parsed = _loop_start.elapsed();
 
-        // Poll commit message generation — background thread sends the Claude-generated
+        // Poll commit message generation — background thread sends the generated
         // commit message via mpsc. Non-blocking try_recv; fills the overlay when ready.
         if let Some(ref mut panel) = app.git_actions_panel {
             if let Some(ref mut overlay) = panel.commit_overlay {
@@ -390,15 +401,18 @@ pub async fn run_app(
                     if let Some(ref rx) = overlay.receiver {
                         if let Ok(result) = rx.try_recv() {
                             match result {
-                                Ok(msg) => {
+                                Ok((msg, fallback_notice)) => {
                                     overlay.message = msg;
                                     overlay.cursor = overlay.message.chars().count();
                                     overlay.generating = false;
                                     overlay.receiver = None;
+                                    if let Some(notice) = fallback_notice {
+                                        panel.result_message = Some((notice, false));
+                                    }
                                     needs_redraw = true;
                                 }
                                 Err(err) => {
-                                    // Generation failed — close overlay and show error
+                                    // Both backends failed — close overlay and show error
                                     panel.commit_overlay = None;
                                     panel.result_message = Some((err, true));
                                     needs_redraw = true;

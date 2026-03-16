@@ -3,6 +3,7 @@
 use std::sync::mpsc::Receiver;
 
 use crate::app::util::display_text_from_json;
+use crate::backend::Backend;
 use crate::claude::AgentEvent;
 use crate::events::DisplayEvent;
 use crate::models::OutputType;
@@ -152,6 +153,11 @@ impl App {
         // Resolve branch — first in current project, then in background snapshots
         let branch = self.branch_for_slot(slot_id);
         let was_codex = self.codex_slot_started_at.contains_key(slot_id);
+        let turn_backend = if was_codex {
+            Backend::Codex
+        } else {
+            Backend::Claude
+        };
 
         // If not in current project, check background project snapshots
         if branch.is_none() {
@@ -266,7 +272,7 @@ impl App {
         }
 
         // Post-exit store flow: parse JSONL → strip injected context → append to SQLite
-        self.store_append_from_jsonl(slot_id);
+        self.store_append_from_jsonl(slot_id, turn_backend);
 
         // If a staged prompt exists, leave it for the event loop to auto-send.
         if self.staged_prompt.is_some() {
@@ -318,7 +324,7 @@ impl App {
     /// Store the current turn's display events into the SQLite session store.
     /// Uses the live display_events (which match what the user saw) rather than
     /// re-parsing the JSONL file. Deletes the source JSONL after successful ingestion.
-    fn store_append_from_jsonl(&mut self, slot_id: &str) {
+    fn store_append_from_jsonl(&mut self, slot_id: &str, turn_backend: Backend) {
         // Only process if this slot was targeting a store session
         let (session_id, wt_path, events_offset) = match self.pid_session_target.remove(slot_id) {
             Some(triple) => triple,
@@ -329,7 +335,7 @@ impl App {
         let jsonl_path = self
             .agent_session_ids
             .get(slot_id)
-            .and_then(|uuid| crate::config::session_file(self.backend, &wt_path, uuid));
+            .and_then(|uuid| crate::config::session_file(&wt_path, uuid));
 
         // Collect current turn's events from display_events (after the offset)
         let events: Vec<crate::events::DisplayEvent> = if events_offset < self.display_events.len()
@@ -386,7 +392,7 @@ impl App {
             if self.compaction_needed.is_none() {
                 if let Ok(chars) = store.total_chars_since_compaction(session_id) {
                     if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
-                        self.compaction_needed = Some((session_id, wt_path));
+                        self.compaction_needed = Some((session_id, wt_path, turn_backend));
                     }
                 }
             }
@@ -404,16 +410,25 @@ impl App {
         wt_path: &std::path::Path,
         _project_path: &std::path::Path,
     ) {
-        let jsonl_path = match self.agent_session_ids.get(slot_id) {
-            Some(uuid) => crate::config::session_file(self.backend, wt_path, uuid),
+        let (session_backend, jsonl_path) = match self.agent_session_ids.get(slot_id) {
+            Some(uuid) => match crate::config::session_file_with_backend(wt_path, uuid) {
+                Some(pair) => pair,
+                None => return,
+            },
             None => return,
         };
-        let jsonl_path = match jsonl_path {
-            Some(p) if p.exists() => p,
-            _ => return,
+        if !jsonl_path.exists() {
+            return;
         };
 
-        let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+        let parsed = match session_backend {
+            crate::backend::Backend::Claude => {
+                crate::app::session_parser::parse_session_file(&jsonl_path)
+            }
+            crate::backend::Backend::Codex => {
+                crate::app::codex_session_parser::parse_codex_session_file(&jsonl_path)
+            }
+        };
         if parsed.events.is_empty() {
             return;
         }
@@ -1723,5 +1738,26 @@ mod tests {
 
         assert!(app.session_file_dirty);
         assert_eq!(app.session_file_parse_offset, 5678);
+    }
+
+    #[test]
+    fn store_append_from_jsonl_captures_turn_backend_for_compaction() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let wt_path = std::path::PathBuf::from("/tmp/compaction-backend");
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0));
+        app.display_events.push(DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: "x".repeat(crate::app::session_store::COMPACTION_THRESHOLD + 1),
+        });
+
+        app.store_append_from_jsonl("55", Backend::Codex);
+
+        assert_eq!(app.compaction_needed, Some((sid, wt_path, Backend::Codex)));
     }
 }

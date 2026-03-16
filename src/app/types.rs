@@ -507,19 +507,21 @@ pub struct GitChangedFile {
 }
 
 /// Commit message overlay state — shown when pressing `c` in the Git panel.
-/// Claude generates the message via one-shot `claude -p`, user can edit before committing.
+/// Claude or Codex generates the message via a one-shot background CLI call,
+/// and the user can edit before committing.
 #[derive(Debug)]
 pub struct GitCommitOverlay {
     /// The editable commit message text (may be multi-line)
     pub message: String,
     /// Cursor position as char index within message
     pub cursor: usize,
-    /// True while Claude is still generating the message in a background thread
+    /// True while the background generator is still producing the message
     pub generating: bool,
     /// Scroll offset for displaying long messages
     pub scroll: usize,
-    /// Receiver for the generated message from the background thread
-    pub receiver: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Receiver for the generated message from the background thread.
+    /// Ok((message, optional_fallback_notice)), Err(error_if_both_backends_failed).
+    pub receiver: Option<std::sync::mpsc::Receiver<Result<(String, Option<String>), String>>>,
 }
 
 /// Conflict resolution overlay — shown when squash merge encounters conflicts.

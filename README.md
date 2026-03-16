@@ -44,7 +44,7 @@
 - **File Staging** — Stage/unstage individual files (`s`) or all at once (`S`); unstaged files shown with strikethrough
 - **Discard Changes** — Revert individual files (`x`) with inline confirmation prompt
 - **Squash Merge** — One-key squash merge with auto-rebase onto main and rich commit messages
-- **AI Commit Messages** — Claude generates conventional commit messages from your staged changes
+- **AI Commit Messages** — Claude or Codex generates conventional commit messages from your staged changes, with automatic cross-backend fallback
 - **Auto-Rebase** — Keep feature branches up-to-date automatically with configurable auto-resolve files
 - **Conflict Resolution** — Structured conflict overlay with Claude-assisted resolution (RCR)
 
@@ -149,7 +149,7 @@ azureal
 
 ## Architecture
 
-Azureal is **mostly stateless** — runtime state is derived from git worktrees and branches. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is configured in `azufig.toml`. Sessions are stored in a single SQLite database (`.azureal/sessions.azs`) — portable, self-contained, and transferable between machines by copying one file. Agent JSONL session files are temporary — parsed during live streaming, ingested into the store on exit, then deleted.
+Azureal is **mostly stateless** — runtime state is derived from git worktrees and branches. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is derived from the active model (`gpt-*` → Codex, everything else → Claude). Sessions are stored in a single SQLite database (`.azureal/sessions.azs`) — portable, self-contained, and transferable between machines by copying one file. Agent JSONL session files are temporary — parsed during live streaming, ingested into the store on exit, then deleted.
 
 All keybindings are defined once in a central module. Press `?` for the full help overlay.
 

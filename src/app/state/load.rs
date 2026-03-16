@@ -386,9 +386,7 @@ impl App {
                     // Set up JSONL watching for the watcher thread
                     if let Some(uuid) = self.agent_session_ids.get(slot) {
                         if let Some(ref wt_path) = worktree_path {
-                            if let Some(jsonl_path) =
-                                crate::config::session_file(self.backend, wt_path, uuid)
-                            {
+                            if let Some(jsonl_path) = crate::config::session_file(wt_path, uuid) {
                                 if jsonl_path.exists() {
                                     self.session_file_path = Some(jsonl_path);
                                 }
@@ -570,7 +568,7 @@ impl App {
 
         // Incremental parse: only read new bytes since last offset
         let was_full_reparse = self.session_file_parse_offset == 0;
-        let parsed = match self.backend {
+        let parsed = match crate::config::backend_from_session_path(&path).unwrap_or(self.backend) {
             crate::backend::Backend::Claude => {
                 crate::app::session_parser::parse_session_file_incremental(
                     &path,

@@ -8,6 +8,7 @@ use crate::app::types::{
     BackgroundRebaseOutcome, GitActionsPanel, GitChangedFile, GitCommitOverlay,
 };
 use crate::app::App;
+use crate::backend::Backend;
 use crate::git::{Git, SquashMergeResult};
 
 /// Rebase outcome for the UI to display
@@ -22,6 +23,108 @@ pub(crate) enum RebaseOutcome {
         _raw_output: String,
     },
     Failed(String),
+}
+
+fn commit_message_backend_for_selected_model(selected_model: Option<&str>) -> Backend {
+    selected_model
+        .map(crate::app::state::backend_for_model)
+        .unwrap_or(Backend::Claude)
+}
+
+fn commit_message_model_for_backend(backend: Backend) -> Option<&'static str> {
+    match backend {
+        // Preserve the existing Claude-side behavior: let Claude CLI use its
+        // configured/default model for commit-message generation.
+        Backend::Claude => None,
+        // Rough Sonnet-tier Codex pair for the same helper flow.
+        Backend::Codex => Some("gpt-5.3-codex"),
+    }
+}
+
+fn strip_commit_message_fences(raw: &str) -> String {
+    let msg = raw.trim();
+    let msg = msg.strip_prefix("```").unwrap_or(msg);
+    let msg = msg.strip_suffix("```").unwrap_or(msg);
+    msg.trim().to_string()
+}
+
+fn codex_commit_message_output_path() -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "azureal-commit-msg-{}-{}.txt",
+        std::process::id(),
+        nanos
+    ))
+}
+
+fn generate_commit_message_with_claude(
+    executable: &str,
+    working_dir: &std::path::Path,
+    prompt: &str,
+    model: Option<&str>,
+) -> Result<String, String> {
+    let mut cmd = std::process::Command::new(executable);
+    cmd.arg("-p");
+    if let Some(model) = model {
+        cmd.args(["--model", model]);
+    }
+    cmd.arg("--no-session-persistence");
+    cmd.arg(prompt);
+    cmd.current_dir(working_dir);
+
+    match cmd.output() {
+        Ok(output) if output.status.success() => Ok(strip_commit_message_fences(
+            &String::from_utf8_lossy(&output.stdout),
+        )),
+        Ok(output) => {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(format!("Claude failed: {}", err))
+        }
+        Err(e) => Err(format!("Failed to run claude: {}", e)),
+    }
+}
+
+fn generate_commit_message_with_codex(
+    executable: &str,
+    working_dir: &std::path::Path,
+    prompt: &str,
+    model: Option<&str>,
+) -> Result<String, String> {
+    let output_path = codex_commit_message_output_path();
+    let mut cmd = std::process::Command::new(executable);
+    cmd.arg("exec");
+    cmd.arg("--ephemeral");
+    cmd.args(["--color", "never"]);
+    if let Some(model) = model {
+        cmd.args(["--model", model]);
+    }
+    cmd.arg("-o");
+    cmd.arg(&output_path);
+    cmd.arg(prompt);
+    cmd.current_dir(working_dir);
+
+    let result = match cmd.output() {
+        Ok(output) if output.status.success() => {
+            let raw = std::fs::read_to_string(&output_path)
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| String::from_utf8_lossy(&output.stdout).to_string());
+            Ok(strip_commit_message_fences(&raw))
+        }
+        Ok(output) => {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let fallback = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !err.is_empty() { err } else { fallback };
+            Err(format!("Codex failed: {}", detail))
+        }
+        Err(e) => Err(format!("Failed to run codex: {}", e)),
+    };
+
+    let _ = std::fs::remove_file(&output_path);
+    result
 }
 
 /// Parse conflict and auto-merge file lists from git rebase/merge output.
@@ -555,8 +658,9 @@ pub(super) fn exec_push(app: &mut App) {
     });
 }
 
-/// Start the commit flow: stage changes, get the diff, spawn Claude one-shot
-/// to generate a commit message, and open the commit overlay.
+/// Start the commit flow: stage changes, get the diff, spawn a one-shot
+/// Claude-or-Codex helper to generate a commit message, and open the commit
+/// overlay.
 /// All files default to staged=true. If user unstaged some files, only staged
 /// ones are committed. If all are staged (default), stage_all for efficiency.
 pub(super) fn exec_commit_start(app: &mut App) {
@@ -620,11 +724,8 @@ pub(super) fn exec_commit_start(app: &mut App) {
     };
 
     let stat = Git::get_staged_stat(&wt).unwrap_or_default();
-
-    let claude_bin = crate::azufig::load_global_azufig()
-        .config
-        .claude_executable
-        .unwrap_or_else(|| "claude".into());
+    let config = crate::config::Config::load().unwrap_or_default();
+    let commit_backend = commit_message_backend_for_selected_model(app.selected_model.as_deref());
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();
@@ -639,26 +740,44 @@ pub(super) fn exec_commit_start(app: &mut App) {
             "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
             stat, diff_trimmed
         );
-        let result = std::process::Command::new(&claude_bin)
-            .args(["-p", "--no-session-persistence", &prompt])
-            .current_dir(&wt_clone)
-            .output();
+        let generate = |backend: Backend| -> Result<String, String> {
+            let model = commit_message_model_for_backend(backend).map(str::to_string);
+            match backend {
+                Backend::Claude => generate_commit_message_with_claude(
+                    config.claude_executable(),
+                    &wt_clone,
+                    &prompt,
+                    model.as_deref(),
+                ),
+                Backend::Codex => generate_commit_message_with_codex(
+                    config.codex_executable(),
+                    &wt_clone,
+                    &prompt,
+                    model.as_deref(),
+                ),
+            }
+        };
 
-        match result {
-            Ok(output) if output.status.success() => {
-                let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let msg = raw.strip_prefix("```").unwrap_or(&raw);
-                let msg = msg.strip_suffix("```").unwrap_or(msg).trim().to_string();
-                let _ = tx.send(Ok(msg));
+        let result = match generate(commit_backend) {
+            Ok(msg) => Ok((msg, None)),
+            Err(primary_err) => {
+                let alt = commit_backend.alternate();
+                match generate(alt) {
+                    Ok(msg) => {
+                        let notice = format!(
+                            "{} failed — fell back to {}",
+                            commit_backend, alt
+                        );
+                        Ok((msg, Some(notice)))
+                    }
+                    Err(alt_err) => Err(format!(
+                        "{} failed: {}; {} also failed: {}",
+                        commit_backend, primary_err, alt, alt_err
+                    )),
+                }
             }
-            Ok(output) => {
-                let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let _ = tx.send(Err(format!("Claude failed: {}", err)));
-            }
-            Err(e) => {
-                let _ = tx.send(Err(format!("Failed to run claude: {}", e)));
-            }
-        }
+        };
+        let _ = tx.send(result);
     });
 
     if let Some(ref mut p) = app.git_actions_panel {
@@ -1303,17 +1422,40 @@ mod tests {
     #[test]
     fn commit_msg_strip_backtick_prefix() {
         let raw = "```feat: add thing\nbody here```";
-        let msg = raw.strip_prefix("```").unwrap_or(raw);
-        let msg = msg.strip_suffix("```").unwrap_or(msg).trim();
-        assert_eq!(msg, "feat: add thing\nbody here");
+        assert_eq!(
+            strip_commit_message_fences(raw),
+            "feat: add thing\nbody here"
+        );
     }
 
     #[test]
     fn commit_msg_no_backtick_unchanged() {
         let raw = "feat: add thing\nbody here";
-        let msg = raw.strip_prefix("```").unwrap_or(raw);
-        let msg = msg.strip_suffix("```").unwrap_or(msg).trim();
-        assert_eq!(msg, "feat: add thing\nbody here");
+        assert_eq!(
+            strip_commit_message_fences(raw),
+            "feat: add thing\nbody here"
+        );
+    }
+
+    #[test]
+    fn commit_message_backend_uses_selected_model_family() {
+        assert_eq!(
+            commit_message_backend_for_selected_model(Some("sonnet")),
+            Backend::Claude
+        );
+        assert_eq!(
+            commit_message_backend_for_selected_model(Some("gpt-5.4")),
+            Backend::Codex
+        );
+    }
+
+    #[test]
+    fn commit_message_model_for_backend_codex_pair() {
+        assert_eq!(commit_message_model_for_backend(Backend::Claude), None);
+        assert_eq!(
+            commit_message_model_for_backend(Backend::Codex),
+            Some("gpt-5.3-codex")
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════

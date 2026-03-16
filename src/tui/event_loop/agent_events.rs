@@ -79,8 +79,8 @@ pub fn handle_claude_event(
 
     // Spawn compaction agent if threshold was exceeded during store_append_from_jsonl
     if is_exit {
-        if let Some((session_id, wt_path)) = app.compaction_needed.take() {
-            spawn_compaction_agent(app, claude_process, session_id, &wt_path);
+        if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.take() {
+            spawn_compaction_agent(app, claude_process, session_id, &wt_path, turn_backend);
         }
     }
 
@@ -90,11 +90,12 @@ pub fn handle_claude_event(
 /// Spawn a background Claude agent to summarize the conversation for compaction.
 /// The agent's receiver goes into `compaction_receivers` (not `agent_receivers`)
 /// so its output is captured separately and never displayed in the session pane.
-fn spawn_compaction_agent(
+pub fn spawn_compaction_agent(
     app: &mut App,
     claude_process: &AgentProcess,
     session_id: i64,
     wt_path: &std::path::Path,
+    turn_backend: crate::backend::Backend,
 ) {
     let store = match app.session_store.as_ref() {
         Some(s) => s,
@@ -126,21 +127,50 @@ fn spawn_compaction_agent(
     };
     let prompt = crate::app::context_injection::build_compaction_prompt(&payload);
 
-    let compaction_model = match crate::app::state::backend_for_model(app.display_model_name()) {
+    let primary_model = compaction_model_for_backend(turn_backend);
+    let spawn_result = claude_process.spawn(wt_path, &prompt, None, Some(primary_model));
+
+    // If primary backend spawn fails, try the alternate
+    let (rx, pid, used_fallback) = match spawn_result {
+        Ok((rx, pid)) => (rx, pid, false),
+        Err(_) => {
+            let alt = turn_backend.alternate();
+            let alt_model = compaction_model_for_backend(alt);
+            match claude_process.spawn(wt_path, &prompt, None, Some(alt_model)) {
+                Ok((rx, pid)) => (rx, pid, true),
+                Err(_) => return, // Both backends failed to spawn
+            }
+        }
+    };
+
+    let pid_str = pid.to_string();
+    app.compaction_receivers.insert(
+        pid_str,
+        crate::app::state::CompactionJob {
+            rx,
+            session_id,
+            boundary_seq,
+            wt_path: wt_path.to_path_buf(),
+            turn_backend,
+        },
+    );
+    // Show "Compacting" banner in the session pane
+    app.display_events
+        .push(crate::events::DisplayEvent::MayBeCompacting);
+    if used_fallback {
+        let alt = turn_backend.alternate();
+        app.set_status(format!(
+            "Compaction: {} failed to spawn — fell back to {}",
+            turn_backend, alt
+        ));
+    }
+    app.invalidate_render_cache();
+}
+
+fn compaction_model_for_backend(backend: crate::backend::Backend) -> &'static str {
+    match backend {
         crate::backend::Backend::Claude => "haiku",
         crate::backend::Backend::Codex => "gpt-5.1-codex-mini",
-    };
-    match claude_process.spawn(wt_path, &prompt, None, Some(compaction_model)) {
-        Ok((rx, pid)) => {
-            let pid_str = pid.to_string();
-            app.compaction_receivers
-                .insert(pid_str, (rx, session_id, boundary_seq));
-            // Show "Compacting" banner in the session pane
-            app.display_events
-                .push(crate::events::DisplayEvent::MayBeCompacting);
-            app.invalidate_render_cache();
-        }
-        Err(_) => {} // Compaction is best-effort
     }
 }
 
@@ -150,11 +180,11 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
         return false;
     }
 
-    let mut completed: Vec<(String, i64, i64)> = Vec::new();
+    let mut completed: Vec<String> = Vec::new();
     let mut had_events = false;
 
-    for (pid, (rx, session_id, _boundary)) in &app.compaction_receivers {
-        while let Ok(event) = rx.try_recv() {
+    for (pid, job) in &app.compaction_receivers {
+        while let Ok(event) = job.rx.try_recv() {
             had_events = true;
             match event {
                 crate::claude::AgentEvent::Output(output) => {
@@ -169,7 +199,7 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
                     }
                 }
                 crate::claude::AgentEvent::Exited { .. } => {
-                    completed.push((pid.clone(), *session_id, *_boundary));
+                    completed.push(pid.clone());
                 }
                 _ => {}
             }
@@ -177,22 +207,35 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
     }
 
     // Process completed compaction agents
-    for (pid, session_id, boundary_seq) in completed {
-        app.compaction_receivers.remove(&pid);
-        if let Some(summary) = app.compaction_output.remove(&pid) {
-            let summary = summary.trim();
-            if !summary.is_empty() {
-                if let Some(ref store) = app.session_store {
-                    // Store compaction at the boundary — events after this seq remain as raw events
-                    let _ = store.store_compaction(session_id, boundary_seq, summary);
-                    // Refresh badge — chars_since_compaction just dropped
-                    app.update_token_badge();
-                    // Show "Compacted" banner in the session pane
-                    app.display_events
-                        .push(crate::events::DisplayEvent::Compacting);
-                    app.invalidate_render_cache();
-                }
+    for pid in completed {
+        let job = match app.compaction_receivers.remove(&pid) {
+            Some(j) => j,
+            None => continue,
+        };
+        let summary_text = app.compaction_output.remove(&pid);
+        let summary_trimmed = summary_text.as_deref().map(str::trim).unwrap_or("");
+
+        if !summary_trimmed.is_empty() {
+            if let Some(ref store) = app.session_store {
+                // Store compaction at the boundary — events after this seq remain as raw events
+                let _ = store.store_compaction(job.session_id, job.boundary_seq, summary_trimmed);
+                // Refresh badge — chars_since_compaction just dropped
+                app.update_token_badge();
+                // Show "Compacted" banner in the session pane
+                app.display_events
+                    .push(crate::events::DisplayEvent::Compacting);
+                app.invalidate_render_cache();
             }
+        } else {
+            // Compaction produced no output (e.g. backend hit usage limit).
+            // Queue a retry with the alternate backend.
+            let alt = job.turn_backend.alternate();
+            app.compaction_retry_needed =
+                Some((job.session_id, job.wt_path.clone(), alt));
+            app.set_status(format!(
+                "Compaction: {} produced no output — retrying with {}",
+                job.turn_backend, alt
+            ));
         }
     }
 
@@ -233,7 +276,21 @@ mod tests {
     use crate::claude::{AgentEvent, AgentOutput};
     use crate::models::OutputType;
 
-    // ── Helper: build a minimal App with a worktree so handle_claude_event can work ──
+    // ── Helpers ──
+
+    fn test_compaction_job(
+        rx: std::sync::mpsc::Receiver<AgentEvent>,
+        session_id: i64,
+        boundary_seq: i64,
+    ) -> crate::app::state::CompactionJob {
+        crate::app::state::CompactionJob {
+            rx,
+            session_id,
+            boundary_seq,
+            wt_path: std::path::PathBuf::from("/tmp/test-wt"),
+            turn_backend: crate::backend::Backend::Claude,
+        }
+    }
 
     fn app_with_worktree(branch: &str) -> App {
         let mut app = App::new();
@@ -878,6 +935,18 @@ mod tests {
         assert!(extract_assistant_text(data).is_none());
     }
 
+    #[test]
+    fn test_compaction_model_for_backend() {
+        assert_eq!(
+            compaction_model_for_backend(crate::backend::Backend::Claude),
+            "haiku"
+        );
+        assert_eq!(
+            compaction_model_for_backend(crate::backend::Backend::Codex),
+            "gpt-5.1-codex-mini"
+        );
+    }
+
     // ── poll_compaction_agents ──
 
     #[test]
@@ -911,7 +980,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("99".into(), (rx, sid, 0));
+        app.compaction_receivers
+            .insert("99".into(), test_compaction_job(rx, sid, 0));
 
         assert!(poll_compaction_agents(&mut app));
         assert!(app.compaction_receivers.is_empty());
@@ -944,7 +1014,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("88".into(), (rx, sid, 0));
+        app.compaction_receivers
+            .insert("88".into(), test_compaction_job(rx, sid, 0));
 
         poll_compaction_agents(&mut app);
 
@@ -969,7 +1040,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("77".into(), (rx, sid, 0));
+        app.compaction_receivers
+            .insert("77".into(), test_compaction_job(rx, sid, 0));
 
         poll_compaction_agents(&mut app);
 
@@ -1016,7 +1088,8 @@ mod tests {
         .unwrap();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
-        app.compaction_receivers.insert("66".into(), (rx, sid, 0));
+        app.compaction_receivers
+            .insert("66".into(), test_compaction_job(rx, sid, 0));
 
         // First poll accumulates output
         poll_compaction_agents(&mut app);

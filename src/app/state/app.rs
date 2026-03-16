@@ -41,6 +41,15 @@ use crate::models::{Project, Worktree};
 use crate::syntax::SyntaxHighlighter;
 use crate::tui::render_thread::RenderThread;
 
+/// Metadata for a running compaction agent.
+pub struct CompactionJob {
+    pub rx: Receiver<crate::claude::AgentEvent>,
+    pub session_id: i64,
+    pub boundary_seq: i64,
+    pub wt_path: PathBuf,
+    pub turn_backend: Backend,
+}
+
 /// Application state
 pub struct App {
     /// Which agent backend is active (Claude or Codex)
@@ -119,13 +128,17 @@ pub struct App {
     pub current_session_id: Option<i64>,
     /// Set by store_append_from_jsonl when compaction threshold is exceeded.
     /// Consumed by the event loop to spawn a background compaction agent.
-    /// (session_id, worktree_path)
-    pub compaction_needed: Option<(i64, PathBuf)>,
-    /// Compaction agent receivers: PID string → (receiver, session_id, boundary_seq).
+    /// (session_id, worktree_path, backend_of_turn_that_triggered_compaction)
+    pub compaction_needed: Option<(i64, PathBuf, Backend)>,
+    /// Compaction agent receivers: PID string → metadata.
     /// Polled separately from agent_receivers — output is captured, not displayed.
-    pub compaction_receivers: HashMap<String, (Receiver<crate::claude::AgentEvent>, i64, i64)>,
+    pub compaction_receivers: HashMap<String, CompactionJob>,
     /// Accumulated assistant text from compaction agents: PID string → text buffer
     pub compaction_output: HashMap<String, String>,
+    /// Set by poll_compaction_agents when a compaction completes with no output.
+    /// The event loop re-spawns with the alternate backend.
+    /// (session_id, worktree_path, alternate_backend)
+    pub compaction_retry_needed: Option<(i64, PathBuf, Backend)>,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
     pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
@@ -613,6 +626,7 @@ impl App {
             compaction_needed: None,
             compaction_receivers: HashMap::new(),
             compaction_output: HashMap::new(),
+            compaction_retry_needed: None,
             terminal_mode: false,
             terminal_pty: None,
             terminal_child: None,
