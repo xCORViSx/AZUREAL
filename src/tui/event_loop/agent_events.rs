@@ -77,12 +77,8 @@ pub fn handle_claude_event(
         }
     }
 
-    // Spawn compaction agent if threshold was exceeded during store_append_from_jsonl
-    if is_exit {
-        if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.take() {
-            spawn_compaction_agent(app, claude_process, session_id, &wt_path, turn_backend);
-        }
-    }
+    // Compaction spawning moved to the event loop's per-tick check so it fires
+    // immediately when the live char counter crosses 400K, not just at process exit.
 
     Ok(())
 }

@@ -92,6 +92,8 @@ impl App {
             _ => 0,
         };
         self.store_chars_cached = store_chars;
+        // Sync the live char counter from the store (authoritative at rest)
+        self.chars_since_compaction = store_chars;
         self.apply_token_badge(store_chars);
     }
 

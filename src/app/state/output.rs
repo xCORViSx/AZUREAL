@@ -30,6 +30,10 @@ impl App {
     /// `pending_user_message` — this is ONLY used as a dedup marker so the
     /// full re-parse on Claude exit can detect and skip the duplicate.
     pub fn add_user_message(&mut self, content: String) {
+        // User is manually sending a prompt — cancel any pending auto-continue
+        // from a mid-turn compaction (the user's own prompt supersedes it).
+        self.auto_continue_after_compaction = false;
+
         // Compaction summaries are internal — show banner, not raw text
         if content.starts_with("This session is being continued from a previous conversation") {
             self.display_events.push(DisplayEvent::Compacting);
@@ -41,10 +45,13 @@ impl App {
         // the entire conversation. stream-json stdout never emits user events,
         // so without this the message would be invisible until Claude exits
         // and the session file is re-parsed.
-        self.display_events.push(DisplayEvent::UserMessage {
+        let event = DisplayEvent::UserMessage {
             _uuid: String::new(),
             content: content.clone(),
-        });
+        };
+        // Track user message chars in the live compaction counter
+        self.chars_since_compaction += crate::app::session_store::event_char_len(&event);
+        self.display_events.push(event);
         // Dedup marker: full re-parse (on Claude exit) will check this to
         // avoid creating a second UserMessage for the same content.
         self.pending_user_message = Some(content);

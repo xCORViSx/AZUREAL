@@ -388,8 +388,8 @@ impl App {
                 }
             }
 
-            // Check if compaction is needed (only if not already pending)
-            if self.compaction_needed.is_none() {
+            // Check if compaction is needed (only if not already pending or in-flight)
+            if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
                 if let Ok(chars) = store.total_chars_since_compaction(session_id) {
                     if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
                         self.compaction_needed = Some((session_id, wt_path, turn_backend));
@@ -752,8 +752,46 @@ impl App {
             // Only extend + invalidate when we actually got events. Many stdout lines
             // (progress, hook_started) produce 0 events — skip the work entirely.
             if !events.is_empty() {
+                // Update live char counter for mid-turn compaction detection
+                let added_chars: usize = events
+                    .iter()
+                    .map(crate::app::session_store::event_char_len)
+                    .sum();
+                self.chars_since_compaction += added_chars;
+
+                // Extend display_events BEFORE the threshold check so that
+                // store_append_from_display captures the triggering batch.
                 self.display_events.extend(events);
                 self.invalidate_render_cache();
+
+                // Mid-turn compaction trigger: fire as soon as threshold is crossed.
+                // Also kill the active process — letting it continue would just pile
+                // more uncompacted content onto an already-full context window.
+                // After compaction completes, the event loop auto-sends a hidden
+                // "continue" prompt with the fresh compaction summary.
+                if self.compaction_needed.is_none()
+                    && self.compaction_receivers.is_empty()
+                    && self.chars_since_compaction
+                        >= crate::app::session_store::COMPACTION_THRESHOLD
+                {
+                    if let Some(sid) = self.current_session_id {
+                        if let Some(wt_path) = self
+                            .current_worktree()
+                            .and_then(|s| s.worktree_path.clone())
+                        {
+                            let turn_backend = self.backend;
+                            self.compaction_needed = Some((sid, wt_path, turn_backend));
+                            // Store partial turn events before killing so compaction
+                            // has the latest data. Uses store_append_from_display
+                            // which removes the slot from pid_session_target (the
+                            // exit handler won't double-store).
+                            self.store_append_from_display(slot_id);
+                            self.auto_continue_after_compaction = true;
+                            self.cancel_current_claude();
+                            self.set_status("Compacting context — will auto-continue...");
+                        }
+                    }
+                }
                 // Activity detected — reset compaction inactivity watcher
                 self.last_session_event_time = std::time::Instant::now();
                 self.compaction_banner_injected = false;

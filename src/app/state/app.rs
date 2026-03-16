@@ -139,6 +139,16 @@ pub struct App {
     /// The event loop re-spawns with the alternate backend.
     /// (session_id, worktree_path, alternate_backend)
     pub compaction_retry_needed: Option<(i64, PathBuf, Backend)>,
+    /// Live character count since last compaction. Initialized from the store at
+    /// session load/switch, incremented during handle_claude_output as events stream
+    /// in, and reset after a successful compaction. Enables mid-turn compaction
+    /// triggering instead of waiting for process exit.
+    pub chars_since_compaction: usize,
+    /// Set when a mid-turn compaction kills the active process. After the compaction
+    /// agent finishes, the event loop auto-sends a hidden "continue" prompt (no user
+    /// bubble) with fresh context injection including the new compaction summary.
+    /// Cleared on manual user prompt or session switch.
+    pub auto_continue_after_compaction: bool,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,
     pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
@@ -627,6 +637,8 @@ impl App {
             compaction_receivers: HashMap::new(),
             compaction_output: HashMap::new(),
             compaction_retry_needed: None,
+            chars_since_compaction: 0,
+            auto_continue_after_compaction: false,
             terminal_mode: false,
             terminal_pty: None,
             terminal_child: None,

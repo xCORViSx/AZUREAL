@@ -354,6 +354,19 @@ pub async fn run_app(
             // No redraw needed — compaction is invisible
         }
 
+        // Spawn compaction agent when threshold is crossed (mid-turn or post-exit).
+        // The live char counter in handle_claude_output sets compaction_needed as soon
+        // as 400K chars is reached, so this fires without waiting for process exit.
+        if let Some((session_id, wt_path, turn_backend)) = app.compaction_needed.take() {
+            agent_events::spawn_compaction_agent(
+                app,
+                &claude_process,
+                session_id,
+                &wt_path,
+                turn_backend,
+            );
+        }
+
         // Retry compaction with alternate backend if the primary produced no output
         if let Some((session_id, wt_path, alt_backend)) = app.compaction_retry_needed.take() {
             agent_events::spawn_compaction_agent(
@@ -363,6 +376,55 @@ pub async fn run_app(
                 &wt_path,
                 alt_backend,
             );
+        }
+
+        // Auto-continue after mid-turn compaction: once all compaction agents finish
+        // (no receivers, no retry pending), spawn a hidden "continue" prompt with
+        // fresh context injection (includes the new compaction summary). No user
+        // bubble — the conversation resumes transparently.
+        if app.auto_continue_after_compaction
+            && app.compaction_receivers.is_empty()
+            && app.compaction_retry_needed.is_none()
+        {
+            app.auto_continue_after_compaction = false;
+            if let Some(wt_path) =
+                app.current_worktree().and_then(|s| s.worktree_path.clone())
+            {
+                let branch = app
+                    .current_worktree()
+                    .map(|s| s.branch_name.clone())
+                    .unwrap_or_default();
+                let events_offset = app.display_events.len();
+                let prompt = "Continue.".to_string();
+                // Build context with compaction summary — no add_user_message (no bubble)
+                let send_prompt = app
+                    .current_session_id
+                    .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
+                    .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
+                    .map(|payload| {
+                        crate::app::context_injection::build_context_prompt(&payload, &prompt)
+                    })
+                    .unwrap_or_else(|| prompt.clone());
+                let selected_model = app.selected_model.clone();
+                match claude_process.spawn(
+                    &wt_path,
+                    &send_prompt,
+                    None,
+                    selected_model.as_deref(),
+                ) {
+                    Ok((rx, pid)) => {
+                        if let Some(sid) = app.current_session_id {
+                            app.pid_session_target.insert(
+                                pid.to_string(),
+                                (sid, wt_path.clone(), events_offset),
+                            );
+                        }
+                        app.register_claude(branch, pid, rx, selected_model.as_deref());
+                        app.set_status("Auto-continuing after compaction...");
+                    }
+                    Err(e) => app.set_status(format!("Auto-continue failed: {}", e)),
+                }
+            }
         }
 
         let _t_claude = _loop_start.elapsed();
