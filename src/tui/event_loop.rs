@@ -335,8 +335,15 @@ pub async fn run_app(
                     ) {
                         Ok((rx, pid)) => {
                             if let Some(sid) = app.current_session_id {
-                                app.pid_session_target
-                                    .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                                app.pid_session_target.insert(
+                                    pid.to_string(),
+                                    (
+                                        sid,
+                                        wt_path.clone(),
+                                        events_offset,
+                                        app.session_file_size,
+                                    ),
+                                );
                             }
                             app.register_claude(branch, pid, rx, selected_model.as_deref());
                             app.update_title_session_name();
@@ -417,7 +424,7 @@ pub async fn run_app(
                         if let Some(sid) = app.current_session_id {
                             app.pid_session_target.insert(
                                 pid.to_string(),
-                                (sid, wt_path.clone(), events_offset),
+                                (sid, wt_path.clone(), events_offset, app.session_file_size),
                             );
                         }
                         app.register_claude(branch, pid, rx, selected_model.as_deref());

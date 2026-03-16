@@ -11,6 +11,35 @@ use crate::models::OutputType;
 use super::App;
 
 impl App {
+    fn tool_status_from_events(
+        events: &[crate::events::DisplayEvent],
+    ) -> (
+        std::collections::HashSet<String>,
+        std::collections::HashSet<String>,
+    ) {
+        let mut pending = std::collections::HashSet::new();
+        let mut failed = std::collections::HashSet::new();
+        for event in events {
+            match event {
+                crate::events::DisplayEvent::ToolCall { tool_use_id, .. } => {
+                    pending.insert(tool_use_id.clone());
+                }
+                crate::events::DisplayEvent::ToolResult {
+                    tool_use_id,
+                    is_error,
+                    ..
+                } => {
+                    pending.remove(tool_use_id);
+                    if *is_error {
+                        failed.insert(tool_use_id.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        (pending, failed)
+    }
+
     /// Check if a slot's output should be displayed (active slot of viewed branch)
     pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
         let is_rcr_slot = self
@@ -292,10 +321,11 @@ impl App {
     /// a new prompt supersedes a still-running process. Removes the slot from
     /// pid_session_target so the exit handler doesn't double-store.
     pub fn store_append_from_display(&mut self, slot_id: &str) {
-        let (session_id, wt_path, events_offset) = match self.pid_session_target.remove(slot_id) {
-            Some(triple) => triple,
-            None => return,
-        };
+        let (session_id, wt_path, events_offset, _) =
+            match self.pid_session_target.remove(slot_id) {
+                Some(triple) => triple,
+                None => return,
+            };
         let end = self.display_events.len();
         if events_offset >= end {
             return;
@@ -326,10 +356,11 @@ impl App {
     /// re-parsing the JSONL file. Deletes the source JSONL after successful ingestion.
     fn store_append_from_jsonl(&mut self, slot_id: &str, turn_backend: Backend) {
         // Only process if this slot was targeting a store session
-        let (session_id, wt_path, events_offset) = match self.pid_session_target.remove(slot_id) {
+        let (session_id, wt_path, events_offset, session_file_offset) =
+            match self.pid_session_target.remove(slot_id) {
             Some(triple) => triple,
             None => return,
-        };
+            };
 
         // Resolve JSONL file path for deletion
         let jsonl_path = self
@@ -338,12 +369,12 @@ impl App {
             .and_then(|uuid| crate::config::session_file(&wt_path, uuid));
 
         // Collect current turn's events from display_events (after the offset)
-        let events: Vec<crate::events::DisplayEvent> = if events_offset < self.display_events.len()
-        {
-            self.display_events[events_offset..].to_vec()
-        } else {
-            Vec::new()
-        };
+        let mut events: Vec<crate::events::DisplayEvent> =
+            if events_offset < self.display_events.len() {
+                self.display_events[events_offset..].to_vec()
+            } else {
+                Vec::new()
+            };
 
         if events.is_empty() {
             // Still delete the JSONL even if no events to store
@@ -351,6 +382,32 @@ impl App {
                 let _ = std::fs::remove_file(&p);
             }
             return;
+        }
+        if turn_backend == Backend::Codex {
+            if let Some(ref path) = jsonl_path {
+                if path.exists() && events_offset <= self.display_events.len() {
+                    let prefix_events = &self.display_events[..events_offset];
+                    let (prefix_pending, prefix_failed) =
+                        Self::tool_status_from_events(prefix_events);
+                    let parsed =
+                        crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                            path,
+                            session_file_offset,
+                            prefix_events,
+                            &prefix_pending,
+                            &prefix_failed,
+                        );
+                    if parsed.events.len() >= prefix_events.len() {
+                        events = parsed.events[events_offset..].to_vec();
+                        if self.session_file_path.as_ref() == Some(path) {
+                            self.display_events = parsed.events;
+                            self.pending_tool_calls = parsed.pending_tools;
+                            self.failed_tool_calls = parsed.failed_tools;
+                            self.invalidate_render_cache();
+                        }
+                    }
+                }
+            }
         }
 
         // Open store at the target worktree path (may differ from current worktree
@@ -372,6 +429,7 @@ impl App {
                 }
             }
         };
+
         if store.append_events(session_id, &events).is_ok() {
             // Clear the persisted UUID — ingestion complete, no recovery needed
             let _ = store.clear_session_uuid(session_id);
@@ -412,6 +470,7 @@ impl App {
         session_id: i64,
         wt_path: &std::path::Path,
         _project_path: &std::path::Path,
+        session_file_offset: u64,
     ) {
         let (session_backend, jsonl_path) = match self.agent_session_ids.get(slot_id) {
             Some(uuid) => match crate::config::session_file_with_backend(wt_path, uuid) {
@@ -424,34 +483,50 @@ impl App {
             return;
         };
 
-        let parsed = match session_backend {
-            crate::backend::Backend::Claude => {
-                crate::app::session_parser::parse_session_file(&jsonl_path)
-            }
-            crate::backend::Backend::Codex => {
-                crate::app::codex_session_parser::parse_codex_session_file(&jsonl_path)
-            }
-        };
-        if parsed.events.is_empty() {
-            return;
-        }
-
-        let events: Vec<crate::events::DisplayEvent> = parsed
-            .events
-            .into_iter()
-            .map(|ev| match ev {
-                crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                    let stripped = crate::app::context_injection::strip_injected_context(&content);
-                    crate::events::DisplayEvent::UserMessage {
-                        _uuid,
-                        content: stripped.to_string(),
-                    }
-                }
-                other => other,
-            })
-            .collect();
-
         if let Ok(store) = crate::app::session_store::SessionStore::open(wt_path) {
+            let events: Vec<crate::events::DisplayEvent> = match session_backend {
+                crate::backend::Backend::Claude => {
+                    let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
+                    if parsed.events.is_empty() {
+                        return;
+                    }
+                    parsed
+                        .events
+                        .into_iter()
+                        .map(|ev| match ev {
+                            crate::events::DisplayEvent::UserMessage { _uuid, content } => {
+                                let stripped =
+                                    crate::app::context_injection::strip_injected_context(&content);
+                                crate::events::DisplayEvent::UserMessage {
+                                    _uuid,
+                                    content: stripped.to_string(),
+                                }
+                            }
+                            other => other,
+                        })
+                        .collect()
+                }
+                crate::backend::Backend::Codex => {
+                    let existing_events = store.load_events(session_id).unwrap_or_default();
+                    let (existing_pending, existing_failed) =
+                        Self::tool_status_from_events(&existing_events);
+                    let parsed =
+                        crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                            &jsonl_path,
+                            session_file_offset,
+                            &existing_events,
+                            &existing_pending,
+                            &existing_failed,
+                        );
+                    if parsed.events.len() < existing_events.len() {
+                        return;
+                    }
+                    parsed.events[existing_events.len()..].to_vec()
+                }
+            };
+            if events.is_empty() {
+                return;
+            }
             if store.append_events(session_id, &events).is_ok() {
                 // Source JSONL ingested — delete the original file
                 let _ = std::fs::remove_file(&jsonl_path);
@@ -542,8 +617,16 @@ impl App {
         }
 
         // Post-exit store flow for background project
-        if let Some((session_id, wt_path, _)) = snapshot.pid_session_target.remove(slot_id) {
-            self.store_append_background(slot_id, session_id, &wt_path, &project_path);
+        if let Some((session_id, wt_path, _, session_file_offset)) =
+            snapshot.pid_session_target.remove(slot_id)
+        {
+            self.store_append_background(
+                slot_id,
+                session_id,
+                &wt_path,
+                &project_path,
+                session_file_offset,
+            );
         }
 
         // Status message
@@ -889,7 +972,7 @@ impl App {
             .insert(slot_id.to_string(), claude_session_id.clone());
 
         // Persist UUID in the store so orphaned JSOLNs can be recovered on restart
-        if let Some((session_id, _, _)) = self.pid_session_target.get(slot_id) {
+        if let Some((session_id, _, _, _)) = self.pid_session_target.get(slot_id) {
             if let Some(ref store) = self.session_store {
                 let _ = store.set_session_uuid(*session_id, &claude_session_id);
             }
@@ -1782,6 +1865,133 @@ mod tests {
     }
 
     #[test]
+    fn store_append_from_jsonl_reparses_codex_turn_from_session_file() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let wt_path = std::path::PathBuf::from("/tmp/codex-reparse");
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let codex_session_id = format!("codex-reparse-{}-{}", std::process::id(), unique);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
+        let patch = "*** Begin Patch\n*** Update File: /tmp/codex-reparse.txt\n@@\n-old line\n+new line\n*** End Patch";
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call_patch",
+                    "name": "apply_patch",
+                    "input": patch,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call_patch",
+                    "output": "Success. Updated the following files:\nM /tmp/codex-reparse.txt\n",
+                }
+            })
+        )
+        .unwrap();
+
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+        app.session_file_path = Some(session_path.clone());
+        app.display_events = vec![
+            DisplayEvent::ToolCall {
+                _uuid: String::new(),
+                tool_use_id: "call_patch".into(),
+                tool_name: "Edit".into(),
+                file_path: Some("/tmp/codex-reparse.txt".into()),
+                input: json!({ "path": "/tmp/codex-reparse.txt" }),
+            },
+            DisplayEvent::ToolResult {
+                tool_use_id: "call_patch".into(),
+                tool_name: "Edit".into(),
+                file_path: Some("/tmp/codex-reparse.txt".into()),
+                content: "File update: /tmp/codex-reparse.txt".into(),
+                is_error: false,
+            },
+        ];
+
+        app.store_append_from_jsonl("55", Backend::Codex);
+
+        let stored = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+        let stored_tool_call = stored
+            .iter()
+            .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
+            .expect("expected reparsed ToolCall in stored events");
+        match stored_tool_call {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                ..
+            } => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(file_path.as_deref(), Some("/tmp/codex-reparse.txt"));
+                assert_eq!(input.get("patch").and_then(|v| v.as_str()), Some(patch));
+            }
+            other => panic!("expected reparsed ToolCall, got {:?}", other),
+        }
+        let live_tool_call = app
+            .display_events
+            .iter()
+            .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
+            .expect("expected live display to contain reparsed ToolCall");
+        match live_tool_call {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert_eq!(input.get("patch").and_then(|v| v.as_str()), Some(patch));
+            }
+            other => panic!("expected live display to be replaced, got {:?}", other),
+        }
+        assert!(app.session_file_path.is_none());
+        assert!(!session_path.exists());
+    }
+
+    #[test]
     fn store_append_from_jsonl_captures_turn_backend_for_compaction() {
         let mut app = App::new();
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
@@ -1790,7 +2000,7 @@ mod tests {
         app.session_store = Some(store);
         app.session_store_path = Some(wt_path.clone());
         app.pid_session_target
-            .insert("55".into(), (sid, wt_path.clone(), 0));
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.display_events.push(DisplayEvent::AssistantText {
             _uuid: String::new(),
             _message_id: String::new(),

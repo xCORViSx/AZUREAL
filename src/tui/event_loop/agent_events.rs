@@ -65,8 +65,15 @@ pub fn handle_claude_event(
                 ) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
-                            app.pid_session_target
-                                .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                            app.pid_session_target.insert(
+                                pid.to_string(),
+                                (
+                                    sid,
+                                    wt_path.clone(),
+                                    events_offset,
+                                    app.session_file_size,
+                                ),
+                            );
                         }
                         app.register_claude(branch, pid, rx, selected_model.as_deref());
                         app.set_status("Running...");

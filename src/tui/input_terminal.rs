@@ -315,7 +315,12 @@ pub fn handle_input_mode(
                                     if let Some(sid) = app.current_session_id {
                                         app.pid_session_target.insert(
                                             pid.to_string(),
-                                            (sid, wt_path.clone(), events_offset),
+                                            (
+                                                sid,
+                                                wt_path.clone(),
+                                                events_offset,
+                                                app.session_file_size,
+                                            ),
                                         );
                                     }
                                     app.register_claude(

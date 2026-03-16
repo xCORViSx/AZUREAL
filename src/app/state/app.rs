@@ -118,12 +118,12 @@ pub struct App {
     pub session_store_path: Option<PathBuf>,
     /// PID string → (S-number, worktree_path) of the session this agent's results
     /// should write to. Set at spawn time, consumed at exit time.
-    /// The worktree_path is the CWD used when spawning Claude (needed to locate
-    /// the JSONL session file under `~/.claude/projects/<encoded_path>/`).
-    /// PID string → (S-number, worktree_path, display_events_offset) of the session
-    /// this agent's results should write to. The offset is the display_events.len()
-    /// at spawn time — only events after this index are from the current turn.
-    pub pid_session_target: HashMap<String, (i64, PathBuf, usize)>,
+    /// PID string → (S-number, worktree_path, display_events_offset,
+    /// session_file_offset). The display offset marks where the current turn
+    /// begins in `display_events`. The file offset records the session JSONL's
+    /// size at spawn time so Codex turns can be re-parsed from disk without
+    /// duplicating earlier turns.
+    pub pid_session_target: HashMap<String, (i64, PathBuf, usize, u64)>,
     /// S-number of the currently viewed/active session in the session pane
     pub current_session_id: Option<i64>,
     /// Set by store_append_from_jsonl when compaction threshold is exceeded.

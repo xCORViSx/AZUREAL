@@ -380,7 +380,7 @@ impl App {
                 self.display_events = saved_display_events;
                 self.invalidate_render_cache();
                 if let Some(slot) = self.active_slot.get(&branch_name) {
-                    if let Some((sid, _, _)) = self.pid_session_target.get(slot) {
+                    if let Some((sid, _, _, _)) = self.pid_session_target.get(slot) {
                         self.current_session_id = Some(*sid);
                     }
                     // Set up JSONL watching for the watcher thread
@@ -438,7 +438,7 @@ impl App {
                 let active_store_id = self
                     .pid_session_target
                     .get(active_slot)
-                    .map(|(sid, _, _)| *sid);
+                    .map(|(sid, _, _, _)| *sid);
                 if let Some(active_sid) = active_store_id {
                     if let Some(viewed_sid) = self.current_session_id {
                         self.viewing_historic_session = active_sid != viewed_sid;
@@ -546,11 +546,22 @@ impl App {
             return false;
         }
         self.session_file_dirty = false;
-        // Skip while the ACTIVE slot is streaming — its live output already
-        // feeds display_events. Other concurrent slots on the same branch don't
-        // affect the displayed session file, so we only gate on the active one.
+        // Claude's live stdout already has the rich event data, so polling the
+        // file while the active slot runs would duplicate events. Codex is the
+        // opposite: stdout can collapse edits to `file_change`, while the JSONL
+        // contains the full `apply_patch` payload. For active Codex sessions,
+        // force a full reparse from disk so the richer edit diffs replace the
+        // placeholder live events mid-turn.
         if self.is_active_slot_running() {
-            return false;
+            let backend = self
+                .session_file_path
+                .as_deref()
+                .and_then(crate::config::backend_from_session_path)
+                .unwrap_or(self.backend);
+            if backend != crate::backend::Backend::Codex {
+                return false;
+            }
+            self.session_file_parse_offset = 0;
         }
         self.refresh_session_events();
         true
@@ -1376,6 +1387,111 @@ mod tests {
         let mut app = App::new();
         app.session_file_dirty = false;
         assert!(!app.poll_session_file());
+    }
+
+    #[test]
+    fn poll_session_file_reparses_active_codex_session_from_disk() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("30");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!(
+            "rollout-live-codex-reparse-{}-{}.jsonl",
+            std::process::id(),
+            unique
+        ));
+        let patch =
+            "*** Begin Patch\n*** Update File: /tmp/live-codex-reparse.txt\n@@\n-before\n+after\n*** End Patch";
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": format!("live-codex-reparse-{}", unique),
+                    "cwd": "/tmp/live-codex-reparse",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call_live_patch",
+                    "name": "apply_patch",
+                    "input": patch,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call_live_patch",
+                    "output": "Success. Updated the following files:\nM /tmp/live-codex-reparse.txt\n",
+                }
+            })
+        )
+        .unwrap();
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "codex".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("codex".into(), "55".into());
+        app.running_sessions.insert("55".into());
+        app.session_file_path = Some(session_path.clone());
+        app.session_file_dirty = true;
+        app.session_file_parse_offset = 999;
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: String::new(),
+            tool_use_id: "call_live_patch".into(),
+            tool_name: "Edit".into(),
+            file_path: Some("/tmp/live-codex-reparse.txt".into()),
+            input: serde_json::json!({ "path": "/tmp/live-codex-reparse.txt" }),
+        });
+
+        assert!(app.poll_session_file());
+
+        let live_tool_call = app
+            .display_events
+            .iter()
+            .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
+            .expect("expected ToolCall after Codex reparse");
+        match live_tool_call {
+            DisplayEvent::ToolCall { input, .. } => {
+                assert_eq!(input.get("patch").and_then(|v| v.as_str()), Some(patch));
+            }
+            other => panic!("expected ToolCall, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_file(&session_path);
     }
 
     // ── load_session_output state reset ──

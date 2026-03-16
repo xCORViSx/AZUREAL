@@ -1,0 +1,12 @@
+alpha: one revised
+beta: two
+gamma: three updated
+delta: four
+
+notes:
+- first draft replaced
+- second line added
+- keep this disposable for parser checks
+
+summary:
+- mock edit cycle complete
