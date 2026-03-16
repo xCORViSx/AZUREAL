@@ -1,9 +1,9 @@
 //! Session navigation and CRUD operations
 
-use std::sync::mpsc;
-use crate::app::types::{Focus, BackgroundOpProgress, BackgroundOpOutcome};
+use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress, Focus};
 use crate::git::Git;
 use crate::models::Worktree;
+use std::sync::mpsc;
 
 use super::App;
 
@@ -18,10 +18,14 @@ impl App {
     /// if it doesn't exist. Each worktree has its own store so sessions are
     /// deleted with the worktree.
     pub fn ensure_session_store(&mut self) {
-        let Some(wt_path) = self.current_worktree_path() else { return; };
+        let Some(wt_path) = self.current_worktree_path() else {
+            return;
+        };
         // Reopen if we switched worktrees
         if let Some(ref store_path) = self.session_store_path {
-            if *store_path == wt_path && self.session_store.is_some() { return; }
+            if *store_path == wt_path && self.session_store.is_some() {
+                return;
+            }
         }
         self.session_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
         self.session_store_path = Some(wt_path);
@@ -30,10 +34,14 @@ impl App {
     /// Open the session store only if the .azs file already exists for the
     /// current worktree. Avoids creating the file on startup.
     pub fn try_open_session_store(&mut self) {
-        let Some(wt_path) = self.current_worktree_path() else { return; };
+        let Some(wt_path) = self.current_worktree_path() else {
+            return;
+        };
         // Reopen if we switched worktrees
         if let Some(ref store_path) = self.session_store_path {
-            if *store_path == wt_path && self.session_store.is_some() { return; }
+            if *store_path == wt_path && self.session_store.is_some() {
+                return;
+            }
         }
         let db_path = crate::app::session_store::SessionStore::db_path(&wt_path);
         if db_path.exists() {
@@ -49,10 +57,16 @@ impl App {
     /// persisted `last_claude_uuid` — if the JSONL exists, parses it and
     /// appends the events to the store, then deletes the JSONL.
     pub fn recover_orphaned_jsonls(&mut self) {
-        let Some(ref wt_path) = self.current_worktree_path() else { return; };
-        let Some(ref store) = self.session_store else { return; };
+        let Some(ref wt_path) = self.current_worktree_path() else {
+            return;
+        };
+        let Some(ref store) = self.session_store else {
+            return;
+        };
         let sessions = store.sessions_with_uuid().unwrap_or_default();
-        if sessions.is_empty() { return; }
+        if sessions.is_empty() {
+            return;
+        }
 
         for (session_id, _worktree, uuid) in &sessions {
             let jsonl_path = crate::config::session_file(self.backend, wt_path, uuid);
@@ -65,18 +79,21 @@ impl App {
             let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
             if !parsed.events.is_empty() {
                 // Strip injected context from UserMessage events
-                let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
-                    match ev {
+                let events: Vec<crate::events::DisplayEvent> = parsed
+                    .events
+                    .into_iter()
+                    .map(|ev| match ev {
                         crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                            let stripped = crate::app::context_injection::strip_injected_context(&content);
+                            let stripped =
+                                crate::app::context_injection::strip_injected_context(&content);
                             crate::events::DisplayEvent::UserMessage {
                                 _uuid,
                                 content: stripped.to_string(),
                             }
                         }
                         other => other,
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 if store.append_events(*session_id, &events).is_ok() {
                     let _ = std::fs::remove_file(&jsonl_path);
@@ -91,7 +108,9 @@ impl App {
     }
 
     pub fn select_next_session(&mut self) {
-        if self.worktrees.is_empty() { return; }
+        if self.worktrees.is_empty() {
+            return;
+        }
         let next = match self.selected_worktree {
             Some(i) if i + 1 < self.worktrees.len() => i + 1,
             Some(_) => 0, // wrap to first
@@ -104,7 +123,9 @@ impl App {
     }
 
     pub fn select_prev_session(&mut self) {
-        if self.worktrees.is_empty() { return; }
+        if self.worktrees.is_empty() {
+            return;
+        }
         let prev = match self.selected_worktree {
             Some(0) => self.worktrees.len() - 1, // wrap to last
             Some(i) => i - 1,
@@ -117,7 +138,11 @@ impl App {
     }
 
     /// Create a new git worktree with a custom name
-    pub fn create_new_worktree_with_name(&mut self, worktree_name: String, _prompt: String) -> anyhow::Result<Worktree> {
+    pub fn create_new_worktree_with_name(
+        &mut self,
+        worktree_name: String,
+        _prompt: String,
+    ) -> anyhow::Result<Worktree> {
         let Some(project) = self.project.clone() else {
             anyhow::bail!("No project loaded")
         };
@@ -138,10 +163,15 @@ impl App {
         self.save_current_terminal();
         std::thread::spawn(move || {
             let outcome = match Git::create_worktree(&project_path, &wt_path, &branch_clone) {
-                Ok(()) => BackgroundOpOutcome::Created { branch: branch_clone },
+                Ok(()) => BackgroundOpOutcome::Created {
+                    branch: branch_clone,
+                },
                 Err(e) => BackgroundOpOutcome::Failed(format!("Create failed: {}", e)),
             };
-            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(outcome),
+            });
         });
 
         // Return a placeholder — the real worktree is set up when the background op completes
@@ -180,20 +210,28 @@ impl App {
                 Ok(()) => BackgroundOpOutcome::Archived,
                 Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
             };
-            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(outcome),
+            });
         });
         Ok(())
     }
 
     /// Restore an archived worktree by recreating its git worktree from the preserved branch
     pub fn unarchive_current_worktree(&mut self) -> anyhow::Result<()> {
-        let session = self.current_worktree().ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
+        let session = self
+            .current_worktree()
+            .ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
         if !session.archived {
             anyhow::bail!("Worktree is not archived");
         }
         let branch = session.branch_name.clone();
         let worktree_name = session.name().to_string();
-        let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        let project = self
+            .project
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
         let worktree_path = project.worktrees_dir().join(&worktree_name);
         let project_path = project.path.clone();
         let (tx, rx) = mpsc::channel();
@@ -202,19 +240,34 @@ impl App {
         let branch_clone = branch.clone();
         let name_clone = worktree_name.clone();
         std::thread::spawn(move || {
-            let outcome = match Git::create_worktree_from_branch(&project_path, &worktree_path, &branch_clone) {
-                Ok(()) => BackgroundOpOutcome::Unarchived { branch: branch_clone, display_name: name_clone },
+            let outcome = match Git::create_worktree_from_branch(
+                &project_path,
+                &worktree_path,
+                &branch_clone,
+            ) {
+                Ok(()) => BackgroundOpOutcome::Unarchived {
+                    branch: branch_clone,
+                    display_name: name_clone,
+                },
                 Err(e) => BackgroundOpOutcome::Failed(format!("Unarchive failed: {}", e)),
             };
-            let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(outcome),
+            });
         });
         Ok(())
     }
 
     /// Delete the current worktree AND its branch permanently
     pub fn delete_current_worktree(&mut self) -> anyhow::Result<()> {
-        let wt = self.current_worktree().ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
-        let project = self.project.clone().ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        let wt = self
+            .current_worktree()
+            .ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
+        let project = self
+            .project
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
         if wt.branch_name == project.main_branch {
             anyhow::bail!("Cannot delete main branch");
         }
@@ -269,7 +322,8 @@ impl App {
     pub fn select_session_file(&mut self, branch_name: &str, idx: usize) {
         if let Some(files) = self.session_files.get(branch_name) {
             if idx < files.len() {
-                self.session_selected_file_idx.insert(branch_name.to_string(), idx);
+                self.session_selected_file_idx
+                    .insert(branch_name.to_string(), idx);
                 // Load the selected session file
                 self.load_session_output();
                 self.invalidate_sidebar();
@@ -279,7 +333,9 @@ impl App {
 
     /// Jump to first session
     pub fn select_first_session(&mut self) {
-        if self.worktrees.is_empty() { return; }
+        if self.worktrees.is_empty() {
+            return;
+        }
         if self.selected_worktree != Some(0) {
             self.save_current_terminal();
             self.selected_worktree = Some(0);
@@ -292,15 +348,23 @@ impl App {
     pub fn start_new_session(&mut self) {
         if let Some(wt) = self.current_worktree().cloned() {
             if wt.archived {
-                let key = if cfg!(target_os = "macos") { "⌘a" } else { "Ctrl+Shift+A" };
+                let key = if cfg!(target_os = "macos") {
+                    "⌘a"
+                } else {
+                    "Ctrl+Shift+A"
+                };
                 self.set_status(&format!("Worktree is archived — unarchive first ({key})"));
                 return;
             }
-            if wt.worktree_path.is_none() { return; }
+            if wt.worktree_path.is_none() {
+                return;
+            }
 
             // Compute default name: S{next_id}
             self.ensure_session_store();
-            let next = self.session_store.as_ref()
+            let next = self
+                .session_store
+                .as_ref()
                 .map(|s| s.next_s_number())
                 .unwrap_or(1);
             let default_name = format!("S{}", next);
@@ -326,7 +390,9 @@ impl App {
             return;
         }
 
-        let Some(wt) = self.current_worktree().cloned() else { return };
+        let Some(wt) = self.current_worktree().cloned() else {
+            return;
+        };
         let branch = wt.branch_name.clone();
 
         // Clear active session state for fresh start
@@ -405,7 +471,9 @@ impl App {
 
     /// Jump to last session
     pub fn select_last_session(&mut self) {
-        if self.worktrees.is_empty() { return; }
+        if self.worktrees.is_empty() {
+            return;
+        }
         let last = self.worktrees.len() - 1;
         if self.selected_worktree != Some(last) {
             self.save_current_terminal();
@@ -414,7 +482,6 @@ impl App {
             self.invalidate_sidebar();
         }
     }
-
 }
 
 #[cfg(test)]
@@ -614,10 +681,21 @@ mod tests {
     fn test_select_session_file_valid_idx() {
         let mut app = app_with_worktrees(1);
         let branch = "azureal/wt-0".to_string();
-        app.session_files.insert(branch.clone(), vec![
-            ("sess-0".to_string(), PathBuf::from("/sess0.json"), "10:00".to_string()),
-            ("sess-1".to_string(), PathBuf::from("/sess1.json"), "11:00".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.clone(),
+            vec![
+                (
+                    "sess-0".to_string(),
+                    PathBuf::from("/sess0.json"),
+                    "10:00".to_string(),
+                ),
+                (
+                    "sess-1".to_string(),
+                    PathBuf::from("/sess1.json"),
+                    "11:00".to_string(),
+                ),
+            ],
+        );
         app.select_session_file(&branch, 1);
         assert_eq!(app.session_selected_file_idx.get(&branch), Some(&1));
     }
@@ -626,9 +704,14 @@ mod tests {
     fn test_select_session_file_out_of_bounds() {
         let mut app = app_with_worktrees(1);
         let branch = "azureal/wt-0".to_string();
-        app.session_files.insert(branch.clone(), vec![
-            ("sess-0".to_string(), PathBuf::from("/sess0.json"), "10:00".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.clone(),
+            vec![(
+                "sess-0".to_string(),
+                PathBuf::from("/sess0.json"),
+                "10:00".to_string(),
+            )],
+        );
         app.select_session_file(&branch, 5); // out of bounds
         assert!(app.session_selected_file_idx.get(&branch).is_none());
     }
@@ -637,17 +720,23 @@ mod tests {
     fn test_select_session_file_unknown_branch() {
         let mut app = app_with_worktrees(1);
         app.select_session_file("unknown/branch", 0);
-        assert!(app.session_selected_file_idx.get("unknown/branch").is_none());
+        assert!(app
+            .session_selected_file_idx
+            .get("unknown/branch")
+            .is_none());
     }
 
     #[test]
     fn test_select_session_file_first_idx() {
         let mut app = app_with_worktrees(1);
         let branch = "azureal/wt-0".to_string();
-        app.session_files.insert(branch.clone(), vec![
-            ("a".to_string(), PathBuf::from("/a"), "09:00".to_string()),
-            ("b".to_string(), PathBuf::from("/b"), "10:00".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.clone(),
+            vec![
+                ("a".to_string(), PathBuf::from("/a"), "09:00".to_string()),
+                ("b".to_string(), PathBuf::from("/b"), "10:00".to_string()),
+            ],
+        );
         app.select_session_file(&branch, 0);
         assert_eq!(app.session_selected_file_idx.get(&branch), Some(&0));
     }
@@ -733,7 +822,11 @@ mod tests {
         app.selected_worktree = Some(0);
         let result = app.archive_current_worktree();
         assert!(result.is_ok()); // returns Ok but does nothing
-        assert!(app.status_message.as_ref().unwrap().contains("Cannot archive main branch"));
+        assert!(app
+            .status_message
+            .as_ref()
+            .unwrap()
+            .contains("Cannot archive main branch"));
     }
 
     // ── delete_current_worktree: guard against main branch ──
@@ -755,7 +848,10 @@ mod tests {
         app.selected_worktree = Some(0);
         let result = app.delete_current_worktree();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Cannot delete main branch"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Cannot delete main branch"));
     }
 
     // ── delete_current_worktree: no worktree selected ──
@@ -800,7 +896,10 @@ mod tests {
         let mut app = App::new();
         let result = app.unarchive_current_worktree();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No worktree selected"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No worktree selected"));
     }
 
     // ── create_new_worktree_with_name: no project ──
@@ -810,7 +909,10 @@ mod tests {
         let mut app = App::new();
         let result = app.create_new_worktree_with_name("test-wt".to_string(), "prompt".to_string());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No project loaded"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No project loaded"));
     }
 
     // ── Large index consistency ──
@@ -844,9 +946,17 @@ mod tests {
     #[test]
     fn test_next_session_preserves_worktrees_vec() {
         let mut app = app_with_worktrees(3);
-        let names_before: Vec<_> = app.worktrees.iter().map(|w| w.branch_name.clone()).collect();
+        let names_before: Vec<_> = app
+            .worktrees
+            .iter()
+            .map(|w| w.branch_name.clone())
+            .collect();
         app.select_next_session();
-        let names_after: Vec<_> = app.worktrees.iter().map(|w| w.branch_name.clone()).collect();
+        let names_after: Vec<_> = app
+            .worktrees
+            .iter()
+            .map(|w| w.branch_name.clone())
+            .collect();
         assert_eq!(names_before, names_after);
     }
 
@@ -933,11 +1043,14 @@ mod tests {
     fn test_select_session_file_last_valid_idx() {
         let mut app = app_with_worktrees(1);
         let branch = "azureal/wt-0".to_string();
-        app.session_files.insert(branch.clone(), vec![
-            ("a".to_string(), PathBuf::from("/a"), "1".to_string()),
-            ("b".to_string(), PathBuf::from("/b"), "2".to_string()),
-            ("c".to_string(), PathBuf::from("/c"), "3".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.clone(),
+            vec![
+                ("a".to_string(), PathBuf::from("/a"), "1".to_string()),
+                ("b".to_string(), PathBuf::from("/b"), "2".to_string()),
+                ("c".to_string(), PathBuf::from("/c"), "3".to_string()),
+            ],
+        );
         app.select_session_file(&branch, 2); // last valid
         assert_eq!(app.session_selected_file_idx.get(&branch), Some(&2));
     }
@@ -946,10 +1059,13 @@ mod tests {
     fn test_select_session_file_overwrite_previous_selection() {
         let mut app = app_with_worktrees(1);
         let branch = "azureal/wt-0".to_string();
-        app.session_files.insert(branch.clone(), vec![
-            ("a".to_string(), PathBuf::from("/a"), "1".to_string()),
-            ("b".to_string(), PathBuf::from("/b"), "2".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.clone(),
+            vec![
+                ("a".to_string(), PathBuf::from("/a"), "1".to_string()),
+                ("b".to_string(), PathBuf::from("/b"), "2".to_string()),
+            ],
+        );
         app.select_session_file(&branch, 0);
         assert_eq!(app.session_selected_file_idx.get(&branch), Some(&0));
         app.select_session_file(&branch, 1);
@@ -970,7 +1086,10 @@ mod tests {
         app.selected_worktree = Some(0);
         let result = app.delete_current_worktree();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No project loaded"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No project loaded"));
     }
 
     // ── first/last idempotency ──

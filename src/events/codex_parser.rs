@@ -4,8 +4,8 @@
 //! Event types: thread.started, turn.started, item.started, item.completed,
 //! turn.completed, error, turn.failed.
 
-use std::collections::HashMap;
 use super::display::DisplayEvent;
+use std::collections::HashMap;
 
 /// Parser for Codex CLI JSONL streaming events
 pub struct CodexEventParser {
@@ -41,10 +41,14 @@ impl CodexEventParser {
         let mut last_json = None;
         for line in complete.split('\n') {
             let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
+            if trimmed.is_empty() {
+                continue;
+            }
             let (line_events, json) = self.parse_line(trimmed);
             events.extend(line_events);
-            if json.is_some() { last_json = json; }
+            if json.is_some() {
+                last_json = json;
+            }
         }
 
         (events, last_json)
@@ -82,7 +86,11 @@ impl CodexEventParser {
     }
 
     fn parse_thread_started(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
-        let thread_id = json.get("thread_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let thread_id = json
+            .get("thread_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         vec![DisplayEvent::Init {
             _session_id: thread_id,
             cwd: String::new(),
@@ -97,11 +105,19 @@ impl CodexEventParser {
         };
 
         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let item_id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         match item_type {
             "command_execution" => {
-                let command = item.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let command = item
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 // Track for matching with completed
                 self.items.insert(item_id.clone(), "Bash".to_string());
                 vec![DisplayEvent::ToolCall {
@@ -123,11 +139,19 @@ impl CodexEventParser {
         };
 
         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let item_id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         match item_type {
             "reasoning" => {
-                let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let text = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if text.is_empty() {
                     Vec::new()
                 } else {
@@ -139,7 +163,11 @@ impl CodexEventParser {
                 }
             }
             "agent_message" => {
-                let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let text = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 vec![DisplayEvent::AssistantText {
                     _uuid: String::new(),
                     _message_id: String::new(),
@@ -147,8 +175,16 @@ impl CodexEventParser {
                 }]
             }
             "command_execution" => {
-                let command = item.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let output = item.get("aggregated_output").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let command = item
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let output = item
+                    .get("aggregated_output")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let exit_code = item.get("exit_code").and_then(|v| v.as_i64());
                 let is_error = exit_code.map(|c| c != 0).unwrap_or(false);
 
@@ -186,8 +222,16 @@ impl CodexEventParser {
 
                 if let Some(changes) = changes {
                     for change in changes {
-                        let path = change.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let kind = change.get("kind").and_then(|v| v.as_str()).unwrap_or("update").to_string();
+                        let path = change
+                            .get("path")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let kind = change
+                            .get("kind")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("update")
+                            .to_string();
                         let change_id = format!("{}-{}", item_id, path);
 
                         events.push(DisplayEvent::ToolCall {
@@ -210,9 +254,16 @@ impl CodexEventParser {
             }
             "mcp_tool_call" => {
                 let server = item.get("server").and_then(|v| v.as_str()).unwrap_or("mcp");
-                let tool = item.get("tool").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let tool = item
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 let tool_name = format!("{}:{}", server, tool);
-                let result = item.get("result").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let result = item
+                    .get("result")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let error = item.get("error").and_then(|v| v.as_str());
 
                 vec![
@@ -221,7 +272,10 @@ impl CodexEventParser {
                         tool_use_id: item_id.clone(),
                         tool_name: tool_name.clone(),
                         file_path: None,
-                        input: item.get("arguments").cloned().unwrap_or(serde_json::Value::Null),
+                        input: item
+                            .get("arguments")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
                     },
                     DisplayEvent::ToolResult {
                         tool_use_id: item_id,
@@ -238,8 +292,14 @@ impl CodexEventParser {
 
     fn parse_turn_completed(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let usage = json.get("usage");
-        let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
-        let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+        let input_tokens = usage
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output_tokens = usage
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         vec![DisplayEvent::Complete {
             _session_id: String::new(),
@@ -250,7 +310,11 @@ impl CodexEventParser {
     }
 
     fn parse_error(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
-        let message = json.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error").to_string();
+        let message = json
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error")
+            .to_string();
         vec![DisplayEvent::AssistantText {
             _uuid: String::new(),
             _message_id: String::new(),
@@ -259,21 +323,25 @@ impl CodexEventParser {
     }
 
     fn parse_turn_failed(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
-        let message = json.get("error")
+        let message = json
+            .get("error")
             .and_then(|e| e.get("message"))
             .and_then(|v| v.as_str())
             .unwrap_or("Turn failed");
 
-        vec![DisplayEvent::Complete {
-            _session_id: String::new(),
-            success: false,
-            duration_ms: 0,
-            cost_usd: 0.0,
-        }, DisplayEvent::AssistantText {
-            _uuid: String::new(),
-            _message_id: String::new(),
-            text: format!("Error: {}", message),
-        }]
+        vec![
+            DisplayEvent::Complete {
+                _session_id: String::new(),
+                success: false,
+                duration_ms: 0,
+                cost_usd: 0.0,
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: format!("Error: {}", message),
+            },
+        ]
     }
 }
 
@@ -311,7 +379,9 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(json.is_some());
         match &events[0] {
-            DisplayEvent::Init { _session_id, model, .. } => {
+            DisplayEvent::Init {
+                _session_id, model, ..
+            } => {
                 assert_eq!(_session_id, "abc-123");
                 assert_eq!(model, "gpt-5.4");
             }
@@ -348,7 +418,12 @@ mod tests {
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::ToolCall { tool_name, tool_use_id, input, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                tool_use_id,
+                input,
+                ..
+            } => {
                 assert_eq!(tool_name, "Bash");
                 assert_eq!(tool_use_id, "item_1");
                 assert_eq!(input["command"], "ls -la");
@@ -368,7 +443,12 @@ mod tests {
         // Should only have ToolResult (no duplicate ToolCall)
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::ToolResult { tool_name, content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => {
                 assert_eq!(tool_name, "Bash");
                 assert!(content.contains("file1"));
                 assert!(!is_error);
@@ -393,7 +473,9 @@ mod tests {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"false","aggregated_output":"","exit_code":1,"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
-        let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
+        let result = events
+            .iter()
+            .find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
         match result.unwrap() {
             DisplayEvent::ToolResult { is_error, .. } => assert!(is_error),
             _ => unreachable!(),
@@ -405,7 +487,9 @@ mod tests {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"true","aggregated_output":"","exit_code":0,"status":"completed"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
-        let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
+        let result = events
+            .iter()
+            .find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
         match result.unwrap() {
             DisplayEvent::ToolResult { content, .. } => assert!(content.contains("Exit code: 0")),
             _ => unreachable!(),
@@ -429,7 +513,8 @@ mod tests {
     #[test]
     fn parse_reasoning_empty_text() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
-        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":""}}"#;
+        let line =
+            r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":""}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
     }
@@ -471,14 +556,20 @@ mod tests {
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2); // ToolCall + ToolResult
         match &events[0] {
-            DisplayEvent::ToolCall { tool_name, file_path, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(file_path.as_deref(), Some("src/main.rs"));
             }
             _ => panic!("expected ToolCall"),
         }
         match &events[1] {
-            DisplayEvent::ToolResult { content, file_path, .. } => {
+            DisplayEvent::ToolResult {
+                content, file_path, ..
+            } => {
                 assert!(content.contains("update"));
                 assert_eq!(file_path.as_deref(), Some("src/main.rs"));
             }
@@ -511,14 +602,18 @@ mod tests {
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2);
         match &events[0] {
-            DisplayEvent::ToolCall { tool_name, input, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name, input, ..
+            } => {
                 assert_eq!(tool_name, "docs:search");
                 assert_eq!(input["query"], "help");
             }
             _ => panic!("expected ToolCall"),
         }
         match &events[1] {
-            DisplayEvent::ToolResult { content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                content, is_error, ..
+            } => {
                 assert_eq!(content, "Found docs");
                 assert!(!is_error);
             }
@@ -531,9 +626,13 @@ mod tests {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"s","tool":"t","arguments":null,"result":"","error":"timeout"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
-        let result = events.iter().find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
+        let result = events
+            .iter()
+            .find(|e| matches!(e, DisplayEvent::ToolResult { .. }));
         match result.unwrap() {
-            DisplayEvent::ToolResult { content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                content, is_error, ..
+            } => {
                 assert_eq!(content, "timeout");
                 assert!(is_error);
             }
@@ -550,7 +649,9 @@ mod tests {
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::Complete { success, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success, cost_usd, ..
+            } => {
                 assert!(success);
                 assert!(*cost_usd > 0.0);
             }
@@ -579,7 +680,9 @@ mod tests {
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::AssistantText { text, .. } => assert!(text.contains("Model not supported")),
+            DisplayEvent::AssistantText { text, .. } => {
+                assert!(text.contains("Model not supported"))
+            }
             _ => panic!("expected AssistantText"),
         }
     }
@@ -592,7 +695,10 @@ mod tests {
         let line = r#"{"type":"turn.failed","error":{"message":"API error"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert_eq!(events.len(), 2);
-        assert!(matches!(&events[0], DisplayEvent::Complete { success: false, .. }));
+        assert!(matches!(
+            &events[0],
+            DisplayEvent::Complete { success: false, .. }
+        ));
         match &events[1] {
             DisplayEvent::AssistantText { text, .. } => assert!(text.contains("API error")),
             _ => panic!("expected AssistantText"),
@@ -720,7 +826,8 @@ mod tests {
     #[test]
     fn parse_unknown_item_type() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
-        let line = r#"{"type":"item.completed","item":{"id":"i99","type":"future_tool","data":"x"}}"#;
+        let line =
+            r#"{"type":"item.completed","item":{"id":"i99","type":"future_tool","data":"x"}}"#;
         let (events, _) = p.parse(&format!("{}\n", line));
         assert!(events.is_empty());
     }

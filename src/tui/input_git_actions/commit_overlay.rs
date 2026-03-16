@@ -27,33 +27,45 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
             panel.commit_overlay = None;
         }
 
-        (KeyModifiers::NONE, KeyCode::Enter) if !generating && !overlay.message.trim().is_empty() => {
+        (KeyModifiers::NONE, KeyCode::Enter)
+            if !generating && !overlay.message.trim().is_empty() =>
+        {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;
             app.loading_indicator = Some("Committing...".into());
             app.deferred_action = Some(crate::app::DeferredAction::GitCommit {
-                worktree: wt, message: msg,
+                worktree: wt,
+                message: msg,
             });
         }
 
-        (m, KeyCode::Char('p')) if crate::tui::keybindings::is_cmd(m) && !generating && !overlay.message.trim().is_empty() => {
+        (m, KeyCode::Char('p'))
+            if crate::tui::keybindings::is_cmd(m)
+                && !generating
+                && !overlay.message.trim().is_empty() =>
+        {
             let msg = overlay.message.clone();
             let wt = panel.worktree_path.clone();
             panel.commit_overlay = None;
             app.loading_indicator = Some("Committing and pushing...".into());
             app.deferred_action = Some(crate::app::DeferredAction::GitCommitAndPush {
-                worktree: wt, message: msg,
+                worktree: wt,
+                message: msg,
             });
         }
 
         (KeyModifiers::NONE, KeyCode::Backspace) if !generating => {
             if overlay.cursor > 0 {
-                let byte_pos = overlay.message.char_indices()
+                let byte_pos = overlay
+                    .message
+                    .char_indices()
                     .nth(overlay.cursor - 1)
                     .map(|(i, _)| i)
                     .unwrap_or(0);
-                let next_byte = overlay.message.char_indices()
+                let next_byte = overlay
+                    .message
+                    .char_indices()
                     .nth(overlay.cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(overlay.message.len());
@@ -65,11 +77,15 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
         (KeyModifiers::NONE, KeyCode::Delete) if !generating => {
             let char_count = overlay.message.chars().count();
             if overlay.cursor < char_count {
-                let byte_pos = overlay.message.char_indices()
+                let byte_pos = overlay
+                    .message
+                    .char_indices()
                     .nth(overlay.cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(overlay.message.len());
-                let next_byte = overlay.message.char_indices()
+                let next_byte = overlay
+                    .message
+                    .char_indices()
                     .nth(overlay.cursor + 1)
                     .map(|(i, _)| i)
                     .unwrap_or(overlay.message.len());
@@ -78,14 +94,20 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
         }
 
         (KeyModifiers::NONE, KeyCode::Left) if !generating => {
-            if overlay.cursor > 0 { overlay.cursor -= 1; }
+            if overlay.cursor > 0 {
+                overlay.cursor -= 1;
+            }
         }
         (KeyModifiers::NONE, KeyCode::Right) if !generating => {
             let char_count = overlay.message.chars().count();
-            if overlay.cursor < char_count { overlay.cursor += 1; }
+            if overlay.cursor < char_count {
+                overlay.cursor += 1;
+            }
         }
 
-        (KeyModifiers::NONE, KeyCode::Home) if !generating => { overlay.cursor = 0; }
+        (KeyModifiers::NONE, KeyCode::Home) if !generating => {
+            overlay.cursor = 0;
+        }
         (KeyModifiers::NONE, KeyCode::End) if !generating => {
             overlay.cursor = overlay.message.chars().count();
         }
@@ -93,11 +115,15 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
         (KeyModifiers::NONE, KeyCode::Up) if !generating => {
             let chars: Vec<char> = overlay.message.chars().collect();
             let mut line_start = overlay.cursor;
-            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') {
+                line_start -= 1;
+            }
             if line_start > 0 {
                 let prev_end = line_start - 1;
                 let mut prev_start = prev_end;
-                while prev_start > 0 && chars.get(prev_start - 1) != Some(&'\n') { prev_start -= 1; }
+                while prev_start > 0 && chars.get(prev_start - 1) != Some(&'\n') {
+                    prev_start -= 1;
+                }
                 let col = overlay.cursor - line_start;
                 let prev_len = prev_end - prev_start;
                 overlay.cursor = prev_start + col.min(prev_len);
@@ -106,21 +132,29 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
         (KeyModifiers::NONE, KeyCode::Down) if !generating => {
             let chars: Vec<char> = overlay.message.chars().collect();
             let mut line_start = overlay.cursor;
-            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+            while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') {
+                line_start -= 1;
+            }
             let col = overlay.cursor - line_start;
             let mut line_end = overlay.cursor;
-            while line_end < chars.len() && chars[line_end] != '\n' { line_end += 1; }
+            while line_end < chars.len() && chars[line_end] != '\n' {
+                line_end += 1;
+            }
             if line_end < chars.len() {
                 let next_start = line_end + 1;
                 let mut next_end = next_start;
-                while next_end < chars.len() && chars[next_end] != '\n' { next_end += 1; }
+                while next_end < chars.len() && chars[next_end] != '\n' {
+                    next_end += 1;
+                }
                 let next_len = next_end - next_start;
                 overlay.cursor = next_start + col.min(next_len);
             }
         }
 
         (m, KeyCode::Enter) if m.contains(KeyModifiers::SHIFT) && !generating => {
-            let byte_pos = overlay.message.char_indices()
+            let byte_pos = overlay
+                .message
+                .char_indices()
                 .nth(overlay.cursor)
                 .map(|(i, _)| i)
                 .unwrap_or(overlay.message.len());
@@ -129,7 +163,9 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
         }
 
         (m, KeyCode::Char(c)) if !generating && !m.contains(KeyModifiers::CONTROL) => {
-            let byte_pos = overlay.message.char_indices()
+            let byte_pos = overlay
+                .message
+                .char_indices()
                 .nth(overlay.cursor)
                 .map(|(i, _)| i)
                 .unwrap_or(overlay.message.len());
@@ -147,11 +183,21 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     fn key_mod(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -161,7 +207,11 @@ mod tests {
     #[test]
     fn commit_overlay_empty_message() {
         let ov = crate::app::types::GitCommitOverlay {
-            message: String::new(), cursor: 0, generating: false, scroll: 0, receiver: None,
+            message: String::new(),
+            cursor: 0,
+            generating: false,
+            scroll: 0,
+            receiver: None,
         };
         assert!(ov.message.is_empty());
         assert_eq!(ov.cursor, 0);
@@ -171,7 +221,11 @@ mod tests {
     #[test]
     fn commit_overlay_generating_state() {
         let ov = crate::app::types::GitCommitOverlay {
-            message: String::new(), cursor: 0, generating: true, scroll: 0, receiver: None,
+            message: String::new(),
+            cursor: 0,
+            generating: true,
+            scroll: 0,
+            receiver: None,
         };
         assert!(ov.generating);
     }
@@ -179,7 +233,11 @@ mod tests {
     #[test]
     fn commit_overlay_with_message() {
         let ov = crate::app::types::GitCommitOverlay {
-            message: "feat: add tests".to_string(), cursor: 15, generating: false, scroll: 0, receiver: None,
+            message: "feat: add tests".to_string(),
+            cursor: 15,
+            generating: false,
+            scroll: 0,
+            receiver: None,
         };
         assert_eq!(ov.message, "feat: add tests");
         assert_eq!(ov.cursor, 15);
@@ -192,13 +250,19 @@ mod tests {
     #[test]
     fn esc_matches_cancel() {
         let k = key(KeyCode::Esc);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Esc)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Esc)
+        ));
     }
 
     #[test]
     fn enter_matches_commit() {
         let k = key(KeyCode::Enter);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Enter)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Enter)
+        ));
     }
 
     #[test]
@@ -211,49 +275,73 @@ mod tests {
     #[test]
     fn backspace_matches_delete() {
         let k = key(KeyCode::Backspace);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Backspace)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Backspace)
+        ));
     }
 
     #[test]
     fn delete_key_matches() {
         let k = key(KeyCode::Delete);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Delete)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Delete)
+        ));
     }
 
     #[test]
     fn left_arrow_matches() {
         let k = key(KeyCode::Left);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Left)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Left)
+        ));
     }
 
     #[test]
     fn right_arrow_matches() {
         let k = key(KeyCode::Right);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Right)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Right)
+        ));
     }
 
     #[test]
     fn home_matches() {
         let k = key(KeyCode::Home);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Home)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Home)
+        ));
     }
 
     #[test]
     fn end_matches() {
         let k = key(KeyCode::End);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::End)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::End)
+        ));
     }
 
     #[test]
     fn up_arrow_matches() {
         let k = key(KeyCode::Up);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Up)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Up)
+        ));
     }
 
     #[test]
     fn down_arrow_matches() {
         let k = key(KeyCode::Down);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Down)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Down)
+        ));
     }
 
     #[test]
@@ -273,7 +361,9 @@ mod tests {
         let chars: Vec<char> = message.chars().collect();
         let cursor = 5usize;
         let mut line_start = cursor;
-        while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+        while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') {
+            line_start -= 1;
+        }
         // No newline before — line_start is 0, no previous line
         assert_eq!(line_start, 0);
     }
@@ -284,7 +374,9 @@ mod tests {
         let chars: Vec<char> = message.chars().collect();
         let cursor = 8usize; // in "line2 text"
         let mut line_start = cursor;
-        while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') { line_start -= 1; }
+        while line_start > 0 && chars.get(line_start - 1) != Some(&'\n') {
+            line_start -= 1;
+        }
         assert_eq!(line_start, 6); // after newline
         let col = cursor - line_start;
         assert_eq!(col, 2);
@@ -296,7 +388,9 @@ mod tests {
         let chars: Vec<char> = message.chars().collect();
         let cursor = 2usize;
         let mut line_end = cursor;
-        while line_end < chars.len() && chars[line_end] != '\n' { line_end += 1; }
+        while line_end < chars.len() && chars[line_end] != '\n' {
+            line_end += 1;
+        }
         // No newline after — at end
         assert_eq!(line_end, chars.len());
     }
@@ -309,7 +403,11 @@ mod tests {
     fn insert_char_at_cursor() {
         let mut msg = String::from("feat: ");
         let cursor = 6usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, 'a');
         assert_eq!(msg, "feat: a");
     }
@@ -318,7 +416,11 @@ mod tests {
     fn insert_newline_at_cursor() {
         let mut msg = String::from("ab");
         let cursor = 1usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, '\n');
         assert_eq!(msg, "a\nb");
     }
@@ -328,8 +430,16 @@ mod tests {
         let mut msg = String::from("abc");
         let mut cursor = 3usize;
         if cursor > 0 {
-            let bp = msg.char_indices().nth(cursor - 1).map(|(i, _)| i).unwrap_or(0);
-            let nb = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+            let bp = msg
+                .char_indices()
+                .nth(cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let nb = msg
+                .char_indices()
+                .nth(cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
             msg.replace_range(bp..nb, "");
             cursor -= 1;
         }
@@ -343,8 +453,16 @@ mod tests {
         let cursor = 1usize;
         let char_count = msg.chars().count();
         if cursor < char_count {
-            let bp = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
-            let nb = msg.char_indices().nth(cursor + 1).map(|(i, _)| i).unwrap_or(msg.len());
+            let bp = msg
+                .char_indices()
+                .nth(cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
+            let nb = msg
+                .char_indices()
+                .nth(cursor + 1)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
             msg.replace_range(bp..nb, "");
         }
         assert_eq!(msg, "ac");
@@ -355,11 +473,17 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn empty_message_trim_is_empty() { assert!("".trim().is_empty()); }
+    fn empty_message_trim_is_empty() {
+        assert!("".trim().is_empty());
+    }
     #[test]
-    fn whitespace_message_trim_is_empty() { assert!("   ".trim().is_empty()); }
+    fn whitespace_message_trim_is_empty() {
+        assert!("   ".trim().is_empty());
+    }
     #[test]
-    fn nonempty_message_trim_is_not_empty() { assert!(!"feat: x".trim().is_empty()); }
+    fn nonempty_message_trim_is_not_empty() {
+        assert!(!"feat: x".trim().is_empty());
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Generating flag guards (keys blocked while generating)
@@ -444,7 +568,11 @@ mod tests {
         let msg = "hello";
         let char_count = msg.chars().count();
         let cursor = char_count;
-        let new_cursor = if cursor < char_count { cursor + 1 } else { cursor };
+        let new_cursor = if cursor < char_count {
+            cursor + 1
+        } else {
+            cursor
+        };
         assert_eq!(new_cursor, char_count);
     }
 
@@ -453,7 +581,11 @@ mod tests {
         let msg = "hello";
         let char_count = msg.chars().count();
         let cursor = 2usize;
-        let new_cursor = if cursor < char_count { cursor + 1 } else { cursor };
+        let new_cursor = if cursor < char_count {
+            cursor + 1
+        } else {
+            cursor
+        };
         assert_eq!(new_cursor, 3);
     }
 
@@ -466,8 +598,16 @@ mod tests {
         let mut msg = String::from("abc");
         let mut cursor = 0usize;
         if cursor > 0 {
-            let bp = msg.char_indices().nth(cursor - 1).map(|(i, _)| i).unwrap_or(0);
-            let nb = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+            let bp = msg
+                .char_indices()
+                .nth(cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let nb = msg
+                .char_indices()
+                .nth(cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
             msg.replace_range(bp..nb, "");
             cursor -= 1;
         }
@@ -485,8 +625,16 @@ mod tests {
         let cursor = 3usize;
         let char_count = msg.chars().count();
         if cursor < char_count {
-            let bp = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
-            let nb = msg.char_indices().nth(cursor + 1).map(|(i, _)| i).unwrap_or(msg.len());
+            let bp = msg
+                .char_indices()
+                .nth(cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
+            let nb = msg
+                .char_indices()
+                .nth(cursor + 1)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
             msg.replace_range(bp..nb, "");
         }
         assert_eq!(msg, "abc");
@@ -500,7 +648,11 @@ mod tests {
     fn insert_char_at_beginning() {
         let mut msg = String::from("bc");
         let cursor = 0usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, 'a');
         assert_eq!(msg, "abc");
     }
@@ -513,7 +665,11 @@ mod tests {
     fn insert_char_into_empty() {
         let mut msg = String::new();
         let cursor = 0usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, 'x');
         assert_eq!(msg, "x");
     }
@@ -527,8 +683,16 @@ mod tests {
         let mut msg = String::from("a");
         let mut cursor = 1usize;
         if cursor > 0 {
-            let bp = msg.char_indices().nth(cursor - 1).map(|(i, _)| i).unwrap_or(0);
-            let nb = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+            let bp = msg
+                .char_indices()
+                .nth(cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let nb = msg
+                .char_indices()
+                .nth(cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(msg.len());
             msg.replace_range(bp..nb, "");
             cursor -= 1;
         }
@@ -560,7 +724,11 @@ mod tests {
     fn insert_unicode_char() {
         let mut msg = String::from("ab");
         let cursor = 1usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, '→');
         assert_eq!(msg, "a→b");
     }
@@ -573,7 +741,11 @@ mod tests {
     fn shift_enter_at_start_prepends_newline() {
         let mut msg = String::from("hello");
         let cursor = 0usize;
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, '\n');
         assert_eq!(msg, "\nhello");
     }
@@ -582,7 +754,11 @@ mod tests {
     fn shift_enter_at_end_appends_newline() {
         let mut msg = String::from("hello");
         let cursor = msg.chars().count();
-        let byte_pos = msg.char_indices().nth(cursor).map(|(i, _)| i).unwrap_or(msg.len());
+        let byte_pos = msg
+            .char_indices()
+            .nth(cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(msg.len());
         msg.insert(byte_pos, '\n');
         assert_eq!(msg, "hello\n");
     }
@@ -594,7 +770,11 @@ mod tests {
     #[test]
     fn commit_overlay_scroll_default_zero() {
         let ov = crate::app::types::GitCommitOverlay {
-            message: String::new(), cursor: 0, generating: false, scroll: 0, receiver: None,
+            message: String::new(),
+            cursor: 0,
+            generating: false,
+            scroll: 0,
+            receiver: None,
         };
         assert_eq!(ov.scroll, 0);
     }
@@ -602,7 +782,11 @@ mod tests {
     #[test]
     fn commit_overlay_scroll_nonzero() {
         let ov = crate::app::types::GitCommitOverlay {
-            message: "multi\nline\nmessage".to_string(), cursor: 0, generating: false, scroll: 2, receiver: None,
+            message: "multi\nline\nmessage".to_string(),
+            cursor: 0,
+            generating: false,
+            scroll: 2,
+            receiver: None,
         };
         assert_eq!(ov.scroll, 2);
     }

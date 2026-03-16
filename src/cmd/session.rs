@@ -8,8 +8,11 @@ use crate::models::{Project, Worktree};
 
 /// Truncate string with ellipsis
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len { s.to_string() }
-    else { format!("{}...", &s[..max_len.saturating_sub(3)]) }
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
 }
 
 /// Discover project from current directory
@@ -27,14 +30,19 @@ fn discover_project() -> Result<Project> {
 fn discover_worktrees(project: &Project) -> Result<Vec<Worktree>> {
     let worktrees = Git::list_worktrees_detailed(&project.path)?;
     let azureal_branches = Git::list_azureal_branches(&project.path)?;
-    let backend = crate::config::Config::load().map(|c| c.backend).unwrap_or_default();
+    let backend = crate::config::Config::load()
+        .map(|c| c.backend)
+        .unwrap_or_default();
 
     let mut sessions = Vec::new();
     let mut active_branches: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Add all worktrees as sessions
     for wt in &worktrees {
-        let branch_name = wt.branch.clone().unwrap_or_else(|| project.main_branch.clone());
+        let branch_name = wt
+            .branch
+            .clone()
+            .unwrap_or_else(|| project.main_branch.clone());
         let claude_id = crate::config::find_latest_session(backend, &wt.path);
 
         sessions.push(Worktree {
@@ -74,8 +82,11 @@ fn find_worktree(worktrees: &[Worktree], query: &str) -> Result<Worktree> {
     }
 
     // Partial match
-    let matches: Vec<_> = worktrees.iter()
-        .filter(|s| s.branch_name.contains(query) || s.name().to_lowercase().contains(&query.to_lowercase()))
+    let matches: Vec<_> = worktrees
+        .iter()
+        .filter(|s| {
+            s.branch_name.contains(query) || s.name().to_lowercase().contains(&query.to_lowercase())
+        })
         .collect();
 
     match matches.len() {
@@ -83,7 +94,9 @@ fn find_worktree(worktrees: &[Worktree], query: &str) -> Result<Worktree> {
         1 => Ok(matches[0].clone()),
         _ => {
             eprintln!("Multiple worktrees match '{}':", query);
-            for s in &matches { eprintln!("  {}", s.branch_name); }
+            for s in &matches {
+                eprintln!("  {}", s.branch_name);
+            }
             anyhow::bail!("Please specify a more precise name");
         }
     }
@@ -101,7 +114,11 @@ pub fn handle_session_list(
         OutputFormat::Plain => {
             for session in &sessions {
                 // CLI has no process tracking — pass false for is_running
-                println!("{}\t{}", session.branch_name, session.status(false).as_str());
+                println!(
+                    "{}\t{}",
+                    session.branch_name,
+                    session.status(false).as_str()
+                );
             }
         }
         OutputFormat::Table => {
@@ -111,10 +128,13 @@ pub fn handle_session_list(
                 println!("{:<40} {:<12} WORKTREE", "BRANCH", "STATUS");
                 println!("{}", "-".repeat(90));
                 for session in sessions {
-                    let wt = session.worktree_path.as_ref()
+                    let wt = session
+                        .worktree_path
+                        .as_ref()
                         .map(|p| truncate(&p.to_string_lossy(), 35))
                         .unwrap_or_else(|| "(archived)".to_string());
-                    println!("{:<40} {:<12} {}",
+                    println!(
+                        "{:<40} {:<12} {}",
                         truncate(&session.branch_name, 40),
                         session.status(false).as_str(),
                         wt
@@ -172,7 +192,11 @@ pub fn handle_session_status(session_query: &str, output_format: OutputFormat) -
     match output_format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&session)?),
         // CLI has no process tracking — pass false for is_running
-        OutputFormat::Plain => println!("{}\t{}", session.branch_name, session.status(false).as_str()),
+        OutputFormat::Plain => println!(
+            "{}\t{}",
+            session.branch_name,
+            session.status(false).as_str()
+        ),
         OutputFormat::Table => {
             println!("Session: {}", session.name());
             println!("Branch: {}", session.branch_name);
@@ -203,7 +227,10 @@ pub fn handle_session_stop(session_query: &str, _force: bool) -> Result<()> {
     // Note: In stateless mode, we can't track PIDs
     // User should use `pkill` or similar to stop Claude processes
     println!("Session: {}", session.name());
-    println!("To stop a Claude process, use: pkill -f 'claude.*{}'", session.name());
+    println!(
+        "To stop a Claude process, use: pkill -f 'claude.*{}'",
+        session.name()
+    );
     Ok(())
 }
 
@@ -214,7 +241,11 @@ pub fn handle_session_delete(session_query: &str, skip_confirm: bool) -> Result<
 
     if !skip_confirm {
         if let Some(ref wt) = session.worktree_path {
-            println!("Delete session '{}' and worktree at {}?", session.name(), wt.display());
+            println!(
+                "Delete session '{}' and worktree at {}?",
+                session.name(),
+                wt.display()
+            );
         } else {
             println!("Delete archived branch '{}'?", session.branch_name);
         }
@@ -275,7 +306,11 @@ pub fn handle_session_unarchive(session_query: &str) -> Result<()> {
     let worktree_path = project.worktrees_dir().join(&worktree_name);
 
     Git::create_worktree_from_branch(&project.path, &worktree_path, &session.branch_name)?;
-    println!("Unarchived session: {} → {}", session.name(), worktree_path.display());
+    println!(
+        "Unarchived session: {} → {}",
+        session.name(),
+        worktree_path.display()
+    );
     Ok(())
 }
 
@@ -291,7 +326,11 @@ pub fn handle_session_resume(session_query: &str, _prompt: Option<String>) -> Re
         println!("  cd {} && claude", wt.display());
     } else {
         println!("Session is archived. Create a new worktree first:");
-        println!("  git worktree add worktrees/{} {}", session.name(), session.branch_name);
+        println!(
+            "  git worktree add worktrees/{} {}",
+            session.name(),
+            session.branch_name
+        );
     }
     Ok(())
 }
@@ -306,7 +345,9 @@ pub fn handle_session_logs(session_query: &str, _follow: bool, _lines: usize) ->
     if let Some(ref id) = session.claude_session_id {
         println!("Claude session ID: {}", id);
         if let Some(ref wt) = session.worktree_path {
-            let backend = crate::config::Config::load().map(|c| c.backend).unwrap_or_default();
+            let backend = crate::config::Config::load()
+                .map(|c| c.backend)
+                .unwrap_or_default();
             if let Some(file) = crate::config::session_file(backend, wt, id) {
                 println!("Session file: {}", file.display());
             }
@@ -335,8 +376,15 @@ pub fn handle_session_diff(session_query: &str, stat_only: bool) -> Result<()> {
             println!("No changes");
         } else {
             println!("Files changed:");
-            for file in &diff_info.files_changed { println!("  {}", file); }
-            println!("\n{} files, +{} -{} lines", diff_info.files_changed.len(), diff_info.additions, diff_info.deletions);
+            for file in &diff_info.files_changed {
+                println!("  {}", file);
+            }
+            println!(
+                "\n{} files, +{} -{} lines",
+                diff_info.files_changed.len(),
+                diff_info.additions,
+                diff_info.deletions
+            );
         }
     } else if diff_info.diff_text.is_empty() {
         println!("No changes");
@@ -397,8 +445,14 @@ pub fn handle_session_cleanup(
     let (mut cleaned, mut errors) = (0, 0);
     for session in &cleanable {
         match Git::delete_branch(&project.path, &session.branch_name) {
-            Ok(()) => { println!("Deleted: {}", session.branch_name); cleaned += 1; }
-            Err(e) => { eprintln!("Error deleting {}: {}", session.branch_name, e); errors += 1; }
+            Ok(()) => {
+                println!("Deleted: {}", session.branch_name);
+                cleaned += 1;
+            }
+            Err(e) => {
+                eprintln!("Error deleting {}: {}", session.branch_name, e);
+                errors += 1;
+            }
         }
     }
 
@@ -420,9 +474,14 @@ fn generate_session_name(prompt: &str) -> String {
         format!("session-{}", &uuid::Uuid::new_v4().to_string()[..8])
     } else {
         let name = if name.len() > 30 {
-            if let Some(pos) = name[..30].rfind(' ') { &name[..pos] }
-            else { &name[..30] }
-        } else { name };
+            if let Some(pos) = name[..30].rfind(' ') {
+                &name[..pos]
+            } else {
+                &name[..30]
+            }
+        } else {
+            name
+        };
         name.to_string()
     }
 }
@@ -431,7 +490,13 @@ fn generate_session_name(prompt: &str) -> String {
 fn sanitize_for_branch(s: &str) -> String {
     let sanitized: String = s
         .chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
 
     let mut result = String::new();
@@ -817,11 +882,14 @@ mod tests {
 
     #[test]
     fn test_generate_then_sanitize_long_prompt() {
-        let name = generate_session_name("implement the new authentication system with OAuth2 support");
+        let name =
+            generate_session_name("implement the new authentication system with OAuth2 support");
         let branch = sanitize_for_branch(&name);
         // Name truncated at word boundary, then sanitized
         assert!(branch.len() <= 30);
-        assert!(branch.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        assert!(branch
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-'));
     }
 
     #[test]

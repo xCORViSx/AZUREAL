@@ -32,7 +32,12 @@ pub(super) fn draw_save_dialog(f: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .title(Span::styled(" File Saved ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " File Saved ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ))
         .border_style(Style::default().fg(Color::Green));
 
     f.render_widget(block, dialog_area);
@@ -61,7 +66,12 @@ pub(super) fn draw_discard_dialog(f: &mut Frame, area: Rect, from_edit_diff: boo
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .title(Span::styled(" Unsaved Changes ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Unsaved Changes ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
         .border_style(Style::default().fg(Color::Yellow));
 
     f.render_widget(block, dialog_area);

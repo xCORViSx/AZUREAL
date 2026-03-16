@@ -4,26 +4,35 @@
 //! the various panes (viewer, session, input, edit). Used by mouse click,
 //! drag, and input cursor placement.
 
-use crate::app::App;
 use super::super::draw_input::word_wrap_break_points;
 use super::super::draw_viewer::word_wrap_breaks;
+use crate::app::App;
 
 /// Map screen coordinates to (cache_line, cache_col) within a bordered pane.
 /// Returns None if outside the content area (inside borders).
 pub fn screen_to_cache_pos(
-    screen_col: u16, screen_row: u16,
-    pane: ratatui::layout::Rect, scroll: usize, cache_len: usize,
+    screen_col: u16,
+    screen_row: u16,
+    pane: ratatui::layout::Rect,
+    scroll: usize,
+    cache_len: usize,
 ) -> Option<(usize, usize)> {
     // Content sits inside the 1px border on all sides
     let cx = pane.x + 1;
     let cy = pane.y + 1;
     let ch = pane.height.saturating_sub(2) as usize;
-    if screen_col < cx || screen_row < cy { return None; }
+    if screen_col < cx || screen_row < cy {
+        return None;
+    }
     let vrow = (screen_row - cy) as usize;
     let col = (screen_col - cx) as usize;
-    if vrow >= ch { return None; }
+    if vrow >= ch {
+        return None;
+    }
     let line = scroll + vrow;
-    if line >= cache_len { return None; }
+    if line >= cache_len {
+        return None;
+    }
     Some((line, col))
 }
 
@@ -35,7 +44,9 @@ pub fn screen_to_edit_pos(app: &App, screen_col: u16, screen_row: u16) -> Option
     let pane = app.pane_viewer;
     let cx = pane.x + 1; // inside left border
     let cy = pane.y + 1; // inside top border
-    if screen_row < cy || screen_col < cx { return None; }
+    if screen_row < cy || screen_col < cx {
+        return None;
+    }
 
     let total_lines = app.viewer_edit_content.len();
     let line_num_width = total_lines.to_string().len().max(3);
@@ -63,7 +74,11 @@ pub fn screen_to_edit_pos(app: &App, screen_col: u16, screen_row: u16) -> Option
             let wrap_seg = visual_row - running;
             // Convert click_x to a char offset within the source line using break positions
             let row_start = breaks[wrap_seg];
-            let row_end = if wrap_seg + 1 < breaks.len() { breaks[wrap_seg + 1] } else { len };
+            let row_end = if wrap_seg + 1 < breaks.len() {
+                breaks[wrap_seg + 1]
+            } else {
+                len
+            };
             let src_col = (row_start + click_x).min(row_end);
             return Some((i, src_col));
         }
@@ -84,14 +99,18 @@ pub fn screen_to_input_char(app: &App, click_col: u16, click_row: u16) -> usize 
     let inner_x = app.input_area.x + 1;
     let inner_y = app.input_area.y + 1;
     let inner_width = (app.input_area.width.saturating_sub(2)) as usize;
-    if inner_width == 0 { return 0; }
+    if inner_width == 0 {
+        return 0;
+    }
     let target_row = (click_row.saturating_sub(inner_y)) as usize;
     let target_col = (click_col.saturating_sub(inner_x)) as usize;
     let visible_rows = app.input_area.height.saturating_sub(2) as usize;
     let cursor_row_current = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
     let scroll_offset = if visible_rows > 0 && cursor_row_current >= visible_rows {
         cursor_row_current - visible_rows + 1
-    } else { 0 };
+    } else {
+        0
+    };
     let actual_row = target_row + scroll_offset;
     row_col_to_char_index(&app.input, actual_row, target_col, inner_width)
 }
@@ -103,7 +122,9 @@ pub fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     let inner_x = app.input_area.x + 1;
     let inner_y = app.input_area.y + 1;
     let inner_width = (app.input_area.width.saturating_sub(2)) as usize;
-    if inner_width == 0 { return; }
+    if inner_width == 0 {
+        return;
+    }
     let target_col = (click_col.saturating_sub(inner_x)) as usize;
     let target_row = (click_row.saturating_sub(inner_y)) as usize;
 
@@ -112,7 +133,9 @@ pub fn click_to_input_cursor(app: &mut App, click_col: u16, click_row: u16) {
     let cursor_row_current = compute_cursor_row_fast(&app.input, app.input_cursor, inner_width);
     let scroll_offset = if visible_rows > 0 && cursor_row_current >= visible_rows {
         cursor_row_current - visible_rows + 1
-    } else { 0 };
+    } else {
+        0
+    };
     let actual_row = target_row + scroll_offset;
 
     app.input_cursor = row_col_to_char_index(&app.input, actual_row, target_col, inner_width);
@@ -128,7 +151,9 @@ pub fn compute_cursor_row_fast(input: &str, cursor_idx: usize, inner_width: usiz
     let mut row = 0usize;
     let mut prev = 0usize;
     for &bp in &breaks {
-        if target >= prev && target < bp { return row; }
+        if target >= prev && target < bp {
+            return row;
+        }
         row += 1;
         prev = bp;
     }
@@ -137,9 +162,16 @@ pub fn compute_cursor_row_fast(input: &str, cursor_idx: usize, inner_width: usiz
 
 /// Map a visual (row, col) coordinate back to a char index in the input text.
 /// Uses word-wrap break points so clicking and cursor math agree with rendering.
-fn row_col_to_char_index(input: &str, target_row: usize, target_col: usize, inner_width: usize) -> usize {
+fn row_col_to_char_index(
+    input: &str,
+    target_row: usize,
+    target_col: usize,
+    inner_width: usize,
+) -> usize {
     let chars: Vec<char> = input.chars().collect();
-    if chars.is_empty() { return 0; }
+    if chars.is_empty() {
+        return 0;
+    }
     let breaks = word_wrap_break_points(&chars, inner_width);
 
     // Find the start and end char indices for the target row
@@ -149,25 +181,38 @@ fn row_col_to_char_index(input: &str, target_row: usize, target_col: usize, inne
     let mut row_end = chars.len();
     let mut found = false;
     for &bp in &breaks {
-        if row == target_row { row_start = prev; row_end = bp; found = true; break; }
+        if row == target_row {
+            row_start = prev;
+            row_end = bp;
+            found = true;
+            break;
+        }
         row += 1;
         prev = bp;
     }
     // If target_row is the last (or only) row
     if !found {
-        if row == target_row { row_start = prev; row_end = chars.len(); }
-        else { return chars.len(); } // clicked below content
+        if row == target_row {
+            row_start = prev;
+            row_end = chars.len();
+        } else {
+            return chars.len();
+        } // clicked below content
     }
 
     // Skip trailing newline from row content (it's not a visible character)
     let content_end = if row_end > row_start && chars.get(row_end - 1) == Some(&'\n') {
         row_end - 1
-    } else { row_end };
+    } else {
+        row_end
+    };
 
     // Walk chars in this row until display width reaches or passes target_col
     let mut col_accum = 0usize;
     for i in row_start..content_end {
-        if col_accum >= target_col { return i; }
+        if col_accum >= target_col {
+            return i;
+        }
         col_accum += unicode_width::UnicodeWidthChar::width(chars[i]).unwrap_or(1);
     }
     content_end // click past row content → place at row end
@@ -485,7 +530,7 @@ mod tests {
         // Each CJK char is 2 display columns wide
         // Width 4: fits 2 CJK chars per row
         let input = "\u{4F60}\u{597D}\u{4E16}\u{754C}"; // 4 chars
-        // Row 0: chars 0-1 (4 columns), Row 1: chars 2-3 (4 columns)
+                                                        // Row 0: chars 0-1 (4 columns), Row 1: chars 2-3 (4 columns)
         assert_eq!(compute_cursor_row_fast(input, 0, 4), 0);
         assert_eq!(compute_cursor_row_fast(input, 2, 4), 1);
     }
@@ -642,8 +687,8 @@ mod tests {
     fn row_col_unicode_wide_chars() {
         // CJK chars are 2 columns wide. Width 4 fits 2 CJK chars.
         let input = "\u{4F60}\u{597D}\u{4E16}\u{754C}"; // 4 chars, 8 display cols
-        // Row 0: chars 0..2 (4 cols), Row 1: chars 2..4 (4 cols)
-        // target_row=0, target_col=0 → char 0
+                                                        // Row 0: chars 0..2 (4 cols), Row 1: chars 2..4 (4 cols)
+                                                        // target_row=0, target_col=0 → char 0
         assert_eq!(row_col_to_char_index(input, 0, 0, 4), 0);
         // target_col=2 → second char (first char takes cols 0-1)
         assert_eq!(row_col_to_char_index(input, 0, 2, 4), 1);

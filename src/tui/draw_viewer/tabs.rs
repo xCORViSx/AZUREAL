@@ -10,21 +10,27 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::super::util::AZURE;
+use crate::app::App;
 
 /// How many rows the tab bar occupies (0 if no tabs, 1 for ≤6, 2 for >6)
 pub(super) fn tab_bar_rows(tab_count: usize) -> u16 {
-    if tab_count == 0 { 0 }
-    else if tab_count <= 6 { 1 }
-    else { 2 }
+    if tab_count == 0 {
+        0
+    } else if tab_count <= 6 {
+        1
+    } else {
+        2
+    }
 }
 
 /// Draw fixed-width tab bar: 6 tabs per row, up to 2 rows (12 max).
 /// Each "slot" is inner_width/6. Tab content fills slot_w-1 chars + 1 char gap.
 pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
     let inner_w = area.width.saturating_sub(2) as usize;
-    if inner_w < 12 { return; }
+    if inner_w < 12 {
+        return;
+    }
     // Each slot includes the tab + 1 trailing gap char. 6 slots fill the row.
     let slot_w = inner_w / 6;
     // Visible tab content = slot minus gap(1) minus leading pad(1)
@@ -49,7 +55,10 @@ pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
             };
             let is_active = idx == app.viewer_active_tab;
             let style = if is_active {
-                Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(AZURE)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray).bg(Color::DarkGray)
             };
@@ -66,7 +75,9 @@ pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
 /// Draw tab dialog overlay for switching between tabs
 pub(super) fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
     let tab_count = app.viewer_tabs.len();
-    if tab_count == 0 { return; }
+    if tab_count == 0 {
+        return;
+    }
 
     let dialog_width = 40u16.min(area.width.saturating_sub(4));
     let dialog_height = (tab_count as u16 + 4).min(area.height.saturating_sub(4));
@@ -79,7 +90,10 @@ pub(super) fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .title(Span::styled(" Tabs ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Tabs ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
         .border_style(Style::default().fg(AZURE));
 
     f.render_widget(block.clone(), dialog_area);
@@ -112,7 +126,7 @@ pub(super) fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "j/k:nav Enter:select x:close Esc:cancel",
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(Color::DarkGray),
     )));
 
     let para = Paragraph::new(lines);
@@ -460,7 +474,7 @@ mod tests {
         let area_width = 80u16;
         let inner_w = area_width.saturating_sub(2) as usize;
         let slot_w = inner_w / 6;
-        assert_eq!(slot_w, 13);  // 78 / 6 = 13
+        assert_eq!(slot_w, 13); // 78 / 6 = 13
     }
 
     #[test]
@@ -474,7 +488,7 @@ mod tests {
     #[test]
     fn test_slot_w_below_12_skips_render() {
         // draw_tab_bar returns early when inner_w < 12
-        let area_width = 13u16;  // inner_w = 11
+        let area_width = 13u16; // inner_w = 11
         let inner_w = area_width.saturating_sub(2) as usize;
         assert!(inner_w < 12);
     }

@@ -4,11 +4,20 @@
 //! and scroll (pane-specific scrolling). Also handles clipboard copy from
 //! viewer and session selections.
 
+use super::coords::{
+    click_to_input_cursor, screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char,
+};
 use crate::app::{App, Focus};
-use super::coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char, click_to_input_cursor};
 
 /// Apply accumulated scroll to the appropriate panel using cached pane rects
-pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_width: u16, _term_height: u16) -> bool {
+pub fn apply_scroll_cached(
+    app: &mut App,
+    delta: i32,
+    col: u16,
+    row: u16,
+    _term_width: u16,
+    _term_height: u16,
+) -> bool {
     use ratatui::layout::Position;
     let pos = Position::new(col, row);
 
@@ -17,7 +26,9 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
         if app.pane_worktrees.contains(pos) {
             // Scroll changed files list (move selection)
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.changed_files.is_empty() { return false; }
+                if p.changed_files.is_empty() {
+                    return false;
+                }
                 let max = p.changed_files.len() - 1;
                 if delta > 0 {
                     p.selected_file = (p.selected_file + delta as usize).min(max);
@@ -30,7 +41,9 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
         } else if app.pane_session.contains(pos) {
             // Scroll commits list (move selection)
             if let Some(ref mut p) = app.git_actions_panel {
-                if p.commits.is_empty() { return false; }
+                if p.commits.is_empty() {
+                    return false;
+                }
                 let max = p.commits.len() - 1;
                 if delta > 0 {
                     p.selected_commit = (p.selected_commit + delta as usize).min(max);
@@ -43,8 +56,11 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
         } else if app.pane_viewer.contains(pos) {
             // Scroll the diff viewer
             app.viewer_selection = None;
-            return if delta > 0 { app.scroll_viewer_down(delta as usize) }
-                   else { app.scroll_viewer_up((-delta) as usize) };
+            return if delta > 0 {
+                app.scroll_viewer_down(delta as usize)
+            } else {
+                app.scroll_viewer_up((-delta) as usize)
+            };
         }
         return false;
     }
@@ -53,16 +69,26 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     if let Some(ref mut p) = app.health_panel {
         match p.tab {
             crate::app::types::HealthTab::GodFiles => {
-                if p.god_files.is_empty() { return false; }
+                if p.god_files.is_empty() {
+                    return false;
+                }
                 let max = p.god_files.len() - 1;
-                if delta > 0 { p.god_selected = (p.god_selected + delta as usize).min(max); }
-                else { p.god_selected = p.god_selected.saturating_sub((-delta) as usize); }
+                if delta > 0 {
+                    p.god_selected = (p.god_selected + delta as usize).min(max);
+                } else {
+                    p.god_selected = p.god_selected.saturating_sub((-delta) as usize);
+                }
             }
             crate::app::types::HealthTab::Documentation => {
-                if p.doc_entries.is_empty() { return false; }
+                if p.doc_entries.is_empty() {
+                    return false;
+                }
                 let max = p.doc_entries.len() - 1;
-                if delta > 0 { p.doc_selected = (p.doc_selected + delta as usize).min(max); }
-                else { p.doc_selected = p.doc_selected.saturating_sub((-delta) as usize); }
+                if delta > 0 {
+                    p.doc_selected = (p.doc_selected + delta as usize).min(max);
+                } else {
+                    p.doc_selected = p.doc_selected.saturating_sub((-delta) as usize);
+                }
             }
         }
         return true;
@@ -71,35 +97,62 @@ pub fn apply_scroll_cached(app: &mut App, delta: i32, col: u16, row: u16, _term_
     if app.pane_worktrees.contains(pos) {
         // FileTree is always visible in the left pane — scroll file tree items
         let old = app.file_tree_selected;
-        if delta > 0 { for _ in 0..delta.abs() { app.file_tree_next(); } }
-        else { for _ in 0..delta.abs() { app.file_tree_prev(); } }
+        if delta > 0 {
+            for _ in 0..delta.abs() {
+                app.file_tree_next();
+            }
+        } else {
+            for _ in 0..delta.abs() {
+                app.file_tree_prev();
+            }
+        }
         app.file_tree_selected != old
     } else if app.pane_viewer.contains(pos) {
         app.viewer_selection = None;
-        if delta > 0 { app.scroll_viewer_down(delta as usize) }
-        else { app.scroll_viewer_up((-delta) as usize) }
+        if delta > 0 {
+            app.scroll_viewer_down(delta as usize)
+        } else {
+            app.scroll_viewer_up((-delta) as usize)
+        }
     } else if app.terminal_mode && app.input_area.contains(pos) {
-        if delta > 0 { app.scroll_terminal_down(delta as usize); }
-        else { app.scroll_terminal_up((-delta) as usize); }
+        if delta > 0 {
+            app.scroll_terminal_down(delta as usize);
+        } else {
+            app.scroll_terminal_up((-delta) as usize);
+        }
         true
     } else if app.pane_todo.width > 0 && app.pane_todo.contains(pos) {
         // Todo widget scroll — only when content overflows the 20-line cap
         let content_h = app.pane_todo.height.saturating_sub(2);
         let max_scroll = app.todo_total_lines.saturating_sub(content_h);
-        if max_scroll == 0 { return false; }
-        if delta > 0 { app.todo_scroll = (app.todo_scroll + delta as u16).min(max_scroll); }
-        else { app.todo_scroll = app.todo_scroll.saturating_sub((-delta) as u16); }
+        if max_scroll == 0 {
+            return false;
+        }
+        if delta > 0 {
+            app.todo_scroll = (app.todo_scroll + delta as u16).min(max_scroll);
+        } else {
+            app.todo_scroll = app.todo_scroll.saturating_sub((-delta) as u16);
+        }
         true
     } else if app.pane_session.contains(pos) {
         // Session list overlay: scroll selected item
         if app.show_session_list {
-            let total: usize = app.worktrees.iter().map(|s| {
-                app.session_files.get(&s.branch_name).map(|f| f.len().max(1)).unwrap_or(1)
-            }).sum();
+            let total: usize = app
+                .worktrees
+                .iter()
+                .map(|s| {
+                    app.session_files
+                        .get(&s.branch_name)
+                        .map(|f| f.len().max(1))
+                        .unwrap_or(1)
+                })
+                .sum();
             if delta > 0 {
-                app.session_list_selected = (app.session_list_selected + delta as usize).min(total.saturating_sub(1));
+                app.session_list_selected =
+                    (app.session_list_selected + delta as usize).min(total.saturating_sub(1));
             } else {
-                app.session_list_selected = app.session_list_selected.saturating_sub((-delta) as usize);
+                app.session_list_selected =
+                    app.session_list_selected.saturating_sub((-delta) as usize);
             }
             return true;
         }
@@ -121,18 +174,30 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     let pos = Position::new(col, row);
 
     // Overlays first — clicking anywhere dismisses them
-    if app.table_popup.is_some() { app.table_popup = None; return true; }
-    if app.show_help { app.show_help = false; return true; }
+    if app.table_popup.is_some() {
+        app.table_popup = None;
+        return true;
+    }
+    if app.show_help {
+        app.show_help = false;
+        return true;
+    }
 
     // Worktree tab row click — select worktree or toggle BrowseMain
     if app.pane_worktree_tabs.contains(pos) {
-        let target = app.worktree_tab_hits.iter()
+        let target = app
+            .worktree_tab_hits
+            .iter()
             .find(|(xs, xe, _)| col >= *xs && col < *xe)
             .map(|(_, _, t)| *t);
         if let Some(tab_target) = target {
             if app.git_actions_panel.is_some() {
                 // Git panel mode: switch git panel to clicked worktree
-                let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+                let focused_pane = app
+                    .git_actions_panel
+                    .as_ref()
+                    .map(|p| p.focused_pane)
+                    .unwrap_or(0);
                 match tab_target {
                     None => {
                         // ★ main tab: switch git panel to main branch
@@ -153,11 +218,16 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 // Normal mode: select worktree or toggle BrowseMain
                 match tab_target {
                     None => {
-                        if app.browsing_main { app.exit_main_browse(); }
-                        else { app.enter_main_browse(); }
+                        if app.browsing_main {
+                            app.exit_main_browse();
+                        } else {
+                            app.enter_main_browse();
+                        }
                     }
                     Some(idx) => {
-                        if app.browsing_main { app.exit_main_browse(); }
+                        if app.browsing_main {
+                            app.exit_main_browse();
+                        }
                         app.save_current_terminal();
                         app.selected_worktree = Some(idx);
                         app.load_session_output();
@@ -175,23 +245,41 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         if app.pane_viewer.contains(pos) {
             app.git_status_selected = false;
             app.viewer_selection = None;
-            if let Some((cl, cc)) = screen_to_cache_pos(col, row, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
+            if let Some((cl, cc)) = screen_to_cache_pos(
+                col,
+                row,
+                app.pane_viewer,
+                app.viewer_scroll,
+                app.viewer_lines_cache.len(),
+            ) {
                 app.mouse_drag_start = Some((cl, cc, 0));
             }
         } else if app.input_area.contains(pos) {
             // Click on git status box — select the result message text
             app.viewer_selection = None;
-            app.git_status_selected = app.git_actions_panel.as_ref()
-                .and_then(|p| p.result_message.as_ref()).is_some();
+            app.git_status_selected = app
+                .git_actions_panel
+                .as_ref()
+                .and_then(|p| p.result_message.as_ref())
+                .is_some();
         } else {
             app.git_status_selected = false;
         }
         app.last_click = Some((std::time::Instant::now(), col, row));
         return true;
     }
-    if app.run_command_picker.is_some() { app.run_command_picker = None; return true; }
-    if app.run_command_dialog.is_some() { app.run_command_dialog = None; return true; }
-    if app.branch_dialog.is_some() { app.branch_dialog = None; return true; }
+    if app.run_command_picker.is_some() {
+        app.run_command_picker = None;
+        return true;
+    }
+    if app.run_command_dialog.is_some() {
+        app.run_command_dialog = None;
+        return true;
+    }
+    if app.branch_dialog.is_some() {
+        app.branch_dialog = None;
+        return true;
+    }
 
     // Clicking any pane exits prompt mode (input pane re-enables it below)
     app.prompt_mode = false;
@@ -240,13 +328,26 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
         app.focus = Focus::Session;
         // Check if the click landed on an underlined file path link
         app.clamp_session_scroll();
-        if let Some((cache_line, cache_col)) = screen_to_cache_pos(col, row, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
+        if let Some((cache_line, cache_col)) = screen_to_cache_pos(
+            col,
+            row,
+            app.pane_session,
+            app.session_scroll,
+            app.rendered_lines_cache.len(),
+        ) {
             // Search clickable_paths for a hit: first line checks column range,
             // continuation lines match anywhere within the wrapped path region
-            let hit = app.clickable_paths.iter().find(|(li, sc, ec, _, _, _, wlc)| {
-                if cache_line == *li { cache_col >= *sc && cache_col < *ec }
-                else { *wlc > 1 && cache_line > *li && cache_line < *li + *wlc }
-            }).cloned();
+            let hit = app
+                .clickable_paths
+                .iter()
+                .find(|(li, sc, ec, _, _, _, wlc)| {
+                    if cache_line == *li {
+                        cache_col >= *sc && cache_col < *ec
+                    } else {
+                        *wlc > 1 && cache_line > *li && cache_line < *li + *wlc
+                    }
+                })
+                .cloned();
             if let Some((li, sc, ec, file_path, old_s, new_s, wlc)) = hit {
                 // Set inverted-color highlight on the clicked path (including wrap count)
                 app.clicked_path_highlight = Some((li, sc, ec, wlc));
@@ -256,7 +357,10 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 // Read/Write tool: open file plain in Viewer
                 if !old_s.is_empty() || !new_s.is_empty() {
                     // Set selected_tool_diff so ⌥←/⌥→ cycling knows where we are
-                    let click_idx = app.clickable_paths.iter().position(|(l, s, e, _, _, _, _)| *l == li && *s == sc && *e == ec);
+                    let click_idx = app
+                        .clickable_paths
+                        .iter()
+                        .position(|(l, s, e, _, _, _, _)| *l == li && *s == sc && *e == ec);
                     app.selected_tool_diff = click_idx;
                     app.load_file_with_edit_diff(&file_path, &old_s, &new_s);
                 } else {
@@ -264,9 +368,11 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                 }
             } else {
                 // Check if the click landed on a table region
-                let table_hit = app.clickable_tables.iter().find(|(start, end, _)| {
-                    cache_line >= *start && cache_line < *end
-                }).cloned();
+                let table_hit = app
+                    .clickable_tables
+                    .iter()
+                    .find(|(start, end, _)| cache_line >= *start && cache_line < *end)
+                    .cloned();
                 if let Some((_, _, raw_markdown)) = table_hit {
                     app.open_table_popup(&raw_markdown);
                 }
@@ -302,7 +408,9 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.pane_status.contains(pos) {
         if let Some(ref msg) = app.status_message {
             let text = msg.clone();
-            if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+            if let Ok(mut cb) = arboard::Clipboard::new() {
+                let _ = cb.set_text(&text);
+            }
             app.clipboard = text;
             app.set_status("Copied to clipboard");
         }
@@ -316,7 +424,9 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
 /// Drag anchor is stored in cache coordinates (computed on MouseDown) so
 /// auto-scroll during drag doesn't shift the start point.
 pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
-    let Some((anchor_line, anchor_col, pane_id)) = app.mouse_drag_start else { return false };
+    let Some((anchor_line, anchor_col, pane_id)) = app.mouse_drag_start else {
+        return false;
+    };
 
     match pane_id {
         // --- Input pane: anchor_line = char index, anchor_col unused ---
@@ -335,12 +445,27 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
         // --- Viewer pane: anchor = (cache_line, cache_col) ---
         0 => {
             // Auto-scroll when dragging above/below pane
-            if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
-            else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
+            if row < app.pane_viewer.y + 1 {
+                app.scroll_viewer_up(1);
+            } else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) {
+                app.scroll_viewer_down(1);
+            }
             // Clamp end to pane content bounds
-            let ec = col.max(app.pane_viewer.x + 1).min(app.pane_viewer.x + app.pane_viewer.width.saturating_sub(1));
-            let er = row.max(app.pane_viewer.y + 1).min(app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1));
-            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) else { return false };
+            let ec = col
+                .max(app.pane_viewer.x + 1)
+                .min(app.pane_viewer.x + app.pane_viewer.width.saturating_sub(1));
+            let er = row
+                .max(app.pane_viewer.y + 1)
+                .min(app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1));
+            let Some((el, ecc)) = screen_to_cache_pos(
+                ec,
+                er,
+                app.pane_viewer,
+                app.viewer_scroll,
+                app.viewer_lines_cache.len(),
+            ) else {
+                return false;
+            };
             // Normalize so start <= end (anchor is always the fixed point)
             let sel = if anchor_line < el || (anchor_line == el && anchor_col <= ecc) {
                 (anchor_line, anchor_col, el, ecc)
@@ -348,18 +473,36 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
                 (el, ecc, anchor_line, anchor_col)
             };
             let new = Some(sel);
-            if app.viewer_selection != new { app.viewer_selection = new; return true; }
+            if app.viewer_selection != new {
+                app.viewer_selection = new;
+                return true;
+            }
             false
         }
         // --- Session pane: anchor = (cache_line, cache_col) ---
         1 => {
             app.clamp_session_scroll();
             // Auto-scroll when dragging above/below pane
-            if row < app.pane_session.y + 1 { app.scroll_session_up(1); }
-            else if row >= app.pane_session.y + app.pane_session.height.saturating_sub(1) { app.scroll_session_down(1); }
-            let ec = col.max(app.pane_session.x + 1).min(app.pane_session.x + app.pane_session.width.saturating_sub(1));
-            let er = row.max(app.pane_session.y + 1).min(app.pane_session.y + app.pane_session.height.saturating_sub(1));
-            let Some((el, ecc)) = screen_to_cache_pos(ec, er, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) else { return false };
+            if row < app.pane_session.y + 1 {
+                app.scroll_session_up(1);
+            } else if row >= app.pane_session.y + app.pane_session.height.saturating_sub(1) {
+                app.scroll_session_down(1);
+            }
+            let ec = col
+                .max(app.pane_session.x + 1)
+                .min(app.pane_session.x + app.pane_session.width.saturating_sub(1));
+            let er = row
+                .max(app.pane_session.y + 1)
+                .min(app.pane_session.y + app.pane_session.height.saturating_sub(1));
+            let Some((el, ecc)) = screen_to_cache_pos(
+                ec,
+                er,
+                app.pane_session,
+                app.session_scroll,
+                app.rendered_lines_cache.len(),
+            ) else {
+                return false;
+            };
             let sel = if anchor_line < el || (anchor_line == el && anchor_col <= ecc) {
                 (anchor_line, anchor_col, el, ecc)
             } else {
@@ -376,9 +519,14 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
         // --- Edit mode viewer: anchor = (source_line, source_col) ---
         3 => {
             // Auto-scroll when dragging above/below pane
-            if row < app.pane_viewer.y + 1 { app.scroll_viewer_up(1); }
-            else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) { app.scroll_viewer_down(1); }
-            let Some((el, ec)) = screen_to_edit_pos(app, col, row) else { return false };
+            if row < app.pane_viewer.y + 1 {
+                app.scroll_viewer_up(1);
+            } else if row >= app.pane_viewer.y + app.pane_viewer.height.saturating_sub(1) {
+                app.scroll_viewer_down(1);
+            }
+            let Some((el, ec)) = screen_to_edit_pos(app, col, row) else {
+                return false;
+            };
             // Update edit selection from anchor to current drag position
             let new = Some((anchor_line, anchor_col, el, ec));
             if app.viewer_edit_selection != new {
@@ -397,7 +545,10 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
 /// `gutter` chars are stripped from the start of every line (for viewer line numbers).
 fn extract_text_from_cache(
     cache: &[ratatui::text::Line],
-    sl: usize, sc: usize, el: usize, ec: usize,
+    sl: usize,
+    sc: usize,
+    el: usize,
+    ec: usize,
     gutter: usize,
 ) -> String {
     let mut out = String::new();
@@ -407,11 +558,17 @@ fn extract_text_from_cache(
         let chars: Vec<char> = text.chars().collect();
         // Shift columns past the gutter so line numbers are never copied
         let start = if idx == sl { sc.max(gutter) } else { gutter };
-        let end = if idx == el { ec.max(gutter) } else { chars.len() };
+        let end = if idx == el {
+            ec.max(gutter)
+        } else {
+            chars.len()
+        };
         if start < end && start < chars.len() {
             out.extend(&chars[start..end.min(chars.len())]);
         }
-        if idx < el { out.push('\n'); }
+        if idx < el {
+            out.push('\n');
+        }
     }
     out
 }
@@ -420,19 +577,28 @@ fn extract_text_from_cache(
 /// Strips line number gutter (first span per line) when viewer is in File mode,
 /// so copied text contains only file content — no "  1 │ " prefixes.
 pub fn copy_viewer_selection(app: &mut App) {
-    let Some((sl, sc, el, ec)) = app.viewer_selection else { return };
+    let Some((sl, sc, el, ec)) = app.viewer_selection else {
+        return;
+    };
     // Git mode diffs have no gutter; File mode strips line number prefix
     let gutter = if app.git_actions_panel.is_some() {
         0
     } else if app.viewer_mode == crate::app::ViewerMode::File {
-        app.viewer_lines_cache.first()
+        app.viewer_lines_cache
+            .first()
             .and_then(|l| l.spans.first())
             .map(|s| s.content.chars().count())
             .unwrap_or(0)
-    } else { 0 };
+    } else {
+        0
+    };
     let text = extract_text_from_cache(&app.viewer_lines_cache, sl, sc, el, ec, gutter);
-    if text.is_empty() { return; }
-    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+    if text.is_empty() {
+        return;
+    }
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text(&text);
+    }
     app.clipboard = text;
     app.set_status("Copied to clipboard");
 }
@@ -441,10 +607,16 @@ pub fn copy_viewer_selection(app: &mut App) {
 /// Respects bubble content bounds so copied text excludes borders, headers,
 /// and gutters — only actual message/content text is extracted.
 pub fn copy_session_selection(app: &mut App) {
-    let Some((sl, sc, el, ec)) = app.session_selection else { return };
+    let Some((sl, sc, el, ec)) = app.session_selection else {
+        return;
+    };
     let text = extract_session_text(&app.rendered_lines_cache, sl, sc, el, ec);
-    if text.is_empty() { return; }
-    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+    if text.is_empty() {
+        return;
+    }
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text(&text);
+    }
     app.clipboard = text;
     app.set_status("Copied to clipboard");
 }
@@ -454,17 +626,26 @@ pub fn copy_session_selection(app: &mut App) {
 /// Bubble gutters and right-side borders are excluded from extraction.
 fn extract_session_text(
     cache: &[ratatui::text::Line],
-    sl: usize, sc: usize, el: usize, ec: usize,
+    sl: usize,
+    sc: usize,
+    el: usize,
+    ec: usize,
 ) -> String {
     use crate::tui::draw_output::compute_line_content_bounds;
     let mut parts: Vec<String> = Vec::new();
     for idx in sl..=el {
         let Some(line) = cache.get(idx) else { continue };
         let (cb_start, cb_end) = compute_line_content_bounds(line);
-        if cb_start >= cb_end { continue; } // skip decoration
+        if cb_start >= cb_end {
+            continue;
+        } // skip decoration
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         let chars: Vec<char> = text.chars().collect();
-        let start = if idx == sl { sc.max(cb_start) } else { cb_start };
+        let start = if idx == sl {
+            sc.max(cb_start)
+        } else {
+            cb_start
+        };
         let end = if idx == el { ec.min(cb_end) } else { cb_end };
         if start < end && start < chars.len() {
             parts.push(chars[start..end.min(chars.len())].iter().collect());
@@ -486,8 +667,8 @@ fn extract_session_text(
 mod tests {
     use super::*;
     use ratatui::layout::{Position, Rect};
+    use ratatui::style::{Color, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::style::{Style, Color};
 
     // -- extract_text_from_cache: single line, full range --
 
@@ -545,10 +726,7 @@ mod tests {
 
     #[test]
     fn test_extract_gutter_strips_line_numbers() {
-        let lines = vec![
-            Line::from("  1 | foo"),
-            Line::from("  2 | bar"),
-        ];
+        let lines = vec![Line::from("  1 | foo"), Line::from("  2 | bar")];
         let result = extract_text_from_cache(&lines, 0, 0, 1, 9, 6);
         assert_eq!(result, "foo\nbar");
     }
@@ -608,20 +786,14 @@ mod tests {
 
     #[test]
     fn test_extract_newlines_between_lines() {
-        let lines = vec![
-            Line::from("a"),
-            Line::from("b"),
-        ];
+        let lines = vec![Line::from("a"), Line::from("b")];
         let result = extract_text_from_cache(&lines, 0, 0, 1, 1, 0);
         assert!(result.contains('\n'));
     }
 
     #[test]
     fn test_extract_no_trailing_newline() {
-        let lines = vec![
-            Line::from("a"),
-            Line::from("b"),
-        ];
+        let lines = vec![Line::from("a"), Line::from("b")];
         let result = extract_text_from_cache(&lines, 0, 0, 1, 1, 0);
         assert!(!result.ends_with('\n'));
     }
@@ -787,7 +959,9 @@ mod tests {
         let col = 2u16;
         let pane_x = 5u16;
         let pane_width = 20u16;
-        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        let ec = col
+            .max(pane_x + 1)
+            .min(pane_x + pane_width.saturating_sub(1));
         assert_eq!(ec, 6); // clamped to pane_x + 1
     }
 
@@ -796,7 +970,9 @@ mod tests {
         let col = 50u16;
         let pane_x = 5u16;
         let pane_width = 20u16;
-        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        let ec = col
+            .max(pane_x + 1)
+            .min(pane_x + pane_width.saturating_sub(1));
         assert_eq!(ec, 24); // clamped to pane_x + pane_width - 1
     }
 
@@ -805,7 +981,9 @@ mod tests {
         let col = 15u16;
         let pane_x = 5u16;
         let pane_width = 20u16;
-        let ec = col.max(pane_x + 1).min(pane_x + pane_width.saturating_sub(1));
+        let ec = col
+            .max(pane_x + 1)
+            .min(pane_x + pane_width.saturating_sub(1));
         assert_eq!(ec, 15); // unchanged
     }
 
@@ -816,7 +994,9 @@ mod tests {
         let row = 2u16;
         let pane_y = 5u16;
         let pane_height = 20u16;
-        let er = row.max(pane_y + 1).min(pane_y + pane_height.saturating_sub(1));
+        let er = row
+            .max(pane_y + 1)
+            .min(pane_y + pane_height.saturating_sub(1));
         assert_eq!(er, 6);
     }
 
@@ -825,7 +1005,9 @@ mod tests {
         let row = 50u16;
         let pane_y = 5u16;
         let pane_height = 20u16;
-        let er = row.max(pane_y + 1).min(pane_y + pane_height.saturating_sub(1));
+        let er = row
+            .max(pane_y + 1)
+            .min(pane_y + pane_height.saturating_sub(1));
         assert_eq!(er, 24);
     }
 
@@ -955,13 +1137,20 @@ mod tests {
 
     #[test]
     fn test_clickable_path_tuple() {
-        let path: (usize, usize, usize, String, String, String, usize) =
-            (5, 10, 25, "/path/to/file".into(), "old".into(), "new".into(), 1);
-        assert_eq!(path.0, 5);  // line index
+        let path: (usize, usize, usize, String, String, String, usize) = (
+            5,
+            10,
+            25,
+            "/path/to/file".into(),
+            "old".into(),
+            "new".into(),
+            1,
+        );
+        assert_eq!(path.0, 5); // line index
         assert_eq!(path.1, 10); // start column
         assert_eq!(path.2, 25); // end column
         assert_eq!(path.3, "/path/to/file");
-        assert_eq!(path.6, 1);  // wrap line count
+        assert_eq!(path.6, 1); // wrap line count
     }
 
     #[test]
@@ -1026,11 +1215,10 @@ mod tests {
 
     #[test]
     fn test_gutter_from_first_span() {
-        let line = Line::from(vec![
-            Span::raw("  1 | "),
-            Span::raw("content"),
-        ]);
-        let gutter = line.spans.first()
+        let line = Line::from(vec![Span::raw("  1 | "), Span::raw("content")]);
+        let gutter = line
+            .spans
+            .first()
             .map(|s| s.content.chars().count())
             .unwrap_or(0);
         assert_eq!(gutter, 6);
@@ -1039,7 +1227,8 @@ mod tests {
     #[test]
     fn test_gutter_empty_cache() {
         let cache: Vec<Line> = vec![];
-        let gutter = cache.first()
+        let gutter = cache
+            .first()
             .and_then(|l| l.spans.first())
             .map(|s| s.content.chars().count())
             .unwrap_or(0);

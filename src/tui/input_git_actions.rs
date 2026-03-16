@@ -20,33 +20,45 @@ mod diff_viewer;
 mod operations;
 
 // Re-export pub(crate) items for external consumers
-pub(crate) use operations::{exec_rebase_inner, RebaseOutcome, refresh_changed_files, refresh_commit_log};
+pub(crate) use operations::{
+    exec_rebase_inner, refresh_changed_files, refresh_commit_log, RebaseOutcome,
+};
 pub(crate) mod diff_viewer_api {
-    pub(crate) use super::diff_viewer::{load_file_diff_inline, load_commit_diff_inline};
+    pub(crate) use super::diff_viewer::{load_commit_diff_inline, load_file_diff_inline};
 }
 
 use anyhow::Result;
 use crossterm::event;
 use crossterm::event::KeyModifiers;
 
+use super::event_loop::copy_viewer_selection;
+use super::keybindings::{is_cmd, lookup_git_actions_action, Action};
 use crate::app::App;
 use crate::backend::AgentProcess;
-use super::keybindings::{lookup_git_actions_action, Action, is_cmd};
-use super::event_loop::copy_viewer_selection;
 
-use diff_viewer::{open_file_diff_inline, load_file_diff_inline, load_commit_diff_inline};
-use operations::{exec_squash_merge, exec_rebase, exec_pull, exec_push, exec_commit_start};
+use auto_resolve_overlay::handle_auto_resolve_overlay;
 use commit_overlay::handle_commit_overlay;
 use conflict_resolution::handle_conflict_overlay;
-use auto_resolve_overlay::handle_auto_resolve_overlay;
+use diff_viewer::{load_commit_diff_inline, load_file_diff_inline, open_file_diff_inline};
+use operations::{exec_commit_start, exec_pull, exec_push, exec_rebase, exec_squash_merge};
 
 /// Action count depends on context: main=3 (pull, commit, push),
 /// feature=4 (squash-merge, rebase, commit, push)
-fn action_count(is_on_main: bool) -> usize { if is_on_main { 3 } else { 4 } }
+fn action_count(is_on_main: bool) -> usize {
+    if is_on_main {
+        3
+    } else {
+        4
+    }
+}
 
 /// Handle all keyboard input while the Git Actions panel is open.
 /// Returns Ok(()) — the panel intercepts everything (no fallthrough).
-pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub fn handle_git_actions_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     let panel = match app.git_actions_panel.as_mut() {
         Some(p) => p,
         None => return Ok(()),
@@ -82,7 +94,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                     if let Some(ref p) = app.git_actions_panel {
                         if let Some((ref msg, _)) = p.result_message {
                             let text = msg.clone();
-                            if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                            if let Ok(mut cb) = arboard::Clipboard::new() {
+                                let _ = cb.set_text(&text);
+                            }
                             app.clipboard = text;
                             app.set_status("Copied to clipboard");
                         }
@@ -90,7 +104,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 } else if let Some(ref p) = app.git_actions_panel {
                     if let Some((ref msg, _)) = p.result_message {
                         let text = msg.clone();
-                        if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                            let _ = cb.set_text(&text);
+                        }
                         app.clipboard = text;
                         app.set_status("Copied to clipboard");
                     }
@@ -100,13 +116,23 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
             event::KeyCode::Char('a') => {
                 if app.viewer_lines_cache.is_empty() {
                     // No viewer content — select the status box message
-                    app.git_status_selected = app.git_actions_panel.as_ref()
-                        .and_then(|p| p.result_message.as_ref()).is_some();
+                    app.git_status_selected = app
+                        .git_actions_panel
+                        .as_ref()
+                        .and_then(|p| p.result_message.as_ref())
+                        .is_some();
                 } else {
                     app.git_status_selected = false;
                     let last = app.viewer_lines_cache.len().saturating_sub(1);
-                    let last_col = app.viewer_lines_cache.last()
-                        .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
+                    let last_col = app
+                        .viewer_lines_cache
+                        .last()
+                        .map(|l| {
+                            l.spans
+                                .iter()
+                                .map(|s| s.content.chars().count())
+                                .sum::<usize>()
+                        })
                         .unwrap_or(0);
                     app.viewer_selection = Some((0, 0, last, last_col));
                 }
@@ -138,20 +164,28 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
     }
 
     // Clear stale result message on any non-nav key
-    let is_nav = matches!(action_is_nav(key.modifiers, key.code, panel.focused_pane),
-        Some(true));
-    if !is_nav { panel.result_message = None; app.git_status_selected = false; }
+    let is_nav = matches!(
+        action_is_nav(key.modifiers, key.code, panel.focused_pane),
+        Some(true)
+    );
+    if !is_nav {
+        panel.result_message = None;
+        app.git_status_selected = false;
+    }
 
     let focused_pane = panel.focused_pane;
     let is_on_main = panel.is_on_main;
 
     // Resolve key → action via centralized binding arrays
-    let Some(action) = lookup_git_actions_action(focused_pane, is_on_main, key.modifiers, key.code) else {
+    let Some(action) = lookup_git_actions_action(focused_pane, is_on_main, key.modifiers, key.code)
+    else {
         return Ok(());
     };
 
     match action {
-        Action::Escape => { app.close_git_actions_panel(); }
+        Action::Escape => {
+            app.close_git_actions_panel();
+        }
         Action::GitToggleFocus => {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.focused_pane = (p.focused_pane + 1) % 3;
@@ -165,9 +199,15 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::NavDown => {
             if let Some(ref mut p) = app.git_actions_panel {
                 match p.focused_pane {
-                    0 => { if p.selected_action + 1 < action_count(p.is_on_main) { p.selected_action += 1; } }
+                    0 => {
+                        if p.selected_action + 1 < action_count(p.is_on_main) {
+                            p.selected_action += 1;
+                        }
+                    }
                     1 => {
-                        if !p.changed_files.is_empty() && p.selected_file + 1 < p.changed_files.len() {
+                        if !p.changed_files.is_empty()
+                            && p.selected_file + 1 < p.changed_files.len()
+                        {
                             p.selected_file += 1;
                         }
                         load_file_diff_inline(p);
@@ -185,13 +225,21 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::NavUp => {
             if let Some(ref mut p) = app.git_actions_panel {
                 match p.focused_pane {
-                    0 => { if p.selected_action > 0 { p.selected_action -= 1; } }
+                    0 => {
+                        if p.selected_action > 0 {
+                            p.selected_action -= 1;
+                        }
+                    }
                     1 => {
-                        if p.selected_file > 0 { p.selected_file -= 1; }
+                        if p.selected_file > 0 {
+                            p.selected_file -= 1;
+                        }
                         load_file_diff_inline(p);
                     }
                     2 => {
-                        if p.selected_commit > 0 { p.selected_commit -= 1; }
+                        if p.selected_commit > 0 {
+                            p.selected_commit -= 1;
+                        }
                         load_commit_diff_inline(p);
                     }
                     _ => {}
@@ -201,9 +249,19 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::GoToTop => {
             if let Some(ref mut p) = app.git_actions_panel {
                 match p.focused_pane {
-                    0 => { p.selected_action = 0; }
-                    1 => { p.selected_file = 0; p.file_scroll = 0; load_file_diff_inline(p); }
-                    2 => { p.selected_commit = 0; p.commit_scroll = 0; load_commit_diff_inline(p); }
+                    0 => {
+                        p.selected_action = 0;
+                    }
+                    1 => {
+                        p.selected_file = 0;
+                        p.file_scroll = 0;
+                        load_file_diff_inline(p);
+                    }
+                    2 => {
+                        p.selected_commit = 0;
+                        p.commit_scroll = 0;
+                        load_commit_diff_inline(p);
+                    }
                     _ => {}
                 }
             }
@@ -211,20 +269,42 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         Action::GoToBottom => {
             if let Some(ref mut p) = app.git_actions_panel {
                 match p.focused_pane {
-                    0 => { p.selected_action = action_count(p.is_on_main).saturating_sub(1); }
-                    1 => { if !p.changed_files.is_empty() { p.selected_file = p.changed_files.len() - 1; load_file_diff_inline(p); } }
-                    2 => { if !p.commits.is_empty() { p.selected_commit = p.commits.len() - 1; load_commit_diff_inline(p); } }
+                    0 => {
+                        p.selected_action = action_count(p.is_on_main).saturating_sub(1);
+                    }
+                    1 => {
+                        if !p.changed_files.is_empty() {
+                            p.selected_file = p.changed_files.len() - 1;
+                            load_file_diff_inline(p);
+                        }
+                    }
+                    2 => {
+                        if !p.commits.is_empty() {
+                            p.selected_commit = p.commits.len() - 1;
+                            load_commit_diff_inline(p);
+                        }
+                    }
                     _ => {}
                 }
             }
         }
 
         // ── Git operations (only fire when focused_pane==0, enforced by lookup guard) ──
-        Action::GitSquashMerge => { exec_squash_merge(app); }
-        Action::GitRebase => { exec_rebase(app); }
-        Action::GitPull => { exec_pull(app); }
-        Action::GitCommit => { exec_commit_start(app); }
-        Action::GitPush => { exec_push(app); }
+        Action::GitSquashMerge => {
+            exec_squash_merge(app);
+        }
+        Action::GitRebase => {
+            exec_rebase(app);
+        }
+        Action::GitPull => {
+            exec_pull(app);
+        }
+        Action::GitCommit => {
+            exec_commit_start(app);
+        }
+        Action::GitPush => {
+            exec_push(app);
+        }
         Action::GitAutoRebase => {
             if let Some(ref p) = app.git_actions_panel {
                 let branch = p.worktree_name.clone();
@@ -239,7 +319,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 app.invalidate_sidebar();
                 if let Some(ref mut p) = app.git_actions_panel {
                     p.result_message = Some((
-                        if enabled { "Auto-rebase enabled".into() } else { "Auto-rebase disabled".into() },
+                        if enabled {
+                            "Auto-rebase enabled".into()
+                        } else {
+                            "Auto-rebase disabled".into()
+                        },
                         false,
                     ));
                 }
@@ -248,7 +332,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
 
         Action::GitAutoResolveSettings => {
             if let Some(ref mut p) = app.git_actions_panel {
-                let files: Vec<(String, bool)> = p.auto_resolve_files.iter()
+                let files: Vec<(String, bool)> = p
+                    .auto_resolve_files
+                    .iter()
                     .map(|f| (f.clone(), true))
                     .collect();
                 p.auto_resolve_overlay = Some(crate::app::types::AutoResolveOverlay {
@@ -271,12 +357,25 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
             match pane {
                 0 => {
                     if on_main {
-                        match idx { 0 => exec_pull(app), 1 => exec_commit_start(app), 2 => exec_push(app), _ => {} }
+                        match idx {
+                            0 => exec_pull(app),
+                            1 => exec_commit_start(app),
+                            2 => exec_push(app),
+                            _ => {}
+                        }
                     } else {
-                        match idx { 0 => exec_squash_merge(app), 1 => exec_rebase(app), 2 => exec_commit_start(app), 3 => exec_push(app), _ => {} }
+                        match idx {
+                            0 => exec_squash_merge(app),
+                            1 => exec_rebase(app),
+                            2 => exec_commit_start(app),
+                            3 => exec_push(app),
+                            _ => {}
+                        }
                     }
                 }
-                1 => { open_file_diff_inline(app); }
+                1 => {
+                    open_file_diff_inline(app);
+                }
                 2 => {
                     if let Some(ref mut p) = app.git_actions_panel {
                         load_commit_diff_inline(p);
@@ -285,7 +384,9 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 _ => {}
             }
         }
-        Action::GitViewDiff => { open_file_diff_inline(app); }
+        Action::GitViewDiff => {
+            open_file_diff_inline(app);
+        }
 
         Action::GitRefresh => {
             if let Some(ref mut p) = app.git_actions_panel {
@@ -294,11 +395,21 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                 p.result_message = Some(("Refreshed".into(), false));
             }
         }
-        Action::GitPrevWorktree => { switch_git_panel_worktree(app, false); }
-        Action::GitNextWorktree => { switch_git_panel_worktree(app, true); }
-        Action::GitPrevPage => { switch_git_panel_page(app, false); }
-        Action::GitNextPage => { switch_git_panel_page(app, true); }
-        Action::BrowseMain => { switch_git_panel_to_main(app); }
+        Action::GitPrevWorktree => {
+            switch_git_panel_worktree(app, false);
+        }
+        Action::GitNextWorktree => {
+            switch_git_panel_worktree(app, true);
+        }
+        Action::GitPrevPage => {
+            switch_git_panel_page(app, false);
+        }
+        Action::GitNextPage => {
+            switch_git_panel_page(app, true);
+        }
+        Action::BrowseMain => {
+            switch_git_panel_to_main(app);
+        }
 
         // ── File staging actions (only fire when focused_pane==1, enforced by lookup guard) ──
         Action::GitToggleStage => {
@@ -309,8 +420,11 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
                     p.changed_files[idx].staged = !was_staged;
                     let path = &p.changed_files[idx].path;
                     p.result_message = Some((
-                        if was_staged { format!("Unstaged: {}", path) }
-                        else { format!("Staged: {}", path) },
+                        if was_staged {
+                            format!("Unstaged: {}", path)
+                        } else {
+                            format!("Staged: {}", path)
+                        },
                         false,
                     ));
                 }
@@ -318,13 +432,18 @@ pub fn handle_git_actions_input(key: event::KeyEvent, app: &mut App, claude_proc
         }
         Action::GitStageAll => {
             if let Some(ref mut p) = app.git_actions_panel {
-                let all_staged = !p.changed_files.is_empty()
-                    && p.changed_files.iter().all(|f| f.staged);
+                let all_staged =
+                    !p.changed_files.is_empty() && p.changed_files.iter().all(|f| f.staged);
                 let new_staged = !all_staged;
-                for f in &mut p.changed_files { f.staged = new_staged; }
+                for f in &mut p.changed_files {
+                    f.staged = new_staged;
+                }
                 p.result_message = Some((
-                    if new_staged { "Staged all files".into() }
-                    else { "Unstaged all files".into() },
+                    if new_staged {
+                        "Staged all files".into()
+                    } else {
+                        "Unstaged all files".into()
+                    },
                     false,
                 ));
             }
@@ -382,11 +501,16 @@ fn handle_discard_confirm(key: event::KeyEvent, app: &mut App) -> Result<()> {
 /// `switch_git_panel_to_main`). Preserves `focused_pane` across the switch.
 fn switch_git_panel_worktree(app: &mut App, forward: bool) {
     // Collect indices of all active worktrees (non-archived, have a real path)
-    let active: Vec<usize> = app.worktrees.iter().enumerate()
+    let active: Vec<usize> = app
+        .worktrees
+        .iter()
+        .enumerate()
         .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
         .map(|(i, _)| i)
         .collect();
-    if active.is_empty() { return; }
+    if active.is_empty() {
+        return;
+    }
 
     let panel = match app.git_actions_panel.as_ref() {
         Some(p) => p,
@@ -398,7 +522,11 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
 
     // When on main, ] goes to first worktree, [ goes to last
     if is_on_main {
-        let new_idx = if forward { active[0] } else { active[active.len() - 1] };
+        let new_idx = if forward {
+            active[0]
+        } else {
+            active[active.len() - 1]
+        };
         app.browsing_main = false;
         app.selected_worktree = Some(new_idx);
         app.load_session_output();
@@ -409,11 +537,14 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
         return;
     }
 
-    if active.len() <= 1 { return; }
+    if active.len() <= 1 {
+        return;
+    }
 
-    let pos = active.iter().position(|&idx| {
-        app.worktrees[idx].branch_name == current_name
-    }).unwrap_or(0);
+    let pos = active
+        .iter()
+        .position(|&idx| app.worktrees[idx].branch_name == current_name)
+        .unwrap_or(0);
 
     let new_pos = if forward {
         (pos + 1) % active.len()
@@ -434,8 +565,16 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
 /// Switch the git panel to show main branch status (mirrors the ★ main tab click).
 /// If already viewing main, switches back to the previously selected worktree.
 fn switch_git_panel_to_main(app: &mut App) {
-    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
-    let already_on_main = app.git_actions_panel.as_ref().map(|p| p.is_on_main).unwrap_or(false);
+    let focused_pane = app
+        .git_actions_panel
+        .as_ref()
+        .map(|p| p.focused_pane)
+        .unwrap_or(0);
+    let already_on_main = app
+        .git_actions_panel
+        .as_ref()
+        .map(|p| p.is_on_main)
+        .unwrap_or(false);
 
     if already_on_main {
         // Already on main — switch back to the selected worktree
@@ -462,23 +601,35 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
         None => return,
     };
     let active_branch = panel.worktree_name.clone();
-    let tab_bar_width = app.pane_worktrees.width.saturating_add(
-        app.pane_viewer.width).saturating_add(app.pane_session.width) as usize;
-    if tab_bar_width == 0 { return; }
+    let tab_bar_width = app
+        .pane_worktrees
+        .width
+        .saturating_add(app.pane_viewer.width)
+        .saturating_add(app.pane_session.width) as usize;
+    if tab_bar_width == 0 {
+        return;
+    }
 
     // Collect active worktrees (same filter as draw_git_worktree_tabs, minus main)
-    let active: Vec<(usize, &str)> = app.worktrees.iter().enumerate()
+    let active: Vec<(usize, &str)> = app
+        .worktrees
+        .iter()
+        .enumerate()
         .filter(|(_, wt)| !wt.archived && wt.worktree_path.is_some())
         .map(|(i, wt)| (i, wt.name()))
         .collect();
-    if active.len() <= 1 { return; }
+    if active.len() <= 1 {
+        return;
+    }
 
     // Tab display widths: " name " = name_cols + 2
-    let tab_widths: Vec<usize> = active.iter()
+    let tab_widths: Vec<usize> = active
+        .iter()
         .map(|(_, name)| {
             name.chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
-                .sum::<usize>() + 2
+                .sum::<usize>()
+                + 2
         })
         .collect();
 
@@ -498,12 +649,18 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
             cur.push(i);
             cur_w += cost;
         }
-        if active[i].1 == active_branch { active_page = pages.len(); }
+        if active[i].1 == active_branch {
+            active_page = pages.len();
+        }
     }
-    if !cur.is_empty() { pages.push(cur); }
+    if !cur.is_empty() {
+        pages.push(cur);
+    }
 
     let total_pages = pages.len();
-    if total_pages <= 1 { return; }
+    if total_pages <= 1 {
+        return;
+    }
 
     let target_page = if forward {
         (active_page + 1) % total_pages
@@ -515,7 +672,11 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
     let first_on_page = pages[target_page][0];
     let new_idx = active[first_on_page].0;
 
-    let focused_pane = app.git_actions_panel.as_ref().map(|p| p.focused_pane).unwrap_or(0);
+    let focused_pane = app
+        .git_actions_panel
+        .as_ref()
+        .map(|p| p.focused_pane)
+        .unwrap_or(0);
     app.selected_worktree = Some(new_idx);
     app.load_session_output();
     app.open_git_actions_panel();
@@ -525,14 +686,24 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
 }
 
 /// Quick check if a key is a nav key (used to preserve result_message during scrolling)
-fn action_is_nav(modifiers: crossterm::event::KeyModifiers, code: crossterm::event::KeyCode, _focused_pane: u8) -> Option<bool> {
+fn action_is_nav(
+    modifiers: crossterm::event::KeyModifiers,
+    code: crossterm::event::KeyCode,
+    _focused_pane: u8,
+) -> Option<bool> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    Some(matches!((modifiers, code),
-        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Char('k'))
-        | (KeyModifiers::NONE, KeyCode::Down) | (KeyModifiers::NONE, KeyCode::Up)
-        | (KeyModifiers::ALT, KeyCode::Up) | (KeyModifiers::ALT, KeyCode::Down)
-        | (KeyModifiers::NONE, KeyCode::Char('[')) | (KeyModifiers::NONE, KeyCode::Char(']'))
-        | (_, KeyCode::Char('{')) | (_, KeyCode::Char('}'))
+    Some(matches!(
+        (modifiers, code),
+        (KeyModifiers::NONE, KeyCode::Char('j'))
+            | (KeyModifiers::NONE, KeyCode::Char('k'))
+            | (KeyModifiers::NONE, KeyCode::Down)
+            | (KeyModifiers::NONE, KeyCode::Up)
+            | (KeyModifiers::ALT, KeyCode::Up)
+            | (KeyModifiers::ALT, KeyCode::Down)
+            | (KeyModifiers::NONE, KeyCode::Char('['))
+            | (KeyModifiers::NONE, KeyCode::Char(']'))
+            | (_, KeyCode::Char('{'))
+            | (_, KeyCode::Char('}'))
     ))
 }
 
@@ -542,7 +713,12 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key_mod(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -550,70 +726,155 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_count_main_is_3() { assert_eq!(action_count(true), 3); }
+    fn action_count_main_is_3() {
+        assert_eq!(action_count(true), 3);
+    }
 
     #[test]
-    fn action_count_feature_is_4() { assert_eq!(action_count(false), 4); }
+    fn action_count_feature_is_4() {
+        assert_eq!(action_count(false), 4);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  action_is_nav
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn nav_j_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0), Some(true)); }
+    fn nav_j_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_k_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('k'), 0), Some(true)); }
+    fn nav_k_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('k'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_down_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Down, 0), Some(true)); }
+    fn nav_down_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Down, 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_up_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Up, 0), Some(true)); }
+    fn nav_up_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Up, 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_alt_up_is_nav() { assert_eq!(action_is_nav(KeyModifiers::ALT, KeyCode::Up, 0), Some(true)); }
+    fn nav_alt_up_is_nav() {
+        assert_eq!(action_is_nav(KeyModifiers::ALT, KeyCode::Up, 0), Some(true));
+    }
 
     #[test]
-    fn nav_alt_down_is_nav() { assert_eq!(action_is_nav(KeyModifiers::ALT, KeyCode::Down, 0), Some(true)); }
+    fn nav_alt_down_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::ALT, KeyCode::Down, 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_bracket_open_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('['), 0), Some(true)); }
+    fn nav_bracket_open_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('['), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_bracket_close_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char(']'), 0), Some(true)); }
+    fn nav_bracket_close_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char(']'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_brace_open_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('{'), 0), Some(true)); }
+    fn nav_brace_open_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('{'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_brace_close_is_nav() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('}'), 0), Some(true)); }
+    fn nav_brace_close_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('}'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn nav_brace_open_with_shift_is_nav() { assert_eq!(action_is_nav(KeyModifiers::SHIFT, KeyCode::Char('{'), 0), Some(true)); }
+    fn nav_brace_open_with_shift_is_nav() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::SHIFT, KeyCode::Char('{'), 0),
+            Some(true)
+        );
+    }
 
     #[test]
-    fn non_nav_enter() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Enter, 0), Some(false)); }
+    fn non_nav_enter() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Enter, 0),
+            Some(false)
+        );
+    }
 
     #[test]
-    fn non_nav_esc() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Esc, 0), Some(false)); }
+    fn non_nav_esc() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Esc, 0),
+            Some(false)
+        );
+    }
 
     #[test]
-    fn non_nav_char_a() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('a'), 0), Some(false)); }
+    fn non_nav_char_a() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('a'), 0),
+            Some(false)
+        );
+    }
 
     #[test]
-    fn non_nav_char_c() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('c'), 0), Some(false)); }
+    fn non_nav_char_c() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('c'), 0),
+            Some(false)
+        );
+    }
 
     #[test]
-    fn non_nav_tab() { assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Tab, 0), Some(false)); }
+    fn non_nav_tab() {
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Tab, 0),
+            Some(false)
+        );
+    }
 
     #[test]
     fn action_is_nav_ignores_focused_pane() {
         // Same key returns same result regardless of pane
-        assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0),
-                   action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1));
-        assert_eq!(action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1),
-                   action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 2));
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 0),
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1)
+        );
+        assert_eq!(
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 1),
+            action_is_nav(KeyModifiers::NONE, KeyCode::Char('j'), 2)
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -621,58 +882,109 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_escape_eq() { assert_eq!(Action::Escape, Action::Escape); }
+    fn action_escape_eq() {
+        assert_eq!(Action::Escape, Action::Escape);
+    }
     #[test]
-    fn action_git_toggle_focus_eq() { assert_eq!(Action::GitToggleFocus, Action::GitToggleFocus); }
+    fn action_git_toggle_focus_eq() {
+        assert_eq!(Action::GitToggleFocus, Action::GitToggleFocus);
+    }
     #[test]
-    fn action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    fn action_nav_down_eq() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
     #[test]
-    fn action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    fn action_nav_up_eq() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
     #[test]
-    fn action_go_to_top_eq() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    fn action_go_to_top_eq() {
+        assert_eq!(Action::GoToTop, Action::GoToTop);
+    }
     #[test]
-    fn action_go_to_bottom_eq() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    fn action_go_to_bottom_eq() {
+        assert_eq!(Action::GoToBottom, Action::GoToBottom);
+    }
     #[test]
-    fn action_git_squash_merge_eq() { assert_eq!(Action::GitSquashMerge, Action::GitSquashMerge); }
+    fn action_git_squash_merge_eq() {
+        assert_eq!(Action::GitSquashMerge, Action::GitSquashMerge);
+    }
     #[test]
-    fn action_git_rebase_eq() { assert_eq!(Action::GitRebase, Action::GitRebase); }
+    fn action_git_rebase_eq() {
+        assert_eq!(Action::GitRebase, Action::GitRebase);
+    }
     #[test]
-    fn action_git_pull_eq() { assert_eq!(Action::GitPull, Action::GitPull); }
+    fn action_git_pull_eq() {
+        assert_eq!(Action::GitPull, Action::GitPull);
+    }
     #[test]
-    fn action_git_commit_eq() { assert_eq!(Action::GitCommit, Action::GitCommit); }
+    fn action_git_commit_eq() {
+        assert_eq!(Action::GitCommit, Action::GitCommit);
+    }
     #[test]
-    fn action_git_push_eq() { assert_eq!(Action::GitPush, Action::GitPush); }
+    fn action_git_push_eq() {
+        assert_eq!(Action::GitPush, Action::GitPush);
+    }
     #[test]
-    fn action_git_auto_rebase_eq() { assert_eq!(Action::GitAutoRebase, Action::GitAutoRebase); }
+    fn action_git_auto_rebase_eq() {
+        assert_eq!(Action::GitAutoRebase, Action::GitAutoRebase);
+    }
     #[test]
-    fn action_git_auto_resolve_eq() { assert_eq!(Action::GitAutoResolveSettings, Action::GitAutoResolveSettings); }
+    fn action_git_auto_resolve_eq() {
+        assert_eq!(
+            Action::GitAutoResolveSettings,
+            Action::GitAutoResolveSettings
+        );
+    }
     #[test]
-    fn action_confirm_eq() { assert_eq!(Action::Confirm, Action::Confirm); }
+    fn action_confirm_eq() {
+        assert_eq!(Action::Confirm, Action::Confirm);
+    }
     #[test]
-    fn action_git_view_diff_eq() { assert_eq!(Action::GitViewDiff, Action::GitViewDiff); }
+    fn action_git_view_diff_eq() {
+        assert_eq!(Action::GitViewDiff, Action::GitViewDiff);
+    }
     #[test]
-    fn action_git_refresh_eq() { assert_eq!(Action::GitRefresh, Action::GitRefresh); }
+    fn action_git_refresh_eq() {
+        assert_eq!(Action::GitRefresh, Action::GitRefresh);
+    }
     #[test]
-    fn action_git_prev_worktree_eq() { assert_eq!(Action::GitPrevWorktree, Action::GitPrevWorktree); }
+    fn action_git_prev_worktree_eq() {
+        assert_eq!(Action::GitPrevWorktree, Action::GitPrevWorktree);
+    }
     #[test]
-    fn action_git_next_worktree_eq() { assert_eq!(Action::GitNextWorktree, Action::GitNextWorktree); }
+    fn action_git_next_worktree_eq() {
+        assert_eq!(Action::GitNextWorktree, Action::GitNextWorktree);
+    }
     #[test]
-    fn action_git_prev_page_eq() { assert_eq!(Action::GitPrevPage, Action::GitPrevPage); }
+    fn action_git_prev_page_eq() {
+        assert_eq!(Action::GitPrevPage, Action::GitPrevPage);
+    }
     #[test]
-    fn action_git_next_page_eq() { assert_eq!(Action::GitNextPage, Action::GitNextPage); }
+    fn action_git_next_page_eq() {
+        assert_eq!(Action::GitNextPage, Action::GitNextPage);
+    }
     #[test]
-    fn action_browse_main_eq() { assert_eq!(Action::BrowseMain, Action::BrowseMain); }
+    fn action_browse_main_eq() {
+        assert_eq!(Action::BrowseMain, Action::BrowseMain);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  focused_pane cycling arithmetic (toggle focus)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn focused_pane_0_cycles_to_1() { assert_eq!((0u8 + 1) % 3, 1); }
+    fn focused_pane_0_cycles_to_1() {
+        assert_eq!((0u8 + 1) % 3, 1);
+    }
     #[test]
-    fn focused_pane_1_cycles_to_2() { assert_eq!((1u8 + 1) % 3, 2); }
+    fn focused_pane_1_cycles_to_2() {
+        assert_eq!((1u8 + 1) % 3, 2);
+    }
     #[test]
-    fn focused_pane_2_cycles_to_0() { assert_eq!((2u8 + 1) % 3, 0); }
+    fn focused_pane_2_cycles_to_0() {
+        assert_eq!((2u8 + 1) % 3, 0);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Shift+J/K scroll detection
@@ -719,46 +1031,91 @@ mod tests {
         let on_main = true;
         let idx = 0;
         let action = if on_main {
-            match idx { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" }
+            match idx {
+                0 => "pull",
+                1 => "commit",
+                2 => "push",
+                _ => "unknown",
+            }
         } else {
-            match idx { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" }
+            match idx {
+                0 => "squash-merge",
+                1 => "rebase",
+                2 => "commit",
+                3 => "push",
+                _ => "unknown",
+            }
         };
         assert_eq!(action, "pull");
     }
 
     #[test]
     fn main_index_1_is_commit() {
-        let action = match 1 { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" };
+        let action = match 1 {
+            0 => "pull",
+            1 => "commit",
+            2 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "commit");
     }
 
     #[test]
     fn main_index_2_is_push() {
-        let action = match 2 { 0 => "pull", 1 => "commit", 2 => "push", _ => "unknown" };
+        let action = match 2 {
+            0 => "pull",
+            1 => "commit",
+            2 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "push");
     }
 
     #[test]
     fn feature_index_0_is_squash_merge() {
-        let action = match 0 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        let action = match 0 {
+            0 => "squash-merge",
+            1 => "rebase",
+            2 => "commit",
+            3 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "squash-merge");
     }
 
     #[test]
     fn feature_index_1_is_rebase() {
-        let action = match 1 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        let action = match 1 {
+            0 => "squash-merge",
+            1 => "rebase",
+            2 => "commit",
+            3 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "rebase");
     }
 
     #[test]
     fn feature_index_2_is_commit() {
-        let action = match 2 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        let action = match 2 {
+            0 => "squash-merge",
+            1 => "rebase",
+            2 => "commit",
+            3 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "commit");
     }
 
     #[test]
     fn feature_index_3_is_push() {
-        let action = match 3 { 0 => "squash-merge", 1 => "rebase", 2 => "commit", 3 => "push", _ => "unknown" };
+        let action = match 3 {
+            0 => "squash-merge",
+            1 => "rebase",
+            2 => "commit",
+            3 => "push",
+            _ => "unknown",
+        };
         assert_eq!(action, "push");
     }
 
@@ -800,4 +1157,3 @@ mod tests {
         assert_eq!(viewport_height.saturating_sub(2), 0);
     }
 }
-

@@ -8,8 +8,11 @@ use crate::models::Project;
 
 /// Truncate string with ellipsis
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len { s.to_string() }
-    else { format!("{}...", &s[..max_len.saturating_sub(3)]) }
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
 }
 
 /// Discover project from current directory
@@ -39,7 +42,11 @@ pub fn handle_project_list(output_format: OutputFormat) -> Result<()> {
             println!("{:<20} PATH", "NAME");
             println!("{}", "-".repeat(70));
             for project in projects {
-                println!("{:<20} {}", truncate(&project.name, 20), project.path.display());
+                println!(
+                    "{:<20} {}",
+                    truncate(&project.name, 20),
+                    project.path.display()
+                );
             }
         }
     }
@@ -72,7 +79,9 @@ pub fn handle_project_show(project_arg: Option<String>, output_format: OutputFor
             if let Ok(worktrees) = Git::list_worktrees_detailed(&project.path) {
                 println!("\nWorktrees: {}", worktrees.len());
                 for wt in worktrees.iter().take(5) {
-                    let name = if wt.is_main { "(main)" } else {
+                    let name = if wt.is_main {
+                        "(main)"
+                    } else {
                         wt.branch.as_deref().unwrap_or("detached")
                     };
                     println!("  {} - {}", name, wt.path.display());
@@ -291,7 +300,10 @@ mod tests {
             path: PathBuf::from("/home/user/project"),
             main_branch: "main".to_string(),
         };
-        assert_eq!(project.worktrees_dir(), PathBuf::from("/home/user/project/worktrees"));
+        assert_eq!(
+            project.worktrees_dir(),
+            PathBuf::from("/home/user/project/worktrees")
+        );
     }
 
     #[test]
@@ -452,8 +464,16 @@ mod tests {
     #[test]
     fn test_project_json_array() {
         let projects = vec![
-            Project { name: "a".to_string(), path: PathBuf::from("/a"), main_branch: "main".to_string() },
-            Project { name: "b".to_string(), path: PathBuf::from("/b"), main_branch: "main".to_string() },
+            Project {
+                name: "a".to_string(),
+                path: PathBuf::from("/a"),
+                main_branch: "main".to_string(),
+            },
+            Project {
+                name: "b".to_string(),
+                path: PathBuf::from("/b"),
+                main_branch: "main".to_string(),
+            },
         ];
         let json = serde_json::to_string_pretty(&projects).unwrap();
         let parsed: Vec<Project> = serde_json::from_str(&json).unwrap();
@@ -494,7 +514,10 @@ mod tests {
             main_branch: "main".to_string(),
         };
         // PathBuf normalizes trailing slashes
-        assert!(project.worktrees_dir().to_string_lossy().contains("worktrees"));
+        assert!(project
+            .worktrees_dir()
+            .to_string_lossy()
+            .contains("worktrees"));
     }
 
     #[test]

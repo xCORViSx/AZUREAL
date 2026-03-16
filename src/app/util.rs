@@ -13,23 +13,32 @@ pub fn strip_ansi_escapes(text: &str) -> String {
                     chars.next();
                     while let Some(&next_ch) = chars.peek() {
                         chars.next();
-                        if next_ch.is_ascii_alphabetic() { break; }
+                        if next_ch.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
                 Some(&']') => {
                     // OSC sequence: \x1b]...(\x07 or \x1b\\)
                     chars.next();
                     while let Some(&next_ch) = chars.peek() {
-                        if next_ch == '\x07' { chars.next(); break; }
+                        if next_ch == '\x07' {
+                            chars.next();
+                            break;
+                        }
                         if next_ch == '\x1b' {
                             chars.next();
-                            if chars.peek() == Some(&'\\') { chars.next(); }
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
                             break;
                         }
                         chars.next();
                     }
                 }
-                _ => { chars.next(); }
+                _ => {
+                    chars.next();
+                }
             }
         } else {
             result.push(ch);
@@ -47,9 +56,18 @@ fn extract_tool_param(tool_name: &str, input: Option<&serde_json::Value>) -> Str
     };
 
     let result = match tool_name {
-        "Read" | "read" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
-        "Write" | "write" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
-        "Edit" | "edit" => input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()),
+        "Read" | "read" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str()),
+        "Write" | "write" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str()),
+        "Edit" | "edit" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str()),
         "Bash" | "bash" => input.get("command").and_then(|v| v.as_str()),
         "Glob" | "glob" => input.get("pattern").and_then(|v| v.as_str()),
         "Grep" | "grep" => input.get("pattern").and_then(|v| v.as_str()),
@@ -57,11 +75,15 @@ fn extract_tool_param(tool_name: &str, input: Option<&serde_json::Value>) -> Str
         "WebFetch" | "webfetch" => input.get("url").and_then(|v| v.as_str()),
         "WebSearch" | "websearch" => input.get("query").and_then(|v| v.as_str()),
         "LSP" | "lsp" => {
-            let op = input.get("operation").and_then(|v| v.as_str()).unwrap_or("");
+            let op = input
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let file = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
             return format!("{} {}", op, file);
         }
-        _ => input.get("file_path")
+        _ => input
+            .get("file_path")
             .or_else(|| input.get("path"))
             .or_else(|| input.get("command"))
             .or_else(|| input.get("query"))
@@ -95,12 +117,18 @@ pub fn display_text_from_json(json: &serde_json::Value) -> Option<String> {
             let subtype = json.get("subtype").and_then(|s| s.as_str())?;
             match subtype {
                 "init" => {
-                    let model = json.get("model").and_then(|m| m.as_str()).unwrap_or("unknown");
+                    let model = json
+                        .get("model")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("unknown");
                     let cwd = json.get("cwd").and_then(|c| c.as_str()).unwrap_or("");
                     Some(format!("[Session started | {} | {}]\n", model, cwd))
                 }
                 "hook_response" => {
-                    let hook_name = json.get("hook_name").and_then(|n| n.as_str()).unwrap_or("hook");
+                    let hook_name = json
+                        .get("hook_name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("hook");
                     let output = json.get("output").and_then(|o| o.as_str()).unwrap_or("");
                     if output.is_empty() {
                         Some(format!("[Hook: {}]\n", hook_name))
@@ -142,12 +170,26 @@ pub fn display_text_from_json(json: &serde_json::Value) -> Option<String> {
                 }
             }
 
-            if text_parts.is_empty() { None } else { Some(format!("Claude: {}\n", text_parts.join("\n"))) }
+            if text_parts.is_empty() {
+                None
+            } else {
+                Some(format!("Claude: {}\n", text_parts.join("\n")))
+            }
         }
         "result" => {
-            let duration = json.get("duration_ms").and_then(|d| d.as_u64()).unwrap_or(0);
-            let cost = json.get("total_cost_usd").and_then(|c| c.as_f64()).unwrap_or(0.0);
-            Some(format!("[Done: {:.1}s, ${:.4}]\n", duration as f64 / 1000.0, cost))
+            let duration = json
+                .get("duration_ms")
+                .and_then(|d| d.as_u64())
+                .unwrap_or(0);
+            let cost = json
+                .get("total_cost_usd")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(0.0);
+            Some(format!(
+                "[Done: {:.1}s, ${:.4}]\n",
+                duration as f64 / 1000.0,
+                cost
+            ))
         }
         _ => None,
     }
@@ -247,7 +289,10 @@ mod tests {
     #[test]
     fn test_extract_webfetch_url() {
         let input = json!({"url": "https://example.com"});
-        assert_eq!(extract_tool_param("WebFetch", Some(&input)), "https://example.com");
+        assert_eq!(
+            extract_tool_param("WebFetch", Some(&input)),
+            "https://example.com"
+        );
     }
 
     #[test]
@@ -259,7 +304,10 @@ mod tests {
     #[test]
     fn test_extract_lsp_operation() {
         let input = json!({"operation": "definition", "filePath": "/src/lib.rs"});
-        assert_eq!(extract_tool_param("LSP", Some(&input)), "definition /src/lib.rs");
+        assert_eq!(
+            extract_tool_param("LSP", Some(&input)),
+            "definition /src/lib.rs"
+        );
     }
 
     #[test]
@@ -285,7 +333,10 @@ mod tests {
     #[test]
     fn test_extract_unknown_tool_fallback() {
         let input = json!({"file_path": "/some/file.txt"});
-        assert_eq!(extract_tool_param("UnknownTool", Some(&input)), "/some/file.txt");
+        assert_eq!(
+            extract_tool_param("UnknownTool", Some(&input)),
+            "/some/file.txt"
+        );
     }
 
     #[test]
@@ -639,7 +690,10 @@ mod tests {
     #[test]
     fn test_extract_unknown_tool_query_fallback() {
         let input = json!({"query": "search term"});
-        assert_eq!(extract_tool_param("CustomTool", Some(&input)), "search term");
+        assert_eq!(
+            extract_tool_param("CustomTool", Some(&input)),
+            "search term"
+        );
     }
 
     #[test]
@@ -677,7 +731,7 @@ mod tests {
         });
         let result = display_text_from_json(&json).unwrap();
         assert!(result.contains("opus"));
-        assert!(result.contains("| ]"));  // cwd defaults to empty string
+        assert!(result.contains("| ]")); // cwd defaults to empty string
     }
 
     #[test]

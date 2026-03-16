@@ -10,9 +10,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
-use crate::app::types::{HealthTab, ModuleStyleDialog, RustModuleStyle, PythonModuleStyle};
 use super::keybindings;
+use crate::app::types::{HealthTab, ModuleStyleDialog, PythonModuleStyle, RustModuleStyle};
+use crate::app::App;
 
 /// Health panel accent — bright green from the scope overlay
 const GF_GREEN: Color = Color::Rgb(80, 200, 80);
@@ -20,7 +20,9 @@ const GF_GREEN: Color = Color::Rgb(80, 200, 80);
 /// Draw the Worktree Health panel as a centered modal overlay.
 /// Renders a tab bar at the top and tab-specific content below it.
 pub fn draw_health_panel(f: &mut Frame, app: &App) {
-    let Some(ref panel) = app.health_panel else { return };
+    let Some(ref panel) = app.health_panel else {
+        return;
+    };
     let area = f.area();
 
     // Center modal — same size as Git panel (55% width, 70% height, min 50x16)
@@ -76,19 +78,30 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
     };
 
     // Render the modal block with tab hint top-left, scope hint top-right
-    let tab_key = keybindings::find_key_for_action(&keybindings::HEALTH_SHARED, keybindings::Action::HealthSwitchTab)
-        .unwrap_or("Tab".into());
+    let tab_key = keybindings::find_key_for_action(
+        &keybindings::HEALTH_SHARED,
+        keybindings::Action::HealthSwitchTab,
+    )
+    .unwrap_or("Tab".into());
     let tab_hint = Line::from(Span::styled(
-        format!(" {}:tab ", tab_key), Style::default().fg(GF_GREEN),
+        format!(" {}:tab ", tab_key),
+        Style::default().fg(GF_GREEN),
     ));
-    let title = Line::from(vec![
-        Span::styled(format!(" Health: {} ", panel.worktree_name), Style::default().fg(GF_GREEN).bold()),
-    ]).alignment(ratatui::layout::Alignment::Center);
-    let scope_key = keybindings::find_key_for_action(&keybindings::HEALTH_SHARED, keybindings::Action::HealthScopeMode)
-        .unwrap_or("s".into());
+    let title = Line::from(vec![Span::styled(
+        format!(" Health: {} ", panel.worktree_name),
+        Style::default().fg(GF_GREEN).bold(),
+    )])
+    .alignment(ratatui::layout::Alignment::Center);
+    let scope_key = keybindings::find_key_for_action(
+        &keybindings::HEALTH_SHARED,
+        keybindings::Action::HealthScopeMode,
+    )
+    .unwrap_or("s".into());
     let scope_hint = Line::from(Span::styled(
-        format!(" {}:scope ", scope_key), Style::default().fg(GF_GREEN),
-    )).alignment(ratatui::layout::Alignment::Right);
+        format!(" {}:scope ", scope_key),
+        Style::default().fg(GF_GREEN),
+    ))
+    .alignment(ratatui::layout::Alignment::Right);
     let block = Block::default()
         .title(tab_hint)
         .title(title)
@@ -105,7 +118,8 @@ pub fn draw_health_panel(f: &mut Frame, app: &App) {
     if footer_y < area.height && footer_x < area.width {
         let footer_rect = Rect::new(footer_x, footer_y, footer.len() as u16, 1);
         let footer_widget = Paragraph::new(Line::from(Span::styled(
-            footer, Style::default().fg(GF_GREEN),
+            footer,
+            Style::default().fg(GF_GREEN),
         )));
         f.render_widget(footer_widget, footer_rect);
     }
@@ -138,7 +152,11 @@ fn draw_god_files_tab(
     // Column header with checked count
     let checked_count = panel.god_files.iter().filter(|e| e.checked).count();
     lines.push(Line::from(Span::styled(
-        format!("  {} files over 1000 LOC ({} checked)", panel.god_files.len(), checked_count),
+        format!(
+            "  {} files over 1000 LOC ({} checked)",
+            panel.god_files.len(),
+            checked_count
+        ),
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
@@ -148,29 +166,51 @@ fn draw_god_files_tab(
     let scroll = if panel.god_selected < panel.god_scroll {
         panel.god_selected
     } else if panel.god_selected >= panel.god_scroll + visible_items {
-        panel.god_selected.saturating_sub(visible_items.saturating_sub(1))
+        panel
+            .god_selected
+            .saturating_sub(visible_items.saturating_sub(1))
     } else {
         panel.god_scroll
     };
 
     // Render visible entries
-    for (i, entry) in panel.god_files.iter().enumerate().skip(scroll).take(visible_items) {
+    for (i, entry) in panel
+        .god_files
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_items)
+    {
         let is_selected = i == panel.god_selected;
         let checkbox = if entry.checked { "[x] " } else { "[ ] " };
-        let checkbox_color = if entry.checked { GF_GREEN } else { Color::DarkGray };
+        let checkbox_color = if entry.checked {
+            GF_GREEN
+        } else {
+            Color::DarkGray
+        };
         let line_count_str = format!(" {} lines", entry.line_count);
         let path_max = inner_w.saturating_sub(checkbox.len() + line_count_str.len() + 1);
         let path_display = if entry.rel_path.len() > path_max {
-            format!("…{}", &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..])
+            format!(
+                "…{}",
+                &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..]
+            )
         } else {
             entry.rel_path.clone()
         };
-        let padding = inner_w.saturating_sub(checkbox.len() + path_display.len() + line_count_str.len());
+        let padding =
+            inner_w.saturating_sub(checkbox.len() + path_display.len() + line_count_str.len());
         let pad_str = " ".repeat(padding);
         let (path_style, count_style) = if is_selected {
-            (Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD), Style::default().fg(GF_GREEN))
+            (
+                Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+                Style::default().fg(GF_GREEN),
+            )
         } else {
-            (Style::default().fg(Color::White), Style::default().fg(Color::DarkGray))
+            (
+                Style::default().fg(Color::White),
+                Style::default().fg(Color::DarkGray),
+            )
         };
         lines.push(Line::from(vec![
             Span::styled(checkbox, Style::default().fg(checkbox_color)),
@@ -186,7 +226,12 @@ fn draw_god_files_tab(
         let total = panel.god_files.len();
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!("  {}-{} of {}", pos, (pos + visible_items - 1).min(total), total),
+            format!(
+                "  {}-{} of {}",
+                pos,
+                (pos + visible_items - 1).min(total),
+                total
+            ),
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -201,12 +246,24 @@ fn draw_documentation_tab(
     modal_h: u16,
 ) {
     // Overall score header with color coding
-    let score_color = if panel.doc_score >= 80.0 { GF_GREEN }
-        else if panel.doc_score >= 50.0 { Color::Yellow }
-        else { Color::Red };
+    let score_color = if panel.doc_score >= 80.0 {
+        GF_GREEN
+    } else if panel.doc_score >= 50.0 {
+        Color::Yellow
+    } else {
+        Color::Red
+    };
     lines.push(Line::from(vec![
-        Span::styled("  Overall Documentation Score: ", Style::default().fg(Color::White)),
-        Span::styled(format!("{:.1}%", panel.doc_score), Style::default().fg(score_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  Overall Documentation Score: ",
+            Style::default().fg(Color::White),
+        ),
+        Span::styled(
+            format!("{:.1}%", panel.doc_score),
+            Style::default()
+                .fg(score_color)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             format!("  ({} files scanned)", panel.doc_entries.len()),
             Style::default().fg(Color::DarkGray),
@@ -232,7 +289,11 @@ fn draw_documentation_tab(
     // Column header with checked count
     let checked_count = panel.doc_entries.iter().filter(|e| e.checked).count();
     lines.push(Line::from(Span::styled(
-        format!("  {} files sorted by coverage — worst first ({} checked)", panel.doc_entries.len(), checked_count),
+        format!(
+            "  {} files sorted by coverage — worst first ({} checked)",
+            panel.doc_entries.len(),
+            checked_count
+        ),
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
@@ -242,24 +303,40 @@ fn draw_documentation_tab(
     let scroll = if panel.doc_selected < panel.doc_scroll {
         panel.doc_selected
     } else if panel.doc_selected >= panel.doc_scroll + visible_items {
-        panel.doc_selected.saturating_sub(visible_items.saturating_sub(1))
+        panel
+            .doc_selected
+            .saturating_sub(visible_items.saturating_sub(1))
     } else {
         panel.doc_scroll
     };
 
     let bar_width = 10usize;
 
-    for (i, entry) in panel.doc_entries.iter().enumerate().skip(scroll).take(visible_items) {
+    for (i, entry) in panel
+        .doc_entries
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_items)
+    {
         let is_selected = i == panel.doc_selected;
 
         // Checkbox prefix — same visual as God Files tab
         let checkbox = if entry.checked { "[x] " } else { "[ ] " };
-        let checkbox_color = if entry.checked { GF_GREEN } else { Color::DarkGray };
+        let checkbox_color = if entry.checked {
+            GF_GREEN
+        } else {
+            Color::DarkGray
+        };
 
         let pct_str = format!("{:5.1}%", entry.coverage_pct);
-        let pct_color = if entry.coverage_pct >= 80.0 { GF_GREEN }
-            else if entry.coverage_pct >= 50.0 { Color::Yellow }
-            else { Color::Red };
+        let pct_color = if entry.coverage_pct >= 80.0 {
+            GF_GREEN
+        } else if entry.coverage_pct >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
 
         let filled = (entry.coverage_pct / 100.0 * bar_width as f32).round() as usize;
         let bar: String = "█".repeat(filled) + &"░".repeat(bar_width - filled);
@@ -270,11 +347,16 @@ fn draw_documentation_tab(
         let fixed_width = checkbox.len() + pct_str.len() + 1 + bar_width + ratio.len() + 2;
         let path_max = inner_w.saturating_sub(fixed_width + 1);
         let path_display = if entry.rel_path.len() > path_max {
-            format!("…{}", &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..])
+            format!(
+                "…{}",
+                &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..]
+            )
         } else {
             entry.rel_path.clone()
         };
-        let padding = inner_w.saturating_sub(checkbox.len() + path_display.len() + pct_str.len() + 1 + bar_width + ratio.len());
+        let padding = inner_w.saturating_sub(
+            checkbox.len() + path_display.len() + pct_str.len() + 1 + bar_width + ratio.len(),
+        );
         let pad_str = " ".repeat(padding);
 
         let path_style = if is_selected {
@@ -300,7 +382,12 @@ fn draw_documentation_tab(
         let total = panel.doc_entries.len();
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!("  {}-{} of {}", pos, (pos + visible_items - 1).min(total), total),
+            format!(
+                "  {}-{} of {}",
+                pos,
+                (pos + visible_items - 1).min(total),
+                total
+            ),
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -316,7 +403,9 @@ fn draw_module_style_dialog(
 ) {
     lines.push(Line::from(Span::styled(
         "  Select module style for checked files:",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     )));
     lines.push(Line::from(""));
 
@@ -345,14 +434,19 @@ fn draw_module_style_dialog(
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        lines.push(Line::from(Span::styled("  Rust (.rs):", Style::default().fg(Color::DarkGray))));
+        lines.push(Line::from(Span::styled(
+            "  Rust (.rs):",
+            Style::default().fg(Color::DarkGray),
+        )));
         let cursor = if is_selected { "▸ " } else { "  " };
-        lines.push(Line::from(vec![
-            Span::styled(format!("    {}{}", cursor, label), style),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(format!("      {}", hint), dim),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("    {}{}", cursor, label),
+            style,
+        )]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("      {}", hint),
+            dim,
+        )]));
         lines.push(Line::from(""));
         row += 1;
     }
@@ -379,14 +473,19 @@ fn draw_module_style_dialog(
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        lines.push(Line::from(Span::styled("  Python (.py):", Style::default().fg(Color::DarkGray))));
+        lines.push(Line::from(Span::styled(
+            "  Python (.py):",
+            Style::default().fg(Color::DarkGray),
+        )));
         let cursor = if is_selected { "▸ " } else { "  " };
-        lines.push(Line::from(vec![
-            Span::styled(format!("    {}{}", cursor, label), style),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(format!("      {}", hint), dim),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("    {}{}", cursor, label),
+            style,
+        )]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("      {}", hint),
+            dim,
+        )]));
         lines.push(Line::from(""));
     }
 
@@ -406,33 +505,59 @@ mod tests {
     // ── GF_GREEN constant ──
 
     #[test]
-    fn test_gf_green_value() { assert_eq!(GF_GREEN, Color::Rgb(80, 200, 80)); }
+    fn test_gf_green_value() {
+        assert_eq!(GF_GREEN, Color::Rgb(80, 200, 80));
+    }
     #[test]
-    fn test_gf_green_is_rgb() { matches!(GF_GREEN, Color::Rgb(_, _, _)); }
+    fn test_gf_green_is_rgb() {
+        matches!(GF_GREEN, Color::Rgb(_, _, _));
+    }
 
     // ── HealthTab ──
 
     #[test]
-    fn test_health_tab_god_files() { assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles); }
+    fn test_health_tab_god_files() {
+        assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles);
+    }
     #[test]
-    fn test_health_tab_documentation() { assert_eq!(HealthTab::Documentation, HealthTab::Documentation); }
+    fn test_health_tab_documentation() {
+        assert_eq!(HealthTab::Documentation, HealthTab::Documentation);
+    }
     #[test]
-    fn test_health_tab_ne() { assert_ne!(HealthTab::GodFiles, HealthTab::Documentation); }
+    fn test_health_tab_ne() {
+        assert_ne!(HealthTab::GodFiles, HealthTab::Documentation);
+    }
     #[test]
-    fn test_health_tab_copy() { let t = HealthTab::GodFiles; let c = t; assert_eq!(t, c); }
+    fn test_health_tab_copy() {
+        let t = HealthTab::GodFiles;
+        let c = t;
+        assert_eq!(t, c);
+    }
     #[test]
-    fn test_health_tab_clone() { let t = HealthTab::Documentation; let c = t.clone(); assert_eq!(t, c); }
+    fn test_health_tab_clone() {
+        let t = HealthTab::Documentation;
+        let c = t.clone();
+        assert_eq!(t, c);
+    }
     #[test]
-    fn test_health_tab_debug() { assert_eq!(format!("{:?}", HealthTab::GodFiles), "GodFiles"); }
+    fn test_health_tab_debug() {
+        assert_eq!(format!("{:?}", HealthTab::GodFiles), "GodFiles");
+    }
 
     // ── RustModuleStyle ──
 
     #[test]
-    fn test_rust_style_file_based() { assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased); }
+    fn test_rust_style_file_based() {
+        assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased);
+    }
     #[test]
-    fn test_rust_style_mod_rs() { assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs); }
+    fn test_rust_style_mod_rs() {
+        assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs);
+    }
     #[test]
-    fn test_rust_style_ne() { assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs); }
+    fn test_rust_style_ne() {
+        assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs);
+    }
     #[test]
     fn test_rust_style_labels_file_based() {
         let (label, hint) = match RustModuleStyle::FileBased {
@@ -455,11 +580,17 @@ mod tests {
     // ── PythonModuleStyle ──
 
     #[test]
-    fn test_python_style_package() { assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package); }
+    fn test_python_style_package() {
+        assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package);
+    }
     #[test]
-    fn test_python_style_single() { assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile); }
+    fn test_python_style_single() {
+        assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile);
+    }
     #[test]
-    fn test_python_style_ne() { assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile); }
+    fn test_python_style_ne() {
+        assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile);
+    }
     #[test]
     fn test_python_style_labels_package() {
         let (label, _) = match PythonModuleStyle::Package {
@@ -473,13 +604,25 @@ mod tests {
 
     #[test]
     fn test_module_style_dialog_rust_only() {
-        let d = ModuleStyleDialog { has_rust: true, has_python: false, rust_style: RustModuleStyle::FileBased, python_style: PythonModuleStyle::Package, selected: 0 };
+        let d = ModuleStyleDialog {
+            has_rust: true,
+            has_python: false,
+            rust_style: RustModuleStyle::FileBased,
+            python_style: PythonModuleStyle::Package,
+            selected: 0,
+        };
         assert!(d.has_rust);
         assert!(!d.has_python);
     }
     #[test]
     fn test_module_style_dialog_both() {
-        let d = ModuleStyleDialog { has_rust: true, has_python: true, rust_style: RustModuleStyle::ModRs, python_style: PythonModuleStyle::SingleFile, selected: 1 };
+        let d = ModuleStyleDialog {
+            has_rust: true,
+            has_python: true,
+            rust_style: RustModuleStyle::ModRs,
+            python_style: PythonModuleStyle::SingleFile,
+            selected: 1,
+        };
         assert!(d.has_rust && d.has_python);
         assert_eq!(d.selected, 1);
     }
@@ -488,17 +631,38 @@ mod tests {
 
     #[test]
     fn test_doc_entry_construction() {
-        let e = DocEntry { path: PathBuf::from("/a.rs"), rel_path: "a.rs".into(), total_items: 10, documented_items: 5, coverage_pct: 50.0, checked: false };
+        let e = DocEntry {
+            path: PathBuf::from("/a.rs"),
+            rel_path: "a.rs".into(),
+            total_items: 10,
+            documented_items: 5,
+            coverage_pct: 50.0,
+            checked: false,
+        };
         assert_eq!(e.coverage_pct, 50.0);
     }
     #[test]
     fn test_doc_entry_checked() {
-        let e = DocEntry { path: PathBuf::from("/b.rs"), rel_path: "b.rs".into(), total_items: 8, documented_items: 8, coverage_pct: 100.0, checked: true };
+        let e = DocEntry {
+            path: PathBuf::from("/b.rs"),
+            rel_path: "b.rs".into(),
+            total_items: 8,
+            documented_items: 8,
+            coverage_pct: 100.0,
+            checked: true,
+        };
         assert!(e.checked);
     }
     #[test]
     fn test_doc_entry_clone() {
-        let e = DocEntry { path: PathBuf::from("/c.rs"), rel_path: "c.rs".into(), total_items: 3, documented_items: 1, coverage_pct: 33.3, checked: false };
+        let e = DocEntry {
+            path: PathBuf::from("/c.rs"),
+            rel_path: "c.rs".into(),
+            total_items: 3,
+            documented_items: 1,
+            coverage_pct: 33.3,
+            checked: false,
+        };
         let c = e.clone();
         assert_eq!(c.total_items, 3);
     }
@@ -508,31 +672,61 @@ mod tests {
     #[test]
     fn test_score_color_high() {
         let score = 90.0f32;
-        let color = if score >= 80.0 { GF_GREEN } else if score >= 50.0 { Color::Yellow } else { Color::Red };
+        let color = if score >= 80.0 {
+            GF_GREEN
+        } else if score >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
         assert_eq!(color, GF_GREEN);
     }
     #[test]
     fn test_score_color_medium() {
         let score = 60.0f32;
-        let color = if score >= 80.0 { GF_GREEN } else if score >= 50.0 { Color::Yellow } else { Color::Red };
+        let color = if score >= 80.0 {
+            GF_GREEN
+        } else if score >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
         assert_eq!(color, Color::Yellow);
     }
     #[test]
     fn test_score_color_low() {
         let score = 30.0f32;
-        let color = if score >= 80.0 { GF_GREEN } else if score >= 50.0 { Color::Yellow } else { Color::Red };
+        let color = if score >= 80.0 {
+            GF_GREEN
+        } else if score >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
         assert_eq!(color, Color::Red);
     }
     #[test]
     fn test_score_color_boundary_80() {
         let score = 80.0f32;
-        let color = if score >= 80.0 { GF_GREEN } else if score >= 50.0 { Color::Yellow } else { Color::Red };
+        let color = if score >= 80.0 {
+            GF_GREEN
+        } else if score >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
         assert_eq!(color, GF_GREEN);
     }
     #[test]
     fn test_score_color_boundary_50() {
         let score = 50.0f32;
-        let color = if score >= 80.0 { GF_GREEN } else if score >= 50.0 { Color::Yellow } else { Color::Red };
+        let color = if score >= 80.0 {
+            GF_GREEN
+        } else if score >= 50.0 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
         assert_eq!(color, Color::Yellow);
     }
 
@@ -578,8 +772,14 @@ mod tests {
     fn test_tab_gf_active() {
         let tab = HealthTab::GodFiles;
         let (gf, doc) = match tab {
-            HealthTab::GodFiles => (Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD), Style::default().fg(Color::DarkGray)),
-            HealthTab::Documentation => (Style::default().fg(Color::DarkGray), Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD)),
+            HealthTab::GodFiles => (
+                Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::DarkGray),
+            ),
+            HealthTab::Documentation => (
+                Style::default().fg(Color::DarkGray),
+                Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+            ),
         };
         assert_eq!(gf.fg, Some(GF_GREEN));
         assert_eq!(doc.fg, Some(Color::DarkGray));
@@ -588,8 +788,14 @@ mod tests {
     fn test_tab_doc_active() {
         let tab = HealthTab::Documentation;
         let (gf, doc) = match tab {
-            HealthTab::GodFiles => (Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD), Style::default().fg(Color::DarkGray)),
-            HealthTab::Documentation => (Style::default().fg(Color::DarkGray), Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD)),
+            HealthTab::GodFiles => (
+                Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::DarkGray),
+            ),
+            HealthTab::Documentation => (
+                Style::default().fg(Color::DarkGray),
+                Style::default().fg(GF_GREEN).add_modifier(Modifier::BOLD),
+            ),
         };
         assert_eq!(gf.fg, Some(Color::DarkGray));
         assert_eq!(doc.fg, Some(GF_GREEN));
@@ -598,30 +804,46 @@ mod tests {
     // ── Modal sizing ──
 
     #[test]
-    fn test_health_modal_w() { assert_eq!((100u16 * 55 / 100).max(50).min(100), 55); }
+    fn test_health_modal_w() {
+        assert_eq!((100u16 * 55 / 100).max(50).min(100), 55);
+    }
     #[test]
-    fn test_health_modal_h() { assert_eq!((40u16 * 70 / 100).max(16).min(40), 28); }
+    fn test_health_modal_h() {
+        assert_eq!((40u16 * 70 / 100).max(16).min(40), 28);
+    }
 
     // ── Visible items ──
 
     #[test]
-    fn test_gf_visible_items() { assert_eq!((30u16 as usize).saturating_sub(12), 18); }
+    fn test_gf_visible_items() {
+        assert_eq!((30u16 as usize).saturating_sub(12), 18);
+    }
     #[test]
-    fn test_doc_visible_items() { assert_eq!((30u16 as usize).saturating_sub(14), 16); }
+    fn test_doc_visible_items() {
+        assert_eq!((30u16 as usize).saturating_sub(14), 16);
+    }
 
     // ── Percentage format ──
 
     #[test]
-    fn test_pct_format() { assert_eq!(format!("{:5.1}%", 75.5), " 75.5%"); }
+    fn test_pct_format() {
+        assert_eq!(format!("{:5.1}%", 75.5), " 75.5%");
+    }
     #[test]
-    fn test_pct_format_100() { assert_eq!(format!("{:5.1}%", 100.0), "100.0%"); }
+    fn test_pct_format_100() {
+        assert_eq!(format!("{:5.1}%", 100.0), "100.0%");
+    }
     #[test]
-    fn test_pct_format_0() { assert_eq!(format!("{:5.1}%", 0.0), "  0.0%"); }
+    fn test_pct_format_0() {
+        assert_eq!(format!("{:5.1}%", 0.0), "  0.0%");
+    }
 
     // ── Score display ──
 
     #[test]
-    fn test_score_display() { assert_eq!(format!("{:.1}%", 85.3f32), "85.3%"); }
+    fn test_score_display() {
+        assert_eq!(format!("{:.1}%", 85.3f32), "85.3%");
+    }
 
     // ── Dialog cursor logic ──
 
@@ -662,14 +884,30 @@ mod tests {
 
     #[test]
     fn test_doc_scroll_above() {
-        let selected: usize = 2; let scroll: usize = 5; let vis: usize = 10;
-        let new = if selected < scroll { selected } else if selected >= scroll + vis { selected.saturating_sub(vis - 1) } else { scroll };
+        let selected: usize = 2;
+        let scroll: usize = 5;
+        let vis: usize = 10;
+        let new = if selected < scroll {
+            selected
+        } else if selected >= scroll + vis {
+            selected.saturating_sub(vis - 1)
+        } else {
+            scroll
+        };
         assert_eq!(new, 2);
     }
     #[test]
     fn test_doc_scroll_below() {
-        let selected: usize = 20; let scroll: usize = 5; let vis: usize = 10;
-        let new = if selected < scroll { selected } else if selected >= scroll + vis { selected.saturating_sub(vis - 1) } else { scroll };
+        let selected: usize = 20;
+        let scroll: usize = 5;
+        let vis: usize = 10;
+        let new = if selected < scroll {
+            selected
+        } else if selected >= scroll + vis {
+            selected.saturating_sub(vis - 1)
+        } else {
+            scroll
+        };
         assert_eq!(new, 11);
     }
 
@@ -678,15 +916,33 @@ mod tests {
     #[test]
     fn test_doc_checked_count() {
         let entries = vec![
-            DocEntry { path: PathBuf::from("/a"), rel_path: "a".into(), total_items: 5, documented_items: 3, coverage_pct: 60.0, checked: true },
-            DocEntry { path: PathBuf::from("/b"), rel_path: "b".into(), total_items: 5, documented_items: 0, coverage_pct: 0.0, checked: false },
+            DocEntry {
+                path: PathBuf::from("/a"),
+                rel_path: "a".into(),
+                total_items: 5,
+                documented_items: 3,
+                coverage_pct: 60.0,
+                checked: true,
+            },
+            DocEntry {
+                path: PathBuf::from("/b"),
+                rel_path: "b".into(),
+                total_items: 5,
+                documented_items: 0,
+                coverage_pct: 0.0,
+                checked: false,
+            },
         ];
         assert_eq!(entries.iter().filter(|e| e.checked).count(), 1);
     }
 
     #[test]
     fn test_gf_green_rgb_green_channel_highest() {
-        if let Color::Rgb(r, g, b) = GF_GREEN { assert!(g > r && g > b); } else { panic!(); }
+        if let Color::Rgb(r, g, b) = GF_GREEN {
+            assert!(g > r && g > b);
+        } else {
+            panic!();
+        }
     }
 
     #[test]

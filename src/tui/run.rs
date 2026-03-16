@@ -3,13 +3,13 @@
 //! Contains the run() function to start the TUI and the ui() layout function.
 
 use anyhow::Result;
+#[cfg(not(target_os = "windows"))]
+use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, PopKeyboardEnhancementFlags},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-#[cfg(not(target_os = "windows"))]
-use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -25,8 +25,11 @@ use crate::config::Config;
 
 use super::event_loop;
 use super::keybindings;
-use super::util::{GIT_ORANGE, GIT_BROWN, AZURE};
-use super::{draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer};
+use super::util::{AZURE, GIT_BROWN, GIT_ORANGE};
+use super::{
+    draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects,
+    draw_sidebar, draw_status, draw_terminal, draw_viewer,
+};
 
 /// Run the TUI application
 pub async fn run() -> Result<()> {
@@ -51,7 +54,8 @@ pub async fn run() -> Result<()> {
             KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
         )
-    ).is_ok();
+    )
+    .is_ok();
     #[cfg(target_os = "windows")]
     let kbd_enhanced = false;
 
@@ -72,7 +76,8 @@ pub async fn run() -> Result<()> {
     let config = Config::load().unwrap_or_default();
     // Restore model from session event stream (ModelSwitch tag → Init event).
     // Only defaults to Opus when the session is brand-new / empty.
-    let restored = app.last_session_model()
+    let restored = app
+        .last_session_model()
         .unwrap_or(crate::app::state::default_model());
     app.selected_model = Some(restored.to_string());
     app.backend = crate::app::state::backend_for_model(restored);
@@ -99,7 +104,11 @@ pub async fn run() -> Result<()> {
         let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
     }
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     result
@@ -140,7 +149,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let git_box_height = 3u16; // borders + 1 content line
         let git_v = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(4), Constraint::Length(git_box_height)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(4),
+                Constraint::Length(git_box_height),
+            ])
             .split(content_area);
         let tab_bar_area = git_v[0];
         let panes_area = git_v[1];
@@ -209,15 +222,23 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 let mut rows = 1usize;
                 let mut col = 0usize;
                 for c in app.input.chars() {
-                    if c == '\n' { rows += 1; col = 0; }
-                    else {
+                    if c == '\n' {
+                        rows += 1;
+                        col = 0;
+                    } else {
                         let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                        if col + w > input_inner_width { rows += 1; col = w; }
-                        else { col += w; }
+                        if col + w > input_inner_width {
+                            rows += 1;
+                            col = w;
+                        } else {
+                            col += w;
+                        }
                     }
                 }
                 rows
-            } else { 1 };
+            } else {
+                1
+            };
             let max_input = (below_tabs.height * 3 / 4).max(3);
             (input_lines as u16 + 2).min(max_input)
         };
@@ -390,7 +411,8 @@ fn draw_splash(f: &mut Frame) {
     // so wings extend equally above and below. Text is 26 rows, butterfly
     // is taller — offset by the difference so they share the same center.
     let bf_h = butterfly.len() as u16;
-    let bf_lines: Vec<Line<'static>> = butterfly.iter()
+    let bf_lines: Vec<Line<'static>> = butterfly
+        .iter()
         .map(|row| Line::from(Span::styled(row.to_string(), bf_style)))
         .collect();
     let bf_widget = Paragraph::new(bf_lines).alignment(Alignment::Center);
@@ -432,12 +454,22 @@ fn draw_splash(f: &mut Frame) {
 
     // Render butterfly first (background), centered on same point as text
     let bf_start_y = center_y.saturating_sub(bf_h / 2);
-    f.render_widget(bf_widget, ratatui::layout::Rect::new(
-        area.x, bf_start_y, area.width, bf_h.min(area.height.saturating_sub(bf_start_y.saturating_sub(area.y))),
-    ));
+    f.render_widget(
+        bf_widget,
+        ratatui::layout::Rect::new(
+            area.x,
+            bf_start_y,
+            area.width,
+            bf_h.min(
+                area.height
+                    .saturating_sub(bf_start_y.saturating_sub(area.y)),
+            ),
+        ),
+    );
 
     // Then render text on top (foreground overwrites butterfly cells)
-    let mut lines: Vec<Line<'static>> = logo.iter()
+    let mut lines: Vec<Line<'static>> = logo
+        .iter()
         .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
         .collect();
     lines.push(Line::from(""));
@@ -446,12 +478,13 @@ fn draw_splash(f: &mut Frame) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("L o a d i n g   p r o j e c t . . .", logo_style)));
+    lines.push(Line::from(Span::styled(
+        "L o a d i n g   p r o j e c t . . .",
+        logo_style,
+    )));
 
     let splash = Paragraph::new(lines).alignment(Alignment::Center);
-    let splash_area = ratatui::layout::Rect::new(
-        area.x, text_start_y, area.width, total_height,
-    );
+    let splash_area = ratatui::layout::Rect::new(area.x, text_start_y, area.width, total_height);
     f.render_widget(splash, splash_area);
 }
 
@@ -475,9 +508,11 @@ fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
     let rect = Rect::new(x, y, w, h);
     let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
         .alignment(Alignment::Center)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color)),
+        );
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
@@ -525,10 +560,16 @@ fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
 /// Auto-rebase indicator color for a worktree branch.
 /// Returns Some(color) if auto-rebase is enabled: green=idle, orange=RCR active, blue=approval pending.
 fn rebase_indicator_color(app: &App, branch: &str) -> Option<Color> {
-    if !app.auto_rebase_enabled.contains(branch) { return None; }
+    if !app.auto_rebase_enabled.contains(branch) {
+        return None;
+    }
     if let Some(ref rcr) = app.rcr_session {
         if rcr.branch == branch {
-            return Some(if rcr.approval_pending { Color::Blue } else { GIT_ORANGE });
+            return Some(if rcr.approval_pending {
+                Color::Blue
+            } else {
+                GIT_ORANGE
+            });
         }
     }
     Some(Color::Green)
@@ -546,33 +587,73 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     // target: None = [M] main browse, Some(idx) = worktree index
     let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
 
-    let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
-    tabs.push((format!("★ {}", main_branch), app.browsing_main, false, None, None, false));
+    let main_branch = app
+        .project
+        .as_ref()
+        .map(|p| p.main_branch.as_str())
+        .unwrap_or("main");
+    tabs.push((
+        format!("★ {}", main_branch),
+        app.browsing_main,
+        false,
+        None,
+        None,
+        false,
+    ));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !app.browsing_main && app.selected_worktree == Some(idx);
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
-            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color, false));
+            tabs.push((
+                format!("◇ {}", wt.name()),
+                active,
+                true,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
         } else if unread {
-            tabs.push((format!("◐ {}", wt.name()), active, false, Some(idx), rebase_color, true));
+            tabs.push((
+                format!("◐ {}", wt.name()),
+                active,
+                false,
+                Some(idx),
+                rebase_color,
+                true,
+            ));
         } else {
             let status = wt.status(app.is_session_running(&wt.branch_name));
-            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color, false));
+            tabs.push((
+                format!("{} {}", status.symbol(), wt.name()),
+                active,
+                false,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
         }
     }
 
-    if tabs.is_empty() { return; }
+    if tabs.is_empty() {
+        return;
+    }
 
     // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
-    let tab_widths: Vec<usize> = tabs.iter()
+    let tab_widths: Vec<usize> = tabs
+        .iter()
         .map(|(label, _, _, _, rebase, _)| {
-            let base: usize = label.chars()
+            let base: usize = label
+                .chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
                 + 1;
-            if rebase.is_some() { base + 1 } else { base }
+            if rebase.is_some() {
+                base + 1
+            } else {
+                base
+            }
         })
         .collect();
 
@@ -592,9 +673,13 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
             cur.push(i);
             cur_w += cost;
         }
-        if *is_active { active_page = pages.len(); }
+        if *is_active {
+            active_page = pages.len();
+        }
     }
-    if !cur.is_empty() { pages.push(cur); }
+    if !cur.is_empty() {
+        pages.push(cur);
+    }
 
     let total_pages = pages.len();
     let page_tabs = match pages.get(active_page) {
@@ -610,16 +695,27 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     for (j, &idx) in page_tabs.iter().enumerate() {
         let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
         let tab_text = format!("{} ", label);
-        let mut tab_w: u16 = tab_text.chars()
+        let mut tab_w: u16 = tab_text
+            .chars()
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
             .sum();
 
-        let dim = if focused { Color::Gray } else { Color::DarkGray };
+        let dim = if focused {
+            Color::Gray
+        } else {
+            Color::DarkGray
+        };
         let style = if is_active {
             if target.is_none() {
-                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White).bg(AZURE).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .bg(AZURE)
+                    .add_modifier(Modifier::BOLD)
             }
         } else if is_archived {
             Style::default().fg(dim)
@@ -634,7 +730,10 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled(tab_text, style));
 
         if let Some(color) = rebase_color {
-            spans.push(Span::styled("R", Style::default().fg(color).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(
+                "R",
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ));
             tab_w += 1;
         }
 
@@ -649,7 +748,11 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     if total_pages > 1 {
-        let page_color = if focused { Color::Gray } else { Color::DarkGray };
+        let page_color = if focused {
+            Color::Gray
+        } else {
+            Color::DarkGray
+        };
         spans.push(Span::styled(
             format!("  {}/{}", active_page + 1, total_pages),
             Style::default().fg(page_color).add_modifier(Modifier::DIM),
@@ -677,34 +780,74 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     // target: None = main branch, Some(idx) = worktree index
     let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
 
-    let main_branch = app.project.as_ref().map(|p| p.main_branch.as_str()).unwrap_or("main");
+    let main_branch = app
+        .project
+        .as_ref()
+        .map(|p| p.main_branch.as_str())
+        .unwrap_or("main");
     let main_is_active = *active_branch == main_branch;
-    tabs.push((format!("★ {}", main_branch), main_is_active, false, None, None, false));
+    tabs.push((
+        format!("★ {}", main_branch),
+        main_is_active,
+        false,
+        None,
+        None,
+        false,
+    ));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !main_is_active && wt.branch_name == *active_branch;
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
-            tabs.push((format!("◇ {}", wt.name()), active, true, Some(idx), rebase_color, false));
+            tabs.push((
+                format!("◇ {}", wt.name()),
+                active,
+                true,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
         } else if unread {
-            tabs.push((format!("◐ {}", wt.name()), active, false, Some(idx), rebase_color, true));
+            tabs.push((
+                format!("◐ {}", wt.name()),
+                active,
+                false,
+                Some(idx),
+                rebase_color,
+                true,
+            ));
         } else {
             let status = wt.status(app.is_session_running(&wt.branch_name));
-            tabs.push((format!("{} {}", status.symbol(), wt.name()), active, false, Some(idx), rebase_color, false));
+            tabs.push((
+                format!("{} {}", status.symbol(), wt.name()),
+                active,
+                false,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
         }
     }
 
-    if tabs.is_empty() { return; }
+    if tabs.is_empty() {
+        return;
+    }
 
     // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
-    let tab_widths: Vec<usize> = tabs.iter()
+    let tab_widths: Vec<usize> = tabs
+        .iter()
         .map(|(label, _, _, _, rebase, _)| {
-            let base: usize = label.chars()
+            let base: usize = label
+                .chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>()
                 + 1;
-            if rebase.is_some() { base + 1 } else { base }
+            if rebase.is_some() {
+                base + 1
+            } else {
+                base
+            }
         })
         .collect();
 
@@ -724,9 +867,13 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
             cur.push(i);
             cur_w += cost;
         }
-        if *is_active { active_page = pages.len(); }
+        if *is_active {
+            active_page = pages.len();
+        }
     }
-    if !cur.is_empty() { pages.push(cur); }
+    if !cur.is_empty() {
+        pages.push(cur);
+    }
 
     let total_pages = pages.len();
     let page_tabs = match pages.get(active_page) {
@@ -742,16 +889,23 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     for (j, &idx) in page_tabs.iter().enumerate() {
         let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
         let tab_text = format!("{} ", label);
-        let mut tab_w: u16 = tab_text.chars()
+        let mut tab_w: u16 = tab_text
+            .chars()
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
             .sum();
 
         // Same styling logic as draw_worktree_tabs but with git color palette
         let style = if is_active {
             if target.is_none() {
-                Style::default().fg(Color::Black).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(GIT_ORANGE)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White).bg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .bg(GIT_ORANGE)
+                    .add_modifier(Modifier::BOLD)
             }
         } else if is_archived {
             Style::default().fg(Color::DarkGray)
@@ -766,7 +920,10 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled(tab_text, style));
 
         if let Some(color) = rebase_color {
-            spans.push(Span::styled("R", Style::default().fg(color).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(
+                "R",
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ));
             tab_w += 1;
         }
 
@@ -801,11 +958,15 @@ fn draw_debug_dump_naming(f: &mut Frame, app: &App) {
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(prompt, Style::default().fg(Color::White)))
-        .block(Block::default()
-            .title(Span::styled(" Debug Dump ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+    let dialog = Paragraph::new(Span::styled(prompt, Style::default().fg(Color::White))).block(
+        Block::default()
+            .title(Span::styled(
+                " Debug Dump ",
+                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+            ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE)));
+            .border_style(Style::default().fg(AZURE)),
+    );
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
@@ -821,9 +982,11 @@ fn draw_debug_dump_saving(f: &mut Frame) {
     let rect = Rect::new(x, y, w, h);
     let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
         .alignment(Alignment::Center)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(AZURE)),
+        );
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
@@ -838,9 +1001,11 @@ fn draw_loading_indicator(f: &mut Frame, msg: &str) {
     let rect = Rect::new(x, y, w, h);
     let dialog = Paragraph::new(Span::styled(padded, Style::default().fg(Color::White)))
         .alignment(Alignment::Center)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(AZURE)),
+        );
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
@@ -1150,11 +1315,17 @@ mod tests {
         let mut rows = 1usize;
         let mut col = 0usize;
         for c in input.chars() {
-            if c == '\n' { rows += 1; col = 0; }
-            else {
+            if c == '\n' {
+                rows += 1;
+                col = 0;
+            } else {
                 let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if col + w > inner_width { rows += 1; col = w; }
-                else { col += w; }
+                if col + w > inner_width {
+                    rows += 1;
+                    col = w;
+                } else {
+                    col += w;
+                }
             }
         }
         assert_eq!(rows, 1);
@@ -1167,11 +1338,17 @@ mod tests {
         let mut rows = 1usize;
         let mut col = 0usize;
         for c in input.chars() {
-            if c == '\n' { rows += 1; col = 0; }
-            else {
+            if c == '\n' {
+                rows += 1;
+                col = 0;
+            } else {
                 let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if col + w > inner_width { rows += 1; col = w; }
-                else { col += w; }
+                if col + w > inner_width {
+                    rows += 1;
+                    col = w;
+                } else {
+                    col += w;
+                }
             }
         }
         assert_eq!(rows, 2);
@@ -1184,11 +1361,17 @@ mod tests {
         let mut rows = 1usize;
         let mut col = 0usize;
         for c in input.chars() {
-            if c == '\n' { rows += 1; col = 0; }
-            else {
+            if c == '\n' {
+                rows += 1;
+                col = 0;
+            } else {
                 let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if col + w > inner_width { rows += 1; col = w; }
-                else { col += w; }
+                if col + w > inner_width {
+                    rows += 1;
+                    col = w;
+                } else {
+                    col += w;
+                }
             }
         }
         assert_eq!(rows, 2); // "aaa" on row 1, "a" wraps to row 2
@@ -1203,15 +1386,23 @@ mod tests {
             let mut rows = 1usize;
             let mut col = 0usize;
             for c in input.chars() {
-                if c == '\n' { rows += 1; col = 0; }
-                else {
+                if c == '\n' {
+                    rows += 1;
+                    col = 0;
+                } else {
                     let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                    if col + w > inner_width { rows += 1; col = w; }
-                    else { col += w; }
+                    if col + w > inner_width {
+                        rows += 1;
+                        col = w;
+                    } else {
+                        col += w;
+                    }
                 }
             }
             rows
-        } else { 1 };
+        } else {
+            1
+        };
         assert_eq!(input_lines, 1);
     }
 
@@ -1220,8 +1411,8 @@ mod tests {
     #[test]
     fn splash_logo_has_ten_rows() {
         let logo: Vec<&str> = vec![
-            "line1", "line2", "line3", "line4", "line5",
-            "line6", "line7", "line8", "line9", "line10",
+            "line1", "line2", "line3", "line4", "line5", "line6", "line7", "line8", "line9",
+            "line10",
         ];
         assert_eq!(logo.len(), 10);
     }
@@ -1229,8 +1420,7 @@ mod tests {
     #[test]
     fn splash_acronym_has_twelve_rows() {
         let acronym: Vec<&str> = vec![
-            "l1", "l2", "l3", "l4", "l5", "l6",
-            "l7", "l8", "l9", "l10", "l11", "l12",
+            "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10", "l11", "l12",
         ];
         assert_eq!(acronym.len(), 12);
     }

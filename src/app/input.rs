@@ -10,7 +10,11 @@ use super::App;
 impl App {
     /// Convert char index to byte offset in self.input
     fn char_to_byte(&self, char_idx: usize) -> usize {
-        self.input.char_indices().nth(char_idx).map(|(b, _)| b).unwrap_or(self.input.len())
+        self.input
+            .char_indices()
+            .nth(char_idx)
+            .map(|(b, _)| b)
+            .unwrap_or(self.input.len())
     }
 
     /// Handle input character
@@ -45,7 +49,9 @@ impl App {
 
     /// Move cursor right
     pub fn input_right(&mut self) {
-        if self.input_cursor < self.input.chars().count() { self.input_cursor += 1; }
+        if self.input_cursor < self.input.chars().count() {
+            self.input_cursor += 1;
+        }
     }
 
     /// Move cursor to start
@@ -60,31 +66,49 @@ impl App {
 
     /// Move cursor to previous word boundary
     pub fn input_word_left(&mut self) {
-        if self.input_cursor == 0 { return; }
+        if self.input_cursor == 0 {
+            return;
+        }
         let chars: Vec<char> = self.input.chars().collect();
         let mut pos = self.input_cursor.saturating_sub(1);
-        while pos > 0 && chars[pos].is_whitespace() { pos -= 1; }
-        while pos > 0 && !chars[pos - 1].is_whitespace() { pos -= 1; }
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
         self.input_cursor = pos;
     }
 
     /// Move cursor to next word boundary
     pub fn input_word_right(&mut self) {
         let chars: Vec<char> = self.input.chars().collect();
-        if self.input_cursor >= chars.len() { return; }
+        if self.input_cursor >= chars.len() {
+            return;
+        }
         let mut pos = self.input_cursor;
-        while pos < chars.len() && !chars[pos].is_whitespace() { pos += 1; }
-        while pos < chars.len() && chars[pos].is_whitespace() { pos += 1; }
+        while pos < chars.len() && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        while pos < chars.len() && chars[pos].is_whitespace() {
+            pos += 1;
+        }
         self.input_cursor = pos;
     }
 
     /// Delete word before cursor
     pub fn input_delete_word(&mut self) {
-        if self.input_cursor == 0 { return; }
+        if self.input_cursor == 0 {
+            return;
+        }
         let chars: Vec<char> = self.input.chars().collect();
         let mut pos = self.input_cursor.saturating_sub(1);
-        while pos > 0 && chars[pos].is_whitespace() { pos -= 1; }
-        while pos > 0 && !chars[pos - 1].is_whitespace() { pos -= 1; }
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
         let before: String = chars[..pos].iter().collect();
         let after: String = chars[self.input_cursor..].iter().collect();
         self.input = format!("{}{}", before, after);
@@ -102,18 +126,29 @@ impl App {
 
     /// Collect prompt history from display_events UserMessage entries (most recent last)
     fn collect_prompt_history(&self) -> Vec<String> {
-        self.display_events.iter().filter_map(|ev| {
-            if let crate::events::DisplayEvent::UserMessage { content, .. } = ev {
-                let trimmed = content.trim();
-                if !trimmed.is_empty() { Some(trimmed.to_string()) } else { None }
-            } else { None }
-        }).collect()
+        self.display_events
+            .iter()
+            .filter_map(|ev| {
+                if let crate::events::DisplayEvent::UserMessage { content, .. } = ev {
+                    let trimmed = content.trim();
+                    if !trimmed.is_empty() {
+                        Some(trimmed.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Navigate to previous prompt in history (↑)
     pub fn prompt_history_prev(&mut self) {
         let history = self.collect_prompt_history();
-        if history.is_empty() { return; }
+        if history.is_empty() {
+            return;
+        }
         match self.prompt_history_idx {
             None => {
                 // First press: save current input, jump to most recent history entry
@@ -186,13 +221,19 @@ impl App {
     /// Get normalized selection (start <= end)
     fn get_normalized_input_selection(&self) -> Option<(usize, usize)> {
         let (s, e) = self.input_selection?;
-        if s <= e { Some((s, e)) } else { Some((e, s)) }
+        if s <= e {
+            Some((s, e))
+        } else {
+            Some((e, s))
+        }
     }
 
     /// Get selected text
     pub fn get_input_selected_text(&self) -> Option<String> {
         let (start, end) = self.get_normalized_input_selection()?;
-        if start == end { return None; }
+        if start == end {
+            return None;
+        }
         let chars: Vec<char> = self.input.chars().collect();
         Some(chars[start..end.min(chars.len())].iter().collect())
     }
@@ -200,7 +241,9 @@ impl App {
     /// Delete selected text and return it
     fn delete_input_selection(&mut self) -> Option<String> {
         let (start, end) = self.get_normalized_input_selection()?;
-        if start == end { return None; }
+        if start == end {
+            return None;
+        }
         let deleted = self.get_input_selected_text();
         let chars: Vec<char> = self.input.chars().collect();
         self.input = chars[..start].iter().chain(chars[end..].iter()).collect();
@@ -213,7 +256,9 @@ impl App {
 
     /// Copy selected text to system clipboard. Returns true if copied successfully.
     pub fn input_copy(&mut self) -> bool {
-        let Some(text) = self.get_input_selected_text() else { return false };
+        let Some(text) = self.get_input_selected_text() else {
+            return false;
+        };
         if let Ok(mut cb) = arboard::Clipboard::new() {
             if cb.set_text(&text).is_ok() {
                 self.clipboard = text;
@@ -227,7 +272,9 @@ impl App {
 
     /// Cut selected text to system clipboard
     pub fn input_cut(&mut self) {
-        let Some(text) = self.delete_input_selection() else { return };
+        let Some(text) = self.delete_input_selection() else {
+            return;
+        };
         if let Ok(mut cb) = arboard::Clipboard::new() {
             let _ = cb.set_text(&text);
         }
@@ -241,7 +288,9 @@ impl App {
             .and_then(|mut cb| cb.get_text().ok())
             .unwrap_or_else(|| self.clipboard.clone());
 
-        if paste_text.is_empty() { return; }
+        if paste_text.is_empty() {
+            return;
+        }
 
         // Delete selection first if any
         if self.has_input_selection() {
@@ -274,7 +323,9 @@ impl App {
     /// Move left with optional selection extension
     pub fn input_left_select(&mut self, extend: bool) {
         if extend {
-            if self.input_selection.is_none() { self.input_start_selection(); }
+            if self.input_selection.is_none() {
+                self.input_start_selection();
+            }
             self.input_left();
             self.input_extend_selection();
         } else {
@@ -286,7 +337,9 @@ impl App {
     /// Move right with optional selection extension
     pub fn input_right_select(&mut self, extend: bool) {
         if extend {
-            if self.input_selection.is_none() { self.input_start_selection(); }
+            if self.input_selection.is_none() {
+                self.input_start_selection();
+            }
             self.input_right();
             self.input_extend_selection();
         } else {
@@ -859,14 +912,16 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_with_history() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u1".to_string(),
-            content: "first prompt".to_string(),
-        });
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u2".to_string(),
-            content: "second prompt".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u1".to_string(),
+                content: "first prompt".to_string(),
+            });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u2".to_string(),
+                content: "second prompt".to_string(),
+            });
         app.input = "current".to_string();
         app.prompt_history_prev();
         assert_eq!(app.input, "second prompt");
@@ -877,14 +932,16 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_twice() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u1".to_string(),
-            content: "first".to_string(),
-        });
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u2".to_string(),
-            content: "second".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u1".to_string(),
+                content: "first".to_string(),
+            });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u2".to_string(),
+                content: "second".to_string(),
+            });
         app.prompt_history_prev();
         app.prompt_history_prev();
         assert_eq!(app.input, "first");
@@ -894,10 +951,11 @@ mod tests {
     #[test]
     fn test_prompt_history_next_restores() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u1".to_string(),
-            content: "prompt".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u1".to_string(),
+                content: "prompt".to_string(),
+            });
         app.input = "typing...".to_string();
         app.prompt_history_prev();
         assert_eq!(app.input, "prompt");
@@ -909,10 +967,11 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_at_oldest_stays() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u1".to_string(),
-            content: "only".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u1".to_string(),
+                content: "only".to_string(),
+            });
         app.prompt_history_prev();
         app.prompt_history_prev(); // already at oldest
         assert_eq!(app.input, "only");
@@ -930,31 +989,34 @@ mod tests {
     #[test]
     fn test_collect_prompt_history_filters_non_user() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::AssistantText {
-            _uuid: "u".to_string(),
-            _message_id: "m".to_string(),
-            text: "response".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::AssistantText {
+                _uuid: "u".to_string(),
+                _message_id: "m".to_string(),
+                text: "response".to_string(),
+            });
         assert!(app.collect_prompt_history().is_empty());
     }
 
     #[test]
     fn test_collect_prompt_history_filters_empty_content() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u".to_string(),
-            content: "   ".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u".to_string(),
+                content: "   ".to_string(),
+            });
         assert!(app.collect_prompt_history().is_empty());
     }
 
     #[test]
     fn test_collect_prompt_history_trims() {
         let mut app = App::new();
-        app.display_events.push(crate::events::DisplayEvent::UserMessage {
-            _uuid: "u".to_string(),
-            content: "  hello  ".to_string(),
-        });
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: "u".to_string(),
+                content: "  hello  ".to_string(),
+            });
         let h = app.collect_prompt_history();
         assert_eq!(h, vec!["hello"]);
     }

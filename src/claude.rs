@@ -20,10 +20,14 @@ pub struct AgentOutput {
 #[derive(Debug)]
 pub enum AgentEvent {
     Output(AgentOutput),
-    Started { pid: u32 },
+    Started {
+        pid: u32,
+    },
     /// Claude's session ID from init event (for --resume)
     SessionId(String),
-    Exited { code: Option<i32> },
+    Exited {
+        code: Option<i32>,
+    },
 }
 
 /// Manages Claude Code CLI processes via PTY
@@ -85,7 +89,12 @@ impl ClaudeProcess {
 
         // Use standard process with separate stdout/stderr to capture hooks
         let mut child = Command::new(self.config.claude_executable())
-            .args(cmd.get_argv().iter().skip(1).map(|s| s.to_str().unwrap_or("")))
+            .args(
+                cmd.get_argv()
+                    .iter()
+                    .skip(1)
+                    .map(|s| s.to_str().unwrap_or("")),
+            )
             .current_dir(working_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -414,7 +423,10 @@ mod tests {
             ..Config::default()
         };
         let process = ClaudeProcess::new(config);
-        assert_eq!(process.config.claude_executable(), "/usr/local/bin/claude-code");
+        assert_eq!(
+            process.config.claude_executable(),
+            "/usr/local/bin/claude-code"
+        );
     }
 
     #[test]
@@ -424,7 +436,10 @@ mod tests {
             ..Config::default()
         };
         let process = ClaudeProcess::new(config);
-        assert_eq!(process.config.anthropic_api_key.as_deref(), Some("sk-test-key"));
+        assert_eq!(
+            process.config.anthropic_api_key.as_deref(),
+            Some("sk-test-key")
+        );
     }
 
     #[test]
@@ -444,7 +459,10 @@ mod tests {
             ..Config::default()
         };
         let process = ClaudeProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Ignore));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Ignore
+        ));
     }
 
     #[test]
@@ -454,7 +472,10 @@ mod tests {
             ..Config::default()
         };
         let process = ClaudeProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Approve));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Approve
+        ));
     }
 
     #[test]
@@ -464,7 +485,10 @@ mod tests {
             ..Config::default()
         };
         let process = ClaudeProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Ask));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Ask
+        ));
     }
 
     // ── ClaudeProcess::spawn: validation ──
@@ -473,12 +497,7 @@ mod tests {
     fn test_claude_process_spawn_empty_prompt_fails() {
         let config = Config::default();
         let process = ClaudeProcess::new(config);
-        let result = process.spawn(
-            std::path::Path::new("/tmp"),
-            "",
-            None,
-            None,
-        );
+        let result = process.spawn(std::path::Path::new("/tmp"), "", None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
@@ -492,17 +511,25 @@ mod tests {
         tx.send(AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: "test\n".to_string(),
-        })).unwrap();
+        }))
+        .unwrap();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
-        assert!(matches!(rx.recv().unwrap(), AgentEvent::Started { pid: 100 }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            AgentEvent::Started { pid: 100 }
+        ));
         assert!(matches!(rx.recv().unwrap(), AgentEvent::Output(_)));
-        assert!(matches!(rx.recv().unwrap(), AgentEvent::Exited { code: Some(0) }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            AgentEvent::Exited { code: Some(0) }
+        ));
     }
 
     #[test]
     fn test_claude_event_channel_session_id() {
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(AgentEvent::SessionId("uuid-test".to_string())).unwrap();
+        tx.send(AgentEvent::SessionId("uuid-test".to_string()))
+            .unwrap();
         if let AgentEvent::SessionId(id) = rx.recv().unwrap() {
             assert_eq!(id, "uuid-test");
         }
@@ -565,7 +592,10 @@ mod tests {
     #[test]
     fn test_all_claude_event_variants_exist() {
         let events: Vec<AgentEvent> = vec![
-            AgentEvent::Output(AgentOutput { output_type: OutputType::Stdout, data: String::new() }),
+            AgentEvent::Output(AgentOutput {
+                output_type: OutputType::Stdout,
+                data: String::new(),
+            }),
             AgentEvent::Started { pid: 1 },
             AgentEvent::SessionId("id".to_string()),
             AgentEvent::Exited { code: Some(0) },

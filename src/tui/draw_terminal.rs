@@ -9,10 +9,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus};
 use super::draw_input::split_title_hints;
-use super::keybindings::{terminal_type_title, terminal_command_title, terminal_scroll_title};
+use super::keybindings::{terminal_command_title, terminal_scroll_title, terminal_type_title};
 use super::util::AZURE;
+use crate::app::{App, Focus};
 
 /// Draw the embedded PTY terminal pane.
 /// When title + hints overflow the top border, remaining hints go on the bottom border.
@@ -60,13 +60,17 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Get screen contents with ANSI formatting and convert to styled text
     let content = app.terminal_screen_contents();
-    let text: Text = content.into_text().unwrap_or_else(|_| {
-        Text::from(String::from_utf8_lossy(&content).to_string())
-    });
+    let text: Text = content
+        .into_text()
+        .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&content).to_string()));
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if is_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .title(Span::styled(top_title, border_style))
         .border_style(border_style);
 
@@ -306,7 +310,8 @@ mod tests {
 
     #[test]
     fn split_hints_overflow_gives_bottom() {
-        let long_hints = "a:action | b:other | c:third | d:fourth | e:fifth | f:sixth | g:seventh | h:eighth";
+        let long_hints =
+            "a:action | b:other | c:third | d:fourth | e:fifth | f:sixth | g:seventh | h:eighth";
         let (top, bottom) = split_title_hints(" T ", long_hints, 30);
         assert!(!top.is_empty());
         // With narrow width, some hints should overflow to bottom
@@ -373,14 +378,22 @@ mod tests {
     #[test]
     fn border_type_focused_double() {
         let focused = true;
-        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        let bt = if focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         assert_eq!(bt, BorderType::Double);
     }
 
     #[test]
     fn border_type_unfocused_plain() {
         let focused = false;
-        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        let bt = if focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         assert_eq!(bt, BorderType::Plain);
     }
 
@@ -512,9 +525,15 @@ mod tests {
         let bottom_title: Option<String> = None;
         let mut block = ratatui::widgets::Block::default()
             .borders(Borders::ALL)
-            .title(Span::styled(" TERMINAL ", Style::default().fg(Color::White)));
+            .title(Span::styled(
+                " TERMINAL ",
+                Style::default().fg(Color::White),
+            ));
         if let Some(ref bot) = bottom_title {
-            block = block.title_bottom(Span::styled(bot.as_str(), Style::default().fg(Color::White)));
+            block = block.title_bottom(Span::styled(
+                bot.as_str(),
+                Style::default().fg(Color::White),
+            ));
         }
         let _ = block;
     }

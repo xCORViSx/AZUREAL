@@ -1,7 +1,7 @@
 //! Model selection and token usage badge
 
-use crate::backend::Backend;
 use super::App;
+use crate::backend::Backend;
 
 /// Unified model pool — Claude models first, then Codex models.
 /// Ctrl+M cycles through the entire pool regardless of backend.
@@ -76,11 +76,10 @@ impl App {
             }
         }
         // Fall back to the last Init event (model the session was started with)
-        self.display_events.iter().rev()
-            .find_map(|e| match e {
-                crate::events::DisplayEvent::Init { model, .. } => model_alias_from_init(model),
-                _ => None,
-            })
+        self.display_events.iter().rev().find_map(|e| match e {
+            crate::events::DisplayEvent::Init { model, .. } => model_alias_from_init(model),
+            _ => None,
+        })
     }
 
     /// Recompute the cached context usage badge from session store character count.
@@ -89,9 +88,7 @@ impl App {
     /// For live updates during streaming, use `update_token_badge_live()` instead.
     pub fn update_token_badge(&mut self) {
         let store_chars = match (&self.session_store, self.current_session_id) {
-            (Some(store), Some(sid)) => {
-                store.total_chars_since_compaction(sid).unwrap_or(0)
-            }
+            (Some(store), Some(sid)) => store.total_chars_since_compaction(sid).unwrap_or(0),
             _ => 0,
         };
         self.store_chars_cached = store_chars;
@@ -101,7 +98,9 @@ impl App {
     /// Lightweight badge update during streaming — uses cached store chars plus
     /// live display_events char count. No store I/O.
     pub fn update_token_badge_live(&mut self) {
-        let live_chars: usize = self.display_events.iter()
+        let live_chars: usize = self
+            .display_events
+            .iter()
             .map(crate::app::session_store::event_char_len)
             .sum();
         self.apply_token_badge(self.store_chars_cached + live_chars);
@@ -111,9 +110,13 @@ impl App {
         let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
         let pct_value = if total_chars > 0 || self.current_session_id.is_some() {
             let pct = (total_chars as f64 / threshold * 100.0).min(100.0);
-            let color = if pct < 60.0 { ratatui::style::Color::Green }
-                else if pct < 90.0 { ratatui::style::Color::Yellow }
-                else { ratatui::style::Color::Red };
+            let color = if pct < 60.0 {
+                ratatui::style::Color::Green
+            } else if pct < 90.0 {
+                ratatui::style::Color::Yellow
+            } else {
+                ratatui::style::Color::Red
+            };
             self.token_badge_cache = Some((format!(" {:.0}% ", pct), color));
             pct
         } else {
@@ -151,7 +154,9 @@ impl App {
             self.agent_processor_needs_reset = true;
         }
         // Inject ModelSwitch tag into the event stream + persist to session store
-        let tag = crate::events::DisplayEvent::ModelSwitch { model: next.to_string() };
+        let tag = crate::events::DisplayEvent::ModelSwitch {
+            model: next.to_string(),
+        };
         self.display_events.push(tag.clone());
         if let (Some(store), Some(sid)) = (&self.session_store, self.current_session_id) {
             let _ = store.append_events(sid, &[tag]);
@@ -206,14 +211,23 @@ mod tests {
     fn test_alias_exact_match() {
         assert_eq!(model_alias_from_init("opus"), Some("opus"));
         assert_eq!(model_alias_from_init("gpt-5.4"), Some("gpt-5.4"));
-        assert_eq!(model_alias_from_init("gpt-5.1-codex-mini"), Some("gpt-5.1-codex-mini"));
+        assert_eq!(
+            model_alias_from_init("gpt-5.1-codex-mini"),
+            Some("gpt-5.1-codex-mini")
+        );
     }
 
     #[test]
     fn test_alias_claude_api_name() {
-        assert_eq!(model_alias_from_init("claude-3-5-sonnet-20241022"), Some("sonnet"));
+        assert_eq!(
+            model_alias_from_init("claude-3-5-sonnet-20241022"),
+            Some("sonnet")
+        );
         assert_eq!(model_alias_from_init("claude-opus-4-6"), Some("opus"));
-        assert_eq!(model_alias_from_init("claude-3-haiku-20240307"), Some("haiku"));
+        assert_eq!(
+            model_alias_from_init("claude-3-haiku-20240307"),
+            Some("haiku")
+        );
     }
 
     #[test]
@@ -249,8 +263,16 @@ mod tests {
         use crate::events::DisplayEvent;
         let mut app = App::new();
         app.display_events = vec![
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "gpt-5.4".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "hi".into(),
+            },
         ];
         assert_eq!(app.last_session_model(), Some("gpt-5.4"));
     }
@@ -260,10 +282,26 @@ mod tests {
         use crate::events::DisplayEvent;
         let mut app = App::new();
         app.display_events = vec![
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "first".into() },
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "sonnet".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "second".into() },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "opus".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "first".into(),
+            },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "sonnet".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "second".into(),
+            },
         ];
         assert_eq!(app.last_session_model(), Some("sonnet"));
     }
@@ -273,9 +311,19 @@ mod tests {
         use crate::events::DisplayEvent;
         let mut app = App::new();
         app.display_events = vec![
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
-            DisplayEvent::ModelSwitch { model: "gpt-5.4".into() },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "opus".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "hi".into(),
+            },
+            DisplayEvent::ModelSwitch {
+                model: "gpt-5.4".into(),
+            },
         ];
         // ModelSwitch should take priority over Init
         assert_eq!(app.last_session_model(), Some("gpt-5.4"));
@@ -286,10 +334,20 @@ mod tests {
         use crate::events::DisplayEvent;
         let mut app = App::new();
         app.display_events = vec![
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "opus".into() },
-            DisplayEvent::ModelSwitch { model: "sonnet".into() },
-            DisplayEvent::ModelSwitch { model: "gpt-5.4".into() },
-            DisplayEvent::ModelSwitch { model: "haiku".into() },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "opus".into(),
+            },
+            DisplayEvent::ModelSwitch {
+                model: "sonnet".into(),
+            },
+            DisplayEvent::ModelSwitch {
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::ModelSwitch {
+                model: "haiku".into(),
+            },
         ];
         assert_eq!(app.last_session_model(), Some("haiku"));
     }
@@ -299,9 +357,20 @@ mod tests {
         use crate::events::DisplayEvent;
         let mut app = App::new();
         app.display_events = vec![
-            DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: "sonnet".into() },
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
+            DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: "sonnet".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "hello".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "hi".into(),
+            },
         ];
         assert_eq!(app.last_session_model(), Some("sonnet"));
     }
@@ -388,8 +457,13 @@ mod tests {
         app.session_store = Some(store);
         app.current_session_id = Some(sid);
         app.cycle_model(); // opus → sonnet
-        // Verify the ModelSwitch event was persisted to the store
-        let events = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+                           // Verify the ModelSwitch event was persisted to the store
+        let events = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
         assert_eq!(events.len(), 1);
         match &events[0] {
             crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
@@ -545,7 +619,11 @@ mod tests {
 
         // Store compaction — chars_since_compaction drops to 0
         let max_seq = app.session_store.as_ref().unwrap().max_seq(sid).unwrap();
-        app.session_store.as_ref().unwrap().store_compaction(sid, max_seq, "summary").unwrap();
+        app.session_store
+            .as_ref()
+            .unwrap()
+            .store_compaction(sid, max_seq, "summary")
+            .unwrap();
         app.update_token_badge();
         assert!(!app.context_pct_high);
         let (text, color) = app.token_badge_cache.unwrap();

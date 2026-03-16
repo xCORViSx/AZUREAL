@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use super::FileTreeEntry;
 
 /// Build file tree entries for a directory (respects expanded state)
-pub fn build_file_tree(root: &PathBuf, expanded: &HashSet<PathBuf>, hidden_dirs: &HashSet<String>) -> Vec<FileTreeEntry> {
+pub fn build_file_tree(
+    root: &PathBuf,
+    expanded: &HashSet<PathBuf>,
+    hidden_dirs: &HashSet<String>,
+) -> Vec<FileTreeEntry> {
     let mut entries = Vec::new();
     build_file_tree_recursive(root, expanded, &mut entries, 0, false, hidden_dirs);
     entries
@@ -21,16 +25,22 @@ fn build_file_tree_recursive(
     parent_hidden: bool,
     hidden_dirs: &HashSet<String>,
 ) {
-    let Ok(read_dir) = std::fs::read_dir(dir) else { return };
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return;
+    };
 
     let mut items: Vec<_> = read_dir
         .filter_map(|e| e.ok())
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
             // Skip common build/dependency directories (too noisy)
-            if name == "target" || name == "node_modules" { return false; }
+            if name == "target" || name == "node_modules" {
+                return false;
+            }
             // Hide entries configured in Filetree Options overlay
-            if hidden_dirs.contains(&name) { return false; }
+            if hidden_dirs.contains(&name) {
+                return false;
+            }
             true
         })
         .collect();
@@ -51,7 +61,7 @@ fn build_file_tree_recursive(
                 (false, true) => std::cmp::Ordering::Less,
                 (true, false) => std::cmp::Ordering::Greater,
                 _ => a.file_name().cmp(&b.file_name()),
-            }
+            },
         }
     });
 
@@ -195,7 +205,9 @@ mod tests {
         let expanded = HashSet::new();
         let hidden = HashSet::new();
         let entries = build_file_tree(&root, &expanded, &hidden);
-        let has_src_child = entries.iter().any(|e| e.path.starts_with(root.join("src")) && e.path != root.join("src"));
+        let has_src_child = entries
+            .iter()
+            .any(|e| e.path.starts_with(root.join("src")) && e.path != root.join("src"));
         assert!(!has_src_child, "collapsed src should not show children");
     }
 
@@ -206,7 +218,10 @@ mod tests {
         fs::create_dir(root.join("target")).unwrap();
         fs::write(root.join("target/debug"), "bin").unwrap();
         let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
-        assert!(!entries.iter().any(|e| e.name == "target"), "target dir should be filtered out");
+        assert!(
+            !entries.iter().any(|e| e.name == "target"),
+            "target dir should be filtered out"
+        );
     }
 
     #[test]
@@ -225,7 +240,10 @@ mod tests {
         let mut hidden = HashSet::new();
         hidden.insert("docs".to_string());
         let entries = build_file_tree(&root, &HashSet::new(), &hidden);
-        assert!(!entries.iter().any(|e| e.name == "docs"), "docs should be hidden");
+        assert!(
+            !entries.iter().any(|e| e.name == "docs"),
+            "docs should be hidden"
+        );
     }
 
     #[test]
@@ -305,7 +323,11 @@ mod tests {
         let root = tmp.path().to_path_buf();
         let entries = build_file_tree(&root, &HashSet::new(), &HashSet::new());
         for e in &entries {
-            assert!(e.path.is_absolute(), "path {} should be absolute", e.path.display());
+            assert!(
+                e.path.is_absolute(),
+                "path {} should be absolute",
+                e.path.display()
+            );
         }
     }
 
@@ -370,7 +392,10 @@ mod tests {
         // "a/b" NOT expanded
         let entries = build_file_tree(&root.to_path_buf(), &expanded, &HashSet::new());
         let deep = entries.iter().find(|e| e.name == "deep.txt");
-        assert!(deep.is_none(), "deep file should not appear if parent not expanded");
+        assert!(
+            deep.is_none(),
+            "deep file should not appear if parent not expanded"
+        );
     }
 
     #[test]

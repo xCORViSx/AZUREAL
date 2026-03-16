@@ -8,9 +8,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::keybindings;
 use super::util::{GIT_BROWN, GIT_ORANGE};
+use crate::app::App;
 
 /// Draw the sidebar — in Git mode shows Actions + Changed Files,
 /// otherwise delegates to the file tree pane.
@@ -31,13 +31,19 @@ pub fn draw_file_tree_overlay(f: &mut Frame, app: &mut App, area: Rect) {
 
 /// Git panel sidebar — Actions list (top) + Changed Files (bottom)
 /// Returns the computed file_scroll for writeback.
-fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActionsPanel, area: Rect) -> usize {
+fn draw_git_sidebar(
+    f: &mut Frame,
+    app: &App,
+    panel: &crate::app::types::GitActionsPanel,
+    area: Rect,
+) -> usize {
     // Split vertically: actions (auto-height) | files (fill)
     let action_rows = if panel.is_on_main { 8 } else { 10 };
     let splits = Layout::vertical([
         ratatui::layout::Constraint::Length(action_rows),
         ratatui::layout::Constraint::Min(4),
-    ]).split(area);
+    ])
+    .split(area);
     let actions_area = splits[0];
     let files_area = splits[1];
 
@@ -84,7 +90,10 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
             Span::styled("   ", Style::default()),
             Span::styled("[a]", Style::default().fg(GIT_BROWN)),
             Span::styled(" Auto-rebase ", Style::default().fg(Color::White)),
-            Span::styled(indicator, Style::default().fg(ind_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                indicator,
+                Style::default().fg(ind_color).add_modifier(Modifier::BOLD),
+            ),
         ]));
     }
 
@@ -102,21 +111,42 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     action_lines.push(Line::from(vec![
         Span::styled("   ", Style::default()),
         Span::styled("[s]", Style::default().fg(GIT_BROWN)),
-        Span::styled(format!(" Auto-resolve ({})", ar_count), Style::default().fg(Color::White)),
+        Span::styled(
+            format!(" Auto-resolve ({})", ar_count),
+            Style::default().fg(Color::White),
+        ),
     ]));
 
     let actions_block = Block::default()
-        .title(Span::styled(" Actions ", Style::default()
-            .fg(if actions_focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(if actions_focused { Modifier::BOLD } else { Modifier::empty() })))
+        .title(Span::styled(
+            " Actions ",
+            Style::default()
+                .fg(if actions_focused {
+                    GIT_ORANGE
+                } else {
+                    GIT_BROWN
+                })
+                .add_modifier(if actions_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
+        ))
         .borders(Borders::ALL)
-        .border_type(if actions_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if actions_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .border_style(if actions_focused {
             Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(GIT_BROWN)
         });
-    f.render_widget(Paragraph::new(action_lines).block(actions_block), actions_area);
+    f.render_widget(
+        Paragraph::new(action_lines).block(actions_block),
+        actions_area,
+    );
 
     // ─── Changed Files pane (bottom) ─────────────────────────────────────────
     let files_focused = panel.focused_pane == 1;
@@ -129,7 +159,9 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
     let scroll = if panel.selected_file < panel.file_scroll {
         panel.selected_file
     } else if panel.selected_file >= panel.file_scroll + visible_files {
-        panel.selected_file.saturating_sub(visible_files.saturating_sub(1))
+        panel
+            .selected_file
+            .saturating_sub(visible_files.saturating_sub(1))
     } else {
         panel.file_scroll
     };
@@ -138,13 +170,23 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
 
     let discard_idx = panel.discard_confirm;
 
-    for (i, file) in panel.changed_files.iter().enumerate().skip(scroll).take(visible_files) {
+    for (i, file) in panel
+        .changed_files
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_files)
+    {
         let selected = files_focused && i == panel.selected_file;
 
         // Discard confirmation replaces the file line
         if discard_idx == Some(i) {
             let msg = format!(" Discard {}? [y/n] ", file.path);
-            let trunc = if msg.len() > inner_w { &msg[..inner_w] } else { &msg };
+            let trunc = if msg.len() > inner_w {
+                &msg[..inner_w]
+            } else {
+                &msg
+            };
             file_lines.push(Line::from(Span::styled(
                 trunc.to_string(),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
@@ -168,7 +210,13 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         let stat_len = add_str.len() + 1 + del_str.len();
         let path_budget = inner_w.saturating_sub(prefix.len() + 2 + stat_len + 1);
         let path_display = if file.path.len() > path_budget {
-            format!("\u{2026}{}", &file.path[file.path.len().saturating_sub(path_budget.saturating_sub(1))..])
+            format!(
+                "\u{2026}{}",
+                &file.path[file
+                    .path
+                    .len()
+                    .saturating_sub(path_budget.saturating_sub(1))..]
+            )
         } else {
             file.path.clone()
         };
@@ -176,18 +224,46 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
 
         // Unstaged files get strikethrough on the path, dimmed colors
         let path_style = if selected {
-            let mut s = Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-            if !file.staged { s = s.add_modifier(Modifier::CROSSED_OUT); }
+            let mut s = Style::default()
+                .fg(GIT_ORANGE)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+            if !file.staged {
+                s = s.add_modifier(Modifier::CROSSED_OUT);
+            }
             s
         } else if file.staged {
-            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::UNDERLINED)
         } else {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT)
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::CROSSED_OUT)
         };
-        let add_style = if selected { Style::default().fg(GIT_ORANGE) } else if file.staged { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) };
-        let del_style = if selected { Style::default().fg(GIT_ORANGE) } else if file.staged { Style::default().fg(Color::Red) } else { Style::default().fg(Color::DarkGray) };
-        let slash_style = if selected { Style::default().fg(GIT_ORANGE) } else { Style::default().fg(GIT_BROWN) };
-        let status_style = if !file.staged && !selected { Style::default().fg(Color::DarkGray) } else { Style::default().fg(status_color) };
+        let add_style = if selected {
+            Style::default().fg(GIT_ORANGE)
+        } else if file.staged {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let del_style = if selected {
+            Style::default().fg(GIT_ORANGE)
+        } else if file.staged {
+            Style::default().fg(Color::Red)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let slash_style = if selected {
+            Style::default().fg(GIT_ORANGE)
+        } else {
+            Style::default().fg(GIT_BROWN)
+        };
+        let status_style = if !file.staged && !selected {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(status_color)
+        };
 
         file_lines.push(Line::from(vec![
             Span::styled(prefix, Style::default()),
@@ -208,18 +284,40 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
         let total_add: usize = panel.changed_files.iter().map(|f| f.additions).sum();
         let total_del: usize = panel.changed_files.iter().map(|f| f.deletions).sum();
         if staged_count > 0 {
-            format!(" Changed Files ({}, {}\u{2713}, +{}/-{}) ", panel.changed_files.len(), staged_count, total_add, total_del)
+            format!(
+                " Changed Files ({}, {}\u{2713}, +{}/-{}) ",
+                panel.changed_files.len(),
+                staged_count,
+                total_add,
+                total_del
+            )
         } else {
-            format!(" Changed Files ({}, +{}/-{}) ", panel.changed_files.len(), total_add, total_del)
+            format!(
+                " Changed Files ({}, +{}/-{}) ",
+                panel.changed_files.len(),
+                total_add,
+                total_del
+            )
         }
     };
 
     let files_block = Block::default()
-        .title(Span::styled(files_title, Style::default()
-            .fg(if files_focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(if files_focused { Modifier::BOLD } else { Modifier::empty() })))
+        .title(Span::styled(
+            files_title,
+            Style::default()
+                .fg(if files_focused { GIT_ORANGE } else { GIT_BROWN })
+                .add_modifier(if files_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
+        ))
         .borders(Borders::ALL)
-        .border_type(if files_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if files_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .border_style(if files_focused {
             Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
         } else {
@@ -232,9 +330,9 @@ fn draw_git_sidebar(f: &mut Frame, app: &App, panel: &crate::app::types::GitActi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::types::GitChangedFile;
     use ratatui::layout::{Constraint, Layout, Rect};
     use ratatui::style::{Color, Modifier, Style};
-    use crate::app::types::GitChangedFile;
 
     // ══════════════════════════════════════════════════════════════════
     //  Color constants
@@ -281,10 +379,8 @@ mod tests {
     fn sidebar_layout_main_branch() {
         let area = Rect::new(0, 0, 40, 30);
         let action_rows = 8u16;
-        let splits = Layout::vertical([
-            Constraint::Length(action_rows),
-            Constraint::Min(4),
-        ]).split(area);
+        let splits =
+            Layout::vertical([Constraint::Length(action_rows), Constraint::Min(4)]).split(area);
         assert_eq!(splits[0].height, 8);
         assert_eq!(splits[1].height, 22);
     }
@@ -293,10 +389,8 @@ mod tests {
     fn sidebar_layout_feature_branch() {
         let area = Rect::new(0, 0, 40, 30);
         let action_rows = 10u16;
-        let splits = Layout::vertical([
-            Constraint::Length(action_rows),
-            Constraint::Min(4),
-        ]).split(area);
+        let splits =
+            Layout::vertical([Constraint::Length(action_rows), Constraint::Min(4)]).split(area);
         assert_eq!(splits[0].height, 10);
         assert_eq!(splits[1].height, 20);
     }
@@ -540,7 +634,10 @@ mod tests {
         let path = "src/main.rs";
         let budget = 30;
         let display = if path.len() > budget {
-            format!("\u{2026}{}", &path[path.len().saturating_sub(budget.saturating_sub(1))..])
+            format!(
+                "\u{2026}{}",
+                &path[path.len().saturating_sub(budget.saturating_sub(1))..]
+            )
         } else {
             path.to_string()
         };
@@ -552,7 +649,10 @@ mod tests {
         let path = "src/very/deeply/nested/module/file.rs";
         let budget = 15;
         let display = if path.len() > budget {
-            format!("\u{2026}{}", &path[path.len().saturating_sub(budget.saturating_sub(1))..])
+            format!(
+                "\u{2026}{}",
+                &path[path.len().saturating_sub(budget.saturating_sub(1))..]
+            )
         } else {
             path.to_string()
         };
@@ -642,7 +742,12 @@ mod tests {
         } else {
             let total_add: usize = files.iter().map(|f| f.additions).sum();
             let total_del: usize = files.iter().map(|f| f.deletions).sum();
-            format!(" Changed Files ({}, +{}/-{}) ", files.len(), total_add, total_del)
+            format!(
+                " Changed Files ({}, +{}/-{}) ",
+                files.len(),
+                total_add,
+                total_del
+            )
         };
         assert_eq!(title, " Changed Files (none) ");
     }
@@ -650,12 +755,29 @@ mod tests {
     #[test]
     fn files_title_with_files() {
         let files = vec![
-            GitChangedFile { path: "a.rs".into(), status: 'M', additions: 10, deletions: 5, staged: false },
-            GitChangedFile { path: "b.rs".into(), status: 'A', additions: 20, deletions: 0, staged: false },
+            GitChangedFile {
+                path: "a.rs".into(),
+                status: 'M',
+                additions: 10,
+                deletions: 5,
+                staged: false,
+            },
+            GitChangedFile {
+                path: "b.rs".into(),
+                status: 'A',
+                additions: 20,
+                deletions: 0,
+                staged: false,
+            },
         ];
         let total_add: usize = files.iter().map(|f| f.additions).sum();
         let total_del: usize = files.iter().map(|f| f.deletions).sum();
-        let title = format!(" Changed Files ({}, +{}/-{}) ", files.len(), total_add, total_del);
+        let title = format!(
+            " Changed Files ({}, +{}/-{}) ",
+            files.len(),
+            total_add,
+            total_del
+        );
         assert_eq!(title, " Changed Files (2, +30/-5) ");
     }
 
@@ -666,14 +788,22 @@ mod tests {
     #[test]
     fn actions_border_focused_double() {
         let focused = true;
-        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        let bt = if focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         assert_eq!(bt, BorderType::Double);
     }
 
     #[test]
     fn actions_border_unfocused_plain() {
         let focused = false;
-        let bt = if focused { BorderType::Double } else { BorderType::Plain };
+        let bt = if focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         assert_eq!(bt, BorderType::Plain);
     }
 
@@ -686,7 +816,11 @@ mod tests {
         let focused = true;
         let style = Style::default()
             .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() });
+            .add_modifier(if focused {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
 
@@ -695,7 +829,11 @@ mod tests {
         let focused = false;
         let style = Style::default()
             .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() });
+            .add_modifier(if focused {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
         assert_eq!(style.fg, Some(GIT_BROWN));
     }
 
@@ -707,9 +845,13 @@ mod tests {
     fn path_style_selected_orange_bold_underline() {
         let selected = true;
         let style = if selected {
-            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            Style::default()
+                .fg(GIT_ORANGE)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
-            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::UNDERLINED)
         };
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
@@ -718,9 +860,13 @@ mod tests {
     fn path_style_unselected_white_underline() {
         let selected = false;
         let style = if selected {
-            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            Style::default()
+                .fg(GIT_ORANGE)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
-            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::UNDERLINED)
         };
         assert_eq!(style.fg, Some(Color::White));
     }

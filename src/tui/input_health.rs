@@ -7,15 +7,19 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
-use crate::app::App;
-use crate::app::types::{RustModuleStyle, PythonModuleStyle};
-use crate::backend::AgentProcess;
 use super::keybindings::{lookup_health_action, Action};
+use crate::app::types::{PythonModuleStyle, RustModuleStyle};
+use crate::app::App;
+use crate::backend::AgentProcess;
 
 /// Handle keyboard input when the Worktree Health panel is active.
 /// Module style dialog takes priority when shown (pre-modularize selector).
 /// Otherwise all keys resolved through keybindings.rs.
-pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub fn handle_health_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     // Module style dialog intercepts all input when active
     // (transient sub-state like confirm-delete y/n — raw key matching)
     if let Some(ref panel) = app.health_panel {
@@ -39,12 +43,18 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         Action::HealthSwitchTab => {
             if let Some(ref mut p) = app.health_panel {
                 p.tab = match p.tab {
-                    crate::app::types::HealthTab::GodFiles => crate::app::types::HealthTab::Documentation,
-                    crate::app::types::HealthTab::Documentation => crate::app::types::HealthTab::GodFiles,
+                    crate::app::types::HealthTab::GodFiles => {
+                        crate::app::types::HealthTab::Documentation
+                    }
+                    crate::app::types::HealthTab::Documentation => {
+                        crate::app::types::HealthTab::GodFiles
+                    }
                 };
             }
         }
-        Action::Escape => { app.close_health_panel(); }
+        Action::Escape => {
+            app.close_health_panel();
+        }
         Action::NavDown => {
             if let Some(ref mut p) = app.health_panel {
                 match p.tab {
@@ -65,10 +75,14 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
             if let Some(ref mut p) = app.health_panel {
                 match p.tab {
                     crate::app::types::HealthTab::GodFiles => {
-                        if p.god_selected > 0 { p.god_selected -= 1; }
+                        if p.god_selected > 0 {
+                            p.god_selected -= 1;
+                        }
                     }
                     crate::app::types::HealthTab::Documentation => {
-                        if p.doc_selected > 0 { p.doc_selected -= 1; }
+                        if p.doc_selected > 0 {
+                            p.doc_selected -= 1;
+                        }
                     }
                 }
             }
@@ -76,8 +90,12 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         Action::GoToTop => {
             if let Some(ref mut p) = app.health_panel {
                 match p.tab {
-                    crate::app::types::HealthTab::GodFiles => { p.god_selected = 0; }
-                    crate::app::types::HealthTab::Documentation => { p.doc_selected = 0; }
+                    crate::app::types::HealthTab::GodFiles => {
+                        p.god_selected = 0;
+                    }
+                    crate::app::types::HealthTab::Documentation => {
+                        p.doc_selected = 0;
+                    }
                 }
             }
         }
@@ -85,10 +103,14 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
             if let Some(ref mut p) = app.health_panel {
                 match p.tab {
                     crate::app::types::HealthTab::GodFiles => {
-                        if !p.god_files.is_empty() { p.god_selected = p.god_files.len() - 1; }
+                        if !p.god_files.is_empty() {
+                            p.god_selected = p.god_files.len() - 1;
+                        }
                     }
                     crate::app::types::HealthTab::Documentation => {
-                        if !p.doc_entries.is_empty() { p.doc_selected = p.doc_entries.len() - 1; }
+                        if !p.doc_entries.is_empty() {
+                            p.doc_selected = p.doc_entries.len() - 1;
+                        }
                     }
                 }
             }
@@ -98,7 +120,9 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         Action::PageDown => {
             if let Some(ref mut p) = app.health_panel {
                 // Same modal_h and chrome calculations as draw_health.rs
-                let modal_h = (app.screen_height * 70 / 100).max(16).min(app.screen_height) as usize;
+                let modal_h = (app.screen_height * 70 / 100)
+                    .max(16)
+                    .min(app.screen_height) as usize;
                 match p.tab {
                     crate::app::types::HealthTab::GodFiles => {
                         let page = modal_h.saturating_sub(12).max(1);
@@ -115,7 +139,9 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         }
         Action::PageUp => {
             if let Some(ref mut p) = app.health_panel {
-                let modal_h = (app.screen_height * 70 / 100).max(16).min(app.screen_height) as usize;
+                let modal_h = (app.screen_height * 70 / 100)
+                    .max(16)
+                    .min(app.screen_height) as usize;
                 match p.tab {
                     crate::app::types::HealthTab::GodFiles => {
                         let page = modal_h.saturating_sub(12).max(1);
@@ -130,26 +156,38 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
         }
 
         // ── Panel-level — scope applies to all health features ──
-        Action::HealthScopeMode => { app.enter_god_file_scope_mode(); }
-
-        // ── God Files tab only ──
-        Action::HealthToggleCheck => { app.god_file_toggle_check(); }
-        Action::HealthToggleAll => { app.god_file_toggle_all(); }
-        // Start modularize — may show module style dialog first
-        Action::HealthModularize => { app.god_file_start_modularize(claude_process); }
-
-        // ── Shared — `v` opens checked files in Viewer from both tabs ──
-        Action::HealthViewChecked => {
-            match tab {
-                crate::app::types::HealthTab::GodFiles => app.god_file_view_checked(),
-                crate::app::types::HealthTab::Documentation => app.doc_view_checked(),
-            }
+        Action::HealthScopeMode => {
+            app.enter_god_file_scope_mode();
         }
 
+        // ── God Files tab only ──
+        Action::HealthToggleCheck => {
+            app.god_file_toggle_check();
+        }
+        Action::HealthToggleAll => {
+            app.god_file_toggle_all();
+        }
+        // Start modularize — may show module style dialog first
+        Action::HealthModularize => {
+            app.god_file_start_modularize(claude_process);
+        }
+
+        // ── Shared — `v` opens checked files in Viewer from both tabs ──
+        Action::HealthViewChecked => match tab {
+            crate::app::types::HealthTab::GodFiles => app.god_file_view_checked(),
+            crate::app::types::HealthTab::Documentation => app.doc_view_checked(),
+        },
+
         // ── Documentation tab only ──
-        Action::HealthDocToggleCheck => { app.doc_toggle_check(); }
-        Action::HealthDocToggleNon100 => { app.doc_toggle_non100(); }
-        Action::HealthDocSpawn => { app.doc_health_spawn(claude_process); }
+        Action::HealthDocToggleCheck => {
+            app.doc_toggle_check();
+        }
+        Action::HealthDocToggleNon100 => {
+            app.doc_toggle_non100();
+        }
+        Action::HealthDocSpawn => {
+            app.doc_health_spawn(claude_process);
+        }
         _ => {}
     }
     Ok(())
@@ -161,21 +199,29 @@ pub fn handle_health_input(key: event::KeyEvent, app: &mut App, claude_process: 
 ///   Space/Left/Right: toggle style for current language
 ///   Enter: confirm and spawn GFM sessions with chosen styles
 ///   Esc: cancel back to god files list
-fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+fn handle_module_style_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     match key.code {
         // Navigate between language rows
         KeyCode::Char('j') | KeyCode::Down => {
             if let Some(ref mut panel) = app.health_panel {
                 if let Some(ref mut d) = panel.module_style_dialog {
                     let max = if d.has_rust && d.has_python { 1 } else { 0 };
-                    if d.selected < max { d.selected += 1; }
+                    if d.selected < max {
+                        d.selected += 1;
+                    }
                 }
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
             if let Some(ref mut panel) = app.health_panel {
                 if let Some(ref mut d) = panel.module_style_dialog {
-                    if d.selected > 0 { d.selected -= 1; }
+                    if d.selected > 0 {
+                        d.selected -= 1;
+                    }
                 }
             }
         }
@@ -206,7 +252,11 @@ fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process
                 Some(ref panel) => match panel.module_style_dialog {
                     Some(ref d) => (
                         if d.has_rust { Some(d.rust_style) } else { None },
-                        if d.has_python { Some(d.python_style) } else { None },
+                        if d.has_python {
+                            Some(d.python_style)
+                        } else {
+                            None
+                        },
                     ),
                     None => (None, None),
                 },
@@ -232,11 +282,16 @@ fn handle_module_style_input(key: event::KeyEvent, app: &mut App, claude_process
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use crate::app::types::HealthTab;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -244,11 +299,17 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn health_tab_god_files_eq() { assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles); }
+    fn health_tab_god_files_eq() {
+        assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles);
+    }
     #[test]
-    fn health_tab_documentation_eq() { assert_eq!(HealthTab::Documentation, HealthTab::Documentation); }
+    fn health_tab_documentation_eq() {
+        assert_eq!(HealthTab::Documentation, HealthTab::Documentation);
+    }
     #[test]
-    fn health_tab_different_ne() { assert_ne!(HealthTab::GodFiles, HealthTab::Documentation); }
+    fn health_tab_different_ne() {
+        assert_ne!(HealthTab::GodFiles, HealthTab::Documentation);
+    }
 
     #[test]
     fn health_tab_toggle_god_to_doc() {
@@ -275,11 +336,17 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn rust_style_file_based_eq() { assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased); }
+    fn rust_style_file_based_eq() {
+        assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased);
+    }
     #[test]
-    fn rust_style_mod_rs_eq() { assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs); }
+    fn rust_style_mod_rs_eq() {
+        assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs);
+    }
     #[test]
-    fn rust_style_different_ne() { assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs); }
+    fn rust_style_different_ne() {
+        assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs);
+    }
 
     #[test]
     fn rust_style_toggle_file_to_mod() {
@@ -306,11 +373,17 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn python_style_package_eq() { assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package); }
+    fn python_style_package_eq() {
+        assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package);
+    }
     #[test]
-    fn python_style_single_eq() { assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile); }
+    fn python_style_single_eq() {
+        assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile);
+    }
     #[test]
-    fn python_style_different_ne() { assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile); }
+    fn python_style_different_ne() {
+        assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile);
+    }
 
     #[test]
     fn python_style_toggle() {
@@ -373,37 +446,69 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_health_switch_tab() { assert_eq!(Action::HealthSwitchTab, Action::HealthSwitchTab); }
+    fn action_health_switch_tab() {
+        assert_eq!(Action::HealthSwitchTab, Action::HealthSwitchTab);
+    }
     #[test]
-    fn action_escape() { assert_eq!(Action::Escape, Action::Escape); }
+    fn action_escape() {
+        assert_eq!(Action::Escape, Action::Escape);
+    }
     #[test]
-    fn action_nav_down() { assert_eq!(Action::NavDown, Action::NavDown); }
+    fn action_nav_down() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
     #[test]
-    fn action_nav_up() { assert_eq!(Action::NavUp, Action::NavUp); }
+    fn action_nav_up() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
     #[test]
-    fn action_go_to_top() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    fn action_go_to_top() {
+        assert_eq!(Action::GoToTop, Action::GoToTop);
+    }
     #[test]
-    fn action_go_to_bottom() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    fn action_go_to_bottom() {
+        assert_eq!(Action::GoToBottom, Action::GoToBottom);
+    }
     #[test]
-    fn action_page_down() { assert_eq!(Action::PageDown, Action::PageDown); }
+    fn action_page_down() {
+        assert_eq!(Action::PageDown, Action::PageDown);
+    }
     #[test]
-    fn action_page_up() { assert_eq!(Action::PageUp, Action::PageUp); }
+    fn action_page_up() {
+        assert_eq!(Action::PageUp, Action::PageUp);
+    }
     #[test]
-    fn action_health_toggle_check() { assert_eq!(Action::HealthToggleCheck, Action::HealthToggleCheck); }
+    fn action_health_toggle_check() {
+        assert_eq!(Action::HealthToggleCheck, Action::HealthToggleCheck);
+    }
     #[test]
-    fn action_health_toggle_all() { assert_eq!(Action::HealthToggleAll, Action::HealthToggleAll); }
+    fn action_health_toggle_all() {
+        assert_eq!(Action::HealthToggleAll, Action::HealthToggleAll);
+    }
     #[test]
-    fn action_health_view_checked() { assert_eq!(Action::HealthViewChecked, Action::HealthViewChecked); }
+    fn action_health_view_checked() {
+        assert_eq!(Action::HealthViewChecked, Action::HealthViewChecked);
+    }
     #[test]
-    fn action_health_scope_mode() { assert_eq!(Action::HealthScopeMode, Action::HealthScopeMode); }
+    fn action_health_scope_mode() {
+        assert_eq!(Action::HealthScopeMode, Action::HealthScopeMode);
+    }
     #[test]
-    fn action_health_modularize() { assert_eq!(Action::HealthModularize, Action::HealthModularize); }
+    fn action_health_modularize() {
+        assert_eq!(Action::HealthModularize, Action::HealthModularize);
+    }
     #[test]
-    fn action_health_doc_toggle_check() { assert_eq!(Action::HealthDocToggleCheck, Action::HealthDocToggleCheck); }
+    fn action_health_doc_toggle_check() {
+        assert_eq!(Action::HealthDocToggleCheck, Action::HealthDocToggleCheck);
+    }
     #[test]
-    fn action_health_doc_toggle_non100() { assert_eq!(Action::HealthDocToggleNon100, Action::HealthDocToggleNon100); }
+    fn action_health_doc_toggle_non100() {
+        assert_eq!(Action::HealthDocToggleNon100, Action::HealthDocToggleNon100);
+    }
     #[test]
-    fn action_health_doc_spawn() { assert_eq!(Action::HealthDocSpawn, Action::HealthDocSpawn); }
+    fn action_health_doc_spawn() {
+        assert_eq!(Action::HealthDocSpawn, Action::HealthDocSpawn);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Page scroll calculation (modal_h arithmetic)
@@ -451,7 +556,8 @@ mod tests {
 
     #[test]
     fn lookup_health_unmapped_key() {
-        let result = lookup_health_action(HealthTab::GodFiles, KeyModifiers::NONE, KeyCode::Char('z'));
+        let result =
+            lookup_health_action(HealthTab::GodFiles, KeyModifiers::NONE, KeyCode::Char('z'));
         assert!(result.is_none());
     }
 
@@ -480,7 +586,10 @@ mod tests {
     #[test]
     fn dialog_space_toggles() {
         let k = key(KeyCode::Char(' '));
-        assert!(matches!(k.code, KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right));
+        assert!(matches!(
+            k.code,
+            KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right
+        ));
     }
 
     #[test]

@@ -26,7 +26,11 @@ pub use super::render_events::render_display_events;
 
 /// Truncate a string to max length, adding ellipsis if needed
 pub fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max { s.to_string() } else { format!("{}…", s.chars().take(max - 1).collect::<String>()) }
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(max - 1).collect::<String>())
+    }
 }
 
 #[cfg(test)]
@@ -354,4 +358,3 @@ mod tests {
         assert_eq!(result.chars().count(), 3);
     }
 }
-

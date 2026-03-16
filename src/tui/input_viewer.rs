@@ -5,8 +5,8 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::keybindings::{is_cmd, is_cmd_shift, macos_opt_key};
 use crate::app::App;
-use super::keybindings::{macos_opt_key, is_cmd, is_cmd_shift};
 
 /// Handle keyboard input for the Viewer panel.
 /// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
@@ -277,7 +277,9 @@ fn handle_save_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.exit_viewer_edit_mode();
             // Reload the file with the edit diff overlay
             if let Some(idx) = app.selected_tool_diff {
-                if let Some((_, _, _, file_path, old_str, new_str, _)) = app.clickable_paths.get(idx).cloned() {
+                if let Some((_, _, _, file_path, old_str, new_str, _)) =
+                    app.clickable_paths.get(idx).cloned()
+                {
                     app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                 }
             }
@@ -338,7 +340,9 @@ fn handle_discard_dialog_input(key: KeyEvent, app: &mut App) -> Result<()> {
                         app.exit_viewer_edit_mode();
                         // Reload with edit diff overlay
                         if let Some(idx) = app.selected_tool_diff {
-                            if let Some((_, _, _, file_path, old_str, new_str, _)) = app.clickable_paths.get(idx).cloned() {
+                            if let Some((_, _, _, file_path, old_str, new_str, _)) =
+                                app.clickable_paths.get(idx).cloned()
+                            {
                                 app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
                             }
                         }
@@ -441,13 +445,19 @@ mod tests {
     #[test]
     fn cmd_s_matches_super_s() {
         let k = key_mod(KeyCode::Char('s'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('s'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('s'))
+        ));
     }
 
     #[test]
     fn cmd_z_matches_super_z() {
         let k = key_mod(KeyCode::Char('z'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('z'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('z'))
+        ));
     }
 
     #[test]
@@ -469,25 +479,37 @@ mod tests {
     #[test]
     fn cmd_c_matches_copy() {
         let k = key_mod(KeyCode::Char('c'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('c'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('c'))
+        ));
     }
 
     #[test]
     fn cmd_x_matches_cut() {
         let k = key_mod(KeyCode::Char('x'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('x'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('x'))
+        ));
     }
 
     #[test]
     fn cmd_v_matches_paste() {
         let k = key_mod(KeyCode::Char('v'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('v'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('v'))
+        ));
     }
 
     #[test]
     fn cmd_a_matches_select_all() {
         let k = key_mod(KeyCode::Char('a'), KeyModifiers::SUPER);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SUPER, KeyCode::Char('a'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SUPER, KeyCode::Char('a'))
+        ));
     }
 
     // ── Cursor movement patterns ──────────────────────────────────────
@@ -495,61 +517,91 @@ mod tests {
     #[test]
     fn shift_left_matches_selection_pattern() {
         let k = key_mod(KeyCode::Left, KeyModifiers::SHIFT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SHIFT, KeyCode::Left)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SHIFT, KeyCode::Left)
+        ));
     }
 
     #[test]
     fn shift_right_matches_selection_pattern() {
         let k = key_mod(KeyCode::Right, KeyModifiers::SHIFT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SHIFT, KeyCode::Right)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SHIFT, KeyCode::Right)
+        ));
     }
 
     #[test]
     fn shift_up_matches_selection_pattern() {
         let k = key_mod(KeyCode::Up, KeyModifiers::SHIFT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SHIFT, KeyCode::Up)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SHIFT, KeyCode::Up)
+        ));
     }
 
     #[test]
     fn shift_down_matches_selection_pattern() {
         let k = key_mod(KeyCode::Down, KeyModifiers::SHIFT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SHIFT, KeyCode::Down)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SHIFT, KeyCode::Down)
+        ));
     }
 
     #[test]
     fn plain_left_matches_no_selection_pattern() {
         let k = key(KeyCode::Left);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Left)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Left)
+        ));
     }
 
     #[test]
     fn plain_right_matches_no_selection_pattern() {
         let k = key(KeyCode::Right);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Right)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Right)
+        ));
     }
 
     #[test]
     fn plain_up_matches_no_selection_pattern() {
         let k = key(KeyCode::Up);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Up)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Up)
+        ));
     }
 
     #[test]
     fn plain_down_matches_no_selection_pattern() {
         let k = key(KeyCode::Down);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Down)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Down)
+        ));
     }
 
     #[test]
     fn home_key_matches() {
         let k = key(KeyCode::Home);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Home)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Home)
+        ));
     }
 
     #[test]
     fn end_key_matches() {
         let k = key(KeyCode::End);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::End)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::End)
+        ));
     }
 
     // ── Text editing key patterns ─────────────────────────────────────
@@ -557,43 +609,64 @@ mod tests {
     #[test]
     fn enter_key_matches() {
         let k = key(KeyCode::Enter);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Enter)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Enter)
+        ));
     }
 
     #[test]
     fn backspace_key_matches() {
         let k = key(KeyCode::Backspace);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Backspace)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Backspace)
+        ));
     }
 
     #[test]
     fn delete_key_matches() {
         let k = key(KeyCode::Delete);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Delete)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Delete)
+        ));
     }
 
     #[test]
     fn char_key_matches_none_modifier() {
         let k = key(KeyCode::Char('h'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('h'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('h'))
+        ));
     }
 
     #[test]
     fn shift_char_matches_shift_modifier() {
         let k = key_mod(KeyCode::Char('H'), KeyModifiers::SHIFT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::SHIFT, KeyCode::Char('H'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::SHIFT, KeyCode::Char('H'))
+        ));
     }
 
     #[test]
     fn tab_key_matches() {
         let k = key(KeyCode::Tab);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Tab)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Tab)
+        ));
     }
 
     #[test]
     fn esc_key_matches() {
         let k = key(KeyCode::Esc);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Esc)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Esc)
+        ));
     }
 
     // ── Tab dialog key patterns ───────────────────────────────────────
@@ -637,13 +710,19 @@ mod tests {
     #[test]
     fn tab_dialog_enter_matches() {
         let k = key(KeyCode::Enter);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Enter)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Enter)
+        ));
     }
 
     #[test]
     fn tab_dialog_x_matches_close() {
         let k = key(KeyCode::Char('x'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('x'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('x'))
+        ));
     }
 
     // ── Tab dialog number key digit-to-index mapping ──────────────────
@@ -746,28 +825,66 @@ mod tests {
     #[test]
     fn macos_opt_key_all_letters_mapped() {
         let mappings = [
-            ('å', 'a'), ('∫', 'b'), ('ç', 'c'), ('∂', 'd'),
-            ('´', 'e'), ('ƒ', 'f'), ('©', 'g'), ('˙', 'h'),
-            ('ˆ', 'i'), ('∆', 'j'), ('˚', 'k'), ('¬', 'l'),
-            ('µ', 'm'), ('˜', 'n'), ('ø', 'o'), ('π', 'p'),
-            ('œ', 'q'), ('®', 'r'), ('ß', 's'), ('†', 't'),
-            ('¨', 'u'), ('√', 'v'), ('∑', 'w'), ('≈', 'x'),
-            ('¥', 'y'), ('Ω', 'z'),
+            ('å', 'a'),
+            ('∫', 'b'),
+            ('ç', 'c'),
+            ('∂', 'd'),
+            ('´', 'e'),
+            ('ƒ', 'f'),
+            ('©', 'g'),
+            ('˙', 'h'),
+            ('ˆ', 'i'),
+            ('∆', 'j'),
+            ('˚', 'k'),
+            ('¬', 'l'),
+            ('µ', 'm'),
+            ('˜', 'n'),
+            ('ø', 'o'),
+            ('π', 'p'),
+            ('œ', 'q'),
+            ('®', 'r'),
+            ('ß', 's'),
+            ('†', 't'),
+            ('¨', 'u'),
+            ('√', 'v'),
+            ('∑', 'w'),
+            ('≈', 'x'),
+            ('¥', 'y'),
+            ('Ω', 'z'),
         ];
         for (unicode, letter) in mappings {
-            assert_eq!(macos_opt_key(unicode), Some(letter), "failed for {} -> {}", unicode, letter);
+            assert_eq!(
+                macos_opt_key(unicode),
+                Some(letter),
+                "failed for {} -> {}",
+                unicode,
+                letter
+            );
         }
     }
 
     #[test]
     fn macos_opt_key_numbers_mapped() {
         let mappings = [
-            ('¡', '1'), ('™', '2'), ('£', '3'), ('¢', '4'),
-            ('∞', '5'), ('§', '6'), ('¶', '7'), ('•', '8'),
-            ('ª', '9'), ('º', '0'),
+            ('¡', '1'),
+            ('™', '2'),
+            ('£', '3'),
+            ('¢', '4'),
+            ('∞', '5'),
+            ('§', '6'),
+            ('¶', '7'),
+            ('•', '8'),
+            ('ª', '9'),
+            ('º', '0'),
         ];
         for (unicode, digit) in mappings {
-            assert_eq!(macos_opt_key(unicode), Some(digit), "failed for {} -> {}", unicode, digit);
+            assert_eq!(
+                macos_opt_key(unicode),
+                Some(digit),
+                "failed for {} -> {}",
+                unicode,
+                digit
+            );
         }
     }
 
@@ -780,7 +897,10 @@ mod tests {
     #[test]
     fn alt_t_key_matches_tab_toggle() {
         let k = key_mod(KeyCode::Char('t'), KeyModifiers::ALT);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::ALT, KeyCode::Char('t'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::ALT, KeyCode::Char('t'))
+        ));
     }
 
     // ── Save dialog key patterns ──────────────────────────────────────
@@ -806,13 +926,19 @@ mod tests {
     #[test]
     fn save_dialog_f_matches_go_to_file() {
         let k = key(KeyCode::Char('f'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('f'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('f'))
+        ));
     }
 
     #[test]
     fn save_dialog_esc_cancels() {
         let k = key(KeyCode::Esc);
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Esc)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Esc)
+        ));
     }
 
     // ── Discard dialog key patterns ───────────────────────────────────
@@ -856,13 +982,19 @@ mod tests {
     #[test]
     fn discard_dialog_s_matches_save() {
         let k = key(KeyCode::Char('s'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('s'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('s'))
+        ));
     }
 
     #[test]
     fn discard_dialog_f_matches_save_and_go() {
         let k = key(KeyCode::Char('f'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('f'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('f'))
+        ));
     }
 
     // ── KeyModifiers bitflag combinations ─────────────────────────────

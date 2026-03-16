@@ -7,16 +7,20 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::syntax::SyntaxHighlighter;
 use super::colorize::ORANGE;
-use super::util::AZURE;
-use super::markdown::{parse_markdown_spans, is_table_separator};
+use super::markdown::{is_table_separator, parse_markdown_spans};
 use super::render_wrap::wrap_text;
+use super::util::AZURE;
+use crate::syntax::SyntaxHighlighter;
 
 /// Render assistant markdown text into lines (with syntax-highlighted code blocks)
 /// Returns (rendered_lines, table_regions) where table_regions are
 /// (output_line_start, output_line_end, raw_markdown) for click-to-expand.
-pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut SyntaxHighlighter) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>) {
+pub fn render_assistant_text(
+    text: &str,
+    bubble_width: usize,
+    highlighter: &mut SyntaxHighlighter,
+) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>) {
     let mut lines = Vec::new();
     let mut table_regions: Vec<(usize, usize, String)> = Vec::new();
     let mut in_code_block = false;
@@ -47,15 +51,27 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
                 let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
                 if !code_block_lang.is_empty() {
                     spans.push(Span::styled("┌─ ", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(code_block_lang.clone(), Style::default().fg(AZURE)));
+                    spans.push(Span::styled(
+                        code_block_lang.clone(),
+                        Style::default().fg(AZURE),
+                    ));
                     spans.push(Span::styled(" ─", Style::default().fg(Color::DarkGray)));
                 } else {
-                    spans.push(Span::styled("┌──────", Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(
+                        "┌──────",
+                        Style::default().fg(Color::DarkGray),
+                    ));
                 }
                 lines.push(Line::from(spans));
             } else {
                 // Closing fence — highlight collected code and emit
-                emit_code_block(&mut lines, &code_block_lines, &code_block_lang, bubble_width, highlighter);
+                emit_code_block(
+                    &mut lines,
+                    &code_block_lines,
+                    &code_block_lang,
+                    bubble_width,
+                    highlighter,
+                );
                 in_code_block = false;
                 lines.push(Line::from(vec![
                     Span::styled("│ ", Style::default().fg(ORANGE)),
@@ -80,7 +96,15 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
                 // Render all rows of this table to get the output line range
                 for j in *table_start..*table_end {
                     let row_trimmed = text_lines[j].trim();
-                    render_table_row(&mut lines, row_trimmed, j, *table_start, *table_end, col_widths, &text_lines);
+                    render_table_row(
+                        &mut lines,
+                        row_trimmed,
+                        j,
+                        *table_start,
+                        *table_end,
+                        col_widths,
+                        &text_lines,
+                    );
                 }
                 let output_end = lines.len();
                 // Collect raw markdown for the table
@@ -104,7 +128,13 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
         }
 
         // Numbered lists
-        if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
+        if trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+            && trimmed.contains(". ")
+        {
             render_numbered(&mut lines, trimmed, bubble_width);
             continue;
         }
@@ -119,14 +149,23 @@ pub fn render_assistant_text(text: &str, bubble_width: usize, highlighter: &mut 
         let content_width = bubble_width.saturating_sub(2);
         for wrapped in wrap_text(line, content_width) {
             let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
-            spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+            spans.extend(parse_markdown_spans(
+                &wrapped,
+                Style::default().fg(Color::White),
+            ));
             lines.push(Line::from(spans));
         }
     }
 
     // Handle unclosed code block — emit any remaining collected lines
     if in_code_block {
-        emit_code_block(&mut lines, &code_block_lines, &code_block_lang, bubble_width, highlighter);
+        emit_code_block(
+            &mut lines,
+            &code_block_lines,
+            &code_block_lang,
+            bubble_width,
+            highlighter,
+        );
     }
 
     (lines, table_regions)
@@ -142,7 +181,15 @@ pub fn render_table_for_popup(raw_markdown: &str, width: usize) -> Vec<Line<'sta
     if let Some((start, end, col_widths)) = table_info.first() {
         for i in *start..*end {
             let trimmed = text_lines[i].trim();
-            render_table_row(&mut lines, trimmed, i, *start, *end, col_widths, &text_lines);
+            render_table_row(
+                &mut lines,
+                trimmed,
+                i,
+                *start,
+                *end,
+                col_widths,
+                &text_lines,
+            );
         }
     }
 
@@ -181,7 +228,8 @@ fn emit_code_block(
         } else {
             // Line needs wrapping — fall back to wrap_text with the dominant color
             // (wrapping mid-span is complex; for long lines, use the first span's color)
-            let fallback_color = highlighted_spans.first()
+            let fallback_color = highlighted_spans
+                .first()
                 .and_then(|s| s.style.fg)
                 .unwrap_or(Color::Yellow);
             for wrapped in wrap_text(raw_line, code_max) {
@@ -242,19 +290,25 @@ fn scan_tables(text_lines: &[&str], bubble_width: usize) -> Vec<(usize, usize, V
 /// Shrink column widths proportionally so the table fits within bubble_width.
 /// Each column gets at least 3 chars (enough for "a…" + padding).
 fn clamp_col_widths(widths: &mut [usize], bubble_width: usize) {
-    if widths.is_empty() { return; }
+    if widths.is_empty() {
+        return;
+    }
     // Total table width = 2 (gutter) + 1 (border) + sum(w+2) + (n-1) separators + 1 (border)
     // = 4 + sum(w+2) + (n-1) = 4 + 2*n + sum(w) + n - 1 = 3 + 3*n + sum(w)
     let n = widths.len();
     let overhead = 3 + 3 * n;
     let total: usize = widths.iter().sum();
     let table_width = overhead + total;
-    if table_width <= bubble_width { return; }
+    if table_width <= bubble_width {
+        return;
+    }
 
     // Available space for all column content combined
     let available = bubble_width.saturating_sub(overhead);
     if available == 0 {
-        for w in widths.iter_mut() { *w = 1; }
+        for w in widths.iter_mut() {
+            *w = 1;
+        }
         return;
     }
 
@@ -268,27 +322,49 @@ fn clamp_col_widths(widths: &mut [usize], bubble_width: usize) {
     // If rounding left us over budget, trim largest columns one char at a time
     let mut sum: usize = widths.iter().sum();
     while sum > available {
-        let max_idx = widths.iter().enumerate().max_by_key(|(_, w)| **w).map(|(i, _)| i).unwrap();
-        if widths[max_idx] <= min_w { break; }
+        let max_idx = widths
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, w)| **w)
+            .map(|(i, _)| i)
+            .unwrap();
+        if widths[max_idx] <= min_w {
+            break;
+        }
         widths[max_idx] -= 1;
         sum -= 1;
     }
 }
 
 /// Render a table row with borders
-fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, table_start: usize, table_end: usize, col_widths: &[usize], text_lines: &[&str]) {
+fn render_table_row(
+    lines: &mut Vec<Line<'static>>,
+    trimmed: &str,
+    idx: usize,
+    table_start: usize,
+    table_end: usize,
+    col_widths: &[usize],
+    text_lines: &[&str],
+) {
     let is_sep = is_table_separator(trimmed);
     let cells: Vec<&str> = trimmed.split('|').filter(|s| !s.is_empty()).collect();
     let is_first_row = idx == table_start;
     let is_last_row = idx == table_end - 1;
-    let is_header = is_first_row && text_lines.get(idx + 1).map(|l| is_table_separator(l)).unwrap_or(false);
+    let is_header = is_first_row
+        && text_lines
+            .get(idx + 1)
+            .map(|l| is_table_separator(l))
+            .unwrap_or(false);
 
     // Top border
     if is_first_row {
         let mut top = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         top.push(Span::styled("┌", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
-            top.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+            top.push(Span::styled(
+                "─".repeat(*w + 2),
+                Style::default().fg(Color::DarkGray),
+            ));
             if j < col_widths.len() - 1 {
                 top.push(Span::styled("┬", Style::default().fg(Color::DarkGray)));
             }
@@ -301,7 +377,10 @@ fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, t
         let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         spans.push(Span::styled("├", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
-            spans.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "─".repeat(*w + 2),
+                Style::default().fg(Color::DarkGray),
+            ));
             if j < col_widths.len() - 1 {
                 spans.push(Span::styled("┼", Style::default().fg(Color::DarkGray)));
             }
@@ -323,9 +402,15 @@ fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, t
                 format!(" {:width$} ", trimmed_cell, width = w)
             };
             if is_header {
-                spans.push(Span::styled(display_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+                spans.push(Span::styled(
+                    display_text,
+                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+                ));
             } else {
-                spans.push(Span::styled(display_text, Style::default().fg(Color::White)));
+                spans.push(Span::styled(
+                    display_text,
+                    Style::default().fg(Color::White),
+                ));
             }
             spans.push(Span::styled("│", Style::default().fg(Color::DarkGray)));
         }
@@ -337,7 +422,10 @@ fn render_table_row(lines: &mut Vec<Line<'static>>, trimmed: &str, idx: usize, t
         let mut bot = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         bot.push(Span::styled("└", Style::default().fg(Color::DarkGray)));
         for (j, w) in col_widths.iter().enumerate() {
-            bot.push(Span::styled("─".repeat(*w + 2), Style::default().fg(Color::DarkGray)));
+            bot.push(Span::styled(
+                "─".repeat(*w + 2),
+                Style::default().fg(Color::DarkGray),
+            ));
             if j < col_widths.len() - 1 {
                 bot.push(Span::styled("┴", Style::default().fg(Color::DarkGray)));
             }
@@ -351,9 +439,22 @@ fn render_header(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: us
     let header_level = trimmed.chars().take_while(|&c| c == '#').count();
     let header_text = trimmed.trim_start_matches('#').trim();
     let (prefix, style) = match header_level {
-        1 => ("█ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-        2 => ("▓ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-        3 => ("▒ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        1 => (
+            "█ ",
+            Style::default()
+                .fg(AZURE)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        ),
+        2 => (
+            "▓ ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ),
+        3 => (
+            "▒ ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         _ => ("░ ", Style::default().fg(Color::Green)),
     };
     let header_max = bubble_width.saturating_sub(4);
@@ -375,16 +476,25 @@ fn render_header(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: us
 }
 
 fn render_bullet(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usize) {
-    let bullet_content = trimmed.trim_start_matches("- ").trim_start_matches("* ").trim_start_matches("• ");
+    let bullet_content = trimmed
+        .trim_start_matches("- ")
+        .trim_start_matches("* ")
+        .trim_start_matches("• ");
     let bullet_max = bubble_width.saturating_sub(6);
-    for (i, wrapped) in wrap_text(bullet_content, bullet_max).into_iter().enumerate() {
+    for (i, wrapped) in wrap_text(bullet_content, bullet_max)
+        .into_iter()
+        .enumerate()
+    {
         let mut spans = vec![Span::styled("│ ", Style::default().fg(ORANGE))];
         if i == 0 {
             spans.push(Span::styled("  • ", Style::default().fg(AZURE)));
         } else {
             spans.push(Span::styled("    ", Style::default()));
         }
-        spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+        spans.extend(parse_markdown_spans(
+            &wrapped,
+            Style::default().fg(Color::White),
+        ));
         lines.push(Line::from(spans));
     }
 }
@@ -402,7 +512,10 @@ fn render_numbered(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: 
         } else {
             spans.push(Span::styled(" ".repeat(num_prefix.len()), Style::default()));
         }
-        spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+        spans.extend(parse_markdown_spans(
+            &wrapped,
+            Style::default().fg(Color::White),
+        ));
         lines.push(Line::from(spans));
     }
 }
@@ -415,7 +528,12 @@ fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usi
             Span::styled("│ ", Style::default().fg(ORANGE)),
             Span::styled("┃ ", Style::default().fg(Color::DarkGray)),
         ];
-        spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+        spans.extend(parse_markdown_spans(
+            &wrapped,
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ));
         lines.push(Line::from(spans));
     }
 }
@@ -423,7 +541,11 @@ fn render_quote(lines: &mut Vec<Line<'static>>, trimmed: &str, bubble_width: usi
 /// Render markdown for the viewer pane (no session gutter prefix, full-width).
 /// Reuses the assistant text renderer then strips the orange `│ ` prefix from
 /// each line, giving a clean markdown reading experience.
-pub fn render_markdown_for_viewer(text: &str, width: usize, highlighter: &mut SyntaxHighlighter) -> Vec<Line<'static>> {
+pub fn render_markdown_for_viewer(
+    text: &str,
+    width: usize,
+    highlighter: &mut SyntaxHighlighter,
+) -> Vec<Line<'static>> {
     // +2 compensates for the gutter we strip — keeps content wrapping at `width`
     let (mut lines, _) = render_assistant_text(text, width + 2, highlighter);
     for line in &mut lines {
@@ -438,7 +560,9 @@ pub fn render_markdown_for_viewer(text: &str, width: usize, highlighter: &mut Sy
 mod tests {
     use super::*;
 
-    fn hl() -> SyntaxHighlighter { SyntaxHighlighter::new() }
+    fn hl() -> SyntaxHighlighter {
+        SyntaxHighlighter::new()
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // clamp_col_widths
@@ -547,11 +671,7 @@ mod tests {
 
     #[test]
     fn scan_tables_simple_table() {
-        let lines = vec![
-            "| A | B |",
-            "|---|---|",
-            "| 1 | 2 |",
-        ];
+        let lines = vec!["| A | B |", "|---|---|", "| 1 | 2 |"];
         let result = scan_tables(&lines, 80);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, 0); // start
@@ -588,11 +708,7 @@ mod tests {
 
     #[test]
     fn scan_tables_table_at_end() {
-        let lines = vec![
-            "hello",
-            "| A | B |",
-            "|---|---|",
-        ];
+        let lines = vec!["hello", "| A | B |", "|---|---|"];
         let result = scan_tables(&lines, 80);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, 1);
@@ -806,7 +922,8 @@ mod tests {
 
     #[test]
     fn render_table_clamped_columns() {
-        let text = "| Very Long Column Name Here | Another Very Long Column |\n|---|---|\n| x | y |";
+        let text =
+            "| Very Long Column Name Here | Another Very Long Column |\n|---|---|\n| x | y |";
         let (lines, _table_regions) = render_assistant_text(text, 30, &mut hl());
         assert!(!lines.is_empty());
     }
@@ -851,9 +968,16 @@ mod tests {
         assert_eq!(lines.len(), 5);
         // Code lines should have >2 spans (gutter + code gutter + highlighted spans)
         let code_line = &lines[1]; // "fn main() {"
-        assert!(code_line.spans.len() > 2, "highlighted code should have multiple spans, got {}", code_line.spans.len());
+        assert!(
+            code_line.spans.len() > 2,
+            "highlighted code should have multiple spans, got {}",
+            code_line.spans.len()
+        );
         // Should have magenta for `fn` keyword
-        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        let has_magenta = code_line
+            .spans
+            .iter()
+            .any(|s| s.style.fg == Some(Color::Magenta));
         assert!(has_magenta, "Rust `fn` keyword should be Magenta");
     }
 
@@ -864,7 +988,10 @@ mod tests {
         assert_eq!(lines.len(), 4);
         // "def" keyword should be magenta
         let code_line = &lines[1];
-        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        let has_magenta = code_line
+            .spans
+            .iter()
+            .any(|s| s.style.fg == Some(Color::Magenta));
         assert!(has_magenta, "Python `def` keyword should be Magenta");
     }
 
@@ -895,7 +1022,11 @@ mod tests {
         // No line should start with the orange "│ " gutter
         for line in &lines {
             if let Some(first) = line.spans.first() {
-                assert_ne!(first.content.as_ref(), "│ ", "viewer lines must not have session gutter");
+                assert_ne!(
+                    first.content.as_ref(),
+                    "│ ",
+                    "viewer lines must not have session gutter"
+                );
             }
         }
     }
@@ -925,7 +1056,10 @@ mod tests {
         assert!(lines.len() >= 3);
         // Code line should have syntax highlighting (magenta for `fn`)
         let code_line = &lines[1];
-        let has_magenta = code_line.spans.iter().any(|s| s.style.fg == Some(Color::Magenta));
+        let has_magenta = code_line
+            .spans
+            .iter()
+            .any(|s| s.style.fg == Some(Color::Magenta));
         assert!(has_magenta, "code block should have syntax highlighting");
     }
 
@@ -966,7 +1100,10 @@ mod tests {
         for line in &lines {
             if let Some(first) = line.spans.first() {
                 if first.content.as_ref() == "│ " {
-                    assert_ne!(first.style, orange_gutter, "viewer lines must not have orange session gutter");
+                    assert_ne!(
+                        first.style, orange_gutter,
+                        "viewer lines must not have orange session gutter"
+                    );
                 }
             }
         }

@@ -11,22 +11,28 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus};
-use crate::app::types::FileTreeAction;
 use super::file_icons::file_icon;
 use super::util::{truncate, AZURE};
+use crate::app::types::FileTreeAction;
+use crate::app::{App, Focus};
 
 /// Check whether a file tree entry is "inside" one of the god file filter directories.
 /// A directory itself counts as inside if it's in the set. Files and subdirectories
 /// are inside if any ancestor path is in the set.
 fn is_in_god_file_scope(app: &App, path: &std::path::Path, is_dir: bool) -> bool {
-    if !app.god_file_filter_mode { return false; }
+    if !app.god_file_filter_mode {
+        return false;
+    }
     // Direct membership — the dir itself is in the filter set
-    if is_dir && app.god_file_filter_dirs.contains(path) { return true; }
+    if is_dir && app.god_file_filter_dirs.contains(path) {
+        return true;
+    }
     // Walk ancestors to see if any parent is in the filter set
     let mut p = path.parent();
     while let Some(ancestor) = p {
-        if app.god_file_filter_dirs.contains(ancestor) { return true; }
+        if app.god_file_filter_dirs.contains(ancestor) {
+            return true;
+        }
         p = ancestor.parent();
     }
     false
@@ -35,12 +41,18 @@ fn is_in_god_file_scope(app: &App, path: &std::path::Path, is_dir: bool) -> bool
 /// Check if a directory is in the god file filter set OR is a subdirectory of one.
 /// Subdirs of accepted dirs automatically inherit accepted status (bright green).
 fn is_god_file_filter_dir(app: &App, path: &std::path::Path) -> bool {
-    if !app.god_file_filter_mode { return false; }
-    if app.god_file_filter_dirs.contains(path) { return true; }
+    if !app.god_file_filter_mode {
+        return false;
+    }
+    if app.god_file_filter_dirs.contains(path) {
+        return true;
+    }
     // Walk ancestors — if any parent is accepted, this subdir is too
     let mut p = path.parent();
     while let Some(ancestor) = p {
-        if app.god_file_filter_dirs.contains(ancestor) { return true; }
+        if app.god_file_filter_dirs.contains(ancestor) {
+            return true;
+        }
         p = ancestor.parent();
     }
     false
@@ -63,7 +75,11 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
     const GF_GREEN_DIM: Color = Color::Rgb(60, 140, 60);
 
     if app.file_tree_entries.is_empty() {
-        if app.current_worktree().and_then(|s| s.worktree_path.as_ref()).is_none() {
+        if app
+            .current_worktree()
+            .and_then(|s| s.worktree_path.as_ref())
+            .is_none()
+        {
             lines.push(Line::from(Span::styled(
                 "No worktree",
                 Style::default().fg(Color::DarkGray),
@@ -85,14 +101,19 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
 
             // Get icon glyph + color from file_icons module (Nerd Font or emoji fallback)
             let expanded = entry.is_dir && app.file_tree_expanded.contains(&entry.path);
-            let (icon, mut icon_color) = file_icon(&entry.path, entry.is_dir, expanded, app.nerd_fonts);
+            let (icon, mut icon_color) =
+                file_icon(&entry.path, entry.is_dir, expanded, app.nerd_fonts);
             // In filter mode, scoped entries get green icons; hidden entries get dimmed
             if app.god_file_filter_mode && is_gf_dir {
                 icon_color = GF_GREEN;
             } else if app.god_file_filter_mode && in_gf_scope {
                 icon_color = GF_GREEN_DIM;
             } else if entry.is_hidden {
-                icon_color = if entry.is_dir { Color::Rgb(120, 100, 60) } else { Color::Rgb(100, 100, 100) };
+                icon_color = if entry.is_dir {
+                    Color::Rgb(120, 100, 60)
+                } else {
+                    Color::Rgb(100, 100, 100)
+                };
             }
 
             let mut spans = vec![
@@ -107,11 +128,20 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
                 } else {
                     Color::Blue
                 };
-                Style::default().bg(bg).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(bg)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else if entry.is_dir {
                 // Filter mode: scoped dirs are green, others dim; normal mode: cyan/dimmed
                 let color = if app.god_file_filter_mode {
-                    if is_gf_dir { GF_GREEN } else if entry.is_hidden { Color::Rgb(80, 120, 130) } else { Color::DarkGray }
+                    if is_gf_dir {
+                        GF_GREEN
+                    } else if entry.is_hidden {
+                        Color::Rgb(80, 120, 130)
+                    } else {
+                        Color::DarkGray
+                    }
                 } else if entry.is_hidden {
                     Color::Rgb(80, 120, 130)
                 } else {
@@ -121,7 +151,13 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             } else {
                 // Filter mode: files in scope get dim green, others dim gray
                 let color = if app.god_file_filter_mode {
-                    if in_gf_scope { GF_GREEN_DIM } else if entry.is_hidden { Color::Rgb(70, 70, 70) } else { Color::Rgb(100, 100, 100) }
+                    if in_gf_scope {
+                        GF_GREEN_DIM
+                    } else if entry.is_hidden {
+                        Color::Rgb(70, 70, 70)
+                    } else {
+                        Color::Rgb(100, 100, 100)
+                    }
                 } else if entry.is_hidden {
                     Color::Rgb(100, 100, 100)
                 } else {
@@ -136,13 +172,23 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             let max_name_len = 38usize.saturating_sub(entry.depth * 2 + 2);
             if is_clipboard_src {
                 // Wrap name in box chars: ┃name┃ for copy, ╎name╎ for move (dashed)
-                let (l, r) = if clipboard_is_move { ("╎", "╎") } else { ("┃", "┃") };
+                let (l, r) = if clipboard_is_move {
+                    ("╎", "╎")
+                } else {
+                    ("┃", "┃")
+                };
                 let border_style = Style::default().fg(Color::Magenta);
                 spans.push(Span::styled(l, border_style));
-                spans.push(Span::styled(truncate(&entry.name, max_name_len.saturating_sub(2)), name_style));
+                spans.push(Span::styled(
+                    truncate(&entry.name, max_name_len.saturating_sub(2)),
+                    name_style,
+                ));
                 spans.push(Span::styled(r, border_style));
             } else {
-                spans.push(Span::styled(truncate(&entry.name, max_name_len), name_style));
+                spans.push(Span::styled(
+                    truncate(&entry.name, max_name_len),
+                    name_style,
+                ));
             }
             lines.push(Line::from(spans));
         }
@@ -156,21 +202,43 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
 fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, Style)>) {
     match action {
         FileTreeAction::Copy(src) => {
-            let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
             let parts = vec![
-                ("Copy ".to_string(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                (
+                    "Copy ".to_string(),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 (name, Style::default().fg(Color::White)),
-                (" → Enter:paste Esc:cancel".to_string(), Style::default().fg(Color::DarkGray)),
+                (
+                    " → Enter:paste Esc:cancel".to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ];
             let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
             (plain, parts)
         }
         FileTreeAction::Move(src) => {
-            let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
             let parts = vec![
-                ("Move ".to_string(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                (
+                    "Move ".to_string(),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 (name, Style::default().fg(Color::White)),
-                (" → Enter:paste Esc:cancel".to_string(), Style::default().fg(Color::DarkGray)),
+                (
+                    " → Enter:paste Esc:cancel".to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ];
             let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
             (plain, parts)
@@ -178,7 +246,12 @@ fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, St
         FileTreeAction::Add(buf) => {
             let label = "Add (/ = dir): ";
             let parts = vec![
-                (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                (
+                    label.to_string(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 (buf.clone(), Style::default().fg(Color::White)),
                 ("█".to_string(), Style::default().fg(Color::White)),
             ];
@@ -188,7 +261,12 @@ fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, St
         FileTreeAction::Rename(buf) => {
             let label = "Rename: ";
             let parts = vec![
-                (label.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                (
+                    label.to_string(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 (buf.clone(), Style::default().fg(Color::White)),
                 ("█".to_string(), Style::default().fg(Color::White)),
             ];
@@ -196,9 +274,12 @@ fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, St
             (plain, parts)
         }
         FileTreeAction::Delete => {
-            let parts = vec![
-                ("Delete? (y/N) ".to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ];
+            let parts = vec![(
+                "Delete? (y/N) ".to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )];
             let plain: String = parts.iter().map(|(t, _)| t.as_str()).collect();
             (plain, parts)
         }
@@ -215,8 +296,12 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
     for (text, style) in parts {
         let mut first = true;
         for word in text.split(' ') {
-            if !first { tokens.push((" ", *style)); }
-            if !word.is_empty() { tokens.push((word, *style)); }
+            if !first {
+                tokens.push((" ", *style));
+            }
+            if !word.is_empty() {
+                tokens.push((word, *style));
+            }
             first = false;
         }
     }
@@ -229,7 +314,10 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
         let len = token.chars().count();
         // Space token — only emit if it fits, otherwise skip (line break absorbs it)
         if token == " " {
-            if col + 1 <= max_width { current_spans.push(Span::styled(" ", style)); col += 1; }
+            if col + 1 <= max_width {
+                current_spans.push(Span::styled(" ", style));
+                col += 1;
+            }
             continue;
         }
         // Word fits on current line
@@ -252,17 +340,24 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
             let mut chunk = String::new();
             for ch in token.chars() {
                 if col >= max_width {
-                    if !chunk.is_empty() { current_spans.push(Span::styled(chunk.clone(), style)); chunk.clear(); }
+                    if !chunk.is_empty() {
+                        current_spans.push(Span::styled(chunk.clone(), style));
+                        chunk.clear();
+                    }
                     lines.push(Line::from(std::mem::take(&mut current_spans)));
                     col = 0;
                 }
                 chunk.push(ch);
                 col += 1;
             }
-            if !chunk.is_empty() { current_spans.push(Span::styled(chunk, style)); }
+            if !chunk.is_empty() {
+                current_spans.push(Span::styled(chunk, style));
+            }
         }
     }
-    if !current_spans.is_empty() { lines.push(Line::from(current_spans)); }
+    if !current_spans.is_empty() {
+        lines.push(Line::from(current_spans));
+    }
     lines
 }
 
@@ -296,7 +391,10 @@ fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_type(BorderType::QuadrantOutside)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(" Filetree Options ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Filetree Options ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
         .title_bottom(Line::from(Span::styled(
             " Space:toggle  Esc:close ",
             Style::default().fg(AZURE),
@@ -350,11 +448,14 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
         }
     } else {
         app.file_tree_scroll
-    }.min(max_scroll);
+    }
+    .min(max_scroll);
     app.file_tree_scroll = scroll;
 
     // Build viewport slice directly (single clone operation)
-    let mut display_lines: Vec<Line> = app.file_tree_lines_cache.iter()
+    let mut display_lines: Vec<Line> = app
+        .file_tree_lines_cache
+        .iter()
         .skip(scroll)
         .take(viewport_height)
         .cloned()
@@ -367,9 +468,17 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     let title = if in_filter_mode {
         // Filter mode title shows scope count and Enter/Esc hints
         let scope_count = app.god_file_filter_dirs.len();
-        format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" })
+        format!(
+            " Health Scope ({} dir{}) ",
+            scope_count,
+            if scope_count == 1 { "" } else { "s" }
+        )
     } else if total > viewport_height {
-        format!(" Filetree [{}/{}] ", scroll + display_lines.len().min(total - scroll), total)
+        format!(
+            " Filetree [{}/{}] ",
+            scroll + display_lines.len().min(total - scroll),
+            total
+        )
     } else {
         " Filetree ".to_string()
     };
@@ -381,16 +490,28 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
 
     // In filter mode: green border; normal: azure/white
     let (border_color, title_style) = if in_filter_mode {
-        (GF_BORDER_GREEN, Style::default().fg(GF_BORDER_GREEN).add_modifier(Modifier::BOLD))
+        (
+            GF_BORDER_GREEN,
+            Style::default()
+                .fg(GF_BORDER_GREEN)
+                .add_modifier(Modifier::BOLD),
+        )
     } else if is_focused {
-        (AZURE, Style::default().fg(AZURE).add_modifier(Modifier::BOLD))
+        (
+            AZURE,
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        )
     } else {
         (Color::White, Style::default().fg(Color::White))
     };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused || in_filter_mode { BorderType::Double } else { BorderType::Plain })
+        .border_type(if is_focused || in_filter_mode {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .title(Span::styled(title, title_style))
         .border_style(Style::default().fg(border_color));
 
@@ -805,7 +926,11 @@ mod tests {
     #[test]
     fn test_clipboard_move_borders() {
         let is_move = true;
-        let (l, r) = if is_move { ("\u{254e}", "\u{254e}") } else { ("\u{2503}", "\u{2503}") };
+        let (l, r) = if is_move {
+            ("\u{254e}", "\u{254e}")
+        } else {
+            ("\u{2503}", "\u{2503}")
+        };
         assert_eq!(l, "\u{254e}");
         assert_eq!(r, "\u{254e}");
     }
@@ -813,7 +938,11 @@ mod tests {
     #[test]
     fn test_clipboard_copy_borders() {
         let is_move = false;
-        let (l, r) = if is_move { ("\u{254e}", "\u{254e}") } else { ("\u{2503}", "\u{2503}") };
+        let (l, r) = if is_move {
+            ("\u{254e}", "\u{254e}")
+        } else {
+            ("\u{2503}", "\u{2503}")
+        };
         assert_eq!(l, "\u{2503}");
         assert_eq!(r, "\u{2503}");
     }
@@ -849,14 +978,22 @@ mod tests {
     #[test]
     fn test_health_scope_title() {
         let scope_count = 3;
-        let title = format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" });
+        let title = format!(
+            " Health Scope ({} dir{}) ",
+            scope_count,
+            if scope_count == 1 { "" } else { "s" }
+        );
         assert_eq!(title, " Health Scope (3 dirs) ");
     }
 
     #[test]
     fn test_health_scope_title_singular() {
         let scope_count = 1;
-        let title = format!(" Health Scope ({} dir{}) ", scope_count, if scope_count == 1 { "" } else { "s" });
+        let title = format!(
+            " Health Scope ({} dir{}) ",
+            scope_count,
+            if scope_count == 1 { "" } else { "s" }
+        );
         assert_eq!(title, " Health Scope (1 dir) ");
     }
 }

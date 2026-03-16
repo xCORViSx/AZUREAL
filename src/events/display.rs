@@ -13,10 +13,7 @@ pub enum DisplayEvent {
         model: String,
     },
     /// Hook output
-    Hook {
-        name: String,
-        output: String,
-    },
+    Hook { name: String, output: String },
     /// User's message
     UserMessage {
         #[serde(skip)]
@@ -24,9 +21,7 @@ pub enum DisplayEvent {
         content: String,
     },
     /// Slash command (e.g., /compact, /crt)
-    Command {
-        name: String,
-    },
+    Command { name: String },
     /// Context compacted (detected from compaction summary in session file)
     Compacting,
     /// Context compacted via /compact command (unreachable in -p mode)
@@ -34,10 +29,7 @@ pub enum DisplayEvent {
     /// Suspected compaction (90%+ context, 20s inactivity)
     MayBeCompacting,
     /// Plan mode content (from ~/.claude/plans/)
-    Plan {
-        name: String,
-        content: String,
-    },
+    Plan { name: String, content: String },
     /// Assistant text response
     AssistantText {
         #[serde(skip)]
@@ -79,9 +71,7 @@ pub enum DisplayEvent {
     /// Model switch tag — injected into the event stream when the user cycles
     /// models via Ctrl+M. Stripped from LLM context injection but persisted in
     /// the session store so the app can restore the model on reload.
-    ModelSwitch {
-        model: String,
-    },
+    ModelSwitch { model: String },
     /// Filtered out (used for rewound/edited messages that were superseded)
     Filtered,
 }
@@ -102,7 +92,11 @@ mod tests {
             model: "claude-opus-4-6".into(),
         };
         match ev {
-            DisplayEvent::Init { _session_id, cwd, model } => {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
                 assert_eq!(_session_id, "abc-123");
                 assert_eq!(cwd, "/home/user");
                 assert_eq!(model, "claude-opus-4-6");
@@ -119,7 +113,11 @@ mod tests {
             model: String::new(),
         };
         match ev {
-            DisplayEvent::Init { _session_id, cwd, model } => {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
                 assert!(_session_id.is_empty());
                 assert!(cwd.is_empty());
                 assert!(model.is_empty());
@@ -136,7 +134,11 @@ mod tests {
             model: "\u{00E9}\u{00E8}\u{00EA}".into(),
         };
         match ev {
-            DisplayEvent::Init { _session_id, cwd, model } => {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
                 assert_eq!(_session_id, "\u{1F680}");
                 assert!(cwd.contains('\u{65E5}'));
                 assert_eq!(model, "\u{00E9}\u{00E8}\u{00EA}");
@@ -153,7 +155,9 @@ mod tests {
             model: "model\t\twith\ttabs".into(),
         };
         match ev {
-            DisplayEvent::Init { _session_id, cwd, .. } => {
+            DisplayEvent::Init {
+                _session_id, cwd, ..
+            } => {
                 assert!(_session_id.contains('\n'));
                 assert!(cwd.contains(' '));
             }
@@ -260,7 +264,9 @@ mod tests {
 
     #[test]
     fn command_basic() {
-        let ev = DisplayEvent::Command { name: "/compact".into() };
+        let ev = DisplayEvent::Command {
+            name: "/compact".into(),
+        };
         match ev {
             DisplayEvent::Command { name } => assert_eq!(name, "/compact"),
             _ => panic!("wrong variant"),
@@ -269,7 +275,9 @@ mod tests {
 
     #[test]
     fn command_empty_name() {
-        let ev = DisplayEvent::Command { name: String::new() };
+        let ev = DisplayEvent::Command {
+            name: String::new(),
+        };
         match ev {
             DisplayEvent::Command { name } => assert!(name.is_empty()),
             _ => panic!("wrong variant"),
@@ -278,7 +286,9 @@ mod tests {
 
     #[test]
     fn command_special_chars_name() {
-        let ev = DisplayEvent::Command { name: "/cmd with spaces & symbols!@#".into() };
+        let ev = DisplayEvent::Command {
+            name: "/cmd with spaces & symbols!@#".into(),
+        };
         match ev {
             DisplayEvent::Command { name } => assert!(name.contains('!')),
             _ => panic!("wrong variant"),
@@ -372,7 +382,11 @@ mod tests {
             text: "Here is the answer".into(),
         };
         match ev {
-            DisplayEvent::AssistantText { _uuid, _message_id, text } => {
+            DisplayEvent::AssistantText {
+                _uuid,
+                _message_id,
+                text,
+            } => {
                 assert_eq!(_uuid, "u1");
                 assert_eq!(_message_id, "m1");
                 assert_eq!(text, "Here is the answer");
@@ -411,7 +425,12 @@ mod tests {
             input: serde_json::json!({"file_path": "/src/main.rs"}),
         };
         match ev {
-            DisplayEvent::ToolCall { tool_name, file_path, input, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                ..
+            } => {
                 assert_eq!(tool_name, "Read");
                 assert_eq!(file_path, Some("/src/main.rs".into()));
                 assert!(input.is_object());
@@ -481,7 +500,13 @@ mod tests {
             is_error: false,
         };
         match ev {
-            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, .. } => {
+            DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                file_path,
+                content,
+                ..
+            } => {
                 assert_eq!(tool_use_id, "tu1");
                 assert_eq!(tool_name, "Read");
                 assert_eq!(file_path, Some("/src/main.rs".into()));
@@ -534,7 +559,12 @@ mod tests {
             cost_usd: 0.05,
         };
         match ev {
-            DisplayEvent::Complete { success, duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert!(success);
                 assert_eq!(duration_ms, 5000);
                 assert!((cost_usd - 0.05).abs() < f64::EPSILON);
@@ -552,7 +582,9 @@ mod tests {
             cost_usd: 0.0,
         };
         match ev {
-            DisplayEvent::Complete { success, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success, cost_usd, ..
+            } => {
                 assert!(!success);
                 assert_eq!(cost_usd, 0.0);
             }
@@ -583,7 +615,11 @@ mod tests {
             cost_usd: f64::MAX,
         };
         match ev {
-            DisplayEvent::Complete { duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert_eq!(duration_ms, u64::MAX);
                 assert_eq!(cost_usd, f64::MAX);
             }
@@ -603,7 +639,10 @@ mod tests {
             model: "m".into(),
         };
         let dbg = format!("{:?}", ev);
-        assert!(dbg.contains("Init"), "Debug output should contain 'Init': {dbg}");
+        assert!(
+            dbg.contains("Init"),
+            "Debug output should contain 'Init': {dbg}"
+        );
     }
 
     #[test]
@@ -682,8 +721,16 @@ mod tests {
         let cloned = ev.clone();
         match (&ev, &cloned) {
             (
-                DisplayEvent::Init { _session_id: a_id, cwd: a_cwd, model: a_model },
-                DisplayEvent::Init { _session_id: b_id, cwd: b_cwd, model: b_model },
+                DisplayEvent::Init {
+                    _session_id: a_id,
+                    cwd: a_cwd,
+                    model: a_model,
+                },
+                DisplayEvent::Init {
+                    _session_id: b_id,
+                    cwd: b_cwd,
+                    model: b_model,
+                },
             ) => {
                 assert_eq!(a_id, b_id);
                 assert_eq!(a_cwd, b_cwd);
@@ -739,7 +786,12 @@ mod tests {
         };
         let cloned = ev.clone();
         match cloned {
-            DisplayEvent::Complete { success, duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert!(success);
                 assert_eq!(duration_ms, 99);
                 assert!((cost_usd - 0.42).abs() < f64::EPSILON);
@@ -775,7 +827,9 @@ mod tests {
         };
         let cloned = ev.clone();
         match cloned {
-            DisplayEvent::ToolResult { tool_name, content, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name, content, ..
+            } => {
                 assert_eq!(tool_name, "Grep");
                 assert_eq!(content, "match found");
             }
@@ -790,10 +844,18 @@ mod tests {
     #[test]
     fn variants_are_distinct() {
         let init = DisplayEvent::Init {
-            _session_id: "s".into(), cwd: "c".into(), model: "m".into()
+            _session_id: "s".into(),
+            cwd: "c".into(),
+            model: "m".into(),
         };
-        let hook = DisplayEvent::Hook { name: "n".into(), output: "o".into() };
-        let user = DisplayEvent::UserMessage { _uuid: "u".into(), content: "c".into() };
+        let hook = DisplayEvent::Hook {
+            name: "n".into(),
+            output: "o".into(),
+        };
+        let user = DisplayEvent::UserMessage {
+            _uuid: "u".into(),
+            content: "c".into(),
+        };
         let cmd = DisplayEvent::Command { name: "n".into() };
         let compacting = DisplayEvent::Compacting;
         let compacted = DisplayEvent::Compacted;
@@ -835,7 +897,9 @@ mod tests {
 
     #[test]
     fn model_switch_basic() {
-        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "gpt-5.4".into(),
+        };
         match ev {
             DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.4"),
             _ => panic!("wrong variant"),
@@ -844,7 +908,9 @@ mod tests {
 
     #[test]
     fn model_switch_clone() {
-        let ev = DisplayEvent::ModelSwitch { model: "sonnet".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "sonnet".into(),
+        };
         let cloned = ev.clone();
         match cloned {
             DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
@@ -854,7 +920,9 @@ mod tests {
 
     #[test]
     fn model_switch_debug() {
-        let ev = DisplayEvent::ModelSwitch { model: "opus".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "opus".into(),
+        };
         let dbg = format!("{:?}", ev);
         assert!(dbg.contains("ModelSwitch"));
         assert!(dbg.contains("opus"));
@@ -862,13 +930,17 @@ mod tests {
 
     #[test]
     fn model_switch_is_not_init() {
-        let ev = DisplayEvent::ModelSwitch { model: "opus".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "opus".into(),
+        };
         assert!(!matches!(ev, DisplayEvent::Init { .. }));
     }
 
     #[test]
     fn model_switch_serde_roundtrip() {
-        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "gpt-5.4".into(),
+        };
         let json = serde_json::to_string(&ev).unwrap();
         let parsed: DisplayEvent = serde_json::from_str(&json).unwrap();
         match parsed {

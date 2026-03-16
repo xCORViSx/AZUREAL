@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::tui::util::AZURE;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// A project represents a git repository (derived from current working directory)
@@ -14,11 +14,16 @@ impl Project {
     /// Create a project from a git repo path.
     /// Uses display_name if provided, otherwise falls back to folder name.
     pub fn from_path(path: PathBuf, main_branch: String) -> Self {
-        let name = crate::config::project_display_name(&path)
-            .unwrap_or_else(|| path.file_name()
+        let name = crate::config::project_display_name(&path).unwrap_or_else(|| {
+            path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unnamed".to_string()));
-        Self { name, path, main_branch }
+                .unwrap_or_else(|| "unnamed".to_string())
+        });
+        Self {
+            name,
+            path,
+            main_branch,
+        }
     }
 
     pub fn worktrees_dir(&self) -> PathBuf {
@@ -80,7 +85,8 @@ pub const BRANCH_PREFIX: &str = "azureal";
 /// Strip the branch prefix from a full branch name for display.
 /// Returns the original string unchanged if it doesn't have the prefix.
 pub fn strip_branch_prefix(branch: &str) -> &str {
-    branch.strip_prefix(BRANCH_PREFIX)
+    branch
+        .strip_prefix(BRANCH_PREFIX)
         .and_then(|s| s.strip_prefix('/'))
         .unwrap_or(branch)
 }
@@ -332,7 +338,10 @@ mod tests {
     #[test]
     fn test_strip_prefix_partial_match() {
         // "azureal-extra/feat" does not start with "azureal/"
-        assert_eq!(strip_branch_prefix("azureal-extra/feat"), "azureal-extra/feat");
+        assert_eq!(
+            strip_branch_prefix("azureal-extra/feat"),
+            "azureal-extra/feat"
+        );
     }
 
     #[test]
@@ -348,7 +357,10 @@ mod tests {
 
     #[test]
     fn test_strip_prefix_with_dashes() {
-        assert_eq!(strip_branch_prefix("azureal/my-cool-feature"), "my-cool-feature");
+        assert_eq!(
+            strip_branch_prefix("azureal/my-cool-feature"),
+            "my-cool-feature"
+        );
     }
 
     #[test]
@@ -443,7 +455,10 @@ mod tests {
             archived: false,
         };
         assert_eq!(wt.name(), "feature-x");
-        assert_eq!(wt.worktree_path.as_deref(), Some(Path::new("/tmp/wt/feature-x")));
+        assert_eq!(
+            wt.worktree_path.as_deref(),
+            Some(Path::new("/tmp/wt/feature-x"))
+        );
         assert_eq!(wt.claude_session_id.as_deref(), Some("sess-abc-123"));
         assert!(!wt.archived);
     }
@@ -720,7 +735,11 @@ mod tests {
         ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {
-                if i == j { assert_eq!(a, b); } else { assert_ne!(a, b); }
+                if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert_ne!(a, b);
+                }
             }
         }
     }
@@ -857,7 +876,12 @@ mod tests {
             WorktreeStatus::Failed,
         ] {
             let s = status.as_str();
-            assert_eq!(s, s.to_lowercase(), "as_str for {:?} should be lowercase", status);
+            assert_eq!(
+                s,
+                s.to_lowercase(),
+                "as_str for {:?} should be lowercase",
+                status
+            );
         }
     }
 
@@ -871,7 +895,11 @@ mod tests {
             WorktreeStatus::Completed,
             WorktreeStatus::Failed,
         ] {
-            assert!(!status.symbol().is_empty(), "symbol for {:?} should not be empty", status);
+            assert!(
+                !status.symbol().is_empty(),
+                "symbol for {:?} should not be empty",
+                status
+            );
         }
     }
 }

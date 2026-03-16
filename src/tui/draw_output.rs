@@ -15,7 +15,7 @@ mod session_list;
 mod todo_widget;
 
 /// Re-export public API so existing `use super::draw_output::{...}` imports work unchanged
-pub use render_submit::{submit_render_request, poll_render_result};
+pub use render_submit::{poll_render_result, submit_render_request};
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
@@ -25,9 +25,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus, ViewMode};
 use super::colorize::ORANGE;
-use super::util::{colorize_output, detect_message_type, MessageType, GIT_BROWN, GIT_ORANGE, AZURE};
+use super::util::{
+    colorize_output, detect_message_type, MessageType, AZURE, GIT_BROWN, GIT_ORANGE,
+};
+use crate::app::{App, Focus, ViewMode};
 
 /// Compute the selectable content range for a session pane cache line.
 /// Returns (content_start_col, content_end_col) in char indices.
@@ -89,9 +91,12 @@ pub(crate) fn compute_line_content_bounds(line: &Line) -> (usize, usize) {
     // Content lines: last span is " │" in AZURE (right border)
     if last.content.as_ref() == " │" && last.style.fg == Some(AZURE) {
         let right = total - 2; // strip " │"
-        // Left: sum of all spans before content (offset + padding)
+                               // Left: sum of all spans before content (offset + padding)
         let left: usize = if spans.len() >= 3 {
-            spans[..spans.len() - 2].iter().map(|s| s.content.chars().count()).sum()
+            spans[..spans.len() - 2]
+                .iter()
+                .map(|s| s.content.chars().count())
+                .sum()
         } else {
             0
         };
@@ -135,15 +140,29 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         // Helper closure: count wrapped visual lines for a todo list.
         // prefix_extra = extra chars before text (e.g. 2 for "↳ " indent on subtasks)
         let count_lines = |todos: &[crate::app::TodoItem], prefix_extra: usize| -> u16 {
-            if inner_w == 0 { return todos.len() as u16; }
-            todos.iter().map(|t| {
-                let text = if t.status == crate::app::TodoStatus::InProgress && !t.active_form.is_empty() {
-                    &t.active_form
-                } else { &t.content };
-                // 2 chars for icon ("✓ ") + prefix_extra for indent
-                let text_w: usize = text.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>() + 2 + prefix_extra;
-                ((text_w + inner_w - 1) / inner_w).max(1) as u16
-            }).sum()
+            if inner_w == 0 {
+                return todos.len() as u16;
+            }
+            todos
+                .iter()
+                .map(|t| {
+                    let text = if t.status == crate::app::TodoStatus::InProgress
+                        && !t.active_form.is_empty()
+                    {
+                        &t.active_form
+                    } else {
+                        &t.content
+                    };
+                    // 2 chars for icon ("✓ ") + prefix_extra for indent
+                    let text_w: usize = text
+                        .chars()
+                        .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+                        .sum::<usize>()
+                        + 2
+                        + prefix_extra;
+                    ((text_w + inner_w - 1) / inner_w).max(1) as u16
+                })
+                .sum()
         };
         let main_lines = count_lines(&app.current_todos, 0);
         // Subagent todos get "↳ " prefix (2 display-width chars)
@@ -153,7 +172,10 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         // Cap at 20 content lines + 2 border = 22, also ensure session pane has >= 10 rows
         let max_h = 22u16.min(area.height.saturating_sub(10));
         (total_content_lines + 2).min(max_h)
-    } else { app.todo_total_lines = 0; 0 };
+    } else {
+        app.todo_total_lines = 0;
+        0
+    };
     // Search bar at bottom of session pane: visible when search is active or has residual matches
     let has_search = app.session_find_active || !app.session_find_matches.is_empty();
     let search_height: u16 = if has_search { 3 } else { 0 };
@@ -161,7 +183,8 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Min(1),
         Constraint::Length(search_height),
         Constraint::Length(todo_height),
-    ]).areas(area);
+    ])
+    .areas(area);
     let area = session_area;
     app.pane_session_content = area;
     let viewport_height = area.height.saturating_sub(2) as usize;
@@ -195,17 +218,23 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 // Check if viewport cache is still valid — skip the clone if so.
                 // Selection changes also invalidate (must re-apply highlight)
                 // Check if any tools are still pending (need pulse animation)
-                let has_pending_tools = app.animation_line_indices.iter()
+                let has_pending_tools = app
+                    .animation_line_indices
+                    .iter()
                     .any(|(_, _, id)| app.pending_tool_calls.contains(id));
                 let cache_valid = scroll == app.session_viewport_scroll
                     && (!has_pending_tools || app.animation_tick == app.session_viewport_anim_tick)
                     && app.tool_status_generation == app.session_viewport_status_gen
                     && app.session_selection == app.session_selection_cached
-                    && app.session_viewport_cache.len() == viewport_height.min(app.rendered_lines_cache.len().saturating_sub(scroll));
+                    && app.session_viewport_cache.len()
+                        == viewport_height
+                            .min(app.rendered_lines_cache.len().saturating_sub(scroll));
 
                 if !cache_valid {
                     // Clone viewport slice from the pre-rendered line cache
-                    let mut lines: Vec<Line> = app.rendered_lines_cache.iter()
+                    let mut lines: Vec<Line> = app
+                        .rendered_lines_cache
+                        .iter()
                         .skip(scroll)
                         .take(viewport_height)
                         .cloned()
@@ -216,14 +245,17 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     // complete or fail between renders. This patches both text and color
                     // so circles update immediately without a full re-render.
                     if !app.animation_line_indices.is_empty() {
-                        let pulse_colors = [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
-                        let pulse_color = pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
+                        let pulse_colors =
+                            [Color::White, Color::Gray, Color::DarkGray, Color::Gray];
+                        let pulse_color =
+                            pulse_colors[(app.animation_tick / 2) as usize % pulse_colors.len()];
                         for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
                             if *line_idx >= scroll && *line_idx < scroll + viewport_height {
                                 let viewport_idx = line_idx - scroll;
                                 if let Some(line) = lines.get_mut(viewport_idx) {
                                     if let Some(span) = line.spans.get_mut(*span_idx) {
-                                        let is_pending = app.pending_tool_calls.contains(tool_use_id);
+                                        let is_pending =
+                                            app.pending_tool_calls.contains(tool_use_id);
                                         let is_failed = app.failed_tool_calls.contains(tool_use_id);
                                         if is_pending {
                                             span.content = "○ ".into();
@@ -249,13 +281,25 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                             let ci = scroll + vi;
                             if ci >= sl && ci <= el {
                                 let (cb_start, cb_end) = compute_line_content_bounds(line);
-                                if cb_start >= cb_end { continue; }
+                                if cb_start >= cb_end {
+                                    continue;
+                                }
                                 let eff_sc = if ci == sl { sc.max(cb_start) } else { cb_start };
                                 let eff_ec = if ci == el { ec.min(cb_end) } else { cb_end };
-                                if eff_sc >= eff_ec { continue; }
-                                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                                if eff_sc >= eff_ec {
+                                    continue;
+                                }
+                                let text: String =
+                                    line.spans.iter().map(|s| s.content.as_ref()).collect();
                                 let new_spans = super::draw_viewer::apply_selection_to_line(
-                                    line.spans.clone(), &text, 0, 0, eff_sc, 0, eff_ec, 0,
+                                    line.spans.clone(),
+                                    &text,
+                                    0,
+                                    0,
+                                    eff_sc,
+                                    0,
+                                    eff_ec,
+                                    0,
                                 );
                                 *line = Line::from(new_spans);
                             }
@@ -270,13 +314,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                         let hl_style = Style::default().bg(ORANGE).fg(Color::Black);
                         for row in 0..wlc {
                             let cache_line = hl + row;
-                            if cache_line < scroll || cache_line >= scroll + viewport_height { continue; }
+                            if cache_line < scroll || cache_line >= scroll + viewport_height {
+                                continue;
+                            }
                             let vi = cache_line - scroll;
-                            let Some(line) = lines.get_mut(vi) else { continue };
+                            let Some(line) = lines.get_mut(vi) else {
+                                continue;
+                            };
                             let (start, end) = if row == 0 {
                                 (hsc, hec)
                             } else {
-                                (hsc, line.spans.iter().map(|s| s.content.chars().count()).sum())
+                                (
+                                    hsc,
+                                    line.spans.iter().map(|s| s.content.chars().count()).sum(),
+                                )
                             };
                             let mut new_spans: Vec<Span<'static>> = Vec::new();
                             let mut col = 0usize;
@@ -311,11 +362,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     if !app.session_find_matches.is_empty() {
                         let match_style = Style::default().bg(Color::DarkGray).fg(Color::Yellow);
                         let current_style = Style::default().bg(Color::Yellow).fg(Color::Black);
-                        for (mi, &(line_idx, sc, ec)) in app.session_find_matches.iter().enumerate() {
-                            if line_idx < scroll || line_idx >= scroll + viewport_height { continue; }
+                        for (mi, &(line_idx, sc, ec)) in app.session_find_matches.iter().enumerate()
+                        {
+                            if line_idx < scroll || line_idx >= scroll + viewport_height {
+                                continue;
+                            }
                             let vi = line_idx - scroll;
-                            let Some(line) = lines.get_mut(vi) else { continue };
-                            let style = if mi == app.session_find_current { current_style } else { match_style };
+                            let Some(line) = lines.get_mut(vi) else {
+                                continue;
+                            };
+                            let style = if mi == app.session_find_current {
+                                current_style
+                            } else {
+                                match_style
+                            };
                             let mut new_spans: Vec<Span<'static>> = Vec::new();
                             let mut col = 0usize;
                             for span in line.spans.iter() {
@@ -328,11 +388,20 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                                     let hs = sc.saturating_sub(col);
                                     let he = (ec - col).min(span_len);
                                     if hs > 0 {
-                                        new_spans.push(Span::styled(chars[..hs].iter().collect::<String>(), span.style));
+                                        new_spans.push(Span::styled(
+                                            chars[..hs].iter().collect::<String>(),
+                                            span.style,
+                                        ));
                                     }
-                                    new_spans.push(Span::styled(chars[hs..he].iter().collect::<String>(), style));
+                                    new_spans.push(Span::styled(
+                                        chars[hs..he].iter().collect::<String>(),
+                                        style,
+                                    ));
                                     if he < span_len {
-                                        new_spans.push(Span::styled(chars[he..].iter().collect::<String>(), span.style));
+                                        new_spans.push(Span::styled(
+                                            chars[he..].iter().collect::<String>(),
+                                            span.style,
+                                        ));
                                     }
                                 }
                                 col = span_end;
@@ -344,17 +413,26 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     // Build title with message count
                     // Total counts ALL display events (not just rendered tail from deferred render)
                     // so the denominator is accurate even before the user scrolls to top
-                    let total_msgs = app.display_events.iter().filter(|e| matches!(e,
-                        crate::events::DisplayEvent::UserMessage { .. } |
-                        crate::events::DisplayEvent::AssistantText { .. }
-                    )).count();
+                    let total_msgs = app
+                        .display_events
+                        .iter()
+                        .filter(|e| {
+                            matches!(
+                                e,
+                                crate::events::DisplayEvent::UserMessage { .. }
+                                    | crate::events::DisplayEvent::AssistantText { .. }
+                            )
+                        })
+                        .count();
                     let title = if total_msgs > 0 {
                         let current_line = scroll.saturating_add(3);
                         // Current position from rendered bubble positions (only covers rendered tail)
                         // Add the unrendered bubble count as offset so numbering is correct
                         let rendered_bubbles = app.message_bubble_positions.len();
                         let unrendered_offset = total_msgs.saturating_sub(rendered_bubbles);
-                        let current_msg = app.message_bubble_positions.iter()
+                        let current_msg = app
+                            .message_bubble_positions
+                            .iter()
                             .enumerate()
                             .rev()
                             .find(|(_, (line_idx, _))| *line_idx <= current_line)
@@ -372,7 +450,10 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     app.session_viewport_title = title;
                 }
 
-                (app.session_viewport_title.clone(), app.session_viewport_cache.clone())
+                (
+                    app.session_viewport_title.clone(),
+                    app.session_viewport_cache.clone(),
+                )
             } else if !app.session_lines.is_empty() || !app.session_buffer.is_empty() {
                 // Fallback: using session_lines with colorize_output
                 let mut all_lines: Vec<Line> = Vec::new();
@@ -381,19 +462,23 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 for line in app.session_lines.iter() {
                     let msg_type = detect_message_type(line);
                     if (last_msg_type == MessageType::User && msg_type == MessageType::Assistant)
-                        || (last_msg_type == MessageType::Assistant && msg_type == MessageType::User)
+                        || (last_msg_type == MessageType::Assistant
+                            && msg_type == MessageType::User)
                     {
                         all_lines.push(Line::from(""));
                         all_lines.push(Line::from(""));
                     }
                     all_lines.push(colorize_output(line));
-                    if msg_type != MessageType::Other { last_msg_type = msg_type; }
+                    if msg_type != MessageType::Other {
+                        last_msg_type = msg_type;
+                    }
                 }
 
                 if !app.session_buffer.is_empty() {
                     let msg_type = detect_message_type(&app.session_buffer);
                     if (last_msg_type == MessageType::User && msg_type == MessageType::Assistant)
-                        || (last_msg_type == MessageType::Assistant && msg_type == MessageType::User)
+                        || (last_msg_type == MessageType::Assistant
+                            && msg_type == MessageType::User)
                     {
                         all_lines.push(Line::from(""));
                         all_lines.push(Line::from(""));
@@ -406,11 +491,22 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 // Resolve sentinel to concrete position for THIS frame only —
                 // don't write it back so usize::MAX survives and keeps
                 // following bottom as new content arrives.
-                let scroll = if app.session_scroll == usize::MAX { max_scroll }
-                    else { app.session_scroll.min(max_scroll) };
-                let lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(viewport_height).collect();
+                let scroll = if app.session_scroll == usize::MAX {
+                    max_scroll
+                } else {
+                    app.session_scroll.min(max_scroll)
+                };
+                let lines: Vec<Line> = all_lines
+                    .into_iter()
+                    .skip(scroll)
+                    .take(viewport_height)
+                    .collect();
                 let title = if total > viewport_height {
-                    format!(" Session [{}/{}] ", scroll + viewport_height.min(total - scroll), total)
+                    format!(
+                        " Session [{}/{}] ",
+                        scroll + viewport_height.min(total - scroll),
+                        total
+                    )
                 } else {
                     " Session ".to_string()
                 };
@@ -423,16 +519,24 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                 let key = crate::tui::keybindings::find_key_for_action(
                     &crate::tui::keybindings::SESSION,
                     crate::tui::keybindings::Action::ToggleSessionList,
-                ).unwrap_or_else(|| "s".into());
+                )
+                .unwrap_or_else(|| "s".into());
                 let add_key = crate::tui::keybindings::find_key_for_action(
                     &crate::tui::keybindings::SESSION,
                     crate::tui::keybindings::Action::NewSession,
-                ).unwrap_or_else(|| "a".into());
+                )
+                .unwrap_or_else(|| "a".into());
                 let hint = vec![Line::from(vec![
                     Span::styled("Press ", Style::default().fg(Color::DarkGray)),
                     Span::styled(key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                    Span::styled(" to choose a session or ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(add_key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        " to choose a session or ",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        add_key,
+                        Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(" to create one", Style::default().fg(Color::DarkGray)),
                 ])];
                 (" Session ".to_string(), hint)
@@ -444,7 +548,9 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     let rcr_active = app.rcr_session.is_some();
     let border_style = if rcr_active {
         // RCR mode: green borders to visually indicate active conflict resolution
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD)
     } else if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
@@ -470,17 +576,24 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         if let Some(b) = branch.as_deref() {
             if !app.viewing_historic_session {
                 // The active slot's key IS the PID string
-                let active_pid = app.active_slot.get(b)
+                let active_pid = app
+                    .active_slot
+                    .get(b)
                     .filter(|slot| app.running_sessions.contains(*slot))
                     .and_then(|slot| slot.parse::<u32>().ok());
                 if let Some(pid) = active_pid {
                     spans.push(Span::styled(
                         format!(" PID:{} ", pid),
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ));
-                } else if let Some(&code) = app.active_slot.get(b)
+                } else if let Some(&code) = app
+                    .active_slot
+                    .get(b)
                     .and_then(|slot| app.agent_exit_codes.get(slot))
-                    .or_else(|| app.agent_exit_codes.get(b)) {
+                    .or_else(|| app.agent_exit_codes.get(b))
+                {
                     let (text, color) = if code == 0 {
                         (" exit:0 ".to_string(), Color::Green)
                     } else {
@@ -491,19 +604,30 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
 
-        if spans.is_empty() { None } else { Some(Line::from(spans).alignment(Alignment::Right)) }
+        if spans.is_empty() {
+            None
+        } else {
+            Some(Line::from(spans).alignment(Alignment::Right))
+        }
     };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if is_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .title(Span::styled(title.clone(), border_style))
         .border_style(border_style);
 
     // Centered session name in [brackets] on top border
     if !app.title_session_name.is_empty() {
         // Available space: total border width minus left title, right title, and some padding
-        let right_len = right_title.as_ref().map(|rt| rt.spans.iter().map(|s| s.content.len()).sum::<usize>()).unwrap_or(0);
+        let right_len = right_title
+            .as_ref()
+            .map(|rt| rt.spans.iter().map(|s| s.content.len()).sum::<usize>())
+            .unwrap_or(0);
         let avail = (area.width as usize).saturating_sub(title.len() + right_len + 4);
         let name = &app.title_session_name;
         let bracketed = if name.chars().count() + 2 <= avail {
@@ -515,10 +639,14 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
             String::new()
         };
         if !bracketed.is_empty() {
-            let title_color = if rcr_active { Color::Green } else { Color::White };
+            let title_color = if rcr_active {
+                Color::Green
+            } else {
+                Color::White
+            };
             block = block.title(
                 Line::from(Span::styled(bracketed, Style::default().fg(title_color)))
-                    .alignment(Alignment::Center)
+                    .alignment(Alignment::Center),
             );
         }
     }
@@ -533,9 +661,15 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         if !rcr.approval_pending {
             block = block.title_bottom(
                 Line::from(vec![
-                    Span::styled(" ⌃a ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        " ⌃a ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("Accept/Abort ", Style::default().fg(Color::DarkGray)),
-                ]).alignment(Alignment::Center)
+                ])
+                .alignment(Alignment::Center),
             );
         }
     }
@@ -560,13 +694,23 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         let model_key = crate::tui::keybindings::find_key_for_action(
             &crate::tui::keybindings::GLOBAL,
             crate::tui::keybindings::Action::CycleModel,
-        ).unwrap_or_else(|| "Ctrl+m".into());
+        )
+        .unwrap_or_else(|| "Ctrl+m".into());
         block = block.title_bottom(
             Line::from(vec![
-                Span::styled(format!(" {}", model_key), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!(" {}", model_key),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(":", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{} ", model_name), Style::default().fg(model_color).add_modifier(Modifier::BOLD)),
-            ]).alignment(Alignment::Right)
+                Span::styled(
+                    format!("{} ", model_name),
+                    Style::default()
+                        .fg(model_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])
+            .alignment(Alignment::Right),
         );
     }
 
@@ -576,18 +720,36 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     // Render session find bar at bottom of session content area
     if has_search {
         let match_info = if app.session_find_matches.is_empty() {
-            if app.session_find.is_empty() { String::new() } else { " 0/0 ".to_string() }
+            if app.session_find.is_empty() {
+                String::new()
+            } else {
+                " 0/0 ".to_string()
+            }
         } else {
-            format!(" {}/{} ", app.session_find_current + 1, app.session_find_matches.len())
+            format!(
+                " {}/{} ",
+                app.session_find_current + 1,
+                app.session_find_matches.len()
+            )
         };
-        let border_color = if app.session_find_active { Color::Yellow } else { Color::DarkGray };
-        let search_widget = Paragraph::new(app.session_find.clone())
-            .block(Block::default()
+        let border_color = if app.session_find_active {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        };
+        let search_widget = Paragraph::new(app.session_find.clone()).block(
+            Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(border_color))
                 .title(Span::styled("/", Style::default().fg(Color::Yellow)))
-                .title(Line::from(Span::styled(match_info, Style::default().fg(Color::DarkGray))).alignment(Alignment::Right)),
-            );
+                .title(
+                    Line::from(Span::styled(
+                        match_info,
+                        Style::default().fg(Color::DarkGray),
+                    ))
+                    .alignment(Alignment::Right),
+                ),
+        );
         f.render_widget(search_widget, search_area);
         // Show cursor in search bar when actively typing
         if app.session_find_active {
@@ -605,8 +767,19 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         app.pane_todo = todo_area;
         let content_h = todo_area.height.saturating_sub(2);
         let max_scroll = app.todo_total_lines.saturating_sub(content_h);
-        if app.todo_scroll > max_scroll { app.todo_scroll = max_scroll; }
-        todo_widget::draw_todo_widget(f, &app.current_todos, &app.subagent_todos, app.subagent_parent_idx, todo_area, app.animation_tick, app.todo_scroll, app.todo_total_lines);
+        if app.todo_scroll > max_scroll {
+            app.todo_scroll = max_scroll;
+        }
+        todo_widget::draw_todo_widget(
+            f,
+            &app.current_todos,
+            &app.subagent_todos,
+            app.subagent_parent_idx,
+            todo_area,
+            app.animation_tick,
+            app.todo_scroll,
+            app.todo_total_lines,
+        );
     } else {
         // No todos visible — clear cached rect so mouse scroll won't hit-test stale area
         app.pane_todo = Rect::default();
@@ -616,29 +789,38 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
 /// Draw the new session name dialog — centered input box over the session pane.
 fn draw_new_session_dialog(f: &mut Frame, app: &App, area: Rect) {
     let input = &app.new_session_name_input;
-    let w = (input.chars().count() as u16 + 6).max(42).min(area.width.saturating_sub(4));
+    let w = (input.chars().count() as u16 + 6)
+        .max(42)
+        .min(area.width.saturating_sub(4));
     let h = 3u16;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let dialog_area = ratatui::layout::Rect::new(x, y, w, h);
 
-    let clear = ratatui::widgets::Paragraph::new("")
-        .block(ratatui::widgets::Block::default().style(ratatui::style::Style::default().bg(ratatui::style::Color::Black)));
+    let clear = ratatui::widgets::Paragraph::new("").block(
+        ratatui::widgets::Block::default()
+            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black)),
+    );
     f.render_widget(clear, dialog_area);
 
-    let widget = ratatui::widgets::Paragraph::new(input.as_str())
-        .block(ratatui::widgets::Block::default()
+    let widget = ratatui::widgets::Paragraph::new(input.as_str()).block(
+        ratatui::widgets::Block::default()
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(ratatui::style::Style::default().fg(super::util::AZURE))
             .title(ratatui::text::Span::styled(
                 " New Session ",
-                ratatui::style::Style::default().fg(super::util::AZURE).add_modifier(ratatui::style::Modifier::BOLD),
+                ratatui::style::Style::default()
+                    .fg(super::util::AZURE)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
             ))
-            .title(ratatui::text::Line::from(ratatui::text::Span::styled(
-                " Enter:create  Esc:cancel ",
-                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
-            )).alignment(ratatui::layout::Alignment::Right)),
-        );
+            .title(
+                ratatui::text::Line::from(ratatui::text::Span::styled(
+                    " Enter:create  Esc:cancel ",
+                    ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+                ))
+                .alignment(ratatui::layout::Alignment::Right),
+            ),
+    );
     f.render_widget(widget, dialog_area);
 
     let cursor_x = dialog_area.x + 1 + app.new_session_name_cursor as u16;
@@ -663,27 +845,60 @@ pub fn draw_rcr_approval(f: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
-        .title(Span::styled(" RCR ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
+        .border_style(
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(Span::styled(
+            " RCR ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ));
 
     let text = vec![
-        Line::from(Span::styled("Accept conflict resolution?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Accept conflict resolution?",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(vec![
-            Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[y]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Accept  "),
-            Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[n]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Abort  "),
-            Span::styled("[Esc]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "[Esc]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Review"),
         ]),
     ];
-    let para = Paragraph::new(text).block(block).alignment(Alignment::Center);
+    let para = Paragraph::new(text)
+        .block(block)
+        .alignment(Alignment::Center);
     f.render_widget(para, dialog);
 }
 
 /// Draw the post-merge dialog — asks whether to keep, archive, or delete the
 /// worktree after a successful squash merge. Centered on the full screen.
-pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::app::types::PostMergeDialog) {
+pub fn draw_post_merge_dialog(
+    f: &mut Frame,
+    area: Rect,
+    dialog_state: &crate::app::types::PostMergeDialog,
+) {
     let w = 50u16.min(area.width.saturating_sub(2));
     let h = 9u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(w)) / 2;
@@ -700,19 +915,41 @@ pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::a
             Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD),
         ));
 
-    let arrow = |i: usize| if dialog_state.selected == i { "▸ " } else { "  " };
+    let arrow = |i: usize| {
+        if dialog_state.selected == i {
+            "▸ "
+        } else {
+            "  "
+        }
+    };
     let style = |i: usize, color: Color| {
         if dialog_state.selected == i {
             Style::default().fg(color).add_modifier(Modifier::BOLD)
-        } else { Style::default().fg(Color::White) }
+        } else {
+            Style::default().fg(Color::White)
+        }
     };
 
     let text = vec![
-        Line::from(Span::styled("What should happen to this worktree?", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "What should happen to this worktree?",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(Span::styled(format!("{}Keep — continue working on this branch", arrow(0)), style(0, Color::Green))),
-        Line::from(Span::styled(format!("{}Archive — remove worktree, keep branch", arrow(1)), style(1, Color::Yellow))),
-        Line::from(Span::styled(format!("{}Delete — remove worktree and branch", arrow(2)), style(2, Color::Red))),
+        Line::from(Span::styled(
+            format!("{}Keep — continue working on this branch", arrow(0)),
+            style(0, Color::Green),
+        )),
+        Line::from(Span::styled(
+            format!("{}Archive — remove worktree, keep branch", arrow(1)),
+            style(1, Color::Yellow),
+        )),
+        Line::from(Span::styled(
+            format!("{}Delete — remove worktree and branch", arrow(2)),
+            style(2, Color::Red),
+        )),
     ];
     let para = Paragraph::new(text).block(block).alignment(Alignment::Left);
     f.render_widget(para, rect);
@@ -720,7 +957,11 @@ pub fn draw_post_merge_dialog(f: &mut Frame, area: Rect, dialog_state: &crate::a
 
 /// Git panel commit log — scrollable list of recent commits
 /// Returns the computed commit_scroll for writeback.
-fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, area: Rect) -> usize {
+fn draw_git_commits(
+    f: &mut Frame,
+    panel: &crate::app::types::GitActionsPanel,
+    area: Rect,
+) -> usize {
     let focused = panel.focused_pane == 2;
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
@@ -738,7 +979,9 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         computed_scroll = if panel.selected_commit < panel.commit_scroll {
             panel.selected_commit
         } else if panel.selected_commit >= panel.commit_scroll + inner_h {
-            panel.selected_commit.saturating_sub(inner_h.saturating_sub(1))
+            panel
+                .selected_commit
+                .saturating_sub(inner_h.saturating_sub(1))
         } else {
             panel.commit_scroll
         };
@@ -749,7 +992,11 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
             let prefix = if selected { " \u{25b8} " } else { "   " };
 
             // Green for unpushed, dim for pushed
-            let hash_color = if !commit.is_pushed { Color::Green } else { Color::DarkGray };
+            let hash_color = if !commit.is_pushed {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
             let subject_color = if selected {
                 GIT_ORANGE
             } else if !commit.is_pushed {
@@ -757,12 +1004,19 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
             } else {
                 Color::White
             };
-            let subject_mod = if selected { Modifier::BOLD } else { Modifier::empty() };
+            let subject_mod = if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            };
 
             // Truncate subject to fit: prefix(3) + hash(7) + space(1) + subject
             let subject_budget = inner_w.saturating_sub(prefix.len() + 8);
             let subject_display = if commit.subject.len() > subject_budget {
-                format!("{}\u{2026}", &commit.subject[..subject_budget.saturating_sub(1)])
+                format!(
+                    "{}\u{2026}",
+                    &commit.subject[..subject_budget.saturating_sub(1)]
+                )
             } else {
                 commit.subject.clone()
             };
@@ -771,7 +1025,10 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
                 Span::styled(prefix, Style::default()),
                 Span::styled(&commit.hash, Style::default().fg(hash_color)),
                 Span::raw(" "),
-                Span::styled(subject_display, Style::default().fg(subject_color).add_modifier(subject_mod)),
+                Span::styled(
+                    subject_display,
+                    Style::default().fg(subject_color).add_modifier(subject_mod),
+                ),
             ]));
         }
     }
@@ -783,11 +1040,22 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         Style::default().fg(GIT_BROWN)
     };
     let mut block = Block::default()
-        .title(Span::styled(title, Style::default()
-            .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
-            .add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() })))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(if focused { GIT_ORANGE } else { GIT_BROWN })
+                .add_modifier(if focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
+        ))
         .borders(Borders::ALL)
-        .border_type(if focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .border_style(border_style);
 
     // Bottom border: divergence badges for main and remote
@@ -798,12 +1066,21 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         let ahead = panel.commits_ahead_main;
         if behind > 0 || ahead > 0 {
             let mut parts = Vec::new();
-            if ahead > 0 { parts.push(format!("↑{}", ahead)); }
-            if behind > 0 { parts.push(format!("↓{}", behind)); }
+            if ahead > 0 {
+                parts.push(format!("↑{}", ahead));
+            }
+            if behind > 0 {
+                parts.push(format!("↓{}", behind));
+            }
             let label = format!(" {} main ", parts.join(" "));
             let color = if behind > 0 { Color::Red } else { Color::Green };
-            bottom_spans.push(Span::styled(label,
-                Style::default().fg(Color::White).bg(color).add_modifier(Modifier::BOLD)));
+            bottom_spans.push(Span::styled(
+                label,
+                Style::default()
+                    .fg(Color::White)
+                    .bg(color)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
     }
     // Remote divergence (any branch with upstream)
@@ -811,20 +1088,33 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
         let behind = panel.commits_behind_remote;
         let ahead = panel.commits_ahead_remote;
         if behind > 0 || ahead > 0 {
-            if !bottom_spans.is_empty() { bottom_spans.push(Span::raw(" ")); }
+            if !bottom_spans.is_empty() {
+                bottom_spans.push(Span::raw(" "));
+            }
             let mut parts = Vec::new();
-            if ahead > 0 { parts.push(format!("↑{}", ahead)); }
-            if behind > 0 { parts.push(format!("↓{}", behind)); }
+            if ahead > 0 {
+                parts.push(format!("↑{}", ahead));
+            }
+            if behind > 0 {
+                parts.push(format!("↓{}", behind));
+            }
             let label = format!(" {} remote ", parts.join(" "));
-            let color = if behind > 0 { Color::Yellow } else { Color::Cyan };
-            bottom_spans.push(Span::styled(label,
-                Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)));
+            let color = if behind > 0 {
+                Color::Yellow
+            } else {
+                Color::Cyan
+            };
+            bottom_spans.push(Span::styled(
+                label,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(color)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
     }
     if !bottom_spans.is_empty() {
-        block = block.title_bottom(
-            Line::from(bottom_spans).alignment(Alignment::Right)
-        );
+        block = block.title_bottom(Line::from(bottom_spans).alignment(Alignment::Right));
     }
 
     f.render_widget(Paragraph::new(lines).block(block), area);
@@ -834,105 +1124,250 @@ fn draw_git_commits(f: &mut Frame, panel: &crate::app::types::GitActionsPanel, a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::types::{GitCommit, GitChangedFile, PostMergeDialog};
+    use crate::app::types::{GitChangedFile, GitCommit, PostMergeDialog};
     use std::path::PathBuf;
 
     // ── Colors ──
     #[test]
-    fn test_azure() { assert_eq!(AZURE, Color::Rgb(51, 153, 255)); }
+    fn test_azure() {
+        assert_eq!(AZURE, Color::Rgb(51, 153, 255));
+    }
     #[test]
-    fn test_git_orange() { assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50)); }
+    fn test_git_orange() {
+        assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50));
+    }
     #[test]
-    fn test_git_brown() { assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45)); }
+    fn test_git_brown() {
+        assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45));
+    }
     #[test]
-    fn test_orange_exists() { let _ = ORANGE; }
+    fn test_orange_exists() {
+        let _ = ORANGE;
+    }
 
     // ── ViewMode ──
     #[test]
-    fn test_view_mode_eq() { assert_eq!(ViewMode::Session, ViewMode::Session); }
+    fn test_view_mode_eq() {
+        assert_eq!(ViewMode::Session, ViewMode::Session);
+    }
 
     // ── Focus ──
     #[test]
-    fn test_focus_session() { assert_eq!(Focus::Session, Focus::Session); }
+    fn test_focus_session() {
+        assert_eq!(Focus::Session, Focus::Session);
+    }
     #[test]
-    fn test_focus_input() { assert_eq!(Focus::Input, Focus::Input); }
+    fn test_focus_input() {
+        assert_eq!(Focus::Input, Focus::Input);
+    }
     #[test]
-    fn test_focus_ne() { assert_ne!(Focus::Session, Focus::Input); }
+    fn test_focus_ne() {
+        assert_ne!(Focus::Session, Focus::Input);
+    }
 
     // ── MessageType ──
     #[test]
-    fn test_msg_type_user() { let _ = MessageType::User; }
+    fn test_msg_type_user() {
+        let _ = MessageType::User;
+    }
     #[test]
-    fn test_msg_type_assistant() { let _ = MessageType::Assistant; }
+    fn test_msg_type_assistant() {
+        let _ = MessageType::Assistant;
+    }
     #[test]
-    fn test_msg_type_other() { let _ = MessageType::Other; }
+    fn test_msg_type_other() {
+        let _ = MessageType::Other;
+    }
 
     // ── GitCommit ──
     #[test]
     fn test_commit_new() {
-        let c = GitCommit { hash: "abc".into(), full_hash: "abcdef".into(), subject: "feat".into(), is_pushed: false };
+        let c = GitCommit {
+            hash: "abc".into(),
+            full_hash: "abcdef".into(),
+            subject: "feat".into(),
+            is_pushed: false,
+        };
         assert!(!c.is_pushed);
     }
     #[test]
     fn test_commit_pushed() {
-        let c = GitCommit { hash: "d".into(), full_hash: "dd".into(), subject: "s".into(), is_pushed: true };
+        let c = GitCommit {
+            hash: "d".into(),
+            full_hash: "dd".into(),
+            subject: "s".into(),
+            is_pushed: true,
+        };
         assert!(c.is_pushed);
     }
     #[test]
     fn test_commit_clone() {
-        let c = GitCommit { hash: "h".into(), full_hash: "hh".into(), subject: "s".into(), is_pushed: false };
+        let c = GitCommit {
+            hash: "h".into(),
+            full_hash: "hh".into(),
+            subject: "s".into(),
+            is_pushed: false,
+        };
         let cl = c.clone();
         assert_eq!(cl.hash, "h");
     }
 
     // ── GitChangedFile ──
     #[test]
-    fn test_file_modified() { let f = GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 5, staged: false }; assert_eq!(f.status, 'M'); }
+    fn test_file_modified() {
+        let f = GitChangedFile {
+            path: "a".into(),
+            status: 'M',
+            additions: 10,
+            deletions: 5,
+            staged: false,
+        };
+        assert_eq!(f.status, 'M');
+    }
     #[test]
-    fn test_file_added() { let f = GitChangedFile { path: "b".into(), status: 'A', additions: 50, deletions: 0, staged: false }; assert_eq!(f.status, 'A'); }
+    fn test_file_added() {
+        let f = GitChangedFile {
+            path: "b".into(),
+            status: 'A',
+            additions: 50,
+            deletions: 0,
+            staged: false,
+        };
+        assert_eq!(f.status, 'A');
+    }
     #[test]
-    fn test_file_deleted() { let f = GitChangedFile { path: "c".into(), status: 'D', additions: 0, deletions: 30, staged: false }; assert_eq!(f.status, 'D'); }
+    fn test_file_deleted() {
+        let f = GitChangedFile {
+            path: "c".into(),
+            status: 'D',
+            additions: 0,
+            deletions: 30,
+            staged: false,
+        };
+        assert_eq!(f.status, 'D');
+    }
 
     // ── Status colors ──
     #[test]
-    fn test_sc_a() { assert_eq!(match 'A' { 'A'=>Color::Green, 'D'=>Color::Red, 'M'=>Color::Yellow, 'R'=>Color::Cyan, '?'=>Color::Magenta, _=>Color::White }, Color::Green); }
+    fn test_sc_a() {
+        assert_eq!(
+            match 'A' {
+                'A' => Color::Green,
+                'D' => Color::Red,
+                'M' => Color::Yellow,
+                'R' => Color::Cyan,
+                '?' => Color::Magenta,
+                _ => Color::White,
+            },
+            Color::Green
+        );
+    }
     #[test]
-    fn test_sc_d() { assert_eq!(match 'D' { 'A'=>Color::Green, 'D'=>Color::Red, _=>Color::White }, Color::Red); }
+    fn test_sc_d() {
+        assert_eq!(
+            match 'D' {
+                'A' => Color::Green,
+                'D' => Color::Red,
+                _ => Color::White,
+            },
+            Color::Red
+        );
+    }
     #[test]
-    fn test_sc_m() { assert_eq!(match 'M' { 'M'=>Color::Yellow, _=>Color::White }, Color::Yellow); }
+    fn test_sc_m() {
+        assert_eq!(
+            match 'M' {
+                'M' => Color::Yellow,
+                _ => Color::White,
+            },
+            Color::Yellow
+        );
+    }
     #[test]
-    fn test_sc_r() { assert_eq!(match 'R' { 'R'=>Color::Cyan, _=>Color::White }, Color::Cyan); }
+    fn test_sc_r() {
+        assert_eq!(
+            match 'R' {
+                'R' => Color::Cyan,
+                _ => Color::White,
+            },
+            Color::Cyan
+        );
+    }
 
     // ── PostMergeDialog ──
     #[test]
-    fn test_pmd_keep() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 0 }; assert_eq!(d.selected, 0); }
+    fn test_pmd_keep() {
+        let d = PostMergeDialog {
+            branch: "b".into(),
+            display_name: "d".into(),
+            worktree_path: PathBuf::from("/w"),
+            selected: 0,
+        };
+        assert_eq!(d.selected, 0);
+    }
     #[test]
-    fn test_pmd_archive() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 1 }; assert_eq!(d.selected, 1); }
+    fn test_pmd_archive() {
+        let d = PostMergeDialog {
+            branch: "b".into(),
+            display_name: "d".into(),
+            worktree_path: PathBuf::from("/w"),
+            selected: 1,
+        };
+        assert_eq!(d.selected, 1);
+    }
     #[test]
-    fn test_pmd_delete() { let d = PostMergeDialog { branch: "b".into(), display_name: "d".into(), worktree_path: PathBuf::from("/w"), selected: 2 }; assert_eq!(d.selected, 2); }
+    fn test_pmd_delete() {
+        let d = PostMergeDialog {
+            branch: "b".into(),
+            display_name: "d".into(),
+            worktree_path: PathBuf::from("/w"),
+            selected: 2,
+        };
+        assert_eq!(d.selected, 2);
+    }
 
     // ── Arrow indicator ──
     #[test]
-    fn test_arrow_0() { let s=0; assert_eq!(if s==0{"\u{25b8} "}else{"  "}, "\u{25b8} "); }
+    fn test_arrow_0() {
+        let s = 0;
+        assert_eq!(if s == 0 { "\u{25b8} " } else { "  " }, "\u{25b8} ");
+    }
     #[test]
-    fn test_arrow_2() { let s=2; assert_eq!(if s==2{"\u{25b8} "}else{"  "}, "\u{25b8} "); }
+    fn test_arrow_2() {
+        let s = 2;
+        assert_eq!(if s == 2 { "\u{25b8} " } else { "  " }, "\u{25b8} ");
+    }
 
     // ── Title format ──
     #[test]
-    fn test_commits_title_0() { assert_eq!(format!(" Commits ({}) ", 0), " Commits (0) "); }
+    fn test_commits_title_0() {
+        assert_eq!(format!(" Commits ({}) ", 0), " Commits (0) ");
+    }
     #[test]
-    fn test_commits_title_42() { assert_eq!(format!(" Commits ({}) ", 42), " Commits (42) "); }
+    fn test_commits_title_42() {
+        assert_eq!(format!(" Commits ({}) ", 42), " Commits (42) ");
+    }
 
     // ── Changed files title ──
     #[test]
     fn test_cf_title_none() {
         let files: Vec<GitChangedFile> = vec![];
-        let t = if files.is_empty() { " Changed Files (none) ".into() } else { format!(" Changed Files ({}) ", files.len()) };
+        let t = if files.is_empty() {
+            " Changed Files (none) ".into()
+        } else {
+            format!(" Changed Files ({}) ", files.len())
+        };
         assert_eq!(t, " Changed Files (none) ");
     }
     #[test]
     fn test_cf_title_stats() {
-        let files = vec![GitChangedFile { path: "a".into(), status: 'M', additions: 10, deletions: 3, staged: false }];
+        let files = vec![GitChangedFile {
+            path: "a".into(),
+            status: 'M',
+            additions: 10,
+            deletions: 3,
+            staged: false,
+        }];
         let ta: usize = files.iter().map(|f| f.additions).sum();
         let td: usize = files.iter().map(|f| f.deletions).sum();
         let t = format!(" Changed Files ({}, +{}/-{}) ", files.len(), ta, td);
@@ -943,83 +1378,186 @@ mod tests {
     #[test]
     fn test_div_ahead() {
         let mut p = Vec::new();
-        if 3 > 0 { p.push(format!("\u{2191}{}", 3)); }
+        if 3 > 0 {
+            p.push(format!("\u{2191}{}", 3));
+        }
         assert_eq!(format!(" {} main ", p.join(" ")), " \u{2191}3 main ");
     }
     #[test]
     fn test_div_behind() {
         let mut p = Vec::new();
-        if 5 > 0 { p.push(format!("\u{2193}{}", 5)); }
+        if 5 > 0 {
+            p.push(format!("\u{2193}{}", 5));
+        }
         assert_eq!(format!(" {} main ", p.join(" ")), " \u{2193}5 main ");
     }
     #[test]
     fn test_div_both() {
         let mut p = Vec::new();
-        p.push(format!("\u{2191}{}", 2)); p.push(format!("\u{2193}{}", 3));
-        assert_eq!(format!(" {} main ", p.join(" ")), " \u{2191}2 \u{2193}3 main ");
+        p.push(format!("\u{2191}{}", 2));
+        p.push(format!("\u{2193}{}", 3));
+        assert_eq!(
+            format!(" {} main ", p.join(" ")),
+            " \u{2191}2 \u{2193}3 main "
+        );
     }
 
     // ── RCR dialog ──
     #[test]
-    fn test_rcr_size() { assert_eq!(46u16.min(80u16.saturating_sub(2)), 46); assert_eq!(5u16.min(40u16.saturating_sub(2)), 5); }
+    fn test_rcr_size() {
+        assert_eq!(46u16.min(80u16.saturating_sub(2)), 46);
+        assert_eq!(5u16.min(40u16.saturating_sub(2)), 5);
+    }
     #[test]
-    fn test_rcr_small() { assert_eq!(46u16.min(20u16.saturating_sub(2)), 18); }
+    fn test_rcr_small() {
+        assert_eq!(46u16.min(20u16.saturating_sub(2)), 18);
+    }
 
     // ── Post-merge ──
     #[test]
-    fn test_pm_size() { assert_eq!(50u16.min(100u16.saturating_sub(2)), 50); assert_eq!(9u16.min(40u16.saturating_sub(2)), 9); }
+    fn test_pm_size() {
+        assert_eq!(50u16.min(100u16.saturating_sub(2)), 50);
+        assert_eq!(9u16.min(40u16.saturating_sub(2)), 9);
+    }
 
     // ── Session title ──
     #[test]
-    fn test_session_title() { assert_eq!(format!(" Session [{}/{}] ", 5, 20), " Session [5/20] "); }
+    fn test_session_title() {
+        assert_eq!(format!(" Session [{}/{}] ", 5, 20), " Session [5/20] ");
+    }
     #[test]
-    fn test_session_title_empty() { assert_eq!(" Session ".to_string(), " Session "); }
+    fn test_session_title_empty() {
+        assert_eq!(" Session ".to_string(), " Session ");
+    }
 
     // ── Model colors (unified pool) ──
     #[test]
-    fn test_mc_opus() { assert_eq!(match "opus" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Magenta); }
+    fn test_mc_opus() {
+        assert_eq!(
+            match "opus" {
+                "opus" => Color::Magenta,
+                "sonnet" => Color::Cyan,
+                "haiku" => Color::Yellow,
+                _ => Color::DarkGray,
+            },
+            Color::Magenta
+        );
+    }
     #[test]
-    fn test_mc_sonnet() { assert_eq!(match "sonnet" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Cyan); }
+    fn test_mc_sonnet() {
+        assert_eq!(
+            match "sonnet" {
+                "opus" => Color::Magenta,
+                "sonnet" => Color::Cyan,
+                "haiku" => Color::Yellow,
+                _ => Color::DarkGray,
+            },
+            Color::Cyan
+        );
+    }
     #[test]
-    fn test_mc_haiku() { assert_eq!(match "haiku" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::Yellow); }
+    fn test_mc_haiku() {
+        assert_eq!(
+            match "haiku" {
+                "opus" => Color::Magenta,
+                "sonnet" => Color::Cyan,
+                "haiku" => Color::Yellow,
+                _ => Color::DarkGray,
+            },
+            Color::Yellow
+        );
+    }
     #[test]
-    fn test_mc_gpt54() { assert_eq!(match "gpt-5.4" { "gpt-5.4"=>Color::Green, _=>Color::DarkGray }, Color::Green); }
+    fn test_mc_gpt54() {
+        assert_eq!(
+            match "gpt-5.4" {
+                "gpt-5.4" => Color::Green,
+                _ => Color::DarkGray,
+            },
+            Color::Green
+        );
+    }
     #[test]
-    fn test_mc_unknown() { assert_eq!(match "x" { "opus"=>Color::Magenta, "sonnet"=>Color::Cyan, "haiku"=>Color::Yellow, _=>Color::DarkGray }, Color::DarkGray); }
+    fn test_mc_unknown() {
+        assert_eq!(
+            match "x" {
+                "opus" => Color::Magenta,
+                "sonnet" => Color::Cyan,
+                "haiku" => Color::Yellow,
+                _ => Color::DarkGray,
+            },
+            Color::DarkGray
+        );
+    }
 
     // ── Search match ──
     #[test]
     fn test_search_empty() {
-        let m: Vec<(usize,usize,usize)> = vec![]; let f = "";
-        let i = if m.is_empty() { if f.is_empty() { String::new() } else { " 0/0 ".into() } } else { format!(" {}/{} ", 1, m.len()) };
+        let m: Vec<(usize, usize, usize)> = vec![];
+        let f = "";
+        let i = if m.is_empty() {
+            if f.is_empty() {
+                String::new()
+            } else {
+                " 0/0 ".into()
+            }
+        } else {
+            format!(" {}/{} ", 1, m.len())
+        };
         assert_eq!(i, "");
     }
     #[test]
     fn test_search_no_match() {
-        let i = if true { if false { String::new() } else { " 0/0 ".into() } } else { String::new() };
+        let i = if true {
+            if false {
+                String::new()
+            } else {
+                " 0/0 ".into()
+            }
+        } else {
+            String::new()
+        };
         assert_eq!(i, " 0/0 ");
     }
     #[test]
-    fn test_search_matches() { assert_eq!(format!(" {}/{} ", 1, 2), " 1/2 "); }
+    fn test_search_matches() {
+        assert_eq!(format!(" {}/{} ", 1, 2), " 1/2 ");
+    }
 
     // ── Exit code ──
     #[test]
     fn test_exit_0() {
-        let (t, c) = if 0==0 { (" exit:0 ".into(), Color::Green) } else { (format!(" exit:{} ", 0), Color::Red) };
-        assert_eq!(t, " exit:0 "); assert_eq!(c, Color::Green);
+        let (t, c) = if 0 == 0 {
+            (" exit:0 ".into(), Color::Green)
+        } else {
+            (format!(" exit:{} ", 0), Color::Red)
+        };
+        assert_eq!(t, " exit:0 ");
+        assert_eq!(c, Color::Green);
     }
     #[test]
     fn test_exit_1() {
-        let (t, c): (String, Color) = if 1==0 { (" exit:0 ".into(), Color::Green) } else { (format!(" exit:{} ", 1), Color::Red) };
-        assert_eq!(t, " exit:1 "); assert_eq!(c, Color::Red);
+        let (t, c): (String, Color) = if 1 == 0 {
+            (" exit:0 ".into(), Color::Green)
+        } else {
+            (format!(" exit:{} ", 1), Color::Red)
+        };
+        assert_eq!(t, " exit:1 ");
+        assert_eq!(c, Color::Red);
     }
 
     #[test]
-    fn test_azure_is_rgb() { assert!(matches!(AZURE, Color::Rgb(_, _, _))); }
+    fn test_azure_is_rgb() {
+        assert!(matches!(AZURE, Color::Rgb(_, _, _)));
+    }
 
     #[test]
     fn test_git_orange_red_channel_highest() {
-        if let Color::Rgb(r, g, b) = GIT_ORANGE { assert!(r > g && r > b); } else { panic!(); }
+        if let Color::Rgb(r, g, b) = GIT_ORANGE {
+            assert!(r > g && r > b);
+        } else {
+            panic!();
+        }
     }
 
     #[test]

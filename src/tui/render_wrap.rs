@@ -6,18 +6,25 @@ use textwrap::{wrap, Options};
 /// Wrap text to fit within max_width, returning wrapped lines.
 /// Fast path: if text fits in max_width, returns single-element vec without calling textwrap.
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
-    if text.is_empty() { return vec![String::new()]; }
+    if text.is_empty() {
+        return vec![String::new()];
+    }
     // Fast path: text fits in one line — skip textwrap entirely
     if text.chars().count() <= max_width && !text.contains('\n') {
         return vec![text.to_string()];
     }
     let opts = Options::new(max_width).break_words(true);
-    wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
+    wrap(text, opts)
+        .into_iter()
+        .map(|cow| cow.into_owned())
+        .collect()
 }
 
 /// Wrap spans to fit within max_width, preserving styles
 pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
-    if max_width == 0 { return vec![spans]; }
+    if max_width == 0 {
+        return vec![spans];
+    }
 
     let mut full_text = String::new();
     let mut style_ranges: Vec<(usize, usize, Style)> = Vec::new();
@@ -29,7 +36,9 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
         style_ranges.push((start, end, span.style));
     }
 
-    if full_text.is_empty() { return vec![vec![]]; }
+    if full_text.is_empty() {
+        return vec![vec![]];
+    }
 
     let opts = Options::new(max_width).break_words(true);
     let wrapped_lines: Vec<String> = wrap(&full_text, opts)
@@ -46,7 +55,9 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
         let mut line_spans: Vec<Span<'static>> = Vec::new();
 
         for &(range_start, range_end, style) in &style_ranges {
-            if range_end <= line_start || range_start >= line_end { continue; }
+            if range_end <= line_start || range_start >= line_end {
+                continue;
+            }
 
             let overlap_start = range_start.max(line_start);
             let overlap_end = range_end.min(line_end);
@@ -54,7 +65,11 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
             if overlap_start < overlap_end {
                 let local_start = overlap_start - line_start;
                 let local_end = overlap_end - line_start;
-                let text: String = wrapped.chars().skip(local_start).take(local_end - local_start).collect();
+                let text: String = wrapped
+                    .chars()
+                    .skip(local_start)
+                    .take(local_end - local_start)
+                    .collect();
                 if !text.is_empty() {
                     line_spans.push(Span::styled(text, style));
                 }
@@ -63,10 +78,14 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
 
         result.push(line_spans);
         char_offset = line_end;
-        if char_offset < full_text.len() { char_offset += 1; }
+        if char_offset < full_text.len() {
+            char_offset += 1;
+        }
     }
 
-    if result.is_empty() { result.push(vec![]); }
+    if result.is_empty() {
+        result.push(vec![]);
+    }
     result
 }
 
@@ -79,15 +98,24 @@ mod tests {
     fn s(text: &str, style: Style) -> Span<'static> {
         Span::styled(text.to_string(), style)
     }
-    fn plain() -> Style { Style::default() }
-    fn red() -> Style { Style::default().fg(Color::Red) }
-    fn blue() -> Style { Style::default().fg(Color::Blue) }
-    fn bold() -> Style { Style::default().add_modifier(Modifier::BOLD) }
+    fn plain() -> Style {
+        Style::default()
+    }
+    fn red() -> Style {
+        Style::default().fg(Color::Red)
+    }
+    fn blue() -> Style {
+        Style::default().fg(Color::Blue)
+    }
+    fn bold() -> Style {
+        Style::default().add_modifier(Modifier::BOLD)
+    }
 
     fn _texts_from(lines: &[Vec<Span<'static>>]) -> Vec<Vec<String>> {
-        lines.iter().map(|line| {
-            line.iter().map(|span| span.content.to_string()).collect()
-        }).collect()
+        lines
+            .iter()
+            .map(|line| line.iter().map(|span| span.content.to_string()).collect())
+            .collect()
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -400,11 +428,7 @@ mod tests {
 
     #[test]
     fn spans_each_char_own_span() {
-        let spans = vec![
-            s("a", red()),
-            s("b", blue()),
-            s("c", bold()),
-        ];
+        let spans = vec![s("a", red()), s("b", blue()), s("c", bold())];
         let result = wrap_spans(spans, 80);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].len(), 3);
@@ -412,12 +436,7 @@ mod tests {
 
     #[test]
     fn spans_each_char_own_span_wraps() {
-        let spans = vec![
-            s("a", red()),
-            s("b", blue()),
-            s("c", bold()),
-            s("d", red()),
-        ];
+        let spans = vec![s("a", red()), s("b", blue()), s("c", bold()), s("d", red())];
         let result = wrap_spans(spans, 2);
         assert!(result.len() >= 2);
     }
@@ -462,9 +481,9 @@ mod tests {
 
     #[test]
     fn spans_many_small_spans() {
-        let spans: Vec<Span<'static>> = (0..20).map(|i| {
-            s(&format!("w{} ", i), if i % 2 == 0 { red() } else { blue() })
-        }).collect();
+        let spans: Vec<Span<'static>> = (0..20)
+            .map(|i| s(&format!("w{} ", i), if i % 2 == 0 { red() } else { blue() }))
+            .collect();
         let result = wrap_spans(spans, 15);
         assert!(result.len() >= 2);
     }

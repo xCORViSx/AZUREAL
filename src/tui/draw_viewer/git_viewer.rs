@@ -11,12 +11,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
-use super::selection::apply_selection_to_line;
 use super::super::util::{GIT_BROWN, GIT_ORANGE};
+use super::selection::apply_selection_to_line;
+use crate::app::App;
 
 /// Git panel viewer — populates viewer_lines_cache for selection/copy/scroll support
-pub(super) fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rect, _is_focused: bool, viewport_height: usize) {
+pub(super) fn draw_git_viewer_selectable(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    _is_focused: bool,
+    viewport_height: usize,
+) {
     let (diff, title_str) = match app.git_actions_panel.as_ref() {
         Some(p) => (p.viewer_diff.clone(), p.viewer_diff_title.clone()),
         None => return,
@@ -28,7 +34,10 @@ pub(super) fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rec
     };
 
     let block = Block::default()
-        .title(Span::styled(&title, Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            &title,
+            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD));
@@ -40,20 +49,23 @@ pub(super) fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rec
     match diff {
         Some(ref diff_text) => {
             // Build styled lines from diff (no line number gutter — gutter=0)
-            let all_lines: Vec<Line<'static>> = diff_text.lines().map(|l| {
-                let style = if l.starts_with('+') && !l.starts_with("+++") {
-                    Style::default().fg(Color::Green)
-                } else if l.starts_with('-') && !l.starts_with("---") {
-                    Style::default().fg(Color::Red)
-                } else if l.starts_with("@@") {
-                    Style::default().fg(Color::Cyan)
-                } else if l.starts_with("diff ") || l.starts_with("index ") {
-                    Style::default().fg(GIT_BROWN)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                Line::from(Span::styled(format!(" {}", l), style))
-            }).collect();
+            let all_lines: Vec<Line<'static>> = diff_text
+                .lines()
+                .map(|l| {
+                    let style = if l.starts_with('+') && !l.starts_with("+++") {
+                        Style::default().fg(Color::Green)
+                    } else if l.starts_with('-') && !l.starts_with("---") {
+                        Style::default().fg(Color::Red)
+                    } else if l.starts_with("@@") {
+                        Style::default().fg(Color::Cyan)
+                    } else if l.starts_with("diff ") || l.starts_with("index ") {
+                        Style::default().fg(GIT_BROWN)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    Line::from(Span::styled(format!(" {}", l), style))
+                })
+                .collect();
 
             // Populate cache for selection/copy infrastructure
             app.viewer_lines_cache = all_lines;
@@ -61,19 +73,33 @@ pub(super) fn draw_git_viewer_selectable(f: &mut Frame, app: &mut App, area: Rec
             let scroll = app.viewer_scroll;
 
             // Build viewport slice with selection highlighting
-            let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+            let display_lines: Vec<Line> = app
+                .viewer_lines_cache
+                .iter()
                 .enumerate()
                 .skip(scroll)
                 .take(viewport_height)
                 .map(|(idx, line)| {
                     if let Some((sl, sc, el, ec)) = app.viewer_selection {
                         if idx >= sl && idx <= el {
-                            let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                            let content: String =
+                                line.spans.iter().map(|s| s.content.as_ref()).collect();
                             Line::from(apply_selection_to_line(
-                                line.spans.clone(), &content, idx, sl, sc, el, ec, 0,
+                                line.spans.clone(),
+                                &content,
+                                idx,
+                                sl,
+                                sc,
+                                el,
+                                ec,
+                                0,
                             ))
-                        } else { line.clone() }
-                    } else { line.clone() }
+                        } else {
+                            line.clone()
+                        }
+                    } else {
+                        line.clone()
+                    }
                 })
                 .collect();
 
@@ -119,10 +145,12 @@ mod tests {
     // ── Helper: build styled lines from a diff string (mirrors production logic) ──
 
     fn build_diff_lines(diff: &str) -> Vec<Line<'static>> {
-        diff.lines().map(|l| {
-            let style = style_for_diff_line(l);
-            Line::from(Span::styled(format!(" {}", l), style))
-        }).collect()
+        diff.lines()
+            .map(|l| {
+                let style = style_for_diff_line(l);
+                Line::from(Span::styled(format!(" {}", l), style))
+            })
+            .collect()
     }
 
     // ── 1. Addition lines ──
@@ -285,7 +313,10 @@ mod tests {
     fn test_build_diff_lines_prepends_space() {
         let lines = build_diff_lines("+added");
         let content: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(content.starts_with(' '), "Lines should be prefixed with a space");
+        assert!(
+            content.starts_with(' '),
+            "Lines should be prefixed with a space"
+        );
     }
 
     #[test]
@@ -447,7 +478,10 @@ index abc1234..def5678 100644
 
     #[test]
     fn test_build_diff_lines_many_additions() {
-        let diff = (0..20).map(|i| format!("+line{}", i)).collect::<Vec<_>>().join("\n");
+        let diff = (0..20)
+            .map(|i| format!("+line{}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let lines = build_diff_lines(&diff);
         assert_eq!(lines.len(), 20);
         for line in &lines {
@@ -458,7 +492,10 @@ index abc1234..def5678 100644
 
     #[test]
     fn test_build_diff_lines_many_deletions() {
-        let diff = (0..15).map(|i| format!("-line{}", i)).collect::<Vec<_>>().join("\n");
+        let diff = (0..15)
+            .map(|i| format!("-line{}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let lines = build_diff_lines(&diff);
         assert_eq!(lines.len(), 15);
         for line in &lines {
@@ -488,7 +525,11 @@ index abc1234..def5678 100644
         let diff = "+a\n-b\n c\n@@d@@\ndiff e\nindex f";
         let lines = build_diff_lines(diff);
         for line in &lines {
-            assert_eq!(line.spans.len(), 1, "Each diff line should have exactly one span");
+            assert_eq!(
+                line.spans.len(),
+                1,
+                "Each diff line should have exactly one span"
+            );
         }
     }
 

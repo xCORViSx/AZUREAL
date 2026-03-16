@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 /// Check if the binary needs installation. If so, install and return true (caller should exit).
 /// Returns false for normal startup (already installed or running from cargo build dir).
 pub fn maybe_self_install() -> bool {
-    let exe = match std::env::current_exe().and_then(|p| dunce::canonicalize(&p).map_err(Into::into))
-    {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
+    let exe =
+        match std::env::current_exe().and_then(|p| dunce::canonicalize(&p).map_err(Into::into)) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
 
     // Skip if running from a cargo build directory (development)
     let exe_str = exe.to_string_lossy();
@@ -27,7 +27,11 @@ pub fn maybe_self_install() -> bool {
     }
 
     // Skip if `azureal` is already findable in PATH (installed elsewhere)
-    let bin_name = if cfg!(windows) { "azureal.exe" } else { "azureal" };
+    let bin_name = if cfg!(windows) {
+        "azureal.exe"
+    } else {
+        "azureal"
+    };
     if let Some(path_var) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path_var) {
             if dir.join(bin_name).is_file() {
@@ -63,12 +67,18 @@ fn is_in_path(exe: &Path) -> bool {
 fn do_install(exe: &Path) -> bool {
     println!();
     println!("  \x1b[36m╔══════════════════════════════════════╗\x1b[0m");
-    println!("  \x1b[36m║\x1b[0m     \x1b[1;36mAZUREAL\x1b[0m — First Run Setup     \x1b[36m║\x1b[0m");
+    println!(
+        "  \x1b[36m║\x1b[0m     \x1b[1;36mAZUREAL\x1b[0m — First Run Setup     \x1b[36m║\x1b[0m"
+    );
     println!("  \x1b[36m╚══════════════════════════════════════╝\x1b[0m");
     println!();
 
     let install_dir = pick_install_dir();
-    let install_path = install_dir.join(if cfg!(windows) { "azureal.exe" } else { "azureal" });
+    let install_path = install_dir.join(if cfg!(windows) {
+        "azureal.exe"
+    } else {
+        "azureal"
+    });
 
     println!("  Installing to: \x1b[1m{}\x1b[0m", install_path.display());
     println!();
@@ -167,11 +177,7 @@ fn try_copy(src: &Path, dst: &Path) -> bool {
                 }
                 _ => {
                     eprintln!("  \x1b[31mInstallation failed. Try manually:\x1b[0m");
-                    eprintln!(
-                        "    sudo cp {} {}",
-                        src.display(),
-                        dst.display()
-                    );
+                    eprintln!("    sudo cp {} {}", src.display(), dst.display());
                     false
                 }
             }
@@ -242,7 +248,10 @@ fn add_to_shell_profile(dir: &Path) -> bool {
     };
 
     let dir_str = dir.to_string_lossy();
-    let export_line = format!("\n# Added by AZUREAL installer\nexport PATH=\"{}:$PATH\"\n", dir_str);
+    let export_line = format!(
+        "\n# Added by AZUREAL installer\nexport PATH=\"{}:$PATH\"\n",
+        dir_str
+    );
 
     // Pick the right shell profile
     let shell = std::env::var("SHELL").unwrap_or_default();

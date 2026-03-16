@@ -18,9 +18,7 @@ pub fn build_context_prompt(payload: &ContextPayload, user_prompt: &str) -> Stri
     if transcript.is_empty() {
         return user_prompt.to_string();
     }
-    format!(
-        "{CONTEXT_OPEN}\n{transcript}\n{CONTEXT_CLOSE}\n\n{user_prompt}"
-    )
+    format!("{CONTEXT_OPEN}\n{transcript}\n{CONTEXT_CLOSE}\n\n{user_prompt}")
 }
 
 /// Strip injected context from a user message content string.
@@ -58,13 +56,11 @@ fn build_transcript(payload: &ContextPayload) -> String {
 /// Format a single DisplayEvent into a transcript line for context injection.
 fn format_event(event: &DisplayEvent) -> Option<String> {
     match event {
-        DisplayEvent::UserMessage { content, .. } => {
-            Some(format!("## User\n{content}\n"))
-        }
-        DisplayEvent::AssistantText { text, .. } => {
-            Some(format!("## Assistant\n{text}\n"))
-        }
-        DisplayEvent::ToolCall { tool_name, input, .. } => {
+        DisplayEvent::UserMessage { content, .. } => Some(format!("## User\n{content}\n")),
+        DisplayEvent::AssistantText { text, .. } => Some(format!("## Assistant\n{text}\n")),
+        DisplayEvent::ToolCall {
+            tool_name, input, ..
+        } => {
             let param = extract_key_param(tool_name, input);
             if param.is_empty() {
                 Some(format!("## Tool: {tool_name}\n"))
@@ -72,20 +68,27 @@ fn format_event(event: &DisplayEvent) -> Option<String> {
                 Some(format!("## Tool: {tool_name} ({param})\n"))
             }
         }
-        DisplayEvent::ToolResult { tool_name, content, is_error, .. } => {
+        DisplayEvent::ToolResult {
+            tool_name,
+            content,
+            is_error,
+            ..
+        } => {
             let prefix = if *is_error { "Error" } else { "Result" };
             let compact = compact_result(content);
             Some(format!("[{prefix}: {tool_name}] {compact}\n"))
         }
-        DisplayEvent::Plan { name, content, .. } => {
-            Some(format!("## Plan: {name}\n{content}\n"))
-        }
-        DisplayEvent::Command { name } => {
-            Some(format!("## Command: {name}\n"))
-        }
-        DisplayEvent::Complete { duration_ms, cost_usd, .. } => {
-            Some(format!("[Session complete: {:.1}s, ${:.4}]\n", *duration_ms as f64 / 1000.0, cost_usd))
-        }
+        DisplayEvent::Plan { name, content, .. } => Some(format!("## Plan: {name}\n{content}\n")),
+        DisplayEvent::Command { name } => Some(format!("## Command: {name}\n")),
+        DisplayEvent::Complete {
+            duration_ms,
+            cost_usd,
+            ..
+        } => Some(format!(
+            "[Session complete: {:.1}s, ${:.4}]\n",
+            *duration_ms as f64 / 1000.0,
+            cost_usd
+        )),
         // Omit non-content events
         DisplayEvent::Init { .. }
         | DisplayEvent::Hook { .. }
@@ -112,7 +115,8 @@ fn extract_key_param(tool_name: &str, input: &serde_json::Value) -> String {
         "LSP" | "lsp" => "operation",
         _ => "file_path",
     };
-    input.get(key)
+    input
+        .get(key)
         .or_else(|| input.get("path"))
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -122,12 +126,20 @@ fn extract_key_param(tool_name: &str, input: &serde_json::Value) -> String {
 /// Compact a tool result to a reasonable length for context injection.
 /// Keeps first 3 lines + count for long results.
 fn compact_result(content: &str) -> String {
-    let content = content.split("<system-reminder>").next().unwrap_or(content).trim_end();
+    let content = content
+        .split("<system-reminder>")
+        .next()
+        .unwrap_or(content)
+        .trim_end();
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() <= 3 {
         content.to_string()
     } else {
-        format!("{}\n(+{} more lines)", lines[..3].join("\n"), lines.len() - 3)
+        format!(
+            "{}\n(+{} more lines)",
+            lines[..3].join("\n"),
+            lines.len() - 3
+        )
     }
 }
 
@@ -159,15 +171,25 @@ mod tests {
     use super::*;
 
     fn empty_payload() -> ContextPayload {
-        ContextPayload { compaction_summary: None, events: vec![] }
+        ContextPayload {
+            compaction_summary: None,
+            events: vec![],
+        }
     }
 
     fn simple_payload() -> ContextPayload {
         ContextPayload {
             compaction_summary: None,
             events: vec![
-                DisplayEvent::UserMessage { _uuid: String::new(), content: "fix the bug".into() },
-                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "I'll look at it.".into() },
+                DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "fix the bug".into(),
+                },
+                DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "I'll look at it.".into(),
+                },
             ],
         }
     }
@@ -240,7 +262,10 @@ mod tests {
 
     #[test]
     fn format_user_message() {
-        let ev = DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() };
+        let ev = DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "hello".into(),
+        };
         let line = format_event(&ev).unwrap();
         assert!(line.starts_with("## User\n"));
         assert!(line.contains("hello"));
@@ -248,7 +273,11 @@ mod tests {
 
     #[test]
     fn format_assistant_text() {
-        let ev = DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() };
+        let ev = DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: "hi".into(),
+        };
         let line = format_event(&ev).unwrap();
         assert!(line.starts_with("## Assistant\n"));
     }
@@ -307,7 +336,11 @@ mod tests {
 
     #[test]
     fn format_init_returns_none() {
-        let ev = DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: String::new() };
+        let ev = DisplayEvent::Init {
+            _session_id: String::new(),
+            cwd: String::new(),
+            model: String::new(),
+        };
         assert!(format_event(&ev).is_none());
     }
 
@@ -323,19 +356,27 @@ mod tests {
 
     #[test]
     fn format_hook_returns_none() {
-        let ev = DisplayEvent::Hook { name: "x".into(), output: "y".into() };
+        let ev = DisplayEvent::Hook {
+            name: "x".into(),
+            output: "y".into(),
+        };
         assert!(format_event(&ev).is_none());
     }
 
     #[test]
     fn format_model_switch_returns_none() {
-        let ev = DisplayEvent::ModelSwitch { model: "gpt-5.4".into() };
+        let ev = DisplayEvent::ModelSwitch {
+            model: "gpt-5.4".into(),
+        };
         assert!(format_event(&ev).is_none());
     }
 
     #[test]
     fn format_plan() {
-        let ev = DisplayEvent::Plan { name: "refactor".into(), content: "step 1".into() };
+        let ev = DisplayEvent::Plan {
+            name: "refactor".into(),
+            content: "step 1".into(),
+        };
         let line = format_event(&ev).unwrap();
         assert!(line.contains("## Plan: refactor"));
         assert!(line.contains("step 1"));
@@ -343,7 +384,9 @@ mod tests {
 
     #[test]
     fn format_command() {
-        let ev = DisplayEvent::Command { name: "/compact".into() };
+        let ev = DisplayEvent::Command {
+            name: "/compact".into(),
+        };
         let line = format_event(&ev).unwrap();
         assert!(line.contains("## Command: /compact"));
     }
@@ -351,7 +394,10 @@ mod tests {
     #[test]
     fn format_complete() {
         let ev = DisplayEvent::Complete {
-            _session_id: String::new(), success: true, duration_ms: 5000, cost_usd: 0.05
+            _session_id: String::new(),
+            success: true,
+            duration_ms: 5000,
+            cost_usd: 0.05,
         };
         let line = format_event(&ev).unwrap();
         assert!(line.contains("5.0s"));
@@ -417,9 +463,10 @@ mod tests {
     fn transcript_with_compaction_summary() {
         let payload = ContextPayload {
             compaction_summary: Some("Previously: fixed auth bug, added tests.".into()),
-            events: vec![
-                DisplayEvent::UserMessage { _uuid: String::new(), content: "now what?".into() },
-            ],
+            events: vec![DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "now what?".into(),
+            }],
         };
         let transcript = build_transcript(&payload);
         assert!(transcript.contains("[Previous conversation summary]"));
@@ -475,9 +522,10 @@ mod tests {
     fn compaction_prompt_with_compaction_summary() {
         let payload = ContextPayload {
             compaction_summary: Some("Previously fixed auth.".into()),
-            events: vec![
-                DisplayEvent::UserMessage { _uuid: String::new(), content: "next task".into() },
-            ],
+            events: vec![DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "next task".into(),
+            }],
         };
         let prompt = build_compaction_prompt(&payload);
         assert!(prompt.contains("[Previous conversation summary]"));

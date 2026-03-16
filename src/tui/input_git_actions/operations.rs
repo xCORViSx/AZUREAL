@@ -4,8 +4,10 @@
 //! Each operation updates the panel's result_message on success/failure.
 //! Auto-resolve logic uses union merge for configured files.
 
+use crate::app::types::{
+    BackgroundRebaseOutcome, GitActionsPanel, GitChangedFile, GitCommitOverlay,
+};
 use crate::app::App;
-use crate::app::types::{BackgroundRebaseOutcome, GitActionsPanel, GitChangedFile, GitCommitOverlay};
 use crate::git::{Git, SquashMergeResult};
 
 /// Rebase outcome for the UI to display
@@ -14,7 +16,11 @@ pub(crate) enum RebaseOutcome {
     UpToDate,
     /// Conflict — rebase is left in progress (NOT aborted) so RCR can resolve.
     /// Contains (conflicted_files, auto_merged_files, raw_output).
-    Conflict { conflicted: Vec<String>, auto_merged: Vec<String>, _raw_output: String },
+    Conflict {
+        conflicted: Vec<String>,
+        auto_merged: Vec<String>,
+        _raw_output: String,
+    },
     Failed(String),
 }
 
@@ -52,25 +58,44 @@ fn union_merge_file(worktree_path: &std::path::Path, file: &str) -> bool {
 
     // Extract the 3 stages: :1 = base, :2 = ours (onto target), :3 = theirs (replayed commit)
     let base = std::process::Command::new("git")
-        .args(["show", &format!(":1:{}", file)]).current_dir(worktree_path).output();
+        .args(["show", &format!(":1:{}", file)])
+        .current_dir(worktree_path)
+        .output();
     let ours = std::process::Command::new("git")
-        .args(["show", &format!(":2:{}", file)]).current_dir(worktree_path).output();
+        .args(["show", &format!(":2:{}", file)])
+        .current_dir(worktree_path)
+        .output();
     let theirs = std::process::Command::new("git")
-        .args(["show", &format!(":3:{}", file)]).current_dir(worktree_path).output();
+        .args(["show", &format!(":3:{}", file)])
+        .current_dir(worktree_path)
+        .output();
 
-    let (Ok(base), Ok(ours), Ok(theirs)) = (base, ours, theirs) else { return false };
-    if !base.status.success() || !ours.status.success() || !theirs.status.success() { return false; }
+    let (Ok(base), Ok(ours), Ok(theirs)) = (base, ours, theirs) else {
+        return false;
+    };
+    if !base.status.success() || !ours.status.success() || !theirs.status.success() {
+        return false;
+    }
 
-    if std::fs::write(&base_p, &base.stdout).is_err() { return false; }
-    if std::fs::write(&ours_p, &ours.stdout).is_err() { return false; }
-    if std::fs::write(&theirs_p, &theirs.stdout).is_err() { return false; }
+    if std::fs::write(&base_p, &base.stdout).is_err() {
+        return false;
+    }
+    if std::fs::write(&ours_p, &ours.stdout).is_err() {
+        return false;
+    }
+    if std::fs::write(&theirs_p, &theirs.stdout).is_err() {
+        return false;
+    }
 
     // Union merge — modifies ours_p in place, exit 0 = clean, 1 = overlaps resolved
     let merge = std::process::Command::new("git")
-        .args(["merge-file", "--union",
+        .args([
+            "merge-file",
+            "--union",
             ours_p.to_str().unwrap_or(""),
             base_p.to_str().unwrap_or(""),
-            theirs_p.to_str().unwrap_or("")])
+            theirs_p.to_str().unwrap_or(""),
+        ])
         .output();
 
     let ok = match merge {
@@ -83,7 +108,9 @@ fn union_merge_file(worktree_path: &std::path::Path, file: &str) -> bool {
             let file_path = worktree_path.join(file);
             let _ = std::fs::write(&file_path, result);
             let _ = std::process::Command::new("git")
-                .args(["add", "--", file]).current_dir(worktree_path).output();
+                .args(["add", "--", file])
+                .current_dir(worktree_path)
+                .output();
         }
     }
 
@@ -104,11 +131,17 @@ fn try_auto_resolve_conflicts(
     auto_resolve_files: &[String],
 ) -> Option<RebaseOutcome> {
     let all_resolvable = !conflicted.is_empty()
-        && conflicted.iter().all(|f| auto_resolve_files.iter().any(|af| af == f));
-    if !all_resolvable { return None; }
+        && conflicted
+            .iter()
+            .all(|f| auto_resolve_files.iter().any(|af| af == f));
+    if !all_resolvable {
+        return None;
+    }
 
     for file in conflicted {
-        if !union_merge_file(worktree_path, file) { return None; }
+        if !union_merge_file(worktree_path, file) {
+            return None;
+        }
     }
 
     // Continue rebase — loop in case the next commit also has auto-resolvable conflicts
@@ -132,7 +165,9 @@ fn try_auto_resolve_conflicts(
                 }
                 let (new_conflicts, new_auto) = parse_conflict_files(text, worktree_path);
                 let still_resolvable = !new_conflicts.is_empty()
-                    && new_conflicts.iter().all(|f| auto_resolve_files.iter().any(|af| af == f));
+                    && new_conflicts
+                        .iter()
+                        .all(|f| auto_resolve_files.iter().any(|af| af == f));
                 if !still_resolvable {
                     return Some(RebaseOutcome::Conflict {
                         conflicted: new_conflicts,
@@ -174,7 +209,9 @@ pub(crate) fn exec_rebase_inner(
         .current_dir(worktree_path)
         .output();
     if let (Ok(b), Ok(t)) = (&base, &tip) {
-        if b.stdout == t.stdout { return RebaseOutcome::UpToDate; }
+        if b.stdout == t.stdout {
+            return RebaseOutcome::UpToDate;
+        }
     }
 
     // Stash any dirty working tree (.DS_Store, swap files, etc.) so rebase
@@ -193,7 +230,9 @@ pub(crate) fn exec_rebase_inner(
     // --onto with explicit fork point replays ONLY branch-specific commits.
     // Plain `git rebase main` can replay squash merge commits from other
     // branches that ended up in this branch's history, causing hangs.
-    let fork_point = base.as_ref().ok()
+    let fork_point = base
+        .as_ref()
+        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
     let output = if !fork_point.is_empty() {
@@ -204,7 +243,12 @@ pub(crate) fn exec_rebase_inner(
         {
             Ok(o) => o,
             Err(e) => {
-                if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+                if stashed {
+                    let _ = std::process::Command::new("git")
+                        .args(["stash", "pop"])
+                        .current_dir(worktree_path)
+                        .output();
+                }
                 return RebaseOutcome::Failed(e.to_string());
             }
         }
@@ -216,34 +260,64 @@ pub(crate) fn exec_rebase_inner(
         {
             Ok(o) => o,
             Err(e) => {
-                if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+                if stashed {
+                    let _ = std::process::Command::new("git")
+                        .args(["stash", "pop"])
+                        .current_dir(worktree_path)
+                        .output();
+                }
                 return RebaseOutcome::Failed(e.to_string());
             }
         }
     };
 
     if output.status.success() {
-        if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+        if stashed {
+            let _ = std::process::Command::new("git")
+                .args(["stash", "pop"])
+                .current_dir(worktree_path)
+                .output();
+        }
         return RebaseOutcome::Rebased;
     }
 
-    let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let text = combined.trim();
     if text.contains("CONFLICT") || text.contains("could not apply") {
         let (conflicted, auto_merged) = parse_conflict_files(text, worktree_path);
 
         // Auto-resolve via union merge if ALL conflicts are in the auto-resolve list
-        if let Some(outcome) = try_auto_resolve_conflicts(worktree_path, &conflicted, auto_resolve_files) {
-            if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+        if let Some(outcome) =
+            try_auto_resolve_conflicts(worktree_path, &conflicted, auto_resolve_files)
+        {
+            if stashed {
+                let _ = std::process::Command::new("git")
+                    .args(["stash", "pop"])
+                    .current_dir(worktree_path)
+                    .output();
+            }
             return outcome;
         }
 
         // Non-auto-resolve conflicts — leave rebase in progress for RCR resolution.
         // Stash stays; popped after RCR accept/abort.
-        return RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output: text.to_string() };
+        return RebaseOutcome::Conflict {
+            conflicted,
+            auto_merged,
+            _raw_output: text.to_string(),
+        };
     }
 
-    if stashed { let _ = std::process::Command::new("git").args(["stash", "pop"]).current_dir(worktree_path).output(); }
+    if stashed {
+        let _ = std::process::Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(worktree_path)
+            .output();
+    }
     RebaseOutcome::Failed(text.to_string())
 }
 
@@ -257,7 +331,8 @@ pub(super) fn exec_rebase(app: &mut App) {
     if let Some(ref p) = app.git_actions_panel {
         if !p.changed_files.is_empty() {
             if let Some(ref mut p) = app.git_actions_panel {
-                p.result_message = Some(("Commit or stash changes first before rebasing".into(), true));
+                p.result_message =
+                    Some(("Commit or stash changes first before rebasing".into(), true));
             }
             return;
         }
@@ -279,9 +354,14 @@ pub(super) fn exec_rebase(app: &mut App) {
                 BackgroundRebaseOutcome::Rebased(format!("Rebased onto main{}", push_note))
             }
             RebaseOutcome::UpToDate => BackgroundRebaseOutcome::UpToDate,
-            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
-                BackgroundRebaseOutcome::Conflict { conflicted, auto_merged }
-            }
+            RebaseOutcome::Conflict {
+                conflicted,
+                auto_merged,
+                ..
+            } => BackgroundRebaseOutcome::Conflict {
+                conflicted,
+                auto_merged,
+            },
             RebaseOutcome::Failed(e) => BackgroundRebaseOutcome::Failed(e),
         };
         let _ = tx.send(outcome);
@@ -293,17 +373,26 @@ pub(super) fn exec_rebase(app: &mut App) {
 /// Progress updates flow through `panel.squash_merge_receiver` and are polled
 /// in the event loop to show real-time phase messages in the loading dialog.
 pub(super) fn exec_squash_merge(app: &mut App) {
+    use crate::app::types::{SquashMergeOutcome, SquashMergeProgress};
     use std::sync::mpsc;
-    use crate::app::types::{SquashMergeProgress, SquashMergeOutcome};
 
     let (repo_root, branch, wt_path, main_branch, ar_files) = match app.git_actions_panel.as_ref() {
-        Some(p) => (p.repo_root.clone(), p.worktree_name.clone(), p.worktree_path.clone(), p.main_branch.clone(), p.auto_resolve_files.clone()),
+        Some(p) => (
+            p.repo_root.clone(),
+            p.worktree_name.clone(),
+            p.worktree_path.clone(),
+            p.main_branch.clone(),
+            p.auto_resolve_files.clone(),
+        ),
         None => return,
     };
     // Dirty check is fast — keep synchronous
     if let Some(ref mut p) = app.git_actions_panel {
         if !p.changed_files.is_empty() {
-            p.result_message = Some(("Commit your changes first (c) before squash merging".into(), true));
+            p.result_message = Some((
+                "Commit your changes first (c) before squash merging".into(),
+                true,
+            ));
             return;
         }
     }
@@ -323,17 +412,27 @@ pub(super) fn exec_squash_merge(app: &mut App) {
         });
 
         match exec_rebase_inner(&wt_path, &main_branch, &ar_files) {
-            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+            RebaseOutcome::Conflict {
+                conflicted,
+                auto_merged,
+                ..
+            } => {
                 let _ = tx.send(SquashMergeProgress {
                     phase: String::new(),
-                    outcome: Some(SquashMergeOutcome::Conflict { conflicted, auto_merged }),
+                    outcome: Some(SquashMergeOutcome::Conflict {
+                        conflicted,
+                        auto_merged,
+                    }),
                 });
                 return;
             }
             RebaseOutcome::Failed(msg) => {
                 let _ = tx.send(SquashMergeProgress {
                     phase: String::new(),
-                    outcome: Some(SquashMergeOutcome::Failed(format!("Rebase failed: {}", msg))),
+                    outcome: Some(SquashMergeOutcome::Failed(format!(
+                        "Rebase failed: {}",
+                        msg
+                    ))),
                 });
                 return;
             }
@@ -381,10 +480,17 @@ pub(super) fn exec_squash_merge(app: &mut App) {
                     }),
                 });
             }
-            Ok(SquashMergeResult::Conflict { conflicted, auto_merged, .. }) => {
+            Ok(SquashMergeResult::Conflict {
+                conflicted,
+                auto_merged,
+                ..
+            }) => {
                 let _ = tx.send(SquashMergeProgress {
                     phase: String::new(),
-                    outcome: Some(SquashMergeOutcome::Conflict { conflicted, auto_merged }),
+                    outcome: Some(SquashMergeOutcome::Conflict {
+                        conflicted,
+                        auto_merged,
+                    }),
                 });
             }
             Err(e) => {
@@ -399,8 +505,8 @@ pub(super) fn exec_squash_merge(app: &mut App) {
 
 /// Pull latest changes from remote (for main branch)
 pub(super) fn exec_pull(app: &mut App) {
+    use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
     use std::sync::mpsc;
-    use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
     let wt = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_path.clone(),
         None => return,
@@ -425,8 +531,8 @@ pub(super) fn exec_pull(app: &mut App) {
 
 /// Push the current worktree branch to remote
 pub(super) fn exec_push(app: &mut App) {
+    use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
     use std::sync::mpsc;
-    use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
     let wt = match app.git_actions_panel.as_ref() {
         Some(p) => p.worktree_path.clone(),
         None => return,
@@ -462,7 +568,8 @@ pub(super) fn exec_commit_start(app: &mut App) {
     let has_unstaged = files_snapshot.iter().any(|f| !f.staged);
     if has_unstaged {
         // User explicitly unstaged some files — stage only the selected ones
-        let staged_paths: Vec<&str> = files_snapshot.iter()
+        let staged_paths: Vec<&str> = files_snapshot
+            .iter()
             .filter(|f| f.staged)
             .map(|f| f.path.as_str())
             .collect();
@@ -515,14 +622,19 @@ pub(super) fn exec_commit_start(app: &mut App) {
     let stat = Git::get_staged_stat(&wt).unwrap_or_default();
 
     let claude_bin = crate::azufig::load_global_azufig()
-        .config.claude_executable
+        .config
+        .claude_executable
         .unwrap_or_else(|| "claude".into());
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();
     std::thread::spawn(move || {
         let max_diff = 30_000;
-        let diff_trimmed = if diff.len() > max_diff { &diff[..max_diff] } else { &diff };
+        let diff_trimmed = if diff.len() > max_diff {
+            &diff[..max_diff]
+        } else {
+            &diff
+        };
         let prompt = format!(
             "Write a conventional commit message for this diff. Format: type: short description (under 72 chars) on the first line, then a blank line, then optional bullet points for details. Types: feat, fix, refactor, docs, test, chore. Output ONLY the commit message, nothing else.\n\n--- stat ---\n{}\n--- diff ---\n{}",
             stat, diff_trimmed
@@ -543,7 +655,9 @@ pub(super) fn exec_commit_start(app: &mut App) {
                 let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
                 let _ = tx.send(Err(format!("Claude failed: {}", err)));
             }
-            Err(e) => { let _ = tx.send(Err(format!("Failed to run claude: {}", e))); }
+            Err(e) => {
+                let _ = tx.send(Err(format!("Failed to run claude: {}", e)));
+            }
         }
     });
 
@@ -562,30 +676,55 @@ pub(super) fn exec_commit_start(app: &mut App) {
 pub(crate) fn refresh_changed_files(panel: &mut GitActionsPanel) {
     match Git::get_diff_files(&panel.worktree_path, &panel.main_branch) {
         Ok(files) => {
-            panel.changed_files = files.into_iter().map(|(path, status, add, del, staged)| {
-                GitChangedFile { path, status, additions: add, deletions: del, staged }
-            }).collect();
+            panel.changed_files = files
+                .into_iter()
+                .map(|(path, status, add, del, staged)| GitChangedFile {
+                    path,
+                    status,
+                    additions: add,
+                    deletions: del,
+                    staged,
+                })
+                .collect();
             if panel.selected_file >= panel.changed_files.len() {
                 panel.selected_file = panel.changed_files.len().saturating_sub(1);
             }
         }
-        Err(_) => { panel.changed_files.clear(); panel.selected_file = 0; }
+        Err(_) => {
+            panel.changed_files.clear();
+            panel.selected_file = 0;
+        }
     }
 }
 
 /// Re-fetch the commit log from git (called after commit/push operations)
 pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
-    let log_main = if panel.is_on_main { None } else { Some(panel.main_branch.as_str()) };
+    let log_main = if panel.is_on_main {
+        None
+    } else {
+        Some(panel.main_branch.as_str())
+    };
     match Git::get_commit_log(&panel.worktree_path, 200, log_main) {
         Ok(entries) => {
-            panel.commits = entries.into_iter().map(|(hash, full_hash, subject, is_pushed)| {
-                crate::app::types::GitCommit { hash, full_hash, subject, is_pushed }
-            }).collect();
+            panel.commits = entries
+                .into_iter()
+                .map(
+                    |(hash, full_hash, subject, is_pushed)| crate::app::types::GitCommit {
+                        hash,
+                        full_hash,
+                        subject,
+                        is_pushed,
+                    },
+                )
+                .collect();
             if panel.selected_commit >= panel.commits.len() {
                 panel.selected_commit = panel.commits.len().saturating_sub(1);
             }
         }
-        Err(_) => { panel.commits.clear(); panel.selected_commit = 0; }
+        Err(_) => {
+            panel.commits.clear();
+            panel.selected_commit = 0;
+        }
     }
     if !panel.is_on_main {
         let (behind, ahead) = Git::get_main_divergence(&panel.worktree_path, &panel.main_branch);
@@ -641,7 +780,12 @@ mod tests {
             auto_merged: vec![],
             _raw_output: "raw".into(),
         };
-        if let RebaseOutcome::Conflict { conflicted, auto_merged, _raw_output } = outcome {
+        if let RebaseOutcome::Conflict {
+            conflicted,
+            auto_merged,
+            _raw_output,
+        } = outcome
+        {
             assert_eq!(conflicted.len(), 2);
             assert!(auto_merged.is_empty());
             assert_eq!(_raw_output, "raw");
@@ -663,7 +807,8 @@ mod tests {
     #[test]
     fn parse_conflict_files_basic_conflict() {
         let text = "CONFLICT (content): Merge conflict in src/main.rs\nAuto-merging Cargo.lock";
-        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        let (conflicted, auto_merged) =
+            parse_conflict_files(text, std::path::Path::new("/nonexistent"));
         assert_eq!(conflicted, vec!["src/main.rs"]);
         assert_eq!(auto_merged, vec!["Cargo.lock"]);
     }
@@ -673,7 +818,8 @@ mod tests {
         // When no CONFLICT lines, parse_conflict_files returns empty (Git::get_conflicted_files
         // would fail on nonexistent path, but the Vec is still populated or empty)
         let text = "Auto-merging Cargo.lock\nAlready up to date.";
-        let (_conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        let (_conflicted, auto_merged) =
+            parse_conflict_files(text, std::path::Path::new("/nonexistent"));
         assert_eq!(auto_merged, vec!["Cargo.lock"]);
     }
 
@@ -694,7 +840,8 @@ mod tests {
     #[test]
     fn parse_conflict_files_empty_text() {
         let text = "";
-        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        let (conflicted, auto_merged) =
+            parse_conflict_files(text, std::path::Path::new("/nonexistent"));
         // conflicted may be empty or populated by Git::get_conflicted_files fallback
         // auto_merged is definitely empty
         assert!(auto_merged.is_empty());
@@ -719,8 +866,8 @@ mod tests {
     fn auto_resolve_empty_conflicted_returns_none() {
         let conflicted: Vec<String> = vec![];
         let ar_files = vec!["Cargo.lock".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(!all_resolvable);
     }
 
@@ -728,8 +875,8 @@ mod tests {
     fn auto_resolve_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string()];
         let ar_files = vec!["Cargo.lock".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(all_resolvable);
     }
 
@@ -737,8 +884,8 @@ mod tests {
     fn auto_resolve_not_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "src/main.rs".to_string()];
         let ar_files = vec!["Cargo.lock".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(!all_resolvable);
     }
 
@@ -746,8 +893,8 @@ mod tests {
     fn auto_resolve_empty_ar_files() {
         let conflicted = vec!["a.rs".to_string()];
         let ar_files: Vec<String> = vec![];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(!all_resolvable);
     }
 
@@ -760,7 +907,9 @@ mod tests {
         let ov = GitConflictOverlay {
             conflicted_files: vec!["a.rs".into()],
             auto_merged_files: vec![],
-            scroll: 0, selected: 0, continue_with_merge: false,
+            scroll: 0,
+            selected: 0,
+            continue_with_merge: false,
         };
         assert!(!ov.continue_with_merge);
     }
@@ -768,8 +917,11 @@ mod tests {
     #[test]
     fn conflict_overlay_construction_merge() {
         let ov = GitConflictOverlay {
-            conflicted_files: vec![], auto_merged_files: vec![],
-            scroll: 0, selected: 0, continue_with_merge: true,
+            conflicted_files: vec![],
+            auto_merged_files: vec![],
+            scroll: 0,
+            selected: 0,
+            continue_with_merge: true,
         };
         assert!(ov.continue_with_merge);
     }
@@ -781,7 +933,11 @@ mod tests {
     #[test]
     fn commit_overlay_initial_state() {
         let ov = GitCommitOverlay {
-            message: String::new(), cursor: 0, generating: true, scroll: 0, receiver: None,
+            message: String::new(),
+            cursor: 0,
+            generating: true,
+            scroll: 0,
+            receiver: None,
         };
         assert!(ov.generating);
         assert!(ov.message.is_empty());
@@ -795,7 +951,13 @@ mod tests {
     #[test]
     fn changed_file_from_tuple() {
         let (path, status, add, del) = ("src/lib.rs".to_string(), 'M', 5usize, 3usize);
-        let f = GitChangedFile { path, status, additions: add, deletions: del, staged: false };
+        let f = GitChangedFile {
+            path,
+            status,
+            additions: add,
+            deletions: del,
+            staged: false,
+        };
         assert_eq!(f.path, "src/lib.rs");
         assert_eq!(f.additions, 5);
         assert_eq!(f.deletions, 3);
@@ -841,7 +1003,9 @@ mod tests {
     fn selected_file_clamp_when_list_shrinks() {
         let mut selected = 5usize;
         let new_len = 3usize;
-        if selected >= new_len { selected = new_len.saturating_sub(1); }
+        if selected >= new_len {
+            selected = new_len.saturating_sub(1);
+        }
         assert_eq!(selected, 2);
     }
 
@@ -849,7 +1013,9 @@ mod tests {
     fn selected_file_stays_when_in_bounds() {
         let mut selected = 2usize;
         let new_len = 5usize;
-        if selected >= new_len { selected = new_len.saturating_sub(1); }
+        if selected >= new_len {
+            selected = new_len.saturating_sub(1);
+        }
         assert_eq!(selected, 2);
     }
 
@@ -876,7 +1042,11 @@ mod tests {
     fn diff_trimmed_over_max() {
         let diff = "x".repeat(40_000);
         let max = 30_000;
-        let trimmed = if diff.len() > max { &diff[..max] } else { &diff };
+        let trimmed = if diff.len() > max {
+            &diff[..max]
+        } else {
+            &diff
+        };
         assert_eq!(trimmed.len(), 30_000);
     }
 
@@ -948,7 +1118,8 @@ mod tests {
     #[test]
     fn parse_conflict_files_mixed_lines() {
         let text = "Some output\nCONFLICT (content): Merge conflict in foo.rs\nAuto-merging bar.rs\nOther output";
-        let (conflicted, auto_merged) = parse_conflict_files(text, std::path::Path::new("/nonexistent"));
+        let (conflicted, auto_merged) =
+            parse_conflict_files(text, std::path::Path::new("/nonexistent"));
         assert!(conflicted.contains(&"foo.rs".to_string()));
         assert!(auto_merged.contains(&"bar.rs".to_string()));
     }
@@ -987,8 +1158,8 @@ mod tests {
     fn auto_resolve_multiple_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()];
         let ar_files = vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(all_resolvable);
     }
 
@@ -996,8 +1167,8 @@ mod tests {
     fn auto_resolve_single_extra_file_not_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "src/lib.rs".to_string()];
         let ar_files = vec!["Cargo.lock".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(!all_resolvable);
     }
 
@@ -1005,8 +1176,8 @@ mod tests {
     fn auto_resolve_exact_match_required() {
         let conflicted = vec!["Cargo.lock.bak".to_string()];
         let ar_files = vec!["Cargo.lock".to_string()];
-        let all_resolvable = !conflicted.is_empty()
-            && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
+        let all_resolvable =
+            !conflicted.is_empty() && conflicted.iter().all(|f| ar_files.iter().any(|af| af == f));
         assert!(!all_resolvable);
     }
 
@@ -1019,7 +1190,9 @@ mod tests {
         let ov = GitConflictOverlay {
             conflicted_files: vec!["a.rs".into()],
             auto_merged_files: vec![],
-            scroll: 0, selected: 0, continue_with_merge: false,
+            scroll: 0,
+            selected: 0,
+            continue_with_merge: false,
         };
         assert_eq!(ov.scroll, 0);
         assert_eq!(ov.selected, 0);
@@ -1031,7 +1204,9 @@ mod tests {
         let ov = GitConflictOverlay {
             conflicted_files: files.clone(),
             auto_merged_files: vec![],
-            scroll: 0, selected: 0, continue_with_merge: false,
+            scroll: 0,
+            selected: 0,
+            continue_with_merge: false,
         };
         assert_eq!(ov.conflicted_files, files);
     }
@@ -1042,7 +1217,9 @@ mod tests {
         let ov = GitConflictOverlay {
             conflicted_files: vec![],
             auto_merged_files: files.clone(),
-            scroll: 0, selected: 0, continue_with_merge: true,
+            scroll: 0,
+            selected: 0,
+            continue_with_merge: true,
         };
         assert_eq!(ov.auto_merged_files, files);
     }

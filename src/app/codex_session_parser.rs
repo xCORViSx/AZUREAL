@@ -69,7 +69,13 @@ impl IncrementalState {
     fn from_events(events: &[DisplayEvent]) -> Self {
         let mut tool_calls = HashMap::new();
         for event in events {
-            if let DisplayEvent::ToolCall { tool_use_id, tool_name, file_path, .. } = event {
+            if let DisplayEvent::ToolCall {
+                tool_use_id,
+                tool_name,
+                file_path,
+                ..
+            } = event
+            {
                 tool_calls.insert(tool_use_id.clone(), (tool_name.clone(), file_path.clone()));
             }
         }
@@ -118,11 +124,16 @@ fn parse_from(
         total_lines += 1;
 
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         let json: serde_json::Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
-            Err(_) => { parse_errors += 1; continue; }
+            Err(_) => {
+                parse_errors += 1;
+                continue;
+            }
         };
 
         let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -131,8 +142,16 @@ fn parse_from(
         match event_type {
             "session_meta" => {
                 if let Some(p) = payload {
-                    let session_id = p.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let cwd = p.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let session_id = p
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let cwd = p
+                        .get("cwd")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     events.push(DisplayEvent::Init {
                         _session_id: session_id,
                         cwd,
@@ -152,7 +171,13 @@ fn parse_from(
 
             "response_item" => {
                 if let Some(p) = payload {
-                    parse_response_item(p, &mut events, &mut pending_tools, &mut failed_tools, &mut tool_calls);
+                    parse_response_item(
+                        p,
+                        &mut events,
+                        &mut pending_tools,
+                        &mut failed_tools,
+                        &mut tool_calls,
+                    );
                 }
             }
 
@@ -227,8 +252,15 @@ fn parse_response_item(
 
         "function_call" | "shell_command" => {
             // Tool call: name + arguments
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("shell_command");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("shell_command");
 
             // Map Codex tool names to display names
             let (tool_name, file_path) = map_codex_tool(name, payload);
@@ -249,10 +281,19 @@ fn parse_response_item(
 
         "function_call_output" => {
             // Tool result from the same response stream
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let output = payload.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output = payload
+                .get("output")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-            let (tool_name, file_path) = tool_calls.get(&call_id)
+            let (tool_name, file_path) = tool_calls
+                .get(&call_id)
                 .cloned()
                 .unwrap_or(("unknown".to_string(), None));
 
@@ -274,8 +315,15 @@ fn parse_response_item(
 
         "custom_tool_call" => {
             // MCP or custom tool call
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("custom_tool");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("custom_tool");
             let (tool_name, file_path) = map_codex_tool(name, payload);
             let input = build_tool_input(name, payload);
 
@@ -292,10 +340,19 @@ fn parse_response_item(
         }
 
         "custom_tool_call_output" => {
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let output = payload.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output = payload
+                .get("output")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-            let (tool_name, file_path) = tool_calls.get(&call_id)
+            let (tool_name, file_path) = tool_calls
+                .get(&call_id)
                 .cloned()
                 .unwrap_or(("custom_tool".to_string(), None));
 
@@ -337,16 +394,16 @@ fn parse_response_item(
 }
 
 /// Parse an event_msg payload
-fn parse_event_msg(
-    payload: &serde_json::Value,
-    events: &mut Vec<DisplayEvent>,
-) {
+fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) {
     let msg_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     match msg_type {
         "user_message" => {
             // User message from the event stream
-            let text = payload.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            let text = payload
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if !text.is_empty() {
                 events.push(DisplayEvent::UserMessage {
                     _uuid: String::new(),
@@ -357,7 +414,10 @@ fn parse_event_msg(
 
         "agent_message" => {
             // Final agent summary message
-            let text = payload.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            let text = payload
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if !text.is_empty() {
                 events.push(DisplayEvent::AssistantText {
                     _uuid: String::new(),
@@ -394,7 +454,10 @@ fn parse_event_msg(
 
         "function_call_output" => {
             // Same structure as response_item/function_call_output but in event_msg wrapper
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let output = payload.get("output").and_then(|v| v.as_str()).unwrap_or("");
             if !call_id.is_empty() {
                 let is_error = output.starts_with("Error") || output.contains("Exit code: 1");
@@ -434,9 +497,12 @@ fn extract_message_text(content: Option<&serde_json::Value>) -> String {
 fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<String>) {
     match name {
         "shell_command" => {
-            let args = payload.get("arguments").and_then(|v| v.as_str())
+            let args = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-            let workdir = args.as_ref()
+            let workdir = args
+                .as_ref()
                 .and_then(|a| a.get("workdir"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
@@ -444,7 +510,9 @@ fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<St
         }
         "apply_patch" => {
             // Extract file path from patch content if possible
-            let args = payload.get("arguments").and_then(|v| v.as_str())
+            let args = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
                 .or_else(|| payload.get("input").and_then(|v| v.as_str()));
             let file_path = args.and_then(|s| {
                 // Look for "*** Update File: <path>" or "*** Add File: <path>"
@@ -468,18 +536,25 @@ fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<St
 fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Value {
     match name {
         "shell_command" => {
-            let args_str = payload.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+            let args_str = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
             serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
         }
         "apply_patch" => {
-            let patch = payload.get("arguments").and_then(|v| v.as_str())
+            let patch = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
                 .or_else(|| payload.get("input").and_then(|v| v.as_str()))
                 .unwrap_or("");
             serde_json::json!({ "patch": patch })
         }
         _ => {
             // For custom tools, try arguments or input field
-            let args_str = payload.get("arguments").and_then(|v| v.as_str())
+            let args_str = payload
+                .get("arguments")
+                .and_then(|v| v.as_str())
                 .or_else(|| payload.get("input").and_then(|v| v.as_str()))
                 .unwrap_or("{}");
             serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
@@ -532,7 +607,11 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::Init { _session_id, cwd, model } => {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
                 assert_eq!(_session_id, "abc-123");
                 assert_eq!(cwd, "/home/user/project");
                 assert_eq!(model, "codex");
@@ -574,7 +653,9 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "fix the bug\nin main.rs"),
+            DisplayEvent::UserMessage { content, .. } => {
+                assert_eq!(content, "fix the bug\nin main.rs")
+            }
             _ => panic!("Expected UserMessage"),
         }
     }
@@ -585,7 +666,10 @@ mod tests {
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"developer","content":"system instructions"}}"#,
         ]);
         assert_eq!(result.events.len(), 1);
-        assert!(matches!(&result.events[0], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(
+            &result.events[0],
+            DisplayEvent::UserMessage { .. }
+        ));
     }
 
     #[test]
@@ -625,7 +709,13 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                tool_use_id,
+                ..
+            } => {
                 assert_eq!(tool_name, "Bash");
                 assert_eq!(file_path.as_deref(), Some("/tmp"));
                 assert_eq!(tool_use_id, "call_abc");
@@ -645,7 +735,13 @@ mod tests {
         assert_eq!(result.events.len(), 2);
         assert!(matches!(&result.events[0], DisplayEvent::ToolCall { .. }));
         match &result.events[1] {
-            DisplayEvent::ToolResult { tool_use_id, tool_name, content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => {
                 assert_eq!(tool_use_id, "call_xyz");
                 assert_eq!(tool_name, "Bash");
                 assert!(content.contains("hi"));
@@ -678,7 +774,11 @@ mod tests {
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:05Z","payload":{"type":"function_call","name":"apply_patch","call_id":"call_patch","arguments":"*** Begin Patch\n*** Update File: /src/main.rs\n@@\n-old\n+new"}}"#,
         ]);
         match &result.events[0] {
-            DisplayEvent::ToolCall { tool_name, file_path, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(file_path.as_deref(), Some("/src/main.rs"));
             }
@@ -692,7 +792,11 @@ mod tests {
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:05Z","payload":{"type":"function_call","name":"apply_patch","call_id":"call_add","arguments":"*** Begin Patch\n*** Add File: /src/new.rs\n+content"}}"#,
         ]);
         match &result.events[0] {
-            DisplayEvent::ToolCall { tool_name, file_path, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(file_path.as_deref(), Some("/src/new.rs"));
             }
@@ -708,7 +812,11 @@ mod tests {
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:06Z","payload":{"type":"custom_tool_call","name":"my_mcp_tool","call_id":"call_mcp","input":"some input"}}"#,
         ]);
         match &result.events[0] {
-            DisplayEvent::ToolCall { tool_name, tool_use_id, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                tool_use_id,
+                ..
+            } => {
                 assert_eq!(tool_name, "my_mcp_tool");
                 assert_eq!(tool_use_id, "call_mcp");
             }
@@ -724,7 +832,12 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 2);
         match &result.events[1] {
-            DisplayEvent::ToolResult { tool_name, content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => {
                 assert_eq!(tool_name, "my_tool");
                 assert_eq!(content, "result text");
                 assert!(!is_error);
@@ -766,7 +879,9 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "I need to read the file first."),
+            DisplayEvent::AssistantText { text, .. } => {
+                assert_eq!(text, "I need to read the file first.")
+            }
             _ => panic!("Expected AssistantText"),
         }
     }
@@ -828,7 +943,9 @@ mod tests {
         ]);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "Thinking about the approach..."),
+            DisplayEvent::AssistantText { text, .. } => {
+                assert_eq!(text, "Thinking about the approach...")
+            }
             _ => panic!("Expected AssistantText"),
         }
     }
@@ -906,10 +1023,16 @@ mod tests {
 
         assert_eq!(result.events.len(), 6); // Init, UserMsg, ToolCall, ToolResult, AssistantText, Complete
         assert!(matches!(&result.events[0], DisplayEvent::Init { .. }));
-        assert!(matches!(&result.events[1], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(
+            &result.events[1],
+            DisplayEvent::UserMessage { .. }
+        ));
         assert!(matches!(&result.events[2], DisplayEvent::ToolCall { .. }));
         assert!(matches!(&result.events[3], DisplayEvent::ToolResult { .. }));
-        assert!(matches!(&result.events[4], DisplayEvent::AssistantText { .. }));
+        assert!(matches!(
+            &result.events[4],
+            DisplayEvent::AssistantText { .. }
+        ));
         assert!(matches!(&result.events[5], DisplayEvent::Complete { .. }));
 
         assert_eq!(result.model.as_deref(), Some("gpt-5.4"));
@@ -938,16 +1061,25 @@ mod tests {
 
         // Append more lines
         {
-            let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
             writeln!(f, r#"{{"type":"response_item","timestamp":"2026-01-01T00:00:02Z","payload":{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"hi back"}}]}}}}"#).unwrap();
         }
 
         // Incremental parse
         let second = parse_codex_session_file_incremental(
-            &path, offset, &first.events, &first.pending_tools, &first.failed_tools,
+            &path,
+            offset,
+            &first.events,
+            &first.pending_tools,
+            &first.failed_tools,
         );
         assert_eq!(second.events.len(), 3); // 2 existing + 1 new
-        assert!(matches!(&second.events[2], DisplayEvent::AssistantText { text, .. } if text == "hi back"));
+        assert!(
+            matches!(&second.events[2], DisplayEvent::AssistantText { text, .. } if text == "hi back")
+        );
     }
 
     #[test]
@@ -959,9 +1091,8 @@ mod tests {
             writeln!(f, r#"{{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{{"id":"s1","cwd":"/tmp"}}}}"#).unwrap();
         }
 
-        let result = parse_codex_session_file_incremental(
-            &path, 0, &[], &HashSet::new(), &HashSet::new(),
-        );
+        let result =
+            parse_codex_session_file_incremental(&path, 0, &[], &HashSet::new(), &HashSet::new());
         assert_eq!(result.events.len(), 1);
     }
 
@@ -983,12 +1114,19 @@ mod tests {
 
         // Second batch: tool result
         {
-            let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
             writeln!(f, r#"{{"type":"response_item","timestamp":"2026-01-01T00:00:04Z","payload":{{"type":"function_call_output","call_id":"call_inc","output":"hi"}}}}"#).unwrap();
         }
 
         let second = parse_codex_session_file_incremental(
-            &path, offset, &first.events, &first.pending_tools, &first.failed_tools,
+            &path,
+            offset,
+            &first.events,
+            &first.pending_tools,
+            &first.failed_tools,
         );
         assert_eq!(second.events.len(), 2);
         // Tool call should be resolved (tool_name from first parse carried over)
@@ -1064,10 +1202,18 @@ mod tests {
     #[test]
     fn test_parse_real_codex_session() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/03/12/rollout-2026-03-12T22-29-48-019ce53e-414d-7852-a2dd-71d7c376fdc2.jsonl");
-        if !path.exists() { return; }
+        if !path.exists() {
+            return;
+        }
         let result = parse_codex_session_file(path);
-        assert!(!result.events.is_empty(), "Real session should produce events");
-        assert_eq!(result.parse_errors, 0, "Real session should have no parse errors");
+        assert!(
+            !result.events.is_empty(),
+            "Real session should produce events"
+        );
+        assert_eq!(
+            result.parse_errors, 0,
+            "Real session should have no parse errors"
+        );
         // First event should be Init
         assert!(matches!(&result.events[0], DisplayEvent::Init { .. }));
     }
@@ -1075,26 +1221,43 @@ mod tests {
     #[test]
     fn test_parse_real_codex_session_with_tools() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/01/01/rollout-2026-01-01T07-56-02-019b79d8-1364-79d0-a63d-9dcbfcf1c21e.jsonl");
-        if !path.exists() { return; }
+        if !path.exists() {
+            return;
+        }
         let result = parse_codex_session_file(path);
         assert!(!result.events.is_empty());
         assert_eq!(result.parse_errors, 0);
         // Should have tool calls
-        let tool_calls = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolCall { .. })).count();
-        assert!(tool_calls > 0, "Session with tools should have ToolCall events");
-        let tool_results = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolResult { .. })).count();
-        assert!(tool_results > 0, "Session with tools should have ToolResult events");
+        let tool_calls = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolCall { .. }))
+            .count();
+        assert!(
+            tool_calls > 0,
+            "Session with tools should have ToolCall events"
+        );
+        let tool_results = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolResult { .. }))
+            .count();
+        assert!(
+            tool_results > 0,
+            "Session with tools should have ToolResult events"
+        );
     }
 
     #[test]
     fn test_real_session_incremental_matches_full() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/01/01/rollout-2026-01-01T07-56-02-019b79d8-1364-79d0-a63d-9dcbfcf1c21e.jsonl");
-        if !path.exists() { return; }
+        if !path.exists() {
+            return;
+        }
         let full = parse_codex_session_file(path);
         // Re-parse incrementally from 0 should produce same event count
-        let incremental = parse_codex_session_file_incremental(
-            path, 0, &[], &HashSet::new(), &HashSet::new(),
-        );
+        let incremental =
+            parse_codex_session_file_incremental(path, 0, &[], &HashSet::new(), &HashSet::new());
         assert_eq!(full.events.len(), incremental.events.len());
     }
 }

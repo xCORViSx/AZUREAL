@@ -3,17 +3,19 @@
 //! Word-boundary wrapping for plain text and styled spans, preserving
 //! syntax highlighting across wrap boundaries.
 
-use ratatui::{
-    style::Style,
-    text::Span,
-};
+use ratatui::{style::Style, text::Span};
 use textwrap::{wrap, Options};
 
 /// Wrap plain text to a maximum width, breaking words if necessary
 pub(super) fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
-    if text.is_empty() { return vec![String::new()]; }
+    if text.is_empty() {
+        return vec![String::new()];
+    }
     let opts = Options::new(max_width).break_words(true);
-    wrap(text, opts).into_iter().map(|cow| cow.into_owned()).collect()
+    wrap(text, opts)
+        .into_iter()
+        .map(|cow| cow.into_owned())
+        .collect()
 }
 
 /// Compute word-boundary wrap break positions for a single line. Returns a
@@ -21,9 +23,13 @@ pub(super) fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 /// Uses textwrap for word boundaries, falls back to hard breaks for long words.
 /// Used by both display wrapping and cursor/scroll math.
 pub(crate) fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
-    if max_width == 0 || text.is_empty() { return vec![0]; }
+    if max_width == 0 || text.is_empty() {
+        return vec![0];
+    }
     let char_count = text.chars().count();
-    if char_count <= max_width { return vec![0]; }
+    if char_count <= max_width {
+        return vec![0];
+    }
     let opts = Options::new(max_width).break_words(true);
     let wrapped = wrap(text, opts);
     let mut breaks = Vec::with_capacity(wrapped.len());
@@ -34,7 +40,9 @@ pub(crate) fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
         // textwrap eats the space at the break point — account for it
         // by checking if the next char in the original text is a space
         let next_char = text.chars().nth(offset);
-        if next_char == Some(' ') { offset += 1; }
+        if next_char == Some(' ') {
+            offset += 1;
+        }
     }
     breaks
 }
@@ -42,8 +50,13 @@ pub(crate) fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
 /// Word-boundary wrapping for styled spans. Uses textwrap to find break
 /// positions, then slices the styled spans at those positions. Preserves
 /// syntax highlighting across wrap boundaries.
-pub(super) fn wrap_spans_word(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'static>>> {
-    if max_width == 0 { return vec![spans]; }
+pub(super) fn wrap_spans_word(
+    spans: Vec<Span<'static>>,
+    max_width: usize,
+) -> Vec<Vec<Span<'static>>> {
+    if max_width == 0 {
+        return vec![spans];
+    }
     // Flatten to (char, style) pairs and plain text for textwrap
     let mut chars_styled: Vec<(char, Style)> = Vec::new();
     let mut plain = String::new();
@@ -53,7 +66,9 @@ pub(super) fn wrap_spans_word(spans: Vec<Span<'static>>, max_width: usize) -> Ve
             plain.push(c);
         }
     }
-    if chars_styled.is_empty() { return vec![vec![]]; }
+    if chars_styled.is_empty() {
+        return vec![vec![]];
+    }
     // Get break positions via textwrap
     let breaks = word_wrap_breaks(&plain, max_width);
     let total = chars_styled.len();
@@ -79,16 +94,22 @@ pub(super) fn wrap_spans_word(spans: Vec<Span<'static>>, max_width: usize) -> Ve
                 if style == cur_style {
                     buf.push(c);
                 } else {
-                    if !buf.is_empty() { line_spans.push(Span::styled(std::mem::take(&mut buf), cur_style)); }
+                    if !buf.is_empty() {
+                        line_spans.push(Span::styled(std::mem::take(&mut buf), cur_style));
+                    }
                     buf.push(c);
                     cur_style = style;
                 }
             }
-            if !buf.is_empty() { line_spans.push(Span::styled(buf, cur_style)); }
+            if !buf.is_empty() {
+                line_spans.push(Span::styled(buf, cur_style));
+            }
         }
         result.push(line_spans);
     }
-    if result.is_empty() { result.push(vec![]); }
+    if result.is_empty() {
+        result.push(vec![]);
+    }
     result
 }
 
@@ -327,7 +348,11 @@ mod tests {
     fn breaks_offsets_are_monotonically_increasing() {
         let breaks = word_wrap_breaks("the quick brown fox jumps over lazy dog", 8);
         for i in 1..breaks.len() {
-            assert!(breaks[i] > breaks[i - 1], "breaks must increase: {:?}", breaks);
+            assert!(
+                breaks[i] > breaks[i - 1],
+                "breaks must increase: {:?}",
+                breaks
+            );
         }
     }
 
@@ -337,7 +362,12 @@ mod tests {
         let breaks = word_wrap_breaks(text, 5);
         let char_count = text.chars().count();
         for &b in &breaks {
-            assert!(b < char_count, "break offset {} out of bounds (len={})", b, char_count);
+            assert!(
+                b < char_count,
+                "break offset {} out of bounds (len={})",
+                b,
+                char_count
+            );
         }
     }
 
@@ -369,9 +399,12 @@ mod tests {
             let breaks = word_wrap_breaks(text, width);
             let wrapped = wrap_text(text, width);
             assert_eq!(
-                breaks.len(), wrapped.len(),
+                breaks.len(),
+                wrapped.len(),
                 "breaks/wrap mismatch at width={}: breaks={:?}, wrapped={:?}",
-                width, breaks, wrapped
+                width,
+                breaks,
+                wrapped
             );
         }
     }
@@ -605,7 +638,10 @@ mod tests {
             assert!(
                 line_len <= max_width,
                 "line {} has {} chars, exceeds max_width {}: {:?}",
-                i, line_len, max_width, line
+                i,
+                line_len,
+                max_width,
+                line
             );
         }
     }

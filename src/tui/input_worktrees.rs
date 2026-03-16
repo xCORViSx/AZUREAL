@@ -275,9 +275,19 @@ mod tests {
     #[test]
     fn non_char_keycodes_do_not_match_s() {
         let codes = [
-            KeyCode::Enter, KeyCode::Esc, KeyCode::Backspace, KeyCode::Delete,
-            KeyCode::Tab, KeyCode::Left, KeyCode::Right, KeyCode::Up, KeyCode::Down,
-            KeyCode::Home, KeyCode::End, KeyCode::PageUp, KeyCode::PageDown,
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Backspace,
+            KeyCode::Delete,
+            KeyCode::Tab,
+            KeyCode::Left,
+            KeyCode::Right,
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Home,
+            KeyCode::End,
+            KeyCode::PageUp,
+            KeyCode::PageDown,
         ];
         for code in codes {
             let k = key(code);

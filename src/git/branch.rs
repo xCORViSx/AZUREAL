@@ -27,7 +27,8 @@ impl Git {
             .context("Failed to list branches")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let branches: Vec<String> = stdout.lines()
+        let branches: Vec<String> = stdout
+            .lines()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
@@ -44,7 +45,8 @@ impl Git {
             .context("Failed to list remote branches")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.lines()
+        Ok(stdout
+            .lines()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect())
@@ -59,7 +61,9 @@ impl Git {
         let mut checked_out: Vec<String> = Vec::new();
         for wt_path in &worktrees {
             let path = Path::new(wt_path);
-            if let Ok(branch) = Self::current_branch(path) { checked_out.push(branch); }
+            if let Ok(branch) = Self::current_branch(path) {
+                checked_out.push(branch);
+            }
         }
 
         // Local branches first, excluding main/master (always the base repo root)
@@ -71,8 +75,14 @@ impl Git {
         // Append remote branches that don't have a local equivalent (skip main/master)
         let remote = Self::list_remote_branches_cached(repo_path)?;
         for remote_branch in remote {
-            let local_name = remote_branch.split('/').skip(1).collect::<Vec<_>>().join("/");
-            if local_name == "main" || local_name == "master" { continue; }
+            let local_name = remote_branch
+                .split('/')
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("/");
+            if local_name == "main" || local_name == "master" {
+                continue;
+            }
             if !all.contains(&local_name) && !all.contains(&remote_branch) {
                 all.push(remote_branch);
             }
@@ -173,7 +183,10 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         if Git::is_git_repo(&cwd) {
             let branches = Git::list_local_branches(&cwd).unwrap();
-            assert!(!branches.is_empty(), "Should have at least one local branch");
+            assert!(
+                !branches.is_empty(),
+                "Should have at least one local branch"
+            );
         }
     }
 
@@ -234,7 +247,10 @@ mod tests {
         if Git::is_git_repo(&cwd) {
             let branches = Git::list_remote_branches_cached(&cwd).unwrap();
             for b in &branches {
-                assert!(b.contains('/'), "Remote branches should contain '/' (remote/branch)");
+                assert!(
+                    b.contains('/'),
+                    "Remote branches should contain '/' (remote/branch)"
+                );
             }
         }
     }
@@ -265,8 +281,11 @@ mod tests {
             let (all, _) = Git::list_all_branches_with_status(&cwd).unwrap();
             // main/master should be excluded from the all list
             for b in &all {
-                assert!(b != "main" && b != "master",
-                    "main/master should be excluded, found: {}", b);
+                assert!(
+                    b != "main" && b != "master",
+                    "main/master should be excluded, found: {}",
+                    b
+                );
             }
         }
     }
@@ -277,7 +296,10 @@ mod tests {
         if Git::is_git_repo(&cwd) {
             let (_, checked_out) = Git::list_all_branches_with_status(&cwd).unwrap();
             // At least the current branch should be checked out
-            assert!(!checked_out.is_empty(), "Should have at least one checked out branch");
+            assert!(
+                !checked_out.is_empty(),
+                "Should have at least one checked out branch"
+            );
         }
     }
 
@@ -318,10 +340,7 @@ mod tests {
 
     #[test]
     fn test_delete_branch_nonexistent_dir() {
-        let result = Git::delete_branch(
-            Path::new("/tmp/no_such_delete_branch_dir"),
-            "some-branch",
-        );
+        let result = Git::delete_branch(Path::new("/tmp/no_such_delete_branch_dir"), "some-branch");
         let _ = result;
     }
 
@@ -376,7 +395,8 @@ mod tests {
     #[test]
     fn test_main_master_filter() {
         let branches = vec!["main", "master", "feature", "dev"];
-        let filtered: Vec<&&str> = branches.iter()
+        let filtered: Vec<&&str> = branches
+            .iter()
             .filter(|b| **b != "main" && **b != "master")
             .collect();
         assert_eq!(filtered, vec![&"feature", &"dev"]);
@@ -385,7 +405,8 @@ mod tests {
     #[test]
     fn test_main_master_filter_empty() {
         let branches: Vec<&str> = vec!["main", "master"];
-        let filtered: Vec<&&str> = branches.iter()
+        let filtered: Vec<&&str> = branches
+            .iter()
             .filter(|b| **b != "main" && **b != "master")
             .collect();
         assert!(filtered.is_empty());
@@ -394,7 +415,8 @@ mod tests {
     #[test]
     fn test_main_master_filter_all_pass() {
         let branches = vec!["feat1", "feat2", "dev"];
-        let filtered: Vec<&&str> = branches.iter()
+        let filtered: Vec<&&str> = branches
+            .iter()
             .filter(|b| **b != "main" && **b != "master")
             .collect();
         assert_eq!(filtered.len(), 3);
@@ -403,18 +425,14 @@ mod tests {
     #[test]
     fn test_head_filter() {
         let refs = vec!["origin/HEAD", "origin/main", "origin/feature"];
-        let filtered: Vec<&&str> = refs.iter()
-            .filter(|s| !s.contains("HEAD"))
-            .collect();
+        let filtered: Vec<&&str> = refs.iter().filter(|s| !s.contains("HEAD")).collect();
         assert_eq!(filtered.len(), 2);
     }
 
     #[test]
     fn test_slash_filter() {
         let refs = vec!["origin/main", "localbranch", "upstream/dev"];
-        let filtered: Vec<&&str> = refs.iter()
-            .filter(|s| s.contains('/'))
-            .collect();
+        let filtered: Vec<&&str> = refs.iter().filter(|s| s.contains('/')).collect();
         assert_eq!(filtered.len(), 2);
     }
 
@@ -422,10 +440,9 @@ mod tests {
 
     #[test]
     fn test_remote_branch_combined_filter() {
-        let refs = vec![
-            "origin/HEAD", "origin/main", "origin/feature", "", "local",
-        ];
-        let filtered: Vec<&&str> = refs.iter()
+        let refs = vec!["origin/HEAD", "origin/main", "origin/feature", "", "local"];
+        let filtered: Vec<&&str> = refs
+            .iter()
             .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect();
         assert_eq!(filtered, vec![&"origin/main", &"origin/feature"]);
@@ -504,7 +521,8 @@ mod tests {
     fn test_main_master_filter_case_sensitive() {
         // "Main" and "Master" should NOT be filtered (case-sensitive)
         let branches = vec!["Main", "Master", "main", "master"];
-        let filtered: Vec<&&str> = branches.iter()
+        let filtered: Vec<&&str> = branches
+            .iter()
             .filter(|b| **b != "main" && **b != "master")
             .collect();
         assert_eq!(filtered.len(), 2);
@@ -515,7 +533,8 @@ mod tests {
     #[test]
     fn test_remote_combined_filter_empty_string_rejected() {
         let refs: Vec<&str> = vec![""];
-        let filtered: Vec<&&str> = refs.iter()
+        let filtered: Vec<&&str> = refs
+            .iter()
             .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect();
         assert!(filtered.is_empty());
@@ -524,7 +543,8 @@ mod tests {
     #[test]
     fn test_remote_combined_filter_head_with_slash_rejected() {
         let refs = vec!["origin/HEAD"];
-        let filtered: Vec<&&str> = refs.iter()
+        let filtered: Vec<&&str> = refs
+            .iter()
             .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect();
         assert!(filtered.is_empty());
@@ -533,7 +553,8 @@ mod tests {
     #[test]
     fn test_remote_combined_filter_all_pass() {
         let refs = vec!["origin/feat-a", "upstream/feat-b", "fork/dev"];
-        let filtered: Vec<&&str> = refs.iter()
+        let filtered: Vec<&&str> = refs
+            .iter()
             .filter(|s| !s.is_empty() && !s.contains("HEAD") && s.contains('/'))
             .collect();
         assert_eq!(filtered.len(), 3);
@@ -561,7 +582,9 @@ mod tests {
         let remote = vec!["origin/main".to_string()];
         for rb in &remote {
             let local_name = rb.split('/').skip(1).collect::<Vec<_>>().join("/");
-            if local_name == "main" || local_name == "master" { continue; }
+            if local_name == "main" || local_name == "master" {
+                continue;
+            }
             all.push(rb.clone());
         }
         assert!(all.is_empty());
@@ -573,7 +596,9 @@ mod tests {
         let remote = vec!["origin/master".to_string()];
         for rb in &remote {
             let local_name = rb.split('/').skip(1).collect::<Vec<_>>().join("/");
-            if local_name == "main" || local_name == "master" { continue; }
+            if local_name == "main" || local_name == "master" {
+                continue;
+            }
             all.push(rb.clone());
         }
         assert!(all.is_empty());
@@ -609,8 +634,11 @@ mod tests {
         if Git::is_git_repo(&cwd) {
             let current = Git::current_branch(&cwd).unwrap();
             let (_, checked_out) = Git::list_all_branches_with_status(&cwd).unwrap();
-            assert!(checked_out.contains(&current),
-                "current branch '{}' should be in checked_out set", current);
+            assert!(
+                checked_out.contains(&current),
+                "current branch '{}' should be in checked_out set",
+                current
+            );
         }
     }
 
@@ -620,7 +648,10 @@ mod tests {
         if Git::is_git_repo(&cwd) {
             let (all, _) = Git::list_all_branches_with_status(&cwd).unwrap();
             for b in &all {
-                assert!(b.is_ascii() || !b.is_empty(), "branch name should be non-empty");
+                assert!(
+                    b.is_ascii() || !b.is_empty(),
+                    "branch name should be non-empty"
+                );
             }
         }
     }
@@ -631,7 +662,11 @@ mod tests {
         if Git::is_git_repo(&cwd) {
             let (all, checked_out) = Git::list_all_branches_with_status(&cwd).unwrap();
             for b in all.iter().chain(checked_out.iter()) {
-                assert!(!b.contains('\n'), "branch name should not contain newline: {:?}", b);
+                assert!(
+                    !b.contains('\n'),
+                    "branch name should not contain newline: {:?}",
+                    b
+                );
             }
         }
     }

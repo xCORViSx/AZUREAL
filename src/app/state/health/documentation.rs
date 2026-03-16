@@ -12,7 +12,7 @@ use crate::app::types::DocEntry;
 use crate::backend::AgentProcess;
 
 use super::super::App;
-use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, load_health_scope, collect_source_files};
+use super::{collect_source_files, load_health_scope, SOURCE_EXTENSIONS, SOURCE_ROOTS};
 
 impl App {
     /// Scan project source files for documentation coverage — counts documentable
@@ -20,14 +20,19 @@ impl App {
     /// whether each has a preceding `///` or `//!` doc comment.
     /// Returns (entries sorted by coverage ascending, overall score 0.0–100.0).
     pub(crate) fn scan_documentation(&self) -> (Vec<DocEntry>, f32) {
-        let Some(root) = self.health_scan_root() else { return (Vec::new(), 0.0) };
+        let Some(root) = self.health_scan_root() else {
+            return (Vec::new(), 0.0);
+        };
 
         // Determine which directories to scan (same logic as god files)
-        let dirs = self.project.as_ref()
+        let dirs = self
+            .project
+            .as_ref()
             .and_then(|p| load_health_scope(&p.path))
             .map(|d| self.translate_scope_dirs(&d))
             .unwrap_or_else(|| {
-                let found: HashSet<PathBuf> = SOURCE_ROOTS.iter()
+                let found: HashSet<PathBuf> = SOURCE_ROOTS
+                    .iter()
                     .map(|name| root.join(name))
                     .filter(|p| p.is_dir())
                     .collect();
@@ -51,7 +56,9 @@ impl App {
             collect_source_files(&root, &mut files);
         } else {
             for dir in &dirs {
-                if dir.is_dir() { collect_source_files(dir, &mut files); }
+                if dir.is_dir() {
+                    collect_source_files(dir, &mut files);
+                }
             }
             // Top-level source files (e.g. main.rs, build.rs)
             if let Ok(rd) = fs::read_dir(&root) {
@@ -59,7 +66,9 @@ impl App {
                     let p = entry.path();
                     if p.is_file() {
                         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if SOURCE_EXTENSIONS.contains(&ext) { files.push(p); }
+                        if SOURCE_EXTENSIONS.contains(&ext) {
+                            files.push(p);
+                        }
                     }
                 }
             }
@@ -68,17 +77,38 @@ impl App {
         // Scan each file for documentable items and doc comments
         for path in &files {
             let (total, documented) = scan_file_doc_coverage(path);
-            if total == 0 { continue; }
+            if total == 0 {
+                continue;
+            }
             let coverage_pct = documented as f32 / total as f32 * 100.0;
-            let rel_path = path.strip_prefix(&root).unwrap_or(path).display().to_string();
+            let rel_path = path
+                .strip_prefix(&root)
+                .unwrap_or(path)
+                .display()
+                .to_string();
             total_all += total;
             documented_all += documented;
-            entries.push(DocEntry { path: path.clone(), rel_path, total_items: total, documented_items: documented, coverage_pct, checked: false });
+            entries.push(DocEntry {
+                path: path.clone(),
+                rel_path,
+                total_items: total,
+                documented_items: documented,
+                coverage_pct,
+                checked: false,
+            });
         }
 
         // Sort worst-documented first so user sees problem files at top
-        entries.sort_by(|a, b| a.coverage_pct.partial_cmp(&b.coverage_pct).unwrap_or(std::cmp::Ordering::Equal));
-        let doc_score = if total_all > 0 { documented_all as f32 / total_all as f32 * 100.0 } else { 100.0 };
+        entries.sort_by(|a, b| {
+            a.coverage_pct
+                .partial_cmp(&b.coverage_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let doc_score = if total_all > 0 {
+            documented_all as f32 / total_all as f32 * 100.0
+        } else {
+            100.0
+        };
         (entries, doc_score)
     }
 
@@ -95,11 +125,17 @@ impl App {
     /// otherwise check all non-100% and uncheck any 100% entries
     pub fn doc_toggle_non100(&mut self) {
         if let Some(ref mut panel) = self.health_panel {
-            let all_non100_checked = panel.doc_entries.iter()
+            let all_non100_checked = panel
+                .doc_entries
+                .iter()
                 .filter(|e| e.coverage_pct < 100.0)
                 .all(|e| e.checked);
             for entry in &mut panel.doc_entries {
-                entry.checked = if entry.coverage_pct < 100.0 { !all_non100_checked } else { false };
+                entry.checked = if entry.coverage_pct < 100.0 {
+                    !all_non100_checked
+                } else {
+                    false
+                };
             }
         }
     }
@@ -108,7 +144,9 @@ impl App {
     pub fn doc_view_checked(&mut self) {
         const MAX_TABS: usize = 12;
         let paths: Vec<PathBuf> = match self.health_panel {
-            Some(ref panel) => panel.doc_entries.iter()
+            Some(ref panel) => panel
+                .doc_entries
+                .iter()
                 .filter(|e| e.checked)
                 .map(|e| e.path.clone())
                 .collect(),
@@ -122,8 +160,13 @@ impl App {
         let mut skipped_dup = 0usize;
         let mut skipped_cap = 0usize;
         for path in &paths {
-            if self.viewer_tabs.iter().any(|t| t.path.as_ref() == Some(path)) {
-                skipped_dup += 1; continue;
+            if self
+                .viewer_tabs
+                .iter()
+                .any(|t| t.path.as_ref() == Some(path))
+            {
+                skipped_dup += 1;
+                continue;
             }
             if self.viewer_tabs.len() >= MAX_TABS {
                 skipped_cap += paths.len() - opened - skipped_dup - skipped_cap;
@@ -133,7 +176,8 @@ impl App {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let title = path.file_name()
+            let title = path
+                .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".to_string());
             self.viewer_tabs.push(crate::app::types::ViewerTab {
@@ -151,9 +195,20 @@ impl App {
             self.load_tab_to_viewer();
             self.focus = crate::app::Focus::Viewer;
         }
-        let mut msg = format!("Opened {} file{}", opened, if opened == 1 { "" } else { "s" });
-        if skipped_dup > 0 { msg.push_str(&format!(", {} already tabbed", skipped_dup)); }
-        if skipped_cap > 0 { msg.push_str(&format!(", {} skipped (max {} tabs)", skipped_cap, MAX_TABS)); }
+        let mut msg = format!(
+            "Opened {} file{}",
+            opened,
+            if opened == 1 { "" } else { "s" }
+        );
+        if skipped_dup > 0 {
+            msg.push_str(&format!(", {} already tabbed", skipped_dup));
+        }
+        if skipped_cap > 0 {
+            msg.push_str(&format!(
+                ", {} skipped (max {} tabs)",
+                skipped_cap, MAX_TABS
+            ));
+        }
         self.set_status(msg);
     }
 
@@ -162,7 +217,9 @@ impl App {
     /// instructing Claude to add missing doc comments to all documentable items.
     pub fn doc_health_spawn(&mut self, claude_process: &AgentProcess) {
         let checked: Vec<(String, usize, usize)> = match self.health_panel {
-            Some(ref panel) => panel.doc_entries.iter()
+            Some(ref panel) => panel
+                .doc_entries
+                .iter()
                 .filter(|e| e.checked)
                 .map(|e| (e.rel_path.clone(), e.documented_items, e.total_items))
                 .collect(),
@@ -176,7 +233,10 @@ impl App {
         // Spawn DH sessions on the current worktree — changes merge back to main
         let (branch, wt_path) = match self.current_worktree_info() {
             Some(v) => v,
-            None => { self.set_status("No active worktree"); return; }
+            None => {
+                self.set_status("No active worktree");
+                return;
+            }
         };
 
         self.health_panel = None;
@@ -185,18 +245,22 @@ impl App {
         let mut failed = 0usize;
         for (rel_path, documented, total) in &checked {
             let prompt = build_doc_health_prompt(rel_path, *documented, *total);
-            let filename = Path::new(rel_path).file_name()
+            let filename = Path::new(rel_path)
+                .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
 
             match claude_process.spawn(&wt_path, &prompt, None, None) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
-                    self.pending_session_names.push((slot, format!("[DH] {}", filename)));
+                    self.pending_session_names
+                        .push((slot, format!("[DH] {}", filename)));
                     self.register_claude(branch.clone(), pid, rx);
                     spawned += 1;
                 }
-                Err(_) => { failed += 1; }
+                Err(_) => {
+                    failed += 1;
+                }
             }
         }
 
@@ -233,7 +297,10 @@ impl App {
         if failed == 0 {
             self.set_status(format!("Documenting {} files simultaneously", spawned));
         } else {
-            self.set_status(format!("Documenting {} files ({} failed to start)", spawned, failed));
+            self.set_status(format!(
+                "Documenting {} files ({} failed to start)",
+                spawned, failed
+            ));
         }
     }
 }
@@ -242,30 +309,61 @@ impl App {
 /// Uses line-based heuristics — no AST parsing, just pattern matching on trimmed lines.
 /// Returns (total_items, documented_items).
 fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
-    let file = match File::open(path) { Ok(f) => f, Err(_) => return (0, 0) };
-    let lines: Vec<String> = BufReader::new(file).lines().filter_map(|l| l.ok()).collect();
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return (0, 0),
+    };
+    let lines: Vec<String> = BufReader::new(file)
+        .lines()
+        .filter_map(|l| l.ok())
+        .collect();
 
     let mut total = 0usize;
     let mut documented = 0usize;
 
     /// Patterns that indicate a documentable item (checked against trimmed line starts)
     const ITEM_PREFIXES: &[&str] = &[
-        "pub fn ", "fn ", "pub struct ", "struct ", "pub enum ", "enum ",
-        "pub trait ", "trait ", "pub const ", "const ", "pub static ", "static ",
-        "pub type ", "type ", "pub async fn ", "async fn ", "pub unsafe fn ", "unsafe fn ",
-        "impl ", "pub mod ", "mod ",
+        "pub fn ",
+        "fn ",
+        "pub struct ",
+        "struct ",
+        "pub enum ",
+        "enum ",
+        "pub trait ",
+        "trait ",
+        "pub const ",
+        "const ",
+        "pub static ",
+        "static ",
+        "pub type ",
+        "type ",
+        "pub async fn ",
+        "async fn ",
+        "pub unsafe fn ",
+        "unsafe fn ",
+        "impl ",
+        "pub mod ",
+        "mod ",
     ];
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         // Skip blank lines, comments, attributes, use/extern/cfg
-        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#')
-            || trimmed.starts_with("use ") || trimmed.starts_with("extern ")
-            || trimmed.starts_with('}') { continue; }
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with('#')
+            || trimmed.starts_with("use ")
+            || trimmed.starts_with("extern ")
+            || trimmed.starts_with('}')
+        {
+            continue;
+        }
 
         // Check if this line starts a documentable item
         let is_item = ITEM_PREFIXES.iter().any(|p| trimmed.starts_with(p));
-        if !is_item { continue; }
+        if !is_item {
+            continue;
+        }
 
         total += 1;
         // Walk backwards from this line to find a doc comment (skip blanks + attributes)
@@ -273,8 +371,12 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
         while j > 0 {
             j -= 1;
             let prev = lines[j].trim();
-            if prev.is_empty() || prev.starts_with("#[") || prev.starts_with("#![") { continue; }
-            if prev.starts_with("///") || prev.starts_with("//!") { documented += 1; }
+            if prev.is_empty() || prev.starts_with("#[") || prev.starts_with("#![") {
+                continue;
+            }
+            if prev.starts_with("///") || prev.starts_with("//!") {
+                documented += 1;
+            }
             break;
         }
     }
@@ -439,7 +541,8 @@ mod tests {
 
     #[test]
     fn test_scan_type_alias_documented() {
-        let (total, documented) = scan_content("/// A type alias\ntype Result<T> = std::result::Result<T, Error>;");
+        let (total, documented) =
+            scan_content("/// A type alias\ntype Result<T> = std::result::Result<T, Error>;");
         assert_eq!(total, 1);
         assert_eq!(documented, 1);
     }

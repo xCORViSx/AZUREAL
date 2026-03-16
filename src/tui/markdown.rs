@@ -22,13 +22,17 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                 }
                 let mut code = String::new();
                 for (_, ch) in chars.by_ref() {
-                    if ch == '`' { break; }
+                    if ch == '`' {
+                        break;
+                    }
                     code.push(ch);
                 }
                 if !code.is_empty() {
                     spans.push(Span::styled(
                         code,
-                        Style::default().fg(Color::Yellow).bg(Color::Rgb(40, 40, 40))
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .bg(Color::Rgb(40, 40, 40)),
                     ));
                 }
             }
@@ -41,18 +45,23 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                     }
                     let mut bold_text = String::new();
                     while let Some((_, ch)) = chars.next() {
-                        if ch == '*'
-                            && chars.peek().map(|(_, c)| *c == '*').unwrap_or(false) {
-                                chars.next();
-                                break;
-                            }
+                        if ch == '*' && chars.peek().map(|(_, c)| *c == '*').unwrap_or(false) {
+                            chars.next();
+                            break;
+                        }
                         bold_text.push(ch);
                     }
                     if !bold_text.is_empty() {
-                        spans.push(Span::styled(bold_text, base_style.add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled(
+                            bold_text,
+                            base_style.add_modifier(Modifier::BOLD),
+                        ));
                     }
                 } else {
-                    let rest: String = text[i + 1..].chars().take_while(|&ch| ch != ' ' && ch != '\n').collect();
+                    let rest: String = text[i + 1..]
+                        .chars()
+                        .take_while(|&ch| ch != ' ' && ch != '\n')
+                        .collect();
                     if rest.contains('*') && !rest.starts_with(' ') {
                         if !current_text.is_empty() {
                             spans.push(Span::styled(current_text.clone(), base_style));
@@ -60,11 +69,16 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
                         }
                         let mut italic_text = String::new();
                         for (_, ch) in chars.by_ref() {
-                            if ch == '*' { break; }
+                            if ch == '*' {
+                                break;
+                            }
                             italic_text.push(ch);
                         }
                         if !italic_text.is_empty() {
-                            spans.push(Span::styled(italic_text, base_style.add_modifier(Modifier::ITALIC)));
+                            spans.push(Span::styled(
+                                italic_text,
+                                base_style.add_modifier(Modifier::ITALIC),
+                            ));
                         }
                     } else {
                         current_text.push(c);
@@ -87,7 +101,10 @@ pub fn parse_markdown_spans(text: &str, base_style: Style) -> Vec<Span<'static>>
 /// Check if a line is a markdown table separator
 pub fn is_table_separator(line: &str) -> bool {
     let trimmed = line.trim();
-    trimmed.contains('|') && trimmed.chars().all(|c| c == '|' || c == '-' || c == ':' || c == ' ')
+    trimmed.contains('|')
+        && trimmed
+            .chars()
+            .all(|c| c == '|' || c == '-' || c == ':' || c == ' ')
 }
 
 #[cfg(test)]
@@ -95,10 +112,20 @@ mod tests {
     use super::*;
 
     // ─── Helper ───────────────────────────────────────────────────────
-    fn base() -> Style { Style::default() }
-    fn code_style() -> Style { Style::default().fg(Color::Yellow).bg(Color::Rgb(40, 40, 40)) }
-    fn bold(s: Style) -> Style { s.add_modifier(Modifier::BOLD) }
-    fn italic(s: Style) -> Style { s.add_modifier(Modifier::ITALIC) }
+    fn base() -> Style {
+        Style::default()
+    }
+    fn code_style() -> Style {
+        Style::default()
+            .fg(Color::Yellow)
+            .bg(Color::Rgb(40, 40, 40))
+    }
+    fn bold(s: Style) -> Style {
+        s.add_modifier(Modifier::BOLD)
+    }
+    fn italic(s: Style) -> Style {
+        s.add_modifier(Modifier::ITALIC)
+    }
 
     fn texts<'a>(spans: &'a [Span<'a>]) -> Vec<&'a str> {
         spans.iter().map(|s| s.content.as_ref()).collect()
@@ -323,14 +350,18 @@ mod tests {
         // Unclosed backtick: everything after the ` is consumed as code
         let spans = parse_markdown_spans("open `code never closed", base());
         // The backtick opens code mode and consumes to end
-        assert!(spans.iter().any(|s| s.content.contains("code never closed")));
+        assert!(spans
+            .iter()
+            .any(|s| s.content.contains("code never closed")));
     }
 
     #[test]
     fn unclosed_bold() {
         // **bold never closed — consumed to end
         let spans = parse_markdown_spans("open **bold never closed", base());
-        assert!(spans.iter().any(|s| s.content.contains("bold never closed")));
+        assert!(spans
+            .iter()
+            .any(|s| s.content.contains("bold never closed")));
     }
 
     #[test]

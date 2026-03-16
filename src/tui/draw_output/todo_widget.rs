@@ -12,8 +12,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{TodoItem, TodoStatus};
 use super::super::util::AZURE;
+use crate::app::{TodoItem, TodoStatus};
 
 /// Render the sticky todo widget — shows at the bottom of the session pane.
 /// Main agent todos show as check/bullet/circle. Subagent todos show indented
@@ -30,7 +30,12 @@ pub fn draw_todo_widget(
     scroll: u16,
     total_lines: u16,
 ) {
-    let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+    let pulse_colors = [
+        Color::Yellow,
+        Color::LightYellow,
+        Color::Yellow,
+        Color::DarkGray,
+    ];
     let pulse = pulse_colors[(animation_tick / 3) as usize % pulse_colors.len()];
 
     // Convert a single TodoItem into a Line with optional "↳ " indent prefix
@@ -42,11 +47,20 @@ pub fn draw_todo_widget(
         };
         let text = if t.status == TodoStatus::InProgress && !t.active_form.is_empty() {
             &t.active_form
-        } else { &t.content };
-        let text_color = if t.status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+        } else {
+            &t.content
+        };
+        let text_color = if t.status == TodoStatus::Completed {
+            Color::DarkGray
+        } else {
+            Color::White
+        };
         let mut spans = Vec::new();
         if is_subtask {
-            spans.push(Span::styled("\u{21b3} ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "\u{21b3} ",
+                Style::default().fg(Color::DarkGray),
+            ));
         }
         spans.push(Span::styled(icon, Style::default().fg(color)));
         spans.push(Span::styled(text.clone(), Style::default().fg(text_color)));
@@ -82,11 +96,17 @@ pub fn draw_todo_widget(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Span::styled(" Tasks ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Tasks ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
         .border_style(Style::default().fg(Color::DarkGray));
 
     // Apply scroll offset so the widget starts at the right place
-    let widget = Paragraph::new(todo_lines).block(block).wrap(Wrap { trim: false }).scroll((scroll, 0));
+    let widget = Paragraph::new(todo_lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0));
     f.render_widget(widget, area);
 
     // Draw scrollbar track on the rightmost column inside the border.
@@ -96,9 +116,13 @@ pub fn draw_todo_widget(
         let track_top = area.y + 1;
         let max_scroll = total_lines.saturating_sub(content_h);
         // Thumb size: proportional to visible/total, minimum 1 row
-        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32).max(1).min(content_h as u32) as u16;
+        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32)
+            .max(1)
+            .min(content_h as u32) as u16;
         // Thumb position: proportional to scroll offset within max_scroll
-        let thumb_top = if max_scroll == 0 { 0 } else {
+        let thumb_top = if max_scroll == 0 {
+            0
+        } else {
             ((scroll as u32 * (content_h - thumb_h) as u32) / max_scroll as u32) as u16
         };
         let track_style = Style::default().fg(Color::DarkGray);
@@ -229,31 +253,56 @@ mod tests {
 
     #[test]
     fn pulse_colors_count() {
-        let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+        let pulse_colors = [
+            Color::Yellow,
+            Color::LightYellow,
+            Color::Yellow,
+            Color::DarkGray,
+        ];
         assert_eq!(pulse_colors.len(), 4);
     }
 
     #[test]
     fn pulse_colors_first_is_yellow() {
-        let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+        let pulse_colors = [
+            Color::Yellow,
+            Color::LightYellow,
+            Color::Yellow,
+            Color::DarkGray,
+        ];
         assert_eq!(pulse_colors[0], Color::Yellow);
     }
 
     #[test]
     fn pulse_colors_second_is_light_yellow() {
-        let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+        let pulse_colors = [
+            Color::Yellow,
+            Color::LightYellow,
+            Color::Yellow,
+            Color::DarkGray,
+        ];
         assert_eq!(pulse_colors[1], Color::LightYellow);
     }
 
     #[test]
     fn pulse_colors_last_is_dark_gray() {
-        let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+        let pulse_colors = [
+            Color::Yellow,
+            Color::LightYellow,
+            Color::Yellow,
+            Color::DarkGray,
+        ];
         assert_eq!(pulse_colors[3], Color::DarkGray);
     }
 
     #[test]
     fn pulse_index_wraps_at_len() {
-        let pulse_colors = [Color::Yellow, Color::LightYellow, Color::Yellow, Color::DarkGray];
+        let pulse_colors = [
+            Color::Yellow,
+            Color::LightYellow,
+            Color::Yellow,
+            Color::DarkGray,
+        ];
         let tick: u64 = 100;
         let idx = (tick / 3) as usize % pulse_colors.len();
         assert!(idx < pulse_colors.len());
@@ -410,21 +459,33 @@ mod tests {
     #[test]
     fn completed_text_color_is_dark_gray() {
         let status = TodoStatus::Completed;
-        let color = if status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+        let color = if status == TodoStatus::Completed {
+            Color::DarkGray
+        } else {
+            Color::White
+        };
         assert_eq!(color, Color::DarkGray);
     }
 
     #[test]
     fn in_progress_text_color_is_white() {
         let status = TodoStatus::InProgress;
-        let color = if status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+        let color = if status == TodoStatus::Completed {
+            Color::DarkGray
+        } else {
+            Color::White
+        };
         assert_eq!(color, Color::White);
     }
 
     #[test]
     fn pending_text_color_is_white() {
         let status = TodoStatus::Pending;
-        let color = if status == TodoStatus::Completed { Color::DarkGray } else { Color::White };
+        let color = if status == TodoStatus::Completed {
+            Color::DarkGray
+        } else {
+            Color::White
+        };
         assert_eq!(color, Color::White);
     }
 
@@ -513,7 +574,9 @@ mod tests {
     fn thumb_height_proportional() {
         let content_h: u16 = 20;
         let total_lines: u16 = 40;
-        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32).max(1).min(content_h as u32) as u16;
+        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32)
+            .max(1)
+            .min(content_h as u32) as u16;
         assert_eq!(thumb_h, 10); // 20*20/40 = 10
     }
 
@@ -521,7 +584,9 @@ mod tests {
     fn thumb_height_minimum_one() {
         let content_h: u16 = 5;
         let total_lines: u16 = 1000;
-        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32).max(1).min(content_h as u32) as u16;
+        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32)
+            .max(1)
+            .min(content_h as u32) as u16;
         assert_eq!(thumb_h, 1); // 25/1000 rounds to 0, clamped to 1
     }
 
@@ -529,7 +594,9 @@ mod tests {
     fn thumb_height_capped_at_content_h() {
         let content_h: u16 = 10;
         let total_lines: u16 = 5;
-        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32).max(1).min(content_h as u32) as u16;
+        let thumb_h = ((content_h as u32 * content_h as u32) / total_lines.max(1) as u32)
+            .max(1)
+            .min(content_h as u32) as u16;
         assert_eq!(thumb_h, content_h); // 100/5 = 20, capped at 10
     }
 
@@ -539,7 +606,9 @@ mod tests {
         let content_h: u16 = 20;
         let thumb_h: u16 = 5;
         let max_scroll: u16 = 30;
-        let thumb_top = if max_scroll == 0 { 0 } else {
+        let thumb_top = if max_scroll == 0 {
+            0
+        } else {
             ((scroll as u32 * (content_h - thumb_h) as u32) / max_scroll as u32) as u16
         };
         assert_eq!(thumb_top, 0);
@@ -551,7 +620,9 @@ mod tests {
         let content_h: u16 = 20;
         let thumb_h: u16 = 5;
         let max_scroll: u16 = 30;
-        let thumb_top = if max_scroll == 0 { 0 } else {
+        let thumb_top = if max_scroll == 0 {
+            0
+        } else {
             ((scroll as u32 * (content_h - thumb_h) as u32) / max_scroll as u32) as u16
         };
         assert_eq!(thumb_top, 15); // 30*15/30 = 15
@@ -646,7 +717,10 @@ mod tests {
         let text_color = Color::DarkGray;
         let mut spans = Vec::new();
         if is_subtask {
-            spans.push(Span::styled("\u{21b3} ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "\u{21b3} ",
+                Style::default().fg(Color::DarkGray),
+            ));
         }
         spans.push(Span::styled(icon, Style::default().fg(color)));
         spans.push(Span::styled(text.clone(), Style::default().fg(text_color)));
@@ -664,10 +738,19 @@ mod tests {
         let is_subtask = true;
         let mut spans = Vec::new();
         if is_subtask {
-            spans.push(Span::styled("\u{21b3} ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "\u{21b3} ",
+                Style::default().fg(Color::DarkGray),
+            ));
         }
-        spans.push(Span::styled("\u{25cb} ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(t.content.clone(), Style::default().fg(Color::White)));
+        spans.push(Span::styled(
+            "\u{25cb} ",
+            Style::default().fg(Color::DarkGray),
+        ));
+        spans.push(Span::styled(
+            t.content.clone(),
+            Style::default().fg(Color::White),
+        ));
         let line = Line::from(spans);
         assert_eq!(line.spans.len(), 3); // prefix + icon + text
     }
@@ -697,13 +780,27 @@ mod tests {
     #[test]
     fn todo_lines_injects_after_parent() {
         let todos = vec![
-            TodoItem { content: "A".to_string(), status: TodoStatus::Completed, active_form: String::new() },
-            TodoItem { content: "B".to_string(), status: TodoStatus::InProgress, active_form: "Doing B".to_string() },
-            TodoItem { content: "C".to_string(), status: TodoStatus::Pending, active_form: String::new() },
+            TodoItem {
+                content: "A".to_string(),
+                status: TodoStatus::Completed,
+                active_form: String::new(),
+            },
+            TodoItem {
+                content: "B".to_string(),
+                status: TodoStatus::InProgress,
+                active_form: "Doing B".to_string(),
+            },
+            TodoItem {
+                content: "C".to_string(),
+                status: TodoStatus::Pending,
+                active_form: String::new(),
+            },
         ];
-        let subs = vec![
-            TodoItem { content: "S1".to_string(), status: TodoStatus::Pending, active_form: String::new() },
-        ];
+        let subs = vec![TodoItem {
+            content: "S1".to_string(),
+            status: TodoStatus::Pending,
+            active_form: String::new(),
+        }];
         let insert_after = 1; // after "B"
         let mut result: Vec<String> = Vec::new();
         for (i, t) in todos.iter().enumerate() {

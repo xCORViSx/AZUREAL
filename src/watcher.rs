@@ -58,7 +58,9 @@ impl FileWatcher {
         // Try creating the watcher — if this fails (OS limits, unsupported
         // platform, etc.), return None so the caller falls back to polling.
         let watcher = RecommendedWatcher::new(
-            move |res| { let _ = notify_tx.send(res); },
+            move |res| {
+                let _ = notify_tx.send(res);
+            },
             Config::default(),
         );
         let watcher = match watcher {
@@ -76,7 +78,11 @@ impl FileWatcher {
             })
             .expect("failed to spawn file-watcher thread");
 
-        Some(Self { cmd_tx, event_rx, _handle: handle })
+        Some(Self {
+            cmd_tx,
+            event_rx,
+            _handle: handle,
+        })
     }
 
     /// Send a command to the watcher thread (non-blocking)
@@ -93,9 +99,7 @@ impl FileWatcher {
 
 /// Paths that generate noise we don't care about — filtered in the watcher
 /// thread so the main thread never sees them.
-const NOISY_SEGMENTS: &[&str] = &[
-    "target", ".git", "node_modules", ".DS_Store",
-];
+const NOISY_SEGMENTS: &[&str] = &["target", ".git", "node_modules", ".DS_Store"];
 
 /// File extensions that are typically editor swap/backup files
 const NOISY_EXTENSIONS: &[&str] = &["swp", "swo", "swn"];
@@ -107,16 +111,22 @@ fn is_noisy_path(path: &Path) -> bool {
     for component in path.components() {
         if let std::path::Component::Normal(s) = component {
             let s = s.to_string_lossy();
-            if NOISY_SEGMENTS.iter().any(|&n| s == n) { return true; }
+            if NOISY_SEGMENTS.iter().any(|&n| s == n) {
+                return true;
+            }
         }
     }
     // Check extension for swap files
     if let Some(ext) = path.extension() {
         let ext = ext.to_string_lossy();
-        if NOISY_EXTENSIONS.iter().any(|&e| ext == e) { return true; }
+        if NOISY_EXTENSIONS.iter().any(|&e| ext == e) {
+            return true;
+        }
     }
     // Backup files ending with ~
-    if path.to_string_lossy().ends_with('~') { return true; }
+    if path.to_string_lossy().ends_with('~') {
+        return true;
+    }
     false
 }
 
@@ -188,7 +198,10 @@ fn watcher_loop(
         match notify_rx.recv_timeout(Duration::from_millis(200)) {
             Ok(event_result) => {
                 classify_event(
-                    &event_result, &session_path, &mut saw_session, &mut saw_worktree,
+                    &event_result,
+                    &session_path,
+                    &mut saw_session,
+                    &mut saw_worktree,
                 );
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -198,16 +211,23 @@ fn watcher_loop(
         // Drain any additional queued events (non-blocking) to coalesce
         while let Ok(event_result) = notify_rx.try_recv() {
             classify_event(
-                &event_result, &session_path, &mut saw_session, &mut saw_worktree,
+                &event_result,
+                &session_path,
+                &mut saw_session,
+                &mut saw_worktree,
             );
         }
 
         // --- Phase 3: Forward coalesced events to main thread ---
         if saw_session {
-            if event_tx.send(WatchEvent::SessionFileChanged).is_err() { return; }
+            if event_tx.send(WatchEvent::SessionFileChanged).is_err() {
+                return;
+            }
         }
         if saw_worktree {
-            if event_tx.send(WatchEvent::WorktreeChanged).is_err() { return; }
+            if event_tx.send(WatchEvent::WorktreeChanged).is_err() {
+                return;
+            }
         }
     }
 }
@@ -234,7 +254,9 @@ fn classify_event(
     // Collect unique affected paths to avoid double-counting
     let mut paths_seen = HashSet::new();
     for path in &event.paths {
-        if !paths_seen.insert(path) { continue; }
+        if !paths_seen.insert(path) {
+            continue;
+        }
 
         // Is this the session file?
         if let Some(ref sp) = session_path {
@@ -254,7 +276,7 @@ fn classify_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use notify::event::{CreateKind, ModifyKind, RemoveKind, AccessKind};
+    use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
 
     // ── Helper to build a notify::Event with paths ──────────────────────
     fn make_event(kind: EventKind, paths: Vec<PathBuf>) -> Event {
@@ -289,7 +311,9 @@ mod tests {
 
     #[test]
     fn noisy_node_modules() {
-        assert!(is_noisy_path(Path::new("/app/node_modules/lodash/index.js")));
+        assert!(is_noisy_path(Path::new(
+            "/app/node_modules/lodash/index.js"
+        )));
     }
 
     #[test]
@@ -309,7 +333,9 @@ mod tests {
 
     #[test]
     fn noisy_node_modules_nested() {
-        assert!(is_noisy_path(Path::new("src/node_modules/.package-lock.json")));
+        assert!(is_noisy_path(Path::new(
+            "src/node_modules/.package-lock.json"
+        )));
     }
 
     // =====================================================================
@@ -423,7 +449,9 @@ mod tests {
     #[test]
     fn clean_path_with_git_substring_not_segment() {
         // ".github" is not ".git"
-        assert!(!is_noisy_path(Path::new("/project/.github/workflows/ci.yml")));
+        assert!(!is_noisy_path(Path::new(
+            "/project/.github/workflows/ci.yml"
+        )));
     }
 
     #[test]
@@ -509,10 +537,7 @@ mod tests {
     #[test]
     fn classify_session_file_create() {
         let sp = PathBuf::from("/tmp/session.jsonl");
-        let event = make_event(
-            EventKind::Create(CreateKind::File),
-            vec![sp.clone()],
-        );
+        let event = make_event(EventKind::Create(CreateKind::File), vec![sp.clone()]);
         let (mut s, mut w) = (false, false);
         classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
         assert!(s, "should detect session file");
@@ -522,10 +547,7 @@ mod tests {
     #[test]
     fn classify_session_file_modify() {
         let sp = PathBuf::from("/sessions/abc.jsonl");
-        let event = make_event(
-            EventKind::Modify(ModifyKind::Any),
-            vec![sp.clone()],
-        );
+        let event = make_event(EventKind::Modify(ModifyKind::Any), vec![sp.clone()]);
         let (mut s, mut w) = (false, false);
         classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
         assert!(s);
@@ -535,10 +557,7 @@ mod tests {
     #[test]
     fn classify_session_file_remove() {
         let sp = PathBuf::from("/data/session.jsonl");
-        let event = make_event(
-            EventKind::Remove(RemoveKind::File),
-            vec![sp.clone()],
-        );
+        let event = make_event(EventKind::Remove(RemoveKind::File), vec![sp.clone()]);
         let (mut s, mut w) = (false, false);
         classify_event(&Ok(event), &Some(sp), &mut s, &mut w);
         assert!(s);
@@ -788,7 +807,9 @@ mod tests {
 
     #[test]
     fn clean_path_with_special_chars() {
-        assert!(!is_noisy_path(Path::new("/project/src/file-with-dashes.rs")));
+        assert!(!is_noisy_path(Path::new(
+            "/project/src/file-with-dashes.rs"
+        )));
     }
 
     #[test]

@@ -33,7 +33,11 @@ impl App {
     /// Check if there's a pending session name for this slot and save it.
     /// slot_id is the PID string — each concurrent spawn can register its own name.
     pub fn check_pending_session_name(&mut self, slot_id: &str, session_id: &str) {
-        if let Some(idx) = self.pending_session_names.iter().position(|(s, _)| s == slot_id) {
+        if let Some(idx) = self
+            .pending_session_names
+            .iter()
+            .position(|(s, _)| s == slot_id)
+        {
             let (_, custom_name) = self.pending_session_names.remove(idx);
             self.save_session_name(session_id, &custom_name);
         }
@@ -215,7 +219,8 @@ mod tests {
     #[test]
     fn check_pending_matching_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".into(), "Custom".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "Custom".into()));
         app.check_pending_session_name("slot-1", "1");
         assert!(app.pending_session_names.is_empty());
     }
@@ -223,7 +228,8 @@ mod tests {
     #[test]
     fn check_pending_non_matching_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".into(), "Name".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "Name".into()));
         app.check_pending_session_name("slot-2", "1");
         assert_eq!(app.pending_session_names.len(), 1);
     }
@@ -231,9 +237,12 @@ mod tests {
     #[test]
     fn check_pending_multiple_slots() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".into(), "A".into()));
-        app.pending_session_names.push(("slot-2".into(), "B".into()));
-        app.pending_session_names.push(("slot-3".into(), "C".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "A".into()));
+        app.pending_session_names
+            .push(("slot-2".into(), "B".into()));
+        app.pending_session_names
+            .push(("slot-3".into(), "C".into()));
         app.check_pending_session_name("slot-2", "1");
         assert_eq!(app.pending_session_names.len(), 2);
         assert!(app.pending_session_names.iter().any(|(s, _)| s == "slot-1"));
@@ -244,8 +253,10 @@ mod tests {
     #[test]
     fn check_pending_removes_only_first_match() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".into(), "First".into()));
-        app.pending_session_names.push(("slot-1".into(), "Second".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "First".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "Second".into()));
         app.check_pending_session_name("slot-1", "1");
         assert_eq!(app.pending_session_names.len(), 1);
         assert_eq!(app.pending_session_names[0].1, "Second");
@@ -263,7 +274,8 @@ mod tests {
     fn check_pending_saves_to_store() {
         let mut app = app_with_store();
         let id = create_session(&app, "main");
-        app.pending_session_names.push(("slot-1".into(), "Saved Name".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "Saved Name".into()));
         app.check_pending_session_name("slot-1", &id);
         let names = app.load_all_session_names();
         assert_eq!(names.get(&id), Some(&"Saved Name".to_string()));
@@ -273,7 +285,8 @@ mod tests {
     #[test]
     fn check_pending_called_twice_same_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot-1".into(), "Name".into()));
+        app.pending_session_names
+            .push(("slot-1".into(), "Name".into()));
         app.check_pending_session_name("slot-1", "1");
         assert!(app.pending_session_names.is_empty());
         app.check_pending_session_name("slot-1", "2");
@@ -293,7 +306,8 @@ mod tests {
     fn check_pending_first_element() {
         let mut app = App::new();
         app.pending_session_names.push(("first".into(), "F".into()));
-        app.pending_session_names.push(("second".into(), "S".into()));
+        app.pending_session_names
+            .push(("second".into(), "S".into()));
         app.check_pending_session_name("first", "1");
         assert_eq!(app.pending_session_names.len(), 1);
         assert_eq!(app.pending_session_names[0].0, "second");
@@ -313,7 +327,8 @@ mod tests {
     fn check_pending_middle_element() {
         let mut app = App::new();
         app.pending_session_names.push(("first".into(), "F".into()));
-        app.pending_session_names.push(("middle".into(), "M".into()));
+        app.pending_session_names
+            .push(("middle".into(), "M".into()));
         app.pending_session_names.push(("last".into(), "L".into()));
         app.check_pending_session_name("middle", "1");
         assert_eq!(app.pending_session_names.len(), 2);
@@ -325,7 +340,8 @@ mod tests {
     fn check_pending_all_elements() {
         let mut app = App::new();
         for i in 0..5 {
-            app.pending_session_names.push((format!("slot-{i}"), format!("Name-{i}")));
+            app.pending_session_names
+                .push((format!("slot-{i}"), format!("Name-{i}")));
         }
         for i in 0..5 {
             app.check_pending_session_name(&format!("slot-{i}"), &format!("{i}"));
@@ -344,7 +360,8 @@ mod tests {
     #[test]
     fn pending_push_and_access() {
         let mut app = App::new();
-        app.pending_session_names.push(("pid-123".into(), "Feature Work".into()));
+        app.pending_session_names
+            .push(("pid-123".into(), "Feature Work".into()));
         assert_eq!(app.pending_session_names.len(), 1);
         assert_eq!(app.pending_session_names[0].0, "pid-123");
         assert_eq!(app.pending_session_names[0].1, "Feature Work");
@@ -354,7 +371,8 @@ mod tests {
     fn pending_multiple_entries() {
         let mut app = App::new();
         for i in 0..10 {
-            app.pending_session_names.push((format!("pid-{i}"), format!("Session {i}")));
+            app.pending_session_names
+                .push((format!("pid-{i}"), format!("Session {i}")));
         }
         assert_eq!(app.pending_session_names.len(), 10);
     }
@@ -374,7 +392,8 @@ mod tests {
     fn pending_capacity_growth() {
         let mut app = App::new();
         for i in 0..100 {
-            app.pending_session_names.push((format!("{i}"), format!("{i}")));
+            app.pending_session_names
+                .push((format!("{i}"), format!("{i}")));
         }
         assert_eq!(app.pending_session_names.len(), 100);
     }
@@ -417,7 +436,8 @@ mod tests {
     #[test]
     fn check_pending_special_chars_in_slot() {
         let mut app = App::new();
-        app.pending_session_names.push(("slot/with/slashes".into(), "Name".into()));
+        app.pending_session_names
+            .push(("slot/with/slashes".into(), "Name".into()));
         app.check_pending_session_name("slot/with/slashes", "1");
         assert!(app.pending_session_names.is_empty());
     }
@@ -426,7 +446,8 @@ mod tests {
     fn check_pending_with_multiple_different_slots() {
         let mut app = App::new();
         for i in 0..5 {
-            app.pending_session_names.push((format!("slot-{i}"), format!("Name {i}")));
+            app.pending_session_names
+                .push((format!("slot-{i}"), format!("Name {i}")));
         }
         app.check_pending_session_name("slot-3", "3");
         assert_eq!(app.pending_session_names.len(), 4);

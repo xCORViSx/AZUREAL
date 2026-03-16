@@ -7,13 +7,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::app::types::{
-    GodFileEntry, HealthPanel,
-    ModuleStyleDialog, RustModuleStyle, PythonModuleStyle,
+    GodFileEntry, HealthPanel, ModuleStyleDialog, PythonModuleStyle, RustModuleStyle,
 };
 use crate::backend::AgentProcess;
 
 use super::super::App;
-use super::{SOURCE_EXTENSIONS, SOURCE_ROOTS, SKIP_DIRS, load_health_scope};
+use super::{load_health_scope, SKIP_DIRS, SOURCE_EXTENSIONS, SOURCE_ROOTS};
 
 /// Minimum line count for a file to be considered a "god file"
 const GOD_FILE_THRESHOLD: usize = 1000;
@@ -97,19 +96,23 @@ impl App {
     /// tree shows entries from the current worktree path. This method translates
     /// project-root paths → worktree paths so highlighting matches the file tree.
     pub fn enter_god_file_scope_mode(&mut self) {
-        let Some(ref project) = self.project else { return };
+        let Some(ref project) = self.project else {
+            return;
+        };
         let project_root = project.path.clone();
 
         // The file tree is rooted at the current worktree path, which may differ
         // from project.path (e.g., /repo/worktrees/health vs /repo). Translate
         // scope paths so they match the file tree entries.
-        let wt_root = self.current_worktree()
+        let wt_root = self
+            .current_worktree()
             .and_then(|wt| wt.worktree_path.clone())
             .unwrap_or_else(|| project_root.clone());
 
         // Try loading persisted scope first (stored as project-root-relative)
         let dirs = load_health_scope(&project_root).unwrap_or_else(|| {
-            let found: Vec<PathBuf> = SOURCE_ROOTS.iter()
+            let found: Vec<PathBuf> = SOURCE_ROOTS
+                .iter()
                 .map(|name| project_root.join(name))
                 .filter(|p| p.is_dir())
                 .collect();
@@ -128,7 +131,11 @@ impl App {
                 .map(|p| {
                     if let Ok(rel) = p.strip_prefix(&project_root) {
                         let translated = wt_root.join(rel);
-                        if translated.is_dir() { translated } else { p }
+                        if translated.is_dir() {
+                            translated
+                        } else {
+                            p
+                        }
                     } else {
                         p
                     }
@@ -164,7 +171,8 @@ impl App {
         let dir_set: HashSet<PathBuf> = dirs.iter().map(PathBuf::from).collect();
         let god_files = self.scan_god_files_with_dirs(&dir_set);
         let (doc_entries, doc_score) = self.scan_documentation();
-        let worktree_name = self.selected_worktree
+        let worktree_name = self
+            .selected_worktree
             .map(|i| self.worktrees[i].name().to_string())
             .unwrap_or_default();
         self.health_panel = Some(HealthPanel {
@@ -187,7 +195,9 @@ impl App {
     pub fn god_file_view_checked(&mut self) {
         const MAX_TABS: usize = 12;
         let paths: Vec<PathBuf> = match self.health_panel {
-            Some(ref panel) => panel.god_files.iter()
+            Some(ref panel) => panel
+                .god_files
+                .iter()
                 .filter(|e| e.checked)
                 .map(|e| e.path.clone())
                 .collect(),
@@ -202,7 +212,11 @@ impl App {
         let mut skipped_dup = 0usize;
         let mut skipped_cap = 0usize;
         for path in &paths {
-            if self.viewer_tabs.iter().any(|t| t.path.as_ref() == Some(path)) {
+            if self
+                .viewer_tabs
+                .iter()
+                .any(|t| t.path.as_ref() == Some(path))
+            {
                 skipped_dup += 1;
                 continue;
             }
@@ -214,7 +228,8 @@ impl App {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let title = path.file_name()
+            let title = path
+                .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".to_string());
             self.viewer_tabs.push(crate::app::types::ViewerTab {
@@ -234,9 +249,20 @@ impl App {
             self.focus = crate::app::Focus::Viewer;
         }
 
-        let mut msg = format!("Opened {} file{}", opened, if opened == 1 { "" } else { "s" });
-        if skipped_dup > 0 { msg.push_str(&format!(", {} already tabbed", skipped_dup)); }
-        if skipped_cap > 0 { msg.push_str(&format!(", {} skipped (max {} tabs)", skipped_cap, MAX_TABS)); }
+        let mut msg = format!(
+            "Opened {} file{}",
+            opened,
+            if opened == 1 { "" } else { "s" }
+        );
+        if skipped_dup > 0 {
+            msg.push_str(&format!(", {} already tabbed", skipped_dup));
+        }
+        if skipped_cap > 0 {
+            msg.push_str(&format!(
+                ", {} skipped (max {} tabs)",
+                skipped_cap, MAX_TABS
+            ));
+        }
         self.set_status(msg);
     }
 
@@ -265,7 +291,9 @@ impl App {
     /// dialog first. Otherwise spawns immediately with generic prompts.
     pub fn god_file_start_modularize(&mut self, claude_process: &AgentProcess) {
         let checked: Vec<(String, usize)> = match self.health_panel {
-            Some(ref panel) => panel.god_files.iter()
+            Some(ref panel) => panel
+                .god_files
+                .iter()
                 .filter(|e| e.checked)
                 .map(|e| (e.rel_path.clone(), e.line_count))
                 .collect(),
@@ -303,7 +331,9 @@ impl App {
         python_style: Option<PythonModuleStyle>,
     ) {
         let checked: Vec<(String, usize)> = match self.health_panel {
-            Some(ref panel) => panel.god_files.iter()
+            Some(ref panel) => panel
+                .god_files
+                .iter()
                 .filter(|e| e.checked)
                 .map(|e| (e.rel_path.clone(), e.line_count))
                 .collect(),
@@ -317,7 +347,10 @@ impl App {
         // Spawn GFM sessions on the current worktree — changes merge back to main
         let (branch, wt_path) = match self.current_worktree_info() {
             Some(v) => v,
-            None => { self.set_status("No active worktree"); return; }
+            None => {
+                self.set_status("No active worktree");
+                return;
+            }
         };
 
         self.health_panel = None;
@@ -326,18 +359,22 @@ impl App {
         let mut failed = 0usize;
         for (rel_path, lines) in &checked {
             let prompt = build_modularize_prompt(rel_path, *lines, rust_style, python_style);
-            let filename = Path::new(rel_path).file_name()
+            let filename = Path::new(rel_path)
+                .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
 
             match claude_process.spawn(&wt_path, &prompt, None, None) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
-                    self.pending_session_names.push((slot, format!("[GFM] {}", filename)));
+                    self.pending_session_names
+                        .push((slot, format!("[GFM] {}", filename)));
                     self.register_claude(branch.clone(), pid, rx);
                     spawned += 1;
                 }
-                Err(_) => { failed += 1; }
+                Err(_) => {
+                    failed += 1;
+                }
             }
         }
 
@@ -375,7 +412,10 @@ impl App {
         if failed == 0 {
             self.set_status(format!("Modularizing {} files simultaneously", spawned));
         } else {
-            self.set_status(format!("Modularizing {} files ({} failed to start)", spawned, failed));
+            self.set_status(format!(
+                "Modularizing {} files ({} failed to start)",
+                spawned, failed
+            ));
         }
     }
 
@@ -385,9 +425,12 @@ impl App {
     /// Scans the current worktree path (not project root) so results reflect
     /// the actual files on the working branch.
     pub(crate) fn scan_god_files(&self) -> Vec<GodFileEntry> {
-        let Some(root) = self.health_scan_root() else { return Vec::new() };
+        let Some(root) = self.health_scan_root() else {
+            return Vec::new();
+        };
 
-        let found_roots: HashSet<PathBuf> = SOURCE_ROOTS.iter()
+        let found_roots: HashSet<PathBuf> = SOURCE_ROOTS
+            .iter()
             .map(|name| root.join(name))
             .filter(|p| p.is_dir())
             .collect();
@@ -405,7 +448,9 @@ impl App {
     /// user-customized scope mode. Dirs should already be translated to the
     /// current worktree path (via `translate_scope_dirs`).
     pub(crate) fn scan_god_files_with_dirs(&self, dirs: &HashSet<PathBuf>) -> Vec<GodFileEntry> {
-        let Some(root) = self.health_scan_root() else { return Vec::new() };
+        let Some(root) = self.health_scan_root() else {
+            return Vec::new();
+        };
         let mut entries = Vec::new();
 
         let scanning_root = dirs.contains(&root);
@@ -429,19 +474,35 @@ impl App {
 /// Scan only the immediate files in a directory (no recursion).
 /// Catches top-level source files like main.rs, build.rs, setup.py, etc.
 fn scan_top_level_files(root: &Path, results: &mut Vec<GodFileEntry>) {
-    let read_dir = match fs::read_dir(root) { Ok(rd) => rd, Err(_) => return };
+    let read_dir = match fs::read_dir(root) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
     for entry in read_dir.filter_map(|e| e.ok()) {
         let path = entry.path();
-        if !path.is_file() { continue; }
+        if !path.is_file() {
+            continue;
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !SOURCE_EXTENSIONS.contains(&ext) { continue; }
+        if !SOURCE_EXTENSIONS.contains(&ext) {
+            continue;
+        }
         let line_count = match count_source_lines(&path) {
             Some(c) => c,
             None => continue,
         };
         if line_count > GOD_FILE_THRESHOLD {
-            let rel_path = path.strip_prefix(root).unwrap_or(&path).display().to_string();
-            results.push(GodFileEntry { path: path.clone(), rel_path, line_count, checked: false });
+            let rel_path = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            results.push(GodFileEntry {
+                path: path.clone(),
+                rel_path,
+                line_count,
+                checked: false,
+            });
         }
     }
 }
@@ -449,29 +510,47 @@ fn scan_top_level_files(root: &Path, results: &mut Vec<GodFileEntry>) {
 /// Recursively scan a directory for source files exceeding the LOC threshold.
 /// Skips hidden directories and known build/dependency/non-source directories.
 fn scan_dir_recursive(root: &Path, dir: &Path, results: &mut Vec<GodFileEntry>) {
-    let read_dir = match fs::read_dir(dir) { Ok(rd) => rd, Err(_) => return };
+    let read_dir = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
     let mut dir_entries: Vec<_> = read_dir.filter_map(|e| e.ok()).collect();
     dir_entries.sort_by_key(|e| e.file_name());
 
     for entry in dir_entries {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') { continue; }
+        if name.starts_with('.') {
+            continue;
+        }
 
         if path.is_dir() {
             let name_lower = name.to_ascii_lowercase();
-            if SKIP_DIRS.iter().any(|&s| s == name_lower) { continue; }
+            if SKIP_DIRS.iter().any(|&s| s == name_lower) {
+                continue;
+            }
             scan_dir_recursive(root, &path, results);
         } else if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if !SOURCE_EXTENSIONS.contains(&ext) { continue; }
+            if !SOURCE_EXTENSIONS.contains(&ext) {
+                continue;
+            }
             let line_count = match count_source_lines(&path) {
                 Some(c) => c,
                 None => continue,
             };
             if line_count > GOD_FILE_THRESHOLD {
-                let rel_path = path.strip_prefix(root).unwrap_or(&path).display().to_string();
-                results.push(GodFileEntry { path: path.clone(), rel_path, line_count, checked: false });
+                let rel_path = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string();
+                results.push(GodFileEntry {
+                    path: path.clone(),
+                    rel_path,
+                    line_count,
+                    checked: false,
+                });
             }
         }
     }
@@ -592,14 +671,16 @@ mod tests {
 
     #[test]
     fn test_prompt_rust_file_based() {
-        let prompt = build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::FileBased), None);
+        let prompt =
+            build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::FileBased), None);
         assert!(prompt.contains("file-based module roots"));
         assert!(prompt.contains("Do NOT use `mod.rs`"));
     }
 
     #[test]
     fn test_prompt_rust_mod_rs() {
-        let prompt = build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::ModRs), None);
+        let prompt =
+            build_modularize_prompt("src/state.rs", 1500, Some(RustModuleStyle::ModRs), None);
         assert!(prompt.contains("mod.rs"));
         assert!(prompt.contains("legacy Rust convention"));
     }
@@ -613,7 +694,8 @@ mod tests {
 
     #[test]
     fn test_prompt_rust_style_ignored_for_non_rs() {
-        let prompt = build_modularize_prompt("app.js", 1500, Some(RustModuleStyle::FileBased), None);
+        let prompt =
+            build_modularize_prompt("app.js", 1500, Some(RustModuleStyle::FileBased), None);
         assert!(!prompt.contains("file-based module roots"));
     }
 
@@ -621,14 +703,16 @@ mod tests {
 
     #[test]
     fn test_prompt_python_package() {
-        let prompt = build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::Package));
+        let prompt =
+            build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::Package));
         assert!(prompt.contains("Python packages"));
         assert!(prompt.contains("__init__.py"));
     }
 
     #[test]
     fn test_prompt_python_single_file() {
-        let prompt = build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::SingleFile));
+        let prompt =
+            build_modularize_prompt("app.py", 1500, None, Some(PythonModuleStyle::SingleFile));
         assert!(prompt.contains("single-file Python modules"));
         assert!(prompt.contains("standalone"));
     }
@@ -642,7 +726,8 @@ mod tests {
 
     #[test]
     fn test_prompt_python_style_ignored_for_non_py() {
-        let prompt = build_modularize_prompt("app.rs", 1500, None, Some(PythonModuleStyle::Package));
+        let prompt =
+            build_modularize_prompt("app.rs", 1500, None, Some(PythonModuleStyle::Package));
         assert!(!prompt.contains("Python packages"));
     }
 
@@ -651,7 +736,8 @@ mod tests {
     #[test]
     fn test_prompt_rs_with_both_styles_only_uses_rust() {
         let prompt = build_modularize_prompt(
-            "src/app.rs", 2000,
+            "src/app.rs",
+            2000,
             Some(RustModuleStyle::FileBased),
             Some(PythonModuleStyle::Package),
         );
@@ -662,7 +748,8 @@ mod tests {
     #[test]
     fn test_prompt_py_with_both_styles_only_uses_python() {
         let prompt = build_modularize_prompt(
-            "app.py", 2000,
+            "app.py",
+            2000,
             Some(RustModuleStyle::FileBased),
             Some(PythonModuleStyle::Package),
         );
@@ -673,7 +760,8 @@ mod tests {
     #[test]
     fn test_prompt_generic_file_no_style_section() {
         let prompt = build_modularize_prompt(
-            "app.go", 2000,
+            "app.go",
+            2000,
             Some(RustModuleStyle::FileBased),
             Some(PythonModuleStyle::Package),
         );
@@ -733,7 +821,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
         make_source_file(root, "exact.rs", 1000); // exactly 1000 — NOT a god file
-        make_source_file(root, "over.rs", 1001);  // 1001 — IS a god file
+        make_source_file(root, "over.rs", 1001); // 1001 — IS a god file
         let mut results = Vec::new();
         scan_dir_recursive(root, root, &mut results);
         assert_eq!(results.len(), 1);

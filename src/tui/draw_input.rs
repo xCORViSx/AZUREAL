@@ -13,8 +13,8 @@ use ratatui::{
     Frame,
 };
 
+use super::keybindings::{prompt_command_title, prompt_type_title};
 use crate::app::{App, Focus};
-use super::keybindings::{prompt_type_title, prompt_command_title};
 
 /// Split hint segments across top and bottom borders.
 /// Returns (top_title, bottom_title_or_none).
@@ -22,7 +22,9 @@ use super::keybindings::{prompt_type_title, prompt_command_title};
 /// Packs as many segments onto the top border (after label) as fit, then the rest go bottom.
 pub fn split_title_hints(label: &str, hints: &str, max_w: usize) -> (String, Option<String>) {
     let full = format!("{} ({}) ", label.trim_end(), hints);
-    if full.chars().count() <= max_w { return (format!(" {} ", full.trim()), None); }
+    if full.chars().count() <= max_w {
+        return (format!(" {} ", full.trim()), None);
+    }
 
     let segments: Vec<&str> = hints.split(" | ").collect();
     // Budget for top: " LABEL (seg | seg | ...) " — label + parens + spaces
@@ -34,7 +36,9 @@ pub fn split_title_hints(label: &str, hints: &str, max_w: usize) -> (String, Opt
     let mut split_at = 0;
     for (i, seg) in segments.iter().enumerate() {
         let sep = if top_parts.is_empty() { 0 } else { 3 };
-        if top_len + sep + seg.chars().count() > top_budget { break; }
+        if top_len + sep + seg.chars().count() > top_budget {
+            break;
+        }
         top_len += sep + seg.chars().count();
         top_parts.push(seg);
         split_at = i + 1;
@@ -87,8 +91,7 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let (top_title, bottom_title) = split_title_hints(&label, &hints, inner_width);
 
     // Pre-wrap content at character boundaries and compute cursor position
-    let (content, cursor_row, cursor_col) =
-        build_wrapped_content(app, inner_width);
+    let (content, cursor_row, cursor_col) = build_wrapped_content(app, inner_width);
 
     // Scroll offset: keep cursor visible within the box
     let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
@@ -98,14 +101,20 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let title_style = if is_focused {
-        Style::default().fg(border_color).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(border_color)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
+        .border_type(if is_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
         .title(Span::styled(top_title, title_style))
         .border_style(title_style);
 
@@ -123,10 +132,7 @@ pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     // Show cursor only in prompt mode when focused
     if app.prompt_mode && is_focused && inner_width > 0 {
         let adjusted_row = cursor_row as u16 - scroll_offset;
-        f.set_cursor_position((
-            area.x + 1 + cursor_col as u16,
-            area.y + 1 + adjusted_row,
-        ));
+        f.set_cursor_position((area.x + 1 + cursor_col as u16, area.y + 1 + adjusted_row));
     }
 }
 
@@ -147,7 +153,13 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
     let breaks = word_wrap_break_points(&chars, inner_width);
 
     let selection = app.input_selection.and_then(|(s, e)| {
-        if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) }
+        if s == e {
+            None
+        } else if s < e {
+            Some((s, e))
+        } else {
+            Some((e, s))
+        }
     });
 
     let normal_style = Style::default().fg(Color::White);
@@ -165,7 +177,15 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
             cursor_row = lines.len();
             cursor_col = display_width(&chars[prev..target]);
         }
-        flush_row(&chars, prev, bp, selection, normal_style, selection_style, &mut lines);
+        flush_row(
+            &chars,
+            prev,
+            bp,
+            selection,
+            normal_style,
+            selection_style,
+            &mut lines,
+        );
         prev = bp;
         // Skip newline char (it's not displayed, next row starts after it)
         if prev > 0 && prev <= chars.len() && prev > 0 && chars.get(prev - 1) == Some(&'\n') {
@@ -177,14 +197,25 @@ fn build_wrapped_content(app: &App, inner_width: usize) -> (Vec<Line<'static>>, 
         cursor_row = lines.len();
         cursor_col = display_width(&chars[prev..target.min(chars.len())]);
     }
-    flush_row(&chars, prev, chars.len(), selection, normal_style, selection_style, &mut lines);
+    flush_row(
+        &chars,
+        prev,
+        chars.len(),
+        selection,
+        normal_style,
+        selection_style,
+        &mut lines,
+    );
 
     (lines, cursor_row, cursor_col)
 }
 
 /// Compute display width of a char slice (sum of unicode widths)
 pub(crate) fn display_width(chars: &[char]) -> usize {
-    chars.iter().map(|c| unicode_width::UnicodeWidthChar::width(*c).unwrap_or(1)).sum()
+    chars
+        .iter()
+        .map(|c| unicode_width::UnicodeWidthChar::width(*c).unwrap_or(1))
+        .sum()
 }
 
 /// Compute word-wrap break points for a char array at the given width.
@@ -194,7 +225,9 @@ pub(crate) fn display_width(chars: &[char]) -> usize {
 /// Word-wrap prefers breaking at the char after the last space before
 /// the width limit. Falls back to hard char break if no space exists.
 pub(crate) fn word_wrap_break_points(chars: &[char], width: usize) -> Vec<usize> {
-    if width == 0 || chars.is_empty() { return vec![]; }
+    if width == 0 || chars.is_empty() {
+        return vec![];
+    }
     let mut breaks = Vec::new();
     let mut _row_start = 0usize;
     let mut col = 0usize;
@@ -205,7 +238,7 @@ pub(crate) fn word_wrap_break_points(chars: &[char], width: usize) -> Vec<usize>
         if c == '\n' {
             // Newline: break here. Next row starts at i+1.
             breaks.push(i + 1);
-            _row_start =i + 1;
+            _row_start = i + 1;
             col = 0;
             last_space = None;
             continue;
@@ -217,18 +250,20 @@ pub(crate) fn word_wrap_break_points(chars: &[char], width: usize) -> Vec<usize>
             if let Some(sp) = last_space {
                 // Break after the space: row is [row_start..sp+1], new row starts at sp+1
                 breaks.push(sp + 1);
-                _row_start =sp + 1;
+                _row_start = sp + 1;
                 // Recompute col from sp+1 to current char (inclusive)
                 col = display_width(&chars[sp + 1..i]) + w;
                 last_space = None;
                 // Check for spaces in the carried-over portion
                 for j in (sp + 1)..i {
-                    if chars[j] == ' ' { last_space = Some(j); }
+                    if chars[j] == ' ' {
+                        last_space = Some(j);
+                    }
                 }
             } else {
                 // No space on this row — hard break at current char
                 breaks.push(i);
-                _row_start =i;
+                _row_start = i;
                 col = w;
                 last_space = None;
             }
@@ -236,7 +271,9 @@ pub(crate) fn word_wrap_break_points(chars: &[char], width: usize) -> Vec<usize>
             col += w;
         }
 
-        if c == ' ' { last_space = Some(i); }
+        if c == ' ' {
+            last_space = Some(i);
+        }
     }
     breaks
 }
@@ -263,17 +300,29 @@ fn flush_row(
             let s = sel_s.max(start);
             let e = sel_e.min(end);
             if start < s {
-                spans.push(Span::styled(chars[start..s].iter().collect::<String>(), normal));
+                spans.push(Span::styled(
+                    chars[start..s].iter().collect::<String>(),
+                    normal,
+                ));
             }
             if s < e {
-                spans.push(Span::styled(chars[s..e].iter().collect::<String>(), selected));
+                spans.push(Span::styled(
+                    chars[s..e].iter().collect::<String>(),
+                    selected,
+                ));
             }
             if e < end {
-                spans.push(Span::styled(chars[e..end].iter().collect::<String>(), normal));
+                spans.push(Span::styled(
+                    chars[e..end].iter().collect::<String>(),
+                    normal,
+                ));
             }
         }
         None => {
-            spans.push(Span::styled(chars[start..end].iter().collect::<String>(), normal));
+            spans.push(Span::styled(
+                chars[start..end].iter().collect::<String>(),
+                normal,
+            ));
         }
     }
     lines.push(Line::from(spans));
@@ -524,7 +573,15 @@ mod tests {
     fn test_flush_row_empty_range() {
         let chars = vec!['a', 'b', 'c'];
         let mut lines = Vec::new();
-        flush_row(&chars, 2, 2, None, Style::default(), Style::default(), &mut lines);
+        flush_row(
+            &chars,
+            2,
+            2,
+            None,
+            Style::default(),
+            Style::default(),
+            &mut lines,
+        );
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].spans.len(), 0); // empty line
     }
@@ -533,7 +590,15 @@ mod tests {
     fn test_flush_row_normal() {
         let chars = vec!['h', 'e', 'l', 'l', 'o'];
         let mut lines = Vec::new();
-        flush_row(&chars, 0, 5, None, Style::default().fg(Color::White), Style::default(), &mut lines);
+        flush_row(
+            &chars,
+            0,
+            5,
+            None,
+            Style::default().fg(Color::White),
+            Style::default(),
+            &mut lines,
+        );
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].spans[0].content.as_ref(), "hello");
     }
@@ -543,7 +608,15 @@ mod tests {
         let chars = vec!['a', 'b', 'c', 'd', 'e'];
         let mut lines = Vec::new();
         let sel_style = Style::default().bg(Color::Blue);
-        flush_row(&chars, 0, 5, Some((1, 3)), Style::default(), sel_style, &mut lines);
+        flush_row(
+            &chars,
+            0,
+            5,
+            Some((1, 3)),
+            Style::default(),
+            sel_style,
+            &mut lines,
+        );
         assert_eq!(lines.len(), 1);
         assert!(lines[0].spans.len() >= 2); // at least normal + selected
     }
@@ -553,7 +626,15 @@ mod tests {
         let chars = vec!['x', 'y', 'z'];
         let mut lines = Vec::new();
         let sel = Style::default().bg(Color::Blue);
-        flush_row(&chars, 0, 3, Some((0, 3)), Style::default(), sel, &mut lines);
+        flush_row(
+            &chars,
+            0,
+            3,
+            Some((0, 3)),
+            Style::default(),
+            sel,
+            &mut lines,
+        );
         assert_eq!(lines.len(), 1);
     }
 
@@ -561,7 +642,15 @@ mod tests {
     fn test_flush_row_partial_range() {
         let chars = vec!['a', 'b', 'c', 'd', 'e'];
         let mut lines = Vec::new();
-        flush_row(&chars, 1, 4, None, Style::default(), Style::default(), &mut lines);
+        flush_row(
+            &chars,
+            1,
+            4,
+            None,
+            Style::default(),
+            Style::default(),
+            &mut lines,
+        );
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].spans[0].content.as_ref(), "bcd");
     }
@@ -573,28 +662,60 @@ mod tests {
     #[test]
     fn test_selection_normalize_forward() {
         let input = Some((2, 5));
-        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        let norm = input.and_then(|(s, e)| {
+            if s == e {
+                None
+            } else if s < e {
+                Some((s, e))
+            } else {
+                Some((e, s))
+            }
+        });
         assert_eq!(norm, Some((2, 5)));
     }
 
     #[test]
     fn test_selection_normalize_backward() {
         let input = Some((5, 2));
-        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        let norm = input.and_then(|(s, e)| {
+            if s == e {
+                None
+            } else if s < e {
+                Some((s, e))
+            } else {
+                Some((e, s))
+            }
+        });
         assert_eq!(norm, Some((2, 5)));
     }
 
     #[test]
     fn test_selection_normalize_same() {
         let input = Some((3, 3));
-        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        let norm = input.and_then(|(s, e)| {
+            if s == e {
+                None
+            } else if s < e {
+                Some((s, e))
+            } else {
+                Some((e, s))
+            }
+        });
         assert!(norm.is_none());
     }
 
     #[test]
     fn test_selection_normalize_none() {
         let input: Option<(usize, usize)> = None;
-        let norm = input.and_then(|(s, e)| if s == e { None } else if s < e { Some((s, e)) } else { Some((e, s)) });
+        let norm = input.and_then(|(s, e)| {
+            if s == e {
+                None
+            } else if s < e {
+                Some((s, e))
+            } else {
+                Some((e, s))
+            }
+        });
         assert!(norm.is_none());
     }
 
@@ -606,7 +727,11 @@ mod tests {
     fn test_scroll_offset_no_scroll() {
         let visible_rows = 5;
         let cursor_row = 3;
-        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows {
+            (cursor_row - visible_rows + 1) as u16
+        } else {
+            0
+        };
         assert_eq!(offset, 0);
     }
 
@@ -614,7 +739,11 @@ mod tests {
     fn test_scroll_offset_scrolled() {
         let visible_rows = 5;
         let cursor_row = 8;
-        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows {
+            (cursor_row - visible_rows + 1) as u16
+        } else {
+            0
+        };
         assert_eq!(offset, 4);
     }
 
@@ -622,7 +751,11 @@ mod tests {
     fn test_scroll_offset_zero_rows() {
         let visible_rows = 0;
         let cursor_row = 3;
-        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows {
+            (cursor_row - visible_rows + 1) as u16
+        } else {
+            0
+        };
         assert_eq!(offset, 0);
     }
 
@@ -658,7 +791,11 @@ mod tests {
     fn test_scroll_offset_cursor_at_start() {
         let visible_rows = 10usize;
         let cursor_row = 0usize;
-        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows {
+            (cursor_row - visible_rows + 1) as u16
+        } else {
+            0
+        };
         assert_eq!(offset, 0);
     }
 
@@ -666,7 +803,11 @@ mod tests {
     fn test_scroll_offset_cursor_past_visible() {
         let visible_rows = 5usize;
         let cursor_row = 7usize;
-        let offset = if visible_rows > 0 && cursor_row >= visible_rows { (cursor_row - visible_rows + 1) as u16 } else { 0 };
+        let offset = if visible_rows > 0 && cursor_row >= visible_rows {
+            (cursor_row - visible_rows + 1) as u16
+        } else {
+            0
+        };
         assert_eq!(offset, 3);
     }
 }

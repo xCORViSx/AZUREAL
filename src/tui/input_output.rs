@@ -29,8 +29,14 @@ pub fn handle_session_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     if !app.session_find_matches.is_empty() && !app.session_find_active {
         use event::KeyCode;
         match key.code {
-            KeyCode::Char('n') => { jump_next_match(app); return Ok(()); }
-            KeyCode::Char('N') => { jump_prev_match(app); return Ok(()); }
+            KeyCode::Char('n') => {
+                jump_next_match(app);
+                return Ok(());
+            }
+            KeyCode::Char('N') => {
+                jump_prev_match(app);
+                return Ok(());
+            }
             // Esc clears residual search matches
             KeyCode::Esc => {
                 app.session_find.clear();
@@ -98,7 +104,9 @@ fn handle_session_find_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
 fn recompute_session_find_matches(app: &mut App) {
     app.session_find_matches.clear();
     app.session_find_current = 0;
-    if app.session_find.is_empty() { return; }
+    if app.session_find.is_empty() {
+        return;
+    }
 
     let query = app.session_find.to_lowercase();
     let query_chars: Vec<char> = query.chars().collect();
@@ -108,13 +116,18 @@ fn recompute_session_find_matches(app: &mut App) {
         // This preserves 1:1 char-index mapping with the original text (the highlight
         // code in draw_output splits spans by char index, NOT byte offset).
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        let lower: Vec<char> = text.chars().map(|c| {
-            // Single-char lowercase only (avoids ß→ss expanding char count)
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            s.to_lowercase().chars().next().unwrap_or(c)
-        }).collect();
-        if lower.len() < qlen { continue; }
+        let lower: Vec<char> = text
+            .chars()
+            .map(|c| {
+                // Single-char lowercase only (avoids ß→ss expanding char count)
+                let mut buf = [0u8; 4];
+                let s = c.encode_utf8(&mut buf);
+                s.to_lowercase().chars().next().unwrap_or(c)
+            })
+            .collect();
+        if lower.len() < qlen {
+            continue;
+        }
         for i in 0..=lower.len() - qlen {
             if lower[i..i + qlen] == query_chars[..] {
                 app.session_find_matches.push((line_idx, i, i + qlen));
@@ -126,7 +139,9 @@ fn recompute_session_find_matches(app: &mut App) {
 /// Jump to the nearest match at or after the current scroll position.
 /// Sets session_scroll so the matched line sits ~3 lines from the top for context.
 fn jump_to_nearest_match(app: &mut App) {
-    if app.session_find_matches.is_empty() { return; }
+    if app.session_find_matches.is_empty() {
+        return;
+    }
 
     // Find the match nearest to current viewport position
     let current_scroll = if app.session_scroll == usize::MAX {
@@ -136,7 +151,9 @@ fn jump_to_nearest_match(app: &mut App) {
     };
 
     // Prefer match at/after current scroll, otherwise wrap to first
-    let idx = app.session_find_matches.iter()
+    let idx = app
+        .session_find_matches
+        .iter()
         .position(|(line, _, _)| *line >= current_scroll)
         .unwrap_or(0);
 
@@ -148,7 +165,9 @@ fn jump_to_nearest_match(app: &mut App) {
 
 /// Jump to the next session find match (n key after Enter)
 pub fn jump_next_match(app: &mut App) {
-    if app.session_find_matches.is_empty() { return; }
+    if app.session_find_matches.is_empty() {
+        return;
+    }
     app.session_find_current = (app.session_find_current + 1) % app.session_find_matches.len();
     let (match_line, _, _) = app.session_find_matches[app.session_find_current];
     app.session_scroll = match_line.saturating_sub(3);
@@ -157,7 +176,9 @@ pub fn jump_next_match(app: &mut App) {
 
 /// Jump to the previous session find match (N key after Enter)
 pub fn jump_prev_match(app: &mut App) {
-    if app.session_find_matches.is_empty() { return; }
+    if app.session_find_matches.is_empty() {
+        return;
+    }
     if app.session_find_current == 0 {
         app.session_find_current = app.session_find_matches.len() - 1;
     } else {
@@ -183,7 +204,8 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
     }
 
     // Count sessions for current worktree (from store-backed session_files cache)
-    let total_rows: usize = app.current_worktree()
+    let total_rows: usize = app
+        .current_worktree()
         .and_then(|s| app.session_files.get(&s.branch_name))
         .map(|f| f.len())
         .unwrap_or(0);
@@ -209,7 +231,8 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         // J: page down
         (KeyModifiers::NONE, KeyCode::Char('J')) => {
             let page = app.session_viewport_height.saturating_sub(2);
-            app.session_list_selected = (app.session_list_selected + page).min(total_rows.saturating_sub(1));
+            app.session_list_selected =
+                (app.session_list_selected + page).min(total_rows.saturating_sub(1));
         }
         // K: page up
         (KeyModifiers::NONE, KeyCode::Char('K')) => {
@@ -325,10 +348,13 @@ fn start_session_rename(app: &mut App) {
         Some(f) => f,
         None => return,
     };
-    if app.session_list_selected >= files.len() { return; }
+    if app.session_list_selected >= files.len() {
+        return;
+    }
     let (session_id, _, _) = &files[app.session_list_selected];
     let session_names = app.load_all_session_names();
-    let current_name = session_names.get(session_id.as_str())
+    let current_name = session_names
+        .get(session_id.as_str())
         .cloned()
         .unwrap_or_else(|| session_id.clone());
     app.session_rename_id = Some(session_id.clone());
@@ -345,7 +371,8 @@ fn handle_session_rename_input(key: event::KeyEvent, app: &mut App) -> Result<()
     match key.code {
         KeyCode::Char(c) => {
             app.session_rename_input.insert(
-                app.session_rename_input.char_indices()
+                app.session_rename_input
+                    .char_indices()
                     .nth(app.session_rename_cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(app.session_rename_input.len()),
@@ -355,7 +382,9 @@ fn handle_session_rename_input(key: event::KeyEvent, app: &mut App) -> Result<()
         }
         KeyCode::Backspace => {
             if app.session_rename_cursor > 0 {
-                let byte_pos = app.session_rename_input.char_indices()
+                let byte_pos = app
+                    .session_rename_input
+                    .char_indices()
                     .nth(app.session_rename_cursor - 1)
                     .map(|(i, _)| i)
                     .unwrap_or(0);
@@ -403,7 +432,8 @@ fn handle_new_session_dialog_input(key: event::KeyEvent, app: &mut App) -> Resul
     match key.code {
         KeyCode::Char(c) => {
             app.new_session_name_input.insert(
-                app.new_session_name_input.char_indices()
+                app.new_session_name_input
+                    .char_indices()
                     .nth(app.new_session_name_cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(app.new_session_name_input.len()),
@@ -413,7 +443,9 @@ fn handle_new_session_dialog_input(key: event::KeyEvent, app: &mut App) -> Resul
         }
         KeyCode::Backspace => {
             if app.new_session_name_cursor > 0 {
-                let byte_pos = app.new_session_name_input.char_indices()
+                let byte_pos = app
+                    .new_session_name_input
+                    .char_indices()
                     .nth(app.new_session_name_cursor - 1)
                     .map(|(i, _)| i)
                     .unwrap_or(0);
@@ -445,7 +477,9 @@ fn handle_new_session_dialog_input(key: event::KeyEvent, app: &mut App) -> Resul
 /// Uses deferred draw: sets loading indicator → draw renders popup →
 /// actual session load runs on next frame via DeferredAction::LoadSession.
 fn select_session_at_row(app: &mut App) {
-    let Some(session) = app.current_worktree() else { return };
+    let Some(session) = app.current_worktree() else {
+        return;
+    };
     let branch = session.branch_name.clone();
     let file_count = app.session_files.get(&branch).map(|f| f.len()).unwrap_or(0);
     if app.session_list_selected < file_count {
@@ -461,10 +495,14 @@ fn select_session_at_row(app: &mut App) {
 /// Resolves session ID from search results → finds index in session_files cache.
 fn select_content_search_result(app: &mut App) {
     let sel = app.session_list_selected;
-    if sel >= app.session_search_results.len() { return; }
+    if sel >= app.session_search_results.len() {
+        return;
+    }
     let (_row_idx, ref session_id, _) = app.session_search_results[sel];
 
-    let Some(session) = app.current_worktree() else { return };
+    let Some(session) = app.current_worktree() else {
+        return;
+    };
     let branch = session.branch_name.clone();
     if let Some(files) = app.session_files.get(&branch) {
         if let Some(file_idx) = files.iter().position(|(sid, _, _)| sid == session_id) {
@@ -482,20 +520,25 @@ fn select_content_search_result(app: &mut App) {
 fn run_cross_session_search(app: &mut App) {
     app.session_search_results.clear();
     let query = app.session_filter.to_lowercase();
-    if query.len() < 3 { return; }
+    if query.len() < 3 {
+        return;
+    }
 
     let branch = match app.current_worktree() {
         Some(s) => s.branch_name.clone(),
         None => return,
     };
 
-    let results = app.session_store.as_ref()
+    let results = app
+        .session_store
+        .as_ref()
         .and_then(|store| store.search_events(Some(&branch), &query, 100).ok())
         .unwrap_or_default();
 
     for (idx, (session_id, data)) in results.into_iter().enumerate() {
         let preview = extract_search_preview(&data, &query);
-        app.session_search_results.push((idx, session_id.to_string(), preview));
+        app.session_search_results
+            .push((idx, session_id.to_string(), preview));
     }
 }
 
@@ -524,7 +567,12 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -660,37 +708,55 @@ mod tests {
     #[test]
     fn slash_activates_filter() {
         let k = key(KeyCode::Char('/'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('/'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('/'))
+        ));
     }
 
     #[test]
     fn j_navigates_down() {
         let k = key(KeyCode::Char('j'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down)
+        ));
     }
 
     #[test]
     fn k_navigates_up() {
         let k = key(KeyCode::Char('k'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up)));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up)
+        ));
     }
 
     #[test]
     fn upper_j_pages_down() {
         let k = key(KeyCode::Char('J'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('J'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('J'))
+        ));
     }
 
     #[test]
     fn upper_k_pages_up() {
         let k = key(KeyCode::Char('K'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('K'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('K'))
+        ));
     }
 
     #[test]
     fn s_closes_overlay() {
         let k = key(KeyCode::Char('s'));
-        assert!(matches!((k.modifiers, k.code), (KeyModifiers::NONE, KeyCode::Char('s'))));
+        assert!(matches!(
+            (k.modifiers, k.code),
+            (KeyModifiers::NONE, KeyCode::Char('s'))
+        ));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -721,13 +787,18 @@ mod tests {
     fn lowercase_search_finds_uppercase() {
         let text = "Hello World";
         let query = "hello";
-        let lower: Vec<char> = text.chars().map(|c| {
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            s.to_lowercase().chars().next().unwrap_or(c)
-        }).collect();
+        let lower: Vec<char> = text
+            .chars()
+            .map(|c| {
+                let mut buf = [0u8; 4];
+                let s = c.encode_utf8(&mut buf);
+                s.to_lowercase().chars().next().unwrap_or(c)
+            })
+            .collect();
         let query_chars: Vec<char> = query.chars().collect();
-        let found = lower.windows(query_chars.len()).any(|w| w == &query_chars[..]);
+        let found = lower
+            .windows(query_chars.len())
+            .any(|w| w == &query_chars[..]);
         assert!(found);
     }
 
@@ -859,7 +930,8 @@ mod tests {
     fn recompute_finds_match_in_cache() {
         let mut app = App::new();
         use ratatui::text::{Line, Span};
-        app.rendered_lines_cache.push(Line::from(vec![Span::raw("hello world")]));
+        app.rendered_lines_cache
+            .push(Line::from(vec![Span::raw("hello world")]));
         app.session_find = "world".to_string();
         recompute_session_find_matches(&mut app);
         assert!(!app.session_find_matches.is_empty());
@@ -872,7 +944,8 @@ mod tests {
     fn recompute_case_insensitive() {
         let mut app = App::new();
         use ratatui::text::{Line, Span};
-        app.rendered_lines_cache.push(Line::from(vec![Span::raw("HELLO")]));
+        app.rendered_lines_cache
+            .push(Line::from(vec![Span::raw("HELLO")]));
         app.session_find = "hello".to_string();
         recompute_session_find_matches(&mut app);
         assert!(!app.session_find_matches.is_empty());
@@ -890,7 +963,8 @@ mod tests {
     fn recompute_multiple_matches_on_same_line() {
         let mut app = App::new();
         use ratatui::text::{Line, Span};
-        app.rendered_lines_cache.push(Line::from(vec![Span::raw("aaa")]));
+        app.rendered_lines_cache
+            .push(Line::from(vec![Span::raw("aaa")]));
         app.session_find = "a".to_string();
         recompute_session_find_matches(&mut app);
         assert_eq!(app.session_find_matches.len(), 3);

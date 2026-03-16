@@ -6,12 +6,12 @@
 //!
 //! Disabled on Windows — direct CSI writes corrupt the console input parser.
 
-use std::io::{self, Write};
 use crossterm::{cursor, execute, queue, style};
 use ratatui::style::Modifier;
+use std::io::{self, Write};
 
+use super::super::draw_input::{display_width, word_wrap_break_points};
 use crate::app::App;
-use super::super::draw_input::{word_wrap_break_points, display_width};
 
 /// Fast-path: render ONLY the input box content via direct crossterm writes.
 /// Costs ~0.1ms vs ~18ms for terminal.draw(). Used during rapid typing so
@@ -23,7 +23,9 @@ pub fn fast_draw_input(app: &App) {
     let area = app.input_area;
     let inner_width = area.width.saturating_sub(2) as usize;
     let visible_rows = area.height.saturating_sub(2) as usize;
-    if inner_width == 0 || visible_rows == 0 { return; }
+    if inner_width == 0 || visible_rows == 0 {
+        return;
+    }
 
     // Compute word-wrap break points (identical logic as draw_input.rs)
     let chars: Vec<char> = app.input.chars().collect();
@@ -41,7 +43,11 @@ pub fn fast_draw_input(app: &App) {
             cursor_col = display_width(&chars[prev..target]);
         }
         // Collect row text (exclude trailing newline if any)
-        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') { bp - 1 } else { bp };
+        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') {
+            bp - 1
+        } else {
+            bp
+        };
         visual_lines.push(chars[prev..end].iter().collect());
         prev = bp;
     }
@@ -55,7 +61,9 @@ pub fn fast_draw_input(app: &App) {
     // Scroll offset: keep cursor visible
     let scroll_offset = if cursor_row >= visible_rows {
         cursor_row - visible_rows + 1
-    } else { 0 };
+    } else {
+        0
+    };
 
     let mut stdout = io::stdout();
 
@@ -64,7 +72,8 @@ pub fn fast_draw_input(app: &App) {
         let line_idx = scroll_offset + row_idx;
         let text = visual_lines.get(line_idx).map(|s| s.as_str()).unwrap_or("");
         // Pad to inner_width (display columns) to overwrite stale content
-        let text_width: usize = text.chars()
+        let text_width: usize = text
+            .chars()
             .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
             .sum();
         let pad = inner_width.saturating_sub(text_width);
@@ -139,10 +148,14 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
     let inner_height = rect.height.saturating_sub(2) as usize;
     let inner_width = rect.width.saturating_sub(2) as usize;
 
-    if inner_width == 0 || inner_height == 0 { return; }
+    if inner_width == 0 || inner_height == 0 {
+        return;
+    }
 
     let total = app.rendered_lines_cache.len();
-    if total == 0 { return; }
+    if total == 0 {
+        return;
+    }
 
     // Follow-bottom: show last inner_height lines from cache
     let start_idx = total.saturating_sub(inner_height);
@@ -159,8 +172,15 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
 
         // Handle centered lines: compute content width and add left padding
         let line_align = line.alignment.unwrap_or(ratatui::layout::Alignment::Left);
-        let content_width: usize = line.spans.iter()
-            .map(|s| s.content.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)).sum::<usize>())
+        let content_width: usize = line
+            .spans
+            .iter()
+            .map(|s| {
+                s.content
+                    .chars()
+                    .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
+                    .sum::<usize>()
+            })
             .sum();
         let align_pad = match line_align {
             ratatui::layout::Alignment::Center => inner_width.saturating_sub(content_width) / 2,
@@ -174,7 +194,9 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
             col += align_pad;
         }
         for span in &line.spans {
-            if col >= inner_width { break; }
+            if col >= inner_width {
+                break;
+            }
 
             // Apply span style (fg, bg, modifiers)
             if let Some(fg) = span.style.fg {
@@ -206,7 +228,9 @@ pub fn fast_draw_session(app: &App, _new_line_count: usize) {
             let mut byte_end = 0;
             for c in span.content.chars() {
                 let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
-                if width_used + w > remaining { break; }
+                if width_used + w > remaining {
+                    break;
+                }
                 width_used += w;
                 byte_end += c.len_utf8();
             }
@@ -344,7 +368,11 @@ mod tests {
     fn test_scroll_offset_needed() {
         let cursor_row = 15usize;
         let visible_rows = 10usize;
-        let offset = if cursor_row >= visible_rows { cursor_row - visible_rows + 1 } else { 0 };
+        let offset = if cursor_row >= visible_rows {
+            cursor_row - visible_rows + 1
+        } else {
+            0
+        };
         assert_eq!(offset, 6);
     }
 
@@ -352,7 +380,11 @@ mod tests {
     fn test_scroll_offset_not_needed() {
         let cursor_row = 5usize;
         let visible_rows = 10usize;
-        let offset = if cursor_row >= visible_rows { cursor_row - visible_rows + 1 } else { 0 };
+        let offset = if cursor_row >= visible_rows {
+            cursor_row - visible_rows + 1
+        } else {
+            0
+        };
         assert_eq!(offset, 0);
     }
 
@@ -360,7 +392,11 @@ mod tests {
     fn test_scroll_offset_at_boundary() {
         let cursor_row = 10usize;
         let visible_rows = 10usize;
-        let offset = if cursor_row >= visible_rows { cursor_row - visible_rows + 1 } else { 0 };
+        let offset = if cursor_row >= visible_rows {
+            cursor_row - visible_rows + 1
+        } else {
+            0
+        };
         assert_eq!(offset, 1);
     }
 
@@ -459,7 +495,11 @@ mod tests {
     fn test_trailing_newline_strip() {
         let chars: Vec<char> = "hello\n".chars().collect();
         let bp = chars.len(); // 6
-        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') { bp - 1 } else { bp };
+        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') {
+            bp - 1
+        } else {
+            bp
+        };
         assert_eq!(end, 5);
     }
 
@@ -467,7 +507,11 @@ mod tests {
     fn test_no_trailing_newline() {
         let chars: Vec<char> = "hello".chars().collect();
         let bp = chars.len(); // 5
-        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') { bp - 1 } else { bp };
+        let end = if bp > 0 && chars.get(bp - 1) == Some(&'\n') {
+            bp - 1
+        } else {
+            bp
+        };
         assert_eq!(end, 5);
     }
 
@@ -593,7 +637,11 @@ mod tests {
     fn test_scroll_offset_cursor_just_below_boundary() {
         let cursor_row = 9usize;
         let visible_rows = 10usize;
-        let offset = if cursor_row >= visible_rows { cursor_row - visible_rows + 1 } else { 0 };
+        let offset = if cursor_row >= visible_rows {
+            cursor_row - visible_rows + 1
+        } else {
+            0
+        };
         assert_eq!(offset, 0);
     }
 
@@ -601,7 +649,11 @@ mod tests {
     fn test_scroll_offset_deep_cursor() {
         let cursor_row = 100usize;
         let visible_rows = 10usize;
-        let offset = if cursor_row >= visible_rows { cursor_row - visible_rows + 1 } else { 0 };
+        let offset = if cursor_row >= visible_rows {
+            cursor_row - visible_rows + 1
+        } else {
+            0
+        };
         assert_eq!(offset, 91);
     }
 
@@ -694,7 +746,11 @@ mod tests {
         let bp = 10usize;
         let target = 5usize;
         let visual_lines_len = 2usize; // 2 lines accumulated before this iteration
-        let cursor_row = if target >= prev && target < bp { visual_lines_len } else { 99 };
+        let cursor_row = if target >= prev && target < bp {
+            visual_lines_len
+        } else {
+            99
+        };
         assert_eq!(cursor_row, 2);
     }
 

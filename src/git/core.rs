@@ -90,14 +90,22 @@ impl Git {
         // Remote branches: origin/azureal/* (strip origin/ prefix to get branch name)
         let remote_pattern = format!("origin/{}/*", crate::models::BRANCH_PREFIX);
         let remote_output = Command::new("git")
-            .args(["branch", "-r", "--list", &remote_pattern, "--format=%(refname:short)"])
+            .args([
+                "branch",
+                "-r",
+                "--list",
+                &remote_pattern,
+                "--format=%(refname:short)",
+            ])
             .current_dir(repo_path)
             .output()
             .context("Failed to list remote branches")?;
 
         for line in String::from_utf8_lossy(&remote_output.stdout).lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
+            if trimmed.is_empty() {
+                continue;
+            }
             // Strip "origin/" prefix to get the bare branch name
             let branch_name = trimmed.strip_prefix("origin/").unwrap_or(trimmed);
             // Only add if not already present as a local branch
@@ -129,18 +137,29 @@ impl Git {
             .current_dir(repo_path)
             .output();
         let remote = Command::new("git")
-            .args(["branch", "-r", "--list", &format!("origin/{}/*", prefix), "--format=%(refname:short)"])
+            .args([
+                "branch",
+                "-r",
+                "--list",
+                &format!("origin/{}/*", prefix),
+                "--format=%(refname:short)",
+            ])
             .current_dir(repo_path)
             .output();
-        let (Ok(local), Ok(remote)) = (local, remote) else { return };
-        let remote_names: std::collections::HashSet<String> = String::from_utf8_lossy(&remote.stdout)
-            .lines()
-            .filter_map(|l| l.trim().strip_prefix("origin/"))
-            .map(|s| s.to_string())
-            .collect();
+        let (Ok(local), Ok(remote)) = (local, remote) else {
+            return;
+        };
+        let remote_names: std::collections::HashSet<String> =
+            String::from_utf8_lossy(&remote.stdout)
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix("origin/"))
+                .map(|s| s.to_string())
+                .collect();
         for line in String::from_utf8_lossy(&local.stdout).lines() {
             let branch = line.trim();
-            if branch.is_empty() || remote_names.contains(branch) { continue; }
+            if branch.is_empty() || remote_names.contains(branch) {
+                continue;
+            }
             // Only delete if fully merged to main (safe — no unmerged work lost)
             let merged = Command::new("git")
                 .args(["branch", "--merged", "main", "--list", branch])
@@ -165,7 +184,9 @@ impl Git {
                 .current_dir(repo_path)
                 .output()?;
 
-            if output.status.success() { return Ok(branch.to_string()); }
+            if output.status.success() {
+                return Ok(branch.to_string());
+            }
         }
 
         let output = Command::new("git")
@@ -244,7 +265,11 @@ impl Git {
         if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let path = std::path::PathBuf::from(&path_str);
-            if path.is_absolute() { Some(path) } else { Some(worktree_path.join(path)) }
+            if path.is_absolute() {
+                Some(path)
+            } else {
+                Some(worktree_path.join(path))
+            }
         } else {
             None
         }
@@ -265,7 +290,10 @@ impl Git {
     /// Returns Vec<(path, status_char, additions, deletions, staged)> by combining
     /// `git diff --name-status` (M/A/D/R) with `git diff --numstat` (+/-).
     /// The `staged` bool is true if the file has staged changes (in the index).
-    pub fn get_diff_files(worktree_path: &Path, _main_branch: &str) -> Result<Vec<(String, char, usize, usize, bool)>> {
+    pub fn get_diff_files(
+        worktree_path: &Path,
+        _main_branch: &str,
+    ) -> Result<Vec<(String, char, usize, usize, bool)>> {
         // Show working tree changes (staged + unstaged) — this is what the user
         // is actively working on. Uses `git diff HEAD` to compare working tree
         // against last commit, capturing both staged and unstaged modifications.
@@ -288,7 +316,8 @@ impl Git {
         let numstat_text = String::from_utf8_lossy(&numstat_out.stdout);
 
         // Build path → (additions, deletions) lookup from numstat
-        let mut stats: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+        let mut stats: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
         for line in numstat_text.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 3 {
@@ -340,10 +369,15 @@ impl Git {
                 use std::io::Write;
                 let _ = stdin.write_all(paths.join("\n").as_bytes());
             }
-            let ignore_out = child.wait_with_output().context("git check-ignore failed")?;
-            let ignored: std::collections::HashSet<&str> =
-                std::str::from_utf8(&ignore_out.stdout).unwrap_or("")
-                    .lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+            let ignore_out = child
+                .wait_with_output()
+                .context("git check-ignore failed")?;
+            let ignored: std::collections::HashSet<&str> = std::str::from_utf8(&ignore_out.stdout)
+                .unwrap_or("")
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect();
             result.retain(|(path, ..)| !ignored.contains(path.as_str()));
         }
 
@@ -351,7 +385,11 @@ impl Git {
     }
 
     /// Get the diff for a single file (working tree vs HEAD, for viewer display)
-    pub fn get_file_diff(worktree_path: &Path, _main_branch: &str, file_path: &str) -> Result<String> {
+    pub fn get_file_diff(
+        worktree_path: &Path,
+        _main_branch: &str,
+        file_path: &str,
+    ) -> Result<String> {
         let output = Command::new("git")
             .args(["diff", "HEAD", "--", file_path])
             .current_dir(worktree_path)
@@ -389,9 +427,16 @@ impl Git {
                 .context("Failed to pull")?
         };
 
-        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        if output.status.success() { Ok(combined.trim().to_string()) }
-        else { anyhow::bail!("{}", combined.trim()) }
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if output.status.success() {
+            Ok(combined.trim().to_string())
+        } else {
+            anyhow::bail!("{}", combined.trim())
+        }
     }
 
     /// Push current branch to remote (auto-sets upstream on first push)
@@ -407,12 +452,19 @@ impl Git {
         // `rev-list --left-right --count` returns "<ahead>\t<behind>".
         // If behind > 0 AND ahead > 0, the histories have diverged — force-with-lease is needed.
         let diverged = Command::new("git")
-            .args(["rev-list", "--left-right", "--count", &format!("HEAD...origin/{}", branch_name)])
+            .args([
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("HEAD...origin/{}", branch_name),
+            ])
             .current_dir(worktree_path)
             .output()
             .ok()
             .and_then(|o| {
-                if !o.status.success() { return None; }
+                if !o.status.success() {
+                    return None;
+                }
                 let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 let parts: Vec<&str> = s.split('\t').collect();
                 if parts.len() == 2 {
@@ -436,7 +488,9 @@ impl Git {
                 if !o.status.success() {
                     let msg = String::from_utf8_lossy(&o.stderr);
                     if msg.contains("CONFLICT") || msg.contains("could not apply") {
-                        anyhow::bail!("Pull rebase failed with conflicts — resolve manually then push");
+                        anyhow::bail!(
+                            "Pull rebase failed with conflicts — resolve manually then push"
+                        );
                     }
                 }
             }
@@ -455,7 +509,11 @@ impl Git {
             .output()
             .context("Failed to push")?;
 
-        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         if output.status.success() {
             let suffix = if diverged { " (force-pushed)" } else { "" };
             Ok(format!("{}{}", combined.trim(), suffix))
@@ -471,7 +529,10 @@ impl Git {
     /// 4. On conflict: return structured conflict info → `SquashMergeResult::Conflict`
     /// Push happens automatically after success (callers call `Git::push()`).
     /// Runs from the repo root (main worktree, already on main branch).
-    pub fn squash_merge_into_main(repo_root: &Path, branch_name: &str) -> Result<SquashMergeResult> {
+    pub fn squash_merge_into_main(
+        repo_root: &Path,
+        branch_name: &str,
+    ) -> Result<SquashMergeResult> {
         // Pre-flight: clean up any leftover merge/rebase state on main from
         // a previous operation that was interrupted (app crash, force-quit, etc.).
         // Without this, `git merge --squash` fails with "unmerged files" errors.
@@ -479,12 +540,19 @@ impl Git {
         // rebase-apply/) — UU files alone could be legitimate in-progress work.
         let git_dir = repo_root.join(".git");
         let has_merge_state = git_dir.join("MERGE_HEAD").exists();
-        let has_rebase_state = git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists();
+        let has_rebase_state =
+            git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists();
         if has_merge_state {
-            let _ = Command::new("git").args(["merge", "--abort"]).current_dir(repo_root).output();
+            let _ = Command::new("git")
+                .args(["merge", "--abort"])
+                .current_dir(repo_root)
+                .output();
         }
         if has_rebase_state {
-            let _ = Command::new("git").args(["rebase", "--abort"]).current_dir(repo_root).output();
+            let _ = Command::new("git")
+                .args(["rebase", "--abort"])
+                .current_dir(repo_root)
+                .output();
         }
         // Remove stale SQUASH_MSG from a previous failed squash merge —
         // git leaves this file behind even when there was nothing to commit
@@ -496,7 +564,10 @@ impl Git {
         // overwrite main with the squash merge anyway, and local changes get
         // stashed in the next step.
         if Self::has_unmerged_files(repo_root) {
-            let _ = Command::new("git").args(["reset", "--hard", "HEAD"]).current_dir(repo_root).output();
+            let _ = Command::new("git")
+                .args(["reset", "--hard", "HEAD"])
+                .current_dir(repo_root)
+                .output();
         }
 
         // Step 0: stash any dirty working tree on main (e.g. .DS_Store, editor
@@ -506,8 +577,13 @@ impl Git {
             .args(["stash", "--include-untracked"])
             .current_dir(repo_root)
             .output();
-        let did_stash = stash_out.as_ref().ok()
-            .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).contains("No local changes"))
+        let did_stash = stash_out
+            .as_ref()
+            .ok()
+            .map(|o| {
+                o.status.success()
+                    && !String::from_utf8_lossy(&o.stdout).contains("No local changes")
+            })
             .unwrap_or(false);
 
         // Step 1: pull main so we're merging onto the latest upstream.
@@ -528,7 +604,12 @@ impl Git {
         // Collect individual commit messages before squash (they'll be lost after).
         // `git log main..branch --reverse --format="- %s"` gives each commit as a bullet.
         let commit_log = Command::new("git")
-            .args(["log", &format!("HEAD..{}", branch_name), "--reverse", "--format=- %s"])
+            .args([
+                "log",
+                &format!("HEAD..{}", branch_name),
+                "--reverse",
+                "--format=- %s",
+            ])
             .current_dir(repo_root)
             .output()
             .ok()
@@ -542,7 +623,11 @@ impl Git {
             .current_dir(repo_root)
             .output()
             .context("Failed to squash merge")?;
-        let combined = format!("{}{}", String::from_utf8_lossy(&merge_out.stdout), String::from_utf8_lossy(&merge_out.stderr));
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&merge_out.stdout),
+            String::from_utf8_lossy(&merge_out.stderr)
+        );
         let text = combined.trim();
 
         // Conflict detected — return structured info instead of bailing
@@ -569,11 +654,18 @@ impl Git {
             // whatever resolves the conflict (or by the user manually).
             if !conflicted.is_empty() {
                 return Ok(SquashMergeResult::Conflict {
-                    conflicted, auto_merged, _raw_output: text.to_string(),
+                    conflicted,
+                    auto_merged,
+                    _raw_output: text.to_string(),
                 });
             }
             // Non-conflict failure — restore stash before bailing
-            if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
+            if did_stash {
+                let _ = Command::new("git")
+                    .args(["stash", "pop"])
+                    .current_dir(repo_root)
+                    .output();
+            }
             anyhow::bail!("{}", text);
         }
 
@@ -594,21 +686,38 @@ impl Git {
             // git commit prints "nothing to commit" to STDOUT, not stderr
             let out = String::from_utf8_lossy(&commit_out.stdout);
             let err = String::from_utf8_lossy(&commit_out.stderr);
-            if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
+            if did_stash {
+                let _ = Command::new("git")
+                    .args(["stash", "pop"])
+                    .current_dir(repo_root)
+                    .output();
+            }
             if out.contains("nothing to commit") || err.contains("nothing to commit") {
                 // Clean up the SQUASH_MSG that git leaves behind
                 let _ = std::fs::remove_file(repo_root.join(".git/SQUASH_MSG"));
-                return Ok(SquashMergeResult::Success("Already up to date — nothing to merge".into()));
+                return Ok(SquashMergeResult::Success(
+                    "Already up to date — nothing to merge".into(),
+                ));
             }
             anyhow::bail!("Squash merge staged but commit failed: {}", err.trim());
         }
 
         // Restore any stashed changes now that merge+commit is complete
-        if did_stash { let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output(); }
+        if did_stash {
+            let _ = Command::new("git")
+                .args(["stash", "pop"])
+                .current_dir(repo_root)
+                .output();
+        }
 
-        let out = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
+        let out = String::from_utf8_lossy(&commit_out.stdout)
+            .trim()
+            .to_string();
         let first = out.lines().next().unwrap_or(&out);
-        Ok(SquashMergeResult::Success(format!("Merged: {}{}", first, pull_note)))
+        Ok(SquashMergeResult::Success(format!(
+            "Merged: {}{}",
+            first, pull_note
+        )))
     }
 
     /// Stage all changes (tracked + untracked) via `git add -A`, then
@@ -693,14 +802,18 @@ impl Git {
             .current_dir(path)
             .output()
             .ok();
-        status.as_ref()
-            .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| {
-                let b = l.as_bytes();
-                // Unmerged entries have U in either column, or AA/DD
-                matches!(b,
-                    [b'U', _, ..] | [_, b'U', ..] | [b'A', b'A', ..] | [b'D', b'D', ..]
-                )
-            }))
+        status
+            .as_ref()
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout).lines().any(|l| {
+                    let b = l.as_bytes();
+                    // Unmerged entries have U in either column, or AA/DD
+                    matches!(
+                        b,
+                        [b'U', _, ..] | [_, b'U', ..] | [b'A', b'A', ..] | [b'D', b'D', ..]
+                    )
+                })
+            })
             .unwrap_or(false)
     }
 
@@ -711,9 +824,15 @@ impl Git {
     /// `squash_merge_into_main()`.
     pub fn cleanup_squash_merge_state(repo_root: &Path) {
         if Self::has_unmerged_files(repo_root) {
-            let _ = Command::new("git").args(["reset", "--hard", "HEAD"]).current_dir(repo_root).output();
+            let _ = Command::new("git")
+                .args(["reset", "--hard", "HEAD"])
+                .current_dir(repo_root)
+                .output();
             // Pop stash that was pushed at the start of squash_merge_into_main()
-            let _ = Command::new("git").args(["stash", "pop"]).current_dir(repo_root).output();
+            let _ = Command::new("git")
+                .args(["stash", "pop"])
+                .current_dir(repo_root)
+                .output();
         }
         // Clean up SQUASH_MSG file that git leaves behind
         let _ = std::fs::remove_file(repo_root.join(".git/SQUASH_MSG"));
@@ -728,19 +847,21 @@ impl Git {
             .current_dir(path)
             .output();
         let files: Vec<String> = match ls {
-            Ok(ref o) if o.status.success() => {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .map(|l| l.to_string())
-                    .collect()
-            }
+            Ok(ref o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.to_string())
+                .collect(),
             _ => return,
         };
-        if files.is_empty() { return; }
+        if files.is_empty() {
+            return;
+        }
         let mut cmd = Command::new("git");
         cmd.args(["rm", "--cached", "--quiet", "--"]);
-        for f in &files { cmd.arg(f); }
+        for f in &files {
+            cmd.arg(f);
+        }
         let _ = cmd.current_dir(path).output();
     }
 
@@ -749,9 +870,10 @@ impl Git {
     /// Silently no-ops if already present or if any step fails.
     /// Entries that must be in .gitignore for azureal to work correctly.
     /// Each tuple: (canonical form to write, all accepted variants).
-    const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[
-        ("worktrees/", &["worktrees", "worktrees/", "/worktrees", "/worktrees/"]),
-    ];
+    const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[(
+        "worktrees/",
+        &["worktrees", "worktrees/", "/worktrees", "/worktrees/"],
+    )];
 
     pub fn ensure_worktrees_gitignored(repo_root: &Path) {
         let gitignore = repo_root.join(".gitignore");
@@ -768,7 +890,9 @@ impl Git {
                 missing.push(canonical);
             }
         }
-        if missing.is_empty() { return; }
+        if missing.is_empty() {
+            return;
+        }
 
         // append missing entries
         let mut new = content.clone();
@@ -779,14 +903,18 @@ impl Git {
             new.push_str(entry);
             new.push('\n');
         }
-        if std::fs::write(&gitignore, &new).is_err() { return; }
+        if std::fs::write(&gitignore, &new).is_err() {
+            return;
+        }
 
         // stage + commit
         let staged = Command::new("git")
             .args(["add", ".gitignore"])
             .current_dir(repo_root)
             .output();
-        if !staged.map(|o| o.status.success()).unwrap_or(false) { return; }
+        if !staged.map(|o| o.status.success()).unwrap_or(false) {
+            return;
+        }
 
         let msg = format!("chore: gitignore {}", missing.join(", "));
         let _ = Command::new("git")
@@ -818,7 +946,11 @@ impl Git {
     /// Get recent commit log for the commits pane in the Git panel.
     /// Returns (short_hash, full_hash, subject, is_pushed) tuples.
     /// Unpushed commits (ahead of upstream) are marked `is_pushed=false`.
-    pub fn get_commit_log(worktree_path: &Path, max_count: usize, main_branch: Option<&str>) -> Result<Vec<(String, String, String, bool)>> {
+    pub fn get_commit_log(
+        worktree_path: &Path,
+        max_count: usize,
+        main_branch: Option<&str>,
+    ) -> Result<Vec<(String, String, String, bool)>> {
         // How many commits ahead of upstream? (0 if no upstream configured)
         let ahead = Command::new("git")
             .args(["rev-list", "--count", "@{u}..HEAD"])
@@ -826,7 +958,12 @@ impl Git {
             .output()
             .ok()
             .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<usize>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<usize>()
+                    .ok()
+            })
             .unwrap_or(0);
 
         // Feature branches: show only commits unique to this branch (main..HEAD)
@@ -864,7 +1001,12 @@ impl Git {
     /// Uses `git rev-list --left-right --count upstream...local`.
     fn rev_list_divergence(worktree_path: &Path, upstream: &str, local: &str) -> (usize, usize) {
         Command::new("git")
-            .args(["rev-list", "--left-right", "--count", &format!("{}...{}", upstream, local)])
+            .args([
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("{}...{}", upstream, local),
+            ])
             .current_dir(worktree_path)
             .output()
             .ok()
@@ -919,11 +1061,17 @@ impl Git {
             .current_dir(worktree_path)
             .output()
             .context("Failed to commit")?;
-        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        if output.status.success() { Ok(combined.trim().to_string()) }
-        else { anyhow::bail!("{}", combined.trim()) }
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if output.status.success() {
+            Ok(combined.trim().to_string())
+        } else {
+            anyhow::bail!("{}", combined.trim())
+        }
     }
-
 }
 
 #[cfg(test)]
@@ -976,7 +1124,12 @@ mod tests {
             auto_merged: vec!["c.rs".to_string()],
             _raw_output: "raw output here".to_string(),
         };
-        if let SquashMergeResult::Conflict { conflicted, auto_merged, _raw_output } = result {
+        if let SquashMergeResult::Conflict {
+            conflicted,
+            auto_merged,
+            _raw_output,
+        } = result
+        {
             assert_eq!(conflicted.len(), 2);
             assert_eq!(conflicted[0], "a.rs");
             assert_eq!(conflicted[1], "b.rs");
@@ -995,7 +1148,12 @@ mod tests {
             auto_merged: vec![],
             _raw_output: String::new(),
         };
-        if let SquashMergeResult::Conflict { conflicted, auto_merged, .. } = result {
+        if let SquashMergeResult::Conflict {
+            conflicted,
+            auto_merged,
+            ..
+        } = result
+        {
             assert!(conflicted.is_empty());
             assert!(auto_merged.is_empty());
         } else {
@@ -1012,7 +1170,12 @@ mod tests {
             auto_merged: auto_merged.clone(),
             _raw_output: "lots of output".to_string(),
         };
-        if let SquashMergeResult::Conflict { conflicted: c, auto_merged: a, .. } = result {
+        if let SquashMergeResult::Conflict {
+            conflicted: c,
+            auto_merged: a,
+            ..
+        } = result
+        {
             assert_eq!(c.len(), 50);
             assert_eq!(a.len(), 30);
             assert_eq!(c[49], "file_49.rs");
@@ -1050,7 +1213,8 @@ mod tests {
 
     #[test]
     fn test_squash_merge_result_success_already_up_to_date() {
-        let result = SquashMergeResult::Success("Already up to date — nothing to merge".to_string());
+        let result =
+            SquashMergeResult::Success("Already up to date — nothing to merge".to_string());
         if let SquashMergeResult::Success(msg) = result {
             assert!(msg.contains("Already up to date"));
         } else {
@@ -1146,7 +1310,10 @@ mod tests {
             _commit: "123".to_string(),
             is_main: false,
         };
-        assert_eq!(info.path.file_name().unwrap().to_str().unwrap(), "my-feature");
+        assert_eq!(
+            info.path.file_name().unwrap().to_str().unwrap(),
+            "my-feature"
+        );
         assert!(info.path.starts_with("/home/user/project"));
     }
 
@@ -1260,7 +1427,12 @@ mod tests {
             auto_merged: vec!["Cargo.toml".to_string(), "Cargo.lock".to_string()],
             _raw_output: "multiple conflicts".to_string(),
         };
-        if let SquashMergeResult::Conflict { conflicted, auto_merged, .. } = result {
+        if let SquashMergeResult::Conflict {
+            conflicted,
+            auto_merged,
+            ..
+        } = result
+        {
             assert!(conflicted.iter().any(|f| f.contains("core.rs")));
             assert!(auto_merged.iter().any(|f| f == "Cargo.toml"));
         }

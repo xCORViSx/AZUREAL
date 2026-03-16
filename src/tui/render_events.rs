@@ -9,16 +9,19 @@ use ratatui::{
 };
 use std::collections::HashSet;
 
+use super::colorize::ORANGE;
+use super::markdown::parse_markdown_spans;
+use super::render_markdown::render_assistant_text;
+use super::render_tools::{
+    extract_edit_preview_strings, extract_tool_param, render_edit_diff, render_tool_result,
+    render_write_preview, tool_display_name,
+};
+use super::render_wrap::wrap_text;
+use super::util::{truncate, AZURE};
 use crate::app::state::backend_for_model;
 use crate::backend::Backend;
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
-use super::colorize::ORANGE;
-use super::util::{truncate, AZURE};
-use super::markdown::parse_markdown_spans;
-use super::render_markdown::render_assistant_text;
-use super::render_tools::{extract_tool_param, render_tool_result, render_edit_diff, render_write_preview, tool_display_name};
-use super::render_wrap::wrap_text;
 
 /// Clickable path entry: (line_idx, start_col, end_col, file_path, old_string, new_string)
 /// (line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)
@@ -41,8 +44,27 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
-    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Default::default())
+) -> (
+    Vec<Line<'static>>,
+    Vec<(usize, usize, String)>,
+    Vec<(usize, bool)>,
+    Vec<ClickablePath>,
+    Vec<ClickableTable>,
+) {
+    render_display_events_with_state(
+        events,
+        width,
+        pending_tools,
+        failed_tools,
+        syntax_highlighter,
+        pending_user_message,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Default::default(),
+    )
 }
 
 /// Render only new events, appending to existing cache data.
@@ -57,10 +79,29 @@ pub fn render_display_events_incremental(
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
+) -> (
+    Vec<Line<'static>>,
+    Vec<(usize, usize, String)>,
+    Vec<(usize, bool)>,
+    Vec<ClickablePath>,
+    Vec<ClickableTable>,
+) {
     // Render only new events into fresh accumulators. Indices are relative to 0 —
     // the main thread offsets them by existing_line_count when extending its cache.
-    render_display_events_with_state(events, width, pending_tools, failed_tools, syntax_highlighter, pending_user_message, Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), pre_scan)
+    render_display_events_with_state(
+        events,
+        width,
+        pending_tools,
+        failed_tools,
+        syntax_highlighter,
+        pending_user_message,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        pre_scan,
+    )
 }
 
 /// Core renderer: iterates events from `start_idx`, appending to provided vectors.
@@ -79,7 +120,13 @@ fn render_display_events_with_state(
     mut clickable_paths: Vec<ClickablePath>,
     mut clickable_tables: Vec<ClickableTable>,
     pre_scan: super::render_thread::PreScanState,
-) -> (Vec<Line<'static>>, Vec<(usize, usize, String)>, Vec<(usize, bool)>, Vec<ClickablePath>, Vec<ClickableTable>) {
+) -> (
+    Vec<Line<'static>>,
+    Vec<(usize, usize, String)>,
+    Vec<(usize, bool)>,
+    Vec<ClickablePath>,
+    Vec<ClickableTable>,
+) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
 
@@ -99,14 +146,18 @@ fn render_display_events_with_state(
         match event {
             DisplayEvent::Init { model, cwd, .. } => {
                 current_model = Some(model.clone());
-                if saw_init || saw_content { continue; }
+                if saw_init || saw_content {
+                    continue;
+                }
                 saw_init = true;
                 render_init(&mut lines, model, cwd);
             }
             DisplayEvent::Hook { name, output } => {
                 // Dedup consecutive identical hooks — compare by reference first to avoid clone
                 if let Some((ref ln, ref lo)) = last_hook {
-                    if ln == name && lo == output { continue; }
+                    if ln == name && lo == output {
+                        continue;
+                    }
                 }
                 last_hook = Some((name.clone(), output.clone()));
                 render_hook(&mut lines, name, output, bubble_width);
@@ -116,21 +167,33 @@ fn render_display_events_with_state(
             }
             DisplayEvent::Compacting => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
-                ]).alignment(Alignment::Center));
+                lines.push(
+                    Line::from(vec![Span::styled(
+                        " ✓ Context compacted ",
+                        Style::default().fg(Color::Black).bg(Color::Green),
+                    )])
+                    .alignment(Alignment::Center),
+                );
             }
             DisplayEvent::Compacted => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
-                ]).alignment(Alignment::Center));
+                lines.push(
+                    Line::from(vec![Span::styled(
+                        " ✓ Context compacted ",
+                        Style::default().fg(Color::Black).bg(Color::Green),
+                    )])
+                    .alignment(Alignment::Center),
+                );
             }
             DisplayEvent::MayBeCompacting => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(" ⏳ Compacting context... ", Style::default().fg(Color::Black).bg(Color::Yellow)),
-                ]).alignment(Alignment::Center));
+                lines.push(
+                    Line::from(vec![Span::styled(
+                        " ⏳ Compacting context... ",
+                        Style::default().fg(Color::Black).bg(Color::Yellow),
+                    )])
+                    .alignment(Alignment::Center),
+                );
             }
             DisplayEvent::Plan { name, content } => {
                 saw_content = true;
@@ -140,17 +203,27 @@ fn render_display_events_with_state(
             DisplayEvent::UserMessage { content, .. } => {
                 // Safety net: if a compaction summary slipped through parsing,
                 // render the banner instead of the raw multi-page summary text
-                if content.starts_with("This session is being continued from a previous conversation") {
+                if content
+                    .starts_with("This session is being continued from a previous conversation")
+                {
                     lines.push(Line::from(""));
-                    lines.push(Line::from(vec![
-                        Span::styled(" ✓ Context compacted ", Style::default().fg(Color::Black).bg(Color::Green)),
-                    ]).alignment(Alignment::Center));
+                    lines.push(
+                        Line::from(vec![Span::styled(
+                            " ✓ Context compacted ",
+                            Style::default().fg(Color::Black).bg(Color::Green),
+                        )])
+                        .alignment(Alignment::Center),
+                    );
                     continue;
                 }
                 saw_content = true;
                 last_hook = None;
-                if saw_exit_plan_mode { saw_user_after_exit_plan = true; }
-                if saw_ask_user_question { saw_user_after_ask = true; }
+                if saw_exit_plan_mode {
+                    saw_user_after_exit_plan = true;
+                }
+                if saw_ask_user_question {
+                    saw_user_after_ask = true;
+                }
                 // Track bubble position (line index after the empty lines)
                 bubble_positions.push((lines.len() + 2, true));
                 render_user_message(&mut lines, content, bubble_width, w);
@@ -163,22 +236,34 @@ fn render_display_events_with_state(
                 lines.push(Line::from(""));
                 lines.push(Line::from(""));
 
-                let (_, assistant_color) = assistant_identity(current_model.as_deref().filter(|m| !m.is_empty()));
-                lines.push(render_assistant_header_line(current_model.as_deref(), bubble_width));
+                let (_, assistant_color) =
+                    assistant_identity(current_model.as_deref().filter(|m| !m.is_empty()));
+                lines.push(render_assistant_header_line(
+                    current_model.as_deref(),
+                    bubble_width,
+                ));
 
                 let base_offset = lines.len();
-                let (text_lines, table_regions) = render_assistant_text(text, bubble_width, syntax_highlighter);
+                let (text_lines, table_regions) =
+                    render_assistant_text(text, bubble_width, syntax_highlighter);
                 lines.extend(text_lines);
                 // Offset table regions to absolute cache line positions
                 for (start, end, raw) in table_regions {
                     clickable_tables.push((start + base_offset, end + base_offset, raw));
                 }
 
-                lines.push(Line::from(vec![
-                    Span::styled(format!("└{}", "─".repeat(bubble_width - 1)), Style::default().fg(assistant_color)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    format!("└{}", "─".repeat(bubble_width - 1)),
+                    Style::default().fg(assistant_color),
+                )]));
             }
-            DisplayEvent::ToolCall { tool_name, file_path, input, tool_use_id, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                tool_use_id,
+                ..
+            } => {
                 saw_content = true;
                 last_hook = None;
                 if tool_name == "ExitPlanMode" {
@@ -191,17 +276,46 @@ fn render_display_events_with_state(
                     last_ask_input = Some(input.clone());
                 }
                 // TodoWrite rendered as sticky widget, skip inline display
-                if tool_name == "TodoWrite" { continue; }
-                render_tool_call(&mut lines, &mut animation_indices, &mut clickable_paths, tool_name, file_path, input, tool_use_id, pending_tools, failed_tools, bubble_width, syntax_highlighter);
+                if tool_name == "TodoWrite" {
+                    continue;
+                }
+                render_tool_call(
+                    &mut lines,
+                    &mut animation_indices,
+                    &mut clickable_paths,
+                    tool_name,
+                    file_path,
+                    input,
+                    tool_use_id,
+                    pending_tools,
+                    failed_tools,
+                    bubble_width,
+                    syntax_highlighter,
+                );
             }
-            DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error, .. } => {
+            DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                file_path,
+                content,
+                is_error,
+                ..
+            } => {
                 saw_content = true;
                 last_hook = None;
                 // TodoWrite result is noise ("Todos have been modified successfully"), skip it
-                if tool_name == "TodoWrite" { continue; }
+                if tool_name == "TodoWrite" {
+                    continue;
+                }
                 let is_failed = *is_error || failed_tools.contains(tool_use_id);
                 let tool_max = bubble_width + 10;
-                lines.extend(render_tool_result(tool_name, file_path.as_deref(), content, is_failed, tool_max));
+                lines.extend(render_tool_result(
+                    tool_name,
+                    file_path.as_deref(),
+                    content,
+                    is_failed,
+                    tool_max,
+                ));
                 // Show approval prompt immediately after ExitPlanMode result
                 if tool_name == "ExitPlanMode" && saw_exit_plan_mode && !saw_user_after_exit_plan {
                     render_plan_approval(&mut lines, w);
@@ -213,7 +327,12 @@ fn render_display_events_with_state(
                     }
                 }
             }
-            DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
+            DisplayEvent::Complete {
+                duration_ms,
+                cost_usd,
+                success,
+                ..
+            } => {
                 render_complete(&mut lines, *duration_ms, *cost_usd, *success);
             }
             DisplayEvent::ModelSwitch { model } => {
@@ -229,7 +348,13 @@ fn render_display_events_with_state(
         render_user_message(&mut lines, msg, bubble_width, w);
     }
 
-    (lines, animation_indices, bubble_positions, clickable_paths, clickable_tables)
+    (
+        lines,
+        animation_indices,
+        bubble_positions,
+        clickable_paths,
+        clickable_tables,
+    )
 }
 
 fn assistant_identity(model: Option<&str>) -> (&'static str, Color) {
@@ -242,19 +367,22 @@ fn assistant_identity(model: Option<&str>) -> (&'static str, Color) {
 fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Line<'static> {
     let model = model.filter(|m| !m.is_empty());
     let (assistant_name, assistant_color) = assistant_identity(model);
-    let header_style = Style::default().fg(Color::Black).bg(assistant_color).add_modifier(Modifier::BOLD);
+    let header_style = Style::default()
+        .fg(Color::Black)
+        .bg(assistant_color)
+        .add_modifier(Modifier::BOLD);
     let model_style = Style::default()
         .fg(Color::Rgb(60, 60, 60))
         .bg(assistant_color);
     let fill_style = Style::default().bg(assistant_color);
 
     let left = format!(" {} ▶ ", assistant_name);
-    let right = model.map(|model| {
-        let max_model_width = bubble_width
-            .saturating_sub(left.chars().count() + 3)
-            .max(1);
-        format!(" {} ", truncate(model, max_model_width))
-    }).unwrap_or_default();
+    let right = model
+        .map(|model| {
+            let max_model_width = bubble_width.saturating_sub(left.chars().count() + 3).max(1);
+            format!(" {} ", truncate(model, max_model_width))
+        })
+        .unwrap_or_default();
     let gap = bubble_width.saturating_sub(left.chars().count() + right.chars().count());
 
     let mut spans = vec![
@@ -270,17 +398,33 @@ fn render_assistant_header_line(model: Option<&str>, bubble_width: usize) -> Lin
 
 fn render_init(lines: &mut Vec<Line<'static>>, model: &str, cwd: &str) {
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled(" Session Started ", Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)),
-    ]).alignment(Alignment::Center));
-    lines.push(Line::from(vec![
-        Span::styled("Model: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(model.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-    ]).alignment(Alignment::Center));
-    lines.push(Line::from(vec![
-        Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(cwd.to_string(), Style::default().fg(Color::White)),
-    ]).alignment(Alignment::Center));
+    lines.push(
+        Line::from(vec![Span::styled(
+            " Session Started ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )])
+        .alignment(Alignment::Center),
+    );
+    lines.push(
+        Line::from(vec![
+            Span::styled("Model: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                model.to_string(),
+                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+            ),
+        ])
+        .alignment(Alignment::Center),
+    );
+    lines.push(
+        Line::from(vec![
+            Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(cwd.to_string(), Style::default().fg(Color::White)),
+        ])
+        .alignment(Alignment::Center),
+    );
     lines.push(Line::from(""));
 }
 
@@ -315,7 +459,9 @@ fn render_hook(lines: &mut Vec<Line<'static>>, name: &str, output: &str, hook_ma
 }
 
 fn render_command(lines: &mut Vec<Line<'static>>, name: &str) {
-    let cmd_style = Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD);
+    let cmd_style = Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD);
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("/ ", cmd_style),
@@ -323,7 +469,12 @@ fn render_command(lines: &mut Vec<Line<'static>>, name: &str) {
     ]));
 }
 
-fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_width: usize, total_width: usize) {
+fn render_user_message(
+    lines: &mut Vec<Line<'static>>,
+    content: &str,
+    bubble_width: usize,
+    total_width: usize,
+) {
     lines.push(Line::from(""));
     lines.push(Line::from(""));
 
@@ -335,7 +486,13 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
     lines.push(Line::from(vec![
         Span::raw(offset_str.clone()),
         Span::styled(header_pad, Style::default().bg(AZURE)),
-        Span::styled(header, Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            header,
+            Style::default()
+                .fg(Color::Black)
+                .bg(AZURE)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]));
 
     let content_width = bubble_width.saturating_sub(2);
@@ -351,7 +508,10 @@ fn render_user_message(lines: &mut Vec<Line<'static>>, content: &str, bubble_wid
 
     lines.push(Line::from(vec![
         Span::raw(offset_str),
-        Span::styled(format!("{}┘", "─".repeat(bubble_width - 1)), Style::default().fg(AZURE)),
+        Span::styled(
+            format!("{}┘", "─".repeat(bubble_width - 1)),
+            Style::default().fg(AZURE),
+        ),
     ]));
 }
 
@@ -372,13 +532,19 @@ fn render_tool_call(
     let is_pending = pending_tools.contains(tool_use_id);
     let is_failed = failed_tools.contains(tool_use_id);
 
-    lines.push(Line::from(vec![Span::styled(" ┃", Style::default().fg(tool_color))]));
+    lines.push(Line::from(vec![Span::styled(
+        " ┃",
+        Style::default().fg(tool_color),
+    )]));
 
     // Avoid cloning file_path — borrow when available, allocate only for fallback
     let param_owned;
     let param_raw: &str = match file_path {
         Some(fp) => fp.as_str(),
-        None => { param_owned = extract_tool_param(tool_name, input); &param_owned }
+        None => {
+            param_owned = extract_tool_param(tool_name, input);
+            &param_owned
+        }
     };
 
     // Use placeholder color for pending - will be patched during viewport rendering
@@ -399,7 +565,9 @@ fn render_tool_call(
     // Edit/Read/Write tools get underlined file paths that are clickable
     let is_file_tool = matches!(tool_name, "Edit" | "Read" | "Write");
     let path_style = if is_file_tool {
-        Style::default().fg(ORANGE).add_modifier(Modifier::UNDERLINED)
+        Style::default()
+            .fg(ORANGE)
+            .add_modifier(Modifier::UNDERLINED)
     } else {
         Style::default().fg(ORANGE)
     };
@@ -418,17 +586,27 @@ fn render_tool_call(
                 let start_col = prefix_len;
                 let end_col = start_col + wrapped.chars().count();
                 let (old_s, new_s) = if tool_name == "Edit" {
-                    (
-                        input.get("old_string").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        input.get("new_string").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    )
-                } else { (String::new(), String::new()) };
-                clickable_paths.push((lines.len(), start_col, end_col, param_raw.to_string(), old_s, new_s, wrap_line_count));
+                    extract_edit_preview_strings(input)
+                } else {
+                    (String::new(), String::new())
+                };
+                clickable_paths.push((
+                    lines.len(),
+                    start_col,
+                    end_col,
+                    param_raw.to_string(),
+                    old_s,
+                    new_s,
+                    wrap_line_count,
+                ));
             }
             lines.push(Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(tool_color)),
                 Span::styled(indicator, Style::default().fg(indicator_color)),
-                Span::styled(display_name.to_string(), Style::default().fg(tool_color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    display_name.to_string(),
+                    Style::default().fg(tool_color).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  ", Style::default()),
                 Span::styled(wrapped, path_style),
             ]));
@@ -450,13 +628,34 @@ fn render_tool_call(
     }
 }
 
-fn render_complete(lines: &mut Vec<Line<'static>>, duration_ms: u64, _cost_usd: f64, success: bool) {
+fn render_complete(
+    lines: &mut Vec<Line<'static>>,
+    duration_ms: u64,
+    _cost_usd: f64,
+    success: bool,
+) {
     lines.push(Line::from(""));
-    let (status, color) = if success { ("Completed", Color::Green) } else { ("Failed", Color::Red) };
-    lines.push(Line::from(vec![
-        Span::styled(format!(" ● {} ", status), Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" {:.1}s ", duration_ms as f64 / 1000.0), Style::default().fg(Color::White)),
-    ]).alignment(Alignment::Center));
+    let (status, color) = if success {
+        ("Completed", Color::Green)
+    } else {
+        ("Failed", Color::Red)
+    };
+    lines.push(
+        Line::from(vec![
+            Span::styled(
+                format!(" ● {} ", status),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {:.1}s ", duration_ms as f64 / 1000.0),
+                Style::default().fg(Color::White),
+            ),
+        ])
+        .alignment(Alignment::Center),
+    );
     lines.push(Line::from(""));
 }
 
@@ -469,24 +668,41 @@ fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
     lines.push(Line::from(""));
 
     // Top border
-    lines.push(Line::from(vec![
-        Span::styled(format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-    ]).alignment(Alignment::Center));
+    lines.push(
+        Line::from(vec![Span::styled(
+            format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))),
+            Style::default().fg(color),
+        )])
+        .alignment(Alignment::Center),
+    );
 
     // Header
     let header = " ⏳ Awaiting Plan Approval ";
     let header_pad = box_width.saturating_sub(header.chars().count() + 2);
-    lines.push(Line::from(vec![
-        Span::styled("│", Style::default().fg(color)),
-        Span::styled(header, Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD)),
-        Span::styled(" ".repeat(header_pad), Style::default().bg(color)),
-        Span::styled("│", Style::default().fg(color)),
-    ]).alignment(Alignment::Center));
+    lines.push(
+        Line::from(vec![
+            Span::styled("│", Style::default().fg(color)),
+            Span::styled(
+                header,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ".repeat(header_pad), Style::default().bg(color)),
+            Span::styled("│", Style::default().fg(color)),
+        ])
+        .alignment(Alignment::Center),
+    );
 
     // Separator
-    lines.push(Line::from(vec![
-        Span::styled(format!("├{}┤", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-    ]).alignment(Alignment::Center));
+    lines.push(
+        Line::from(vec![Span::styled(
+            format!("├{}┤", "─".repeat(box_width.saturating_sub(2))),
+            Style::default().fg(color),
+        )])
+        .alignment(Alignment::Center),
+    );
 
     // Options
     let options = [
@@ -499,30 +715,46 @@ fn render_plan_approval(lines: &mut Vec<Line<'static>>, width: usize) {
 
     for opt in &options {
         let pad = box_width.saturating_sub(opt.chars().count() + 4);
-        lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(color)),
-            Span::styled(opt.to_string(), Style::default().fg(Color::White)),
-            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
-        ]).alignment(Alignment::Center));
+        lines.push(
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(color)),
+                Span::styled(opt.to_string(), Style::default().fg(Color::White)),
+                Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+            ])
+            .alignment(Alignment::Center),
+        );
     }
 
     // Bottom border
-    lines.push(Line::from(vec![
-        Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-    ]).alignment(Alignment::Center));
+    lines.push(
+        Line::from(vec![Span::styled(
+            format!("└{}┘", "─".repeat(box_width.saturating_sub(2))),
+            Style::default().fg(color),
+        )])
+        .alignment(Alignment::Center),
+    );
 }
 
 /// Render AskUserQuestion tool call as a numbered options box.
 /// Input structure: { "questions": [{ "question": "...", "header": "...",
 ///   "options": [{ "label": "...", "description": "..." }], "multiSelect": bool }] }
-fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, width: usize) {
+fn render_ask_user_question(
+    lines: &mut Vec<Line<'static>>,
+    input: &serde_json::Value,
+    width: usize,
+) {
     let color = Color::Magenta;
-    let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else { return };
+    let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else {
+        return;
+    };
 
     for q in questions {
         let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("?");
         let options = q.get("options").and_then(|v| v.as_array());
-        let multi = q.get("multiSelect").and_then(|v| v.as_bool()).unwrap_or(false);
+        let multi = q
+            .get("multiSelect")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         // Box width: fit content or cap at panel width
         let box_width = 60.min(width.saturating_sub(4));
@@ -531,9 +763,13 @@ fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::
         lines.push(Line::from(""));
 
         // Top border
-        lines.push(Line::from(vec![
-            Span::styled(format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-        ]).alignment(Alignment::Center));
+        lines.push(
+            Line::from(vec![Span::styled(
+                format!("┌{}┐", "─".repeat(box_width.saturating_sub(2))),
+                Style::default().fg(color),
+            )])
+            .alignment(Alignment::Center),
+        );
 
         // Header with question text (wrap if needed)
         let header_icon = if multi { "☑ " } else { "❓ " };
@@ -542,17 +778,29 @@ fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::
             let prefix = if i == 0 { header_icon } else { "   " };
             let text = format!("{}{}", prefix, chunk);
             let pad = box_width.saturating_sub(text.chars().count() + 2);
-            lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(color)),
-                Span::styled(text, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
-            ]).alignment(Alignment::Center));
+            lines.push(
+                Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(color)),
+                    Span::styled(
+                        text,
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+                ])
+                .alignment(Alignment::Center),
+            );
         }
 
         // Separator
-        lines.push(Line::from(vec![
-            Span::styled(format!("├{}┤", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-        ]).alignment(Alignment::Center));
+        lines.push(
+            Line::from(vec![Span::styled(
+                format!("├{}┤", "─".repeat(box_width.saturating_sub(2))),
+                Style::default().fg(color),
+            )])
+            .alignment(Alignment::Center),
+        );
 
         // Numbered options
         if let Some(opts) = options {
@@ -562,11 +810,14 @@ fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::
                 // Option label line
                 let opt_text = format!("{}. {}", idx + 1, label);
                 let pad = box_width.saturating_sub(opt_text.chars().count() + 4);
-                lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(color)),
-                    Span::styled(opt_text, Style::default().fg(AZURE)),
-                    Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
-                ]).alignment(Alignment::Center));
+                lines.push(
+                    Line::from(vec![
+                        Span::styled("│ ", Style::default().fg(color)),
+                        Span::styled(opt_text, Style::default().fg(AZURE)),
+                        Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+                    ])
+                    .alignment(Alignment::Center),
+                );
                 // Option description (dimmer, indented)
                 if let Some(d) = desc {
                     let indent = "   ";
@@ -574,29 +825,45 @@ fn render_ask_user_question(lines: &mut Vec<Line<'static>>, input: &serde_json::
                     for chunk in wrap_text(d, desc_max) {
                         let text = format!("{}{}", indent, chunk);
                         let pad = box_width.saturating_sub(text.chars().count() + 4);
-                        lines.push(Line::from(vec![
-                            Span::styled("│ ", Style::default().fg(color)),
-                            Span::styled(text, Style::default().fg(Color::DarkGray)),
-                            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
-                        ]).alignment(Alignment::Center));
+                        lines.push(
+                            Line::from(vec![
+                                Span::styled("│ ", Style::default().fg(color)),
+                                Span::styled(text, Style::default().fg(Color::DarkGray)),
+                                Span::styled(
+                                    format!("{} │", " ".repeat(pad)),
+                                    Style::default().fg(color),
+                                ),
+                            ])
+                            .alignment(Alignment::Center),
+                        );
                     }
                 }
             }
         }
 
         // "Other" note
-        let other_text = format!("{}. Other (type your answer)", options.map(|o| o.len() + 1).unwrap_or(1));
+        let other_text = format!(
+            "{}. Other (type your answer)",
+            options.map(|o| o.len() + 1).unwrap_or(1)
+        );
         let pad = box_width.saturating_sub(other_text.chars().count() + 4);
-        lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(color)),
-            Span::styled(other_text, Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
-        ]).alignment(Alignment::Center));
+        lines.push(
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(color)),
+                Span::styled(other_text, Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(color)),
+            ])
+            .alignment(Alignment::Center),
+        );
 
         // Bottom border
-        lines.push(Line::from(vec![
-            Span::styled(format!("└{}┘", "─".repeat(box_width.saturating_sub(2))), Style::default().fg(color)),
-        ]).alignment(Alignment::Center));
+        lines.push(
+            Line::from(vec![Span::styled(
+                format!("└{}┘", "─".repeat(box_width.saturating_sub(2))),
+                Style::default().fg(color),
+            )])
+            .alignment(Alignment::Center),
+        );
     }
 }
 
@@ -612,36 +879,54 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
     lines.push(Line::from(""));
 
     // Top border
-    lines.push(Line::from(vec![
-        Span::styled(format!("╔{}╗", border.repeat(width.saturating_sub(2))), Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("╔{}╗", border.repeat(width.saturating_sub(2))),
+        Style::default().fg(plan_color).add_modifier(Modifier::BOLD),
+    )]));
 
     // Header with plan icon and name
     let header = format!(" 📋 PLAN MODE: {} ", name);
     let header_pad = width.saturating_sub(header.chars().count() + 2);
     lines.push(Line::from(vec![
-        Span::styled("║", Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
-        Span::styled(header, Style::default().fg(Color::Black).bg(header_bg).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "║",
+            Style::default().fg(plan_color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            header,
+            Style::default()
+                .fg(Color::Black)
+                .bg(header_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" ".repeat(header_pad), Style::default().bg(header_bg)),
-        Span::styled("║", Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "║",
+            Style::default().fg(plan_color).add_modifier(Modifier::BOLD),
+        ),
     ]));
 
     // Separator under header
-    lines.push(Line::from(vec![
-        Span::styled(format!("╠{}╣", "─".repeat(width.saturating_sub(2))), Style::default().fg(plan_color)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("╠{}╣", "─".repeat(width.saturating_sub(2))),
+        Style::default().fg(plan_color),
+    )]));
 
     // Render markdown content with box borders
     let text_lines: Vec<&str> = content.lines().collect();
     let mut in_code_block = false;
 
     // Helper to push a line with box borders and padding
-    let push_boxed = |lines: &mut Vec<Line<'static>>, mut spans: Vec<Span<'static>>, char_count: usize| {
-        let pad = content_width.saturating_sub(char_count);
-        spans.insert(0, Span::styled("║ ", Style::default().fg(plan_color)));
-        spans.push(Span::styled(format!("{} ║", " ".repeat(pad)), Style::default().fg(plan_color)));
-        lines.push(Line::from(spans));
-    };
+    let push_boxed =
+        |lines: &mut Vec<Line<'static>>, mut spans: Vec<Span<'static>>, char_count: usize| {
+            let pad = content_width.saturating_sub(char_count);
+            spans.insert(0, Span::styled("║ ", Style::default().fg(plan_color)));
+            spans.push(Span::styled(
+                format!("{} ║", " ".repeat(pad)),
+                Style::default().fg(plan_color),
+            ));
+            lines.push(Line::from(spans));
+        };
 
     for line in &text_lines {
         let trimmed = line.trim();
@@ -651,15 +936,30 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             in_code_block = !in_code_block;
             let lang = trimmed.trim_start_matches('`').trim();
             let (marker, char_len) = if in_code_block && !lang.is_empty() {
-                (vec![
-                    Span::styled("┌─ ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(lang.to_string(), Style::default().fg(AZURE)),
-                    Span::styled(" ─", Style::default().fg(Color::DarkGray)),
-                ], 5 + lang.chars().count())
+                (
+                    vec![
+                        Span::styled("┌─ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(lang.to_string(), Style::default().fg(AZURE)),
+                        Span::styled(" ─", Style::default().fg(Color::DarkGray)),
+                    ],
+                    5 + lang.chars().count(),
+                )
             } else if !in_code_block {
-                (vec![Span::styled("└──────", Style::default().fg(Color::DarkGray))], 7)
+                (
+                    vec![Span::styled(
+                        "└──────",
+                        Style::default().fg(Color::DarkGray),
+                    )],
+                    7,
+                )
             } else {
-                (vec![Span::styled("┌──────", Style::default().fg(Color::DarkGray))], 7)
+                (
+                    vec![Span::styled(
+                        "┌──────",
+                        Style::default().fg(Color::DarkGray),
+                    )],
+                    7,
+                )
             };
             push_boxed(lines, marker, char_len);
             continue;
@@ -682,16 +982,38 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             let level = trimmed.chars().take_while(|&c| c == '#').count();
             let text = trimmed.trim_start_matches('#').trim();
             let (prefix, style) = match level {
-                1 => ("█ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-                2 => ("▓ ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                3 => ("▒ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                1 => (
+                    "█ ",
+                    Style::default()
+                        .fg(AZURE)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ),
+                2 => (
+                    "▓ ",
+                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+                ),
+                3 => (
+                    "▒ ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 _ => ("░ ", Style::default().fg(Color::Green)),
             };
-            for (i, wrapped) in wrap_text(text, content_width.saturating_sub(2)).into_iter().enumerate() {
+            for (i, wrapped) in wrap_text(text, content_width.saturating_sub(2))
+                .into_iter()
+                .enumerate()
+            {
                 let spans = if i == 0 {
-                    vec![Span::styled(prefix, style), Span::styled(wrapped.clone(), style)]
+                    vec![
+                        Span::styled(prefix, style),
+                        Span::styled(wrapped.clone(), style),
+                    ]
                 } else {
-                    vec![Span::styled("  ", Style::default()), Span::styled(wrapped.clone(), style)]
+                    vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(wrapped.clone(), style),
+                    ]
                 };
                 push_boxed(lines, spans, 2 + wrapped.chars().count());
             }
@@ -700,33 +1022,54 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
 
         // Bullet lists
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
-            let bullet_content = trimmed.trim_start_matches("- ").trim_start_matches("* ").trim_start_matches("• ");
-            for (i, wrapped) in wrap_text(bullet_content, content_width.saturating_sub(4)).into_iter().enumerate() {
+            let bullet_content = trimmed
+                .trim_start_matches("- ")
+                .trim_start_matches("* ")
+                .trim_start_matches("• ");
+            for (i, wrapped) in wrap_text(bullet_content, content_width.saturating_sub(4))
+                .into_iter()
+                .enumerate()
+            {
                 let mut spans = if i == 0 {
                     vec![Span::styled("  • ", Style::default().fg(AZURE))]
                 } else {
                     vec![Span::styled("    ", Style::default())]
                 };
-                spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+                spans.extend(parse_markdown_spans(
+                    &wrapped,
+                    Style::default().fg(Color::White),
+                ));
                 push_boxed(lines, spans, 4 + wrapped.chars().count());
             }
             continue;
         }
 
         // Numbered lists
-        if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        if trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
             if let Some(dot_pos) = trimmed.find(". ") {
                 let num = &trimmed[..dot_pos];
                 let content_text = &trimmed[dot_pos + 2..];
                 let prefix = format!("  {}. ", num);
                 let prefix_len = prefix.chars().count();
-                for (i, wrapped) in wrap_text(content_text, content_width.saturating_sub(prefix_len)).into_iter().enumerate() {
+                for (i, wrapped) in
+                    wrap_text(content_text, content_width.saturating_sub(prefix_len))
+                        .into_iter()
+                        .enumerate()
+                {
                     let mut spans = if i == 0 {
                         vec![Span::styled(prefix.clone(), Style::default().fg(AZURE))]
                     } else {
                         vec![Span::styled(" ".repeat(prefix_len), Style::default())]
                     };
-                    spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::White)));
+                    spans.extend(parse_markdown_spans(
+                        &wrapped,
+                        Style::default().fg(Color::White),
+                    ));
                     push_boxed(lines, spans, prefix_len + wrapped.chars().count());
                 }
                 continue;
@@ -738,7 +1081,12 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
             let quote_content = trimmed.trim_start_matches("> ");
             for wrapped in wrap_text(quote_content, content_width.saturating_sub(2)) {
                 let mut spans = vec![Span::styled("┃ ", Style::default().fg(Color::DarkGray))];
-                spans.extend(parse_markdown_spans(&wrapped, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+                spans.extend(parse_markdown_spans(
+                    &wrapped,
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                ));
                 push_boxed(lines, spans, 2 + wrapped.chars().count());
             }
             continue;
@@ -757,9 +1105,10 @@ fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width:
     }
 
     // Bottom border
-    lines.push(Line::from(vec![
-        Span::styled(format!("╚{}╝", border.repeat(width.saturating_sub(2))), Style::default().fg(plan_color).add_modifier(Modifier::BOLD)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("╚{}╝", border.repeat(width.saturating_sub(2))),
+        Style::default().fg(plan_color).add_modifier(Modifier::BOLD),
+    )]));
 
     lines.push(Line::from(""));
 }
@@ -791,28 +1140,61 @@ mod tests {
         render_ask_user_question(&mut lines, &input, 80);
 
         // Flatten all span content into strings for assertion
-        let text: Vec<String> = lines.iter().map(|l| {
-            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
-        }).collect();
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
 
         // Box borders present
-        assert!(text.iter().any(|l| l.contains('┌') && l.contains('┐')), "Missing top border");
-        assert!(text.iter().any(|l| l.contains('└') && l.contains('┘')), "Missing bottom border");
-        assert!(text.iter().any(|l| l.contains('├') && l.contains('┤')), "Missing separator");
+        assert!(
+            text.iter().any(|l| l.contains('┌') && l.contains('┐')),
+            "Missing top border"
+        );
+        assert!(
+            text.iter().any(|l| l.contains('└') && l.contains('┘')),
+            "Missing bottom border"
+        );
+        assert!(
+            text.iter().any(|l| l.contains('├') && l.contains('┤')),
+            "Missing separator"
+        );
 
         // Question text visible
-        assert!(text.iter().any(|l| l.contains("Which approach?")), "Missing question text");
+        assert!(
+            text.iter().any(|l| l.contains("Which approach?")),
+            "Missing question text"
+        );
 
         // Numbered options
-        assert!(text.iter().any(|l| l.contains("1. Option A")), "Missing option 1");
-        assert!(text.iter().any(|l| l.contains("2. Option B")), "Missing option 2");
+        assert!(
+            text.iter().any(|l| l.contains("1. Option A")),
+            "Missing option 1"
+        );
+        assert!(
+            text.iter().any(|l| l.contains("2. Option B")),
+            "Missing option 2"
+        );
 
         // Descriptions visible
-        assert!(text.iter().any(|l| l.contains("First choice")), "Missing option 1 description");
-        assert!(text.iter().any(|l| l.contains("Second choice")), "Missing option 2 description");
+        assert!(
+            text.iter().any(|l| l.contains("First choice")),
+            "Missing option 1 description"
+        );
+        assert!(
+            text.iter().any(|l| l.contains("Second choice")),
+            "Missing option 2 description"
+        );
 
         // Other option present
-        assert!(text.iter().any(|l| l.contains("3. Other")), "Missing Other option");
+        assert!(
+            text.iter().any(|l| l.contains("3. Other")),
+            "Missing Other option"
+        );
     }
 
     /// Verifies multi-select annotation appears in the header.
@@ -827,11 +1209,20 @@ mod tests {
         });
         let mut lines: Vec<Line<'static>> = Vec::new();
         render_ask_user_question(&mut lines, &input, 80);
-        let text: Vec<String> = lines.iter().map(|l| {
-            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
-        }).collect();
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
         // Multi-select uses ☑ icon instead of ❓
-        assert!(text.iter().any(|l| l.contains('☑')), "Multi-select should show checkbox icon");
+        assert!(
+            text.iter().any(|l| l.contains('☑')),
+            "Multi-select should show checkbox icon"
+        );
     }
 
     /// Verifies empty questions array produces no output (no panic).
@@ -841,7 +1232,10 @@ mod tests {
         render_ask_user_question(&mut lines, &json!({}), 80);
         assert!(lines.is_empty(), "Empty input should produce no lines");
         render_ask_user_question(&mut lines, &json!({"questions": []}), 80);
-        assert!(lines.is_empty(), "Empty questions array should produce no lines");
+        assert!(
+            lines.is_empty(),
+            "Empty questions array should produce no lines"
+        );
     }
 
     /// Verifies narrow width doesn't panic or produce garbled output.
@@ -858,15 +1252,24 @@ mod tests {
         let mut lines: Vec<Line<'static>> = Vec::new();
         // Minimum usable width (box_width = 60.min(width-4) = 16)
         render_ask_user_question(&mut lines, &input, 20);
-        assert!(!lines.is_empty(), "Should produce output even at narrow width");
+        assert!(
+            !lines.is_empty(),
+            "Should produce output even at narrow width"
+        );
     }
 
     // ── Helper to flatten Line spans into a single string ───────────────
 
     fn lines_to_text(lines: &[Line<'static>]) -> Vec<String> {
-        lines.iter().map(|l| {
-            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
-        }).collect()
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect()
     }
 
     // ── render_ask_user_question extended tests ─────────────────────────
@@ -884,8 +1287,14 @@ mod tests {
         render_ask_user_question(&mut lines, &input, 80);
         let text = lines_to_text(&lines);
         // Should have two top borders (one per question)
-        let top_borders = text.iter().filter(|l| l.contains('┌') && l.contains('┐')).count();
-        assert_eq!(top_borders, 2, "Each question should have its own top border");
+        let top_borders = text
+            .iter()
+            .filter(|l| l.contains('┌') && l.contains('┐'))
+            .count();
+        assert_eq!(
+            top_borders, 2,
+            "Each question should have its own top border"
+        );
     }
 
     /// Question with no description shows only label.
@@ -1014,7 +1423,12 @@ mod tests {
         render_ask_user_question(&mut lines, &input, 60);
         let text = lines_to_text(&lines);
         // The description should be split across multiple lines
-        let desc_lines: Vec<&String> = text.iter().filter(|l| l.contains("description") || l.contains("definitely") || l.contains("boundary")).collect();
+        let desc_lines: Vec<&String> = text
+            .iter()
+            .filter(|l| {
+                l.contains("description") || l.contains("definitely") || l.contains("boundary")
+            })
+            .collect();
         assert!(!desc_lines.is_empty(), "Long description should be present");
     }
 
@@ -1090,7 +1504,9 @@ mod tests {
         let mut lines: Vec<Line<'static>> = Vec::new();
         render_hook(&mut lines, "pre-commit", "All checks passed", 80);
         let text = lines_to_text(&lines);
-        assert!(text.iter().any(|l| l.contains("pre-commit") && l.contains("All checks passed")));
+        assert!(text
+            .iter()
+            .any(|l| l.contains("pre-commit") && l.contains("All checks passed")));
     }
 
     /// Hook with empty output renders only name.
@@ -1146,7 +1562,9 @@ mod tests {
         let mut lines: Vec<Line<'static>> = Vec::new();
         render_command(&mut lines, "compact");
         let text = lines_to_text(&lines);
-        assert!(text.iter().any(|l| l.contains("/ ") && l.contains("compact")));
+        assert!(text
+            .iter()
+            .any(|l| l.contains("/ ") && l.contains("compact")));
     }
 
     /// Command produces exactly 2 lines (empty + command).
@@ -1430,7 +1848,12 @@ mod tests {
     fn test_render_events_empty() {
         let mut highlighter = SyntaxHighlighter::new();
         let (lines, anim, bubbles, clicks, _tables) = render_display_events(
-            &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &[],
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(lines.is_empty());
         assert!(anim.is_empty());
@@ -1448,7 +1871,12 @@ mod tests {
             model: "claude-opus-4-20250514".into(),
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Session Started")));
@@ -1459,15 +1887,31 @@ mod tests {
     fn test_render_events_dedup_init() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
-            DisplayEvent::Init { _session_id: "s1".into(), cwd: "/a".into(), model: "m".into() },
-            DisplayEvent::Init { _session_id: "s2".into(), cwd: "/b".into(), model: "m2".into() },
+            DisplayEvent::Init {
+                _session_id: "s1".into(),
+                cwd: "/a".into(),
+                model: "m".into(),
+            },
+            DisplayEvent::Init {
+                _session_id: "s2".into(),
+                cwd: "/b".into(),
+                model: "m2".into(),
+            },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         // Only one "Session Started" should appear
-        let count = text.iter().filter(|l| l.contains("Session Started")).count();
+        let count = text
+            .iter()
+            .filter(|l| l.contains("Session Started"))
+            .count();
         assert_eq!(count, 1);
     }
 
@@ -1480,7 +1924,12 @@ mod tests {
             content: "Hello".into(),
         }];
         let (lines, _, bubbles, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
@@ -1497,11 +1946,19 @@ mod tests {
             text: "I'll help you.".into(),
         }];
         let (lines, _, bubbles, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
-        assert!(!bubbles[0].1, "Assistant bubble should NOT be marked as user");
+        assert!(
+            !bubbles[0].1,
+            "Assistant bubble should NOT be marked as user"
+        );
     }
 
     #[test]
@@ -1520,7 +1977,12 @@ mod tests {
             },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|line| line.contains("Codex")));
@@ -1542,7 +2004,12 @@ mod tests {
             },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let header = lines_to_text(&lines)
             .into_iter()
@@ -1569,7 +2036,12 @@ mod tests {
             },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let codex_header = lines.iter().find_map(|line| {
             line.spans
@@ -1583,7 +2055,11 @@ mod tests {
     #[test]
     fn test_render_assistant_header_line_truncates_model_to_fit() {
         let line = render_assistant_header_line(Some("claude-opus-4-6-extra-long-model"), 16);
-        let text = line.spans.iter().map(|span| span.content.as_ref()).collect::<String>();
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
         assert_eq!(text.chars().count(), 16);
         assert!(text.starts_with(" Claude ▶ "));
         assert!(text.ends_with(" cl… "));
@@ -1621,7 +2097,13 @@ mod tests {
             last_ask_input: None,
         };
         let (lines, _, _, _, _) = render_display_events_incremental(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None, pre_scan,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+            pre_scan,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|line| line.contains("Codex")));
@@ -1636,7 +2118,12 @@ mod tests {
             output: "approved".into(),
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("pre-tool-use")));
@@ -1647,11 +2134,22 @@ mod tests {
     fn test_render_events_dedup_hooks() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
-            DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
-            DisplayEvent::Hook { name: "hook".into(), output: "out".into() },
+            DisplayEvent::Hook {
+                name: "hook".into(),
+                output: "out".into(),
+            },
+            DisplayEvent::Hook {
+                name: "hook".into(),
+                output: "out".into(),
+            },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         let hook_count = text.iter().filter(|l| l.contains("hook")).count();
@@ -1662,9 +2160,16 @@ mod tests {
     #[test]
     fn test_render_events_command() {
         let mut highlighter = SyntaxHighlighter::new();
-        let events = vec![DisplayEvent::Command { name: "compact".into() }];
+        let events = vec![DisplayEvent::Command {
+            name: "compact".into(),
+        }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("compact")));
@@ -1676,7 +2181,12 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacting];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1688,7 +2198,12 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Compacted];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1700,7 +2215,12 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::MayBeCompacting];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("compacting")));
@@ -1717,7 +2237,12 @@ mod tests {
             cost_usd: 0.02,
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Completed")));
@@ -1730,7 +2255,12 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::Filtered];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(lines.is_empty());
     }
@@ -1740,7 +2270,12 @@ mod tests {
     fn test_render_events_pending_user_message() {
         let mut highlighter = SyntaxHighlighter::new();
         let (lines, _, bubbles, _, _) = render_display_events(
-            &[], 80, &HashSet::new(), &HashSet::new(), &mut highlighter, Some("Waiting..."),
+            &[],
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            Some("Waiting..."),
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Waiting...")));
@@ -1760,7 +2295,12 @@ mod tests {
             input: json!({"todos": []}),
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(lines.is_empty(), "TodoWrite tool calls should be skipped");
     }
@@ -1777,7 +2317,12 @@ mod tests {
             is_error: false,
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(lines.is_empty(), "TodoWrite results should be skipped");
     }
@@ -1796,7 +2341,12 @@ mod tests {
             input: json!({"file_path": "/path/file.rs"}),
         }];
         let (_, anim, _, _, _) = render_display_events(
-            &events, 80, &pending, &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &pending,
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(!anim.is_empty(), "Pending tool should have animation index");
     }
@@ -1810,7 +2360,12 @@ mod tests {
             content: "Step 1: Do thing".into(),
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("PLAN MODE")));
@@ -1823,10 +2378,17 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::UserMessage {
             _uuid: "u1".into(),
-            content: "This session is being continued from a previous conversation. Here is a summary...".into(),
+            content:
+                "This session is being continued from a previous conversation. Here is a summary..."
+                    .into(),
         }];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1839,13 +2401,34 @@ mod tests {
     fn test_render_events_mixed_sequence() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
-            DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "Do something".into() },
-            DisplayEvent::AssistantText { _uuid: "a".into(), _message_id: "m".into(), text: "Sure!".into() },
-            DisplayEvent::Complete { _session_id: "s".into(), success: true, duration_ms: 1000, cost_usd: 0.01 },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/p".into(),
+                model: "m".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "Do something".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "Sure!".into(),
+            },
+            DisplayEvent::Complete {
+                _session_id: "s".into(),
+                success: true,
+                duration_ms: 1000,
+                cost_usd: 0.01,
+            },
         ];
         let (lines, _, bubbles, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 2); // user + assistant
@@ -1856,11 +2439,23 @@ mod tests {
     fn test_render_events_init_after_content_suppressed() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "Hi".into() },
-            DisplayEvent::Init { _session_id: "s".into(), cwd: "/p".into(), model: "m".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "Hi".into(),
+            },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/p".into(),
+                model: "m".into(),
+            },
         ];
         let (lines, _, _, _, _) = render_display_events(
-            &events, 80, &HashSet::new(), &HashSet::new(), &mut highlighter, None,
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
         );
         let text = lines_to_text(&lines);
         // Init should be suppressed since content was already seen

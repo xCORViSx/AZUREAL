@@ -124,11 +124,13 @@ impl SessionStore {
         conn.execute_batch(
             "PRAGMA journal_mode = DELETE;\
              PRAGMA synchronous = NORMAL;\
-             PRAGMA foreign_keys = ON;"
+             PRAGMA foreign_keys = ON;",
         )?;
         conn.execute_batch(SCHEMA)?;
         // Migration: add last_claude_uuid column if missing (existing databases)
-        let _ = conn.execute_batch("ALTER TABLE sessions ADD COLUMN last_claude_uuid TEXT NOT NULL DEFAULT '';");
+        let _ = conn.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN last_claude_uuid TEXT NOT NULL DEFAULT '';",
+        );
         Ok(Self { conn })
     }
 
@@ -161,11 +163,11 @@ impl SessionStore {
 
     /// Next S-number: `max(id) + 1` across all sessions, defaulting to 1.
     pub fn next_s_number(&self) -> i64 {
-        self.conn.query_row(
-            "SELECT COALESCE(MAX(id), 0) + 1 FROM sessions",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(1)
+        self.conn
+            .query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM sessions", [], |row| {
+                row.get(0)
+            })
+            .unwrap_or(1)
     }
 
     /// Update the last Claude UUID for a session (for JSONL recovery on restart).
@@ -180,11 +182,17 @@ impl SessionStore {
     /// Get sessions with non-empty last_claude_uuid (for orphan recovery).
     pub fn sessions_with_uuid(&self) -> anyhow::Result<Vec<(i64, String, String)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, worktree, last_claude_uuid FROM sessions WHERE last_claude_uuid != ''"
+            "SELECT id, worktree, last_claude_uuid FROM sessions WHERE last_claude_uuid != ''",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -208,7 +216,13 @@ impl SessionStore {
 
     /// Mark a session as completed with duration and cost (display-only metadata).
     #[allow(dead_code)]
-    pub fn mark_completed(&self, id: i64, success: bool, duration_ms: u64, cost_usd: f64) -> anyhow::Result<()> {
+    pub fn mark_completed(
+        &self,
+        id: i64,
+        success: bool,
+        duration_ms: u64,
+        cost_usd: f64,
+    ) -> anyhow::Result<()> {
         self.conn.execute(
             "UPDATE sessions SET completed = ?1, duration_ms = ?2, cost_usd = ?3 WHERE id = ?4",
             params![success as i64, duration_ms as i64, cost_usd, id],
@@ -220,7 +234,8 @@ impl SessionStore {
     /// Runs VACUUM afterward to reclaim disk space from deleted rows.
     #[allow(dead_code)]
     pub fn delete_session(&self, id: i64) -> anyhow::Result<()> {
-        self.conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
         let _ = self.conn.execute_batch("VACUUM;");
         Ok(())
     }
@@ -275,13 +290,15 @@ impl SessionStore {
 
         if worktree.is_some() {
             let mut s = self.conn.prepare(sql)?;
-            let rows = s.query_map(params![&*filter], map_row)?
+            let rows = s
+                .query_map(params![&*filter], map_row)?
                 .collect::<Result<Vec<_>, _>>()?;
             return Ok(rows);
         }
 
         let mut stmt = self.conn.prepare(sql)?;
-        let rows = stmt.query_map([], map_row)?
+        let rows = stmt
+            .query_map([], map_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -302,7 +319,11 @@ impl SessionStore {
         };
         iter.filter_map(|r| r.ok())
             .map(|(id, name)| {
-                let display = if name.is_empty() { format!("S{}", id) } else { name };
+                let display = if name.is_empty() {
+                    format!("S{}", id)
+                } else {
+                    name
+                };
                 (id, display)
             })
             .collect()
@@ -329,13 +350,24 @@ impl SessionStore {
         let mut seq = self.next_seq(session_id)?;
         let tx = self.conn.unchecked_transaction()?;
         let mut stmt = tx.prepare(
-            "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, ?2, ?3, ?4, ?5)"
+            "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         let mut count = 0usize;
         let mut completion: Option<(bool, u64, f64)> = None;
         for event in events {
-            if matches!(event, DisplayEvent::Filtered | DisplayEvent::MayBeCompacting) { continue; }
-            if let DisplayEvent::Complete { success, duration_ms, cost_usd, .. } = event {
+            if matches!(
+                event,
+                DisplayEvent::Filtered | DisplayEvent::MayBeCompacting
+            ) {
+                continue;
+            }
+            if let DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } = event
+            {
                 completion = Some((*success, *duration_ms, *cost_usd));
             }
             let compacted = compact_event(event);
@@ -360,13 +392,15 @@ impl SessionStore {
 
     /// Load all events for a session in order.
     pub fn load_events(&self, session_id: i64) -> anyhow::Result<Vec<DisplayEvent>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT data FROM events WHERE session_id = ?1 ORDER BY seq"
-        )?;
-        let rows = stmt.query_map(params![session_id], |row| {
-            let blob: Vec<u8> = row.get(0)?;
-            Ok(blob)
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT data FROM events WHERE session_id = ?1 ORDER BY seq")?;
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                let blob: Vec<u8> = row.get(0)?;
+                Ok(blob)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut events = Vec::with_capacity(rows.len());
         for blob in rows {
@@ -379,14 +413,20 @@ impl SessionStore {
     }
 
     /// Load events from a specific sequence position onward (for context building).
-    pub fn load_events_from(&self, session_id: i64, from_seq: i64) -> anyhow::Result<Vec<DisplayEvent>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 ORDER BY seq"
-        )?;
-        let rows = stmt.query_map(params![session_id, from_seq], |row| {
-            let blob: Vec<u8> = row.get(0)?;
-            Ok(blob)
-        })?.collect::<Result<Vec<_>, _>>()?;
+    pub fn load_events_from(
+        &self,
+        session_id: i64,
+        from_seq: i64,
+    ) -> anyhow::Result<Vec<DisplayEvent>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 ORDER BY seq")?;
+        let rows = stmt
+            .query_map(params![session_id, from_seq], |row| {
+                let blob: Vec<u8> = row.get(0)?;
+                Ok(blob)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut events = Vec::with_capacity(rows.len());
         for blob in rows {
@@ -403,7 +443,9 @@ impl SessionStore {
     pub fn count_events(&self, session_id: i64, kinds: Option<&[&str]>) -> anyhow::Result<usize> {
         let count: i64 = match kinds {
             Some(ks) if !ks.is_empty() => {
-                let placeholders: Vec<String> = ks.iter().enumerate()
+                let placeholders: Vec<String> = ks
+                    .iter()
+                    .enumerate()
                     .map(|(i, _)| format!("?{}", i + 2))
                     .collect();
                 let sql = format!(
@@ -420,13 +462,11 @@ impl SessionStore {
                 let mut rows = stmt.raw_query();
                 rows.next()?.map(|r| r.get(0)).transpose()?.unwrap_or(0)
             }
-            _ => {
-                self.conn.query_row(
-                    "SELECT COUNT(*) FROM events WHERE session_id = ?1",
-                    params![session_id],
-                    |row| row.get(0),
-                )?
-            }
+            _ => self.conn.query_row(
+                "SELECT COUNT(*) FROM events WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )?,
         };
         Ok(count as usize)
     }
@@ -443,7 +483,8 @@ impl SessionStore {
 
     /// Total character count of events since the last compaction (or all events if none).
     pub fn total_chars_since_compaction(&self, session_id: i64) -> anyhow::Result<usize> {
-        let after_seq = self.latest_compaction(session_id)?
+        let after_seq = self
+            .latest_compaction(session_id)?
             .map(|c| c.after_seq)
             .unwrap_or(0);
         let sum: i64 = self.conn.query_row(
@@ -455,7 +496,12 @@ impl SessionStore {
     }
 
     /// Store a compaction summary.
-    pub fn store_compaction(&self, session_id: i64, after_seq: i64, summary: &str) -> anyhow::Result<()> {
+    pub fn store_compaction(
+        &self,
+        session_id: i64,
+        after_seq: i64,
+        summary: &str,
+    ) -> anyhow::Result<()> {
         self.conn.execute(
             "INSERT INTO compactions(session_id, after_seq, summary) VALUES (?1, ?2, ?3)",
             params![session_id, after_seq, summary],
@@ -480,14 +526,19 @@ impl SessionStore {
     /// Find the compaction boundary: the seq just before the Nth-to-last UserMessage.
     /// Returns `None` if there are fewer than `keep` UserMessages since `from_seq`,
     /// meaning there's not enough old content to compact.
-    pub fn compaction_boundary(&self, session_id: i64, from_seq: i64, keep: usize) -> anyhow::Result<Option<i64>> {
+    pub fn compaction_boundary(
+        &self,
+        session_id: i64,
+        from_seq: i64,
+        keep: usize,
+    ) -> anyhow::Result<Option<i64>> {
         // Get seqs of all UserMessage events since from_seq, ordered newest first
         let mut stmt = self.conn.prepare(
             "SELECT seq FROM events WHERE session_id = ?1 AND seq >= ?2 AND kind = 'UserMessage' ORDER BY seq DESC"
         )?;
-        let seqs: Vec<i64> = stmt.query_map(params![session_id, from_seq], |row| {
-            row.get(0)
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let seqs: Vec<i64> = stmt
+            .query_map(params![session_id, from_seq], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
 
         if seqs.len() <= keep {
             return Ok(None); // Not enough user messages to justify compaction
@@ -511,14 +562,21 @@ impl SessionStore {
     }
 
     /// Load events in a range [from_seq, through_seq] (inclusive).
-    pub fn load_events_range(&self, session_id: i64, from_seq: i64, through_seq: i64) -> anyhow::Result<Vec<DisplayEvent>> {
+    pub fn load_events_range(
+        &self,
+        session_id: i64,
+        from_seq: i64,
+        through_seq: i64,
+    ) -> anyhow::Result<Vec<DisplayEvent>> {
         let mut stmt = self.conn.prepare(
             "SELECT data FROM events WHERE session_id = ?1 AND seq >= ?2 AND seq <= ?3 ORDER BY seq"
         )?;
-        let rows = stmt.query_map(params![session_id, from_seq, through_seq], |row| {
-            let blob: Vec<u8> = row.get(0)?;
-            Ok(blob)
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map(params![session_id, from_seq, through_seq], |row| {
+                let blob: Vec<u8> = row.get(0)?;
+                Ok(blob)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         let mut events = Vec::with_capacity(rows.len());
         for blob in rows {
             let json = decompress_data(&blob);
@@ -532,30 +590,45 @@ impl SessionStore {
     /// Search event data across sessions for a query string. Returns up to `limit`
     /// results as (session_id, preview_text). Searches only text-bearing event kinds.
     /// Decompresses each event and filters in Rust (data column is zstd-compressed).
-    pub fn search_events(&self, worktree: Option<&str>, query: &str, limit: usize) -> anyhow::Result<Vec<(i64, String)>> {
+    pub fn search_events(
+        &self,
+        worktree: Option<&str>,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<(i64, String)>> {
         let query_lower = query.to_lowercase();
         let sql = match worktree {
-            Some(_) => "SELECT e.session_id, e.data FROM events e \
+            Some(_) => {
+                "SELECT e.session_id, e.data FROM events e \
                         JOIN sessions s ON s.id = e.session_id \
                         WHERE s.worktree = ?1 AND e.kind IN ('UserMessage','AssistantText') \
-                        ORDER BY e.session_id, e.seq",
-            None =>    "SELECT e.session_id, e.data FROM events e \
+                        ORDER BY e.session_id, e.seq"
+            }
+            None => {
+                "SELECT e.session_id, e.data FROM events e \
                         WHERE e.kind IN ('UserMessage','AssistantText') \
-                        ORDER BY e.session_id, e.seq",
+                        ORDER BY e.session_id, e.seq"
+            }
         };
         let mut stmt = self.conn.prepare(sql)?;
         let rows: Vec<(i64, Vec<u8>)> = if let Some(wt) = worktree {
             stmt.query_map(params![wt], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?.filter_map(|r| r.ok()).collect()
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
         } else {
             stmt.query_map([], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?.filter_map(|r| r.ok()).collect()
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
         };
         let mut results = Vec::new();
         for (session_id, blob) in rows {
-            if results.len() >= limit { break; }
+            if results.len() >= limit {
+                break;
+            }
             let json = decompress_data(&blob);
             if json.to_lowercase().contains(&query_lower) {
                 results.push((session_id, json));
@@ -617,13 +690,20 @@ fn event_kind(event: &DisplayEvent) -> &'static str {
 /// ToolCall input is stripped to only the key field `extract_tool_param` reads.
 fn compact_event(event: &DisplayEvent) -> DisplayEvent {
     match event {
-        DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error } => {
+        DisplayEvent::ToolResult {
+            tool_use_id,
+            tool_name,
+            file_path,
+            content,
+            is_error,
+        } => {
             // Strip system-reminder blocks first
             let content = if let Some(start) = content.find("<system-reminder>") {
                 &content[..start]
             } else {
                 content.as_str()
-            }.trim_end();
+            }
+            .trim_end();
 
             let lines: Vec<&str> = content.lines().collect();
             let compacted = match tool_name.as_str() {
@@ -633,14 +713,29 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
                         content.to_string()
                     } else {
                         let first = lines[0];
-                        let last = lines.iter().rev().find(|l| !l.trim().is_empty()).unwrap_or(&"");
+                        let last = lines
+                            .iter()
+                            .rev()
+                            .find(|l| !l.trim().is_empty())
+                            .unwrap_or(&"");
                         format!("{}\n  ({} lines)\n{}", first, lines.len(), last)
                     }
                 }
                 "Bash" | "bash" => {
                     // Last 2 non-empty lines
-                    let non_empty: Vec<&str> = lines.iter().filter(|l| !l.trim().is_empty()).copied().collect();
-                    non_empty.iter().rev().take(2).rev().copied().collect::<Vec<_>>().join("\n")
+                    let non_empty: Vec<&str> = lines
+                        .iter()
+                        .filter(|l| !l.trim().is_empty())
+                        .copied()
+                        .collect();
+                    non_empty
+                        .iter()
+                        .rev()
+                        .take(2)
+                        .rev()
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 }
                 "Grep" | "grep" => {
                     // First 3 lines
@@ -686,7 +781,13 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
                 is_error: *is_error,
             }
         }
-        DisplayEvent::ToolCall { _uuid, tool_use_id, tool_name, file_path, input } => {
+        DisplayEvent::ToolCall {
+            _uuid,
+            tool_use_id,
+            tool_name,
+            file_path,
+            input,
+        } => {
             // Strip input to only the key field the render pipeline reads.
             // Edit is kept fully (needed for inline diff rendering).
             let compacted_input = match tool_name.as_str() {
@@ -699,14 +800,19 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
                     }
                     if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
                         let content_lines: Vec<&str> = content.lines().collect();
-                        let purpose = content_lines.iter()
+                        let purpose = content_lines
+                            .iter()
                             .find(|l| {
                                 let t = l.trim();
-                                t.starts_with("//") || t.starts_with('#') ||
-                                t.starts_with("/*") || t.starts_with("\"\"\"") ||
-                                t.starts_with("///") || t.starts_with("//!")
+                                t.starts_with("//")
+                                    || t.starts_with('#')
+                                    || t.starts_with("/*")
+                                    || t.starts_with("\"\"\"")
+                                    || t.starts_with("///")
+                                    || t.starts_with("//!")
                             })
-                            .or(content_lines.first()).copied()
+                            .or(content_lines.first())
+                            .copied()
                             .unwrap_or("");
                         obj.insert("_lines".into(), serde_json::json!(content_lines.len()));
                         if !purpose.is_empty() {
@@ -756,9 +862,9 @@ pub fn event_char_len(event: &DisplayEvent) -> usize {
     match event {
         DisplayEvent::UserMessage { content, .. } => content.len(),
         DisplayEvent::AssistantText { text, .. } => text.len(),
-        DisplayEvent::ToolCall { tool_name, input, .. } => {
-            tool_name.len() + input.to_string().len()
-        }
+        DisplayEvent::ToolCall {
+            tool_name, input, ..
+        } => tool_name.len() + input.to_string().len(),
         DisplayEvent::ToolResult { content, .. } => content.len(),
         DisplayEvent::Plan { content, .. } => content.len(),
         DisplayEvent::Hook { output, .. } => output.len(),
@@ -808,11 +914,14 @@ mod tests {
     #[test]
     fn open_memory_creates_tables() {
         let store = SessionStore::open_memory().unwrap();
-        let version: String = store.conn.query_row(
-            "SELECT value FROM meta WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let version: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(version, "2");
     }
 
@@ -820,11 +929,14 @@ mod tests {
     fn open_memory_idempotent() {
         let store = SessionStore::open_memory().unwrap();
         store.conn.execute_batch(SCHEMA).unwrap();
-        let version: String = store.conn.query_row(
-            "SELECT value FROM meta WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let version: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(version, "2");
     }
 
@@ -845,9 +957,14 @@ mod tests {
     fn create_session_default_name_empty() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        let name: String = store.conn.query_row(
-            "SELECT name FROM sessions WHERE id = ?1", params![id], |r| r.get(0),
-        ).unwrap();
+        let name: String = store
+            .conn
+            .query_row(
+                "SELECT name FROM sessions WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(name.is_empty());
     }
 
@@ -858,9 +975,14 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
         store.rename_session(id, "Feature Work").unwrap();
-        let name: String = store.conn.query_row(
-            "SELECT name FROM sessions WHERE id = ?1", params![id], |r| r.get(0),
-        ).unwrap();
+        let name: String = store
+            .conn
+            .query_row(
+                "SELECT name FROM sessions WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(name, "Feature Work");
     }
 
@@ -877,9 +999,14 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
         store.delete_session(id).unwrap();
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM sessions WHERE id = ?1", params![id], |r| r.get(0),
-        ).unwrap();
+        let count: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sessions WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -889,9 +1016,14 @@ mod tests {
         let id = store.create_session("main").unwrap();
         store.append_events(id, &sample_events()).unwrap();
         store.delete_session(id).unwrap();
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM events WHERE session_id = ?1", params![id], |r| r.get(0),
-        ).unwrap();
+        let count: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE session_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -901,9 +1033,14 @@ mod tests {
         let id = store.create_session("main").unwrap();
         store.store_compaction(id, 5, "summary").unwrap();
         store.delete_session(id).unwrap();
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM compactions WHERE session_id = ?1", params![id], |r| r.get(0),
-        ).unwrap();
+        let count: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM compactions WHERE session_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -968,9 +1105,16 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
         let events = vec![
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "hi".into() },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "hi".into(),
+            },
             DisplayEvent::Filtered,
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hello".into() },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "hello".into(),
+            },
         ];
         let count = store.append_events(id, &events).unwrap();
         assert_eq!(count, 2);
@@ -994,12 +1138,25 @@ mod tests {
     fn append_incremental_continues_sequence() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "first".into() },
-        ]).unwrap();
-        store.append_events(id, &[
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "second".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "first".into(),
+                }],
+            )
+            .unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "second".into(),
+                }],
+            )
+            .unwrap();
         let loaded = store.load_events(id).unwrap();
         assert_eq!(loaded.len(), 2);
         match &loaded[0] {
@@ -1072,7 +1229,12 @@ mod tests {
         let id = store.create_session("main").unwrap();
         store.append_events(id, &sample_events()).unwrap();
         assert_eq!(store.count_events(id, Some(&["UserMessage"])).unwrap(), 1);
-        assert_eq!(store.count_events(id, Some(&["UserMessage", "AssistantText"])).unwrap(), 2);
+        assert_eq!(
+            store
+                .count_events(id, Some(&["UserMessage", "AssistantText"]))
+                .unwrap(),
+            2
+        );
     }
 
     #[test]
@@ -1098,7 +1260,9 @@ mod tests {
     fn store_and_retrieve_compaction() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.store_compaction(id, 10, "Summary of first 10 events").unwrap();
+        store
+            .store_compaction(id, 10, "Summary of first 10 events")
+            .unwrap();
         let info = store.latest_compaction(id).unwrap().unwrap();
         assert_eq!(info.after_seq, 10);
         assert_eq!(info.summary, "Summary of first 10 events");
@@ -1137,7 +1301,9 @@ mod tests {
         let id = store.create_session("main").unwrap();
         store.append_events(id, &sample_events()).unwrap();
         let before = store.total_chars_since_compaction(id).unwrap();
-        store.store_compaction(id, store.max_seq(id).unwrap(), "summary").unwrap();
+        store
+            .store_compaction(id, store.max_seq(id).unwrap(), "summary")
+            .unwrap();
         let after = store.total_chars_since_compaction(id).unwrap();
         assert!(before > 0);
         assert_eq!(after, 0);
@@ -1147,13 +1313,27 @@ mod tests {
     fn total_chars_since_compaction_only_counts_new() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "12345".into() },
-        ]).unwrap();
-        store.store_compaction(id, store.max_seq(id).unwrap(), "s").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "abc".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "12345".into(),
+                }],
+            )
+            .unwrap();
+        store
+            .store_compaction(id, store.max_seq(id).unwrap(), "s")
+            .unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "abc".into(),
+                }],
+            )
+            .unwrap();
         let chars = store.total_chars_since_compaction(id).unwrap();
         assert_eq!(chars, 3);
     }
@@ -1198,15 +1378,32 @@ mod tests {
     fn build_context_returns_events_after_compaction() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "old".into() },
-        ]).unwrap();
-        store.store_compaction(id, store.max_seq(id).unwrap(), "Summary of old stuff").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "new".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "old".into(),
+                }],
+            )
+            .unwrap();
+        store
+            .store_compaction(id, store.max_seq(id).unwrap(), "Summary of old stuff")
+            .unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "new".into(),
+                }],
+            )
+            .unwrap();
         let payload = store.build_context(id).unwrap().unwrap();
-        assert_eq!(payload.compaction_summary.as_deref(), Some("Summary of old stuff"));
+        assert_eq!(
+            payload.compaction_summary.as_deref(),
+            Some("Summary of old stuff")
+        );
         assert_eq!(payload.events.len(), 1);
         match &payload.events[0] {
             DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "new"),
@@ -1219,9 +1416,14 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
         store.append_events(id, &sample_events()).unwrap();
-        store.store_compaction(id, store.max_seq(id).unwrap(), "All summarized").unwrap();
+        store
+            .store_compaction(id, store.max_seq(id).unwrap(), "All summarized")
+            .unwrap();
         let payload = store.build_context(id).unwrap().unwrap();
-        assert_eq!(payload.compaction_summary.as_deref(), Some("All summarized"));
+        assert_eq!(
+            payload.compaction_summary.as_deref(),
+            Some("All summarized")
+        );
         assert!(payload.events.is_empty());
     }
 
@@ -1250,19 +1452,90 @@ mod tests {
 
     #[test]
     fn event_kind_all_variants() {
-        assert_eq!(event_kind(&DisplayEvent::UserMessage { _uuid: String::new(), content: String::new() }), "UserMessage");
-        assert_eq!(event_kind(&DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: String::new() }), "AssistantText");
-        assert_eq!(event_kind(&DisplayEvent::ToolCall { _uuid: String::new(), tool_use_id: String::new(), tool_name: String::new(), file_path: None, input: serde_json::Value::Null }), "ToolCall");
-        assert_eq!(event_kind(&DisplayEvent::ToolResult { tool_use_id: String::new(), tool_name: String::new(), file_path: None, content: String::new(), is_error: false }), "ToolResult");
-        assert_eq!(event_kind(&DisplayEvent::Init { _session_id: String::new(), cwd: String::new(), model: String::new() }), "Init");
-        assert_eq!(event_kind(&DisplayEvent::Hook { name: String::new(), output: String::new() }), "Hook");
-        assert_eq!(event_kind(&DisplayEvent::Command { name: String::new() }), "Command");
+        assert_eq!(
+            event_kind(&DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: String::new()
+            }),
+            "UserMessage"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: String::new()
+            }),
+            "AssistantText"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::ToolCall {
+                _uuid: String::new(),
+                tool_use_id: String::new(),
+                tool_name: String::new(),
+                file_path: None,
+                input: serde_json::Value::Null
+            }),
+            "ToolCall"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::ToolResult {
+                tool_use_id: String::new(),
+                tool_name: String::new(),
+                file_path: None,
+                content: String::new(),
+                is_error: false
+            }),
+            "ToolResult"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::Init {
+                _session_id: String::new(),
+                cwd: String::new(),
+                model: String::new()
+            }),
+            "Init"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::Hook {
+                name: String::new(),
+                output: String::new()
+            }),
+            "Hook"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::Command {
+                name: String::new()
+            }),
+            "Command"
+        );
         assert_eq!(event_kind(&DisplayEvent::Compacting), "Compacting");
         assert_eq!(event_kind(&DisplayEvent::Compacted), "Compacted");
-        assert_eq!(event_kind(&DisplayEvent::MayBeCompacting), "MayBeCompacting");
-        assert_eq!(event_kind(&DisplayEvent::Plan { name: String::new(), content: String::new() }), "Plan");
-        assert_eq!(event_kind(&DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 0, cost_usd: 0.0 }), "Complete");
-        assert_eq!(event_kind(&DisplayEvent::ModelSwitch { model: String::new() }), "ModelSwitch");
+        assert_eq!(
+            event_kind(&DisplayEvent::MayBeCompacting),
+            "MayBeCompacting"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::Plan {
+                name: String::new(),
+                content: String::new()
+            }),
+            "Plan"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::Complete {
+                _session_id: String::new(),
+                success: true,
+                duration_ms: 0,
+                cost_usd: 0.0
+            }),
+            "Complete"
+        );
+        assert_eq!(
+            event_kind(&DisplayEvent::ModelSwitch {
+                model: String::new()
+            }),
+            "ModelSwitch"
+        );
         assert_eq!(event_kind(&DisplayEvent::Filtered), "Filtered");
     }
 
@@ -1270,13 +1543,20 @@ mod tests {
 
     #[test]
     fn event_char_len_user_message() {
-        let ev = DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() };
+        let ev = DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "hello".into(),
+        };
         assert_eq!(event_char_len(&ev), 5);
     }
 
     #[test]
     fn event_char_len_assistant_text() {
-        let ev = DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi there!".into() };
+        let ev = DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: "hi there!".into(),
+        };
         assert_eq!(event_char_len(&ev), 9);
     }
 
@@ -1318,21 +1598,29 @@ mod tests {
     fn round_trip_preserves_tool_call_key_field() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::ToolCall {
-                _uuid: String::new(),
-                tool_use_id: "tc1".into(),
-                tool_name: "Read".into(),
-                file_path: Some("/src/main.rs".into()),
-                input: serde_json::json!({"file_path": "/src/main.rs", "offset": 10}),
-            },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::ToolCall {
+                    _uuid: String::new(),
+                    tool_use_id: "tc1".into(),
+                    tool_name: "Read".into(),
+                    file_path: Some("/src/main.rs".into()),
+                    input: serde_json::json!({"file_path": "/src/main.rs", "offset": 10}),
+                }],
+            )
+            .unwrap();
         let loaded = store.load_events(id).unwrap();
         match &loaded[0] {
-            DisplayEvent::ToolCall { input, tool_name, .. } => {
+            DisplayEvent::ToolCall {
+                input, tool_name, ..
+            } => {
                 assert_eq!(tool_name, "Read");
                 // Compaction keeps file_path but strips offset
-                assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
+                assert_eq!(
+                    input.get("file_path").unwrap().as_str().unwrap(),
+                    "/src/main.rs"
+                );
                 assert!(input.get("offset").is_none());
             }
             _ => panic!("wrong variant"),
@@ -1343,18 +1631,23 @@ mod tests {
     fn round_trip_preserves_tool_result_is_error() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::ToolResult {
-                tool_use_id: "tc1".into(),
-                tool_name: "Bash".into(),
-                file_path: None,
-                content: "error: not found".into(),
-                is_error: true,
-            },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::ToolResult {
+                    tool_use_id: "tc1".into(),
+                    tool_name: "Bash".into(),
+                    file_path: None,
+                    content: "error: not found".into(),
+                    is_error: true,
+                }],
+            )
+            .unwrap();
         let loaded = store.load_events(id).unwrap();
         match &loaded[0] {
-            DisplayEvent::ToolResult { is_error, content, .. } => {
+            DisplayEvent::ToolResult {
+                is_error, content, ..
+            } => {
                 assert!(*is_error);
                 assert_eq!(content, "error: not found");
             }
@@ -1366,17 +1659,25 @@ mod tests {
     fn round_trip_preserves_complete() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store.append_events(id, &[
-            DisplayEvent::Complete {
-                _session_id: String::new(),
-                success: true,
-                duration_ms: 5000,
-                cost_usd: 0.05,
-            },
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::Complete {
+                    _session_id: String::new(),
+                    success: true,
+                    duration_ms: 5000,
+                    cost_usd: 0.05,
+                }],
+            )
+            .unwrap();
         let loaded = store.load_events(id).unwrap();
         match &loaded[0] {
-            DisplayEvent::Complete { success, duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert!(*success);
                 assert_eq!(*duration_ms, 5000);
                 assert!((*cost_usd - 0.05).abs() < f64::EPSILON);
@@ -1390,11 +1691,16 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
         // MayBeCompacting and Filtered are skipped by append_events
-        store.append_events(id, &[
-            DisplayEvent::Compacting,
-            DisplayEvent::Compacted,
-            DisplayEvent::MayBeCompacting,
-        ]).unwrap();
+        store
+            .append_events(
+                id,
+                &[
+                    DisplayEvent::Compacting,
+                    DisplayEvent::Compacted,
+                    DisplayEvent::MayBeCompacting,
+                ],
+            )
+            .unwrap();
         let loaded = store.load_events(id).unwrap();
         assert_eq!(loaded.len(), 2);
         assert!(matches!(loaded[0], DisplayEvent::Compacting));
@@ -1408,13 +1714,31 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let s1 = store.create_session("main").unwrap();
         let s2 = store.create_session("feat").unwrap();
-        store.append_events(s1, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "s1 msg".into() },
-        ]).unwrap();
-        store.append_events(s2, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "s2 msg".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "s2 reply".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                s1,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "s1 msg".into(),
+                }],
+            )
+            .unwrap();
+        store
+            .append_events(
+                s2,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "s2 msg".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "s2 reply".into(),
+                    },
+                ],
+            )
+            .unwrap();
         assert_eq!(store.load_events(s1).unwrap().len(), 1);
         assert_eq!(store.load_events(s2).unwrap().len(), 2);
     }
@@ -1433,10 +1757,16 @@ mod tests {
 
     #[test]
     fn compact_read_truncates_large() {
-        let content = (0..100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let content = (0..100)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Read".into(),
-            file_path: None, content, is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Read".into(),
+            file_path: None,
+            content,
+            is_error: false,
         };
         let c = compact_event(&ev);
         match &c {
@@ -1453,8 +1783,11 @@ mod tests {
     #[test]
     fn compact_read_preserves_small() {
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Read".into(),
-            file_path: None, content: "only line".into(), is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Read".into(),
+            file_path: None,
+            content: "only line".into(),
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => assert_eq!(content, "only line"),
@@ -1466,8 +1799,11 @@ mod tests {
     fn compact_bash_keeps_last_two() {
         let content = "line1\n\nline2\nline3\nline4";
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Bash".into(),
-            file_path: None, content: content.into(), is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Bash".into(),
+            file_path: None,
+            content: content.into(),
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => {
@@ -1481,10 +1817,16 @@ mod tests {
 
     #[test]
     fn compact_grep_keeps_first_three() {
-        let content = (0..10).map(|i| format!("match {}", i)).collect::<Vec<_>>().join("\n");
+        let content = (0..10)
+            .map(|i| format!("match {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Grep".into(),
-            file_path: None, content, is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Grep".into(),
+            file_path: None,
+            content,
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => {
@@ -1501,8 +1843,11 @@ mod tests {
     fn compact_glob_shows_count() {
         let content = "a.rs\nb.rs\nc.rs\nd.rs\ne.rs";
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Glob".into(),
-            file_path: None, content: content.into(), is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Glob".into(),
+            file_path: None,
+            content: content.into(),
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => assert_eq!(content, "5 files"),
@@ -1512,10 +1857,16 @@ mod tests {
 
     #[test]
     fn compact_task_keeps_first_five() {
-        let content = (0..20).map(|i| format!("output {}", i)).collect::<Vec<_>>().join("\n");
+        let content = (0..20)
+            .map(|i| format!("output {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Task".into(),
-            file_path: None, content, is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Task".into(),
+            file_path: None,
+            content,
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => {
@@ -1532,8 +1883,11 @@ mod tests {
     fn compact_default_keeps_first_three() {
         let content = "a\nb\nc\nd\ne";
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "WebFetch".into(),
-            file_path: None, content: content.into(), is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "WebFetch".into(),
+            file_path: None,
+            content: content.into(),
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => {
@@ -1548,8 +1902,11 @@ mod tests {
     fn compact_strips_system_reminder() {
         let content = "real output\n<system-reminder>secret stuff</system-reminder>";
         let ev = DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Read".into(),
-            file_path: None, content: content.into(), is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Read".into(),
+            file_path: None,
+            content: content.into(),
+            is_error: false,
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolResult { content, .. } => {
@@ -1566,15 +1923,25 @@ mod tests {
     fn compact_write_summarizes_content() {
         let code = "// Main entry point\nfn main() {\n    println!(\"hello\");\n}\n";
         let ev = DisplayEvent::ToolCall {
-            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Write".into(),
+            _uuid: "u".into(),
+            tool_use_id: "t".into(),
+            tool_name: "Write".into(),
             file_path: Some("/src/main.rs".into()),
             input: serde_json::json!({"file_path": "/src/main.rs", "content": code}),
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolCall { input, .. } => {
-                assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
+                assert_eq!(
+                    input.get("file_path").unwrap().as_str().unwrap(),
+                    "/src/main.rs"
+                );
                 assert_eq!(input.get("_lines").unwrap().as_u64().unwrap(), 4);
-                assert!(input.get("_purpose").unwrap().as_str().unwrap().contains("Main entry point"));
+                assert!(input
+                    .get("_purpose")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .contains("Main entry point"));
                 assert!(input.get("content").is_none());
             }
             _ => panic!(),
@@ -1584,7 +1951,9 @@ mod tests {
     #[test]
     fn compact_edit_preserved() {
         let ev = DisplayEvent::ToolCall {
-            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Edit".into(),
+            _uuid: "u".into(),
+            tool_use_id: "t".into(),
+            tool_name: "Edit".into(),
             file_path: Some("/f.rs".into()),
             input: serde_json::json!({"file_path": "/f.rs", "old_string": "a", "new_string": "b"}),
         };
@@ -1600,13 +1969,18 @@ mod tests {
     #[test]
     fn compact_bash_strips_extras() {
         let ev = DisplayEvent::ToolCall {
-            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Bash".into(),
+            _uuid: "u".into(),
+            tool_use_id: "t".into(),
+            tool_name: "Bash".into(),
             file_path: None,
             input: serde_json::json!({"command": "cargo build", "timeout": 120000, "description": "Build"}),
         };
         match &compact_event(&ev) {
             DisplayEvent::ToolCall { input, .. } => {
-                assert_eq!(input.get("command").unwrap().as_str().unwrap(), "cargo build");
+                assert_eq!(
+                    input.get("command").unwrap().as_str().unwrap(),
+                    "cargo build"
+                );
                 assert!(input.get("timeout").is_none());
                 assert!(input.get("description").is_none());
             }
@@ -1617,7 +1991,9 @@ mod tests {
     #[test]
     fn compact_read_strips_extras() {
         let ev = DisplayEvent::ToolCall {
-            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Read".into(),
+            _uuid: "u".into(),
+            tool_use_id: "t".into(),
+            tool_name: "Read".into(),
             file_path: Some("/f.rs".into()),
             input: serde_json::json!({"file_path": "/f.rs", "offset": 100, "limit": 50}),
         };
@@ -1633,7 +2009,10 @@ mod tests {
 
     #[test]
     fn compact_passthrough_user_message() {
-        let ev = DisplayEvent::UserMessage { _uuid: "u".into(), content: "hello".into() };
+        let ev = DisplayEvent::UserMessage {
+            _uuid: "u".into(),
+            content: "hello".into(),
+        };
         match &compact_event(&ev) {
             DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "hello"),
             _ => panic!(),
@@ -1642,7 +2021,11 @@ mod tests {
 
     #[test]
     fn compact_passthrough_assistant_text() {
-        let ev = DisplayEvent::AssistantText { _uuid: "u".into(), _message_id: "m".into(), text: "reply".into() };
+        let ev = DisplayEvent::AssistantText {
+            _uuid: "u".into(),
+            _message_id: "m".into(),
+            text: "reply".into(),
+        };
         match &compact_event(&ev) {
             DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "reply"),
             _ => panic!(),
@@ -1655,10 +2038,16 @@ mod tests {
     fn append_events_compacts_tool_result() {
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("test").unwrap();
-        let big_content = (0..100).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let big_content = (0..100)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let events = vec![DisplayEvent::ToolResult {
-            tool_use_id: "t".into(), tool_name: "Read".into(),
-            file_path: None, content: big_content, is_error: false,
+            tool_use_id: "t".into(),
+            tool_name: "Read".into(),
+            file_path: None,
+            content: big_content,
+            is_error: false,
         }];
         store.append_events(sid, &events).unwrap();
 
@@ -1678,7 +2067,9 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("test").unwrap();
         let events = vec![DisplayEvent::ToolCall {
-            _uuid: "u".into(), tool_use_id: "t".into(), tool_name: "Bash".into(),
+            _uuid: "u".into(),
+            tool_use_id: "t".into(),
+            tool_name: "Bash".into(),
             file_path: None,
             input: serde_json::json!({"command": "ls", "timeout": 120000}),
         }];
@@ -1699,10 +2090,22 @@ mod tests {
     fn insert_conversation(store: &SessionStore, sid: i64, user_count: usize) {
         // Insert alternating User/Assistant messages
         for i in 0..user_count {
-            store.append_events(sid, &[
-                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("prompt {}", i + 1) },
-                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("reply {}", i + 1) },
-            ]).unwrap();
+            store
+                .append_events(
+                    sid,
+                    &[
+                        DisplayEvent::UserMessage {
+                            _uuid: String::new(),
+                            content: format!("prompt {}", i + 1),
+                        },
+                        DisplayEvent::AssistantText {
+                            _uuid: String::new(),
+                            _message_id: String::new(),
+                            text: format!("reply {}", i + 1),
+                        },
+                    ],
+                )
+                .unwrap();
         }
     }
 
@@ -1859,21 +2262,42 @@ mod tests {
         let sid = store.create_session("main").unwrap();
 
         // First exchange: user prompt + assistant reply
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "fix the auth bug".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "I'll check the auth module.".into() },
-            DisplayEvent::ToolCall {
-                _uuid: String::new(), tool_use_id: "tc1".into(), tool_name: "Read".into(),
-                file_path: Some("/src/auth.rs".into()),
-                input: serde_json::json!({"file_path": "/src/auth.rs"}),
-            },
-            DisplayEvent::ToolResult {
-                tool_use_id: "tc1".into(), tool_name: "Read".into(),
-                file_path: Some("/src/auth.rs".into()),
-                content: "fn authenticate() { todo!() }".into(), is_error: false,
-            },
-            DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 3000, cost_usd: 0.02 },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "fix the auth bug".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "I'll check the auth module.".into(),
+                    },
+                    DisplayEvent::ToolCall {
+                        _uuid: String::new(),
+                        tool_use_id: "tc1".into(),
+                        tool_name: "Read".into(),
+                        file_path: Some("/src/auth.rs".into()),
+                        input: serde_json::json!({"file_path": "/src/auth.rs"}),
+                    },
+                    DisplayEvent::ToolResult {
+                        tool_use_id: "tc1".into(),
+                        tool_name: "Read".into(),
+                        file_path: Some("/src/auth.rs".into()),
+                        content: "fn authenticate() { todo!() }".into(),
+                        is_error: false,
+                    },
+                    DisplayEvent::Complete {
+                        _session_id: String::new(),
+                        success: true,
+                        duration_ms: 3000,
+                        cost_usd: 0.02,
+                    },
+                ],
+            )
+            .unwrap();
 
         // Build context for second prompt
         let payload = store.build_context(sid).unwrap().unwrap();
@@ -1894,10 +2318,22 @@ mod tests {
         assert_eq!(stripped, user_prompt);
 
         // Store the second exchange with clean user message
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: stripped.to_string() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Added error handling.".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: stripped.to_string(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "Added error handling.".into(),
+                    },
+                ],
+            )
+            .unwrap();
 
         // Verify all 7 events stored, no context tags leaked
         let all = store.load_events(sid).unwrap();
@@ -1917,19 +2353,36 @@ mod tests {
 
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("feat").unwrap();
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "search for main".into() },
-            DisplayEvent::ToolCall {
-                _uuid: String::new(), tool_use_id: "tc1".into(), tool_name: "Grep".into(),
-                file_path: None,
-                input: serde_json::json!({"pattern": "fn main"}),
-            },
-            DisplayEvent::ToolResult {
-                tool_use_id: "tc1".into(), tool_name: "Grep".into(),
-                file_path: None, content: "src/main.rs:1:fn main()".into(), is_error: false,
-            },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Found it in main.rs".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "search for main".into(),
+                    },
+                    DisplayEvent::ToolCall {
+                        _uuid: String::new(),
+                        tool_use_id: "tc1".into(),
+                        tool_name: "Grep".into(),
+                        file_path: None,
+                        input: serde_json::json!({"pattern": "fn main"}),
+                    },
+                    DisplayEvent::ToolResult {
+                        tool_use_id: "tc1".into(),
+                        tool_name: "Grep".into(),
+                        file_path: None,
+                        content: "src/main.rs:1:fn main()".into(),
+                        is_error: false,
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "Found it in main.rs".into(),
+                    },
+                ],
+            )
+            .unwrap();
 
         let payload = store.build_context(sid).unwrap().unwrap();
         let injected = build_context_prompt(&payload, "next step");
@@ -1949,17 +2402,29 @@ mod tests {
         // 4. Summary stored
         // 5. build_context returns summary + recent events
         // 6. Context injection includes summary prefix
-        use crate::app::context_injection::{build_context_prompt, build_compaction_prompt};
+        use crate::app::context_injection::{build_compaction_prompt, build_context_prompt};
 
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
 
         // Insert 6 exchanges (12 events)
         for i in 1..=6 {
-            store.append_events(sid, &[
-                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("question {}", i) },
-                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("answer {}", i) },
-            ]).unwrap();
+            store
+                .append_events(
+                    sid,
+                    &[
+                        DisplayEvent::UserMessage {
+                            _uuid: String::new(),
+                            content: format!("question {}", i),
+                        },
+                        DisplayEvent::AssistantText {
+                            _uuid: String::new(),
+                            _message_id: String::new(),
+                            text: format!("answer {}", i),
+                        },
+                    ],
+                )
+                .unwrap();
         }
 
         // Find boundary (keep last 3 user messages)
@@ -2015,18 +2480,35 @@ mod tests {
 
         // Second batch: 5 more exchanges (seqs 11..=20)
         for i in 6..=10 {
-            store.append_events(sid, &[
-                DisplayEvent::UserMessage { _uuid: String::new(), content: format!("prompt {}", i) },
-                DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: format!("reply {}", i) },
-            ]).unwrap();
+            store
+                .append_events(
+                    sid,
+                    &[
+                        DisplayEvent::UserMessage {
+                            _uuid: String::new(),
+                            content: format!("prompt {}", i),
+                        },
+                        DisplayEvent::AssistantText {
+                            _uuid: String::new(),
+                            _message_id: String::new(),
+                            text: format!("reply {}", i),
+                        },
+                    ],
+                )
+                .unwrap();
         }
 
         // Second compaction at seq 14
-        store.store_compaction(sid, 14, "Second summary (includes first)").unwrap();
+        store
+            .store_compaction(sid, 14, "Second summary (includes first)")
+            .unwrap();
 
         // build_context should use the latest compaction
         let payload = store.build_context(sid).unwrap().unwrap();
-        assert_eq!(payload.compaction_summary.as_deref(), Some("Second summary (includes first)"));
+        assert_eq!(
+            payload.compaction_summary.as_deref(),
+            Some("Second summary (includes first)")
+        );
 
         // Events should be from seq 15 onward only
         let events = &payload.events;
@@ -2047,12 +2529,25 @@ mod tests {
 
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "hello".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "hi".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "hello".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "hi".into(),
+                    },
+                ],
+            )
+            .unwrap();
 
-        let multiline_prompt = "fix this:\n\n```rust\nfn main() {\n    panic!()\n}\n```\n\nalso update tests";
+        let multiline_prompt =
+            "fix this:\n\n```rust\nfn main() {\n    panic!()\n}\n```\n\nalso update tests";
         let payload = store.build_context(sid).unwrap().unwrap();
         let injected = build_context_prompt(&payload, multiline_prompt);
         let stripped = strip_injected_context(&injected);
@@ -2067,24 +2562,44 @@ mod tests {
 
         // Insert a large message (simulate 100K chars worth of content)
         let big_msg = "x".repeat(200_000);
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: big_msg.clone() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: big_msg },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: big_msg.clone(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: big_msg,
+                    },
+                ],
+            )
+            .unwrap();
 
         let chars = store.total_chars_since_compaction(sid).unwrap();
         assert_eq!(chars, 400_000);
         assert!(chars >= COMPACTION_THRESHOLD);
 
         // After compaction, counter resets
-        store.store_compaction(sid, store.max_seq(sid).unwrap(), "summary").unwrap();
+        store
+            .store_compaction(sid, store.max_seq(sid).unwrap(), "summary")
+            .unwrap();
         let chars_after = store.total_chars_since_compaction(sid).unwrap();
         assert_eq!(chars_after, 0);
 
         // New events accumulate fresh
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "short".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "short".into(),
+                }],
+            )
+            .unwrap();
         let chars_new = store.total_chars_since_compaction(sid).unwrap();
         assert_eq!(chars_new, 5);
     }
@@ -2118,14 +2633,35 @@ mod tests {
         let store = SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
 
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: "old work".into() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "done".into() },
-        ]).unwrap();
-        store.store_compaction(sid, store.max_seq(sid).unwrap(), "All prior work summarized.").unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "old work".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "done".into(),
+                    },
+                ],
+            )
+            .unwrap();
+        store
+            .store_compaction(
+                sid,
+                store.max_seq(sid).unwrap(),
+                "All prior work summarized.",
+            )
+            .unwrap();
 
         let payload = store.build_context(sid).unwrap().unwrap();
-        assert_eq!(payload.compaction_summary.as_deref(), Some("All prior work summarized."));
+        assert_eq!(
+            payload.compaction_summary.as_deref(),
+            Some("All prior work summarized.")
+        );
         assert!(payload.events.is_empty());
 
         let injected = build_context_prompt(&payload, "continue");
@@ -2141,19 +2677,31 @@ mod tests {
         let sid = store.create_session("main").unwrap();
 
         // Big Read result (100 lines)
-        let big_content = (0..100).map(|i| format!("line {}: {}", i, "x".repeat(80))).collect::<Vec<_>>().join("\n");
-        store.append_events(sid, &[
-            DisplayEvent::ToolResult {
-                tool_use_id: "t".into(), tool_name: "Read".into(),
-                file_path: None, content: big_content.clone(), is_error: false,
-            },
-        ]).unwrap();
+        let big_content = (0..100)
+            .map(|i| format!("line {}: {}", i, "x".repeat(80)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        store
+            .append_events(
+                sid,
+                &[DisplayEvent::ToolResult {
+                    tool_use_id: "t".into(),
+                    tool_name: "Read".into(),
+                    file_path: None,
+                    content: big_content.clone(),
+                    is_error: false,
+                }],
+            )
+            .unwrap();
 
         // Load back — should be compacted (first + last line + count)
         let loaded = store.load_events(sid).unwrap();
         match &loaded[0] {
             DisplayEvent::ToolResult { content, .. } => {
-                assert!(content.len() < big_content.len() / 2, "compacted content should be much smaller");
+                assert!(
+                    content.len() < big_content.len() / 2,
+                    "compacted content should be much smaller"
+                );
                 assert!(content.contains("(100 lines)"));
             }
             _ => panic!("wrong variant"),
@@ -2199,11 +2747,28 @@ mod tests {
         assert_eq!(stripped2, p2);
 
         // Store prompt 2 exchange (with clean prompt)
-        store.append_events(sid, &[
-            DisplayEvent::UserMessage { _uuid: String::new(), content: stripped2.to_string() },
-            DisplayEvent::AssistantText { _uuid: String::new(), _message_id: String::new(), text: "Added tests.".into() },
-            DisplayEvent::Complete { _session_id: String::new(), success: true, duration_ms: 1500, cost_usd: 0.008 },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: stripped2.to_string(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "Added tests.".into(),
+                    },
+                    DisplayEvent::Complete {
+                        _session_id: String::new(),
+                        success: true,
+                        duration_ms: 1500,
+                        cost_usd: 0.008,
+                    },
+                ],
+            )
+            .unwrap();
 
         // === Prompt 3: with context from prompts 1+2 ===
         let p3 = "run cargo test";

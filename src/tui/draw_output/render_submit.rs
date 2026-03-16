@@ -6,9 +6,9 @@
 //! All expensive work (markdown, syntax highlighting, wrapping) happens on
 //! the background thread — these functions just shuttle data back and forth.
 
+use super::super::render_thread::{PreScanState, RenderRequest};
 use crate::app::{App, ViewMode};
 use crate::events::DisplayEvent;
-use super::super::render_thread::{PreScanState, RenderRequest};
 
 /// On initial load of large conversations, only render this many events from the tail.
 /// The user starts at the bottom so they see the most recent messages instantly.
@@ -29,12 +29,17 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
             DisplayEvent::Hook { name, output } => {
                 s.last_hook = Some((name.clone(), output.clone()));
             }
-            DisplayEvent::Plan { .. } | DisplayEvent::UserMessage { .. }
-            | DisplayEvent::AssistantText { .. } | DisplayEvent::ToolCall { .. }
+            DisplayEvent::Plan { .. }
+            | DisplayEvent::UserMessage { .. }
+            | DisplayEvent::AssistantText { .. }
+            | DisplayEvent::ToolCall { .. }
             | DisplayEvent::ToolResult { .. } => {
                 s.saw_content = true;
                 s.last_hook = None;
-                if let DisplayEvent::ToolCall { tool_name, input, .. } = event {
+                if let DisplayEvent::ToolCall {
+                    tool_name, input, ..
+                } = event
+                {
                     if tool_name == "ExitPlanMode" {
                         s.saw_exit_plan_mode = true;
                         s.saw_user_after_exit_plan = false;
@@ -46,8 +51,12 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
                     }
                 }
                 if let DisplayEvent::UserMessage { .. } = event {
-                    if s.saw_exit_plan_mode { s.saw_user_after_exit_plan = true; }
-                    if s.saw_ask_user_question { s.saw_user_after_ask = true; }
+                    if s.saw_exit_plan_mode {
+                        s.saw_user_after_exit_plan = true;
+                    }
+                    if s.saw_ask_user_question {
+                        s.saw_user_after_ask = true;
+                    }
                 }
             }
             DisplayEvent::ModelSwitch { model } => {
@@ -64,7 +73,9 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
 /// The actual rendering happens on the render thread — the main thread
 /// keeps processing events immediately after this returns.
 pub fn submit_render_request(app: &mut App, session_width: u16) {
-    if app.display_events.is_empty() || app.view_mode != ViewMode::Session { return; }
+    if app.display_events.is_empty() || app.view_mode != ViewMode::Session {
+        return;
+    }
 
     let inner_width = session_width.saturating_sub(2);
 
@@ -78,7 +89,9 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
     }
 
     // Only submit if cache is dirty or width changed
-    if !app.rendered_lines_dirty && app.rendered_lines_width == inner_width { return; }
+    if !app.rendered_lines_dirty && app.rendered_lines_width == inner_width {
+        return;
+    }
 
     let event_count = app.display_events.len();
     let can_incremental = app.rendered_lines_width == inner_width
@@ -152,10 +165,14 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
 /// Check for completed render results from the background thread (NON-BLOCKING).
 /// Returns true if new content was applied (caller should trigger a redraw).
 pub fn poll_render_result(app: &mut App) -> bool {
-    let Some(result) = app.render_thread.try_recv() else { return false; };
+    let Some(result) = app.render_thread.try_recv() else {
+        return false;
+    };
 
     // Discard stale results (a newer request was already applied)
-    if result.seq <= app.render_seq_applied { return false; }
+    if result.seq <= app.render_seq_applied {
+        return false;
+    }
 
     if result.incremental {
         // Incremental: render thread produced ONLY new lines with indices
@@ -163,7 +180,8 @@ pub fn poll_render_result(app: &mut App) -> bool {
         let offset = app.rendered_lines_cache.len();
 
         // Trim stale animation indices (tools that completed since last render)
-        app.animation_line_indices.retain(|&(idx, _, _)| idx < offset);
+        app.animation_line_indices
+            .retain(|&(idx, _, _)| idx < offset);
 
         // Extend cache with new content
         app.rendered_lines_cache.extend(result.lines);
@@ -176,10 +194,19 @@ pub fn poll_render_result(app: &mut App) -> bool {
             app.message_bubble_positions.push((idx + offset, is_user));
         }
         for (line_idx, start_col, end_col, path, old, new, wrap_count) in result.clickable_paths {
-            app.clickable_paths.push((line_idx + offset, start_col, end_col, path, old, new, wrap_count));
+            app.clickable_paths.push((
+                line_idx + offset,
+                start_col,
+                end_col,
+                path,
+                old,
+                new,
+                wrap_count,
+            ));
         }
         for (start, end, raw) in result.clickable_tables {
-            app.clickable_tables.push((start + offset, end + offset, raw));
+            app.clickable_tables
+                .push((start + offset, end + offset, raw));
         }
     } else {
         // Full render: replace everything
@@ -334,8 +361,14 @@ mod tests {
     #[test]
     fn test_pre_scan_user_message_clears_last_hook() {
         let events = vec![
-            DisplayEvent::Hook { name: "hook1".into(), output: "out".into() },
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "hi".into() },
+            DisplayEvent::Hook {
+                name: "hook1".into(),
+                output: "out".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "hi".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.last_hook.is_none());
@@ -380,7 +413,10 @@ mod tests {
     fn test_pre_scan_exit_plan_then_user() {
         let events = vec![
             tool_call("ExitPlanMode", json!({})),
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "go".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "go".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_exit_plan_mode);
@@ -403,7 +439,10 @@ mod tests {
     fn test_pre_scan_ask_user_then_user_message() {
         let events = vec![
             tool_call("AskUserQuestion", json!({})),
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "yes".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "yes".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_ask_user_question);
@@ -424,8 +463,14 @@ mod tests {
     #[test]
     fn test_pre_scan_multiple_hooks_last_wins() {
         let events = vec![
-            DisplayEvent::Hook { name: "h1".into(), output: "o1".into() },
-            DisplayEvent::Hook { name: "h2".into(), output: "o2".into() },
+            DisplayEvent::Hook {
+                name: "h1".into(),
+                output: "o1".into(),
+            },
+            DisplayEvent::Hook {
+                name: "h2".into(),
+                output: "o2".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert_eq!(state.last_hook, Some(("h2".into(), "o2".into())));
@@ -436,7 +481,10 @@ mod tests {
     #[test]
     fn test_pre_scan_content_clears_hook() {
         let events = vec![
-            DisplayEvent::Hook { name: "h1".into(), output: "o1".into() },
+            DisplayEvent::Hook {
+                name: "h1".into(),
+                output: "o1".into(),
+            },
             DisplayEvent::AssistantText {
                 _uuid: "a1".into(),
                 _message_id: "m1".into(),
@@ -487,7 +535,9 @@ mod tests {
 
     #[test]
     fn test_pre_scan_command_no_effect() {
-        let events = vec![DisplayEvent::Command { name: "/compact".into() }];
+        let events = vec![DisplayEvent::Command {
+            name: "/compact".into(),
+        }];
         let state = pre_scan_events(&events);
         assert!(!state.saw_content);
     }
@@ -511,7 +561,10 @@ mod tests {
     fn test_pre_scan_ask_then_user_then_ask_resets_user_after() {
         let events = vec![
             tool_call("AskUserQuestion", json!({"q": 1})),
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "yes".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "yes".into(),
+            },
             tool_call("AskUserQuestion", json!({"q": 2})),
         ];
         let state = pre_scan_events(&events);
@@ -575,9 +628,20 @@ mod tests {
     #[test]
     fn test_pre_scan_init_hook_content_sequence() {
         let events = vec![
-            DisplayEvent::Init { _session_id: "s".into(), cwd: "/".into(), model: "m".into() },
-            DisplayEvent::Hook { name: "h".into(), output: "o".into() },
-            DisplayEvent::AssistantText { _uuid: "a".into(), _message_id: "m".into(), text: "t".into() },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/".into(),
+                model: "m".into(),
+            },
+            DisplayEvent::Hook {
+                name: "h".into(),
+                output: "o".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "t".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_init);
@@ -591,8 +655,14 @@ mod tests {
     fn test_pre_scan_exit_plan_then_two_users() {
         let events = vec![
             tool_call("ExitPlanMode", json!({})),
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "go".into() },
-            DisplayEvent::UserMessage { _uuid: "u2".into(), content: "again".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "go".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "again".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_user_after_exit_plan);
@@ -615,9 +685,19 @@ mod tests {
     #[test]
     fn test_pre_scan_init_persists() {
         let events = vec![
-            DisplayEvent::Init { _session_id: "s".into(), cwd: "/".into(), model: "m".into() },
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "x".into() },
-            DisplayEvent::Hook { name: "h".into(), output: "o".into() },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/".into(),
+                model: "m".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "x".into(),
+            },
+            DisplayEvent::Hook {
+                name: "h".into(),
+                output: "o".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_init);
@@ -628,8 +708,14 @@ mod tests {
     #[test]
     fn test_pre_scan_hook_after_content() {
         let events = vec![
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "x".into() },
-            DisplayEvent::Hook { name: "after".into(), output: "hook".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "x".into(),
+            },
+            DisplayEvent::Hook {
+                name: "after".into(),
+                output: "hook".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert_eq!(state.last_hook, Some(("after".into(), "hook".into())));
@@ -797,7 +883,10 @@ mod tests {
     #[test]
     fn test_pre_scan_tool_result_clears_hook() {
         let events = vec![
-            DisplayEvent::Hook { name: "h".into(), output: "o".into() },
+            DisplayEvent::Hook {
+                name: "h".into(),
+                output: "o".into(),
+            },
             tool_result("Read", "contents"),
         ];
         let state = pre_scan_events(&events);
@@ -824,11 +913,26 @@ mod tests {
     #[test]
     fn test_pre_scan_interleaved_hooks_content() {
         let events = vec![
-            DisplayEvent::Hook { name: "h1".into(), output: "o1".into() },
-            DisplayEvent::UserMessage { _uuid: "u1".into(), content: "a".into() },
-            DisplayEvent::Hook { name: "h2".into(), output: "o2".into() },
-            DisplayEvent::UserMessage { _uuid: "u2".into(), content: "b".into() },
-            DisplayEvent::Hook { name: "h3".into(), output: "o3".into() },
+            DisplayEvent::Hook {
+                name: "h1".into(),
+                output: "o1".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "a".into(),
+            },
+            DisplayEvent::Hook {
+                name: "h2".into(),
+                output: "o2".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "b".into(),
+            },
+            DisplayEvent::Hook {
+                name: "h3".into(),
+                output: "o3".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_content);
@@ -870,7 +974,10 @@ mod tests {
     fn test_pre_scan_exit_plan_user_exit_plan_resets() {
         let events = vec![
             tool_call("ExitPlanMode", json!({})),
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "x".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "x".into(),
+            },
             tool_call("ExitPlanMode", json!({})),
         ];
         let state = pre_scan_events(&events);
@@ -884,8 +991,14 @@ mod tests {
     #[test]
     fn test_pre_scan_plan_clears_hook() {
         let events = vec![
-            DisplayEvent::Hook { name: "h".into(), output: "o".into() },
-            DisplayEvent::Plan { name: "p".into(), content: "c".into() },
+            DisplayEvent::Hook {
+                name: "h".into(),
+                output: "o".into(),
+            },
+            DisplayEvent::Plan {
+                name: "p".into(),
+                content: "c".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.last_hook.is_none());
@@ -926,10 +1039,17 @@ mod tests {
     #[test]
     fn test_pre_scan_all_flags_true() {
         let events = vec![
-            DisplayEvent::Init { _session_id: "s".into(), cwd: "/".into(), model: "m".into() },
+            DisplayEvent::Init {
+                _session_id: "s".into(),
+                cwd: "/".into(),
+                model: "m".into(),
+            },
             tool_call("ExitPlanMode", json!({})),
             tool_call("AskUserQuestion", json!({"q": "test"})),
-            DisplayEvent::UserMessage { _uuid: "u".into(), content: "yes".into() },
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: "yes".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(state.saw_init);
@@ -945,9 +1065,18 @@ mod tests {
     #[test]
     fn test_pre_scan_only_hooks_no_content() {
         let events = vec![
-            DisplayEvent::Hook { name: "a".into(), output: "1".into() },
-            DisplayEvent::Hook { name: "b".into(), output: "2".into() },
-            DisplayEvent::Hook { name: "c".into(), output: "3".into() },
+            DisplayEvent::Hook {
+                name: "a".into(),
+                output: "1".into(),
+            },
+            DisplayEvent::Hook {
+                name: "b".into(),
+                output: "2".into(),
+            },
+            DisplayEvent::Hook {
+                name: "c".into(),
+                output: "3".into(),
+            },
         ];
         let state = pre_scan_events(&events);
         assert!(!state.saw_content);

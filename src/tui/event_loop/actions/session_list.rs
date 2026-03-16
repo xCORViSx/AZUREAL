@@ -27,12 +27,17 @@ pub(super) fn open_session_list(app: &mut App) {
                     // Use integer ID as string key — never collides with UUIDs
                     files.push((key.clone(), std::path::PathBuf::new(), s.created.clone()));
                     // Pre-populate msg counts from store metadata (avoids JSONL I/O)
-                    app.session_msg_counts.insert(key.clone(), (s.message_count, 0));
+                    app.session_msg_counts
+                        .insert(key.clone(), (s.message_count, 0));
                     // Pre-populate completion status (display-only, never in prompts)
                     if let Some(success) = s.completed {
                         app.session_completion.insert(
                             key,
-                            (success, s.duration_ms.unwrap_or(0), s.cost_usd.unwrap_or(0.0)),
+                            (
+                                success,
+                                s.duration_ms.unwrap_or(0),
+                                s.cost_usd.unwrap_or(0.0),
+                            ),
                         );
                     }
                 }
@@ -48,7 +53,6 @@ pub(super) fn open_session_list(app: &mut App) {
 pub fn finish_session_list_load(app: &mut App) {
     app.session_list_loading = false;
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -148,7 +152,8 @@ mod tests {
     #[test]
     fn test_open_session_list_preserves_msg_counts() {
         let mut app = App::new();
-        app.session_msg_counts.insert("sess1".to_string(), (10, 500));
+        app.session_msg_counts
+            .insert("sess1".to_string(), (10, 500));
         open_session_list(&mut app);
         assert_eq!(app.session_msg_counts.get("sess1"), Some(&(10, 500)));
     }

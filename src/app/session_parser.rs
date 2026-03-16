@@ -54,12 +54,22 @@ impl IncrementalParserState {
         let user_msg_by_parent = HashMap::new();
 
         for event in events {
-            if let DisplayEvent::ToolCall { tool_use_id, tool_name, file_path, .. } = event {
+            if let DisplayEvent::ToolCall {
+                tool_use_id,
+                tool_name,
+                file_path,
+                ..
+            } = event
+            {
                 tool_calls.insert(tool_use_id.clone(), (tool_name.clone(), file_path.clone()));
             }
         }
 
-        Self { tool_calls, user_msg_by_parent, session_slug: slug }
+        Self {
+            tool_calls,
+            user_msg_by_parent,
+            session_slug: slug,
+        }
     }
 }
 
@@ -84,7 +94,9 @@ pub fn parse_session_file_incremental(
     }
 
     // Check file size — if it shrank, full re-parse (shouldn't happen with JSONL append-only)
-    let file_len = std::fs::metadata(session_file).map(|m| m.len()).unwrap_or(0);
+    let file_len = std::fs::metadata(session_file)
+        .map(|m| m.len())
+        .unwrap_or(0);
     if file_len < start_offset {
         return parse_session_file(session_file);
     }
@@ -120,7 +132,10 @@ pub fn parse_session_file_incremental(
     // If the new parse produced any Filtered events (user-message rewrites referencing old indices),
     // we need a full re-parse to handle the cross-reference correctly.
     // This is rare (only when user edits/rewinds a message).
-    let has_user_rewrite = result.events.iter().any(|e| matches!(e, DisplayEvent::Filtered));
+    let has_user_rewrite = result
+        .events
+        .iter()
+        .any(|e| matches!(e, DisplayEvent::Filtered));
     if has_user_rewrite {
         return parse_session_file(session_file);
     }
@@ -134,10 +149,12 @@ pub fn parse_session_file_incremental(
     for id in existing_pending {
         if !result.pending_tools.contains(id) {
             // Check if a ToolResult appeared for this tool in the new events
-            let got_result = merged_events.iter().any(|e| {
-                matches!(e, DisplayEvent::ToolResult { tool_use_id, .. } if tool_use_id == id)
-            });
-            if got_result { merged_pending.remove(id); }
+            let got_result = merged_events.iter().any(
+                |e| matches!(e, DisplayEvent::ToolResult { tool_use_id, .. } if tool_use_id == id),
+            );
+            if got_result {
+                merged_pending.remove(id);
+            }
         }
     }
     merged_pending.extend(result.pending_tools);
@@ -194,22 +211,24 @@ fn parse_session_file_from(
 
     let file = match File::open(session_file) {
         Ok(f) => f,
-        Err(_) => return ParsedSession {
-            events: Vec::new(),
-            pending_tools: HashSet::new(),
-            failed_tools: HashSet::new(),
-            total_lines: 0,
-            parse_errors: 0,
-            assistant_total: 0,
-            assistant_no_message: 0,
-            assistant_no_content_arr: 0,
-            assistant_text_blocks: 0,
-            awaiting_plan_approval: false,
-            end_offset: 0,
-            session_tokens: None,
-            context_window: None,
-            model: None,
-        },
+        Err(_) => {
+            return ParsedSession {
+                events: Vec::new(),
+                pending_tools: HashSet::new(),
+                failed_tools: HashSet::new(),
+                total_lines: 0,
+                parse_errors: 0,
+                assistant_total: 0,
+                assistant_no_message: 0,
+                assistant_no_content_arr: 0,
+                assistant_text_blocks: 0,
+                awaiting_plan_approval: false,
+                end_offset: 0,
+                session_tokens: None,
+                context_window: None,
+                model: None,
+            }
+        }
     };
 
     // Seek to start_offset if nonzero
@@ -252,11 +271,15 @@ fn parse_session_file_from(
             Ok(n) => n,
             Err(_) => break,
         };
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         bytes_read += n as u64;
 
         let line = line_buf.trim_end_matches('\n').trim_end_matches('\r');
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         total_lines += 1;
         let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -264,7 +287,8 @@ fn parse_session_file_from(
             continue;
         };
 
-        let timestamp = json.get("timestamp")
+        let timestamp = json
+            .get("timestamp")
             .and_then(|t| t.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc))
@@ -273,23 +297,40 @@ fn parse_session_file_from(
         let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         if session_slug.is_none() {
-            session_slug = json.get("slug").and_then(|s| s.as_str()).map(|s| s.to_string());
+            session_slug = json
+                .get("slug")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string());
         }
 
         match event_type {
             "user" => parse_user_event(
-                &json, timestamp, &mut timed_events, &mut user_msg_by_parent,
-                &tool_calls, &mut pending_tools, &mut failed_tools,
-                &mut last_user_msg, &mut ups_hooks,
+                &json,
+                timestamp,
+                &mut timed_events,
+                &mut user_msg_by_parent,
+                &tool_calls,
+                &mut pending_tools,
+                &mut failed_tools,
+                &mut last_user_msg,
+                &mut ups_hooks,
                 session_slug.as_deref(),
             ),
             "assistant" => {
                 parse_assistant_event(
-                    &json, timestamp, &mut timed_events, &mut tool_calls, &mut pending_tools,
-                    &mut session_tokens, &mut context_window, &mut model,
+                    &json,
+                    timestamp,
+                    &mut timed_events,
+                    &mut tool_calls,
+                    &mut pending_tools,
+                    &mut session_tokens,
+                    &mut context_window,
+                    &mut model,
                 );
             }
-            "result" => parse_result_event(&json, timestamp, &mut timed_events, &mut context_window),
+            "result" => {
+                parse_result_event(&json, timestamp, &mut timed_events, &mut context_window)
+            }
             "system" => parse_system_event(&json, timestamp, &mut timed_events),
             "progress" => parse_progress_event(&json, timestamp, &mut timed_events),
             _ => {}
@@ -302,7 +343,8 @@ fn parse_session_file_from(
     }
 
     // Filter out Filtered events and extract just the DisplayEvents
-    let events: Vec<DisplayEvent> = timed_events.into_iter()
+    let events: Vec<DisplayEvent> = timed_events
+        .into_iter()
         .filter(|(_, e)| !matches!(e, DisplayEvent::Filtered))
         .map(|(_, e)| e)
         .collect();
@@ -311,7 +353,12 @@ fn parse_session_file_from(
 
     let (ast_total, ast_no_msg, ast_no_arr, ast_text) = PARSE_DIAGNOSTICS.with(|d| {
         let d = d.borrow();
-        (d.assistant_events_total, d.assistant_events_no_message, d.assistant_events_no_content_arr, d.assistant_text_blocks)
+        (
+            d.assistant_events_total,
+            d.assistant_events_no_message,
+            d.assistant_events_no_content_arr,
+            d.assistant_text_blocks,
+        )
     });
 
     ParsedSession {
@@ -333,7 +380,10 @@ fn parse_session_file_from(
 }
 
 /// Extract hook events from system-reminder tags in content
-pub fn extract_hooks_from_content(content: &str, timestamp: DateTime<Utc>) -> Vec<(DateTime<Utc>, DisplayEvent)> {
+pub fn extract_hooks_from_content(
+    content: &str,
+    timestamp: DateTime<Utc>,
+) -> Vec<(DateTime<Utc>, DisplayEvent)> {
     let mut hooks = Vec::new();
     let mut search_start = 0;
 
@@ -357,7 +407,13 @@ pub fn extract_hooks_from_content(content: &str, timestamp: DateTime<Utc>) -> Ve
                 if !output.is_empty() && output != "..." && !name.is_empty() {
                     hooks.push((timestamp, DisplayEvent::Hook { name, output }));
                 } else if output == "..." && !name.is_empty() {
-                    hooks.push((timestamp, DisplayEvent::Hook { name: name.clone(), output: format!("[{}]", name) }));
+                    hooks.push((
+                        timestamp,
+                        DisplayEvent::Hook {
+                            name: name.clone(),
+                            output: format!("[{}]", name),
+                        },
+                    ));
                 }
             } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
                 let name = reminder_content[..hook_pos]
@@ -371,7 +427,13 @@ pub fn extract_hooks_from_content(content: &str, timestamp: DateTime<Utc>) -> Ve
                     .trim_end_matches("\\n")
                     .to_string();
                 if !name.is_empty() {
-                    hooks.push((timestamp, DisplayEvent::Hook { name, output: format!("FAILED: {}", output) }));
+                    hooks.push((
+                        timestamp,
+                        DisplayEvent::Hook {
+                            name,
+                            output: format!("FAILED: {}", output),
+                        },
+                    ));
                 }
             }
             search_start = abs_start + end + 18;
@@ -396,20 +458,26 @@ fn parse_user_event(
 ) {
     let message = json.get("message");
     let content_val = message.and_then(|m| m.get("content"));
-    let is_meta = json.get("isMeta").and_then(|m| m.as_bool()).unwrap_or(false);
+    let is_meta = json
+        .get("isMeta")
+        .and_then(|m| m.as_bool())
+        .unwrap_or(false);
 
     let content_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
         Some(s.to_string())
     } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
-        Some(arr.iter()
-            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-            .collect::<Vec<_>>()
-            .join("\n"))
+        Some(
+            arr.iter()
+                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
     } else {
         None
     };
 
-    let is_compaction_summary = content_str.as_ref()
+    let is_compaction_summary = content_str
+        .as_ref()
         .map(|c| c.starts_with("This session is being continued from a previous conversation"))
         .unwrap_or(false);
 
@@ -424,13 +492,19 @@ fn parse_user_event(
         }
     }
 
-    if is_meta { return; }
+    if is_meta {
+        return;
+    }
 
     if let Some(content) = content_val.and_then(|c| c.as_str()) {
-        if content.contains("<local-command-caveat>") { return; }
+        if content.contains("<local-command-caveat>") {
+            return;
+        }
         // Task notifications are injected by Claude Code as user-role messages
         // when background commands complete — filter them from display.
-        if content.contains("<task-notification>") { return; }
+        if content.contains("<task-notification>") {
+            return;
+        }
 
         if content.contains("<local-command-stdout>") {
             if content.contains("Compacted") {
@@ -442,12 +516,21 @@ fn parse_user_event(
         if content.starts_with("<command-name>") {
             if let Some(end) = content.find("</command-name>") {
                 let cmd = &content[14..end];
-                events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
+                events.push((
+                    timestamp,
+                    DisplayEvent::Command {
+                        name: cmd.to_string(),
+                    },
+                ));
                 return;
             }
         }
 
-        let parent_uuid = json.get("parentUuid").and_then(|p| p.as_str()).unwrap_or("").to_string();
+        let parent_uuid = json
+            .get("parentUuid")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
         let event_idx = events.len();
 
         if !parent_uuid.is_empty() {
@@ -464,16 +547,30 @@ fn parse_user_event(
         }
 
         *last_user_msg = Some((events.len(), timestamp));
-        events.push((timestamp, DisplayEvent::UserMessage {
-            _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-            content: content.to_string(),
-        }));
+        events.push((
+            timestamp,
+            DisplayEvent::UserMessage {
+                _uuid: json
+                    .get("uuid")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                content: content.to_string(),
+            },
+        ));
     } else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {
         for block in content_arr {
             if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                 parse_tool_result_block(
-                    block, timestamp, events, tool_calls, pending_tools, failed_tools,
-                    last_user_msg, ups_hooks, session_slug,
+                    block,
+                    timestamp,
+                    events,
+                    tool_calls,
+                    pending_tools,
+                    failed_tools,
+                    last_user_msg,
+                    ups_hooks,
+                    session_slug,
                 );
             }
         }
@@ -491,8 +588,15 @@ fn parse_tool_result_block(
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
     session_slug: Option<&str>,
 ) {
-    let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-    let (tool_name, file_path) = tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
+    let tool_use_id = block
+        .get("tool_use_id")
+        .and_then(|i| i.as_str())
+        .unwrap_or("")
+        .to_string();
+    let (tool_name, file_path) = tool_calls
+        .get(&tool_use_id)
+        .cloned()
+        .unwrap_or(("Unknown".to_string(), None));
 
     let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
         s.to_string()
@@ -501,7 +605,9 @@ fn parse_tool_result_block(
             .filter_map(|b| {
                 if b.get("type").and_then(|t| t.as_str()) == Some("text") {
                     b.get("text").and_then(|t| t.as_str())
-                } else { None }
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -513,12 +619,15 @@ fn parse_tool_result_block(
 
     // Use is_error from Claude Code's JSON when available (authoritative).
     // Fall back to conservative heuristic for older session files that lack the field.
-    let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or_else(|| {
-        let first = content.lines().next().unwrap_or("").to_lowercase();
-        first.contains("<tool_use_error>")
-            || (first.starts_with("error") && !first.starts_with("error:"))
-            || first.contains("enoent")
-    });
+    let is_error = block
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| {
+            let first = content.lines().next().unwrap_or("").to_lowercase();
+            first.contains("<tool_use_error>")
+                || (first.starts_with("error") && !first.starts_with("error:"))
+                || first.contains("enoent")
+        });
 
     if is_error {
         failed_tools.insert(tool_use_id.clone());
@@ -540,18 +649,23 @@ fn parse_tool_result_block(
     }
 
     // Check if this is a Write to a plan file before moving values
-    let is_plan_write = tool_name == "Write" && file_path.as_ref()
-        .map(|p| p.contains("/.claude/plans/") && p.ends_with(".md"))
-        .unwrap_or(false);
+    let is_plan_write = tool_name == "Write"
+        && file_path
+            .as_ref()
+            .map(|p| p.contains("/.claude/plans/") && p.ends_with(".md"))
+            .unwrap_or(false);
 
     if !content.is_empty() {
-        events.push((timestamp, DisplayEvent::ToolResult {
-            tool_use_id,
-            tool_name,
-            file_path,
-            content,
-            is_error,
-        }));
+        events.push((
+            timestamp,
+            DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                file_path,
+                content,
+                is_error,
+            },
+        ));
     }
 
     // Insert plan content after successful Write to plan file (show every plan for full history)
@@ -585,13 +699,25 @@ pub fn context_window_for_model(model: &str) -> u64 {
     // Claude 4.x family: default 200k, but Opus 4.6 and Sonnet 4.5 support 1M (beta)
     // We use 200k as default since 1M beta requires special access and we auto-detect
     // via actual token counts if they exceed 200k (see draw_output.rs)
-    if model.contains("opus-4-6") { return 200_000; }
-    if model.contains("sonnet-4-5") { return 200_000; }
-    if model.contains("haiku-4-5") { return 200_000; }
-    if model.contains("sonnet-4-") { return 200_000; }
-    if model.contains("opus-4-") { return 200_000; }
+    if model.contains("opus-4-6") {
+        return 200_000;
+    }
+    if model.contains("sonnet-4-5") {
+        return 200_000;
+    }
+    if model.contains("haiku-4-5") {
+        return 200_000;
+    }
+    if model.contains("sonnet-4-") {
+        return 200_000;
+    }
+    if model.contains("opus-4-") {
+        return 200_000;
+    }
     // Claude 3.x family
-    if model.contains("claude-3") { return 200_000; }
+    if model.contains("claude-3") {
+        return 200_000;
+    }
     // Unknown model — safe default
     200_000
 }
@@ -619,10 +745,22 @@ fn parse_assistant_event(
 
     // Extract token usage — each assistant event overwrites previous (last = most recent context)
     if let Some(usage) = message.get("usage") {
-        let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-        let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-        let cache_create = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let input = usage
+            .get("input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output = usage
+            .get("output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cache_read = usage
+            .get("cache_read_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cache_create = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         *session_tokens = Some((input + cache_read + cache_create, output));
     }
 
@@ -633,7 +771,9 @@ fn parse_assistant_event(
     }
 
     for block in content_arr {
-        let Some(block_type) = block.get("type").and_then(|t| t.as_str()) else { continue };
+        let Some(block_type) = block.get("type").and_then(|t| t.as_str()) else {
+            continue;
+        };
 
         match block_type {
             "thinking" => {
@@ -646,30 +786,62 @@ fn parse_assistant_event(
             "text" => {
                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
                     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_text_blocks += 1);
-                    events.push((timestamp, DisplayEvent::AssistantText {
-                        _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                        _message_id: message.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
-                        text: text.to_string(),
-                    }));
+                    events.push((
+                        timestamp,
+                        DisplayEvent::AssistantText {
+                            _uuid: json
+                                .get("uuid")
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            _message_id: message
+                                .get("id")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            text: text.to_string(),
+                        },
+                    ));
                 }
             }
             "tool_use" => {
-                let tool_name = block.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                let tool_id = block.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-                let input = block.get("input").cloned().unwrap_or(serde_json::Value::Null);
-                let file_path = input.get("file_path").or(input.get("path"))
-                    .and_then(|p| p.as_str()).map(|s| s.to_string());
+                let tool_name = block
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_id = block
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = block
+                    .get("input")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let file_path = input
+                    .get("file_path")
+                    .or(input.get("path"))
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string());
 
                 tool_calls.insert(tool_id.clone(), (tool_name.clone(), file_path.clone()));
                 pending_tools.insert(tool_id.clone());
 
-                events.push((timestamp, DisplayEvent::ToolCall {
-                    _uuid: json.get("uuid").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                    tool_use_id: tool_id,
-                    tool_name,
-                    file_path,
-                    input,
-                }));
+                events.push((
+                    timestamp,
+                    DisplayEvent::ToolCall {
+                        _uuid: json
+                            .get("uuid")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        tool_use_id: tool_id,
+                        tool_name,
+                        file_path,
+                        input,
+                    },
+                ));
             }
             _ => {}
         }
@@ -684,12 +856,19 @@ fn parse_result_event(
 ) {
     if let Some(duration) = json.get("durationMs").and_then(|d| d.as_f64()) {
         let cost = json.get("costUsd").and_then(|c| c.as_f64()).unwrap_or(0.0);
-        events.push((timestamp, DisplayEvent::Complete {
-            _session_id: json.get("sessionId").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            duration_ms: duration as u64,
-            cost_usd: cost,
-            success: true,
-        }));
+        events.push((
+            timestamp,
+            DisplayEvent::Complete {
+                _session_id: json
+                    .get("sessionId")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                duration_ms: duration as u64,
+                cost_usd: cost,
+                success: true,
+            },
+        ));
     }
     // modelUsage contains the authoritative contextWindow from the API — overrides
     // the heuristic from context_window_for_model(). Session JSONL uses camelCase.
@@ -713,7 +892,12 @@ fn parse_system_event(
             if content.starts_with("<command-name>") {
                 if let Some(end) = content.find("</command-name>") {
                     let cmd = &content[14..end];
-                    events.push((timestamp, DisplayEvent::Command { name: cmd.to_string() }));
+                    events.push((
+                        timestamp,
+                        DisplayEvent::Command {
+                            name: cmd.to_string(),
+                        },
+                    ));
                 }
             }
         }
@@ -726,34 +910,47 @@ fn parse_progress_event(
     events: &mut Vec<(DateTime<Utc>, DisplayEvent)>,
 ) {
     let Some(data) = json.get("data") else { return };
-    if data.get("type").and_then(|t| t.as_str()) != Some("hook_progress") { return; }
+    if data.get("type").and_then(|t| t.as_str()) != Some("hook_progress") {
+        return;
+    }
 
-    let hook_name = data.get("hookName")
+    let hook_name = data
+        .get("hookName")
         .or_else(|| data.get("hookEvent"))
         .and_then(|n| n.as_str())
         .unwrap_or("")
         .to_string();
     let command = data.get("command").and_then(|c| c.as_str()).unwrap_or("");
 
-    if hook_name.is_empty() { return; }
+    if hook_name.is_empty() {
+        return;
+    }
 
     let output = if command.starts_with("echo '") && command.ends_with('\'') {
-        command[6..command.len()-1].to_string()
+        command[6..command.len() - 1].to_string()
     } else if command.starts_with("echo \"") && command.ends_with('"') {
-        command[6..command.len()-1].to_string()
+        command[6..command.len() - 1].to_string()
     } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
         if let Some(start) = command.find("OUT='") {
             let rest = &command[start + 5..];
             if let Some(end) = rest.find('\'') {
                 rest[..end].to_string()
-            } else { String::new() }
+            } else {
+                String::new()
+            }
         } else if let Some(start) = command.find("OUT=\"") {
             let rest = &command[start + 5..];
             if let Some(end) = rest.find('"') {
                 rest[..end].to_string()
-            } else { String::new() }
-        } else { String::new() }
-    } else { String::new() };
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
 
     // Always show hooks - use [hookName] as fallback when no output extracted
     let display_output = if output.is_empty() {
@@ -761,7 +958,13 @@ fn parse_progress_event(
     } else {
         output
     };
-    events.push((timestamp, DisplayEvent::Hook { name: hook_name, output: display_output }));
+    events.push((
+        timestamp,
+        DisplayEvent::Hook {
+            name: hook_name,
+            output: display_output,
+        },
+    ));
 }
 
 /// Load plan file from ~/.claude/plans/{slug}.md
@@ -772,9 +975,13 @@ fn load_plan_file(slug: &str) -> Option<DisplayEvent> {
     if plan_path.exists() {
         let content = std::fs::read_to_string(&plan_path).ok()?;
         // Extract plan name from first line (# Plan: Name or just # Title)
-        let name = content.lines()
+        let name = content
+            .lines()
             .next()
-            .and_then(|line| line.strip_prefix("# Plan: ").or_else(|| line.strip_prefix("# ")))
+            .and_then(|line| {
+                line.strip_prefix("# Plan: ")
+                    .or_else(|| line.strip_prefix("# "))
+            })
             .unwrap_or(slug)
             .to_string();
 
@@ -797,15 +1004,13 @@ mod tests {
 
     #[test]
     fn test_plan_approval_exit_plan_no_user() {
-        let events = vec![
-            DisplayEvent::ToolCall {
-                _uuid: "u1".into(),
-                tool_use_id: "t1".into(),
-                tool_name: "ExitPlanMode".into(),
-                file_path: None,
-                input: serde_json::Value::Null,
-            },
-        ];
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "t1".into(),
+            tool_name: "ExitPlanMode".into(),
+            file_path: None,
+            input: serde_json::Value::Null,
+        }];
         assert!(check_plan_approval(&events));
     }
 
@@ -872,15 +1077,13 @@ mod tests {
 
     #[test]
     fn test_plan_approval_other_tool_not_exit_plan() {
-        let events = vec![
-            DisplayEvent::ToolCall {
-                _uuid: "u1".into(),
-                tool_use_id: "t1".into(),
-                tool_name: "Read".into(),
-                file_path: Some("/test.rs".into()),
-                input: serde_json::Value::Null,
-            },
-        ];
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "t1".into(),
+            tool_name: "Read".into(),
+            file_path: Some("/test.rs".into()),
+            input: serde_json::Value::Null,
+        }];
         assert!(!check_plan_approval(&events));
     }
 
@@ -888,7 +1091,8 @@ mod tests {
 
     #[test]
     fn test_extract_hooks_success() {
-        let content = "<system-reminder>\nMyHook hook success: All checks passed\n</system-reminder>";
+        let content =
+            "<system-reminder>\nMyHook hook success: All checks passed\n</system-reminder>";
         let ts = Utc::now();
         let hooks = extract_hooks_from_content(content, ts);
         assert_eq!(hooks.len(), 1);
@@ -902,7 +1106,8 @@ mod tests {
 
     #[test]
     fn test_extract_hooks_failed() {
-        let content = "<system-reminder>\nBuildCheck hook failed: compilation error\n</system-reminder>";
+        let content =
+            "<system-reminder>\nBuildCheck hook failed: compilation error\n</system-reminder>";
         let ts = Utc::now();
         let hooks = extract_hooks_from_content(content, ts);
         assert_eq!(hooks.len(), 1);
@@ -969,17 +1174,26 @@ mod tests {
 
     #[test]
     fn test_context_window_sonnet() {
-        assert_eq!(context_window_for_model("claude-sonnet-4-5-20250929"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-sonnet-4-5-20250929"),
+            200_000
+        );
     }
 
     #[test]
     fn test_context_window_haiku() {
-        assert_eq!(context_window_for_model("claude-haiku-4-5-20251001"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-haiku-4-5-20251001"),
+            200_000
+        );
     }
 
     #[test]
     fn test_context_window_claude3() {
-        assert_eq!(context_window_for_model("claude-3-5-sonnet-20241022"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-3-5-sonnet-20241022"),
+            200_000
+        );
     }
 
     #[test]
@@ -1023,7 +1237,10 @@ mod tests {
         let state = IncrementalParserState::from_events(&events, Some("slug".into()));
         assert_eq!(state.tool_calls.len(), 2);
         assert_eq!(state.tool_calls.get("tc-1").unwrap().0, "Read");
-        assert_eq!(state.tool_calls.get("tc-1").unwrap().1, Some("/file.rs".to_string()));
+        assert_eq!(
+            state.tool_calls.get("tc-1").unwrap().1,
+            Some("/file.rs".to_string())
+        );
         assert_eq!(state.tool_calls.get("tc-2").unwrap().0, "Write");
         assert_eq!(state.tool_calls.get("tc-2").unwrap().1, None);
         assert_eq!(state.session_slug, Some("slug".to_string()));
@@ -1035,14 +1252,20 @@ mod tests {
     fn test_context_window_sonnet_4_generic() {
         // "sonnet-4-" matches any sonnet-4 variant
         assert_eq!(context_window_for_model("claude-sonnet-4-0"), 200_000);
-        assert_eq!(context_window_for_model("claude-sonnet-4-1-20260101"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-sonnet-4-1-20260101"),
+            200_000
+        );
     }
 
     #[test]
     fn test_context_window_opus_4_generic() {
         // "opus-4-" matches any opus-4 variant
         assert_eq!(context_window_for_model("claude-opus-4-0"), 200_000);
-        assert_eq!(context_window_for_model("claude-opus-4-1-20260301"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-opus-4-1-20260301"),
+            200_000
+        );
     }
 
     #[test]
@@ -1064,14 +1287,20 @@ mod tests {
 
     #[test]
     fn test_context_window_claude_3_variants() {
-        assert_eq!(context_window_for_model("claude-3-5-sonnet-20241022"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-3-5-sonnet-20241022"),
+            200_000
+        );
         assert_eq!(context_window_for_model("claude-3-opus-20240229"), 200_000);
         assert_eq!(context_window_for_model("claude-3-haiku-20240307"), 200_000);
     }
 
     #[test]
     fn test_context_window_haiku_4_5_with_date() {
-        assert_eq!(context_window_for_model("claude-haiku-4-5-20260101"), 200_000);
+        assert_eq!(
+            context_window_for_model("claude-haiku-4-5-20260101"),
+            200_000
+        );
     }
 
     #[test]
@@ -1179,7 +1408,8 @@ mod tests {
 
     #[test]
     fn test_extract_hooks_colon_in_name() {
-        let content = "<system-reminder>\nPreToolUse:Bash hook success: allowed\n</system-reminder>";
+        let content =
+            "<system-reminder>\nPreToolUse:Bash hook success: allowed\n</system-reminder>";
         let hooks = extract_hooks_from_content(content, Utc::now());
         assert_eq!(hooks.len(), 1);
         if let DisplayEvent::Hook { name, .. } = &hooks[0].1 {
@@ -1487,20 +1717,23 @@ mod tests {
         assert_eq!(state.tool_calls.len(), 1);
         // Last one wins since HashMap::insert overwrites
         assert_eq!(state.tool_calls.get("same-id").unwrap().0, "Write");
-        assert_eq!(state.tool_calls.get("same-id").unwrap().1, Some("/b.rs".to_string()));
+        assert_eq!(
+            state.tool_calls.get("same-id").unwrap().1,
+            Some("/b.rs".to_string())
+        );
     }
 
     #[test]
     fn test_incremental_state_many_tool_calls() {
-        let events: Vec<DisplayEvent> = (0..100).map(|i| {
-            DisplayEvent::ToolCall {
+        let events: Vec<DisplayEvent> = (0..100)
+            .map(|i| DisplayEvent::ToolCall {
                 _uuid: format!("u{}", i),
                 tool_use_id: format!("tc-{}", i),
                 tool_name: "Bash".into(),
                 file_path: None,
                 input: serde_json::Value::Null,
-            }
-        }).collect();
+            })
+            .collect();
         let state = IncrementalParserState::from_events(&events, None);
         assert_eq!(state.tool_calls.len(), 100);
     }
@@ -1508,54 +1741,46 @@ mod tests {
     #[test]
     fn test_incremental_state_tool_result_not_captured() {
         // ToolResult events should NOT be captured in tool_calls map
-        let events = vec![
-            DisplayEvent::ToolResult {
-                tool_use_id: "tc-1".into(),
-                tool_name: "Read".into(),
-                file_path: Some("/file.rs".into()),
-                content: "data".into(),
-                is_error: false,
-            },
-        ];
+        let events = vec![DisplayEvent::ToolResult {
+            tool_use_id: "tc-1".into(),
+            tool_name: "Read".into(),
+            file_path: Some("/file.rs".into()),
+            content: "data".into(),
+            is_error: false,
+        }];
         let state = IncrementalParserState::from_events(&events, None);
         assert!(state.tool_calls.is_empty());
     }
 
     #[test]
     fn test_incremental_state_complete_not_captured() {
-        let events = vec![
-            DisplayEvent::Complete {
-                _session_id: "s1".into(),
-                success: true,
-                duration_ms: 5000,
-                cost_usd: 0.05,
-            },
-        ];
+        let events = vec![DisplayEvent::Complete {
+            _session_id: "s1".into(),
+            success: true,
+            duration_ms: 5000,
+            cost_usd: 0.05,
+        }];
         let state = IncrementalParserState::from_events(&events, None);
         assert!(state.tool_calls.is_empty());
     }
 
     #[test]
     fn test_incremental_state_init_not_captured() {
-        let events = vec![
-            DisplayEvent::Init {
-                _session_id: "s1".into(),
-                cwd: "/home".into(),
-                model: "claude".into(),
-            },
-        ];
+        let events = vec![DisplayEvent::Init {
+            _session_id: "s1".into(),
+            cwd: "/home".into(),
+            model: "claude".into(),
+        }];
         let state = IncrementalParserState::from_events(&events, None);
         assert!(state.tool_calls.is_empty());
     }
 
     #[test]
     fn test_incremental_state_plan_not_captured() {
-        let events = vec![
-            DisplayEvent::Plan {
-                name: "plan".into(),
-                content: "content".into(),
-            },
-        ];
+        let events = vec![DisplayEvent::Plan {
+            name: "plan".into(),
+            content: "content".into(),
+        }];
         let state = IncrementalParserState::from_events(&events, None);
         assert!(state.tool_calls.is_empty());
     }
@@ -1563,12 +1788,10 @@ mod tests {
     #[test]
     fn test_incremental_state_user_msg_by_parent_always_empty() {
         // from_events never populates user_msg_by_parent
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u1".into(),
-                content: "test".into(),
-            },
-        ];
+        let events = vec![DisplayEvent::UserMessage {
+            _uuid: "u1".into(),
+            content: "test".into(),
+        }];
         let state = IncrementalParserState::from_events(&events, None);
         assert!(state.user_msg_by_parent.is_empty());
     }
@@ -1735,7 +1958,12 @@ mod tests {
         let result = parse_session_file(&file_path);
         assert_eq!(result.events.len(), 1);
         match &result.events[0] {
-            DisplayEvent::Complete { duration_ms, cost_usd, success, .. } => {
+            DisplayEvent::Complete {
+                duration_ms,
+                cost_usd,
+                success,
+                ..
+            } => {
                 assert_eq!(*duration_ms, 5000);
                 assert!((*cost_usd - 0.05).abs() < f64::EPSILON);
                 assert!(*success);
@@ -1782,7 +2010,10 @@ mod tests {
         let line = r#"{"type":"user","message":{"content":"<task-notification><task-id>abc123</task-id><status>completed</status><summary>Background command completed</summary></task-notification>Read the output file"},"timestamp":"2026-01-01T00:00:00Z","uuid":"u1"}"#;
         std::fs::write(&file_path, format!("{}\n", line)).unwrap();
         let result = parse_session_file(&file_path);
-        assert!(result.events.is_empty(), "task-notification should be filtered from display");
+        assert!(
+            result.events.is_empty(),
+            "task-notification should be filtered from display"
+        );
         let _ = std::fs::remove_file(&file_path);
     }
 
@@ -1818,8 +2049,16 @@ mod tests {
         let result_line = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu-1","content":"fn main() {}"}]},"timestamp":"2026-01-01T00:00:01Z","uuid":"u2"}"#;
         std::fs::write(&file_path, format!("{}\n{}\n", call_line, result_line)).unwrap();
         let result = parse_session_file(&file_path);
-        let tool_calls: Vec<_> = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolCall { .. })).collect();
-        let tool_results: Vec<_> = result.events.iter().filter(|e| matches!(e, DisplayEvent::ToolResult { .. })).collect();
+        let tool_calls: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolCall { .. }))
+            .collect();
+        let tool_results: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolResult { .. }))
+            .collect();
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_results.len(), 1);
         let _ = std::fs::remove_file(&file_path);
@@ -1828,7 +2067,8 @@ mod tests {
     #[test]
     fn test_parse_session_file_unknown_event_type_ignored() {
         let file_path = test_file("unknown_type");
-        let line = r#"{"type":"unknown_type","data":"whatever","timestamp":"2026-01-01T00:00:00Z"}"#;
+        let line =
+            r#"{"type":"unknown_type","data":"whatever","timestamp":"2026-01-01T00:00:00Z"}"#;
         std::fs::write(&file_path, format!("{}\n", line)).unwrap();
         let result = parse_session_file(&file_path);
         assert!(result.events.is_empty());
@@ -1958,13 +2198,8 @@ mod tests {
         let line = r#"{"type":"system","subtype":"local_command","content":"<command-name>test</command-name>"}"#;
         std::fs::write(&file_path, format!("{}\n", line)).unwrap();
 
-        let result = parse_session_file_incremental(
-            &file_path,
-            0,
-            &[],
-            &HashSet::new(),
-            &HashSet::new(),
-        );
+        let result =
+            parse_session_file_incremental(&file_path, 0, &[], &HashSet::new(), &HashSet::new());
         assert_eq!(result.events.len(), 1);
         let _ = std::fs::remove_file(&file_path);
     }

@@ -4,8 +4,8 @@ mod azufig;
 mod backend;
 mod claude;
 mod cli;
-mod codex;
 mod cmd;
+mod codex;
 mod config;
 mod events;
 mod git;
@@ -32,7 +32,11 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let log_level = if cli.verbose { "azureal=debug" } else { "azureal=info" };
+    let log_level = if cli.verbose {
+        "azureal=debug"
+    } else {
+        "azureal=info"
+    };
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
@@ -74,7 +78,9 @@ async fn main() -> Result<()> {
         } else {
             !bundle_exec.exists() || {
                 let src_mod = std::fs::metadata(&exe).and_then(|m| m.modified()).ok();
-                let dst_mod = std::fs::metadata(&bundle_exec).and_then(|m| m.modified()).ok();
+                let dst_mod = std::fs::metadata(&bundle_exec)
+                    .and_then(|m| m.modified())
+                    .ok();
                 match (src_mod, dst_mod) {
                     (Some(s), Some(d)) => s > d,
                     _ => true,
@@ -89,20 +95,23 @@ async fn main() -> Result<()> {
                 contents.join("Resources/Azureal.icns"),
                 include_bytes!("../resources/Azureal.icns"),
             );
-            let _ = std::fs::write(contents.join("Info.plist"), concat!(
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-                "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
-                "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
-                "<plist version=\"1.0\">\n<dict>\n",
-                "\t<key>CFBundleIdentifier</key>\n\t<string>com.xcorvisx.azureal</string>\n",
-                "\t<key>CFBundleName</key>\n\t<string>AZUREAL</string>\n",
-                "\t<key>CFBundleDisplayName</key>\n\t<string>AZUREAL</string>\n",
-                "\t<key>CFBundleExecutable</key>\n\t<string>azureal</string>\n",
-                "\t<key>CFBundleIconFile</key>\n\t<string>Azureal</string>\n",
-                "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n",
-                "\t<key>LSUIElement</key>\n\t<true/>\n",
-                "</dict>\n</plist>\n",
-            ));
+            let _ = std::fs::write(
+                contents.join("Info.plist"),
+                concat!(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+                    "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+                    "<plist version=\"1.0\">\n<dict>\n",
+                    "\t<key>CFBundleIdentifier</key>\n\t<string>com.xcorvisx.azureal</string>\n",
+                    "\t<key>CFBundleName</key>\n\t<string>AZUREAL</string>\n",
+                    "\t<key>CFBundleDisplayName</key>\n\t<string>AZUREAL</string>\n",
+                    "\t<key>CFBundleExecutable</key>\n\t<string>azureal</string>\n",
+                    "\t<key>CFBundleIconFile</key>\n\t<string>Azureal</string>\n",
+                    "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n",
+                    "\t<key>LSUIElement</key>\n\t<true/>\n",
+                    "</dict>\n</plist>\n",
+                ),
+            );
         }
 
         // Copy the real binary into the bundle so proc_pidpath() resolves
@@ -125,7 +134,10 @@ async fn main() -> Result<()> {
         // AZUREAL_REEXEC env var prevents infinite loop: the re-exec'd process
         // sees it and skips this block. Command::exec() replaces the current
         // process (unix execvp), so if it succeeds we never reach the next line.
-        if !already_in_bundle && bundle_exec.exists() && std::env::var_os("AZUREAL_REEXEC").is_none() {
+        if !already_in_bundle
+            && bundle_exec.exists()
+            && std::env::var_os("AZUREAL_REEXEC").is_none()
+        {
             use std::os::unix::process::CommandExt;
             let args: Vec<String> = std::env::args().skip(1).collect();
             let err = std::process::Command::new(&bundle_exec)
@@ -146,12 +158,18 @@ async fn main() -> Result<()> {
         #[allow(non_upper_case_globals)]
         const kCurrentProcess: u32 = 2;
         #[repr(C)]
-        struct ProcessSerialNumber { high: u32, low: u32 }
+        struct ProcessSerialNumber {
+            high: u32,
+            low: u32,
+        }
         extern "C" {
             fn TransformProcessType(psn: *mut ProcessSerialNumber, ty: u32) -> i32;
         }
         unsafe {
-            let mut psn = ProcessSerialNumber { high: 0, low: kCurrentProcess };
+            let mut psn = ProcessSerialNumber {
+                high: 0,
+                low: kCurrentProcess,
+            };
             // 4 = kProcessTransformToUIElementAppType
             TransformProcessType(&mut psn, 4);
         }
@@ -169,22 +187,25 @@ async fn main() -> Result<()> {
             // Small delay so TransformProcessType's ncprefs entry is flushed
             std::thread::sleep(std::time::Duration::from_millis(200));
             let _ = std::process::Command::new("python3")
-                .args(["-c", concat!(
-                    "import plistlib,os,pathlib\n",
-                    "p=pathlib.Path.home()/'Library/Preferences/com.apple.ncprefs.plist'\n",
-                    "if not p.exists(): exit()\n",
-                    "d=plistlib.loads(p.read_bytes())\n",
-                    "bid='com.xcorvisx.azureal'\n",
-                    "found=False\n",
-                    "for app in d.get('apps',[]):\n",
-                    "  if app.get('bundle-id')==bid:\n",
-                    // 41951246 = ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS|BIT_23
-                    "    app['flags']=41951246;found=True;break\n",
-                    "if not found:\n",
-                    "  d.setdefault('apps',[]).append({'bundle-id':bid,'flags':41951246})\n",
-                    "p.write_bytes(plistlib.dumps(d,fmt=plistlib.FMT_BINARY))\n",
-                    "os.system('killall usernoted 2>/dev/null')\n",
-                )])
+                .args([
+                    "-c",
+                    concat!(
+                        "import plistlib,os,pathlib\n",
+                        "p=pathlib.Path.home()/'Library/Preferences/com.apple.ncprefs.plist'\n",
+                        "if not p.exists(): exit()\n",
+                        "d=plistlib.loads(p.read_bytes())\n",
+                        "bid='com.xcorvisx.azureal'\n",
+                        "found=False\n",
+                        "for app in d.get('apps',[]):\n",
+                        "  if app.get('bundle-id')==bid:\n",
+                        // 41951246 = ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS|BIT_23
+                        "    app['flags']=41951246;found=True;break\n",
+                        "if not found:\n",
+                        "  d.setdefault('apps',[]).append({'bundle-id':bid,'flags':41951246})\n",
+                        "p.write_bytes(plistlib.dumps(d,fmt=plistlib.FMT_BINARY))\n",
+                        "os.system('killall usernoted 2>/dev/null')\n",
+                    ),
+                ])
                 .output();
             let _ = std::fs::write(&notif_marker, "1");
         }
@@ -198,24 +219,49 @@ async fn main() -> Result<()> {
         Some(Commands::Tui) | None => tui::run().await?,
 
         // Session shortcuts
-        Some(Commands::List { project, all }) => cmd::handle_session_list(project, all, output_format)?,
-        Some(Commands::New { prompt, project, name }) => cmd::handle_session_new(prompt, project, name, output_format)?,
+        Some(Commands::List { project, all }) => {
+            cmd::handle_session_list(project, all, output_format)?
+        }
+        Some(Commands::New {
+            prompt,
+            project,
+            name,
+        }) => cmd::handle_session_new(prompt, project, name, output_format)?,
         Some(Commands::Status { session }) => cmd::handle_session_status(&session, output_format)?,
         Some(Commands::Diff { session, stat }) => cmd::handle_session_diff(&session, stat)?,
 
         // Session subcommands
         Some(Commands::Session(cmd)) => match cmd {
-            SessionCommands::List { project, all } => cmd::handle_session_list(project, all, output_format)?,
-            SessionCommands::New { prompt, project, name } => cmd::handle_session_new(prompt, project, name, output_format)?,
-            SessionCommands::Status { session } => cmd::handle_session_status(&session, output_format)?,
+            SessionCommands::List { project, all } => {
+                cmd::handle_session_list(project, all, output_format)?
+            }
+            SessionCommands::New {
+                prompt,
+                project,
+                name,
+            } => cmd::handle_session_new(prompt, project, name, output_format)?,
+            SessionCommands::Status { session } => {
+                cmd::handle_session_status(&session, output_format)?
+            }
             SessionCommands::Stop { session, force } => cmd::handle_session_stop(&session, force)?,
             SessionCommands::Delete { session, yes } => cmd::handle_session_delete(&session, yes)?,
             SessionCommands::Archive { session } => cmd::handle_session_archive(&session)?,
             SessionCommands::Unarchive { session } => cmd::handle_session_unarchive(&session)?,
-            SessionCommands::Resume { session, prompt } => cmd::handle_session_resume(&session, prompt)?,
-            SessionCommands::Logs { session, follow, lines } => cmd::handle_session_logs(&session, follow, lines)?,
+            SessionCommands::Resume { session, prompt } => {
+                cmd::handle_session_resume(&session, prompt)?
+            }
+            SessionCommands::Logs {
+                session,
+                follow,
+                lines,
+            } => cmd::handle_session_logs(&session, follow, lines)?,
             SessionCommands::Diff { session, stat } => cmd::handle_session_diff(&session, stat)?,
-            SessionCommands::Cleanup { project, delete_branches, yes, dry_run } => cmd::handle_session_cleanup(project, delete_branches, yes, dry_run)?,
+            SessionCommands::Cleanup {
+                project,
+                delete_branches,
+                yes,
+                dry_run,
+            } => cmd::handle_session_cleanup(project, delete_branches, yes, dry_run)?,
         },
 
         // Project subcommands
@@ -223,7 +269,10 @@ async fn main() -> Result<()> {
             ProjectCommands::List => cmd::handle_project_list(output_format)?,
             ProjectCommands::Show { project } => cmd::handle_project_show(project, output_format)?,
             ProjectCommands::Remove { project, yes } => cmd::handle_project_remove(&project, yes)?,
-            ProjectCommands::Config { project, main_branch } => cmd::handle_project_config(project, main_branch)?,
+            ProjectCommands::Config {
+                project,
+                main_branch,
+            } => cmd::handle_project_config(project, main_branch)?,
         },
     }
 
@@ -315,7 +364,8 @@ mod tests {
 
     #[test]
     fn test_cli_session_new() {
-        let cli = Cli::try_parse_from(["azureal", "session", "new", "--prompt", "build feature"]).unwrap();
+        let cli = Cli::try_parse_from(["azureal", "session", "new", "--prompt", "build feature"])
+            .unwrap();
         if let Some(Commands::Session(SessionCommands::New { prompt, .. })) = cli.command {
             assert_eq!(prompt, "build feature");
         } else {
@@ -336,7 +386,8 @@ mod tests {
 
     #[test]
     fn test_cli_session_stop_force() {
-        let cli = Cli::try_parse_from(["azureal", "session", "stop", "my-session", "--force"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["azureal", "session", "stop", "my-session", "--force"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Stop { force, .. })) = cli.command {
             assert!(force);
         }
@@ -355,7 +406,8 @@ mod tests {
 
     #[test]
     fn test_cli_session_delete_yes() {
-        let cli = Cli::try_parse_from(["azureal", "session", "delete", "my-session", "--yes"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["azureal", "session", "delete", "my-session", "--yes"]).unwrap();
         if let Some(Commands::Session(SessionCommands::Delete { yes, .. })) = cli.command {
             assert!(yes);
         }
@@ -395,7 +447,10 @@ mod tests {
     #[test]
     fn test_cli_session_logs() {
         let cli = Cli::try_parse_from(["azureal", "session", "logs", "my-session"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Logs { session, follow, .. })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Logs {
+            session, follow, ..
+        })) = cli.command
+        {
             assert_eq!(session, "my-session");
             assert!(!follow);
         } else {
@@ -417,7 +472,13 @@ mod tests {
     #[test]
     fn test_cli_session_cleanup() {
         let cli = Cli::try_parse_from(["azureal", "session", "cleanup"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Cleanup { delete_branches, yes, dry_run, .. })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Cleanup {
+            delete_branches,
+            yes,
+            dry_run,
+            ..
+        })) = cli.command
+        {
             assert!(!delete_branches);
             assert!(!yes);
             assert!(!dry_run);
@@ -428,8 +489,22 @@ mod tests {
 
     #[test]
     fn test_cli_session_cleanup_with_flags() {
-        let cli = Cli::try_parse_from(["azureal", "session", "cleanup", "--delete-branches", "--yes", "--dry-run"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Cleanup { delete_branches, yes, dry_run, .. })) = cli.command {
+        let cli = Cli::try_parse_from([
+            "azureal",
+            "session",
+            "cleanup",
+            "--delete-branches",
+            "--yes",
+            "--dry-run",
+        ])
+        .unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup {
+            delete_branches,
+            yes,
+            dry_run,
+            ..
+        })) = cli.command
+        {
             assert!(delete_branches);
             assert!(yes);
             assert!(dry_run);
@@ -441,7 +516,10 @@ mod tests {
     #[test]
     fn test_cli_project_list() {
         let cli = Cli::try_parse_from(["azureal", "project", "list"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Project(ProjectCommands::List))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Project(ProjectCommands::List))
+        ));
     }
 
     #[test]
@@ -476,7 +554,11 @@ mod tests {
     #[test]
     fn test_cli_project_config() {
         let cli = Cli::try_parse_from(["azureal", "project", "config"]).unwrap();
-        if let Some(Commands::Project(ProjectCommands::Config { project, main_branch })) = cli.command {
+        if let Some(Commands::Project(ProjectCommands::Config {
+            project,
+            main_branch,
+        })) = cli.command
+        {
             assert!(project.is_none());
             assert!(main_branch.is_none());
         } else {

@@ -4,33 +4,60 @@
 //! overlays by reading key labels from the binding arrays. Draw functions call
 //! these instead of hardcoding hint strings.
 
-use super::types::{Action, HelpSection, Keybinding};
 use super::bindings::*;
+use super::types::{Action, HelpSection, Keybinding};
 
 /// Platform-appropriate modifier prefix for Ctrl
 fn plat_ctrl(key: &str) -> String {
-    if cfg!(target_os = "macos") { format!("⌃{}", key) } else { format!("Ctrl+{}", key) }
+    if cfg!(target_os = "macos") {
+        format!("⌃{}", key)
+    } else {
+        format!("Ctrl+{}", key)
+    }
 }
 
 /// Platform-appropriate modifier prefix for Alt
 fn plat_alt(key: &str) -> String {
-    if cfg!(target_os = "macos") { format!("⌥{}", key) } else { format!("Alt+{}", key) }
+    if cfg!(target_os = "macos") {
+        format!("⌥{}", key)
+    } else {
+        format!("Alt+{}", key)
+    }
 }
 
 /// Platform-appropriate modifier prefix for Shift
 fn plat_shift(key: &str) -> String {
-    if cfg!(target_os = "macos") { format!("⇧{}", key) } else { format!("Shift+{}", key) }
+    if cfg!(target_os = "macos") {
+        format!("⇧{}", key)
+    } else {
+        format!("Shift+{}", key)
+    }
 }
 
 /// Generate help sections from binding definitions
 /// Note: Terminal and Input bindings are shown in their own title bars, not here
 pub fn help_sections() -> Vec<HelpSection> {
     vec![
-        HelpSection { title: "GLOBAL", bindings: &GLOBAL },
-        HelpSection { title: "Filetree", bindings: &FILE_TREE },
-        HelpSection { title: "Viewer", bindings: &VIEWER },
-        HelpSection { title: "Edit Mode", bindings: &EDIT_MODE },
-        HelpSection { title: "Session", bindings: &SESSION },
+        HelpSection {
+            title: "GLOBAL",
+            bindings: &GLOBAL,
+        },
+        HelpSection {
+            title: "Filetree",
+            bindings: &FILE_TREE,
+        },
+        HelpSection {
+            title: "Viewer",
+            bindings: &VIEWER,
+        },
+        HelpSection {
+            title: "Edit Mode",
+            bindings: &EDIT_MODE,
+        },
+        HelpSection {
+            title: "Session",
+            bindings: &SESSION,
+        },
     ]
 }
 
@@ -86,7 +113,11 @@ pub fn prompt_command_title() -> (String, String, String) {
 pub fn terminal_type_title() -> (String, String, String) {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     let hints = format!("{}:exit", esc);
-    (" TERMINAL ".to_string(), format!(" TERMINAL ({}) ", hints), hints)
+    (
+        " TERMINAL ".to_string(),
+        format!(" TERMINAL ({}) ", hints),
+        hints,
+    )
 }
 
 /// Title + hints for terminal command mode.
@@ -97,15 +128,33 @@ pub fn terminal_command_title() -> (String, String, String) {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
     let (down, up) = find_key_pair(&TERMINAL, Action::NavDown, Action::NavUp, "j", "k");
     let (pdn, pup) = find_key_pair(&TERMINAL, Action::PageDown, Action::PageUp, "J", "K");
-    let alt_up = if cfg!(target_os = "macos") { "⌥↑" } else { "Alt+↑" };
-    let alt_dn = if cfg!(target_os = "macos") { "⌥↓" } else { "Alt+↓" };
-    let (top, bot) = find_key_pair(&TERMINAL, Action::GoToTop, Action::GoToBottom, alt_up, alt_dn);
+    let alt_up = if cfg!(target_os = "macos") {
+        "⌥↑"
+    } else {
+        "Alt+↑"
+    };
+    let alt_dn = if cfg!(target_os = "macos") {
+        "⌥↓"
+    } else {
+        "Alt+↓"
+    };
+    let (top, bot) = find_key_pair(
+        &TERMINAL,
+        Action::GoToTop,
+        Action::GoToBottom,
+        alt_up,
+        alt_dn,
+    );
     let (rup, rdn) = find_key_pair(&TERMINAL, Action::ResizeUp, Action::ResizeDown, "+", "-");
     let hints = format!(
         "{}:type | {}:PROMPT | {}:close | {}/{}:scroll | {}/{}:page | {}/{}:top/bottom | {}/{}:resize",
         t, p, esc, down, up, pdn, pup, top, bot, rup, rdn
     );
-    (" TERMINAL ".to_string(), format!(" TERMINAL ({}) ", hints), hints)
+    (
+        " TERMINAL ".to_string(),
+        format!(" TERMINAL ({}) ", hints),
+        hints,
+    )
 }
 
 /// Title + hints for terminal scrolled mode.
@@ -128,26 +177,36 @@ pub fn terminal_scroll_title(scroll: usize) -> (String, String, String) {
 
 /// Health panel footer for God Files tab
 pub fn health_god_files_hints() -> String {
-    let check = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleCheck).unwrap_or("Space".into());
+    let check =
+        find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleCheck).unwrap_or("Space".into());
     let all = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthToggleAll).unwrap_or("a".into());
-    let view = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthViewChecked).unwrap_or("v".into());
-    let modularize = find_key_for_action(&HEALTH_GOD_FILES, Action::HealthModularize).unwrap_or("Enter".into());
+    let view =
+        find_key_for_action(&HEALTH_GOD_FILES, Action::HealthViewChecked).unwrap_or("v".into());
+    let modularize =
+        find_key_for_action(&HEALTH_GOD_FILES, Action::HealthModularize).unwrap_or("Enter".into());
     let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
     let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:check  {}:all  {}:view  {}/m:modularize  {}:switch  {}:close ",
-        check, all, view, modularize, tab, esc)
+    format!(
+        " {}:check  {}:all  {}:view  {}/m:modularize  {}:switch  {}:close ",
+        check, all, view, modularize, tab, esc
+    )
 }
 
 /// Health panel footer for Documentation tab
 pub fn health_docs_hints() -> String {
-    let check = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleCheck).unwrap_or("Space".into());
-    let all = find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleNon100).unwrap_or("a".into());
+    let check =
+        find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleCheck).unwrap_or("Space".into());
+    let all =
+        find_key_for_action(&HEALTH_DOCS, Action::HealthDocToggleNon100).unwrap_or("a".into());
     let view = find_key_for_action(&HEALTH_DOCS, Action::HealthViewChecked).unwrap_or("v".into());
-    let complete = find_key_for_action(&HEALTH_DOCS, Action::HealthDocSpawn).unwrap_or("Enter".into());
+    let complete =
+        find_key_for_action(&HEALTH_DOCS, Action::HealthDocSpawn).unwrap_or("Enter".into());
     let tab = find_key_for_action(&HEALTH_SHARED, Action::HealthSwitchTab).unwrap_or("Tab".into());
     let esc = find_key_for_action(&HEALTH_SHARED, Action::Escape).unwrap_or("Esc".into());
-    format!(" {}:check  {}:non-100%  {}:view  {}:complete  {}:switch  {}:close ",
-        check, all, view, complete, tab, esc)
+    format!(
+        " {}:check  {}:non-100%  {}:view  {}:complete  {}:switch  {}:close ",
+        check, all, view, complete, tab, esc
+    )
 }
 
 /// Git Actions panel — action key+description pairs for the action list labels.
@@ -156,23 +215,50 @@ pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
     let actions: &[Action] = if is_on_main {
         &[Action::GitPull, Action::GitCommit, Action::GitPush]
     } else {
-        &[Action::GitSquashMerge, Action::GitRebase, Action::GitCommit, Action::GitPush]
+        &[
+            Action::GitSquashMerge,
+            Action::GitRebase,
+            Action::GitCommit,
+            Action::GitPush,
+        ]
     };
-    actions.iter()
+    actions
+        .iter()
         .filter_map(|&a| {
-            GIT_ACTIONS.iter().find(|b| b.action == a).map(|b| (b.primary.display(), b.description))
+            GIT_ACTIONS
+                .iter()
+                .find(|b| b.action == a)
+                .map(|b| (b.primary.display(), b.description))
         })
         .collect()
 }
 
 /// Git Actions panel footer hints
 pub fn git_actions_footer() -> String {
-    let (tab_fwd, tab_back) = find_key_pair(&GIT_ACTIONS, Action::GitToggleFocus, Action::GitToggleFocusBack, "Tab", "S-Tab");
+    let (tab_fwd, tab_back) = find_key_pair(
+        &GIT_ACTIONS,
+        Action::GitToggleFocus,
+        Action::GitToggleFocusBack,
+        "Tab",
+        "S-Tab",
+    );
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
     let esc = find_key_for_action(&GIT_ACTIONS, Action::Escape).unwrap_or("Esc".into());
-    let (prev, next) = find_key_pair(&GIT_ACTIONS, Action::GitPrevWorktree, Action::GitNextWorktree, "[", "]");
-    let (pprev, pnext) = find_key_pair(&GIT_ACTIONS, Action::GitPrevPage, Action::GitNextPage, "{", "}");
+    let (prev, next) = find_key_pair(
+        &GIT_ACTIONS,
+        Action::GitPrevWorktree,
+        Action::GitNextWorktree,
+        "[",
+        "]",
+    );
+    let (pprev, pnext) = find_key_pair(
+        &GIT_ACTIONS,
+        Action::GitPrevPage,
+        Action::GitNextPage,
+        "{",
+        "}",
+    );
     let stage = find_key_for_action(&GIT_ACTIONS, Action::GitToggleStage).unwrap_or("s".into());
     let discard = find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
     format!("{}/{}:cycle | {}:exec/view | {}:stage | {}:discard | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab_fwd, tab_back, enter, stage, discard, refresh, prev, next, pprev, pnext, esc)
@@ -182,14 +268,34 @@ pub fn git_actions_footer() -> String {
 /// Caller gets `has_project` to conditionally include Esc:close.
 pub fn projects_browse_hint_pairs(has_project: bool) -> Vec<(String, &'static str)> {
     let mut v = vec![
-        (find_key_for_action(&PROJECTS_BROWSE, Action::Confirm).unwrap_or("Enter".into()), "open"),
-        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsAdd).unwrap_or("a".into()), "add"),
-        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsDelete).unwrap_or("d".into()), "delete"),
-        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsRename).unwrap_or("n".into()), "name"),
-        (find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsInit).unwrap_or("i".into()), "init"),
+        (
+            find_key_for_action(&PROJECTS_BROWSE, Action::Confirm).unwrap_or("Enter".into()),
+            "open",
+        ),
+        (
+            find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsAdd).unwrap_or("a".into()),
+            "add",
+        ),
+        (
+            find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsDelete).unwrap_or("d".into()),
+            "delete",
+        ),
+        (
+            find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsRename).unwrap_or("n".into()),
+            "name",
+        ),
+        (
+            find_key_for_action(&PROJECTS_BROWSE, Action::ProjectsInit).unwrap_or("i".into()),
+            "init",
+        ),
     ];
-    if has_project { v.push(("Esc".into(), "close")); }
-    v.push((find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or("⌃Q".into()), "quit"));
+    if has_project {
+        v.push(("Esc".into(), "close"));
+    }
+    v.push((
+        find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or("⌃Q".into()),
+        "quit",
+    ));
     v
 }
 
@@ -199,7 +305,10 @@ pub fn picker_title(label: &str) -> String {
     let edit = find_key_for_action(&PICKER, Action::EditSelected).unwrap_or("e".into());
     let del = find_key_for_action(&PICKER, Action::DeleteSelected).unwrap_or("d".into());
     let add = find_key_for_action(&PICKER, Action::ProjectsAdd).unwrap_or("a".into());
-    format!(" {} (1-9:select  {}:add  {}:edit  {}:del) ", label, add, edit, del)
+    format!(
+        " {} (1-9:select  {}:add  {}:edit  {}:del) ",
+        label, add, edit, del
+    )
 }
 
 /// Dialog footer hint pairs for run command / preset prompt dialogs.
@@ -216,13 +325,20 @@ pub fn dialog_footer_hint_pairs() -> Vec<(String, &'static str)> {
 
 /// Find the display key for a given action in a binding list
 pub fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<String> {
-    bindings.iter()
+    bindings
+        .iter()
         .find(|b| b.action == action)
         .map(|b| b.primary.display())
 }
 
 /// Find a pair of keys for two related actions (e.g., NavDown/NavUp → "j"/"k")
-pub fn find_key_pair(bindings: &[Keybinding], a: Action, b: Action, da: &str, db: &str) -> (String, String) {
+pub fn find_key_pair(
+    bindings: &[Keybinding],
+    a: Action,
+    b: Action,
+    da: &str,
+    db: &str,
+) -> (String, String) {
     (
         find_key_for_action(bindings, a).unwrap_or_else(|| da.into()),
         find_key_for_action(bindings, b).unwrap_or_else(|| db.into()),
@@ -276,7 +392,11 @@ mod tests {
     #[test]
     fn help_sections_all_have_nonempty_bindings() {
         for section in help_sections() {
-            assert!(!section.bindings.is_empty(), "section '{}' has no bindings", section.title);
+            assert!(
+                !section.bindings.is_empty(),
+                "section '{}' has no bindings",
+                section.title
+            );
         }
     }
 
@@ -416,14 +536,21 @@ mod tests {
     #[test]
     fn find_key_pair_fallback_when_not_found() {
         let empty: [Keybinding; 0] = [];
-        let (a, b) = find_key_pair(&empty, Action::NavDown, Action::NavUp, "fallback_a", "fallback_b");
+        let (a, b) = find_key_pair(
+            &empty,
+            Action::NavDown,
+            Action::NavUp,
+            "fallback_a",
+            "fallback_b",
+        );
         assert_eq!(a, "fallback_a");
         assert_eq!(b, "fallback_b");
     }
 
     #[test]
     fn find_key_pair_history_in_input() {
-        let (prev, next) = find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
+        let (prev, next) =
+            find_key_pair(&INPUT, Action::HistoryPrev, Action::HistoryNext, "↑", "↓");
         assert_eq!(prev, "↑");
         assert_eq!(next, "↓");
     }
@@ -444,7 +571,13 @@ mod tests {
 
     #[test]
     fn find_key_pair_worktree_tabs_in_global() {
-        let (prev, next) = find_key_pair(&GLOBAL, Action::WorktreeTabPrev, Action::WorktreeTabNext, "[", "]");
+        let (prev, next) = find_key_pair(
+            &GLOBAL,
+            Action::WorktreeTabPrev,
+            Action::WorktreeTabNext,
+            "[",
+            "]",
+        );
         assert_eq!(prev, "[");
         assert_eq!(next, "]");
     }
@@ -474,43 +607,71 @@ mod tests {
     #[test]
     fn prompt_type_title_hints_contains_exit() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("exit"), "hints should mention exit: {}", hints);
+        assert!(
+            hints.contains("exit"),
+            "hints should mention exit: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_submit() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("submit"), "hints should mention submit: {}", hints);
+        assert!(
+            hints.contains("submit"),
+            "hints should mention submit: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_cancel() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("cancel"), "hints should mention cancel: {}", hints);
+        assert!(
+            hints.contains("cancel"),
+            "hints should mention cancel: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_history() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("history"), "hints should mention history: {}", hints);
+        assert!(
+            hints.contains("history"),
+            "hints should mention history: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_del_wrd() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("del wrd"), "hints should mention del wrd: {}", hints);
+        assert!(
+            hints.contains("del wrd"),
+            "hints should mention del wrd: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_speech() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("speech"), "hints should mention speech: {}", hints);
+        assert!(
+            hints.contains("speech"),
+            "hints should mention speech: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_type_title_hints_contains_presets() {
         let (_, _, hints) = prompt_type_title();
-        assert!(hints.contains("presets"), "hints should mention presets: {}", hints);
+        assert!(
+            hints.contains("presets"),
+            "hints should mention presets: {}",
+            hints
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -532,13 +693,21 @@ mod tests {
     #[test]
     fn prompt_command_title_hints_contains_prompt() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
+        assert!(
+            hints.contains("PROMPT"),
+            "hints should mention PROMPT: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_command_title_hints_contains_terminal() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("TERMINAL"), "hints should mention TERMINAL: {}", hints);
+        assert!(
+            hints.contains("TERMINAL"),
+            "hints should mention TERMINAL: {}",
+            hints
+        );
     }
 
     #[test]
@@ -550,7 +719,11 @@ mod tests {
     #[test]
     fn prompt_command_title_hints_contains_health() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("Health"), "hints should mention Health: {}", hints);
+        assert!(
+            hints.contains("Health"),
+            "hints should mention Health: {}",
+            hints
+        );
     }
 
     #[test]
@@ -562,19 +735,31 @@ mod tests {
     #[test]
     fn prompt_command_title_hints_contains_cancel() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("cancel"), "hints should mention cancel: {}", hints);
+        assert!(
+            hints.contains("cancel"),
+            "hints should mention cancel: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_command_title_hints_contains_quit() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("quit"), "hints should mention quit: {}", hints);
+        assert!(
+            hints.contains("quit"),
+            "hints should mention quit: {}",
+            hints
+        );
     }
 
     #[test]
     fn prompt_command_title_hints_contains_help() {
         let (_, _, hints) = prompt_command_title();
-        assert!(hints.contains("help"), "hints should mention help: {}", hints);
+        assert!(
+            hints.contains("help"),
+            "hints should mention help: {}",
+            hints
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -590,7 +775,11 @@ mod tests {
     #[test]
     fn terminal_type_title_hints_contains_exit() {
         let (_, _, hints) = terminal_type_title();
-        assert!(hints.contains("exit"), "hints should mention exit: {}", hints);
+        assert!(
+            hints.contains("exit"),
+            "hints should mention exit: {}",
+            hints
+        );
     }
 
     #[test]
@@ -612,31 +801,51 @@ mod tests {
     #[test]
     fn terminal_command_title_hints_contains_type() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("type"), "hints should mention type: {}", hints);
+        assert!(
+            hints.contains("type"),
+            "hints should mention type: {}",
+            hints
+        );
     }
 
     #[test]
     fn terminal_command_title_hints_contains_prompt() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("PROMPT"), "hints should mention PROMPT: {}", hints);
+        assert!(
+            hints.contains("PROMPT"),
+            "hints should mention PROMPT: {}",
+            hints
+        );
     }
 
     #[test]
     fn terminal_command_title_hints_contains_close() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("close"), "hints should mention close: {}", hints);
+        assert!(
+            hints.contains("close"),
+            "hints should mention close: {}",
+            hints
+        );
     }
 
     #[test]
     fn terminal_command_title_hints_contains_scroll() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("scroll"), "hints should mention scroll: {}", hints);
+        assert!(
+            hints.contains("scroll"),
+            "hints should mention scroll: {}",
+            hints
+        );
     }
 
     #[test]
     fn terminal_command_title_hints_contains_resize() {
         let (_, _, hints) = terminal_command_title();
-        assert!(hints.contains("resize"), "hints should mention resize: {}", hints);
+        assert!(
+            hints.contains("resize"),
+            "hints should mention resize: {}",
+            hints
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -646,13 +855,21 @@ mod tests {
     #[test]
     fn terminal_scroll_title_label_includes_count() {
         let (label, _, _) = terminal_scroll_title(42);
-        assert!(label.contains("42"), "label should include scroll count: {}", label);
+        assert!(
+            label.contains("42"),
+            "label should include scroll count: {}",
+            label
+        );
     }
 
     #[test]
     fn terminal_scroll_title_full_includes_count() {
         let (_, full, _) = terminal_scroll_title(100);
-        assert!(full.contains("100"), "full title should include scroll count: {}", full);
+        assert!(
+            full.contains("100"),
+            "full title should include scroll count: {}",
+            full
+        );
     }
 
     #[test]
@@ -664,13 +881,21 @@ mod tests {
     #[test]
     fn terminal_scroll_title_hints_contains_scroll() {
         let (_, _, hints) = terminal_scroll_title(5);
-        assert!(hints.contains("scroll"), "hints should mention scroll: {}", hints);
+        assert!(
+            hints.contains("scroll"),
+            "hints should mention scroll: {}",
+            hints
+        );
     }
 
     #[test]
     fn terminal_scroll_title_hints_contains_page() {
         let (_, _, hints) = terminal_scroll_title(5);
-        assert!(hints.contains("page"), "hints should mention page: {}", hints);
+        assert!(
+            hints.contains("page"),
+            "hints should mention page: {}",
+            hints
+        );
     }
 
     #[test]
@@ -682,7 +907,11 @@ mod tests {
     #[test]
     fn terminal_scroll_title_hints_contains_bottom() {
         let (_, _, hints) = terminal_scroll_title(5);
-        assert!(hints.contains("bottom"), "hints should mention bottom: {}", hints);
+        assert!(
+            hints.contains("bottom"),
+            "hints should mention bottom: {}",
+            hints
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -710,7 +939,11 @@ mod tests {
     #[test]
     fn health_god_files_hints_contains_modularize() {
         let h = health_god_files_hints();
-        assert!(h.contains("modularize"), "hints should mention modularize: {}", h);
+        assert!(
+            h.contains("modularize"),
+            "hints should mention modularize: {}",
+            h
+        );
     }
 
     #[test]
@@ -738,7 +971,11 @@ mod tests {
     #[test]
     fn health_docs_hints_contains_non_100() {
         let h = health_docs_hints();
-        assert!(h.contains("non-100%"), "hints should mention non-100%: {}", h);
+        assert!(
+            h.contains("non-100%"),
+            "hints should mention non-100%: {}",
+            h
+        );
     }
 
     #[test]
@@ -750,7 +987,11 @@ mod tests {
     #[test]
     fn health_docs_hints_contains_complete() {
         let h = health_docs_hints();
-        assert!(h.contains("complete"), "hints should mention complete: {}", h);
+        assert!(
+            h.contains("complete"),
+            "hints should mention complete: {}",
+            h
+        );
     }
 
     #[test]
@@ -773,9 +1014,21 @@ mod tests {
     fn git_labels_main_has_pull_commit_push() {
         let labels = git_actions_labels(true);
         let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
-        assert!(descs.contains(&"Pull"), "main should show Pull: {:?}", descs);
-        assert!(descs.contains(&"Commit"), "main should show Commit: {:?}", descs);
-        assert!(descs.contains(&"Push to remote"), "main should show Push to remote: {:?}", descs);
+        assert!(
+            descs.contains(&"Pull"),
+            "main should show Pull: {:?}",
+            descs
+        );
+        assert!(
+            descs.contains(&"Commit"),
+            "main should show Commit: {:?}",
+            descs
+        );
+        assert!(
+            descs.contains(&"Push to remote"),
+            "main should show Push to remote: {:?}",
+            descs
+        );
     }
 
     #[test]
@@ -788,10 +1041,26 @@ mod tests {
     fn git_labels_feature_has_squash_rebase_commit_push() {
         let labels = git_actions_labels(false);
         let descs: Vec<&str> = labels.iter().map(|(_, d)| *d).collect();
-        assert!(descs.contains(&"Squash merge to main"), "feature should show Squash: {:?}", descs);
-        assert!(descs.contains(&"Rebase onto main"), "feature should show Rebase: {:?}", descs);
-        assert!(descs.contains(&"Commit"), "feature should show Commit: {:?}", descs);
-        assert!(descs.contains(&"Push to remote"), "feature should show Push: {:?}", descs);
+        assert!(
+            descs.contains(&"Squash merge to main"),
+            "feature should show Squash: {:?}",
+            descs
+        );
+        assert!(
+            descs.contains(&"Rebase onto main"),
+            "feature should show Rebase: {:?}",
+            descs
+        );
+        assert!(
+            descs.contains(&"Commit"),
+            "feature should show Commit: {:?}",
+            descs
+        );
+        assert!(
+            descs.contains(&"Push to remote"),
+            "feature should show Push: {:?}",
+            descs
+        );
     }
 
     #[test]
@@ -837,13 +1106,21 @@ mod tests {
     #[test]
     fn git_footer_contains_exec_view() {
         let f = git_actions_footer();
-        assert!(f.contains("exec/view"), "footer should mention exec/view: {}", f);
+        assert!(
+            f.contains("exec/view"),
+            "footer should mention exec/view: {}",
+            f
+        );
     }
 
     #[test]
     fn git_footer_contains_refresh() {
         let f = git_actions_footer();
-        assert!(f.contains("refresh"), "footer should mention refresh: {}", f);
+        assert!(
+            f.contains("refresh"),
+            "footer should mention refresh: {}",
+            f
+        );
     }
 
     #[test]
@@ -855,7 +1132,11 @@ mod tests {
     #[test]
     fn git_footer_contains_wt() {
         let f = git_actions_footer();
-        assert!(f.contains("wt"), "footer should mention wt (worktree): {}", f);
+        assert!(
+            f.contains("wt"),
+            "footer should mention wt (worktree): {}",
+            f
+        );
     }
 
     #[test]
@@ -872,14 +1153,22 @@ mod tests {
     fn projects_hints_with_project_includes_close() {
         let pairs = projects_browse_hint_pairs(true);
         let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-        assert!(labels.contains(&"close"), "should include close: {:?}", labels);
+        assert!(
+            labels.contains(&"close"),
+            "should include close: {:?}",
+            labels
+        );
     }
 
     #[test]
     fn projects_hints_without_project_no_close() {
         let pairs = projects_browse_hint_pairs(false);
         let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-        assert!(!labels.contains(&"close"), "should not include close: {:?}", labels);
+        assert!(
+            !labels.contains(&"close"),
+            "should not include close: {:?}",
+            labels
+        );
     }
 
     #[test]
@@ -887,7 +1176,11 @@ mod tests {
         for has_project in [true, false] {
             let pairs = projects_browse_hint_pairs(has_project);
             let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-            assert!(labels.contains(&"open"), "should include open: {:?}", labels);
+            assert!(
+                labels.contains(&"open"),
+                "should include open: {:?}",
+                labels
+            );
         }
     }
 
@@ -905,7 +1198,11 @@ mod tests {
         for has_project in [true, false] {
             let pairs = projects_browse_hint_pairs(has_project);
             let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-            assert!(labels.contains(&"delete"), "should include delete: {:?}", labels);
+            assert!(
+                labels.contains(&"delete"),
+                "should include delete: {:?}",
+                labels
+            );
         }
     }
 
@@ -914,7 +1211,11 @@ mod tests {
         for has_project in [true, false] {
             let pairs = projects_browse_hint_pairs(has_project);
             let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-            assert!(labels.contains(&"name"), "should include name: {:?}", labels);
+            assert!(
+                labels.contains(&"name"),
+                "should include name: {:?}",
+                labels
+            );
         }
     }
 
@@ -923,7 +1224,11 @@ mod tests {
         for has_project in [true, false] {
             let pairs = projects_browse_hint_pairs(has_project);
             let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-            assert!(labels.contains(&"init"), "should include init: {:?}", labels);
+            assert!(
+                labels.contains(&"init"),
+                "should include init: {:?}",
+                labels
+            );
         }
     }
 
@@ -932,7 +1237,11 @@ mod tests {
         for has_project in [true, false] {
             let pairs = projects_browse_hint_pairs(has_project);
             let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
-            assert!(labels.contains(&"quit"), "should include quit: {:?}", labels);
+            assert!(
+                labels.contains(&"quit"),
+                "should include quit: {:?}",
+                labels
+            );
         }
     }
 
@@ -964,13 +1273,21 @@ mod tests {
     #[test]
     fn picker_title_contains_label() {
         let t = picker_title("Run Command");
-        assert!(t.contains("Run Command"), "title should contain label: {}", t);
+        assert!(
+            t.contains("Run Command"),
+            "title should contain label: {}",
+            t
+        );
     }
 
     #[test]
     fn picker_title_contains_select_hint() {
         let t = picker_title("Test");
-        assert!(t.contains("1-9:select"), "title should contain select hint: {}", t);
+        assert!(
+            t.contains("1-9:select"),
+            "title should contain select hint: {}",
+            t
+        );
     }
 
     #[test]

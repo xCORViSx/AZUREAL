@@ -76,8 +76,12 @@ impl AgentProcess {
             .map(crate::app::state::backend_for_model)
             .unwrap_or(Backend::Claude);
         match backend {
-            Backend::Claude => self.claude.spawn(working_dir, prompt, resume_session_id, model),
-            Backend::Codex => self.codex.spawn(working_dir, prompt, resume_session_id, model),
+            Backend::Claude => self
+                .claude
+                .spawn(working_dir, prompt, resume_session_id, model),
+            Backend::Codex => self
+                .codex
+                .spawn(working_dir, prompt, resume_session_id, model),
         }
     }
 }

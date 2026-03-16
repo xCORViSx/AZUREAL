@@ -18,6 +18,6 @@ mod terminal;
 pub(crate) mod types;
 mod util;
 
-pub use state::{App, DeferredAction, TodoItem, TodoStatus};
 pub(crate) use state::health::save_health_scope;
+pub use state::{App, DeferredAction, TodoItem, TodoStatus};
 pub use types::{BranchDialog, Focus, RunCommand, ViewMode, ViewerMode};

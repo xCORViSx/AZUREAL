@@ -8,11 +8,13 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
+use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
+use crate::app::types::{
+    is_git_safe_char, CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog,
+};
 use crate::app::{App, Focus, RunCommand};
 use crate::backend::AgentProcess;
 use crate::git::Git;
-use crate::app::types::{CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog, is_git_safe_char};
-use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
 
 /// Handle keyboard input when Branch dialog is focused.
 /// Nav/Enter/Esc through keybindings; filter chars (Backspace, Char) stay raw.
@@ -24,61 +26,69 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
         let is_jk = matches!(key.code, KeyCode::Char('j') | KeyCode::Char('k'));
         // Try centralized bindings first for structural keys (skip j/k when typing)
         if !(on_create && is_jk) {
-        if let Some(action) = lookup_branch_dialog_action(key.modifiers, key.code) {
-            match action {
-                Action::NavDown => dialog.select_next(),
-                Action::NavUp => dialog.select_prev(),
-                Action::Confirm => {
-                    if dialog.on_create_new() {
-                        // "Create new" row — use filter text as worktree name
-                        let name = dialog.filter.trim().to_string();
-                        if name.is_empty() {
-                            app.set_status("Enter a name for the new worktree");
-                            return Ok(());
-                        }
-                        app.close_branch_dialog();
-                        match app.create_new_worktree_with_name(name.clone(), String::new()) {
-                            Ok(_wt) => app.set_status(format!("Created worktree: {}", name)),
-                            Err(e) => app.set_status(format!("Failed: {}", e)),
-                        }
-                    } else if let Some(branch) = dialog.selected_branch().cloned() {
-                        let is_active = dialog.is_checked_out(&branch);
-                        if is_active {
-                            // Branch already has a worktree — switch focus to it
-                            let local_name = if branch.contains('/') {
-                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
-                            } else {
-                                branch.clone()
-                            };
-                            let target_idx = app.worktrees.iter().position(|wt| wt.branch_name == branch || wt.branch_name == local_name);
-                            if let Some(idx) = target_idx {
-                                app.selected_worktree = Some(idx);
-                                app.set_status(format!("Switched to {}", branch));
+            if let Some(action) = lookup_branch_dialog_action(key.modifiers, key.code) {
+                match action {
+                    Action::NavDown => dialog.select_next(),
+                    Action::NavUp => dialog.select_prev(),
+                    Action::Confirm => {
+                        if dialog.on_create_new() {
+                            // "Create new" row — use filter text as worktree name
+                            let name = dialog.filter.trim().to_string();
+                            if name.is_empty() {
+                                app.set_status("Enter a name for the new worktree");
+                                return Ok(());
                             }
-                        } else if let Some(project) = app.current_project().cloned() {
-                            // Create a new worktree from this branch
-                            let local_name = if branch.contains('/') {
-                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
-                            } else {
-                                branch.clone()
-                            };
-                            let worktree_path = project.worktrees_dir().join(&local_name);
-                            match Git::create_worktree_from_branch(&project.path, &worktree_path, &branch) {
-                                Ok(()) => {
-                                    app.set_status(format!("Created worktree: {}", local_name));
-                                    let _ = app.refresh_worktrees();
+                            app.close_branch_dialog();
+                            match app.create_new_worktree_with_name(name.clone(), String::new()) {
+                                Ok(_wt) => app.set_status(format!("Created worktree: {}", name)),
+                                Err(e) => app.set_status(format!("Failed: {}", e)),
+                            }
+                        } else if let Some(branch) = dialog.selected_branch().cloned() {
+                            let is_active = dialog.is_checked_out(&branch);
+                            if is_active {
+                                // Branch already has a worktree — switch focus to it
+                                let local_name = if branch.contains('/') {
+                                    branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                                } else {
+                                    branch.clone()
+                                };
+                                let target_idx = app.worktrees.iter().position(|wt| {
+                                    wt.branch_name == branch || wt.branch_name == local_name
+                                });
+                                if let Some(idx) = target_idx {
+                                    app.selected_worktree = Some(idx);
+                                    app.set_status(format!("Switched to {}", branch));
                                 }
-                                Err(e) => app.set_status(format!("Failed to create worktree: {}", e)),
+                            } else if let Some(project) = app.current_project().cloned() {
+                                // Create a new worktree from this branch
+                                let local_name = if branch.contains('/') {
+                                    branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                                } else {
+                                    branch.clone()
+                                };
+                                let worktree_path = project.worktrees_dir().join(&local_name);
+                                match Git::create_worktree_from_branch(
+                                    &project.path,
+                                    &worktree_path,
+                                    &branch,
+                                ) {
+                                    Ok(()) => {
+                                        app.set_status(format!("Created worktree: {}", local_name));
+                                        let _ = app.refresh_worktrees();
+                                    }
+                                    Err(e) => {
+                                        app.set_status(format!("Failed to create worktree: {}", e))
+                                    }
+                                }
                             }
+                            app.close_branch_dialog();
                         }
-                        app.close_branch_dialog();
                     }
+                    Action::Escape => app.close_branch_dialog(),
+                    _ => {}
                 }
-                Action::Escape => app.close_branch_dialog(),
-                _ => {}
+                return Ok(());
             }
-            return Ok(());
-        }
         }
 
         // Raw text input for filter — only git-safe chars allowed
@@ -98,7 +108,11 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
 /// Number quick-select (1-9) and confirm-delete (y/n) stay raw.
 pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Check if a delete confirmation is pending — only y confirms, anything else cancels
-    if let Some(del_idx) = app.run_command_picker.as_ref().and_then(|p| p.confirm_delete) {
+    if let Some(del_idx) = app
+        .run_command_picker
+        .as_ref()
+        .and_then(|p| p.confirm_delete)
+    {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if del_idx < app.run_commands.len() {
@@ -144,28 +158,44 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
     match action {
         Action::NavDown => {
             if let Some(ref mut picker) = app.run_command_picker {
-                if picker.selected + 1 < cmd_count { picker.selected += 1; }
+                if picker.selected + 1 < cmd_count {
+                    picker.selected += 1;
+                }
             }
         }
         Action::NavUp => {
             if let Some(ref mut picker) = app.run_command_picker {
-                if picker.selected > 0 { picker.selected -= 1; }
+                if picker.selected > 0 {
+                    picker.selected -= 1;
+                }
             }
         }
         Action::Confirm => {
-            let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .run_command_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             app.run_command_picker = None;
             app.execute_run_command(idx);
         }
         Action::EditSelected => {
-            let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .run_command_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             if let Some(cmd) = app.run_commands.get(idx) {
                 app.run_command_dialog = Some(RunCommandDialog::edit(idx, cmd));
             }
             app.run_command_picker = None;
         }
         Action::DeleteSelected => {
-            let idx = app.run_command_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .run_command_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             if idx < cmd_count {
                 if let Some(ref mut picker) = app.run_command_picker {
                     picker.confirm_delete = Some(idx);
@@ -176,7 +206,9 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
             app.run_command_picker = None;
             app.open_run_command_dialog();
         }
-        Action::Escape => { app.run_command_picker = None; }
+        Action::Escape => {
+            app.run_command_picker = None;
+        }
         _ => {}
     }
     Ok(())
@@ -187,8 +219,14 @@ pub fn handle_run_command_picker_input(key: event::KeyEvent, app: &mut App) -> R
 /// In Prompt mode, Enter spawns a Claude session on the main branch to generate the command.
 /// ⌃s toggles global/project scope (works from any field).
 /// Text input keys stay raw — not rebindable.
-pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
-    let Some(ref mut dialog) = app.run_command_dialog else { return Ok(()) };
+pub fn handle_run_command_dialog_input(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
+    let Some(ref mut dialog) = app.run_command_dialog else {
+        return Ok(());
+    };
 
     // ⌃s toggles global/project scope (works from any field)
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
@@ -210,7 +248,9 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
         }
         // Shift+Tab: go back to Name field from Command/Prompt
         KeyCode::BackTab => {
-            if !dialog.editing_name { dialog.editing_name = true; }
+            if !dialog.editing_name {
+                dialog.editing_name = true;
+            }
         }
         // Enter: advance name→command, or save/generate when in command/prompt field
         KeyCode::Enter => {
@@ -238,7 +278,9 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
                     let is_global = dialog.global;
                     let cmd = RunCommand::new(name.clone(), content, is_global);
                     if let Some(idx) = editing_idx {
-                        if idx < app.run_commands.len() { app.run_commands[idx] = cmd; }
+                        if idx < app.run_commands.len() {
+                            app.run_commands[idx] = cmd;
+                        }
                     } else {
                         app.run_commands.push(cmd);
                     }
@@ -254,7 +296,9 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
                 }
             }
         }
-        KeyCode::Esc => { app.run_command_dialog = None; }
+        KeyCode::Esc => {
+            app.run_command_dialog = None;
+        }
         // Text editing for the active field
         KeyCode::Backspace => {
             if dialog.editing_name {
@@ -276,7 +320,9 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
         }
         KeyCode::Right => {
             if dialog.editing_name {
-                if dialog.name_cursor < dialog.name.len() { dialog.name_cursor += 1; }
+                if dialog.name_cursor < dialog.name.len() {
+                    dialog.name_cursor += 1;
+                }
             } else if dialog.command_cursor < dialog.command.len() {
                 dialog.command_cursor += 1;
             }
@@ -300,7 +346,11 @@ pub fn handle_run_command_dialog_input(key: event::KeyEvent, app: &mut App, clau
 /// confirm-delete (y/n) stay raw.
 pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Check if a delete confirmation is pending — only y confirms, anything else cancels
-    if let Some(del_idx) = app.preset_prompt_picker.as_ref().and_then(|p| p.confirm_delete) {
+    if let Some(del_idx) = app
+        .preset_prompt_picker
+        .as_ref()
+        .and_then(|p| p.confirm_delete)
+    {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if del_idx < app.preset_prompts.len() {
@@ -332,11 +382,15 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
     match key.code {
         KeyCode::Char(c @ '1'..='9') => {
             let idx = (c as usize) - ('1' as usize);
-            if idx < count { app.select_preset_prompt(idx); }
+            if idx < count {
+                app.select_preset_prompt(idx);
+            }
             return Ok(());
         }
         KeyCode::Char('0') => {
-            if count > 9 { app.select_preset_prompt(9); }
+            if count > 9 {
+                app.select_preset_prompt(9);
+            }
             return Ok(());
         }
         _ => {}
@@ -350,27 +404,43 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
     match action {
         Action::NavDown => {
             if let Some(ref mut picker) = app.preset_prompt_picker {
-                if picker.selected + 1 < count { picker.selected += 1; }
+                if picker.selected + 1 < count {
+                    picker.selected += 1;
+                }
             }
         }
         Action::NavUp => {
             if let Some(ref mut picker) = app.preset_prompt_picker {
-                if picker.selected > 0 { picker.selected -= 1; }
+                if picker.selected > 0 {
+                    picker.selected -= 1;
+                }
             }
         }
         Action::Confirm => {
-            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .preset_prompt_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             app.select_preset_prompt(idx);
         }
         Action::EditSelected => {
-            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .preset_prompt_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             if let Some(preset) = app.preset_prompts.get(idx) {
                 app.preset_prompt_dialog = Some(PresetPromptDialog::edit(idx, preset));
             }
             app.preset_prompt_picker = None;
         }
         Action::DeleteSelected => {
-            let idx = app.preset_prompt_picker.as_ref().map(|p| p.selected).unwrap_or(0);
+            let idx = app
+                .preset_prompt_picker
+                .as_ref()
+                .map(|p| p.selected)
+                .unwrap_or(0);
             if idx < count {
                 if let Some(ref mut picker) = app.preset_prompt_picker {
                     picker.confirm_delete = Some(idx);
@@ -381,7 +451,9 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
             app.preset_prompt_picker = None;
             app.preset_prompt_dialog = Some(PresetPromptDialog::new());
         }
-        Action::Escape => { app.preset_prompt_picker = None; }
+        Action::Escape => {
+            app.preset_prompt_picker = None;
+        }
         _ => {}
     }
     Ok(())
@@ -391,7 +463,9 @@ pub fn handle_preset_prompt_picker_input(key: event::KeyEvent, app: &mut App) ->
 /// Tab toggles between name and prompt fields, ⌃s toggles global scope,
 /// Enter saves, Esc cancels. Text input keys stay raw.
 pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    let Some(ref mut dialog) = app.preset_prompt_dialog else { return Ok(()) };
+    let Some(ref mut dialog) = app.preset_prompt_dialog else {
+        return Ok(());
+    };
 
     // ⌃s toggles global/project scope (works from any field)
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
@@ -402,11 +476,15 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
     match key.code {
         // Tab: advance from name to prompt field
         KeyCode::Tab => {
-            if dialog.editing_name { dialog.editing_name = false; }
+            if dialog.editing_name {
+                dialog.editing_name = false;
+            }
         }
         // Shift+Tab: go back to name field
         KeyCode::BackTab => {
-            if !dialog.editing_name { dialog.editing_name = true; }
+            if !dialog.editing_name {
+                dialog.editing_name = true;
+            }
         }
         // Enter: advance name→prompt, or save when in prompt field
         KeyCode::Enter => {
@@ -428,7 +506,9 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
             let is_global = dialog.global;
             let preset = PresetPrompt::new(name.clone(), prompt, is_global);
             if let Some(idx) = editing_idx {
-                if idx < app.preset_prompts.len() { app.preset_prompts[idx] = preset; }
+                if idx < app.preset_prompts.len() {
+                    app.preset_prompts[idx] = preset;
+                }
             } else {
                 if app.preset_prompts.len() >= 10 {
                     app.set_status("Maximum 10 preset prompts reached");
@@ -451,12 +531,22 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
         KeyCode::Backspace => {
             if dialog.editing_name {
                 if dialog.name_cursor > 0 {
-                    let byte_pos = dialog.name.char_indices().nth(dialog.name_cursor - 1).map(|(i, _)| i).unwrap_or(0);
+                    let byte_pos = dialog
+                        .name
+                        .char_indices()
+                        .nth(dialog.name_cursor - 1)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
                     dialog.name.remove(byte_pos);
                     dialog.name_cursor -= 1;
                 }
             } else if dialog.prompt_cursor > 0 {
-                let byte_pos = dialog.prompt.char_indices().nth(dialog.prompt_cursor - 1).map(|(i, _)| i).unwrap_or(0);
+                let byte_pos = dialog
+                    .prompt
+                    .char_indices()
+                    .nth(dialog.prompt_cursor - 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
                 dialog.prompt.remove(byte_pos);
                 dialog.prompt_cursor -= 1;
             }
@@ -470,18 +560,30 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
         }
         KeyCode::Right => {
             if dialog.editing_name {
-                if dialog.name_cursor < dialog.name.chars().count() { dialog.name_cursor += 1; }
+                if dialog.name_cursor < dialog.name.chars().count() {
+                    dialog.name_cursor += 1;
+                }
             } else if dialog.prompt_cursor < dialog.prompt.chars().count() {
                 dialog.prompt_cursor += 1;
             }
         }
         KeyCode::Char(c) => {
             if dialog.editing_name {
-                let byte_pos = dialog.name.char_indices().nth(dialog.name_cursor).map(|(i, _)| i).unwrap_or(dialog.name.len());
+                let byte_pos = dialog
+                    .name
+                    .char_indices()
+                    .nth(dialog.name_cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(dialog.name.len());
                 dialog.name.insert(byte_pos, c);
                 dialog.name_cursor += 1;
             } else {
-                let byte_pos = dialog.prompt.char_indices().nth(dialog.prompt_cursor).map(|(i, _)| i).unwrap_or(dialog.prompt.len());
+                let byte_pos = dialog
+                    .prompt
+                    .char_indices()
+                    .nth(dialog.prompt_cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(dialog.prompt.len());
                 dialog.prompt.insert(byte_pos, c);
                 dialog.prompt_cursor += 1;
             }
@@ -495,7 +597,10 @@ pub fn handle_preset_prompt_dialog_input(key: event::KeyEvent, app: &mut App) ->
 /// Extracted for testability: applies the same 30-char limit used by spawn_run_command_prompt.
 fn format_run_cmd_display_name(cmd_name: &str) -> String {
     if cmd_name.chars().count() > 30 {
-        format!("[NewRunCmd] {}…", &cmd_name.chars().take(29).collect::<String>())
+        format!(
+            "[NewRunCmd] {}…",
+            &cmd_name.chars().take(29).collect::<String>()
+        )
     } else {
         format!("[NewRunCmd] {}", cmd_name)
     }
@@ -503,7 +608,12 @@ fn format_run_cmd_display_name(cmd_name: &str) -> String {
 
 /// Spawn a Claude session on the main branch to generate a run command from a prompt.
 /// Claude reads/writes `.azureal/runcmds` and adds the new entry.
-fn spawn_run_command_prompt(app: &mut App, claude_process: &AgentProcess, cmd_name: &str, user_prompt: &str) {
+fn spawn_run_command_prompt(
+    app: &mut App,
+    claude_process: &AgentProcess,
+    cmd_name: &str,
+    user_prompt: &str,
+) {
     if app.project.is_none() {
         app.set_status("No project loaded");
         return;
@@ -542,9 +652,15 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &AgentProcess, cmd_na
     let display_name = format_run_cmd_display_name(cmd_name);
     // Spawn Claude on current worktree (resume existing session if any)
     let resume_id = app.get_claude_session_id(&branch).cloned();
-    match claude_process.spawn(&wt_path, &prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
+    match claude_process.spawn(
+        &wt_path,
+        &prompt,
+        resume_id.as_deref(),
+        app.selected_model.as_deref(),
+    ) {
         Ok((rx, pid)) => {
-            app.pending_session_names.push((pid.to_string(), display_name));
+            app.pending_session_names
+                .push((pid.to_string(), display_name));
             app.register_claude(branch, pid, rx);
             app.focus = Focus::Session;
             app.set_status(format!("Generating run command: {}...", cmd_name));
@@ -556,7 +672,7 @@ fn spawn_run_command_prompt(app: &mut App, claude_process: &AgentProcess, cmd_na
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     /// Helper to build a plain KeyEvent (no modifiers)
     fn key(code: KeyCode) -> KeyEvent {
@@ -590,7 +706,10 @@ mod tests {
     #[test]
     fn display_name_exactly_30_chars() {
         let name = "a".repeat(30);
-        assert_eq!(format_run_cmd_display_name(&name), format!("[NewRunCmd] {}", name));
+        assert_eq!(
+            format_run_cmd_display_name(&name),
+            format!("[NewRunCmd] {}", name)
+        );
     }
 
     #[test]
@@ -620,7 +739,10 @@ mod tests {
 
     #[test]
     fn display_name_spaces_preserved() {
-        assert_eq!(format_run_cmd_display_name("My Build"), "[NewRunCmd] My Build");
+        assert_eq!(
+            format_run_cmd_display_name("My Build"),
+            "[NewRunCmd] My Build"
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1040,7 +1162,10 @@ mod tests {
 
     #[test]
     fn ctrl_s_with_extra_shift_still_contains_control() {
-        let k = key_mod(KeyCode::Char('s'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+        let k = key_mod(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
         assert!(k.modifiers.contains(KeyModifiers::CONTROL));
     }
 

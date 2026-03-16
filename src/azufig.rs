@@ -102,7 +102,9 @@ fn default_hidden() -> Vec<String> {
 
 impl Default for AzufigFiletree {
     fn default() -> Self {
-        Self { hidden: default_hidden() }
+        Self {
+            hidden: default_hidden(),
+        }
     }
 }
 
@@ -183,7 +185,9 @@ pub fn set_auto_rebase(project_root: &Path, branch: &str, enabled: bool) {
 /// Load all branches with auto-rebase enabled from the project-local azufig.
 pub fn load_auto_rebase_branches(project_root: &Path) -> std::collections::HashSet<String> {
     let azufig = load_project_azufig(project_root);
-    azufig.git.iter()
+    azufig
+        .git
+        .iter()
         .filter(|(k, v)| k.starts_with("auto-rebase/") && v == &"true")
         .map(|(k, _)| k.strip_prefix("auto-rebase/").unwrap().to_string())
         .collect()
@@ -198,7 +202,9 @@ const DEFAULT_AUTO_RESOLVE: &[&str] = &["AGENTS.md", "CHANGELOG.md", "README.md"
 /// Returns the default list when no config exists yet.
 pub fn load_auto_resolve_files(project_root: &Path) -> Vec<String> {
     let azufig = load_project_azufig(project_root);
-    let files: Vec<String> = azufig.git.iter()
+    let files: Vec<String> = azufig
+        .git
+        .iter()
         .filter(|(k, v)| k.starts_with("auto-resolve/") && *v == "true")
         .map(|(k, _)| k.strip_prefix("auto-resolve/").unwrap().to_string())
         .collect();
@@ -214,7 +220,9 @@ pub fn save_auto_resolve_files(project_root: &Path, files: &[String]) {
     update_project_azufig(project_root, |azufig| {
         azufig.git.retain(|k, _| !k.starts_with("auto-resolve/"));
         for file in files {
-            azufig.git.insert(format!("auto-resolve/{}", file), "true".into());
+            azufig
+                .git
+                .insert(format!("auto-resolve/{}", file), "true".into());
         }
     });
 }
@@ -271,7 +279,9 @@ fn strip_unnecessary_key_quotes(toml_str: &str) -> String {
 
 /// Check if a string qualifies as a TOML bare key (only A-Z, a-z, 0-9, _, -).
 fn is_bare_key(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 // ── Migration ──
@@ -281,7 +291,9 @@ fn is_bare_key(s: &str) -> bool {
 /// old file is ignored (user can clean it up manually).
 fn migrate_old_azufig(dir: &Path) {
     let new_path = dir.join(AZUFIG_FILENAME);
-    if new_path.exists() { return; }
+    if new_path.exists() {
+        return;
+    }
     let old_path = dir.join("azufig");
     if old_path.is_file() {
         let _ = std::fs::rename(&old_path, &new_path);
@@ -364,7 +376,10 @@ mod tests {
     fn test_strip_quotes_mixed() {
         let input = "\"bare_ok\" = \"val1\"\n\"has spaces\" = \"val2\"\n\"also-ok\" = \"val3\"\n";
         let result = strip_unnecessary_key_quotes(input);
-        assert_eq!(result, "bare_ok = \"val1\"\n\"has spaces\" = \"val2\"\nalso-ok = \"val3\"\n");
+        assert_eq!(
+            result,
+            "bare_ok = \"val1\"\n\"has spaces\" = \"val2\"\nalso-ok = \"val3\"\n"
+        );
     }
 
     #[test]
@@ -445,8 +460,10 @@ mod tests {
     #[test]
     fn test_global_azufig_toml_roundtrip() {
         let mut az = GlobalAzufig::default();
-        az.projects.insert("MyProject".to_string(), "~/dev/myproject".to_string());
-        az.runcmds.insert("1_Build".to_string(), "cargo build".to_string());
+        az.projects
+            .insert("MyProject".to_string(), "~/dev/myproject".to_string());
+        az.runcmds
+            .insert("1_Build".to_string(), "cargo build".to_string());
 
         let toml_str = toml::to_string_pretty(&az).unwrap();
         let parsed: GlobalAzufig = toml::from_str(&toml_str).unwrap();
@@ -458,7 +475,8 @@ mod tests {
     #[test]
     fn test_project_azufig_toml_roundtrip() {
         let mut az = ProjectAzufig::default();
-        az.git.insert("auto-rebase/feature".to_string(), "true".to_string());
+        az.git
+            .insert("auto-rebase/feature".to_string(), "true".to_string());
 
         let toml_str = toml::to_string_pretty(&az).unwrap();
         let parsed: ProjectAzufig = toml::from_str(&toml_str).unwrap();
@@ -489,21 +507,33 @@ mod tests {
     #[test]
     fn test_bare_key_all_lowercase_letters() {
         for c in 'a'..='z' {
-            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+            assert!(
+                is_bare_key(&c.to_string()),
+                "'{}' should be a valid bare key char",
+                c
+            );
         }
     }
 
     #[test]
     fn test_bare_key_all_uppercase_letters() {
         for c in 'A'..='Z' {
-            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+            assert!(
+                is_bare_key(&c.to_string()),
+                "'{}' should be a valid bare key char",
+                c
+            );
         }
     }
 
     #[test]
     fn test_bare_key_all_digits() {
         for c in '0'..='9' {
-            assert!(is_bare_key(&c.to_string()), "'{}' should be a valid bare key char", c);
+            assert!(
+                is_bare_key(&c.to_string()),
+                "'{}' should be a valid bare key char",
+                c
+            );
         }
     }
 
@@ -529,7 +559,11 @@ mod tests {
     fn test_bare_key_invalid_ascii_printable() {
         let invalid = "!\"#$%&'()*+,./:;<>?@[\\]^`{|}~";
         for c in invalid.chars() {
-            assert!(!is_bare_key(&c.to_string()), "'{}' should NOT be a valid bare key char", c);
+            assert!(
+                !is_bare_key(&c.to_string()),
+                "'{}' should NOT be a valid bare key char",
+                c
+            );
         }
     }
 
@@ -588,7 +622,10 @@ mod tests {
     fn test_strip_quotes_nested_sections() {
         let input = "[section]\n\"key1\" = \"val1\"\n\n[other]\n\"key2\" = \"val2\"\n";
         let result = strip_unnecessary_key_quotes(input);
-        assert_eq!(result, "[section]\nkey1 = \"val1\"\n\n[other]\nkey2 = \"val2\"\n");
+        assert_eq!(
+            result,
+            "[section]\nkey1 = \"val1\"\n\n[other]\nkey2 = \"val2\"\n"
+        );
     }
 
     #[test]
@@ -811,13 +848,20 @@ verbose = true
         // Verify alphabetical-ish order (AGENTS, CHANGELOG, README, CLAUDE)
         // Actually the order is as defined, not alphabetical
         let files: Vec<&str> = DEFAULT_AUTO_RESOLVE.to_vec();
-        assert_eq!(files, vec!["AGENTS.md", "CHANGELOG.md", "README.md", "CLAUDE.md"]);
+        assert_eq!(
+            files,
+            vec!["AGENTS.md", "CHANGELOG.md", "README.md", "CLAUDE.md"]
+        );
     }
 
     #[test]
     fn test_default_auto_resolve_all_markdown() {
         for file in DEFAULT_AUTO_RESOLVE {
-            assert!(file.ends_with(".md"), "auto-resolve file '{}' should end with .md", file);
+            assert!(
+                file.ends_with(".md"),
+                "auto-resolve file '{}' should end with .md",
+                file
+            );
         }
     }
 

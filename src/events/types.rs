@@ -256,16 +256,17 @@ mod tests {
         }"#;
         let event: ClaudeCodeEvent = serde_json::from_str(json_str).unwrap();
         match event {
-            ClaudeCodeEvent::Assistant(asst) => {
-                match &asst.message.content[0] {
-                    ContentBlock::ToolUse { id, name, input } => {
-                        assert_eq!(id, "tu-1");
-                        assert_eq!(name, "Read");
-                        assert_eq!(input.get("file_path").unwrap().as_str().unwrap(), "/src/main.rs");
-                    }
-                    _ => panic!("expected ToolUse block"),
+            ClaudeCodeEvent::Assistant(asst) => match &asst.message.content[0] {
+                ContentBlock::ToolUse { id, name, input } => {
+                    assert_eq!(id, "tu-1");
+                    assert_eq!(name, "Read");
+                    assert_eq!(
+                        input.get("file_path").unwrap().as_str().unwrap(),
+                        "/src/main.rs"
+                    );
                 }
-            }
+                _ => panic!("expected ToolUse block"),
+            },
             _ => panic!("expected Assistant event"),
         }
     }
@@ -369,7 +370,10 @@ mod tests {
         }"#;
         let block: ContentBlock = serde_json::from_str(json_str).unwrap();
         match block {
-            ContentBlock::ToolResult { tool_use_id, content } => {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+            } => {
                 assert_eq!(tool_use_id, "tu-99");
                 assert_eq!(content.as_str().unwrap(), "file contents here");
             }
@@ -470,7 +474,8 @@ mod tests {
 
     #[test]
     fn test_content_block_tool_use_isolation() {
-        let json_str = r#"{"type": "tool_use", "id": "tu-abc", "name": "Bash", "input": {"command": "ls"}}"#;
+        let json_str =
+            r#"{"type": "tool_use", "id": "tu-abc", "name": "Bash", "input": {"command": "ls"}}"#;
         let block: ContentBlock = serde_json::from_str(json_str).unwrap();
         match block {
             ContentBlock::ToolUse { id, name, input } => {
@@ -499,7 +504,10 @@ mod tests {
         let json_str = r#"{"type": "tool_result", "tool_use_id": "tu-5", "content": {"key": "value", "count": 42}}"#;
         let block: ContentBlock = serde_json::from_str(json_str).unwrap();
         match block {
-            ContentBlock::ToolResult { tool_use_id, content } => {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+            } => {
                 assert_eq!(tool_use_id, "tu-5");
                 assert_eq!(content.get("key").unwrap().as_str().unwrap(), "value");
                 assert_eq!(content.get("count").unwrap().as_u64().unwrap(), 42);
@@ -510,7 +518,8 @@ mod tests {
 
     #[test]
     fn test_content_block_tool_result_array_content() {
-        let json_str = r#"{"type": "tool_result", "tool_use_id": "tu-6", "content": ["line1", "line2"]}"#;
+        let json_str =
+            r#"{"type": "tool_result", "tool_use_id": "tu-6", "content": ["line1", "line2"]}"#;
         let block: ContentBlock = serde_json::from_str(json_str).unwrap();
         match block {
             ContentBlock::ToolResult { content, .. } => {
@@ -670,8 +679,14 @@ mod tests {
     #[test]
     fn test_serialize_system_has_type_tag() {
         let event = ClaudeCodeEvent::System(SystemEvent {
-            subtype: "init".into(), session_id: "s".into(), uuid: "u".into(),
-            cwd: None, tools: None, model: None, hook_name: None, output: None,
+            subtype: "init".into(),
+            session_id: "s".into(),
+            uuid: "u".into(),
+            cwd: None,
+            tools: None,
+            model: None,
+            hook_name: None,
+            output: None,
         });
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "system");
@@ -680,8 +695,12 @@ mod tests {
     #[test]
     fn test_serialize_user_has_type_tag() {
         let event = ClaudeCodeEvent::User(UserEvent {
-            message: UserMessage { role: "user".into(), content: "hi".into() },
-            session_id: "s".into(), uuid: "u".into(),
+            message: UserMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            },
+            session_id: "s".into(),
+            uuid: "u".into(),
         });
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "user");
@@ -691,10 +710,15 @@ mod tests {
     fn test_serialize_assistant_has_type_tag() {
         let event = ClaudeCodeEvent::Assistant(AssistantEvent {
             message: AssistantMessage {
-                id: "m".into(), model: "claude".into(), role: "assistant".into(),
-                content: vec![], stop_reason: None, usage: None,
+                id: "m".into(),
+                model: "claude".into(),
+                role: "assistant".into(),
+                content: vec![],
+                stop_reason: None,
+                usage: None,
             },
-            session_id: "s".into(), uuid: "u".into(),
+            session_id: "s".into(),
+            uuid: "u".into(),
         });
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "assistant");
@@ -703,9 +727,14 @@ mod tests {
     #[test]
     fn test_serialize_result_has_type_tag() {
         let event = ClaudeCodeEvent::Result(ResultEvent {
-            subtype: "success".into(), session_id: "s".into(), result: None,
-            is_error: false, duration_ms: None, total_cost_usd: None,
-            num_turns: None, uuid: "u".into(),
+            subtype: "success".into(),
+            session_id: "s".into(),
+            result: None,
+            is_error: false,
+            duration_ms: None,
+            total_cost_usd: None,
+            num_turns: None,
+            uuid: "u".into(),
         });
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "result");
@@ -825,9 +854,15 @@ mod tests {
             ClaudeCodeEvent::Assistant(a) => {
                 assert_eq!(a.message.content.len(), 4);
                 assert!(matches!(&a.message.content[0], ContentBlock::Text { .. }));
-                assert!(matches!(&a.message.content[1], ContentBlock::ToolUse { .. }));
+                assert!(matches!(
+                    &a.message.content[1],
+                    ContentBlock::ToolUse { .. }
+                ));
                 assert!(matches!(&a.message.content[2], ContentBlock::Text { .. }));
-                assert!(matches!(&a.message.content[3], ContentBlock::ToolUse { .. }));
+                assert!(matches!(
+                    &a.message.content[3],
+                    ContentBlock::ToolUse { .. }
+                ));
             }
             _ => panic!("expected Assistant event"),
         }
@@ -897,7 +932,10 @@ mod tests {
             ClaudeCodeEvent::Result(r) => {
                 assert_eq!(r.subtype, "success");
                 assert_eq!(r.session_id, "sess-full");
-                assert_eq!(r.result, Some("All tasks completed successfully.".to_string()));
+                assert_eq!(
+                    r.result,
+                    Some("All tasks completed successfully.".to_string())
+                );
                 assert!(!r.is_error);
                 assert_eq!(r.duration_ms, Some(123456));
                 assert_eq!(r.total_cost_usd, Some(1.2345));
@@ -943,7 +981,10 @@ mod tests {
         let event: ClaudeCodeEvent = serde_json::from_str(json_str).unwrap();
         match event {
             ClaudeCodeEvent::User(u) => {
-                assert_eq!(u.message.content, "Hello <world> & \"quotes\" 'apostrophes'");
+                assert_eq!(
+                    u.message.content,
+                    "Hello <world> & \"quotes\" 'apostrophes'"
+                );
             }
             _ => panic!("expected User event"),
         }
@@ -1127,7 +1168,9 @@ mod tests {
                 model: "claude-opus-4-6".into(),
                 role: "assistant".into(),
                 content: vec![
-                    ContentBlock::Text { text: "Hello".into() },
+                    ContentBlock::Text {
+                        text: "Hello".into(),
+                    },
                     ContentBlock::ToolUse {
                         id: "t-rt".into(),
                         name: "Read".into(),
@@ -1164,7 +1207,9 @@ mod tests {
 
     #[test]
     fn test_content_block_text_serialization() {
-        let block = ContentBlock::Text { text: "hello".into() };
+        let block = ContentBlock::Text {
+            text: "hello".into(),
+        };
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "text");
         assert_eq!(json.get("text").unwrap().as_str().unwrap(), "hello");
@@ -1173,7 +1218,9 @@ mod tests {
     #[test]
     fn test_content_block_tool_use_serialization() {
         let block = ContentBlock::ToolUse {
-            id: "t1".into(), name: "Bash".into(), input: serde_json::json!({"cmd": "ls"}),
+            id: "t1".into(),
+            name: "Bash".into(),
+            input: serde_json::json!({"cmd": "ls"}),
         };
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "tool_use");
@@ -1183,7 +1230,8 @@ mod tests {
     #[test]
     fn test_content_block_tool_result_serialization() {
         let block = ContentBlock::ToolResult {
-            tool_use_id: "t1".into(), content: serde_json::json!("output"),
+            tool_use_id: "t1".into(),
+            content: serde_json::json!("output"),
         };
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json.get("type").unwrap().as_str().unwrap(), "tool_result");

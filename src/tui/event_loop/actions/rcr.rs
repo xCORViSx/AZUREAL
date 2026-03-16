@@ -52,7 +52,9 @@ pub(super) fn accept_rcr(app: &mut App) {
                         Err(e) => format!(" (main push failed: {})", e),
                     };
                     // Fast-forward feature branch to main so divergence indicators reset
-                    let main_branch = app.project.as_ref()
+                    let main_branch = app
+                        .project
+                        .as_ref()
                         .map(|p| p.main_branch.as_str())
                         .unwrap_or("main");
                     let _ = std::process::Command::new("git")
@@ -75,7 +77,10 @@ pub(super) fn accept_rcr(app: &mut App) {
                     ));
                 }
                 Err(e) => {
-                    app.set_status(format!("Squash merge failed for {}: {}", rcr.display_name, e));
+                    app.set_status(format!(
+                        "Squash merge failed for {}: {}",
+                        rcr.display_name, e
+                    ));
                 }
             }
         } else {
@@ -84,7 +89,10 @@ pub(super) fn accept_rcr(app: &mut App) {
                 Ok(_) => " → pushed".to_string(),
                 Err(e) => format!(" (push failed: {})", e),
             };
-            app.set_status(format!("Rebase complete — conflicts resolved for {}{}", rcr.display_name, push_note));
+            app.set_status(format!(
+                "Rebase complete — conflicts resolved for {}{}",
+                rcr.display_name, push_note
+            ));
         }
     }
 }
@@ -225,8 +233,13 @@ mod tests {
         accept_rcr(&mut app);
         // Status should mention rebase complete
         let status = app.status_message.as_deref().unwrap_or("");
-        assert!(status.contains("Rebase complete") || status.contains("push failed")
-            || status.contains("feat"), "Status: {}", status);
+        assert!(
+            status.contains("Rebase complete")
+                || status.contains("push failed")
+                || status.contains("feat"),
+            "Status: {}",
+            status
+        );
     }
 
     #[test]
@@ -235,7 +248,11 @@ mod tests {
         app.rcr_session = Some(make_rcr("my-branch", false));
         accept_rcr(&mut app);
         let status = app.status_message.as_deref().unwrap_or("");
-        assert!(status.contains("my-branch"), "Status should mention branch name: {}", status);
+        assert!(
+            status.contains("my-branch"),
+            "Status should mention branch name: {}",
+            status
+        );
     }
 
     // ── accept_rcr with continue_with_merge ──
@@ -415,8 +432,11 @@ mod tests {
         accept_rcr(&mut app);
         let s = app.status_message.as_deref().unwrap_or("");
         // The status must contain either "Rebase complete" or "push" references
-        assert!(s.contains("Rebase complete") || s.contains("push") || s.contains("my-feature"),
-            "Unexpected status: {}", s);
+        assert!(
+            s.contains("Rebase complete") || s.contains("push") || s.contains("my-feature"),
+            "Unexpected status: {}",
+            s
+        );
     }
 
     // ── accept_rcr clears rcr_session before any git ops ──
@@ -427,7 +447,10 @@ mod tests {
             let mut app = App::new();
             app.rcr_session = Some(make_rcr("test", continue_merge));
             accept_rcr(&mut app);
-            assert!(app.rcr_session.is_none(), "rcr_session must be None after accept_rcr");
+            assert!(
+                app.rcr_session.is_none(),
+                "rcr_session must be None after accept_rcr"
+            );
         }
     }
 
@@ -542,7 +565,10 @@ mod tests {
     #[test]
     fn test_rcr_session_worktree_path_is_absolute() {
         let rcr = make_rcr("b", false);
-        assert!(rcr.worktree_path.is_absolute(), "worktree_path should be absolute");
+        assert!(
+            rcr.worktree_path.is_absolute(),
+            "worktree_path should be absolute"
+        );
     }
 
     #[test]

@@ -12,16 +12,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
-use crate::app::types::ProjectsPanelMode;
-use crate::config::display_path;
 use super::keybindings;
 use super::util::AZURE;
+use crate::app::types::ProjectsPanelMode;
+use crate::app::App;
+use crate::config::display_path;
 
 /// Draw the full-screen Projects panel modal.
 /// Takes over the entire screen — caller should return early after this.
 pub fn draw_projects_panel(f: &mut Frame, app: &App) {
-    let Some(ref panel) = app.projects_panel else { return };
+    let Some(ref panel) = app.projects_panel else {
+        return;
+    };
     let area = f.area();
 
     // Center a modal box (60% width, 70% height, min 40x10)
@@ -99,7 +101,10 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
             let mut h = vec![Span::raw(" ")];
             for (key, label) in pairs {
                 h.push(Span::styled(key, Style::default().fg(AZURE)));
-                h.push(Span::styled(format!(":{} ", label), Style::default().fg(Color::DarkGray)));
+                h.push(Span::styled(
+                    format!(":{} ", label),
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
             h
         }
@@ -124,27 +129,38 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
     };
 
     // Split modal: list area + error + input field + key hints
-    let input_height = if panel.mode != ProjectsPanelMode::Browse { 3 } else { 0 };
+    let input_height = if panel.mode != ProjectsPanelMode::Browse {
+        3
+    } else {
+        0
+    };
     let error_height: u16 = if panel.error.is_some() { 1 } else { 0 };
     let chunks = Layout::vertical([
-        Constraint::Min(3),                                  // project list
-        Constraint::Length(error_height),                    // error (visible in ANY mode)
-        Constraint::Length(input_height),                    // input field (only in input modes)
-        Constraint::Length(1),                               // key hints
-    ]).split(modal);
+        Constraint::Min(3),               // project list
+        Constraint::Length(error_height), // error (visible in ANY mode)
+        Constraint::Length(input_height), // input field (only in input modes)
+        Constraint::Length(1),            // key hints
+    ])
+    .split(modal);
 
     // Render the project list with border
-    let list_widget = Paragraph::new(lines)
-        .block(Block::default()
+    let list_widget = Paragraph::new(lines).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(AZURE))
-            .title(Span::styled(" Projects ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
-            .title(Line::from(Span::styled(
-                format!(" {} ", panel.entries.len()),
-                Style::default().fg(Color::DarkGray),
-            )).alignment(Alignment::Right))
-        );
+            .title(Span::styled(
+                " Projects ",
+                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+            ))
+            .title(
+                Line::from(Span::styled(
+                    format!(" {} ", panel.entries.len()),
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .alignment(Alignment::Right),
+            ),
+    );
     f.render_widget(list_widget, chunks[0]);
 
     // Error message — shown in ALL modes (Browse, AddPath, Rename, Init)
@@ -169,11 +185,11 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
             Span::styled(prompt, Style::default().fg(AZURE)),
             Span::raw(&panel.input),
         ]);
-        let input_widget = Paragraph::new(input_line)
-            .block(Block::default()
+        let input_widget = Paragraph::new(input_line).block(
+            Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
-            );
+                .border_style(Style::default().fg(Color::Yellow)),
+        );
         f.render_widget(input_widget, chunks[2]);
 
         // Cursor position in input field
@@ -191,10 +207,10 @@ pub fn draw_projects_panel(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::config::ProjectEntry;
     use ratatui::layout::{Constraint, Layout, Rect};
     use ratatui::style::{Color, Modifier, Style};
-    use crate::config::ProjectEntry;
+    use std::path::PathBuf;
 
     // ══════════════════════════════════════════════════════════════════
     //  AZURE constant
@@ -262,9 +278,18 @@ mod tests {
 
     fn sample_entries() -> Vec<ProjectEntry> {
         vec![
-            ProjectEntry { path: PathBuf::from("/home/user/proj1"), display_name: "Project One".to_string() },
-            ProjectEntry { path: PathBuf::from("/home/user/proj2"), display_name: "Project Two".to_string() },
-            ProjectEntry { path: PathBuf::from("/home/user/proj3"), display_name: "Project Three".to_string() },
+            ProjectEntry {
+                path: PathBuf::from("/home/user/proj1"),
+                display_name: "Project One".to_string(),
+            },
+            ProjectEntry {
+                path: PathBuf::from("/home/user/proj2"),
+                display_name: "Project Two".to_string(),
+            },
+            ProjectEntry {
+                path: PathBuf::from("/home/user/proj3"),
+                display_name: "Project Three".to_string(),
+            },
         ]
     }
 
@@ -571,14 +596,22 @@ mod tests {
     #[test]
     fn indicator_color_current_green() {
         let is_current = true;
-        let color = if is_current { Color::Green } else { Color::DarkGray };
+        let color = if is_current {
+            Color::Green
+        } else {
+            Color::DarkGray
+        };
         assert_eq!(color, Color::Green);
     }
 
     #[test]
     fn indicator_color_not_current_gray() {
         let is_current = false;
-        let color = if is_current { Color::Green } else { Color::DarkGray };
+        let color = if is_current {
+            Color::Green
+        } else {
+            Color::DarkGray
+        };
         assert_eq!(color, Color::DarkGray);
     }
 
@@ -615,28 +648,44 @@ mod tests {
     #[test]
     fn input_height_browse_is_zero() {
         let mode = ProjectsPanelMode::Browse;
-        let h = if mode != ProjectsPanelMode::Browse { 3u16 } else { 0u16 };
+        let h = if mode != ProjectsPanelMode::Browse {
+            3u16
+        } else {
+            0u16
+        };
         assert_eq!(h, 0);
     }
 
     #[test]
     fn input_height_add_is_three() {
         let mode = ProjectsPanelMode::AddPath;
-        let h = if mode != ProjectsPanelMode::Browse { 3u16 } else { 0u16 };
+        let h = if mode != ProjectsPanelMode::Browse {
+            3u16
+        } else {
+            0u16
+        };
         assert_eq!(h, 3);
     }
 
     #[test]
     fn input_height_rename_is_three() {
         let mode = ProjectsPanelMode::Rename;
-        let h = if mode != ProjectsPanelMode::Browse { 3u16 } else { 0u16 };
+        let h = if mode != ProjectsPanelMode::Browse {
+            3u16
+        } else {
+            0u16
+        };
         assert_eq!(h, 3);
     }
 
     #[test]
     fn input_height_init_is_three() {
         let mode = ProjectsPanelMode::Init;
-        let h = if mode != ProjectsPanelMode::Browse { 3u16 } else { 0u16 };
+        let h = if mode != ProjectsPanelMode::Browse {
+            3u16
+        } else {
+            0u16
+        };
         assert_eq!(h, 3);
     }
 
@@ -712,7 +761,8 @@ mod tests {
             Constraint::Length(error_height),
             Constraint::Length(input_height),
             Constraint::Length(1),
-        ]).split(modal);
+        ])
+        .split(modal);
         assert_eq!(chunks.len(), 4);
         assert_eq!(chunks[1].height, 1);
         assert_eq!(chunks[2].height, 3);

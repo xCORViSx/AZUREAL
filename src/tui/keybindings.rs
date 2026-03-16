@@ -24,32 +24,27 @@ mod types;
 // Re-export all public items so existing `use super::keybindings::*` paths work unchanged.
 
 // Types
-pub use types::{KeyCombo, Action, Keybinding, HelpSection};
+pub use types::{Action, HelpSection, KeyCombo, Keybinding};
 
 // Binding arrays
 pub use bindings::{
-    GLOBAL, WORKTREES, FILE_TREE, VIEWER, EDIT_MODE, SESSION, INPUT, TERMINAL,
-    HEALTH_SHARED, HEALTH_GOD_FILES, HEALTH_DOCS,
-    GIT_ACTIONS, PROJECTS_BROWSE, PICKER, BRANCH_DIALOG,
+    BRANCH_DIALOG, EDIT_MODE, FILE_TREE, GIT_ACTIONS, GLOBAL, HEALTH_DOCS, HEALTH_GOD_FILES,
+    HEALTH_SHARED, INPUT, PICKER, PROJECTS_BROWSE, SESSION, TERMINAL, VIEWER, WORKTREES,
 };
 
 // Lookup functions + KeyContext
 pub use lookup::{
-    KeyContext, lookup_action,
-    lookup_health_action, lookup_git_actions_action,
-    lookup_projects_action, lookup_picker_action, lookup_branch_dialog_action,
+    lookup_action, lookup_branch_dialog_action, lookup_git_actions_action, lookup_health_action,
+    lookup_picker_action, lookup_projects_action, KeyContext,
 };
 
 // Hint generators
 pub use hints::{
-    help_sections,
-    prompt_type_title, prompt_command_title,
-    terminal_type_title, terminal_command_title, terminal_scroll_title,
-    health_god_files_hints, health_docs_hints,
-    git_actions_labels, git_actions_footer,
-    projects_browse_hint_pairs, picker_title, dialog_footer_hint_pairs,
-    find_key_for_action, find_key_pair,
+    dialog_footer_hint_pairs, find_key_for_action, find_key_pair, git_actions_footer,
+    git_actions_labels, health_docs_hints, health_god_files_hints, help_sections, picker_title,
+    projects_browse_hint_pairs, prompt_command_title, prompt_type_title, terminal_command_title,
+    terminal_scroll_title, terminal_type_title,
 };
 
 // Platform utilities
-pub use platform::{macos_opt_key, is_cmd, is_cmd_shift};
+pub use platform::{is_cmd, is_cmd_shift, macos_opt_key};

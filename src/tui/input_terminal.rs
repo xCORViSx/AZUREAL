@@ -5,10 +5,14 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
-use crate::tui::keybindings::{macos_opt_key, is_cmd};
+use crate::tui::keybindings::{is_cmd, macos_opt_key};
 
 /// Handle keyboard input when Input field is focused (terminal mode or Claude prompt)
-pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub fn handle_input_mode(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     // PTY Terminal mode - forward keys directly to shell
     if app.terminal_mode {
         if app.prompt_mode {
@@ -54,10 +58,15 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                     app.prompt_mode = true;
                 }
                 (_, KeyCode::Esc) => app.close_terminal(),
-                (KeyModifiers::NONE, KeyCode::Char('+')) | (KeyModifiers::NONE, KeyCode::Char('=')) => app.adjust_terminal_height(2),
+                (KeyModifiers::NONE, KeyCode::Char('+'))
+                | (KeyModifiers::NONE, KeyCode::Char('=')) => app.adjust_terminal_height(2),
                 (KeyModifiers::NONE, KeyCode::Char('-')) => app.adjust_terminal_height(-2),
-                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => app.scroll_terminal_up(1),
-                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => app.scroll_terminal_down(1),
+                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+                    app.scroll_terminal_up(1)
+                }
+                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+                    app.scroll_terminal_down(1)
+                }
                 (KeyModifiers::NONE, KeyCode::Char('K')) => app.scroll_terminal_up(10),
                 (KeyModifiers::NONE, KeyCode::Char('J')) => app.scroll_terminal_down(10),
                 // ⌥↑/⌥↓ scroll to top/bottom
@@ -109,7 +118,9 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
     match (key.modifiers, key.code) {
         (_, KeyCode::Esc) => app.prompt_mode = false,
         // ⌃s — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
-        (KeyModifiers::CONTROL, KeyCode::Char('s')) => { app.toggle_stt(); }
+        (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
+            app.toggle_stt();
+        }
         // ↑/↓ — browse prompt history (pulled from display_events UserMessage entries)
         (KeyModifiers::NONE, KeyCode::Up) => app.prompt_history_prev(),
         (KeyModifiers::NONE, KeyCode::Down) => app.prompt_history_next(),
@@ -119,41 +130,69 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
         // ⌥+number quick-select preset prompts (⌥1-⌥9 → presets 0-8, ⌥0 → preset 9)
         // macOS ⌥+number produces unicode (¡™£¢∞§¶•ªº) — intercept before text input
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
-            if macos_opt_key(c).map(|k| k.is_ascii_digit()).unwrap_or(false) =>
+            if macos_opt_key(c)
+                .map(|k| k.is_ascii_digit())
+                .unwrap_or(false) =>
         {
             let digit = macos_opt_key(c).unwrap();
-            let idx = if digit == '0' { 9 } else { (digit as usize) - ('1' as usize) };
+            let idx = if digit == '0' {
+                9
+            } else {
+                (digit as usize) - ('1' as usize)
+            };
             if idx < app.preset_prompts.len() {
                 app.select_preset_prompt(idx);
             }
         }
         // Regular character input - clears selection first if typing replaces it
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-            if app.has_input_selection() { app.input_delete_selection(); }
+            if app.has_input_selection() {
+                app.input_delete_selection();
+            }
             app.input_char(c);
         }
         (KeyModifiers::NONE, KeyCode::Backspace) => {
-            if app.has_input_selection() { app.input_delete_selection(); }
-            else { app.input_backspace(); }
+            if app.has_input_selection() {
+                app.input_delete_selection();
+            } else {
+                app.input_backspace();
+            }
         }
         (KeyModifiers::NONE, KeyCode::Delete) => {
-            if app.has_input_selection() { app.input_delete_selection(); }
-            else { app.input_delete(); }
+            if app.has_input_selection() {
+                app.input_delete_selection();
+            } else {
+                app.input_delete();
+            }
         }
         (KeyModifiers::NONE, KeyCode::Left) => app.input_left_select(false),
         (KeyModifiers::NONE, KeyCode::Right) => app.input_right_select(false),
-        (KeyModifiers::NONE, KeyCode::Home) => { app.input_clear_selection(); app.input_home(); }
-        (KeyModifiers::NONE, KeyCode::End) => { app.input_clear_selection(); app.input_end(); }
-        (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => { app.input_clear_selection(); app.input_word_left(); }
-        (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => { app.input_clear_selection(); app.input_word_right(); }
+        (KeyModifiers::NONE, KeyCode::Home) => {
+            app.input_clear_selection();
+            app.input_home();
+        }
+        (KeyModifiers::NONE, KeyCode::End) => {
+            app.input_clear_selection();
+            app.input_end();
+        }
+        (KeyModifiers::CONTROL, KeyCode::Left) | (KeyModifiers::ALT, KeyCode::Left) => {
+            app.input_clear_selection();
+            app.input_word_left();
+        }
+        (KeyModifiers::CONTROL, KeyCode::Right) | (KeyModifiers::ALT, KeyCode::Right) => {
+            app.input_clear_selection();
+            app.input_word_right();
+        }
         // ⌃w (universal Unix delete-word), ⌃Backspace (Linux/Windows)
-        (KeyModifiers::CONTROL, KeyCode::Char('w')) | (KeyModifiers::CONTROL, KeyCode::Backspace) => app.input_delete_word(),
+        (KeyModifiers::CONTROL, KeyCode::Char('w'))
+        | (KeyModifiers::CONTROL, KeyCode::Backspace) => app.input_delete_word(),
         // Shift+Enter — insert newline (Enter alone submits)
         // With DISAMBIGUATE_ESCAPE_CODES, Shift+Enter sends CSI 13;2u → (SHIFT, Enter).
         // ALT+Enter arm kept as safety net for Kitty-macOS edge cases.
-        (KeyModifiers::SHIFT, KeyCode::Enter)
-        | (KeyModifiers::ALT, KeyCode::Enter) => {
-            if app.has_input_selection() { app.input_delete_selection(); }
+        (KeyModifiers::SHIFT, KeyCode::Enter) | (KeyModifiers::ALT, KeyCode::Enter) => {
+            if app.has_input_selection() {
+                app.input_delete_selection();
+            }
             app.input_char('\n');
         }
         (KeyModifiers::NONE, KeyCode::Enter) => {
@@ -188,7 +227,9 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                     }
                 } else {
                     // Normal prompt flow — get session info: branch_name and worktree_path
-                    let session_data = app.current_worktree().map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
+                    let session_data = app
+                        .current_worktree()
+                        .map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
 
                     if let Some((branch_name, worktree_opt)) = session_data {
                         if let Some(wt_path) = worktree_opt {
@@ -239,25 +280,42 @@ pub fn handle_input_mode(key: event::KeyEvent, app: &mut App, claude_process: &A
                                     String::new()
                                 };
                                 app.ask_user_questions_cache = None;
-                                if ctx.is_empty() { input.clone() }
-                                else { format!("{}\n\nUser response: {}", ctx, input) }
+                                if ctx.is_empty() {
+                                    input.clone()
+                                } else {
+                                    format!("{}\n\nUser response: {}", ctx, input)
+                                }
                             } else {
                                 input.clone()
                             };
 
                             // Context injection: build conversation context from
                             // the store and inject it into the prompt. No --resume.
-                            let send_prompt = app.current_session_id
+                            let send_prompt = app
+                                .current_session_id
                                 .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
                                 .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                                .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &actual_prompt))
+                                .map(|payload| {
+                                    crate::app::context_injection::build_context_prompt(
+                                        &payload,
+                                        &actual_prompt,
+                                    )
+                                })
                                 .unwrap_or_else(|| actual_prompt.clone());
                             let resume_id: Option<String> = None;
-                            match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
+                            match claude_process.spawn(
+                                &wt_path,
+                                &send_prompt,
+                                resume_id.as_deref(),
+                                app.selected_model.as_deref(),
+                            ) {
                                 Ok((rx, pid)) => {
                                     // Set pid → session target so post-exit flow writes to correct session
                                     if let Some(sid) = app.current_session_id {
-                                        app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                                        app.pid_session_target.insert(
+                                            pid.to_string(),
+                                            (sid, wt_path.clone(), events_offset),
+                                        );
                                     }
                                     app.register_claude(branch_name, pid, rx);
                                     app.set_status("Running...");
@@ -288,16 +346,23 @@ fn build_ask_user_context(input: &serde_json::Value) -> String {
     let Some(questions) = input.get("questions").and_then(|v| v.as_array()) else {
         return String::new();
     };
-    let mut ctx = String::from("[SYSTEM: You just called AskUserQuestion. The user was shown these options:\n");
+    let mut ctx = String::from(
+        "[SYSTEM: You just called AskUserQuestion. The user was shown these options:\n",
+    );
     for (qi, q) in questions.iter().enumerate() {
         let text = q.get("question").and_then(|v| v.as_str()).unwrap_or("?");
-        let multi = q.get("multiSelect").and_then(|v| v.as_bool()).unwrap_or(false);
+        let multi = q
+            .get("multiSelect")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if questions.len() > 1 {
             ctx.push_str(&format!("\nQ{}: {}", qi + 1, text));
         } else {
             ctx.push_str(&format!("\n{}", text));
         }
-        if multi { ctx.push_str(" (multi-select)"); }
+        if multi {
+            ctx.push_str(" (multi-select)");
+        }
         if let Some(opts) = q.get("options").and_then(|v| v.as_array()) {
             for (i, opt) in opts.iter().enumerate() {
                 let label = opt.get("label").and_then(|v| v.as_str()).unwrap_or("?");
@@ -335,12 +400,30 @@ mod tests {
         });
         let ctx = build_ask_user_context(&input);
         assert!(ctx.contains("[SYSTEM:"), "Should start with system prefix");
-        assert!(ctx.contains("Use tiktoken-rs"), "Should include question text");
-        assert!(ctx.contains("1. tiktoken-rs (Recommended)"), "Should number first option");
-        assert!(ctx.contains("2. Character heuristic"), "Should number second option");
-        assert!(ctx.contains("3. Other (custom text)"), "Should include Other option");
-        assert!(!ctx.contains("multi-select"), "Single-select should not mention multi");
-        assert!(ctx.contains("Interpret numbers"), "Should explain number semantics");
+        assert!(
+            ctx.contains("Use tiktoken-rs"),
+            "Should include question text"
+        );
+        assert!(
+            ctx.contains("1. tiktoken-rs (Recommended)"),
+            "Should number first option"
+        );
+        assert!(
+            ctx.contains("2. Character heuristic"),
+            "Should number second option"
+        );
+        assert!(
+            ctx.contains("3. Other (custom text)"),
+            "Should include Other option"
+        );
+        assert!(
+            !ctx.contains("multi-select"),
+            "Single-select should not mention multi"
+        );
+        assert!(
+            ctx.contains("Interpret numbers"),
+            "Should explain number semantics"
+        );
     }
 
     /// Verifies multi-select questions are annotated.
@@ -355,7 +438,10 @@ mod tests {
             }]
         });
         let ctx = build_ask_user_context(&input);
-        assert!(ctx.contains("(multi-select)"), "Multi-select should be annotated");
+        assert!(
+            ctx.contains("(multi-select)"),
+            "Multi-select should be annotated"
+        );
     }
 
     /// Verifies multiple questions get Q1/Q2 prefixes.
@@ -378,8 +464,14 @@ mod tests {
             ]
         });
         let ctx = build_ask_user_context(&input);
-        assert!(ctx.contains("Q1: First?"), "Should prefix first question with Q1");
-        assert!(ctx.contains("Q2: Second?"), "Should prefix second question with Q2");
+        assert!(
+            ctx.contains("Q1: First?"),
+            "Should prefix first question with Q1"
+        );
+        assert!(
+            ctx.contains("Q2: Second?"),
+            "Should prefix second question with Q2"
+        );
     }
 
     /// Verifies missing/invalid questions field returns empty string (no panic).
@@ -720,7 +812,10 @@ mod tests {
             }]
         });
         let ctx = build_ask_user_context(&input);
-        assert!(!ctx.contains("Q1:"), "Single question should not have Q1 prefix");
+        assert!(
+            !ctx.contains("Q1:"),
+            "Single question should not have Q1 prefix"
+        );
         assert!(ctx.contains("\nOnly one?"));
     }
 
@@ -900,7 +995,10 @@ mod tests {
         let ctx = build_ask_user_context(&input);
         let first_pos = ctx.find("1. First").unwrap();
         let other_pos = ctx.find("4. Other").unwrap();
-        assert!(other_pos > first_pos, "Other should come after numbered options");
+        assert!(
+            other_pos > first_pos,
+            "Other should come after numbered options"
+        );
     }
 
     /// Each question's options get their own numbering starting from 1.
@@ -1049,7 +1147,10 @@ mod tests {
         // multi-select should be on the same line, right after question
         assert!(ms_pos > q_pos);
         let between = &ctx[q_pos..ms_pos];
-        assert!(!between.contains('\n'), "multi-select annotation should be on same line as question");
+        assert!(
+            !between.contains('\n'),
+            "multi-select annotation should be on same line as question"
+        );
     }
 
     /// Header field is ignored by build_ask_user_context (only used by UI renderer).

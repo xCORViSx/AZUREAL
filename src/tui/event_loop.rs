@@ -34,7 +34,7 @@ use crate::app::Focus;
 use crate::backend::AgentProcess;
 use crate::config::Config;
 
-use super::draw_output::{submit_render_request, poll_render_result};
+use super::draw_output::{poll_render_result, submit_render_request};
 use super::run::ui;
 
 use actions::handle_key_event;
@@ -63,7 +63,11 @@ pub async fn run_app(
             .ok()
     };
     if let Some(ref mut f) = profile_log {
-        let _ = writeln!(f, "\n=== Session started {:?} ===", std::time::SystemTime::now());
+        let _ = writeln!(
+            f,
+            "\n=== Session started {:?} ===",
+            std::time::SystemTime::now()
+        );
     }
 
     let mut last_draw = Instant::now();
@@ -76,10 +80,10 @@ pub async fn run_app(
     let min_draw_interval = Duration::from_millis(33); // ~30fps max
     let min_poll_interval = Duration::from_millis(500); // Poll session file max 2x/sec
     let min_animation_interval = Duration::from_millis(250); // 4fps for pulsating indicators
-    // Track last key event time so we can defer session pane updates while
-    // typing. This keeps terminal.draw() diffs small (input-only) near
-    // keystrokes, reducing terminal escape-sequence volume that causes
-    // terminal emulators to drop keyboard input.
+                                                             // Track last key event time so we can defer session pane updates while
+                                                             // typing. This keeps terminal.draw() diffs small (input-only) near
+                                                             // keystrokes, reducing terminal escape-sequence volume that causes
+                                                             // terminal emulators to drop keyboard input.
     let mut last_key_time = Instant::now() - Duration::from_secs(1);
 
     // Cache terminal size, update on resize events
@@ -95,7 +99,8 @@ pub async fn run_app(
     // Background JSON parser: Claude streaming events get parsed off the main
     // thread. Eliminates 10-50ms of serde_json::from_str() per tick that was
     // blocking input during Claude streaming.
-    let claude_proc = agent_processor::AgentProcessor::spawn(app.backend, app.display_model_name().to_string());
+    let claude_proc =
+        agent_processor::AgentProcessor::spawn(app.backend, app.display_model_name().to_string());
 
     // Initial draw
     terminal.draw(|f| ui(f, app))?;
@@ -127,18 +132,34 @@ pub async fn run_app(
         // The reader thread continuously reads stdin, so events are buffered
         // in the channel even during terminal.draw() or other blocking work.
         // If idle with no pending work, block briefly to avoid busy-spinning.
-        let commit_generating = app.git_actions_panel.as_ref()
+        let commit_generating = app
+            .git_actions_panel
+            .as_ref()
             .and_then(|p| p.commit_overlay.as_ref())
-            .map(|o| o.generating).unwrap_or(false);
-        let squash_merging = app.git_actions_panel.as_ref()
-            .map(|p| p.squash_merge_receiver.is_some()).unwrap_or(false);
-        let bg_pending = app.file_tree_receiver.is_some() || app.worktree_refresh_receiver.is_some()
-            || app.background_op_receiver.is_some() || app.rebase_op_receiver.is_some();
+            .map(|o| o.generating)
+            .unwrap_or(false);
+        let squash_merging = app
+            .git_actions_panel
+            .as_ref()
+            .map(|p| p.squash_merge_receiver.is_some())
+            .unwrap_or(false);
+        let bg_pending = app.file_tree_receiver.is_some()
+            || app.worktree_refresh_receiver.is_some()
+            || app.background_op_receiver.is_some()
+            || app.rebase_op_receiver.is_some();
         // Note: session_file_dirty, file_tree_refresh_pending, health_refresh_pending
         // are NOT included — they have their own debounce timers and don't need
         // the main loop to busy-spin. Including them caused sustained high CPU
         // when file watchers fired frequently (the debounce kept resetting).
-        let is_busy = app.draw_pending || app.render_in_flight || !app.agent_receivers.is_empty() || app.stt_recording || app.stt_transcribing || commit_generating || squash_merging || bg_pending || app.terminal_mode;
+        let is_busy = app.draw_pending
+            || app.render_in_flight
+            || !app.agent_receivers.is_empty()
+            || app.stt_recording
+            || app.stt_transcribing
+            || commit_generating
+            || squash_merging
+            || bg_pending
+            || app.terminal_mode;
 
         // First event: block briefly when idle so we don't spin the CPU
         let first_event = if is_busy {
@@ -152,23 +173,53 @@ pub async fn run_app(
             if let Event::Key(ref k) = evt {
                 if let KeyCode::Char(c) = k.code {
                     _key_chars.push(c);
-                    let kind_ch = match k.kind { crossterm::event::KeyEventKind::Press => 'P', crossterm::event::KeyEventKind::Repeat => 'R', _ => '?' };
+                    let kind_ch = match k.kind {
+                        crossterm::event::KeyEventKind::Press => 'P',
+                        crossterm::event::KeyEventKind::Repeat => 'R',
+                        _ => '?',
+                    };
                     _key_chars.push(kind_ch);
                     _key_chars.push(' ');
                 }
             }
-            process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
+            process_input_event(
+                evt,
+                app,
+                &claude_process,
+                &mut needs_redraw,
+                &mut scroll_delta,
+                &mut scroll_col,
+                &mut scroll_row,
+                &mut had_key_event,
+                &mut cached_width,
+                &mut cached_height,
+            )?;
             // Drain remaining queued events (non-blocking)
             while let Ok(evt) = input_rx.try_recv() {
                 if let Event::Key(ref k) = evt {
                     if let KeyCode::Char(c) = k.code {
                         _key_chars.push(c);
-                        let kind_ch = match k.kind { crossterm::event::KeyEventKind::Press => 'P', crossterm::event::KeyEventKind::Repeat => 'R', _ => '?' };
+                        let kind_ch = match k.kind {
+                            crossterm::event::KeyEventKind::Press => 'P',
+                            crossterm::event::KeyEventKind::Repeat => 'R',
+                            _ => '?',
+                        };
                         _key_chars.push(kind_ch);
                         _key_chars.push(' ');
                     }
                 }
-                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
+                process_input_event(
+                    evt,
+                    app,
+                    &claude_process,
+                    &mut needs_redraw,
+                    &mut scroll_delta,
+                    &mut scroll_col,
+                    &mut scroll_row,
+                    &mut had_key_event,
+                    &mut cached_width,
+                    &mut cached_height,
+                )?;
             }
         }
 
@@ -190,7 +241,10 @@ pub async fn run_app(
         // Only safe on macOS — on Windows, direct escape sequences corrupt
         // the console input parser (garbled text in input, broken cursor).
         #[cfg(target_os = "macos")]
-        let has_fast_path = app.prompt_mode && !app.terminal_mode && !app.input.contains('\n') && !app.has_input_selection();
+        let has_fast_path = app.prompt_mode
+            && !app.terminal_mode
+            && !app.input.contains('\n')
+            && !app.has_input_selection();
         #[cfg(not(target_os = "macos"))]
         let has_fast_path = false;
         #[cfg(target_os = "macos")]
@@ -225,7 +279,9 @@ pub async fn run_app(
                 while let Ok(event) = rx.try_recv() {
                     claude_events.push((sid.clone(), event));
                     count += 1;
-                    if count >= MAX_CLAUDE_EVENTS_PER_TICK { break 'outer; }
+                    if count >= MAX_CLAUDE_EVENTS_PER_TICK {
+                        break 'outer;
+                    }
                 }
             }
             for (session_id, event) in claude_events {
@@ -234,11 +290,7 @@ pub async fn run_app(
                         // Only parse output for the active/viewed slot — other
                         // slots' output is discarded (no display needed)
                         if app.is_viewing_slot(&session_id) {
-                            claude_proc.submit(
-                                session_id,
-                                output.output_type,
-                                output.data,
-                            );
+                            claude_proc.submit(session_id, output.output_type, output.data);
                         }
                     }
                     other => {
@@ -251,23 +303,39 @@ pub async fn run_app(
         }
 
         // Send staged prompt when no agent is running and no dialog is blocking
-        if app.staged_prompt.is_some() && !app.is_active_slot_running() && !app.new_session_dialog_active {
+        if app.staged_prompt.is_some()
+            && !app.is_active_slot_running()
+            && !app.new_session_dialog_active
+        {
             if let Some(prompt) = app.staged_prompt.take() {
-                if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-                    let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
+                if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone())
+                {
+                    let branch = app
+                        .current_worktree()
+                        .map(|s| s.branch_name.clone())
+                        .unwrap_or_default();
                     let events_offset = app.display_events.len();
                     app.add_user_message(prompt.clone());
                     app.process_session_chunk(&format!("You: {}\n", prompt));
                     app.current_todos.clear();
-                    let send_prompt = app.current_session_id
+                    let send_prompt = app
+                        .current_session_id
                         .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
                         .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                        .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
+                        .map(|payload| {
+                            crate::app::context_injection::build_context_prompt(&payload, &prompt)
+                        })
                         .unwrap_or_else(|| prompt.clone());
-                    match claude_process.spawn(&wt_path, &send_prompt, None, app.selected_model.as_deref()) {
+                    match claude_process.spawn(
+                        &wt_path,
+                        &send_prompt,
+                        None,
+                        app.selected_model.as_deref(),
+                    ) {
                         Ok((rx, pid)) => {
                             if let Some(sid) = app.current_session_id {
-                                app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                                app.pid_session_target
+                                    .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                             }
                             app.register_claude(branch, pid, rx);
                             app.update_title_session_name();
@@ -366,7 +434,12 @@ pub async fn run_app(
             if let Some(outcome) = merge_outcome {
                 app.loading_indicator = None;
                 match outcome {
-                    SquashMergeOutcome::Success { status_msg, branch, display_name, worktree_path } => {
+                    SquashMergeOutcome::Success {
+                        status_msg,
+                        branch,
+                        display_name,
+                        worktree_path,
+                    } => {
                         app.git_actions_panel = None;
                         app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
                             branch,
@@ -376,7 +449,10 @@ pub async fn run_app(
                         });
                         app.set_status(status_msg);
                     }
-                    SquashMergeOutcome::Conflict { conflicted, auto_merged } => {
+                    SquashMergeOutcome::Conflict {
+                        conflicted,
+                        auto_merged,
+                    } => {
                         if let Some(ref mut p) = app.git_actions_panel {
                             p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
                                 conflicted_files: conflicted,
@@ -432,11 +508,16 @@ pub async fn run_app(
                         let _ = app.refresh_worktrees();
                         app.load_session_output();
                     }
-                    BackgroundOpOutcome::Unarchived { branch, display_name } => {
+                    BackgroundOpOutcome::Unarchived {
+                        branch,
+                        display_name,
+                    } => {
                         app.set_status(format!("Unarchived: {}", display_name));
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
-                        if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
+                        if let Some(idx) =
+                            app.worktrees.iter().position(|s| s.branch_name == branch)
+                        {
                             app.selected_worktree = Some(idx);
                             app.load_session_output();
                         }
@@ -444,12 +525,18 @@ pub async fn run_app(
                     BackgroundOpOutcome::Created { branch } => {
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
-                        if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
+                        if let Some(idx) =
+                            app.worktrees.iter().position(|s| s.branch_name == branch)
+                        {
                             app.selected_worktree = Some(idx);
                             app.load_session_output();
                         }
                     }
-                    BackgroundOpOutcome::Deleted { display_name, prev_idx, .. } => {
+                    BackgroundOpOutcome::Deleted {
+                        display_name,
+                        prev_idx,
+                        ..
+                    } => {
                         app.set_status(format!("Deleted: {}", display_name));
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
@@ -500,10 +587,14 @@ pub async fn run_app(
                         if let Some(ref mut p) = app.git_actions_panel {
                             crate::tui::input_git_actions::refresh_changed_files(p);
                             crate::tui::input_git_actions::refresh_commit_log(p);
-                            p.result_message = Some(("Already up to date with main".to_string(), false));
+                            p.result_message =
+                                Some(("Already up to date with main".to_string(), false));
                         }
                     }
-                    BackgroundRebaseOutcome::Conflict { conflicted, auto_merged } => {
+                    BackgroundRebaseOutcome::Conflict {
+                        conflicted,
+                        auto_merged,
+                    } => {
                         if let Some(ref mut p) = app.git_actions_panel {
                             p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
                                 conflicted_files: conflicted,
@@ -569,13 +660,19 @@ pub async fn run_app(
 
         // Parse session file when dirty (set by watcher or fallback polling)
         if app.session_file_dirty {
-            if app.poll_session_file() { needs_redraw = true; }
+            if app.poll_session_file() {
+                needs_redraw = true;
+            }
         }
 
         // Fallback: stat() polling when watcher is unavailable
-        if app.file_watcher.is_none() && now_poll.duration_since(last_session_poll) >= min_poll_interval {
+        if app.file_watcher.is_none()
+            && now_poll.duration_since(last_session_poll) >= min_poll_interval
+        {
             app.check_session_file();
-            if app.poll_session_file() { needs_redraw = true; }
+            if app.poll_session_file() {
+                needs_redraw = true;
+            }
         }
 
         // Debounced file tree refresh: spawn background thread to avoid
@@ -593,7 +690,8 @@ pub async fn run_app(
                     let hidden = app.file_tree_hidden_dirs.clone();
                     let (tx, rx) = std::sync::mpsc::channel();
                     std::thread::spawn(move || {
-                        let entries = crate::app::state::helpers::build_file_tree(&path, &expanded, &hidden);
+                        let entries =
+                            crate::app::state::helpers::build_file_tree(&path, &expanded, &hidden);
                         let _ = tx.send(entries);
                     });
                     app.file_tree_receiver = Some(rx);
@@ -606,7 +704,11 @@ pub async fn run_app(
         if let Some(ref rx) = app.file_tree_receiver {
             if let Ok(entries) = rx.try_recv() {
                 app.file_tree_entries = entries;
-                app.file_tree_selected = if !app.file_tree_entries.is_empty() { Some(0) } else { None };
+                app.file_tree_selected = if !app.file_tree_entries.is_empty() {
+                    Some(0)
+                } else {
+                    None
+                };
                 app.file_tree_scroll = 0;
                 app.invalidate_file_tree();
                 app.file_tree_receiver = None;
@@ -628,7 +730,12 @@ pub async fn run_app(
                 let backend = app.backend;
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
-                    let result = crate::app::state::load::compute_worktree_refresh(path, main_branch, wt_dir, backend);
+                    let result = crate::app::state::load::compute_worktree_refresh(
+                        path,
+                        main_branch,
+                        wt_dir,
+                        backend,
+                    );
                     let _ = tx.send(result);
                 });
                 app.worktree_refresh_receiver = Some(rx);
@@ -694,7 +801,14 @@ pub async fn run_app(
         // Apply accumulated scroll using cached terminal size
         let mut scroll_changed = false;
         if scroll_delta != 0 {
-            scroll_changed = apply_scroll_cached(app, scroll_delta, scroll_col, scroll_row, cached_width, cached_height);
+            scroll_changed = apply_scroll_cached(
+                app,
+                scroll_delta,
+                scroll_col,
+                scroll_row,
+                cached_width,
+                cached_height,
+            );
         }
 
         // Submit render request to background thread if session cache is dirty.
@@ -707,13 +821,18 @@ pub async fn run_app(
         // streaming events into fewer render cycles (clones). During Claude streaming
         // events arrive at ~60Hz; without this, every poll_render_result completion
         // immediately triggers another clone+submit, keeping CPU high.
-        if app.rendered_lines_dirty && !app.render_in_flight
+        if app.rendered_lines_dirty
+            && !app.render_in_flight
             && app.last_render_submit.elapsed() >= Duration::from_millis(50)
         {
             // Session pane width is percentage-based (35% in run.rs), so we read the
             // actual width from the cached pane rect set during the last draw.
             // Falls back to 80 on first frame before any draw has occurred.
-            let session_w = if app.pane_session.width > 0 { app.pane_session.width } else { 80 };
+            let session_w = if app.pane_session.width > 0 {
+                app.pane_session.width
+            } else {
+                80
+            };
             submit_render_request(app, session_w);
             app.last_render_submit = Instant::now();
         }
@@ -730,17 +849,20 @@ pub async fn run_app(
         if poll_render_result(app) {
             #[cfg(target_os = "macos")]
             {
-            let new_line_count = app.rendered_lines_cache.len().saturating_sub(old_cache_len);
-            let follow_bottom = app.session_scroll == usize::MAX;
-            if streaming && follow_bottom && new_line_count > 0
-                && !typing_recently
-                && app.pane_session_content.width > 2 && app.pane_session_content.height > 2
-                && app.git_actions_panel.is_none()
-                && !app.show_session_list
-                && !app.is_projects_panel_active()
-            {
-                fast_draw_session(app, new_line_count);
-            }
+                let new_line_count = app.rendered_lines_cache.len().saturating_sub(old_cache_len);
+                let follow_bottom = app.session_scroll == usize::MAX;
+                if streaming
+                    && follow_bottom
+                    && new_line_count > 0
+                    && !typing_recently
+                    && app.pane_session_content.width > 2
+                    && app.pane_session_content.height > 2
+                    && app.git_actions_panel.is_none()
+                    && !app.show_session_list
+                    && !app.is_projects_panel_active()
+                {
+                    fast_draw_session(app, new_line_count);
+                }
             } // #[cfg(target_os = "macos")]
             needs_redraw = true;
         }
@@ -775,10 +897,28 @@ pub async fn run_app(
                 if let Event::Key(_) = &evt {
                     got_key = true;
                 }
-                process_input_event(evt, app, &claude_process, &mut needs_redraw, &mut scroll_delta, &mut scroll_col, &mut scroll_row, &mut had_key_event, &mut cached_width, &mut cached_height)?;
+                process_input_event(
+                    evt,
+                    app,
+                    &claude_process,
+                    &mut needs_redraw,
+                    &mut scroll_delta,
+                    &mut scroll_col,
+                    &mut scroll_row,
+                    &mut had_key_event,
+                    &mut cached_width,
+                    &mut cached_height,
+                )?;
             }
             #[cfg(target_os = "macos")]
-            if got_key && app.prompt_mode && !app.terminal_mode && app.focus == Focus::Input && app.input_area.width > 2 && !app.input.contains('\n') && !app.has_input_selection() {
+            if got_key
+                && app.prompt_mode
+                && !app.terminal_mode
+                && app.focus == Focus::Input
+                && app.input_area.width > 2
+                && !app.input.contains('\n')
+                && !app.has_input_selection()
+            {
                 fast_draw_input(app);
             }
             if !got_key {
@@ -839,7 +979,9 @@ pub async fn run_app(
             }
         }
 
-        if app.should_quit { break; }
+        if app.should_quit {
+            break;
+        }
     }
 
     Ok(())
@@ -868,58 +1010,68 @@ fn process_input_event(
                 *had_key_event = true;
             }
         }
-        Event::Mouse(mouse) => {
-            match mouse.kind {
-                MouseEventKind::ScrollDown => {
-                    *scroll_delta += 3;
-                    *scroll_col = mouse.column;
-                    *scroll_row = mouse.row;
-                }
-                MouseEventKind::ScrollUp => {
-                    *scroll_delta -= 3;
-                    *scroll_col = mouse.column;
-                    *scroll_row = mouse.row;
-                }
-                MouseEventKind::Down(MouseButton::Left) => {
-                    app.viewer_selection = None;
-                    app.session_selection = None;
-                    let (mc, mr) = (mouse.column, mouse.row);
-                    use ratatui::layout::Position;
-                    let mpos = Position::new(mc, mr);
-                    if app.pane_viewer.contains(mpos) {
-                        if app.viewer_edit_mode {
-                            if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
-                                app.mouse_drag_start = Some((src_line, src_col, 3));
-                            }
-                        } else if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_viewer, app.viewer_scroll, app.viewer_lines_cache.len()) {
-                            app.mouse_drag_start = Some((cl, cc, 0));
+        Event::Mouse(mouse) => match mouse.kind {
+            MouseEventKind::ScrollDown => {
+                *scroll_delta += 3;
+                *scroll_col = mouse.column;
+                *scroll_row = mouse.row;
+            }
+            MouseEventKind::ScrollUp => {
+                *scroll_delta -= 3;
+                *scroll_col = mouse.column;
+                *scroll_row = mouse.row;
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                app.viewer_selection = None;
+                app.session_selection = None;
+                let (mc, mr) = (mouse.column, mouse.row);
+                use ratatui::layout::Position;
+                let mpos = Position::new(mc, mr);
+                if app.pane_viewer.contains(mpos) {
+                    if app.viewer_edit_mode {
+                        if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
+                            app.mouse_drag_start = Some((src_line, src_col, 3));
                         }
-                    } else if app.pane_session.contains(mpos) {
-                        app.clamp_session_scroll();
-                        if let Some((cl, cc)) = screen_to_cache_pos(mc, mr, app.pane_session, app.session_scroll, app.rendered_lines_cache.len()) {
-                            app.mouse_drag_start = Some((cl, cc, 1));
-                        }
-                    } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
-                        let ci = screen_to_input_char(app, mc, mr);
-                        app.mouse_drag_start = Some((ci, 0, 2));
-                    } else {
-                        app.mouse_drag_start = None;
+                    } else if let Some((cl, cc)) = screen_to_cache_pos(
+                        mc,
+                        mr,
+                        app.pane_viewer,
+                        app.viewer_scroll,
+                        app.viewer_lines_cache.len(),
+                    ) {
+                        app.mouse_drag_start = Some((cl, cc, 0));
                     }
-                    if handle_mouse_click(app, mc, mr) {
-                        *needs_redraw = true;
+                } else if app.pane_session.contains(mpos) {
+                    app.clamp_session_scroll();
+                    if let Some((cl, cc)) = screen_to_cache_pos(
+                        mc,
+                        mr,
+                        app.pane_session,
+                        app.session_scroll,
+                        app.rendered_lines_cache.len(),
+                    ) {
+                        app.mouse_drag_start = Some((cl, cc, 1));
                     }
-                }
-                MouseEventKind::Drag(MouseButton::Left) => {
-                    if handle_mouse_drag(app, mouse.column, mouse.row) {
-                        *needs_redraw = true;
-                    }
-                }
-                MouseEventKind::Up(MouseButton::Left) => {
+                } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
+                    let ci = screen_to_input_char(app, mc, mr);
+                    app.mouse_drag_start = Some((ci, 0, 2));
+                } else {
                     app.mouse_drag_start = None;
                 }
-                _ => {}
+                if handle_mouse_click(app, mc, mr) {
+                    *needs_redraw = true;
+                }
             }
-        }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if handle_mouse_drag(app, mouse.column, mouse.row) {
+                    *needs_redraw = true;
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                app.mouse_drag_start = None;
+            }
+            _ => {}
+        },
         Event::Resize(w, h) => {
             *cached_width = w;
             *cached_height = h;
@@ -938,8 +1090,12 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
     use crate::app::types::GitConflictOverlay;
 
     // Skip if RCR active or editing a file
-    if app.rcr_session.is_some() { return false; }
-    if app.viewer_edit_mode { return false; }
+    if app.rcr_session.is_some() {
+        return false;
+    }
+    if app.viewer_edit_mode {
+        return false;
+    }
 
     let project = match &app.project {
         Some(p) => p.clone(),
@@ -947,7 +1103,9 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
     };
 
     // Collect eligible worktrees (avoid borrowing app during iteration)
-    let candidates: Vec<(String, std::path::PathBuf)> = app.worktrees.iter()
+    let candidates: Vec<(String, std::path::PathBuf)> = app
+        .worktrees
+        .iter()
         .filter(|wt| {
             wt.branch_name != project.main_branch
                 && !wt.archived
@@ -959,11 +1117,16 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
         .collect();
 
     // If the git panel is open, note which worktree it's viewing
-    let git_panel_branch = app.git_actions_panel.as_ref().map(|p| p.worktree_name.clone());
+    let git_panel_branch = app
+        .git_actions_panel
+        .as_ref()
+        .map(|p| p.worktree_name.clone());
 
     for (branch, wt_path) in candidates {
         // Skip the worktree whose git panel is currently open
-        if git_panel_branch.as_ref() == Some(&branch) { continue; }
+        if git_panel_branch.as_ref() == Some(&branch) {
+            continue;
+        }
 
         let display = crate::models::strip_branch_prefix(&branch).to_string();
 
@@ -975,7 +1138,9 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
             .ok()
             .map(|o| !o.stdout.is_empty())
             .unwrap_or(false);
-        if dirty { continue; }
+        if dirty {
+            continue;
+        }
 
         let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
         match exec_rebase_inner(&wt_path, &project.main_branch, &ar_files) {
@@ -993,7 +1158,11 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
                 app.invalidate_sidebar();
                 return true;
             }
-            RebaseOutcome::Conflict { conflicted, auto_merged, .. } => {
+            RebaseOutcome::Conflict {
+                conflicted,
+                auto_merged,
+                ..
+            } => {
                 // Switch to the conflicted worktree and open Git panel with conflict overlay
                 if let Some(idx) = app.worktrees.iter().position(|w| w.branch_name == branch) {
                     app.selected_worktree = Some(idx);
@@ -1021,8 +1190,11 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
+        MouseEventKind,
+    };
     use std::time::Duration;
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEventKind, MouseEvent};
 
     // -- Duration constants --
 
@@ -1072,7 +1244,11 @@ mod tests {
         let draw_pending = false;
         let render_in_flight = false;
         let has_receivers = false;
-        let poll_ms = if draw_pending || render_in_flight || has_receivers { 16 } else { 100 };
+        let poll_ms = if draw_pending || render_in_flight || has_receivers {
+            16
+        } else {
+            100
+        };
         assert_eq!(poll_ms, 100);
     }
 
@@ -1128,7 +1304,10 @@ mod tests {
 
     #[test]
     fn test_modifier_key_detection() {
-        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        let key = KeyEvent::new(
+            KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift),
+            KeyModifiers::SHIFT,
+        );
         assert!(matches!(key.code, KeyCode::Modifier(_)));
     }
 
@@ -1166,7 +1345,10 @@ mod tests {
             row: 8,
             modifiers: KeyModifiers::NONE,
         };
-        assert!(matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)));
+        assert!(matches!(
+            mouse.kind,
+            MouseEventKind::Down(MouseButton::Left)
+        ));
     }
 
     #[test]
@@ -1177,7 +1359,10 @@ mod tests {
             row: 12,
             modifiers: KeyModifiers::NONE,
         };
-        assert!(matches!(mouse.kind, MouseEventKind::Drag(MouseButton::Left)));
+        assert!(matches!(
+            mouse.kind,
+            MouseEventKind::Drag(MouseButton::Left)
+        ));
     }
 
     #[test]
@@ -1429,7 +1614,12 @@ mod tests {
 
     #[test]
     fn test_mouse_event_column_row() {
-        let m = MouseEvent { kind: MouseEventKind::Moved, column: 10, row: 20, modifiers: KeyModifiers::NONE };
+        let m = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 10,
+            row: 20,
+            modifiers: KeyModifiers::NONE,
+        };
         assert_eq!(m.column, 10);
         assert_eq!(m.row, 20);
     }

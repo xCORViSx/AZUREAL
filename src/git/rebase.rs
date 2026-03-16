@@ -4,16 +4,20 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-use crate::models::RebaseResult;
 use super::Git;
+use crate::models::RebaseResult;
 
 impl Git {
     /// Check if a rebase is currently in progress
     pub fn is_rebase_in_progress(worktree_path: &Path) -> bool {
         let git_dir = Self::get_git_dir(worktree_path);
         if let Some(git_dir) = git_dir {
-            if git_dir.join("rebase-merge").exists() { return true; }
-            if git_dir.join("rebase-apply").exists() { return true; }
+            if git_dir.join("rebase-merge").exists() {
+                return true;
+            }
+            if git_dir.join("rebase-apply").exists() {
+                return true;
+            }
         }
         false
     }
@@ -37,7 +41,9 @@ impl Git {
 
     /// Abort a rebase in progress
     pub fn rebase_abort(worktree_path: &Path) -> Result<RebaseResult> {
-        if !Self::is_rebase_in_progress(worktree_path) { bail!("No rebase in progress"); }
+        if !Self::is_rebase_in_progress(worktree_path) {
+            bail!("No rebase in progress");
+        }
 
         let output = Command::new("git")
             .args(["rebase", "--abort"])
@@ -45,9 +51,13 @@ impl Git {
             .output()
             .context("Failed to abort rebase")?;
 
-        if output.status.success() { return Ok(RebaseResult::Aborted); }
+        if output.status.success() {
+            return Ok(RebaseResult::Aborted);
+        }
 
-        Ok(RebaseResult::Failed(String::from_utf8_lossy(&output.stderr).to_string()))
+        Ok(RebaseResult::Failed(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
     }
 }
 
@@ -233,21 +243,27 @@ mod tests {
     fn test_rebase_result_failed_unicode() {
         let msg = "Fehler: Zusammenf\u{00fc}hrungskonflikt";
         let r = RebaseResult::Failed(msg.into());
-        if let RebaseResult::Failed(m) = r { assert!(m.contains("hrungskonflikt")); }
+        if let RebaseResult::Failed(m) = r {
+            assert!(m.contains("hrungskonflikt"));
+        }
     }
 
     #[test]
     fn test_rebase_result_failed_long_message() {
         let msg = "x".repeat(10000);
         let r = RebaseResult::Failed(msg.clone());
-        if let RebaseResult::Failed(m) = r { assert_eq!(m.len(), 10000); }
+        if let RebaseResult::Failed(m) = r {
+            assert_eq!(m.len(), 10000);
+        }
     }
 
     #[test]
     fn test_rebase_result_failed_special_chars() {
         let msg = "error: path 'foo/bar.rs' has conflict\n<<<<<<< HEAD\n";
         let r = RebaseResult::Failed(msg.into());
-        if let RebaseResult::Failed(m) = r { assert!(m.contains("<<<<<<")); }
+        if let RebaseResult::Failed(m) = r {
+            assert!(m.contains("<<<<<<"));
+        }
     }
 
     // ── Path validation for rebase checks ──
@@ -526,7 +542,11 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         if let Ok(files) = Git::get_conflicted_files(&cwd) {
             for f in &files {
-                assert!(!f.contains('\n'), "File entry must not contain newline: {:?}", f);
+                assert!(
+                    !f.contains('\n'),
+                    "File entry must not contain newline: {:?}",
+                    f
+                );
             }
         }
     }

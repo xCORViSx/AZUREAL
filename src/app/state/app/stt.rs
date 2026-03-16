@@ -22,10 +22,14 @@ impl App {
     /// Called every event loop iteration when stt_handle exists.
     /// Collects events first to avoid borrow conflict (try_recv borrows handle, processing borrows &mut self).
     pub fn poll_stt(&mut self) -> bool {
-        let events: Vec<_> = self.stt_handle.as_ref()
+        let events: Vec<_> = self
+            .stt_handle
+            .as_ref()
             .map(|h| std::iter::from_fn(|| h.try_recv()).collect())
             .unwrap_or_default();
-        if events.is_empty() { return false; }
+        if events.is_empty() {
+            return false;
+        }
         for event in events {
             match event {
                 crate::stt::SttEvent::RecordingStarted => {
@@ -61,7 +65,9 @@ impl App {
     /// Adds a leading space if the previous char isn't whitespace.
     fn insert_stt_text(&mut self, text: &str) {
         let trimmed = text.trim();
-        if trimmed.is_empty() { return; }
+        if trimmed.is_empty() {
+            return;
+        }
 
         if self.viewer_edit_mode {
             // Insert into viewer edit buffer at cursor position

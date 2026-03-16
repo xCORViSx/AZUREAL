@@ -18,30 +18,47 @@ impl KeyCombo {
     }
 
     pub const fn plain(code: KeyCode) -> Self {
-        Self { modifiers: KeyModifiers::NONE, code }
+        Self {
+            modifiers: KeyModifiers::NONE,
+            code,
+        }
     }
 
     pub const fn shift(code: KeyCode) -> Self {
-        Self { modifiers: KeyModifiers::SHIFT, code }
+        Self {
+            modifiers: KeyModifiers::SHIFT,
+            code,
+        }
     }
 
     pub const fn ctrl(code: KeyCode) -> Self {
-        Self { modifiers: KeyModifiers::CONTROL, code }
+        Self {
+            modifiers: KeyModifiers::CONTROL,
+            code,
+        }
     }
 
     pub const fn alt(code: KeyCode) -> Self {
-        Self { modifiers: KeyModifiers::ALT, code }
+        Self {
+            modifiers: KeyModifiers::ALT,
+            code,
+        }
     }
 
     #[cfg(target_os = "macos")]
     pub const fn cmd(code: KeyCode) -> Self {
-        Self { modifiers: KeyModifiers::SUPER, code }
+        Self {
+            modifiers: KeyModifiers::SUPER,
+            code,
+        }
     }
 
     /// Check if key event matches this combo
     #[inline]
     pub fn matches(&self, modifiers: KeyModifiers, code: KeyCode) -> bool {
-        if self.modifiers == modifiers && self.code == code { return true; }
+        if self.modifiers == modifiers && self.code == code {
+            return true;
+        }
         // Shifted-symbol bindings: characters like ?, !, @, #, etc. are
         // produced by pressing Shift+<key>. On macOS, crossterm typically
         // delivers these as (NONE, Char('?')). On Windows, crossterm
@@ -54,7 +71,9 @@ impl KeyCombo {
         {
             if let KeyCode::Char(c) = code {
                 // Only for non-alpha chars — Shift+letter has separate handling below
-                if !c.is_ascii_alphabetic() { return true; }
+                if !c.is_ascii_alphabetic() {
+                    return true;
+                }
             }
         }
         // Shift+letter bindings use shift(Char('G')) but crossterm delivers
@@ -101,8 +120,12 @@ impl KeyCombo {
 
         #[cfg(target_os = "macos")]
         {
-            if self.modifiers.contains(KeyModifiers::CONTROL) { s.push('⌃'); }
-            if self.modifiers.contains(KeyModifiers::ALT) { s.push('⌥'); }
+            if self.modifiers.contains(KeyModifiers::CONTROL) {
+                s.push('⌃');
+            }
+            if self.modifiers.contains(KeyModifiers::ALT) {
+                s.push('⌥');
+            }
             // Show ⇧ for non-char keys always, and for char keys when
             // combined with other modifiers (e.g. ⌃⇧C vs just G)
             if self.modifiers.contains(KeyModifiers::SHIFT) {
@@ -111,13 +134,19 @@ impl KeyCombo {
                     s.push('⇧');
                 }
             }
-            if self.modifiers.contains(KeyModifiers::SUPER) { s.push('⌘'); }
+            if self.modifiers.contains(KeyModifiers::SUPER) {
+                s.push('⌘');
+            }
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            if self.modifiers.contains(KeyModifiers::CONTROL) { s.push_str("Ctrl+"); }
-            if self.modifiers.contains(KeyModifiers::ALT) { s.push_str("Alt+"); }
+            if self.modifiers.contains(KeyModifiers::CONTROL) {
+                s.push_str("Ctrl+");
+            }
+            if self.modifiers.contains(KeyModifiers::ALT) {
+                s.push_str("Alt+");
+            }
             if self.modifiers.contains(KeyModifiers::SHIFT) {
                 let has_other_mods = self.modifiers != KeyModifiers::SHIFT;
                 if !matches!(self.code, KeyCode::Char(_)) || has_other_mods {
@@ -311,7 +340,13 @@ pub struct Keybinding {
 
 impl Keybinding {
     pub const fn new(primary: KeyCombo, description: &'static str, action: Action) -> Self {
-        Self { primary, alternatives: &[], description, action, pair_with_next: false }
+        Self {
+            primary,
+            alternatives: &[],
+            description,
+            action,
+            pair_with_next: false,
+        }
     }
 
     pub const fn with_alt(
@@ -320,7 +355,13 @@ impl Keybinding {
         description: &'static str,
         action: Action,
     ) -> Self {
-        Self { primary, alternatives, description, action, pair_with_next: false }
+        Self {
+            primary,
+            alternatives,
+            description,
+            action,
+            pair_with_next: false,
+        }
     }
 
     /// Mark this binding to merge with the next one on a single help line
@@ -347,7 +388,9 @@ impl Keybinding {
         for alt in self.alternatives {
             // Skip bare unicode chars produced by macOS ⌥+letter (not ASCII, no modifiers)
             if let KeyCode::Char(c) = alt.code {
-                if !c.is_ascii() && alt.modifiers == KeyModifiers::NONE { continue; }
+                if !c.is_ascii() && alt.modifiers == KeyModifiers::NONE {
+                    continue;
+                }
             }
             s.push('/');
             s.push_str(&alt.display());
@@ -585,7 +628,10 @@ mod tests {
 
     #[test]
     fn display_ctrl_alt() {
-        let kc = KeyCombo::new(KeyModifiers::CONTROL | KeyModifiers::ALT, KeyCode::Char('d'));
+        let kc = KeyCombo::new(
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+            KeyCode::Char('d'),
+        );
         if cfg!(target_os = "macos") {
             assert_eq!(kc.display(), "⌃⌥d");
         } else {
@@ -689,11 +735,7 @@ mod tests {
 
     #[test]
     fn keybinding_new_fields() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('q')),
-            "Quit",
-            Action::Quit,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('q')), "Quit", Action::Quit);
         assert_eq!(kb.primary.code, KeyCode::Char('q'));
         assert_eq!(kb.description, "Quit");
         assert_eq!(kb.action, Action::Quit);
@@ -703,7 +745,10 @@ mod tests {
 
     #[test]
     fn keybinding_with_alt_stores_alternatives() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Down,
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('j')),
             &ALTS,
@@ -716,21 +761,14 @@ mod tests {
 
     #[test]
     fn keybinding_paired_sets_flag() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('j')),
-            "Down",
-            Action::NavDown,
-        ).paired();
+        let kb =
+            Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Down", Action::NavDown).paired();
         assert!(kb.pair_with_next);
     }
 
     #[test]
     fn keybinding_new_not_paired_by_default() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('j')),
-            "Down",
-            Action::NavDown,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('j')), "Down", Action::NavDown);
         assert!(!kb.pair_with_next);
     }
 
@@ -740,17 +778,16 @@ mod tests {
 
     #[test]
     fn keybinding_matches_primary() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('q')),
-            "Quit",
-            Action::Quit,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('q')), "Quit", Action::Quit);
         assert!(kb.matches(KeyModifiers::NONE, KeyCode::Char('q')));
     }
 
     #[test]
     fn keybinding_matches_alternative() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Down,
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('j')),
             &ALTS,
@@ -762,21 +799,13 @@ mod tests {
 
     #[test]
     fn keybinding_no_match() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('q')),
-            "Quit",
-            Action::Quit,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('q')), "Quit", Action::Quit);
         assert!(!kb.matches(KeyModifiers::NONE, KeyCode::Char('x')));
     }
 
     #[test]
     fn keybinding_no_match_wrong_modifier() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('q')),
-            "Quit",
-            Action::Quit,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('q')), "Quit", Action::Quit);
         assert!(!kb.matches(KeyModifiers::CONTROL, KeyCode::Char('q')));
     }
 
@@ -786,17 +815,16 @@ mod tests {
 
     #[test]
     fn display_keys_no_alternatives() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('q')),
-            "Quit",
-            Action::Quit,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('q')), "Quit", Action::Quit);
         assert_eq!(kb.display_keys(), "q");
     }
 
     #[test]
     fn display_keys_with_ascii_alternative() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Down,
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('j')),
             &ALTS,
@@ -808,7 +836,10 @@ mod tests {
 
     #[test]
     fn display_keys_skips_macos_unicode_alt() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Char('®') }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Char('®'),
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::alt(KeyCode::Char('r')),
             &ALTS,
@@ -824,7 +855,10 @@ mod tests {
 
     #[test]
     fn display_keys_keeps_non_ascii_with_modifier() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('®') }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::CONTROL,
+            code: KeyCode::Char('®'),
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::alt(KeyCode::Char('r')),
             &ALTS,
@@ -841,8 +875,14 @@ mod tests {
     #[test]
     fn display_keys_multiple_alternatives() {
         static ALTS: [KeyCombo; 2] = [
-            KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down },
-            KeyCombo { modifiers: KeyModifiers::CONTROL, code: KeyCode::Char('n') },
+            KeyCombo {
+                modifiers: KeyModifiers::NONE,
+                code: KeyCode::Down,
+            },
+            KeyCombo {
+                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('n'),
+            },
         ];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('j')),
@@ -937,7 +977,10 @@ mod tests {
     #[test]
     fn help_section_fields() {
         static BINDINGS: [Keybinding; 0] = [];
-        let hs = HelpSection { title: "Test", bindings: &BINDINGS };
+        let hs = HelpSection {
+            title: "Test",
+            bindings: &BINDINGS,
+        };
         assert_eq!(hs.title, "Test");
         assert!(hs.bindings.is_empty());
     }
@@ -973,7 +1016,10 @@ mod tests {
 
     #[test]
     fn keybinding_matches_shift_alt_through_alternatives() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::SHIFT, code: KeyCode::Char('G') }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::SHIFT,
+            code: KeyCode::Char('G'),
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('g')),
             &ALTS,
@@ -990,7 +1036,10 @@ mod tests {
 
     #[test]
     fn keybinding_with_alt_description() {
-        static ALTS: [KeyCombo; 1] = [KeyCombo { modifiers: KeyModifiers::NONE, code: KeyCode::Down }];
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Down,
+        }];
         let kb = Keybinding::with_alt(
             KeyCombo::plain(KeyCode::Char('j')),
             &ALTS,
@@ -1002,21 +1051,13 @@ mod tests {
 
     #[test]
     fn keybinding_action_stored_correctly() {
-        let kb = Keybinding::new(
-            KeyCombo::ctrl(KeyCode::Char('s')),
-            "Save",
-            Action::Save,
-        );
+        let kb = Keybinding::new(KeyCombo::ctrl(KeyCode::Char('s')), "Save", Action::Save);
         assert_eq!(kb.action, Action::Save);
     }
 
     #[test]
     fn keybinding_paired_preserves_other_fields() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Char('k')),
-            "Up",
-            Action::NavUp,
-        ).paired();
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Char('k')), "Up", Action::NavUp).paired();
         assert_eq!(kb.primary.code, KeyCode::Char('k'));
         assert_eq!(kb.description, "Up");
         assert_eq!(kb.action, Action::NavUp);
@@ -1025,11 +1066,7 @@ mod tests {
 
     #[test]
     fn display_keys_ctrl_binding() {
-        let kb = Keybinding::new(
-            KeyCombo::ctrl(KeyCode::Char('z')),
-            "Undo",
-            Action::Undo,
-        );
+        let kb = Keybinding::new(KeyCombo::ctrl(KeyCode::Char('z')), "Undo", Action::Undo);
         if cfg!(target_os = "macos") {
             assert_eq!(kb.display_keys(), "⌃z");
         } else {
@@ -1039,11 +1076,7 @@ mod tests {
 
     #[test]
     fn display_keys_special_key_binding() {
-        let kb = Keybinding::new(
-            KeyCombo::plain(KeyCode::Esc),
-            "Escape",
-            Action::Escape,
-        );
+        let kb = Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Escape", Action::Escape);
         assert_eq!(kb.display_keys(), "Esc");
     }
 }

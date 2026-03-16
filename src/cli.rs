@@ -379,7 +379,12 @@ mod tests {
     #[test]
     fn test_parse_new() {
         let cli = Cli::try_parse_from(["azureal", "new", "-p", "Fix the bug"]).unwrap();
-        if let Some(Commands::New { prompt, project, name }) = cli.command {
+        if let Some(Commands::New {
+            prompt,
+            project,
+            name,
+        }) = cli.command
+        {
             assert_eq!(prompt, "Fix the bug");
             assert!(project.is_none());
             assert!(name.is_none());
@@ -390,7 +395,8 @@ mod tests {
 
     #[test]
     fn test_parse_new_with_name() {
-        let cli = Cli::try_parse_from(["azureal", "new", "-p", "do stuff", "-n", "my-session"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["azureal", "new", "-p", "do stuff", "-n", "my-session"]).unwrap();
         if let Some(Commands::New { name, .. }) = cli.command {
             assert_eq!(name.as_deref(), Some("my-session"));
         } else {
@@ -444,13 +450,19 @@ mod tests {
     #[test]
     fn test_parse_session_list() {
         let cli = Cli::try_parse_from(["azureal", "session", "list"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Session(SessionCommands::List { .. }))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::List { .. }))
+        ));
     }
 
     #[test]
     fn test_parse_session_ls_alias() {
         let cli = Cli::try_parse_from(["azureal", "session", "ls"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Session(SessionCommands::List { .. }))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::List { .. }))
+        ));
     }
 
     #[test]
@@ -498,13 +510,19 @@ mod tests {
     #[test]
     fn test_parse_session_archive() {
         let cli = Cli::try_parse_from(["azureal", "session", "archive", "feat"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Session(SessionCommands::Archive { .. }))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::Archive { .. }))
+        ));
     }
 
     #[test]
     fn test_parse_session_unarchive() {
         let cli = Cli::try_parse_from(["azureal", "session", "unarchive", "feat"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Session(SessionCommands::Unarchive { .. }))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::Unarchive { .. }))
+        ));
     }
 
     #[test]
@@ -520,7 +538,8 @@ mod tests {
 
     #[test]
     fn test_parse_session_resume_with_prompt() {
-        let cli = Cli::try_parse_from(["azureal", "session", "resume", "feat", "-p", "continue"]).unwrap();
+        let cli = Cli::try_parse_from(["azureal", "session", "resume", "feat", "-p", "continue"])
+            .unwrap();
         if let Some(Commands::Session(SessionCommands::Resume { prompt, .. })) = cli.command {
             assert_eq!(prompt.as_deref(), Some("continue"));
         } else {
@@ -531,7 +550,12 @@ mod tests {
     #[test]
     fn test_parse_session_logs() {
         let cli = Cli::try_parse_from(["azureal", "session", "logs", "feat"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Logs { session, follow, lines })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Logs {
+            session,
+            follow,
+            lines,
+        })) = cli.command
+        {
             assert_eq!(session, "feat");
             assert!(!follow);
             assert_eq!(lines, 50);
@@ -563,7 +587,13 @@ mod tests {
     #[test]
     fn test_parse_session_cleanup() {
         let cli = Cli::try_parse_from(["azureal", "session", "cleanup"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Cleanup { project, delete_branches, yes, dry_run })) = cli.command {
+        if let Some(Commands::Session(SessionCommands::Cleanup {
+            project,
+            delete_branches,
+            yes,
+            dry_run,
+        })) = cli.command
+        {
             assert!(project.is_none());
             assert!(!delete_branches);
             assert!(!yes);
@@ -575,8 +605,22 @@ mod tests {
 
     #[test]
     fn test_parse_session_cleanup_all_flags() {
-        let cli = Cli::try_parse_from(["azureal", "session", "cleanup", "--delete-branches", "-y", "--dry-run"]).unwrap();
-        if let Some(Commands::Session(SessionCommands::Cleanup { delete_branches, yes, dry_run, .. })) = cli.command {
+        let cli = Cli::try_parse_from([
+            "azureal",
+            "session",
+            "cleanup",
+            "--delete-branches",
+            "-y",
+            "--dry-run",
+        ])
+        .unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup {
+            delete_branches,
+            yes,
+            dry_run,
+            ..
+        })) = cli.command
+        {
             assert!(delete_branches);
             assert!(yes);
             assert!(dry_run);
@@ -590,13 +634,19 @@ mod tests {
     #[test]
     fn test_parse_project_list() {
         let cli = Cli::try_parse_from(["azureal", "project", "list"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Project(ProjectCommands::List))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Project(ProjectCommands::List))
+        ));
     }
 
     #[test]
     fn test_parse_project_ls_alias() {
         let cli = Cli::try_parse_from(["azureal", "project", "ls"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Project(ProjectCommands::List))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Project(ProjectCommands::List))
+        ));
     }
 
     #[test]
@@ -633,7 +683,11 @@ mod tests {
     #[test]
     fn test_parse_project_config() {
         let cli = Cli::try_parse_from(["azureal", "project", "config"]).unwrap();
-        if let Some(Commands::Project(ProjectCommands::Config { project, main_branch })) = cli.command {
+        if let Some(Commands::Project(ProjectCommands::Config {
+            project,
+            main_branch,
+        })) = cli.command
+        {
             assert!(project.is_none());
             assert!(main_branch.is_none());
         } else {
@@ -643,7 +697,8 @@ mod tests {
 
     #[test]
     fn test_parse_project_config_with_branch() {
-        let cli = Cli::try_parse_from(["azureal", "project", "config", "--main-branch", "develop"]).unwrap();
+        let cli = Cli::try_parse_from(["azureal", "project", "config", "--main-branch", "develop"])
+            .unwrap();
         if let Some(Commands::Project(ProjectCommands::Config { main_branch, .. })) = cli.command {
             assert_eq!(main_branch.as_deref(), Some("develop"));
         } else {

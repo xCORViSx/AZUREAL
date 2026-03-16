@@ -31,9 +31,9 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use crate::app::{App, Focus, ViewerMode};
 use super::render_markdown::render_markdown_for_viewer;
 use super::util::AZURE;
+use crate::app::{App, Focus, ViewerMode};
 
 use dialogs::{draw_discard_dialog, draw_save_dialog};
 use edit_mode::draw_edit_mode;
@@ -74,15 +74,33 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
     // Image mode — render via terminal graphics protocol (Kitty/Sixel/halfblock)
     if app.viewer_mode == ViewerMode::Image {
         if let Some(ref mut proto) = app.viewer_image_state {
-            let path_str = app.viewer_path.as_ref()
-                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+            let path_str = app
+                .viewer_path
+                .as_ref()
+                .map(|p| {
+                    p.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_else(|| "Image".to_string());
             let border_color = if is_focused { AZURE } else { Color::White };
-            let border_mod = if is_focused { Modifier::BOLD } else { Modifier::empty() };
+            let border_mod = if is_focused {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            };
             let block = Block::default()
                 .borders(Borders::ALL)
-                .border_type(if is_focused { BorderType::Double } else { BorderType::Plain })
-                .title(Span::styled(format!(" {} ", path_str), Style::default().fg(border_color).add_modifier(border_mod)))
+                .border_type(if is_focused {
+                    BorderType::Double
+                } else {
+                    BorderType::Plain
+                })
+                .title(Span::styled(
+                    format!(" {} ", path_str),
+                    Style::default().fg(border_color).add_modifier(border_mod),
+                ))
                 .border_style(Style::default().fg(border_color).add_modifier(border_mod));
             // Compute inner area for the image (inside border, below tab bar)
             let inner = block.inner(area);
@@ -96,8 +114,12 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 StatefulImage::new().render(img_area, f.buffer_mut(), proto);
             }
             // Tab bar still draws on top
-            if !app.viewer_tabs.is_empty() { draw_tab_bar(f, app, area); }
-            if app.viewer_tab_dialog { draw_tab_dialog(f, app, area); }
+            if !app.viewer_tabs.is_empty() {
+                draw_tab_bar(f, app, area);
+            }
+            if app.viewer_tab_dialog {
+                draw_tab_dialog(f, app, area);
+            }
             return;
         }
     }
@@ -106,14 +128,27 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         ViewerMode::Empty => {
             let placeholder = vec![
                 Line::from(""),
-                Line::from(Span::styled("Select a file from the Filetree", Style::default().fg(Color::DarkGray))),
-                Line::from(Span::styled("Session pane.", Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    "Select a file from the Filetree",
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::from(Span::styled(
+                    "Session pane.",
+                    Style::default().fg(Color::DarkGray),
+                )),
             ];
             (" Viewer ".to_string(), placeholder)
         }
         ViewerMode::File => {
-            let path_str = app.viewer_path.as_ref()
-                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+            let path_str = app
+                .viewer_path
+                .as_ref()
+                .map(|p| {
+                    p.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_else(|| "File".to_string());
 
             let is_markdown_view = (path_str.ends_with(".md") || path_str.ends_with(".markdown"))
@@ -127,7 +162,9 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     if is_markdown_view {
                         // Prettified markdown rendering (no line numbers)
                         let rendered = render_markdown_for_viewer(
-                            content, viewport_width, &mut app.syntax_highlighter,
+                            content,
+                            viewport_width,
+                            &mut app.syntax_highlighter,
                         );
                         let count = rendered.len();
                         app.viewer_lines_cache = rendered;
@@ -139,37 +176,39 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                         let highlighted = app.syntax_highlighter.highlight_file(content, &path_str);
 
                         // Check for edit diff overlay
-                        let (diff_start_line, diff_line_count, old_lines) = if let Some((ref old_str, ref new_str)) = app.viewer_edit_diff {
-                            let new_lines: Vec<&str> = new_str.lines().collect();
-                            let old_lines_vec: Vec<&str> = old_str.lines().collect();
-                            let mut found_line = None;
+                        let (diff_start_line, diff_line_count, old_lines) =
+                            if let Some((ref old_str, ref new_str)) = app.viewer_edit_diff {
+                                let new_lines: Vec<&str> = new_str.lines().collect();
+                                let old_lines_vec: Vec<&str> = old_str.lines().collect();
+                                let mut found_line = None;
 
-                            if !new_lines.is_empty() {
-                                for (idx, line) in content_lines.iter().enumerate() {
-                                    if *line == new_lines[0] {
-                                        let mut matches = true;
-                                        for (offset, new_line) in new_lines.iter().enumerate() {
-                                            if content_lines.get(idx + offset) != Some(new_line) {
-                                                matches = false;
+                                if !new_lines.is_empty() {
+                                    for (idx, line) in content_lines.iter().enumerate() {
+                                        if *line == new_lines[0] {
+                                            let mut matches = true;
+                                            for (offset, new_line) in new_lines.iter().enumerate() {
+                                                if content_lines.get(idx + offset) != Some(new_line)
+                                                {
+                                                    matches = false;
+                                                    break;
+                                                }
+                                            }
+                                            if matches {
+                                                found_line = Some(idx);
                                                 break;
                                             }
                                         }
-                                        if matches {
-                                            found_line = Some(idx);
-                                            break;
-                                        }
                                     }
                                 }
-                            }
 
-                            if let Some(start) = found_line {
-                                (Some(start), new_lines.len(), old_lines_vec)
+                                if let Some(start) = found_line {
+                                    (Some(start), new_lines.len(), old_lines_vec)
+                                } else {
+                                    (None, 0, vec![])
+                                }
                             } else {
                                 (None, 0, vec![])
-                            }
-                        } else {
-                            (None, 0, vec![])
-                        };
+                            };
 
                         let total_visual_lines = highlighted.len() + old_lines.len();
                         let line_num_width = total_visual_lines.to_string().len().max(3);
@@ -186,14 +225,23 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                             }
                             if diff_start_line == Some(line_idx) && !old_lines.is_empty() {
                                 for old_line in &old_lines {
-                                    let line_num = format!("{:>width$} │ ", "-", width = line_num_width);
+                                    let line_num =
+                                        format!("{:>width$} │ ", "-", width = line_num_width);
                                     let mut all_spans = vec![
                                         Span::styled(line_num, Style::default().fg(Color::Red)),
-                                        Span::styled((*old_line).to_string(), Style::default().fg(Color::Red).bg(Color::Rgb(60, 20, 20))),
+                                        Span::styled(
+                                            (*old_line).to_string(),
+                                            Style::default()
+                                                .fg(Color::Red)
+                                                .bg(Color::Rgb(60, 20, 20)),
+                                        ),
                                     ];
                                     let old_len = old_line.chars().count();
                                     if old_len < content_width {
-                                        all_spans.push(Span::styled(" ".repeat(content_width - old_len), Style::default().bg(Color::Rgb(60, 20, 20))));
+                                        all_spans.push(Span::styled(
+                                            " ".repeat(content_width - old_len),
+                                            Style::default().bg(Color::Rgb(60, 20, 20)),
+                                        ));
                                     }
                                     all_lines.push(Line::from(all_spans));
                                     line_numbers.push(0);
@@ -217,18 +265,34 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                                 if is_added_line {
                                     let line_num_style = Style::default().fg(Color::Green);
                                     let green_bg = Color::Rgb(20, 60, 20);
-                                    wrapped_spans = wrapped_spans.into_iter()
-                                        .map(|s| Span::styled(s.content.to_string(), s.style.bg(green_bg)))
+                                    wrapped_spans = wrapped_spans
+                                        .into_iter()
+                                        .map(|s| {
+                                            Span::styled(
+                                                s.content.to_string(),
+                                                s.style.bg(green_bg),
+                                            )
+                                        })
                                         .collect();
-                                    let content_len: usize = wrapped_spans.iter().map(|s| s.content.chars().count()).sum();
-                                    let mut all_spans = vec![Span::styled(line_num, line_num_style)];
+                                    let content_len: usize = wrapped_spans
+                                        .iter()
+                                        .map(|s| s.content.chars().count())
+                                        .sum();
+                                    let mut all_spans =
+                                        vec![Span::styled(line_num, line_num_style)];
                                     all_spans.extend(wrapped_spans);
                                     if content_len < content_width {
-                                        all_spans.push(Span::styled(" ".repeat(content_width - content_len), Style::default().bg(green_bg)));
+                                        all_spans.push(Span::styled(
+                                            " ".repeat(content_width - content_len),
+                                            Style::default().bg(green_bg),
+                                        ));
                                     }
                                     all_lines.push(Line::from(all_spans));
                                 } else {
-                                    let mut all_spans = vec![Span::styled(line_num, Style::default().fg(Color::DarkGray))];
+                                    let mut all_spans = vec![Span::styled(
+                                        line_num,
+                                        Style::default().fg(Color::DarkGray),
+                                    )];
                                     all_spans.extend(wrapped_spans);
                                     all_lines.push(Line::from(all_spans));
                                 }
@@ -251,7 +315,9 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                                 // find_edit_line found a content line. Map it to visual line
                                 // via line_numbers (which maps visual → content 1-indexed).
                                 let target_1 = target_line + 1;
-                                if let Some(vis) = app.viewer_line_numbers.iter().position(|&n| n == target_1) {
+                                if let Some(vis) =
+                                    app.viewer_line_numbers.iter().position(|&n| n == target_1)
+                                {
                                     app.viewer_scroll = vis.saturating_sub(3);
                                 }
                             }
@@ -274,27 +340,35 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 let gutter = if is_markdown_view {
                     0
                 } else {
-                    app.viewer_lines_cache.first()
+                    app.viewer_lines_cache
+                        .first()
                         .and_then(|l| l.spans.first())
                         .map(|s| s.content.chars().count())
                         .unwrap_or(0)
                 };
 
                 // Build viewport slice with selection highlighting if active
-                let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+                let display_lines: Vec<Line> = app
+                    .viewer_lines_cache
+                    .iter()
                     .enumerate()
                     .skip(scroll)
                     .take(viewport_height)
                     .map(|(visual_idx, line)| {
-                        if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) = app.viewer_selection {
+                        if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) =
+                            app.viewer_selection
+                        {
                             if visual_idx >= sel_start_line && visual_idx <= sel_end_line {
-                                let line_content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                                let line_content: String =
+                                    line.spans.iter().map(|s| s.content.as_ref()).collect();
                                 let new_spans = sel_line(
                                     line.spans.clone(),
                                     &line_content,
                                     visual_idx,
-                                    sel_start_line, sel_start_col,
-                                    sel_end_line, sel_end_col,
+                                    sel_start_line,
+                                    sel_start_col,
+                                    sel_end_line,
+                                    sel_end_col,
                                     gutter,
                                 );
                                 Line::from(new_spans)
@@ -309,17 +383,26 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
 
                 // Find the last visible original line number for the title
                 let last_visible_idx = (scroll + display_lines.len()).saturating_sub(1);
-                let last_visible_line = app.viewer_line_numbers.get(last_visible_idx).copied().unwrap_or(total);
+                let last_visible_line = app
+                    .viewer_line_numbers
+                    .get(last_visible_idx)
+                    .copied()
+                    .unwrap_or(total);
 
                 // Show "Edit" indicator if viewing an edit diff
                 let title = if app.viewer_edit_diff.is_some() {
                     // Count only Edit tool entries (non-empty old/new strings)
-                    let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
+                    let edits: Vec<usize> = app
+                        .clickable_paths
+                        .iter()
+                        .enumerate()
                         .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
-                        .map(|(i, _)| i).collect();
+                        .map(|(i, _)| i)
+                        .collect();
                     let edit_total = edits.len();
                     // Find which edit-only position we're at (1-indexed)
-                    let edit_idx = app.selected_tool_diff
+                    let edit_idx = app
+                        .selected_tool_diff
                         .and_then(|s| edits.iter().position(|&e| e == s))
                         .map(|p| p + 1)
                         .unwrap_or(1);
@@ -371,20 +454,27 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                 let scroll = app.viewer_scroll;
 
                 // Build viewport slice with selection highlighting if active (no gutter in Diff mode)
-                let display_lines: Vec<Line> = app.viewer_lines_cache.iter()
+                let display_lines: Vec<Line> = app
+                    .viewer_lines_cache
+                    .iter()
                     .enumerate()
                     .skip(scroll)
                     .take(viewport_height)
                     .map(|(visual_idx, line)| {
-                        if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) = app.viewer_selection {
+                        if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) =
+                            app.viewer_selection
+                        {
                             if visual_idx >= sel_start_line && visual_idx <= sel_end_line {
-                                let line_content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                                let line_content: String =
+                                    line.spans.iter().map(|s| s.content.as_ref()).collect();
                                 let new_spans = sel_line(
                                     line.spans.clone(),
                                     &line_content,
                                     visual_idx,
-                                    sel_start_line, sel_start_col,
-                                    sel_end_line, sel_end_col,
+                                    sel_start_line,
+                                    sel_start_col,
+                                    sel_end_line,
+                                    sel_end_col,
                                     0,
                                 );
                                 Line::from(new_spans)
@@ -398,7 +488,9 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
                     .collect();
 
                 // Show worktree name in title if available
-                let name = app.viewer_path.as_ref()
+                let name = app
+                    .viewer_path
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "Diff".to_string());
@@ -410,7 +502,10 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
 
                 (title, display_lines)
             } else {
-                (" Diff ".to_string(), vec![Line::from("Press 'd' on a worktree to view diff")])
+                (
+                    " Diff ".to_string(),
+                    vec![Line::from("Press 'd' on a worktree to view diff")],
+                )
             }
         }
         // Image mode is handled by the early return above — this arm is unreachable
@@ -433,14 +528,35 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
         let mut padded = vec![Line::from(""); tb_rows];
         padded.extend(lines);
         padded
-    } else { lines };
+    } else {
+        lines
+    };
 
     let widget = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(if is_focused || in_edit_diff { BorderType::Double } else { BorderType::Plain })
-            .title(Span::styled(title, Style::default().fg(border_color).add_modifier(if is_focused || in_edit_diff { Modifier::BOLD } else { Modifier::empty() })))
-            .border_style(Style::default().fg(border_color).add_modifier(if is_focused || in_edit_diff { Modifier::BOLD } else { Modifier::empty() })),
+            .border_type(if is_focused || in_edit_diff {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .title(Span::styled(
+                title,
+                Style::default()
+                    .fg(border_color)
+                    .add_modifier(if is_focused || in_edit_diff {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ))
+            .border_style(Style::default().fg(border_color).add_modifier(
+                if is_focused || in_edit_diff {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                },
+            )),
     );
 
     f.render_widget(Clear, area);

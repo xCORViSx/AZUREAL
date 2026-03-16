@@ -49,7 +49,6 @@ pub enum PermissionMode {
     Ask,
 }
 
-
 impl Config {
     /// Load config from the `[config]` section of global azufig.
     pub fn load() -> Result<Self> {
@@ -64,9 +63,7 @@ impl Config {
                 _ => PermissionMode::Ignore,
             },
             verbose: az.config.verbose,
-            backend: Backend::from_str_loose(
-                az.config.backend.as_deref().unwrap_or("claude"),
-            ),
+            backend: Backend::from_str_loose(az.config.backend.as_deref().unwrap_or("claude")),
         })
     }
 
@@ -107,8 +104,7 @@ pub fn project_data_dir() -> Option<PathBuf> {
 pub fn ensure_config_dir() -> Result<()> {
     let dir = config_dir();
     if !dir.exists() {
-        std::fs::create_dir_all(&dir)
-            .context("Failed to create config directory")?;
+        std::fs::create_dir_all(&dir).context("Failed to create config directory")?;
     }
     Ok(())
 }
@@ -118,8 +114,7 @@ pub fn ensure_config_dir() -> Result<()> {
 pub fn ensure_project_data_dir() -> Result<Option<PathBuf>> {
     if let Some(dir) = project_data_dir() {
         if !dir.exists() {
-            std::fs::create_dir_all(&dir)
-                .context("Failed to create project data directory")?;
+            std::fs::create_dir_all(&dir).context("Failed to create project data directory")?;
         }
         Ok(Some(dir))
     } else {
@@ -132,22 +127,25 @@ pub fn ensure_project_data_dir() -> Result<Option<PathBuf>> {
 /// Matches Claude CLI v2.1+ `OP()` function exactly.
 fn encode_project_path(path: &std::path::Path) -> String {
     let raw = path.to_string_lossy();
-    let encoded: String = raw.chars()
+    let encoded: String = raw
+        .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     if encoded.len() <= 200 {
         encoded
     } else {
         // Same truncation + hash scheme as Claude CLI (djb2-style hash, base-36)
-        let hash = raw.bytes().fold(0u64, |h, b| {
-            h.wrapping_mul(31).wrapping_add(b as u64)
-        });
+        let hash = raw
+            .bytes()
+            .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64));
         format!("{}-{}", &encoded[..200], radix_36(hash))
     }
 }
 
 fn radix_36(mut n: u64) -> String {
-    if n == 0 { return "0".to_string(); }
+    if n == 0 {
+        return "0".to_string();
+    }
     let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut buf = Vec::new();
     while n > 0 {
@@ -168,7 +166,11 @@ pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> 
         .join("projects")
         .join(&encoded_path)
         .join(format!("{}.jsonl", session_id));
-    if session_file.exists() { Some(session_file) } else { None }
+    if session_file.exists() {
+        Some(session_file)
+    } else {
+        None
+    }
 }
 
 /// Get Claude's project directory for a given worktree path
@@ -176,7 +178,11 @@ pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let encoded_path = encode_project_path(worktree_path);
     let dir = home.join(".claude").join("projects").join(&encoded_path);
-    if dir.exists() { Some(dir) } else { None }
+    if dir.exists() {
+        Some(dir)
+    } else {
+        None
+    }
 }
 
 /// Migrate old-encoding project directories to the new encoding.
@@ -190,7 +196,9 @@ pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
 pub fn migrate_project_dirs(worktree_paths: &[std::path::PathBuf]) {
     let Some(home) = dirs::home_dir() else { return };
     let projects_dir = home.join(".claude").join("projects");
-    if !projects_dir.exists() { return; }
+    if !projects_dir.exists() {
+        return;
+    }
 
     for wt_path in worktree_paths {
         let new_name = encode_project_path(wt_path);
@@ -219,35 +227,47 @@ pub fn migrate_project_dirs(worktree_paths: &[std::path::PathBuf]) {
 /// Find a foreign-platform project directory that matches the same worktree.
 /// Extracts the repo-relative suffix (e.g. "-AZUREAL-worktrees-run") from the
 /// worktree path and searches for any existing project dir with that suffix.
-fn find_foreign_project_dir(projects_dir: &std::path::Path, worktree_path: &std::path::Path) -> Option<PathBuf> {
+fn find_foreign_project_dir(
+    projects_dir: &std::path::Path,
+    worktree_path: &std::path::Path,
+) -> Option<PathBuf> {
     // Build suffix from path components after (and including) the repo name.
     // e.g. /Users/foo/AZUREAL/worktrees/run → "-AZUREAL-worktrees-run"
     //      C:\Users\bar\AZUREAL\worktrees\run → "-AZUREAL-worktrees-run"
     // We use the last 3 components for worktrees (repo/worktrees/name) or
     // last 1 for the main repo. The suffix is platform-independent since
     // component names don't contain path separators.
-    let components: Vec<&str> = worktree_path.components()
+    let components: Vec<&str> = worktree_path
+        .components()
         .filter_map(|c| c.as_os_str().to_str())
         .collect();
 
     // Find "worktrees" in the path to determine the suffix depth
     let suffix_parts = if let Some(pos) = components.iter().rposition(|&c| c == "worktrees") {
         // Include repo name + worktrees + branch: components[pos-1..]
-        if pos > 0 { &components[pos - 1..] } else { &components[pos..] }
+        if pos > 0 {
+            &components[pos - 1..]
+        } else {
+            &components[pos..]
+        }
     } else {
         // Main repo: just the last component
-        if components.is_empty() { return None; }
+        if components.is_empty() {
+            return None;
+        }
         &components[components.len() - 1..]
     };
 
-    let suffix: String = suffix_parts.iter()
-        .map(|s| format!("-{}", s))
-        .collect();
+    let suffix: String = suffix_parts.iter().map(|s| format!("-{}", s)).collect();
 
-    if suffix.is_empty() { return None; }
+    if suffix.is_empty() {
+        return None;
+    }
 
     let native_name = encode_project_path(worktree_path);
-    let Ok(entries) = std::fs::read_dir(projects_dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(projects_dir) else {
+        return None;
+    };
 
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -264,7 +284,9 @@ fn find_foreign_project_dir(projects_dir: &std::path::Path, worktree_path: &std:
 /// Windows junctions don't require elevated privileges (unlike symlinks).
 fn link_project_dir(target: &std::path::Path, link: &std::path::Path) {
     #[cfg(unix)]
-    { let _ = std::os::unix::fs::symlink(target, link); }
+    {
+        let _ = std::os::unix::fs::symlink(target, link);
+    }
     #[cfg(windows)]
     {
         // Use junction (NTFS reparse point) — no elevation required.
@@ -289,10 +311,18 @@ fn format_time(mtime: std::time::SystemTime) -> String {
         return "future".to_string();
     };
     let secs = dur.as_secs();
-    if secs < 60 { return format!("{}s ago", secs); }
-    if secs < 3600 { return format!("{}m ago", secs / 60); }
-    if secs < 86400 { return format!("{}h ago", secs / 3600); }
-    if secs < 604800 { return format!("{}d ago", secs / 86400); }
+    if secs < 60 {
+        return format!("{}s ago", secs);
+    }
+    if secs < 3600 {
+        return format!("{}m ago", secs / 60);
+    }
+    if secs < 86400 {
+        return format!("{}h ago", secs / 3600);
+    }
+    if secs < 604800 {
+        return format!("{}d ago", secs / 86400);
+    }
     // Older than a week: show date
     let datetime = chrono::DateTime::<chrono::Local>::from(mtime);
     datetime.format("%b %d").to_string()
@@ -301,7 +331,9 @@ fn format_time(mtime: std::time::SystemTime) -> String {
 /// List all Claude session files for a worktree, sorted by modification time (newest first)
 /// Returns (session_id, path, pre-formatted_time_string) to avoid per-frame formatting
 pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
-    let Some(project_dir) = claude_project_dir(worktree_path) else { return Vec::new() };
+    let Some(project_dir) = claude_project_dir(worktree_path) else {
+        return Vec::new();
+    };
 
     let mut sessions: Vec<(String, PathBuf, std::time::SystemTime)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&project_dir) {
@@ -309,7 +341,10 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
             let path = entry.path();
             if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                    let mtime = entry
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .unwrap_or(std::time::UNIX_EPOCH);
                     sessions.push((stem.to_string(), path, mtime));
                 }
             }
@@ -318,12 +353,17 @@ pub fn list_claude_sessions(worktree_path: &std::path::Path) -> Vec<(String, Pat
     // Sort by modification time, newest first
     sessions.sort_by(|a, b| b.2.cmp(&a.2));
     // Pre-format time strings (expensive chrono call done once, not per-frame)
-    sessions.into_iter().map(|(id, path, mtime)| (id, path, format_time(mtime))).collect()
+    sessions
+        .into_iter()
+        .map(|(id, path, mtime)| (id, path, format_time(mtime)))
+        .collect()
 }
 
 /// Find the most recent Claude session for a worktree
 pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<String> {
-    list_claude_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
+    list_claude_sessions(worktree_path)
+        .first()
+        .map(|(id, _, _)| id.clone())
 }
 
 // ── Codex session discovery ──
@@ -332,7 +372,11 @@ pub fn find_latest_claude_session(worktree_path: &std::path::Path) -> Option<Str
 fn codex_sessions_root() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let dir = home.join(".codex").join("sessions");
-    if dir.exists() { Some(dir) } else { None }
+    if dir.exists() {
+        Some(dir)
+    } else {
+        None
+    }
 }
 
 /// Extract CWD from a Codex session file's first line (session_meta event).
@@ -356,10 +400,16 @@ fn codex_session_cwd(path: &std::path::Path) -> Option<String> {
 fn codex_session_id_from_filename(filename: &str) -> Option<String> {
     let stem = filename.strip_suffix(".jsonl")?;
     // UUID is 36 chars (8-4-4-4-12 with hyphens)
-    if stem.len() < 36 { return None; }
+    if stem.len() < 36 {
+        return None;
+    }
     let uuid = &stem[stem.len() - 36..];
     // Validate UUID shape (basic check: has 4 hyphens at correct positions)
-    if uuid.chars().filter(|&c| c == '-').count() == 4 { Some(uuid.to_string()) } else { None }
+    if uuid.chars().filter(|&c| c == '-').count() == 4 {
+        Some(uuid.to_string())
+    } else {
+        None
+    }
 }
 
 /// Get the Codex session file path for a given session ID.
@@ -368,11 +418,17 @@ pub fn codex_session_file(session_id: &str) -> Option<PathBuf> {
     let root = codex_sessions_root()?;
     // Walk year/month/day directories
     for year_entry in std::fs::read_dir(&root).ok()?.flatten() {
-        if !year_entry.path().is_dir() { continue; }
+        if !year_entry.path().is_dir() {
+            continue;
+        }
         for month_entry in std::fs::read_dir(year_entry.path()).ok()?.flatten() {
-            if !month_entry.path().is_dir() { continue; }
+            if !month_entry.path().is_dir() {
+                continue;
+            }
             for day_entry in std::fs::read_dir(month_entry.path()).ok()?.flatten() {
-                if !day_entry.path().is_dir() { continue; }
+                if !day_entry.path().is_dir() {
+                    continue;
+                }
                 for file_entry in std::fs::read_dir(day_entry.path()).ok()?.flatten() {
                     let path = file_entry.path();
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -390,37 +446,67 @@ pub fn codex_session_file(session_id: &str) -> Option<PathBuf> {
 /// List all Codex session files whose CWD matches a worktree path, newest first.
 /// Returns (session_id, path, pre-formatted_time_string) — same shape as list_claude_sessions.
 pub fn list_codex_sessions(worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
-    let Some(root) = codex_sessions_root() else { return Vec::new() };
+    let Some(root) = codex_sessions_root() else {
+        return Vec::new();
+    };
 
     // Canonicalize the target path for reliable comparison
-    let target = dunce::canonicalize(worktree_path)
-        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let target = dunce::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
     let target_str = target.to_string_lossy();
 
     let mut sessions: Vec<(String, PathBuf, std::time::SystemTime)> = Vec::new();
 
     // Walk year/month/day directories
     for year_entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
-        if !year_entry.path().is_dir() { continue; }
-        for month_entry in std::fs::read_dir(year_entry.path()).into_iter().flatten().flatten() {
-            if !month_entry.path().is_dir() { continue; }
-            for day_entry in std::fs::read_dir(month_entry.path()).into_iter().flatten().flatten() {
-                if !day_entry.path().is_dir() { continue; }
-                for file_entry in std::fs::read_dir(day_entry.path()).into_iter().flatten().flatten() {
+        if !year_entry.path().is_dir() {
+            continue;
+        }
+        for month_entry in std::fs::read_dir(year_entry.path())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            if !month_entry.path().is_dir() {
+                continue;
+            }
+            for day_entry in std::fs::read_dir(month_entry.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                if !day_entry.path().is_dir() {
+                    continue;
+                }
+                for file_entry in std::fs::read_dir(day_entry.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
                     let path = file_entry.path();
-                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                    if !name.ends_with(".jsonl") { continue; }
+                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+                    if !name.ends_with(".jsonl") {
+                        continue;
+                    }
 
                     // Extract session ID from filename
-                    let Some(sid) = codex_session_id_from_filename(name) else { continue };
+                    let Some(sid) = codex_session_id_from_filename(name) else {
+                        continue;
+                    };
 
                     // Match CWD from session_meta first line
-                    let Some(cwd) = codex_session_cwd(&path) else { continue };
-                    let cwd_canonical = dunce::canonicalize(&cwd)
-                        .unwrap_or_else(|_| PathBuf::from(&cwd));
-                    if cwd_canonical.to_string_lossy() != *target_str { continue; }
+                    let Some(cwd) = codex_session_cwd(&path) else {
+                        continue;
+                    };
+                    let cwd_canonical =
+                        dunce::canonicalize(&cwd).unwrap_or_else(|_| PathBuf::from(&cwd));
+                    if cwd_canonical.to_string_lossy() != *target_str {
+                        continue;
+                    }
 
-                    let mtime = file_entry.metadata()
+                    let mtime = file_entry
+                        .metadata()
                         .and_then(|m| m.modified())
                         .unwrap_or(std::time::UNIX_EPOCH);
                     sessions.push((sid, path, mtime));
@@ -430,12 +516,17 @@ pub fn list_codex_sessions(worktree_path: &std::path::Path) -> Vec<(String, Path
     }
 
     sessions.sort_by(|a, b| b.2.cmp(&a.2));
-    sessions.into_iter().map(|(id, path, mtime)| (id, path, format_time(mtime))).collect()
+    sessions
+        .into_iter()
+        .map(|(id, path, mtime)| (id, path, format_time(mtime)))
+        .collect()
 }
 
 /// Find the most recent Codex session for a worktree
 pub fn find_latest_codex_session(worktree_path: &std::path::Path) -> Option<String> {
-    list_codex_sessions(worktree_path).first().map(|(id, _, _)| id.clone())
+    list_codex_sessions(worktree_path)
+        .first()
+        .map(|(id, _, _)| id.clone())
 }
 
 // ── Backend-dispatched session discovery ──
@@ -443,7 +534,10 @@ pub fn find_latest_codex_session(worktree_path: &std::path::Path) -> Option<Stri
 /// List sessions for the active backend, newest first.
 /// Dispatches to list_claude_sessions or list_codex_sessions.
 #[allow(dead_code)]
-pub fn list_sessions(backend: Backend, worktree_path: &std::path::Path) -> Vec<(String, PathBuf, String)> {
+pub fn list_sessions(
+    backend: Backend,
+    worktree_path: &std::path::Path,
+) -> Vec<(String, PathBuf, String)> {
     match backend {
         Backend::Claude => list_claude_sessions(worktree_path),
         Backend::Codex => list_codex_sessions(worktree_path),
@@ -460,7 +554,11 @@ pub fn find_latest_session(backend: Backend, worktree_path: &std::path::Path) ->
 
 /// Get a session file path for the active backend.
 /// Claude needs project_path to locate the encoded directory; Codex scans by UUID.
-pub fn session_file(backend: Backend, project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
+pub fn session_file(
+    backend: Backend,
+    project_path: &std::path::Path,
+    session_id: &str,
+) -> Option<PathBuf> {
     match backend {
         Backend::Claude => claude_session_file(project_path, session_id),
         Backend::Codex => codex_session_file(session_id),
@@ -512,20 +610,29 @@ pub fn load_projects() -> Vec<ProjectEntry> {
             continue;
         }
         let display_name = if name.is_empty() {
-            resolved.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| raw_path.clone())
+            resolved
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| raw_path.clone())
         } else {
             name.clone()
         };
-        entries.push(ProjectEntry { path: resolved, display_name });
+        entries.push(ProjectEntry {
+            path: resolved,
+            display_name,
+        });
     }
-    if pruned { save_projects(&entries); }
+    if pruned {
+        save_projects(&entries);
+    }
     entries
 }
 
 /// Look up the display name for a repo path from projects.
 pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
     let canonical = dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
-    load_projects().into_iter()
+    load_projects()
+        .into_iter()
         .find(|e| e.path == canonical)
         .map(|e| e.display_name)
 }
@@ -534,7 +641,8 @@ pub fn project_display_name(repo_path: &std::path::Path) -> Option<String> {
 /// Format: display_name = "~/path"
 pub fn save_projects(entries: &[ProjectEntry]) {
     crate::azufig::update_global_azufig(|az| {
-        az.projects = entries.iter()
+        az.projects = entries
+            .iter()
             .map(|e| (e.display_name.clone(), display_path(&e.path)))
             .collect();
     });
@@ -546,12 +654,19 @@ pub fn save_projects(entries: &[ProjectEntry]) {
 pub fn register_project(repo_path: &std::path::Path) {
     let canonical = dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
     let mut entries = load_projects();
-    if entries.iter().any(|e| e.path == canonical) { return; }
-    let display_name = repo_name_from_origin(&canonical)
-        .unwrap_or_else(|| canonical.file_name()
+    if entries.iter().any(|e| e.path == canonical) {
+        return;
+    }
+    let display_name = repo_name_from_origin(&canonical).unwrap_or_else(|| {
+        canonical
+            .file_name()
             .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| canonical.display().to_string()));
-    entries.push(ProjectEntry { path: canonical, display_name });
+            .unwrap_or_else(|| canonical.display().to_string())
+    });
+    entries.push(ProjectEntry {
+        path: canonical,
+        display_name,
+    });
     save_projects(&entries);
 }
 
@@ -564,13 +679,21 @@ fn repo_name_from_origin(repo_path: &std::path::Path) -> Option<String> {
         .current_dir(repo_path)
         .output()
         .ok()?;
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
     // Take everything after the last '/' or ':', strip .git suffix
-    let name = url.rsplit_once('/').map(|(_, n)| n)
+    let name = url
+        .rsplit_once('/')
+        .map(|(_, n)| n)
         .or_else(|| url.rsplit_once(':').map(|(_, n)| n))?;
     let name = name.strip_suffix(".git").unwrap_or(name);
-    if name.is_empty() { None } else { Some(name.to_string()) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -606,7 +729,11 @@ mod tests {
         let long_segment = "a".repeat(250);
         let path = PathBuf::from(format!("/{}", long_segment));
         let encoded = encode_project_path(&path);
-        assert!(encoded.len() < 250, "encoded length {} should be < 250", encoded.len());
+        assert!(
+            encoded.len() < 250,
+            "encoded length {} should be < 250",
+            encoded.len()
+        );
         assert!(encoded.starts_with("-aaa"));
         assert!(encoded.contains('-'), "should have hash separator");
     }
@@ -695,7 +822,10 @@ mod tests {
         let cfg = Config::default();
         assert!(cfg.anthropic_api_key.is_none());
         assert!(cfg.claude_executable.is_none());
-        assert!(matches!(cfg.default_permission_mode, PermissionMode::Ignore));
+        assert!(matches!(
+            cfg.default_permission_mode,
+            PermissionMode::Ignore
+        ));
         assert!(!cfg.verbose);
     }
 
@@ -721,14 +851,18 @@ mod tests {
         let path = Path::new("/home/用户/项目");
         let encoded = encode_project_path(path);
         // All non-ASCII chars become '-'
-        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-'));
     }
 
     #[test]
     fn test_encode_emoji_path() {
         let path = Path::new("/home/user/🚀project");
         let encoded = encode_project_path(path);
-        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-'));
         assert!(encoded.contains("project"));
     }
 
@@ -736,7 +870,9 @@ mod tests {
     fn test_encode_japanese_path() {
         let path = Path::new("/home/ユーザー/テスト");
         let encoded = encode_project_path(path);
-        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-'));
     }
 
     // ── encode_project_path: special chars ──
@@ -807,7 +943,10 @@ mod tests {
         let path = PathBuf::from(format!("/{}", segment));
         let encoded = encode_project_path(&path);
         assert_eq!(encoded.len(), 200);
-        assert!(!encoded.contains("--"), "should not have hash suffix at exactly 200");
+        assert!(
+            !encoded.contains("--"),
+            "should not have hash suffix at exactly 200"
+        );
         // Actually it's "-" + "aaa..." which is 200 chars
         assert_eq!(encoded, format!("-{}", segment));
     }
@@ -914,8 +1053,14 @@ mod tests {
     fn test_radix_36_all_digits_only_valid_chars() {
         for n in [0, 1, 9, 10, 35, 36, 100, 1000, 99999, u64::MAX] {
             let result = radix_36(n);
-            assert!(result.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
-                "radix_36({}) = '{}' contains invalid chars", n, result);
+            assert!(
+                result
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+                "radix_36({}) = '{}' contains invalid chars",
+                n,
+                result
+            );
         }
     }
 
@@ -987,7 +1132,10 @@ mod tests {
         let cfg: Config = serde_json::from_str(json).unwrap();
         assert!(cfg.anthropic_api_key.is_none());
         assert!(cfg.claude_executable.is_none());
-        assert!(matches!(cfg.default_permission_mode, PermissionMode::Ignore));
+        assert!(matches!(
+            cfg.default_permission_mode,
+            PermissionMode::Ignore
+        ));
         assert!(!cfg.verbose);
     }
 
@@ -1051,10 +1199,17 @@ mod tests {
 
     #[test]
     fn test_permission_mode_roundtrip_all_variants() {
-        for mode in [PermissionMode::Approve, PermissionMode::Ignore, PermissionMode::Ask] {
+        for mode in [
+            PermissionMode::Approve,
+            PermissionMode::Ignore,
+            PermissionMode::Ask,
+        ] {
             let json = serde_json::to_string(&mode).unwrap();
             let parsed: PermissionMode = serde_json::from_str(&json).unwrap();
-            assert_eq!(std::mem::discriminant(&mode), std::mem::discriminant(&parsed));
+            assert_eq!(
+                std::mem::discriminant(&mode),
+                std::mem::discriminant(&parsed)
+            );
         }
     }
 
@@ -1162,7 +1317,9 @@ mod tests {
 
     #[test]
     fn test_codex_session_id_no_jsonl_extension() {
-        let id = codex_session_id_from_filename("rollout-2026-01-01-abcdef12-3456-7890-abcd-ef1234567890.txt");
+        let id = codex_session_id_from_filename(
+            "rollout-2026-01-01-abcdef12-3456-7890-abcd-ef1234567890.txt",
+        );
         assert!(id.is_none());
     }
 
@@ -1254,7 +1411,11 @@ mod tests {
     fn test_codex_session_cwd_windows_path() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.jsonl");
-        std::fs::write(&file, r#"{"type":"session_meta","payload":{"id":"abc","cwd":"C:\\Users\\dev\\project"}}"#).unwrap();
+        std::fs::write(
+            &file,
+            r#"{"type":"session_meta","payload":{"id":"abc","cwd":"C:\\Users\\dev\\project"}}"#,
+        )
+        .unwrap();
         let cwd = codex_session_cwd(&file).unwrap();
         assert_eq!(cwd, "C:\\Users\\dev\\project");
     }
@@ -1341,7 +1502,9 @@ mod tests {
     fn test_list_codex_sessions_real_worktree() {
         // Test against the actual AZUREAL project if sessions exist
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
         // All returned sessions should have valid UUIDs (36 chars with hyphens)
         for (id, path, time_str) in &sessions {
@@ -1355,11 +1518,18 @@ mod tests {
     fn test_codex_session_file_real_session() {
         // If there are real Codex sessions for AZUREAL, we should be able to find them by ID
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
         for (id, expected_path, _) in &sessions {
             let found = codex_session_file(id);
-            assert_eq!(found.as_ref(), Some(expected_path), "codex_session_file should find: {}", id);
+            assert_eq!(
+                found.as_ref(),
+                Some(expected_path),
+                "codex_session_file should find: {}",
+                id
+            );
         }
     }
 
@@ -1367,7 +1537,9 @@ mod tests {
     fn test_codex_session_cwd_matches_real_files() {
         // Verify that CWD extraction matches the actual worktree path
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
         for (_id, path, _) in &sessions {
             let cwd = codex_session_cwd(path);
@@ -1382,7 +1554,9 @@ mod tests {
     #[test]
     fn test_codex_session_ids_are_unique() {
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
         let ids: HashSet<&str> = sessions.iter().map(|(id, _, _)| id.as_str()).collect();
         assert_eq!(ids.len(), sessions.len(), "Session IDs should be unique");
@@ -1391,13 +1565,21 @@ mod tests {
     #[test]
     fn test_codex_sessions_sorted_newest_first() {
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
-        if sessions.len() < 2 { return; }
+        if sessions.len() < 2 {
+            return;
+        }
         // Verify mtime ordering by checking file metadata directly
         for pair in sessions.windows(2) {
-            let mtime_a = std::fs::metadata(&pair[0].1).and_then(|m| m.modified()).unwrap();
-            let mtime_b = std::fs::metadata(&pair[1].1).and_then(|m| m.modified()).unwrap();
+            let mtime_a = std::fs::metadata(&pair[0].1)
+                .and_then(|m| m.modified())
+                .unwrap();
+            let mtime_b = std::fs::metadata(&pair[1].1)
+                .and_then(|m| m.modified())
+                .unwrap();
             assert!(mtime_a >= mtime_b, "Sessions should be sorted newest first");
         }
     }
@@ -1405,7 +1587,9 @@ mod tests {
     #[test]
     fn test_find_latest_codex_session_matches_first() {
         let azureal = Path::new("/Users/macbookpro/AZUREAL");
-        if !azureal.exists() { return; }
+        if !azureal.exists() {
+            return;
+        }
         let sessions = list_codex_sessions(azureal);
         let latest = find_latest_codex_session(azureal);
         if sessions.is_empty() {

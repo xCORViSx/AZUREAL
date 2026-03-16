@@ -4,20 +4,29 @@
 //! slot_id is the PID string — each Claude process gets a unique slot.
 //! Also handles auto-sending staged prompts after Claude exits.
 
-use anyhow::Result;
 use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::claude::AgentEvent;
+use anyhow::Result;
 
 /// Handle Claude process events for a specific slot (PID string).
 /// After an exit event, auto-sends any staged prompt.
-pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub fn handle_claude_event(
+    slot_id: &str,
+    event: AgentEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     let is_exit = matches!(event, AgentEvent::Exited { .. });
 
     match event {
-        AgentEvent::Output(output) => app.handle_claude_output(slot_id, output.output_type, output.data),
+        AgentEvent::Output(output) => {
+            app.handle_claude_output(slot_id, output.output_type, output.data)
+        }
         AgentEvent::Started { pid } => app.handle_claude_started(slot_id, pid),
-        AgentEvent::SessionId(claude_session_id) => app.set_claude_session_id(slot_id, claude_session_id),
+        AgentEvent::SessionId(claude_session_id) => {
+            app.set_claude_session_id(slot_id, claude_session_id)
+        }
         AgentEvent::Exited { code } => app.handle_claude_exited(slot_id, code),
     }
 
@@ -29,22 +38,34 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
         }
         if let Some(prompt) = app.staged_prompt.take() {
             if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-                let branch = app.current_worktree().map(|s| s.branch_name.clone()).unwrap_or_default();
+                let branch = app
+                    .current_worktree()
+                    .map(|s| s.branch_name.clone())
+                    .unwrap_or_default();
                 let events_offset = app.display_events.len();
                 app.add_user_message(prompt.clone());
                 app.process_session_chunk(&format!("You: {}\n", prompt));
                 app.current_todos.clear();
                 // Context injection for staged prompts
-                let send_prompt = app.current_session_id
+                let send_prompt = app
+                    .current_session_id
                     .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
                     .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                    .map(|payload| crate::app::context_injection::build_context_prompt(&payload, &prompt))
+                    .map(|payload| {
+                        crate::app::context_injection::build_context_prompt(&payload, &prompt)
+                    })
                     .unwrap_or_else(|| prompt.clone());
                 let resume_id: Option<String> = None;
-                match claude_process.spawn(&wt_path, &send_prompt, resume_id.as_deref(), app.selected_model.as_deref()) {
+                match claude_process.spawn(
+                    &wt_path,
+                    &send_prompt,
+                    resume_id.as_deref(),
+                    app.selected_model.as_deref(),
+                ) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
-                            app.pid_session_target.insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
+                            app.pid_session_target
+                                .insert(pid.to_string(), (sid, wt_path.clone(), events_offset));
                         }
                         app.register_claude(branch, pid, rx);
                         app.set_status("Running...");
@@ -68,7 +89,12 @@ pub fn handle_claude_event(slot_id: &str, event: AgentEvent, app: &mut App, clau
 /// Spawn a background Claude agent to summarize the conversation for compaction.
 /// The agent's receiver goes into `compaction_receivers` (not `agent_receivers`)
 /// so its output is captured separately and never displayed in the session pane.
-fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_id: i64, wt_path: &std::path::Path) {
+fn spawn_compaction_agent(
+    app: &mut App,
+    claude_process: &AgentProcess,
+    session_id: i64,
+    wt_path: &std::path::Path,
+) {
     let store = match app.session_store.as_ref() {
         Some(s) => s,
         None => return,
@@ -76,7 +102,10 @@ fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_
 
     // Find where the last compaction ended
     let last_compaction = store.latest_compaction(session_id).ok().flatten();
-    let from_seq = last_compaction.as_ref().map(|c| c.after_seq + 1).unwrap_or(1);
+    let from_seq = last_compaction
+        .as_ref()
+        .map(|c| c.after_seq + 1)
+        .unwrap_or(1);
 
     // Find boundary: compact everything BEFORE the last 3 user messages
     let boundary_seq = match store.compaction_boundary(session_id, from_seq, 3) {
@@ -103,9 +132,11 @@ fn spawn_compaction_agent(app: &mut App, claude_process: &AgentProcess, session_
     match claude_process.spawn(wt_path, &prompt, None, Some(compaction_model)) {
         Ok((rx, pid)) => {
             let pid_str = pid.to_string();
-            app.compaction_receivers.insert(pid_str, (rx, session_id, boundary_seq));
+            app.compaction_receivers
+                .insert(pid_str, (rx, session_id, boundary_seq));
             // Show "Compacting" banner in the session pane
-            app.display_events.push(crate::events::DisplayEvent::MayBeCompacting);
+            app.display_events
+                .push(crate::events::DisplayEvent::MayBeCompacting);
             app.invalidate_render_cache();
         }
         Err(_) => {} // Compaction is best-effort
@@ -156,7 +187,8 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
                     // Refresh badge — chars_since_compaction just dropped
                     app.update_token_badge();
                     // Show "Compacted" banner in the session pane
-                    app.display_events.push(crate::events::DisplayEvent::Compacting);
+                    app.display_events
+                        .push(crate::events::DisplayEvent::Compacting);
                     app.invalidate_render_cache();
                 }
             }
@@ -171,7 +203,9 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
 fn extract_assistant_text(data: &str) -> Option<String> {
     for line in data.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let v: serde_json::Value = serde_json::from_str(line).ok()?;
         if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
             continue;
@@ -285,7 +319,10 @@ mod tests {
         let cp = AgentProcess::new(crate::config::Config::default());
         let event = AgentEvent::SessionId("uuid-abc-123".into());
         handle_claude_event("42", event, &mut app, &cp).unwrap();
-        assert_eq!(app.agent_session_ids.get("42"), Some(&"uuid-abc-123".to_string()));
+        assert_eq!(
+            app.agent_session_ids.get("42"),
+            Some(&"uuid-abc-123".to_string())
+        );
     }
 
     #[test]
@@ -293,7 +330,13 @@ mod tests {
         let mut app = App::new();
         app.agent_session_ids.insert("42".into(), "old-uuid".into());
         let cp = AgentProcess::new(crate::config::Config::default());
-        handle_claude_event("42", AgentEvent::SessionId("new-uuid".into()), &mut app, &cp).unwrap();
+        handle_claude_event(
+            "42",
+            AgentEvent::SessionId("new-uuid".into()),
+            &mut app,
+            &cp,
+        )
+        .unwrap();
         assert_eq!(app.agent_session_ids.get("42").unwrap(), "new-uuid");
     }
 
@@ -419,7 +462,9 @@ mod tests {
     fn test_return_ok_on_exited() {
         let mut app = App::new();
         let cp = AgentProcess::new(crate::config::Config::default());
-        assert!(handle_claude_event("1", AgentEvent::Exited { code: Some(0) }, &mut app, &cp).is_ok());
+        assert!(
+            handle_claude_event("1", AgentEvent::Exited { code: Some(0) }, &mut app, &cp).is_ok()
+        );
     }
 
     #[test]
@@ -612,9 +657,18 @@ mod tests {
         handle_claude_event("s1", AgentEvent::SessionId("id-s1".into()), &mut app, &cp).unwrap();
         handle_claude_event("s2", AgentEvent::SessionId("id-s2".into()), &mut app, &cp).unwrap();
         handle_claude_event("s3", AgentEvent::SessionId("id-s3".into()), &mut app, &cp).unwrap();
-        assert_eq!(app.agent_session_ids.get("s1").map(|s| s.as_str()), Some("id-s1"));
-        assert_eq!(app.agent_session_ids.get("s2").map(|s| s.as_str()), Some("id-s2"));
-        assert_eq!(app.agent_session_ids.get("s3").map(|s| s.as_str()), Some("id-s3"));
+        assert_eq!(
+            app.agent_session_ids.get("s1").map(|s| s.as_str()),
+            Some("id-s1")
+        );
+        assert_eq!(
+            app.agent_session_ids.get("s2").map(|s| s.as_str()),
+            Some("id-s2")
+        );
+        assert_eq!(
+            app.agent_session_ids.get("s3").map(|s| s.as_str()),
+            Some("id-s3")
+        );
     }
 
     // ── 12. Started event uses numeric pid string for slot ──
@@ -649,7 +703,13 @@ mod tests {
     fn test_exit_code_128() {
         let mut app = App::new();
         let cp = AgentProcess::new(crate::config::Config::default());
-        handle_claude_event("pid128", AgentEvent::Exited { code: Some(128) }, &mut app, &cp).unwrap();
+        handle_claude_event(
+            "pid128",
+            AgentEvent::Exited { code: Some(128) },
+            &mut app,
+            &cp,
+        )
+        .unwrap();
         assert_eq!(app.agent_exit_codes.get("pid128"), Some(&128));
     }
 
@@ -759,7 +819,8 @@ mod tests {
 
     #[test]
     fn test_extract_assistant_text_valid() {
-        let data = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hello world"}]}}"#;
+        let data =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hello world"}]}}"#;
         assert_eq!(extract_assistant_text(data), Some("hello world".into()));
     }
 
@@ -830,13 +891,20 @@ mod tests {
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
         // Append some events so store_compaction has a valid max_seq
-        store.append_events(sid, &[
-            crate::events::DisplayEvent::UserMessage { _uuid: String::new(), content: "test".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[crate::events::DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "test".into(),
+                }],
+            )
+            .unwrap();
         app.session_store = Some(store);
 
         // Simulate compaction output already accumulated
-        app.compaction_output.insert("99".into(), "The conversation covered X, Y, Z.".into());
+        app.compaction_output
+            .insert("99".into(), "The conversation covered X, Y, Z.".into());
 
         // Create a channel and send exit event
         let (tx, rx) = std::sync::mpsc::channel();
@@ -849,9 +917,17 @@ mod tests {
         assert!(app.compaction_output.is_empty());
 
         // Verify compaction was stored
-        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        let compaction = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .latest_compaction(sid)
+            .unwrap();
         assert!(compaction.is_some());
-        assert_eq!(compaction.unwrap().summary, "The conversation covered X, Y, Z.");
+        assert_eq!(
+            compaction.unwrap().summary,
+            "The conversation covered X, Y, Z."
+        );
     }
 
     #[test]
@@ -872,7 +948,12 @@ mod tests {
         poll_compaction_agents(&mut app);
 
         // Should NOT store an empty/whitespace-only summary
-        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        let compaction = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .latest_compaction(sid)
+            .unwrap();
         assert!(compaction.is_none());
     }
 
@@ -891,7 +972,12 @@ mod tests {
 
         poll_compaction_agents(&mut app);
 
-        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        let compaction = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .latest_compaction(sid)
+            .unwrap();
         assert!(compaction.is_none());
     }
 
@@ -900,23 +986,33 @@ mod tests {
         let mut app = App::new();
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
-        store.append_events(sid, &[
-            crate::events::DisplayEvent::UserMessage { _uuid: String::new(), content: "x".into() },
-        ]).unwrap();
+        store
+            .append_events(
+                sid,
+                &[crate::events::DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "x".into(),
+                }],
+            )
+            .unwrap();
         app.session_store = Some(store);
 
         let (tx, rx) = std::sync::mpsc::channel();
         // Send two output events then exit
-        let assistant_json_1 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 1. "}]}}"#;
-        let assistant_json_2 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 2."}]}}"#;
+        let assistant_json_1 =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 1. "}]}}"#;
+        let assistant_json_2 =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Part 2."}]}}"#;
         tx.send(AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: assistant_json_1.into(),
-        })).unwrap();
+        }))
+        .unwrap();
         tx.send(AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: assistant_json_2.into(),
-        })).unwrap();
+        }))
+        .unwrap();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
         drop(tx);
         app.compaction_receivers.insert("66".into(), (rx, sid, 0));
@@ -925,7 +1021,12 @@ mod tests {
         poll_compaction_agents(&mut app);
 
         // Should have processed exit and stored compaction
-        let compaction = app.session_store.as_ref().unwrap().latest_compaction(sid).unwrap();
+        let compaction = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .latest_compaction(sid)
+            .unwrap();
         assert!(compaction.is_some());
         assert_eq!(compaction.unwrap().summary, "Part 1. Part 2.");
     }

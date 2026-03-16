@@ -175,7 +175,10 @@ mod tests {
             ..Config::default()
         };
         let process = CodexProcess::new(config);
-        assert_eq!(process.config.codex_executable(), "/usr/local/bin/codex-cli");
+        assert_eq!(
+            process.config.codex_executable(),
+            "/usr/local/bin/codex-cli"
+        );
     }
 
     #[test]
@@ -185,7 +188,10 @@ mod tests {
             ..Config::default()
         };
         let process = CodexProcess::new(config);
-        assert_eq!(process.config.anthropic_api_key.as_deref(), Some("sk-test-key"));
+        assert_eq!(
+            process.config.anthropic_api_key.as_deref(),
+            Some("sk-test-key")
+        );
     }
 
     #[test]
@@ -205,7 +211,10 @@ mod tests {
             ..Config::default()
         };
         let process = CodexProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Ignore));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Ignore
+        ));
     }
 
     #[test]
@@ -215,7 +224,10 @@ mod tests {
             ..Config::default()
         };
         let process = CodexProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Approve));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Approve
+        ));
     }
 
     #[test]
@@ -225,7 +237,10 @@ mod tests {
             ..Config::default()
         };
         let process = CodexProcess::new(config);
-        assert!(matches!(process.config.default_permission_mode, PermissionMode::Ask));
+        assert!(matches!(
+            process.config.default_permission_mode,
+            PermissionMode::Ask
+        ));
     }
 
     // ── CodexProcess::spawn validation ──
@@ -248,19 +263,27 @@ mod tests {
         tx.send(AgentEvent::Output(AgentOutput {
             output_type: OutputType::Stdout,
             data: r#"{"type":"thread.started","thread_id":"abc"}"#.into(),
-        })).unwrap();
+        }))
+        .unwrap();
         tx.send(AgentEvent::SessionId("abc".into())).unwrap();
         tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
-        assert!(matches!(rx.recv().unwrap(), AgentEvent::Started { pid: 200 }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            AgentEvent::Started { pid: 200 }
+        ));
         assert!(matches!(rx.recv().unwrap(), AgentEvent::Output(_)));
         assert!(matches!(rx.recv().unwrap(), AgentEvent::SessionId(_)));
-        assert!(matches!(rx.recv().unwrap(), AgentEvent::Exited { code: Some(0) }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            AgentEvent::Exited { code: Some(0) }
+        ));
     }
 
     #[test]
     fn codex_thread_id_extraction_logic() {
         // Verify the substring detection used in spawn()
-        let line = r#"{"type":"thread.started","thread_id":"019ce52c-cfe9-7d13-869a-cf0ca4ce00e4"}"#;
+        let line =
+            r#"{"type":"thread.started","thread_id":"019ce52c-cfe9-7d13-869a-cf0ca4ce00e4"}"#;
         assert!(line.contains("\"thread.started\""));
         let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
         let thread_id = parsed.get("thread_id").and_then(|v| v.as_str()).unwrap();

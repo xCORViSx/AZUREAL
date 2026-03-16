@@ -11,15 +11,15 @@
 //! UI always shows the most recent state without wasting CPU on stale data.
 
 use std::collections::HashSet;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 
 use ratatui::text::Line;
 
+use super::render_events::{ClickablePath, ClickableTable};
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
-use super::render_events::{ClickablePath, ClickableTable};
 
 /// Pre-computed state flags from events before start_idx.
 /// Computed on the main thread (zero-cost read) so the render thread
@@ -108,7 +108,12 @@ impl RenderThread {
             })
             .expect("failed to spawn render thread");
 
-        Self { tx: req_tx, rx: res_rx, seq, _handle: handle }
+        Self {
+            tx: req_tx,
+            rx: res_rx,
+            seq,
+            _handle: handle,
+        }
     }
 
     /// Submit a render request (non-blocking). Returns the assigned sequence number.
@@ -150,7 +155,9 @@ fn render_loop(
 ) {
     while let Ok(mut req) = rx.recv() {
         // Drain queued requests — only render the latest one
-        while let Ok(newer) = rx.try_recv() { req = newer; }
+        while let Ok(newer) = rx.try_recv() {
+            req = newer;
+        }
 
         let width = req.width;
         let seq = req.seq;
@@ -164,8 +171,11 @@ fn render_loop(
             // Render only new events into a fresh Vec (no existing cache clone).
             // Indices are relative to 0 — main thread offsets by existing_line_count.
             let (l, a, b, c, t) = super::render_events::render_display_events_incremental(
-                &req.events, width,
-                &req.pending_tools, &req.failed_tools, highlighter,
+                &req.events,
+                width,
+                &req.pending_tools,
+                &req.failed_tools,
+                highlighter,
                 req.pending_user_message.as_deref(),
                 req.pre_scan,
             );
@@ -175,18 +185,27 @@ fn render_loop(
             // no need to skip here. total_events is the FULL count (for rendered_events_count).
             let total = req.total_events;
             let (l, a, b, c, t) = super::render_events::render_display_events(
-                &req.events, width,
-                &req.pending_tools, &req.failed_tools, highlighter,
+                &req.events,
+                width,
+                &req.pending_tools,
+                &req.failed_tools,
+                highlighter,
                 req.pending_user_message.as_deref(),
             );
             (total, l, a, b, c, t)
         };
 
         let _ = tx.send(RenderResult {
-            lines, anim_indices: anim, bubble_positions: bubbles,
-            clickable_paths: clickable, clickable_tables: tables,
-            events_count: total_events, events_start: deferred_start,
-            width, seq, incremental,
+            lines,
+            anim_indices: anim,
+            bubble_positions: bubbles,
+            clickable_paths: clickable,
+            clickable_tables: tables,
+            events_count: total_events,
+            events_start: deferred_start,
+            width,
+            seq,
+            incremental,
         });
     }
 }
@@ -379,7 +398,7 @@ mod tests {
     #[test]
     fn test_render_result_anim_indices_tuple() {
         let anim: (usize, usize, String) = (5, 10, "tool1".into());
-        assert_eq!(anim.0, 5);  // line index
+        assert_eq!(anim.0, 5); // line index
         assert_eq!(anim.1, 10); // span index
         assert_eq!(anim.2, "tool1"); // tool_use_id
     }
@@ -387,8 +406,8 @@ mod tests {
     #[test]
     fn test_render_result_bubble_positions_tuple() {
         let bubble: (usize, bool) = (3, true);
-        assert_eq!(bubble.0, 3);  // line index
-        assert!(bubble.1);        // is_user
+        assert_eq!(bubble.0, 3); // line index
+        assert!(bubble.1); // is_user
     }
 
     #[test]
@@ -453,7 +472,11 @@ mod tests {
     fn test_seq_newer_wins() {
         let prev_seq = 5u64;
         let new_seq = 7u64;
-        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        let best = if prev_seq > new_seq {
+            prev_seq
+        } else {
+            new_seq
+        };
         assert_eq!(best, 7);
     }
 
@@ -461,7 +484,11 @@ mod tests {
     fn test_seq_older_discarded() {
         let prev_seq = 10u64;
         let new_seq = 3u64;
-        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        let best = if prev_seq > new_seq {
+            prev_seq
+        } else {
+            new_seq
+        };
         assert_eq!(best, 10);
     }
 
@@ -469,7 +496,11 @@ mod tests {
     fn test_seq_equal() {
         let prev_seq = 5u64;
         let new_seq = 5u64;
-        let best = if prev_seq > new_seq { prev_seq } else { new_seq };
+        let best = if prev_seq > new_seq {
+            prev_seq
+        } else {
+            new_seq
+        };
         assert_eq!(best, 5);
     }
 
@@ -572,7 +603,9 @@ mod tests {
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(100));
             result = rt.try_recv();
-            if result.is_some() { break; }
+            if result.is_some() {
+                break;
+            }
         }
         assert!(result.is_some());
         let res = result.unwrap();
@@ -685,10 +718,7 @@ mod tests {
 
     #[test]
     fn test_existing_lines_vec() {
-        let lines: Vec<Line<'static>> = vec![
-            Line::from("line 1"),
-            Line::from("line 2"),
-        ];
+        let lines: Vec<Line<'static>> = vec![Line::from("line 1"), Line::from("line 2")];
         assert_eq!(lines.len(), 2);
     }
 

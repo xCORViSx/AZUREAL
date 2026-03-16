@@ -11,14 +11,27 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::selection::apply_selection_to_spans;
 use super::wrapping::{word_wrap_breaks, wrap_spans_word};
+use crate::app::App;
 
 /// Draw viewer in edit mode
-pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_height: usize, viewport_width: usize) {
-    let path_str = app.viewer_path.as_ref()
-        .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+pub(super) fn draw_edit_mode(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    viewport_height: usize,
+    viewport_width: usize,
+) {
+    let path_str = app
+        .viewer_path
+        .as_ref()
+        .map(|p| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        })
         .unwrap_or_else(|| "File".to_string());
 
     // Title on left — show REC/... prefix when STT is active, modified indicator on right
@@ -30,7 +43,11 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
         format!(" EDIT: {} ", path_str)
     };
     // Border color: magenta during voice input, yellow normally
-    let border_color = if app.stt_recording || app.stt_transcribing { Color::Magenta } else { Color::Yellow };
+    let border_color = if app.stt_recording || app.stt_transcribing {
+        Color::Magenta
+    } else {
+        Color::Yellow
+    };
 
     let total_lines = app.viewer_edit_content.len();
     let line_num_width = total_lines.to_string().len().max(3);
@@ -44,7 +61,9 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
     let edit_ver = app.viewer_edit_version;
     if app.viewer_edit_highlight_ver != edit_ver || app.viewer_edit_highlight_cache.is_empty() {
         let full_content = app.viewer_edit_content.join("\n");
-        app.viewer_edit_highlight_cache = app.syntax_highlighter.highlight_file(&full_content, &path_str);
+        app.viewer_edit_highlight_cache = app
+            .syntax_highlighter
+            .highlight_file(&full_content, &path_str);
         app.viewer_edit_highlight_ver = edit_ver;
     }
 
@@ -86,7 +105,9 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
             break;
         }
     }
-    if !found_first { first_src = app.viewer_edit_content.len(); }
+    if !found_first {
+        first_src = app.viewer_edit_content.len();
+    }
 
     // Build only the visible display lines
     let mut final_lines: Vec<Line> = Vec::with_capacity(viewport_height);
@@ -99,25 +120,42 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
             Style::default().fg(Color::DarkGray)
         };
 
-        let spans = app.viewer_edit_highlight_cache.get(idx).cloned().unwrap_or_default();
+        let spans = app
+            .viewer_edit_highlight_cache
+            .get(idx)
+            .cloned()
+            .unwrap_or_default();
 
         // Apply selection highlighting if this line is in selection range
-        let spans = if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) = selection {
-            if idx >= sel_start_line && idx <= sel_end_line {
-                apply_selection_to_spans(spans, line_content, idx, sel_start_line, sel_start_col, sel_end_line, sel_end_col)
+        let spans =
+            if let Some((sel_start_line, sel_start_col, sel_end_line, sel_end_col)) = selection {
+                if idx >= sel_start_line && idx <= sel_end_line {
+                    apply_selection_to_spans(
+                        spans,
+                        line_content,
+                        idx,
+                        sel_start_line,
+                        sel_start_col,
+                        sel_end_line,
+                        sel_end_col,
+                    )
+                } else {
+                    spans
+                }
             } else {
                 spans
-            }
-        } else {
-            spans
-        };
+            };
 
         let wrapped = wrap_spans_word(spans, content_width);
 
         for (wrap_idx, wrapped_spans) in wrapped.into_iter().enumerate() {
             // Skip wrap rows before scroll start (only applies to first_src)
-            if idx == first_src && wrap_idx < first_wrap_skip { continue; }
-            if final_lines.len() >= viewport_height { break; }
+            if idx == first_src && wrap_idx < first_wrap_skip {
+                continue;
+            }
+            if final_lines.len() >= viewport_height {
+                break;
+            }
 
             let line_num = if wrap_idx == 0 {
                 format!("{:>width$} │ ", idx + 1, width = line_num_width)
@@ -128,16 +166,23 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
             line_spans.extend(wrapped_spans);
             final_lines.push(Line::from(line_spans));
         }
-        if final_lines.len() >= viewport_height { break; }
+        if final_lines.len() >= viewport_height {
+            break;
+        }
     }
 
     // Pad with empty lines if needed
     while final_lines.len() < viewport_height {
         let line_num = format!("{:>width$} │ ", "~", width = line_num_width);
-        final_lines.push(Line::from(Span::styled(line_num, Style::default().fg(Color::DarkGray))));
+        final_lines.push(Line::from(Span::styled(
+            line_num,
+            Style::default().fg(Color::DarkGray),
+        )));
     }
 
-    let border_style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
+    let border_style = Style::default()
+        .fg(border_color)
+        .add_modifier(Modifier::BOLD);
     let title_line = Line::from(Span::styled(&title, border_style));
 
     let mut block = Block::default()
@@ -147,9 +192,13 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
         .border_style(border_style);
     // Right-aligned [modified] indicator — ratatui fills the gap with border chars
     if app.viewer_edit_dirty {
-        block = block.title(Line::from(
-            Span::styled("[modified] ", Style::default().fg(border_color))
-        ).alignment(Alignment::Right));
+        block = block.title(
+            Line::from(Span::styled(
+                "[modified] ",
+                Style::default().fg(border_color),
+            ))
+            .alignment(Alignment::Right),
+        );
     }
 
     let widget = Paragraph::new(final_lines).block(block);
@@ -168,15 +217,23 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
         // Top and bottom edges: blank every other ═ cell (skip corners)
         for x in (x0 + 1)..x1 {
             if (x - x0) % 2 == 0 {
-                if buf[(x, y0)].symbol() == "═" { buf[(x, y0)].set_symbol(" "); }
-                if buf[(x, y1)].symbol() == "═" { buf[(x, y1)].set_symbol(" "); }
+                if buf[(x, y0)].symbol() == "═" {
+                    buf[(x, y0)].set_symbol(" ");
+                }
+                if buf[(x, y1)].symbol() == "═" {
+                    buf[(x, y1)].set_symbol(" ");
+                }
             }
         }
         // Left and right edges: blank every other ║ cell (skip corners)
         for y in (y0 + 1)..y1 {
             if (y - y0) % 2 == 0 {
-                if buf[(x0, y)].symbol() == "║" { buf[(x0, y)].set_symbol(" "); }
-                if buf[(x1, y)].symbol() == "║" { buf[(x1, y)].set_symbol(" "); }
+                if buf[(x0, y)].symbol() == "║" {
+                    buf[(x0, y)].set_symbol(" ");
+                }
+                if buf[(x1, y)].symbol() == "║" {
+                    buf[(x1, y)].set_symbol(" ");
+                }
             }
         }
     }
@@ -188,12 +245,18 @@ pub(super) fn draw_edit_mode(f: &mut Frame, app: &mut App, area: Rect, viewport_
     for i in 0..cursor_line.min(app.viewer_edit_content.len()) {
         cursor_visual_line += word_wrap_breaks(&app.viewer_edit_content[i], cw).len();
     }
-    let cursor_line_str = app.viewer_edit_content.get(cursor_line).map(|s| s.as_str()).unwrap_or("");
+    let cursor_line_str = app
+        .viewer_edit_content
+        .get(cursor_line)
+        .map(|s| s.as_str())
+        .unwrap_or("");
     let cursor_breaks = word_wrap_breaks(cursor_line_str, cw);
     // Find which wrap row the cursor falls on
     let mut cursor_wrap_row = 0;
     for (j, &brk) in cursor_breaks.iter().enumerate() {
-        if cursor_col >= brk { cursor_wrap_row = j; }
+        if cursor_col >= brk {
+            cursor_wrap_row = j;
+        }
     }
     cursor_visual_line += cursor_wrap_row;
     let cursor_visual_col = cursor_col - cursor_breaks[cursor_wrap_row];
@@ -241,7 +304,10 @@ mod tests {
 
     #[test]
     fn test_style_fg_dark_gray() {
-        assert_eq!(Style::default().fg(Color::DarkGray).fg, Some(Color::DarkGray));
+        assert_eq!(
+            Style::default().fg(Color::DarkGray).fg,
+            Some(Color::DarkGray)
+        );
     }
 
     #[test]
@@ -257,7 +323,9 @@ mod tests {
 
     #[test]
     fn test_style_fg_and_bold() {
-        let s = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+        let s = Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD);
         assert_eq!(s.fg, Some(Color::Yellow));
         assert!(s.add_modifier.contains(Modifier::BOLD));
     }
@@ -266,25 +334,41 @@ mod tests {
 
     #[test]
     fn test_border_color_normal() {
-        let color = if false || false { Color::Magenta } else { Color::Yellow };
+        let color = if false || false {
+            Color::Magenta
+        } else {
+            Color::Yellow
+        };
         assert_eq!(color, Color::Yellow);
     }
 
     #[test]
     fn test_border_color_recording() {
-        let color = if true || false { Color::Magenta } else { Color::Yellow };
+        let color = if true || false {
+            Color::Magenta
+        } else {
+            Color::Yellow
+        };
         assert_eq!(color, Color::Magenta);
     }
 
     #[test]
     fn test_border_color_transcribing() {
-        let color = if false || true { Color::Magenta } else { Color::Yellow };
+        let color = if false || true {
+            Color::Magenta
+        } else {
+            Color::Yellow
+        };
         assert_eq!(color, Color::Magenta);
     }
 
     #[test]
     fn test_border_color_both_active() {
-        let color = if true || true { Color::Magenta } else { Color::Yellow };
+        let color = if true || true {
+            Color::Magenta
+        } else {
+            Color::Yellow
+        };
         assert_eq!(color, Color::Magenta);
     }
 
@@ -294,7 +378,13 @@ mod tests {
     fn test_title_normal() {
         let (rec, trans) = (false, false);
         let p = "main.rs";
-        let t = if rec { format!(" REC EDIT: {} ", p) } else if trans { format!(" ... EDIT: {} ", p) } else { format!(" EDIT: {} ", p) };
+        let t = if rec {
+            format!(" REC EDIT: {} ", p)
+        } else if trans {
+            format!(" ... EDIT: {} ", p)
+        } else {
+            format!(" EDIT: {} ", p)
+        };
         assert_eq!(t, " EDIT: main.rs ");
     }
 
@@ -369,35 +459,55 @@ mod tests {
     #[test]
     fn test_selection_normalize_already_ordered() {
         let (sl, sc, el, ec) = (1, 5, 3, 10);
-        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        let n = if sl < el || (sl == el && sc <= ec) {
+            (sl, sc, el, ec)
+        } else {
+            (el, ec, sl, sc)
+        };
         assert_eq!(n, (1, 5, 3, 10));
     }
 
     #[test]
     fn test_selection_normalize_reversed() {
         let (sl, sc, el, ec) = (5, 10, 2, 3);
-        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        let n = if sl < el || (sl == el && sc <= ec) {
+            (sl, sc, el, ec)
+        } else {
+            (el, ec, sl, sc)
+        };
         assert_eq!(n, (2, 3, 5, 10));
     }
 
     #[test]
     fn test_selection_normalize_same_line_ordered() {
         let (sl, sc, el, ec) = (3, 2, 3, 8);
-        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        let n = if sl < el || (sl == el && sc <= ec) {
+            (sl, sc, el, ec)
+        } else {
+            (el, ec, sl, sc)
+        };
         assert_eq!(n, (3, 2, 3, 8));
     }
 
     #[test]
     fn test_selection_normalize_same_line_reversed() {
         let (sl, sc, el, ec) = (3, 8, 3, 2);
-        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        let n = if sl < el || (sl == el && sc <= ec) {
+            (sl, sc, el, ec)
+        } else {
+            (el, ec, sl, sc)
+        };
         assert_eq!(n, (3, 2, 3, 8));
     }
 
     #[test]
     fn test_selection_normalize_same_point() {
         let (sl, sc, el, ec) = (3, 5, 3, 5);
-        let n = if sl < el || (sl == el && sc <= ec) { (sl, sc, el, ec) } else { (el, ec, sl, sc) };
+        let n = if sl < el || (sl == el && sc <= ec) {
+            (sl, sc, el, ec)
+        } else {
+            (el, ec, sl, sc)
+        };
         assert_eq!(n, (3, 5, 3, 5));
     }
 
@@ -500,16 +610,15 @@ mod tests {
 
     #[test]
     fn test_line_from_spans() {
-        let line = Line::from(vec![
-            Span::raw("  1 │ "),
-            Span::raw("fn main()"),
-        ]);
+        let line = Line::from(vec![Span::raw("  1 │ "), Span::raw("fn main()")]);
         assert_eq!(line.spans.len(), 2);
     }
 
     #[test]
     fn test_block_double_border() {
-        let _b = Block::default().borders(Borders::ALL).border_type(BorderType::Double);
+        let _b = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double);
     }
 
     #[test]

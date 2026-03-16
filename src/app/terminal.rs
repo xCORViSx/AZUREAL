@@ -42,7 +42,8 @@ impl App {
         }
 
         // Create new terminal
-        let cwd = self.current_worktree()
+        let cwd = self
+            .current_worktree()
             .and_then(|s| s.worktree_path.clone())
             .or_else(|| self.project.as_ref().map(|p| p.path.clone()))
             .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -66,8 +67,11 @@ impl App {
             // Check exit status (not just is_ok) to verify the shell actually works.
             use std::process::Command as StdCmd;
             let check = |name: &str| -> bool {
-                StdCmd::new(name).arg("-Version").output()
-                    .map(|o| o.status.success()).unwrap_or(false)
+                StdCmd::new(name)
+                    .arg("-Version")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
             };
             if check("pwsh") {
                 "pwsh.exe".into()
@@ -124,7 +128,9 @@ impl App {
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => { let _ = tx.send(buf[..n].to_vec()); }
+                    Ok(n) => {
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
                     Err(_) => break,
                 }
             }
@@ -202,7 +208,9 @@ impl App {
         let mut first = true;
 
         for row_content in screen.rows_formatted(0, cols) {
-            if !first { output.push(b'\n'); }
+            if !first {
+                output.push(b'\n');
+            }
             first = false;
             output.extend_from_slice(&row_content);
         }
@@ -217,9 +225,16 @@ impl App {
 
     /// Resize terminal PTY and parser
     pub fn resize_terminal(&mut self, rows: u16, cols: u16) {
-        if rows == self.terminal_rows && cols == self.terminal_cols { return; }
+        if rows == self.terminal_rows && cols == self.terminal_cols {
+            return;
+        }
         if let Some(ref pty) = self.terminal_pty {
-            let _ = pty.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+            let _ = pty.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            });
         }
         self.terminal_parser.screen_mut().set_size(rows, cols);
         self.terminal_rows = rows;
@@ -236,14 +251,18 @@ impl App {
     /// Scroll terminal up into history
     pub fn scroll_terminal_up(&mut self, lines: usize) {
         self.terminal_scroll = self.terminal_scroll.saturating_add(lines);
-        self.terminal_parser.screen_mut().set_scrollback(self.terminal_scroll);
+        self.terminal_parser
+            .screen_mut()
+            .set_scrollback(self.terminal_scroll);
         self.terminal_scroll = self.terminal_parser.screen().scrollback();
     }
 
     /// Scroll terminal down toward live view
     pub fn scroll_terminal_down(&mut self, lines: usize) {
         self.terminal_scroll = self.terminal_scroll.saturating_sub(lines);
-        self.terminal_parser.screen_mut().set_scrollback(self.terminal_scroll);
+        self.terminal_parser
+            .screen_mut()
+            .set_scrollback(self.terminal_scroll);
     }
 
     /// Scroll terminal to bottom (live view)
@@ -277,10 +296,7 @@ impl App {
             child,
             writer,
             rx,
-            parser: std::mem::replace(
-                &mut self.terminal_parser,
-                vt100::Parser::new(24, 120, 1000),
-            ),
+            parser: std::mem::replace(&mut self.terminal_parser, vt100::Parser::new(24, 120, 1000)),
             scroll: self.terminal_scroll,
             rows: self.terminal_rows,
             cols: self.terminal_cols,
@@ -312,7 +328,6 @@ impl App {
             // Don't auto-show terminal - keep terminal_mode as is
         }
     }
-
 }
 
 #[cfg(test)]

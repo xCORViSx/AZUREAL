@@ -26,16 +26,20 @@ use crossterm::event::{self, KeyCode};
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 
-use super::super::keybindings::{Action, KeyContext, lookup_action};
-use super::super::input_dialogs::{handle_branch_dialog_input, handle_run_command_picker_input, handle_run_command_dialog_input, handle_preset_prompt_picker_input, handle_preset_prompt_dialog_input};
+use super::super::input_dialogs::{
+    handle_branch_dialog_input, handle_preset_prompt_dialog_input,
+    handle_preset_prompt_picker_input, handle_run_command_dialog_input,
+    handle_run_command_picker_input,
+};
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
 use super::super::input_output::handle_session_input;
-use super::super::input_worktrees::handle_worktrees_input;
+use super::super::input_projects::handle_projects_input;
 use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
-use super::super::input_projects::handle_projects_input;
+use super::super::input_worktrees::handle_worktrees_input;
+use super::super::keybindings::{lookup_action, Action, KeyContext};
 
 use execute::execute_action;
 use rcr::accept_rcr;
@@ -45,9 +49,15 @@ use rcr::accept_rcr;
 /// Modal overlays (help, wizard, dialogs) bypass this and consume
 /// all input directly. Focus-specific handlers only see keys that lookup_action()
 /// didn't resolve (text input, dialog nav, etc.).
-pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub fn handle_key_event(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     // Bare modifier presses (Shift, Ctrl, Alt) arrive via Kitty protocol — ignore globally
-    if matches!(key.code, KeyCode::Modifier(_)) { return Ok(()); }
+    if matches!(key.code, KeyCode::Modifier(_)) {
+        return Ok(());
+    }
 
     // ⌃q quits from ANYWHERE — blocked only when a git operation is in progress
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
@@ -79,14 +89,18 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
     if let Some(ref rcr) = app.rcr_session {
         if rcr.approval_pending {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => { accept_rcr(app); }
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    accept_rcr(app);
+                }
                 KeyCode::Char('n') => {
                     // Abort the rebase on the feature branch worktree,
                     // restoring it to its pre-rebase state
                     app.invalidate_sidebar();
                     let rcr = app.rcr_session.take().unwrap();
                     if let Some(ref sid) = rcr.session_id {
-                        if let Some(path) = crate::config::session_file(app.backend, &rcr.worktree_path, sid) {
+                        if let Some(path) =
+                            crate::config::session_file(app.backend, &rcr.worktree_path, sid)
+                        {
                             let _ = std::fs::remove_file(path);
                         }
                     }
@@ -96,7 +110,10 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                         .output();
                     app.load_session_output();
                     app.update_title_session_name();
-                    app.set_status(format!("RCR cancelled — rebase aborted for {}", rcr.display_name));
+                    app.set_status(format!(
+                        "RCR cancelled — rebase aborted for {}",
+                        rcr.display_name
+                    ));
                 }
                 KeyCode::Esc => {
                     // Dismiss dialog — user wants to review the session output first.
@@ -127,7 +144,9 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
     // Table popup — Esc/q closes, j/k/arrows scroll
     if app.table_popup.is_some() {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => { app.table_popup = None; }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.table_popup = None;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut p) = app.table_popup {
                     let max = p.total_lines.saturating_sub(1);
@@ -159,14 +178,18 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                 }
                 return Ok(());
             }
-            crate::app::types::DeleteWorktreeDialog::Siblings { branch, sibling_indices, .. } => {
+            crate::app::types::DeleteWorktreeDialog::Siblings {
+                branch,
+                sibling_indices,
+                ..
+            } => {
                 let branch = branch.clone();
                 let sibling_indices = sibling_indices.clone();
                 app.delete_worktree_dialog = None;
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
                         use std::sync::mpsc;
-                        use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                         let mut all_indices = sibling_indices;
                         if let Some(current) = app.selected_worktree {
                             all_indices.push(current);
@@ -184,7 +207,11 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                                         wt_paths.push(wt_path.clone());
                                     }
                                     app.auto_rebase_enabled.remove(&wt.branch_name);
-                                    crate::azufig::set_auto_rebase(&project.path, &wt.branch_name, false);
+                                    crate::azufig::set_auto_rebase(
+                                        &project.path,
+                                        &wt.branch_name,
+                                        false,
+                                    );
                                 }
                             }
                         }
@@ -211,9 +238,11 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                         std::thread::spawn(move || {
                             if let Some(ref project) = project {
                                 for wt_path in &wt_paths {
-                                    let _ = crate::git::Git::remove_worktree(&project.path, wt_path);
+                                    let _ =
+                                        crate::git::Git::remove_worktree(&project.path, wt_path);
                                 }
-                                let _ = crate::git::Git::delete_branch(&project.path, &branch_clone);
+                                let _ =
+                                    crate::git::Git::delete_branch(&project.path, &branch_clone);
                             }
                             let _ = tx.send(BackgroundOpProgress {
                                 phase: String::new(),
@@ -225,8 +254,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                         });
                     }
                     KeyCode::Char('a') | KeyCode::Char('A') => {
+                        use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
                         use std::sync::mpsc;
-                        use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                         if let Some(project) = &app.project {
                             if let Some(wt) = app.current_worktree() {
                                 if let Some(ref wt_path) = wt.worktree_path {
@@ -236,11 +265,20 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                                     app.loading_indicator = Some("Archiving worktree...".into());
                                     app.background_op_receiver = Some(rx);
                                     std::thread::spawn(move || {
-                                        let outcome = match crate::git::Git::remove_worktree(&project_path, &wt_path) {
+                                        let outcome = match crate::git::Git::remove_worktree(
+                                            &project_path,
+                                            &wt_path,
+                                        ) {
                                             Ok(()) => BackgroundOpOutcome::Archived,
-                                            Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
+                                            Err(e) => BackgroundOpOutcome::Failed(format!(
+                                                "Archive failed: {}",
+                                                e
+                                            )),
                                         };
-                                        let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+                                        let _ = tx.send(BackgroundOpProgress {
+                                            phase: String::new(),
+                                            outcome: Some(outcome),
+                                        });
                                     });
                                 }
                             }
@@ -257,14 +295,22 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
     if app.post_merge_dialog.is_some() {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                if let Some(ref mut d) = app.post_merge_dialog { if d.selected < 2 { d.selected += 1; } }
+                if let Some(ref mut d) = app.post_merge_dialog {
+                    if d.selected < 2 {
+                        d.selected += 1;
+                    }
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if let Some(ref mut d) = app.post_merge_dialog { if d.selected > 0 { d.selected -= 1; } }
+                if let Some(ref mut d) = app.post_merge_dialog {
+                    if d.selected > 0 {
+                        d.selected -= 1;
+                    }
+                }
             }
             KeyCode::Enter => {
+                use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
                 use std::sync::mpsc;
-                use crate::app::types::{BackgroundOpProgress, BackgroundOpOutcome};
                 let d = app.post_merge_dialog.take().unwrap();
                 let prev_idx = app.selected_worktree.unwrap_or(0);
                 match d.selected {
@@ -272,8 +318,11 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                         // Keep — worktree is already rebased (rebase happens before merge)
                         app.set_status(format!("{} — kept", d.display_name));
                         let _ = app.refresh_worktrees();
-                        app.selected_worktree = if app.worktrees.is_empty() { None }
-                        else { Some(prev_idx.min(app.worktrees.len() - 1)) };
+                        app.selected_worktree = if app.worktrees.is_empty() {
+                            None
+                        } else {
+                            Some(prev_idx.min(app.worktrees.len() - 1))
+                        };
                     }
                     1 => {
                         // Archive — remove worktree, keep branch
@@ -286,11 +335,19 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                             app.loading_indicator = Some("Archiving worktree...".into());
                             app.background_op_receiver = Some(rx);
                             std::thread::spawn(move || {
-                                let outcome = match crate::git::Git::remove_worktree(&project_path, &wt_path) {
-                                    Ok(()) => BackgroundOpOutcome::Archived,
-                                    Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
-                                };
-                                let _ = tx.send(BackgroundOpProgress { phase: String::new(), outcome: Some(outcome) });
+                                let outcome =
+                                    match crate::git::Git::remove_worktree(&project_path, &wt_path)
+                                    {
+                                        Ok(()) => BackgroundOpOutcome::Archived,
+                                        Err(e) => BackgroundOpOutcome::Failed(format!(
+                                            "Archive failed: {}",
+                                            e
+                                        )),
+                                    };
+                                let _ = tx.send(BackgroundOpProgress {
+                                    phase: String::new(),
+                                    outcome: Some(outcome),
+                                });
                             });
                         }
                     }
@@ -353,10 +410,15 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
     }
 
     // Full-screen modals that intercept everything
-    if app.is_projects_panel_active() { return handle_projects_input(key, app); }
-    if app.health_panel.is_some() && !app.god_file_filter_mode { return handle_health_input(key, app, claude_process); }
-    if app.git_actions_panel.is_some() { return handle_git_actions_input(key, app, claude_process); }
-
+    if app.is_projects_panel_active() {
+        return handle_projects_input(key, app);
+    }
+    if app.health_panel.is_some() && !app.god_file_filter_mode {
+        return handle_health_input(key, app, claude_process);
+    }
+    if app.git_actions_panel.is_some() {
+        return handle_git_actions_input(key, app, claude_process);
+    }
 
     // Debug dump naming dialog — text input for the dump file suffix
     if let Some(ref mut naming) = app.debug_dump_naming {
@@ -366,29 +428,49 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
                 app.debug_dump_saving = Some(name);
                 app.debug_dump_naming = None;
             }
-            KeyCode::Esc => { app.debug_dump_naming = None; }
-            KeyCode::Backspace => { naming.pop(); }
-            KeyCode::Char(c) => { naming.push(c); }
+            KeyCode::Esc => {
+                app.debug_dump_naming = None;
+            }
+            KeyCode::Backspace => {
+                naming.pop();
+            }
+            KeyCode::Char(c) => {
+                naming.push(c);
+            }
             _ => {}
         }
         return Ok(());
     }
 
-    if app.run_command_picker.is_some() { return handle_run_command_picker_input(key, app); }
-    if app.run_command_dialog.is_some() { return handle_run_command_dialog_input(key, app, &claude_process); }
+    if app.run_command_picker.is_some() {
+        return handle_run_command_picker_input(key, app);
+    }
+    if app.run_command_dialog.is_some() {
+        return handle_run_command_dialog_input(key, app, &claude_process);
+    }
     // Dialog checked before picker — dialog is spawned on top of picker (e/a keys)
-    if app.preset_prompt_dialog.is_some() { return handle_preset_prompt_dialog_input(key, app); }
-    if app.preset_prompt_picker.is_some() { return handle_preset_prompt_picker_input(key, app); }
+    if app.preset_prompt_dialog.is_some() {
+        return handle_preset_prompt_dialog_input(key, app);
+    }
+    if app.preset_prompt_picker.is_some() {
+        return handle_preset_prompt_picker_input(key, app);
+    }
 
     // FileTree options overlay: intercept all keys before keybinding resolution
-    if app.file_tree_options_mode { return handle_file_tree_input(key, app); }
+    if app.file_tree_options_mode {
+        return handle_file_tree_input(key, app);
+    }
 
     // Session find modal: typing search text bypasses keybinding system
-    if app.session_find_active { return handle_session_input(key, app); }
+    if app.session_find_active {
+        return handle_session_input(key, app);
+    }
 
     // Session list overlay: bypass keybinding system so Up/Down/j/k navigate the list
     // instead of being intercepted as JumpNextBubble/JumpPrevBubble
-    if app.show_session_list { return handle_session_input(key, app); }
+    if app.show_session_list {
+        return handle_session_input(key, app);
+    }
 
     // Text input modals bypass keybinding resolution entirely — they consume
     // all keypresses (including Shift+G, etc.) as literal text input.
@@ -407,11 +489,18 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
     if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
         // Input-specific actions: let the input handler execute them (it has
         // the full context: claude_process, plan approval state, etc.)
-        let is_input_action = matches!(action,
-            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
-            | Action::WordLeft | Action::WordRight | Action::DeleteWord
-            | Action::HistoryPrev | Action::HistoryNext
-            | Action::ToggleStt | Action::EnterTerminalType
+        let is_input_action = matches!(
+            action,
+            Action::Submit
+                | Action::InsertNewline
+                | Action::ExitPromptMode
+                | Action::WordLeft
+                | Action::WordRight
+                | Action::DeleteWord
+                | Action::HistoryPrev
+                | Action::HistoryNext
+                | Action::ToggleStt
+                | Action::EnterTerminalType
         ) && matches!(app.focus, Focus::Input);
         if !is_input_action {
             return execute_action(action, app, claude_process);
@@ -435,8 +524,8 @@ pub fn handle_key_event(key: event::KeyEvent, app: &mut App, claude_process: &Ag
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use crate::tui::keybindings::Action;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     // -- KeyEvent construction --
 
@@ -475,13 +564,19 @@ mod tests {
 
     #[test]
     fn test_modifier_key_left_shift() {
-        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        let key = KeyEvent::new(
+            KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift),
+            KeyModifiers::SHIFT,
+        );
         assert!(matches!(key.code, KeyCode::Modifier(_)));
     }
 
     #[test]
     fn test_modifier_key_left_control() {
-        let key = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftControl), KeyModifiers::CONTROL);
+        let key = KeyEvent::new(
+            KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftControl),
+            KeyModifiers::CONTROL,
+        );
         assert!(matches!(key.code, KeyCode::Modifier(_)));
     }
 
@@ -587,11 +682,18 @@ mod tests {
     #[test]
     fn test_is_input_action_submit() {
         let action = Action::Submit;
-        let is_input = matches!(action,
-            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
-            | Action::WordLeft | Action::WordRight | Action::DeleteWord
-            | Action::HistoryPrev | Action::HistoryNext
-            | Action::ToggleStt | Action::EnterTerminalType
+        let is_input = matches!(
+            action,
+            Action::Submit
+                | Action::InsertNewline
+                | Action::ExitPromptMode
+                | Action::WordLeft
+                | Action::WordRight
+                | Action::DeleteWord
+                | Action::HistoryPrev
+                | Action::HistoryNext
+                | Action::ToggleStt
+                | Action::EnterTerminalType
         );
         assert!(is_input);
     }
@@ -599,11 +701,18 @@ mod tests {
     #[test]
     fn test_is_input_action_word_left() {
         let action = Action::WordLeft;
-        let is_input = matches!(action,
-            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
-            | Action::WordLeft | Action::WordRight | Action::DeleteWord
-            | Action::HistoryPrev | Action::HistoryNext
-            | Action::ToggleStt | Action::EnterTerminalType
+        let is_input = matches!(
+            action,
+            Action::Submit
+                | Action::InsertNewline
+                | Action::ExitPromptMode
+                | Action::WordLeft
+                | Action::WordRight
+                | Action::DeleteWord
+                | Action::HistoryPrev
+                | Action::HistoryNext
+                | Action::ToggleStt
+                | Action::EnterTerminalType
         );
         assert!(is_input);
     }
@@ -611,11 +720,18 @@ mod tests {
     #[test]
     fn test_is_not_input_action_nav_down() {
         let action = Action::NavDown;
-        let is_input = matches!(action,
-            Action::Submit | Action::InsertNewline | Action::ExitPromptMode
-            | Action::WordLeft | Action::WordRight | Action::DeleteWord
-            | Action::HistoryPrev | Action::HistoryNext
-            | Action::ToggleStt | Action::EnterTerminalType
+        let is_input = matches!(
+            action,
+            Action::Submit
+                | Action::InsertNewline
+                | Action::ExitPromptMode
+                | Action::WordLeft
+                | Action::WordRight
+                | Action::DeleteWord
+                | Action::HistoryPrev
+                | Action::HistoryNext
+                | Action::ToggleStt
+                | Action::EnterTerminalType
         );
         assert!(!is_input);
     }
@@ -679,28 +795,36 @@ mod tests {
     #[test]
     fn test_post_merge_down_clamp() {
         let mut selected = 1usize;
-        if selected < 2 { selected += 1; }
+        if selected < 2 {
+            selected += 1;
+        }
         assert_eq!(selected, 2);
     }
 
     #[test]
     fn test_post_merge_down_at_max() {
         let mut selected = 2usize;
-        if selected < 2 { selected += 1; }
+        if selected < 2 {
+            selected += 1;
+        }
         assert_eq!(selected, 2); // unchanged
     }
 
     #[test]
     fn test_post_merge_up_clamp() {
         let mut selected = 1usize;
-        if selected > 0 { selected -= 1; }
+        if selected > 0 {
+            selected -= 1;
+        }
         assert_eq!(selected, 0);
     }
 
     #[test]
     fn test_post_merge_up_at_min() {
         let mut selected = 0usize;
-        if selected > 0 { selected -= 1; }
+        if selected > 0 {
+            selected -= 1;
+        }
         assert_eq!(selected, 0); // unchanged
     }
 
@@ -708,12 +832,18 @@ mod tests {
 
     #[test]
     fn test_rcr_accept_y() {
-        assert!(matches!(KeyCode::Char('y'), KeyCode::Char('y') | KeyCode::Enter));
+        assert!(matches!(
+            KeyCode::Char('y'),
+            KeyCode::Char('y') | KeyCode::Enter
+        ));
     }
 
     #[test]
     fn test_rcr_accept_enter() {
-        assert!(matches!(KeyCode::Enter, KeyCode::Char('y') | KeyCode::Enter));
+        assert!(matches!(
+            KeyCode::Enter,
+            KeyCode::Char('y') | KeyCode::Enter
+        ));
     }
 
     #[test]

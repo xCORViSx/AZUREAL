@@ -42,11 +42,15 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
             }
             (KeyModifiers::NONE, KeyCode::Backspace) => {
                 if overlay.input_cursor > 0 {
-                    let idx = overlay.input_buffer.char_indices()
+                    let idx = overlay
+                        .input_buffer
+                        .char_indices()
                         .nth(overlay.input_cursor - 1)
                         .map(|(i, _)| i)
                         .unwrap_or(0);
-                    let end = overlay.input_buffer.char_indices()
+                    let end = overlay
+                        .input_buffer
+                        .char_indices()
                         .nth(overlay.input_cursor)
                         .map(|(i, _)| i)
                         .unwrap_or(overlay.input_buffer.len());
@@ -55,14 +59,20 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
                 }
             }
             (KeyModifiers::NONE, KeyCode::Left) => {
-                if overlay.input_cursor > 0 { overlay.input_cursor -= 1; }
+                if overlay.input_cursor > 0 {
+                    overlay.input_cursor -= 1;
+                }
             }
             (KeyModifiers::NONE, KeyCode::Right) => {
                 let len = overlay.input_buffer.chars().count();
-                if overlay.input_cursor < len { overlay.input_cursor += 1; }
+                if overlay.input_cursor < len {
+                    overlay.input_cursor += 1;
+                }
             }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-                let byte_idx = overlay.input_buffer.char_indices()
+                let byte_idx = overlay
+                    .input_buffer
+                    .char_indices()
                     .nth(overlay.input_cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(overlay.input_buffer.len());
@@ -78,7 +88,9 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Esc) => {
             // Save to azufig, update panel cache, close overlay
-            let enabled: Vec<String> = overlay.files.iter()
+            let enabled: Vec<String> = overlay
+                .files
+                .iter()
                 .filter(|(_, on)| *on)
                 .map(|(f, _)| f.clone())
                 .collect();
@@ -93,7 +105,9 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
             }
         }
         (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
-            if overlay.selected > 0 { overlay.selected -= 1; }
+            if overlay.selected > 0 {
+                overlay.selected -= 1;
+            }
         }
         (KeyModifiers::NONE, KeyCode::Char(' ')) => {
             if let Some(entry) = overlay.files.get_mut(overlay.selected) {
@@ -121,8 +135,8 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::types::{AutoResolveOverlay, GitActionsPanel};
     use crate::app::App;
-    use crate::app::types::{GitActionsPanel, AutoResolveOverlay};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     /// Create a KeyEvent from a code and modifiers
@@ -176,7 +190,13 @@ mod tests {
     fn test_add_mode_esc_cancels_adding() {
         let mut app = app_with_overlay(vec![], true);
         handle_auto_resolve_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(!ov.adding);
     }
 
@@ -184,12 +204,24 @@ mod tests {
     fn test_add_mode_esc_clears_buffer() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "partial".into();
             ov.input_cursor = 7;
         }
         handle_auto_resolve_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.input_buffer.is_empty());
         assert_eq!(ov.input_cursor, 0);
     }
@@ -200,12 +232,24 @@ mod tests {
     fn test_add_mode_enter_adds_file() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "Cargo.lock".into();
             ov.input_cursor = 10;
         }
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(!ov.adding);
         assert_eq!(ov.files.len(), 1);
         assert_eq!(ov.files[0].0, "Cargo.lock");
@@ -217,7 +261,13 @@ mod tests {
     fn test_add_mode_enter_empty_does_not_add() {
         let mut app = app_with_overlay(vec![], true);
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
     }
 
@@ -225,12 +275,24 @@ mod tests {
     fn test_add_mode_enter_whitespace_only_does_not_add() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "   ".into();
             ov.input_cursor = 3;
         }
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
     }
 
@@ -238,12 +300,24 @@ mod tests {
     fn test_add_mode_enter_duplicate_does_not_add() {
         let mut app = app_with_overlay(vec![("Cargo.lock".into(), true)], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "Cargo.lock".into();
             ov.input_cursor = 10;
         }
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1); // no duplicate
     }
 
@@ -253,12 +327,24 @@ mod tests {
     fn test_add_mode_backspace_deletes_char() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 3;
         }
         handle_auto_resolve_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "ab");
         assert_eq!(ov.input_cursor, 2);
     }
@@ -267,12 +353,24 @@ mod tests {
     fn test_add_mode_backspace_at_start_noop() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 0;
         }
         handle_auto_resolve_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "abc");
         assert_eq!(ov.input_cursor, 0);
     }
@@ -283,12 +381,24 @@ mod tests {
     fn test_add_mode_left_arrow() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 2;
         }
         handle_auto_resolve_overlay(key(KeyCode::Left, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_cursor, 1);
     }
 
@@ -296,12 +406,24 @@ mod tests {
     fn test_add_mode_left_arrow_at_zero_noop() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 0;
         }
         handle_auto_resolve_overlay(key(KeyCode::Left, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_cursor, 0);
     }
 
@@ -309,12 +431,24 @@ mod tests {
     fn test_add_mode_right_arrow() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Right, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_cursor, 2);
     }
 
@@ -322,12 +456,24 @@ mod tests {
     fn test_add_mode_right_arrow_at_end_noop() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abc".into();
             ov.input_cursor = 3;
         }
         handle_auto_resolve_overlay(key(KeyCode::Right, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_cursor, 3);
     }
 
@@ -337,7 +483,13 @@ mod tests {
     fn test_add_mode_char_input() {
         let mut app = app_with_overlay(vec![], true);
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "a");
         assert_eq!(ov.input_cursor, 1);
     }
@@ -346,12 +498,24 @@ mod tests {
     fn test_add_mode_char_input_at_middle() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "ac".into();
             ov.input_cursor = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('b'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "abc");
         assert_eq!(ov.input_cursor, 2);
     }
@@ -359,8 +523,15 @@ mod tests {
     #[test]
     fn test_add_mode_shift_char_input() {
         let mut app = app_with_overlay(vec![], true);
-        handle_auto_resolve_overlay(key(KeyCode::Char('A'), KeyModifiers::SHIFT), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        handle_auto_resolve_overlay(key(KeyCode::Char('A'), KeyModifiers::SHIFT), &mut app)
+            .unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "A");
     }
 
@@ -373,33 +544,51 @@ mod tests {
             false,
         );
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 1);
     }
 
     #[test]
     fn test_normal_down_arrow_moves_down() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Down, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 1);
     }
 
     #[test]
     fn test_normal_j_at_end_stays() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 1);
     }
 
@@ -407,7 +596,13 @@ mod tests {
     fn test_normal_j_empty_list_noop() {
         let mut app = app_with_overlay(vec![], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 0);
     }
 
@@ -415,42 +610,63 @@ mod tests {
 
     #[test]
     fn test_normal_k_moves_up() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 0);
     }
 
     #[test]
     fn test_normal_up_arrow_moves_up() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Up, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 0);
     }
 
     #[test]
     fn test_normal_k_at_top_stays() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 0);
     }
 
@@ -460,7 +676,13 @@ mod tests {
     fn test_normal_space_toggles_on_to_off() {
         let mut app = app_with_overlay(vec![("f".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(!ov.files[0].1);
     }
 
@@ -468,7 +690,13 @@ mod tests {
     fn test_normal_space_toggles_off_to_on() {
         let mut app = app_with_overlay(vec![("f".into(), false)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files[0].1);
     }
 
@@ -485,7 +713,13 @@ mod tests {
     fn test_normal_a_enters_add_mode() {
         let mut app = app_with_overlay(vec![], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.adding);
         assert!(ov.input_buffer.is_empty());
         assert_eq!(ov.input_cursor, 0);
@@ -495,28 +729,40 @@ mod tests {
 
     #[test]
     fn test_normal_d_removes_entry() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
         assert_eq!(ov.files[0].0, "b");
     }
 
     #[test]
     fn test_normal_d_removes_last_adjusts_selected() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
         assert_eq!(ov.selected, 0); // adjusted down
     }
@@ -525,7 +771,13 @@ mod tests {
     fn test_normal_d_empty_list_noop() {
         let mut app = app_with_overlay(vec![], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
     }
 
@@ -533,7 +785,13 @@ mod tests {
     fn test_normal_d_single_item_clears_list() {
         let mut app = app_with_overlay(vec![("only".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
         assert_eq!(ov.selected, 0);
     }
@@ -563,14 +821,27 @@ mod tests {
     fn test_add_mode_type_full_name_and_submit() {
         let mut app = app_with_overlay(vec![], true);
         for c in "test.rs".chars() {
-            handle_auto_resolve_overlay(key(KeyCode::Char(c), KeyModifiers::NONE), &mut app).unwrap();
+            handle_auto_resolve_overlay(key(KeyCode::Char(c), KeyModifiers::NONE), &mut app)
+                .unwrap();
         }
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "test.rs");
         assert_eq!(ov.input_cursor, 7);
 
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
         assert_eq!(ov.files[0].0, "test.rs");
     }
@@ -579,13 +850,16 @@ mod tests {
 
     #[test]
     fn test_navigate_then_toggle() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), false)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), false)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files[1].1); // toggled from false to true
         assert!(ov.files[0].1); // unchanged
     }
@@ -596,12 +870,24 @@ mod tests {
     fn test_add_mode_backspace_mid_string() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "abcd".into();
             ov.input_cursor = 2; // cursor after 'b'
         }
         handle_auto_resolve_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "acd");
         assert_eq!(ov.input_cursor, 1);
     }
@@ -612,7 +898,13 @@ mod tests {
     fn test_normal_unknown_key_noop() {
         let mut app = app_with_overlay(vec![("f".into(), true)], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('x'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
         assert_eq!(ov.selected, 0);
     }
@@ -622,8 +914,15 @@ mod tests {
     #[test]
     fn test_add_mode_ctrl_key_noop() {
         let mut app = app_with_overlay(vec![], true);
-        handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::CONTROL), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::CONTROL), &mut app)
+            .unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.input_buffer.is_empty());
     }
 
@@ -631,17 +930,26 @@ mod tests {
 
     #[test]
     fn test_add_selects_new_entry() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            true,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "c".into();
             ov.input_cursor = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 2); // new entry at index 2
     }
 
@@ -654,11 +962,23 @@ mod tests {
             false,
         );
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 1;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 2);
         // "b" removed, now ["a", "c"], selected stays at 1
         assert_eq!(ov.files[1].0, "c");
@@ -670,12 +990,24 @@ mod tests {
     fn test_add_mode_enter_clears_buffer() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "file.txt".into();
             ov.input_cursor = 8;
         }
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.input_buffer.is_empty());
         assert_eq!(ov.input_cursor, 0);
     }
@@ -689,12 +1021,24 @@ mod tests {
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('x'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
 
         // Delete it
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
     }
 
@@ -707,11 +1051,23 @@ mod tests {
             false,
         );
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.selected = 2;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files[2].1);
         assert!(ov.files[0].1); // unchanged
     }
@@ -722,7 +1078,13 @@ mod tests {
     fn test_add_mode_unicode_char() {
         let mut app = app_with_overlay(vec![], true);
         handle_auto_resolve_overlay(key(KeyCode::Char('é'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "é");
         assert_eq!(ov.input_cursor, 1);
     }
@@ -733,10 +1095,17 @@ mod tests {
     fn test_add_mode_multiple_chars_then_backspace() {
         let mut app = app_with_overlay(vec![], true);
         for c in "hello".chars() {
-            handle_auto_resolve_overlay(key(KeyCode::Char(c), KeyModifiers::NONE), &mut app).unwrap();
+            handle_auto_resolve_overlay(key(KeyCode::Char(c), KeyModifiers::NONE), &mut app)
+                .unwrap();
         }
         handle_auto_resolve_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "hell");
         assert_eq!(ov.input_cursor, 4);
     }
@@ -752,12 +1121,24 @@ mod tests {
         // Move to end
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 2);
         // Move back to start
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.selected, 0);
     }
 
@@ -767,12 +1148,24 @@ mod tests {
     fn test_add_mode_insert_at_beginning() {
         let mut app = app_with_overlay(vec![], true);
         {
-            let ov = app.git_actions_panel.as_mut().unwrap().auto_resolve_overlay.as_mut().unwrap();
+            let ov = app
+                .git_actions_panel
+                .as_mut()
+                .unwrap()
+                .auto_resolve_overlay
+                .as_mut()
+                .unwrap();
             ov.input_buffer = "bc".into();
             ov.input_cursor = 0;
         }
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.input_buffer, "abc");
         assert_eq!(ov.input_cursor, 1);
     }
@@ -788,7 +1181,13 @@ mod tests {
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files.is_empty());
     }
 
@@ -796,16 +1195,19 @@ mod tests {
 
     #[test]
     fn test_toggle_all_off_then_on() {
-        let mut app = app_with_overlay(
-            vec![("a".into(), true), ("b".into(), true)],
-            false,
-        );
+        let mut app = app_with_overlay(vec![("a".into(), true), ("b".into(), true)], false);
         // Toggle first off
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
         // Move down and toggle second off
         handle_auto_resolve_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(!ov.files[0].1);
         assert!(!ov.files[1].1);
 
@@ -814,7 +1216,13 @@ mod tests {
         // Move up and toggle first back on
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.files[0].1);
         assert!(ov.files[1].1);
     }
@@ -825,7 +1233,13 @@ mod tests {
     fn test_add_mode_tab_noop() {
         let mut app = app_with_overlay(vec![], true);
         handle_auto_resolve_overlay(key(KeyCode::Tab, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.input_buffer.is_empty());
     }
 
@@ -835,10 +1249,22 @@ mod tests {
     fn test_a_then_esc_returns_to_normal() {
         let mut app = app_with_overlay(vec![], false);
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(ov.adding);
         handle_auto_resolve_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert!(!ov.adding);
     }
 
@@ -855,12 +1281,24 @@ mod tests {
         handle_auto_resolve_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 2);
         // Navigate to first and delete
         handle_auto_resolve_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app).unwrap();
         handle_auto_resolve_overlay(key(KeyCode::Char('d'), KeyModifiers::NONE), &mut app).unwrap();
-        let ov = app.git_actions_panel.as_ref().unwrap().auto_resolve_overlay.as_ref().unwrap();
+        let ov = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .auto_resolve_overlay
+            .as_ref()
+            .unwrap();
         assert_eq!(ov.files.len(), 1);
     }
 }

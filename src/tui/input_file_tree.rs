@@ -6,9 +6,9 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::App;
+use super::keybindings::{lookup_action, Action, KeyContext};
 use crate::app::types::FileTreeAction;
-use super::keybindings::{Action, KeyContext, lookup_action};
+use crate::app::App;
 
 /// Names matching the options overlay (same order as draw_file_tree.rs)
 const FT_OPTIONS: &[&str] = &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"];
@@ -25,7 +25,10 @@ pub fn handle_file_tree_input(key: KeyEvent, app: &mut App) -> Result<()> {
     }
 
     // Copy/Move clipboard mode: allow navigation + Enter to paste
-    if matches!(app.file_tree_action, Some(FileTreeAction::Copy(_) | FileTreeAction::Move(_))) {
+    if matches!(
+        app.file_tree_action,
+        Some(FileTreeAction::Copy(_) | FileTreeAction::Move(_))
+    ) {
         return handle_clipboard_input(key, app);
     }
     // Text-input actions (Add, Rename) and Delete confirmation
@@ -42,10 +45,13 @@ fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
     match key.code {
         // Navigate options list with wrapping
         KeyCode::Char('j') | KeyCode::Down => {
-            app.file_tree_options_selected = (app.file_tree_options_selected + 1) % FT_OPTIONS.len();
+            app.file_tree_options_selected =
+                (app.file_tree_options_selected + 1) % FT_OPTIONS.len();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.file_tree_options_selected = app.file_tree_options_selected.checked_sub(1)
+            app.file_tree_options_selected = app
+                .file_tree_options_selected
+                .checked_sub(1)
                 .unwrap_or(FT_OPTIONS.len() - 1);
         }
         // Toggle the selected entry's hidden state and persist to azufig
@@ -70,7 +76,9 @@ fn handle_options_input(key: KeyEvent, app: &mut App) -> Result<()> {
             app.file_tree_options_mode = false;
         }
         // Shift+O also closes (same key that opened it)
-        KeyCode::Char('O') if key.modifiers == KeyModifiers::SHIFT || key.modifiers == KeyModifiers::NONE => {
+        KeyCode::Char('O')
+            if key.modifiers == KeyModifiers::SHIFT || key.modifiers == KeyModifiers::NONE =>
+        {
             app.file_tree_options_mode = false;
         }
         _ => {}
@@ -101,11 +109,17 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
         _ => unreachable!(),
     };
     let rebuild = |t: u8, b: String| -> FileTreeAction {
-        if t == 0 { FileTreeAction::Add(b) } else { FileTreeAction::Rename(b) }
+        if t == 0 {
+            FileTreeAction::Add(b)
+        } else {
+            FileTreeAction::Rename(b)
+        }
     };
 
     match key.code {
-        KeyCode::Esc => { app.set_status("Cancelled"); }
+        KeyCode::Esc => {
+            app.set_status("Cancelled");
+        }
         KeyCode::Enter => {
             let input = buf.trim().to_string();
             if input.is_empty() {
@@ -116,14 +130,21 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
                 app.file_tree_exec_rename(&input);
             }
         }
-        KeyCode::Backspace => { buf.pop(); app.file_tree_action = Some(rebuild(tag, buf)); }
+        KeyCode::Backspace => {
+            buf.pop();
+            app.file_tree_action = Some(rebuild(tag, buf));
+        }
         KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-            buf.clear(); app.file_tree_action = Some(rebuild(tag, buf));
+            buf.clear();
+            app.file_tree_action = Some(rebuild(tag, buf));
         }
         KeyCode::Char(c) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => {
-            buf.push(c); app.file_tree_action = Some(rebuild(tag, buf));
+            buf.push(c);
+            app.file_tree_action = Some(rebuild(tag, buf));
         }
-        _ => { app.file_tree_action = Some(rebuild(tag, buf)); }
+        _ => {
+            app.file_tree_action = Some(rebuild(tag, buf));
+        }
     }
 
     app.invalidate_file_tree();
@@ -134,7 +155,11 @@ fn handle_action_input(key: KeyEvent, app: &mut App) -> Result<()> {
 /// tag 0 = Add, tag 1 = Rename.
 #[cfg(test)]
 fn rebuild_action(tag: u8, buf: String) -> FileTreeAction {
-    if tag == 0 { FileTreeAction::Add(buf) } else { FileTreeAction::Rename(buf) }
+    if tag == 0 {
+        FileTreeAction::Add(buf)
+    } else {
+        FileTreeAction::Rename(buf)
+    }
 }
 
 /// Handle input in clipboard Copy/Move mode — normal navigation plus Enter to paste
@@ -162,7 +187,11 @@ fn handle_clipboard_input(key: KeyEvent, app: &mut App) -> Result<()> {
         let target_dir = if entry.is_dir {
             entry.path.clone()
         } else {
-            entry.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| entry.path.clone())
+            entry
+                .path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| entry.path.clone())
         };
         match action {
             FileTreeAction::Copy(src) => app.file_tree_exec_copy_to(&src, &target_dir),
@@ -197,7 +226,11 @@ fn handle_clipboard_input(key: KeyEvent, app: &mut App) -> Result<()> {
                         app.toggle_file_tree_dir();
                     } else if let Some(parent) = entry.path.parent() {
                         let parent_path = parent.to_path_buf();
-                        if let Some(pi) = app.file_tree_entries.iter().position(|e| e.path == parent_path && e.is_dir) {
+                        if let Some(pi) = app
+                            .file_tree_entries
+                            .iter()
+                            .position(|e| e.path == parent_path && e.is_dir)
+                        {
                             if app.file_tree_expanded.contains(&parent_path) {
                                 app.file_tree_selected = Some(pi);
                                 app.toggle_file_tree_dir();
@@ -219,11 +252,21 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     fn key_mod(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -262,7 +305,10 @@ mod tests {
 
     #[test]
     fn ft_options_order_matches_draw() {
-        assert_eq!(FT_OPTIONS, &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"]);
+        assert_eq!(
+            FT_OPTIONS,
+            &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"]
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -369,31 +415,46 @@ mod tests {
     #[test]
     fn copy_matches_clipboard_pattern() {
         let action = FileTreeAction::Copy(std::path::PathBuf::from("/tmp/x"));
-        assert!(matches!(action, FileTreeAction::Copy(_) | FileTreeAction::Move(_)));
+        assert!(matches!(
+            action,
+            FileTreeAction::Copy(_) | FileTreeAction::Move(_)
+        ));
     }
 
     #[test]
     fn move_matches_clipboard_pattern() {
         let action = FileTreeAction::Move(std::path::PathBuf::from("/tmp/y"));
-        assert!(matches!(action, FileTreeAction::Copy(_) | FileTreeAction::Move(_)));
+        assert!(matches!(
+            action,
+            FileTreeAction::Copy(_) | FileTreeAction::Move(_)
+        ));
     }
 
     #[test]
     fn add_does_not_match_clipboard_pattern() {
         let action = FileTreeAction::Add("x".into());
-        assert!(!matches!(action, FileTreeAction::Copy(_) | FileTreeAction::Move(_)));
+        assert!(!matches!(
+            action,
+            FileTreeAction::Copy(_) | FileTreeAction::Move(_)
+        ));
     }
 
     #[test]
     fn delete_does_not_match_clipboard_pattern() {
         let action = FileTreeAction::Delete;
-        assert!(!matches!(action, FileTreeAction::Copy(_) | FileTreeAction::Move(_)));
+        assert!(!matches!(
+            action,
+            FileTreeAction::Copy(_) | FileTreeAction::Move(_)
+        ));
     }
 
     #[test]
     fn rename_does_not_match_clipboard_pattern() {
         let action = FileTreeAction::Rename("y".into());
-        assert!(!matches!(action, FileTreeAction::Copy(_) | FileTreeAction::Move(_)));
+        assert!(!matches!(
+            action,
+            FileTreeAction::Copy(_) | FileTreeAction::Move(_)
+        ));
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -494,15 +555,19 @@ mod tests {
     #[test]
     fn shift_o_matches_close_options() {
         let k = key_mod(KeyCode::Char('O'), KeyModifiers::SHIFT);
-        assert!(matches!(k.code, KeyCode::Char('O'))
-            && (k.modifiers == KeyModifiers::SHIFT || k.modifiers == KeyModifiers::NONE));
+        assert!(
+            matches!(k.code, KeyCode::Char('O'))
+                && (k.modifiers == KeyModifiers::SHIFT || k.modifiers == KeyModifiers::NONE)
+        );
     }
 
     #[test]
     fn plain_uppercase_o_matches_close_options() {
         let k = key(KeyCode::Char('O'));
-        assert!(matches!(k.code, KeyCode::Char('O'))
-            && (k.modifiers == KeyModifiers::SHIFT || k.modifiers == KeyModifiers::NONE));
+        assert!(
+            matches!(k.code, KeyCode::Char('O'))
+                && (k.modifiers == KeyModifiers::SHIFT || k.modifiers == KeyModifiers::NONE)
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -510,36 +575,71 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_nav_down_clipboard_nav() { assert_eq!(Action::NavDown, Action::NavDown); }
+    fn action_nav_down_clipboard_nav() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
     #[test]
-    fn action_nav_up_clipboard_nav() { assert_eq!(Action::NavUp, Action::NavUp); }
+    fn action_nav_up_clipboard_nav() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
     #[test]
-    fn action_go_to_top_clipboard_nav() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    fn action_go_to_top_clipboard_nav() {
+        assert_eq!(Action::GoToTop, Action::GoToTop);
+    }
     #[test]
-    fn action_go_to_bottom_clipboard_nav() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    fn action_go_to_bottom_clipboard_nav() {
+        assert_eq!(Action::GoToBottom, Action::GoToBottom);
+    }
     #[test]
-    fn action_nav_right_clipboard_nav() { assert_eq!(Action::NavRight, Action::NavRight); }
+    fn action_nav_right_clipboard_nav() {
+        assert_eq!(Action::NavRight, Action::NavRight);
+    }
     #[test]
-    fn action_open_file_clipboard_nav() { assert_eq!(Action::OpenFile, Action::OpenFile); }
+    fn action_open_file_clipboard_nav() {
+        assert_eq!(Action::OpenFile, Action::OpenFile);
+    }
     #[test]
-    fn action_toggle_dir_clipboard_nav() { assert_eq!(Action::ToggleDir, Action::ToggleDir); }
+    fn action_toggle_dir_clipboard_nav() {
+        assert_eq!(Action::ToggleDir, Action::ToggleDir);
+    }
     #[test]
-    fn action_nav_left_clipboard_nav() { assert_eq!(Action::NavLeft, Action::NavLeft); }
+    fn action_nav_left_clipboard_nav() {
+        assert_eq!(Action::NavLeft, Action::NavLeft);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Input buffer string operations
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn buffer_push_char() { let mut b = String::from("he"); b.push('l'); assert_eq!(b, "hel"); }
+    fn buffer_push_char() {
+        let mut b = String::from("he");
+        b.push('l');
+        assert_eq!(b, "hel");
+    }
     #[test]
-    fn buffer_pop_char() { let mut b = String::from("hello"); b.pop(); assert_eq!(b, "hell"); }
+    fn buffer_pop_char() {
+        let mut b = String::from("hello");
+        b.pop();
+        assert_eq!(b, "hell");
+    }
     #[test]
-    fn buffer_pop_empty() { let mut b = String::new(); assert!(b.pop().is_none()); }
+    fn buffer_pop_empty() {
+        let mut b = String::new();
+        assert!(b.pop().is_none());
+    }
     #[test]
-    fn buffer_clear() { let mut b = String::from("x"); b.clear(); assert!(b.is_empty()); }
+    fn buffer_clear() {
+        let mut b = String::from("x");
+        b.clear();
+        assert!(b.is_empty());
+    }
     #[test]
-    fn buffer_trim_empty() { assert!("   ".trim().is_empty()); }
+    fn buffer_trim_empty() {
+        assert!("   ".trim().is_empty());
+    }
     #[test]
-    fn buffer_trim_content() { assert_eq!("  file.rs  ".trim(), "file.rs"); }
+    fn buffer_trim_content() {
+        assert_eq!("  file.rs  ".trim(), "file.rs");
+    }
 }

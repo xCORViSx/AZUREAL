@@ -8,16 +8,18 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
-use crate::app::App;
+use super::keybindings::{lookup_projects_action, Action};
 use crate::app::types::ProjectsPanelMode;
+use crate::app::App;
 use crate::config;
 use crate::git::Git;
-use super::keybindings::{lookup_projects_action, Action};
 
 /// Handle all keyboard input when the Projects panel is active.
 /// Returns Ok(()) — all keys are consumed (no fall-through to other handlers).
 pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    let Some(ref panel) = app.projects_panel else { return Ok(()) };
+    let Some(ref panel) = app.projects_panel else {
+        return Ok(());
+    };
     let mode = panel.mode;
 
     match mode {
@@ -31,7 +33,9 @@ pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
 /// Browse mode: resolve key via centralized bindings, then dispatch on Action
 fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Clear any previous error on next keypress so it doesn't persist
-    if let Some(ref mut panel) = app.projects_panel { panel.error = None; }
+    if let Some(ref mut panel) = app.projects_panel {
+        panel.error = None;
+    }
 
     let Some(action) = lookup_projects_action(key.modifiers, key.code) else {
         return Ok(());
@@ -39,20 +43,29 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
 
     match action {
         Action::Quit => {
-            if !app.git_action_in_progress() { app.should_quit = true; }
-            else { app.set_status("Cannot quit while a git operation is in progress"); }
+            if !app.git_action_in_progress() {
+                app.should_quit = true;
+            } else {
+                app.set_status("Cannot quit while a git operation is in progress");
+            }
         }
 
         Action::NavDown => {
-            if let Some(ref mut panel) = app.projects_panel { panel.select_next(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.select_next();
+            }
         }
         Action::NavUp => {
-            if let Some(ref mut panel) = app.projects_panel { panel.select_prev(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.select_prev();
+            }
         }
 
         // Open selected project — only if it's a valid git repo
         Action::Confirm => {
-            let path = app.projects_panel.as_ref()
+            let path = app
+                .projects_panel
+                .as_ref()
                 .and_then(|p| p.entries.get(p.selected))
                 .map(|e| e.path.clone());
             if let Some(path) = path {
@@ -73,7 +86,9 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
 
         Action::ProjectsAdd => {
-            if let Some(ref mut panel) = app.projects_panel { panel.start_add(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.start_add();
+            }
         }
 
         Action::ProjectsDelete => {
@@ -84,8 +99,12 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
                         panel.selected -= 1;
                     }
                     true
-                } else { false }
-            } else { false };
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
             if should_save {
                 if let Some(ref panel) = app.projects_panel {
                     config::save_projects(&panel.entries);
@@ -94,16 +113,22 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
         }
 
         Action::ProjectsRename => {
-            if let Some(ref mut panel) = app.projects_panel { panel.start_rename(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.start_rename();
+            }
         }
 
         Action::ProjectsInit => {
-            if let Some(ref mut panel) = app.projects_panel { panel.start_init(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.start_init();
+            }
         }
 
         // Close panel (only if a project is already loaded)
         Action::Escape => {
-            if app.project.is_some() { app.close_projects_panel(); }
+            if app.project.is_some() {
+                app.close_projects_panel();
+            }
         }
 
         _ => {}
@@ -113,46 +138,62 @@ fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
 
 /// Text input mode for Add/Rename/Init — character entry + confirm/cancel
 fn handle_text_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
-    let Some(ref panel) = app.projects_panel else { return Ok(()) };
+    let Some(ref panel) = app.projects_panel else {
+        return Ok(());
+    };
     let mode = panel.mode;
 
     match key.code {
         // Cancel back to Browse mode
         KeyCode::Esc => {
-            if let Some(ref mut panel) = app.projects_panel { panel.cancel_input(); }
-        }
-
-        // Confirm the action
-        KeyCode::Enter => {
-            match mode {
-                ProjectsPanelMode::AddPath => confirm_add(app),
-                ProjectsPanelMode::Rename => confirm_rename(app),
-                ProjectsPanelMode::Init => confirm_init(app),
-                _ => {}
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.cancel_input();
             }
         }
 
+        // Confirm the action
+        KeyCode::Enter => match mode {
+            ProjectsPanelMode::AddPath => confirm_add(app),
+            ProjectsPanelMode::Rename => confirm_rename(app),
+            ProjectsPanelMode::Init => confirm_init(app),
+            _ => {}
+        },
+
         // Text editing
         KeyCode::Backspace => {
-            if let Some(ref mut panel) = app.projects_panel { panel.input_backspace(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.input_backspace();
+            }
         }
         KeyCode::Delete => {
-            if let Some(ref mut panel) = app.projects_panel { panel.input_delete(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.input_delete();
+            }
         }
         KeyCode::Left => {
-            if let Some(ref mut panel) = app.projects_panel { panel.cursor_left(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.cursor_left();
+            }
         }
         KeyCode::Right => {
-            if let Some(ref mut panel) = app.projects_panel { panel.cursor_right(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.cursor_right();
+            }
         }
         KeyCode::Home => {
-            if let Some(ref mut panel) = app.projects_panel { panel.cursor_home(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.cursor_home();
+            }
         }
         KeyCode::End => {
-            if let Some(ref mut panel) = app.projects_panel { panel.cursor_end(); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.cursor_end();
+            }
         }
         KeyCode::Char(c) => {
-            if let Some(ref mut panel) = app.projects_panel { panel.input_char(c); }
+            if let Some(ref mut panel) = app.projects_panel {
+                panel.input_char(c);
+            }
         }
 
         _ => {}
@@ -308,7 +349,12 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -365,17 +411,29 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn mode_browse_eq() { assert_eq!(ProjectsPanelMode::Browse, ProjectsPanelMode::Browse); }
+    fn mode_browse_eq() {
+        assert_eq!(ProjectsPanelMode::Browse, ProjectsPanelMode::Browse);
+    }
     #[test]
-    fn mode_add_path_eq() { assert_eq!(ProjectsPanelMode::AddPath, ProjectsPanelMode::AddPath); }
+    fn mode_add_path_eq() {
+        assert_eq!(ProjectsPanelMode::AddPath, ProjectsPanelMode::AddPath);
+    }
     #[test]
-    fn mode_rename_eq() { assert_eq!(ProjectsPanelMode::Rename, ProjectsPanelMode::Rename); }
+    fn mode_rename_eq() {
+        assert_eq!(ProjectsPanelMode::Rename, ProjectsPanelMode::Rename);
+    }
     #[test]
-    fn mode_init_eq() { assert_eq!(ProjectsPanelMode::Init, ProjectsPanelMode::Init); }
+    fn mode_init_eq() {
+        assert_eq!(ProjectsPanelMode::Init, ProjectsPanelMode::Init);
+    }
     #[test]
-    fn mode_browse_ne_add() { assert_ne!(ProjectsPanelMode::Browse, ProjectsPanelMode::AddPath); }
+    fn mode_browse_ne_add() {
+        assert_ne!(ProjectsPanelMode::Browse, ProjectsPanelMode::AddPath);
+    }
     #[test]
-    fn mode_rename_ne_init() { assert_ne!(ProjectsPanelMode::Rename, ProjectsPanelMode::Init); }
+    fn mode_rename_ne_init() {
+        assert_ne!(ProjectsPanelMode::Rename, ProjectsPanelMode::Init);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  ProjectsPanel construction
@@ -406,23 +464,41 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_quit_eq() { assert_eq!(Action::Quit, Action::Quit); }
+    fn action_quit_eq() {
+        assert_eq!(Action::Quit, Action::Quit);
+    }
     #[test]
-    fn action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    fn action_nav_down_eq() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
     #[test]
-    fn action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    fn action_nav_up_eq() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
     #[test]
-    fn action_confirm_eq() { assert_eq!(Action::Confirm, Action::Confirm); }
+    fn action_confirm_eq() {
+        assert_eq!(Action::Confirm, Action::Confirm);
+    }
     #[test]
-    fn action_projects_add_eq() { assert_eq!(Action::ProjectsAdd, Action::ProjectsAdd); }
+    fn action_projects_add_eq() {
+        assert_eq!(Action::ProjectsAdd, Action::ProjectsAdd);
+    }
     #[test]
-    fn action_projects_delete_eq() { assert_eq!(Action::ProjectsDelete, Action::ProjectsDelete); }
+    fn action_projects_delete_eq() {
+        assert_eq!(Action::ProjectsDelete, Action::ProjectsDelete);
+    }
     #[test]
-    fn action_projects_rename_eq() { assert_eq!(Action::ProjectsRename, Action::ProjectsRename); }
+    fn action_projects_rename_eq() {
+        assert_eq!(Action::ProjectsRename, Action::ProjectsRename);
+    }
     #[test]
-    fn action_projects_init_eq() { assert_eq!(Action::ProjectsInit, Action::ProjectsInit); }
+    fn action_projects_init_eq() {
+        assert_eq!(Action::ProjectsInit, Action::ProjectsInit);
+    }
     #[test]
-    fn action_escape_eq() { assert_eq!(Action::Escape, Action::Escape); }
+    fn action_escape_eq() {
+        assert_eq!(Action::Escape, Action::Escape);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Text input key matching
@@ -560,24 +636,20 @@ mod tests {
 
     #[test]
     fn duplicate_path_detected() {
-        let entries = vec![
-            crate::config::ProjectEntry {
-                path: std::path::PathBuf::from("/tmp/proj"),
-                display_name: "proj".into(),
-            },
-        ];
+        let entries = vec![crate::config::ProjectEntry {
+            path: std::path::PathBuf::from("/tmp/proj"),
+            display_name: "proj".into(),
+        }];
         let canonical = std::path::PathBuf::from("/tmp/proj");
         assert!(entries.iter().any(|e| e.path == canonical));
     }
 
     #[test]
     fn unique_path_not_detected() {
-        let entries = vec![
-            crate::config::ProjectEntry {
-                path: std::path::PathBuf::from("/tmp/proj"),
-                display_name: "proj".into(),
-            },
-        ];
+        let entries = vec![crate::config::ProjectEntry {
+            path: std::path::PathBuf::from("/tmp/proj"),
+            display_name: "proj".into(),
+        }];
         let canonical = std::path::PathBuf::from("/tmp/other");
         assert!(!entries.iter().any(|e| e.path == canonical));
     }

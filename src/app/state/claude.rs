@@ -12,10 +12,22 @@ use super::App;
 impl App {
     /// Check if a slot's output should be displayed (active slot of viewed branch)
     pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
-        let is_rcr_slot = self.rcr_session.as_ref().map(|r| r.slot_id == slot_id).unwrap_or(false);
-        !self.viewing_historic_session && (is_rcr_slot || self.current_worktree().map(|s| {
-            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
-        }).unwrap_or(false))
+        let is_rcr_slot = self
+            .rcr_session
+            .as_ref()
+            .map(|r| r.slot_id == slot_id)
+            .unwrap_or(false);
+        !self.viewing_historic_session
+            && (is_rcr_slot
+                || self
+                    .current_worktree()
+                    .map(|s| {
+                        self.active_slot
+                            .get(&s.branch_name)
+                            .map(|a| a == slot_id)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false))
     }
 
     /// Apply pre-parsed Claude output to app state. Called with results from
@@ -29,12 +41,19 @@ impl App {
     ) {
         for event in &events {
             match event {
-                DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
+                DisplayEvent::ToolCall {
+                    tool_use_id,
+                    tool_name,
+                    input,
+                    ..
+                } => {
                     self.pending_tool_calls.insert(tool_use_id.clone());
                     self.tool_status_generation += 1;
                     if tool_name == "Task" {
                         if self.active_task_tool_ids.is_empty() {
-                            self.subagent_parent_idx = self.current_todos.iter()
+                            self.subagent_parent_idx = self
+                                .current_todos
+                                .iter()
                                 .position(|t| t.status == crate::app::TodoStatus::InProgress);
                         }
                         self.active_task_tool_ids.insert(tool_use_id.clone());
@@ -53,10 +72,16 @@ impl App {
                         self.ask_user_questions_cache = Some(input.clone());
                     }
                 }
-                DisplayEvent::ToolResult { tool_use_id, is_error, .. } => {
+                DisplayEvent::ToolResult {
+                    tool_use_id,
+                    is_error,
+                    ..
+                } => {
                     self.pending_tool_calls.remove(tool_use_id);
                     self.tool_status_generation += 1;
-                    if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
+                    if self.active_task_tool_ids.remove(tool_use_id)
+                        && self.active_task_tool_ids.is_empty()
+                    {
                         self.subagent_todos.clear();
                         self.subagent_parent_idx = None;
                     }
@@ -72,7 +97,8 @@ impl App {
         // Extract detected model from assistant events (for display, not badge)
         if let Some(ref json) = parsed_json {
             if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
-                if let Some(model) = json.get("message")
+                if let Some(model) = json
+                    .get("message")
                     .and_then(|m| m.get("model"))
                     .and_then(|m| m.as_str())
                 {
@@ -106,7 +132,9 @@ impl App {
         self.running_sessions.insert(slot_id.to_string());
         self.agent_exit_codes.remove(slot_id);
         self.invalidate_sidebar();
-        let branch = self.branch_for_slot(slot_id).unwrap_or_else(|| slot_id.to_string());
+        let branch = self
+            .branch_for_slot(slot_id)
+            .unwrap_or_else(|| slot_id.to_string());
         let agent = match self.backend {
             crate::backend::Backend::Claude => "Claude",
             crate::backend::Backend::Codex => "Codex",
@@ -144,21 +172,30 @@ impl App {
         if let Some(ref branch) = branch {
             if let Some(slots) = self.branch_slots.get_mut(branch) {
                 slots.retain(|s| s != slot_id);
-                if slots.is_empty() { self.branch_slots.remove(branch); }
+                if slots.is_empty() {
+                    self.branch_slots.remove(branch);
+                }
             }
         }
 
         // If this was the active slot, switch to next available slot or clear
-        let was_active = branch.as_ref().and_then(|b| self.active_slot.get(b))
-            .map(|a| a == slot_id).unwrap_or(false);
+        let was_active = branch
+            .as_ref()
+            .and_then(|b| self.active_slot.get(b))
+            .map(|a| a == slot_id)
+            .unwrap_or(false);
 
         if was_active {
             if let Some(ref branch) = branch {
                 // Pick another running slot on this branch, or remove active
-                let next = self.branch_slots.get(branch)
+                let next = self
+                    .branch_slots
+                    .get(branch)
                     .and_then(|slots| slots.last().cloned());
                 match next {
-                    Some(next_slot) => { self.active_slot.insert(branch.clone(), next_slot); }
+                    Some(next_slot) => {
+                        self.active_slot.insert(branch.clone(), next_slot);
+                    }
                     None => {
                         // Promote session ID from slot-key to branch-key so the
                         // fallback path in get_claude_session_id() can resume
@@ -194,7 +231,10 @@ impl App {
 
         // Mark as unread if user wasn't watching this session's output
         // (different branch, or same branch but this wasn't the active display slot)
-        let is_current = branch.as_ref().and_then(|b| self.current_worktree().map(|s| s.branch_name == *b)).unwrap_or(false);
+        let is_current = branch
+            .as_ref()
+            .and_then(|b| self.current_worktree().map(|s| s.branch_name == *b))
+            .unwrap_or(false);
         if !(is_current && was_active) {
             if let Some(ref b) = branch {
                 if let Some(uuid) = self.agent_session_ids.get(slot_id) {
@@ -242,18 +282,25 @@ impl App {
             None => return,
         };
         let end = self.display_events.len();
-        if events_offset >= end { return; }
+        if events_offset >= end {
+            return;
+        }
         let events = self.display_events[events_offset..end].to_vec();
 
         let store = if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
             self.session_store.as_ref()
-        } else { None };
+        } else {
+            None
+        };
         let temp_store;
         let store = match store {
             Some(s) => s,
             None => {
                 temp_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
-                match temp_store.as_ref() { Some(s) => s, None => return }
+                match temp_store.as_ref() {
+                    Some(s) => s,
+                    None => return,
+                }
             }
         };
         let _ = store.append_events(session_id, &events);
@@ -270,11 +317,14 @@ impl App {
         };
 
         // Resolve JSONL file path for deletion
-        let jsonl_path = self.agent_session_ids.get(slot_id)
+        let jsonl_path = self
+            .agent_session_ids
+            .get(slot_id)
             .and_then(|uuid| crate::config::session_file(self.backend, &wt_path, uuid));
 
         // Collect current turn's events from display_events (after the offset)
-        let events: Vec<crate::events::DisplayEvent> = if events_offset < self.display_events.len() {
+        let events: Vec<crate::events::DisplayEvent> = if events_offset < self.display_events.len()
+        {
             self.display_events[events_offset..].to_vec()
         } else {
             Vec::new()
@@ -338,7 +388,13 @@ impl App {
 
     /// Parse JSONL and append to store for a background (non-active) project.
     /// Opens a temporary store connection to the worktree's .azs file.
-    fn store_append_background(&self, slot_id: &str, session_id: i64, wt_path: &std::path::Path, _project_path: &std::path::Path) {
+    fn store_append_background(
+        &self,
+        slot_id: &str,
+        session_id: i64,
+        wt_path: &std::path::Path,
+        _project_path: &std::path::Path,
+    ) {
         let jsonl_path = match self.agent_session_ids.get(slot_id) {
             Some(uuid) => crate::config::session_file(self.backend, wt_path, uuid),
             None => return,
@@ -353,8 +409,10 @@ impl App {
             return;
         }
 
-        let events: Vec<crate::events::DisplayEvent> = parsed.events.into_iter().map(|ev| {
-            match ev {
+        let events: Vec<crate::events::DisplayEvent> = parsed
+            .events
+            .into_iter()
+            .map(|ev| match ev {
                 crate::events::DisplayEvent::UserMessage { _uuid, content } => {
                     let stripped = crate::app::context_injection::strip_injected_context(&content);
                     crate::events::DisplayEvent::UserMessage {
@@ -363,8 +421,8 @@ impl App {
                     }
                 }
                 other => other,
-            }
-        }).collect();
+            })
+            .collect();
 
         if let Ok(store) = crate::app::session_store::SessionStore::open(wt_path) {
             if store.append_events(session_id, &events).is_ok() {
@@ -390,7 +448,9 @@ impl App {
         };
 
         // Find branch in snapshot
-        let branch = snapshot.branch_slots.iter()
+        let branch = snapshot
+            .branch_slots
+            .iter()
             .find(|(_, slots)| slots.contains(&slot_id.to_string()))
             .map(|(b, _)| b.clone());
 
@@ -412,15 +472,26 @@ impl App {
 
         // Update snapshot's branch_slots
         let _was_active = if let Some(ref branch) = branch {
-            let active = snapshot.active_slot.get(branch).map(|a| a == slot_id).unwrap_or(false);
+            let active = snapshot
+                .active_slot
+                .get(branch)
+                .map(|a| a == slot_id)
+                .unwrap_or(false);
             if let Some(slots) = snapshot.branch_slots.get_mut(branch) {
                 slots.retain(|s| s != slot_id);
-                if slots.is_empty() { snapshot.branch_slots.remove(branch); }
+                if slots.is_empty() {
+                    snapshot.branch_slots.remove(branch);
+                }
             }
             if active {
-                let next = snapshot.branch_slots.get(branch).and_then(|s| s.last().cloned());
+                let next = snapshot
+                    .branch_slots
+                    .get(branch)
+                    .and_then(|s| s.last().cloned());
                 match next {
-                    Some(next_slot) => { snapshot.active_slot.insert(branch.clone(), next_slot); }
+                    Some(next_slot) => {
+                        snapshot.active_slot.insert(branch.clone(), next_slot);
+                    }
                     None => {
                         if let Some(sid) = self.agent_session_ids.get(slot_id).cloned() {
                             self.agent_session_ids.insert(branch.clone(), sid);
@@ -449,7 +520,9 @@ impl App {
 
         // Status message
         let display = branch.as_deref().unwrap_or(slot_id);
-        let project_name = &self.project_snapshots.get(&project_path)
+        let project_name = &self
+            .project_snapshots
+            .get(&project_path)
             .map(|s| s.project.name.clone())
             .unwrap_or_default();
         let exit_str = match code {
@@ -467,7 +540,10 @@ impl App {
         let worktree = crate::models::strip_branch_prefix(branch_name);
 
         // Resolve session display name
-        let is_current = self.current_worktree().map(|s| s.branch_name == branch_name).unwrap_or(false);
+        let is_current = self
+            .current_worktree()
+            .map(|s| s.branch_name == branch_name)
+            .unwrap_or(false);
         let session_name = if is_current && !self.title_session_name.is_empty() {
             self.title_session_name.clone()
         } else {
@@ -477,7 +553,11 @@ impl App {
                 Some(id) => {
                     let names = self.load_all_session_names();
                     names.get(&id).cloned().unwrap_or_else(|| {
-                        if id.len() > 8 { id[..8].to_string() } else { id }
+                        if id.len() > 8 {
+                            id[..8].to_string()
+                        } else {
+                            id
+                        }
                     })
                 }
                 None => String::new(),
@@ -525,7 +605,9 @@ impl App {
                 #[cfg(windows)]
                 {
                     use std::process::Command;
-                    let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).output();
+                    let _ = Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F"])
+                        .output();
                 }
                 self.set_status("Cancelled Claude");
             }
@@ -540,10 +622,22 @@ impl App {
         // Also suppress when the user is viewing a different session file (historic).
         // During RCR, always show output if the slot matches the RCR session — the
         // worktree's branch_name may be empty (detached HEAD during rebase).
-        let is_rcr_slot = self.rcr_session.as_ref().map(|r| r.slot_id == slot_id).unwrap_or(false);
-        let is_viewing = !self.viewing_historic_session && (is_rcr_slot || self.current_worktree().map(|s| {
-            self.active_slot.get(&s.branch_name).map(|a| a == slot_id).unwrap_or(false)
-        }).unwrap_or(false));
+        let is_rcr_slot = self
+            .rcr_session
+            .as_ref()
+            .map(|r| r.slot_id == slot_id)
+            .unwrap_or(false);
+        let is_viewing = !self.viewing_historic_session
+            && (is_rcr_slot
+                || self
+                    .current_worktree()
+                    .map(|s| {
+                        self.active_slot
+                            .get(&s.branch_name)
+                            .map(|a| a == slot_id)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false));
         if is_viewing {
             // Single JSON parse: EventParser returns both events AND the raw parsed
             // JSON value. We reuse that value for token/model extraction below instead
@@ -552,7 +646,12 @@ impl App {
 
             for event in &events {
                 match event {
-                    DisplayEvent::ToolCall { tool_use_id, tool_name, input, .. } => {
+                    DisplayEvent::ToolCall {
+                        tool_use_id,
+                        tool_name,
+                        input,
+                        ..
+                    } => {
                         self.pending_tool_calls.insert(tool_use_id.clone());
                         self.tool_status_generation += 1;
                         // Track subagent (Task) tool calls — while active, TodoWrite
@@ -561,7 +660,9 @@ impl App {
                         // so subtasks render directly beneath that parent item.
                         if tool_name == "Task" {
                             if self.active_task_tool_ids.is_empty() {
-                                self.subagent_parent_idx = self.current_todos.iter()
+                                self.subagent_parent_idx = self
+                                    .current_todos
+                                    .iter()
                                     .position(|t| t.status == crate::app::TodoStatus::InProgress);
                             }
                             self.active_task_tool_ids.insert(tool_use_id.clone());
@@ -583,11 +684,17 @@ impl App {
                             self.ask_user_questions_cache = Some(input.clone());
                         }
                     }
-                    DisplayEvent::ToolResult { tool_use_id, is_error, .. } => {
+                    DisplayEvent::ToolResult {
+                        tool_use_id,
+                        is_error,
+                        ..
+                    } => {
                         self.pending_tool_calls.remove(tool_use_id);
                         self.tool_status_generation += 1;
                         // When a Task (subagent) completes, clear subagent state
-                        if self.active_task_tool_ids.remove(tool_use_id) && self.active_task_tool_ids.is_empty() {
+                        if self.active_task_tool_ids.remove(tool_use_id)
+                            && self.active_task_tool_ids.is_empty()
+                        {
                             self.subagent_todos.clear();
                             self.subagent_parent_idx = None;
                         }
@@ -606,7 +713,8 @@ impl App {
             // Extract detected model from live stream events (for display, not badge)
             if let Some(ref json) = parsed_json {
                 if let Some("assistant") = json.get("type").and_then(|t| t.as_str()) {
-                    if let Some(model) = json.get("message")
+                    if let Some(model) = json
+                        .get("message")
                         .and_then(|m| m.get("model"))
                         .and_then(|m| m.as_str())
                     {
@@ -638,22 +746,30 @@ impl App {
                     self.process_session_chunk(&data);
                 }
             }
-
         }
     }
 
     /// Register a newly spawned Claude process. The PID is used as the slot key.
     /// Newest spawn becomes the active slot (its output appears in session pane).
-    pub fn register_claude(&mut self, branch_name: String, pid: u32, receiver: Receiver<AgentEvent>) {
+    pub fn register_claude(
+        &mut self,
+        branch_name: String,
+        pid: u32,
+        receiver: Receiver<AgentEvent>,
+    ) {
         let slot = pid.to_string();
         self.agent_receivers.insert(slot.clone(), receiver);
         self.running_sessions.insert(slot.clone());
         // Track slot→project for background event routing
         if let Some(ref project) = self.project {
-            self.slot_to_project.insert(slot.clone(), project.path.clone());
+            self.slot_to_project
+                .insert(slot.clone(), project.path.clone());
         }
         // Track this slot under its branch (append = spawn order preserved)
-        self.branch_slots.entry(branch_name.clone()).or_default().push(slot.clone());
+        self.branch_slots
+            .entry(branch_name.clone())
+            .or_default()
+            .push(slot.clone());
         // Newest spawn becomes active — its output shows in session pane
         self.active_slot.insert(branch_name, slot);
         // New process = user wants live output, not a historic view
@@ -675,7 +791,8 @@ impl App {
                 rcr.session_id = Some(claude_session_id.clone());
             }
         }
-        self.agent_session_ids.insert(slot_id.to_string(), claude_session_id.clone());
+        self.agent_session_ids
+            .insert(slot_id.to_string(), claude_session_id.clone());
 
         // Persist UUID in the store so orphaned JSOLNs can be recovered on restart
         if let Some((session_id, _, _)) = self.pid_session_target.get(slot_id) {
@@ -688,35 +805,52 @@ impl App {
     /// Get the Claude session UUID for the active slot of a branch (for --resume)
     pub fn get_claude_session_id(&self, branch_name: &str) -> Option<&String> {
         // Look up the active slot's Claude session UUID
-        self.active_slot.get(branch_name)
+        self.active_slot
+            .get(branch_name)
             .and_then(|slot| self.agent_session_ids.get(slot))
             // Fallback: check if there's a session_id stored directly by branch
             // (from load_worktrees at startup, before any slot was created)
             .or_else(|| self.agent_session_ids.get(branch_name))
     }
-
 }
 
 /// Parse TodoWrite input JSON into TodoItem vec.
 /// Input structure: { "todos": [{ "content": "...", "status": "pending"|"in_progress"|"completed", "activeForm": "..." }] }
 pub fn parse_todos_from_input(input: &serde_json::Value) -> Vec<super::app::TodoItem> {
-    let Some(todos) = input.get("todos").and_then(|v| v.as_array()) else { return Vec::new() };
-    todos.iter().filter_map(|t| {
-        let content = t.get("content")?.as_str()?.to_string();
-        let active_form = t.get("activeForm").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let status = match t.get("status").and_then(|v| v.as_str()).unwrap_or("pending") {
-            "in_progress" => super::app::TodoStatus::InProgress,
-            "completed" => super::app::TodoStatus::Completed,
-            _ => super::app::TodoStatus::Pending,
-        };
-        Some(super::app::TodoItem { content, status, active_form })
-    }).collect()
+    let Some(todos) = input.get("todos").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    todos
+        .iter()
+        .filter_map(|t| {
+            let content = t.get("content")?.as_str()?.to_string();
+            let active_form = t
+                .get("activeForm")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let status = match t
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pending")
+            {
+                "in_progress" => super::app::TodoStatus::InProgress,
+                "completed" => super::app::TodoStatus::Completed,
+                _ => super::app::TodoStatus::Pending,
+            };
+            Some(super::app::TodoItem {
+                content,
+                status,
+                active_form,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::app::TodoStatus;
+    use super::*;
     use serde_json::json;
 
     /// Verifies parse_todos_from_input correctly parses a real TodoWrite input
@@ -747,9 +881,15 @@ mod tests {
         });
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 3, "Should parse all 3 todos");
-        assert_eq!(todos[0].content, "Add all terminal keybindings to title bar hints");
+        assert_eq!(
+            todos[0].content,
+            "Add all terminal keybindings to title bar hints"
+        );
         assert_eq!(todos[0].status, TodoStatus::InProgress);
-        assert_eq!(todos[0].active_form, "Adding terminal keybindings to title bar");
+        assert_eq!(
+            todos[0].active_form,
+            "Adding terminal keybindings to title bar"
+        );
         assert_eq!(todos[1].status, TodoStatus::Pending);
         assert_eq!(todos[2].status, TodoStatus::Completed);
     }
@@ -879,21 +1019,30 @@ mod tests {
     #[test]
     fn test_parse_todos_status_cancelled() {
         let input = json!({"todos": [{"content": "x", "status": "cancelled", "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status "done" defaults to Pending (not "completed").
     #[test]
     fn test_parse_todos_status_done() {
         let input = json!({"todos": [{"content": "x", "status": "done", "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status "IN_PROGRESS" (uppercase) defaults to Pending (case-sensitive).
     #[test]
     fn test_parse_todos_status_case_sensitive() {
         let input = json!({"todos": [{"content": "x", "status": "IN_PROGRESS", "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status "Pending" with capital P defaults to Pending match.
@@ -901,42 +1050,60 @@ mod tests {
     fn test_parse_todos_status_capitalized() {
         let input = json!({"todos": [{"content": "x", "status": "Pending", "activeForm": ""}]});
         // "Pending" != "pending" — falls through to default
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Missing status field defaults to Pending.
     #[test]
     fn test_parse_todos_missing_status() {
         let input = json!({"todos": [{"content": "x", "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status is null — defaults to Pending.
     #[test]
     fn test_parse_todos_status_null() {
         let input = json!({"todos": [{"content": "x", "status": null, "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status is a number — defaults to Pending.
     #[test]
     fn test_parse_todos_status_number() {
         let input = json!({"todos": [{"content": "x", "status": 1, "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Status is a boolean — defaults to Pending.
     #[test]
     fn test_parse_todos_status_bool() {
         let input = json!({"todos": [{"content": "x", "status": true, "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Empty string status defaults to Pending.
     #[test]
     fn test_parse_todos_status_empty_string() {
         let input = json!({"todos": [{"content": "x", "status": "", "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     // ── Content field edge cases ────────────────────────────────────────
@@ -1028,7 +1195,8 @@ mod tests {
     /// activeForm with unicode.
     #[test]
     fn test_parse_todos_active_form_unicode() {
-        let input = json!({"todos": [{"content": "x", "status": "pending", "activeForm": "テスト中"}]});
+        let input =
+            json!({"todos": [{"content": "x", "status": "pending", "activeForm": "テスト中"}]});
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos[0].active_form, "テスト中");
     }
@@ -1182,7 +1350,8 @@ mod tests {
     /// Content with leading/trailing whitespace is preserved (not trimmed).
     #[test]
     fn test_parse_todos_whitespace_preserved() {
-        let input = json!({"todos": [{"content": "  spaces  ", "status": "pending", "activeForm": ""}]});
+        let input =
+            json!({"todos": [{"content": "  spaces  ", "status": "pending", "activeForm": ""}]});
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos[0].content, "  spaces  ");
     }
@@ -1192,13 +1361,17 @@ mod tests {
     fn test_parse_todos_status_whitespace() {
         let input = json!({"todos": [{"content": "x", "status": " pending ", "activeForm": ""}]});
         // " pending " != "pending" → defaults
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// activeForm with whitespace is preserved.
     #[test]
     fn test_parse_todos_active_form_whitespace() {
-        let input = json!({"todos": [{"content": "x", "status": "pending", "activeForm": "  spaced  "}]});
+        let input =
+            json!({"todos": [{"content": "x", "status": "pending", "activeForm": "  spaced  "}]});
         assert_eq!(parse_todos_from_input(&input)[0].active_form, "  spaced  ");
     }
 
@@ -1207,7 +1380,8 @@ mod tests {
     /// Single pending todo.
     #[test]
     fn test_parse_todos_single_pending() {
-        let input = json!({"todos": [{"content": "Task", "status": "pending", "activeForm": "Working"}]});
+        let input =
+            json!({"todos": [{"content": "Task", "status": "pending", "activeForm": "Working"}]});
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].content, "Task");
@@ -1247,9 +1421,27 @@ mod tests {
         });
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 5);
-        assert_eq!(todos.iter().filter(|t| t.status == TodoStatus::Completed).count(), 1);
-        assert_eq!(todos.iter().filter(|t| t.status == TodoStatus::InProgress).count(), 1);
-        assert_eq!(todos.iter().filter(|t| t.status == TodoStatus::Pending).count(), 3);
+        assert_eq!(
+            todos
+                .iter()
+                .filter(|t| t.status == TodoStatus::Completed)
+                .count(),
+            1
+        );
+        assert_eq!(
+            todos
+                .iter()
+                .filter(|t| t.status == TodoStatus::InProgress)
+                .count(),
+            1
+        );
+        assert_eq!(
+            todos
+                .iter()
+                .filter(|t| t.status == TodoStatus::Pending)
+                .count(),
+            3
+        );
     }
 
     /// Payload with content containing code snippets.
@@ -1298,9 +1490,18 @@ mod tests {
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 100);
         // Verify distribution
-        let pending = todos.iter().filter(|t| t.status == TodoStatus::Pending).count();
-        let in_prog = todos.iter().filter(|t| t.status == TodoStatus::InProgress).count();
-        let completed = todos.iter().filter(|t| t.status == TodoStatus::Completed).count();
+        let pending = todos
+            .iter()
+            .filter(|t| t.status == TodoStatus::Pending)
+            .count();
+        let in_prog = todos
+            .iter()
+            .filter(|t| t.status == TodoStatus::InProgress)
+            .count();
+        let completed = todos
+            .iter()
+            .filter(|t| t.status == TodoStatus::Completed)
+            .count();
         assert_eq!(pending, 34);
         assert_eq!(in_prog, 33);
         assert_eq!(completed, 33);
@@ -1316,7 +1517,8 @@ mod tests {
     /// Content is an array (wrong type) — skipped.
     #[test]
     fn test_parse_todos_content_array() {
-        let input = json!({"todos": [{"content": ["a", "b"], "status": "pending", "activeForm": ""}]});
+        let input =
+            json!({"todos": [{"content": ["a", "b"], "status": "pending", "activeForm": ""}]});
         assert!(parse_todos_from_input(&input).is_empty());
     }
 
@@ -1345,13 +1547,17 @@ mod tests {
     #[test]
     fn test_parse_todos_status_array() {
         let input = json!({"todos": [{"content": "x", "status": ["a"], "activeForm": ""}]});
-        assert_eq!(parse_todos_from_input(&input)[0].status, TodoStatus::Pending);
+        assert_eq!(
+            parse_todos_from_input(&input)[0].status,
+            TodoStatus::Pending
+        );
     }
 
     /// Verify that content with only whitespace is a valid todo.
     #[test]
     fn test_parse_todos_whitespace_only_content() {
-        let input = json!({"todos": [{"content": "   \t\n   ", "status": "pending", "activeForm": ""}]});
+        let input =
+            json!({"todos": [{"content": "   \t\n   ", "status": "pending", "activeForm": ""}]});
         let todos = parse_todos_from_input(&input);
         assert_eq!(todos.len(), 1);
         assert_eq!(todos[0].content, "   \t\n   ");

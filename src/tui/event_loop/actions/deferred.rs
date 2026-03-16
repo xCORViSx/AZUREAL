@@ -43,7 +43,9 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
                         crate::tui::input_git_actions::refresh_changed_files(p);
                         crate::tui::input_git_actions::refresh_commit_log(p);
                     }
-                    Err(e) => { p.result_message = Some((format!("{}", e), true)); }
+                    Err(e) => {
+                        p.result_message = Some((format!("{}", e), true));
+                    }
                 }
             }
         }
@@ -56,13 +58,16 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
                                 p.result_message = Some(("Committed and pushed".into(), false));
                             }
                             Err(e) => {
-                                p.result_message = Some((format!("Committed but push failed: {}", e), true));
+                                p.result_message =
+                                    Some((format!("Committed but push failed: {}", e), true));
                             }
                         }
                         crate::tui::input_git_actions::refresh_changed_files(p);
                         crate::tui::input_git_actions::refresh_commit_log(p);
                     }
-                    Err(e) => { p.result_message = Some((format!("{}", e), true)); }
+                    Err(e) => {
+                        p.result_message = Some((format!("{}", e), true));
+                    }
                 }
             }
         }
@@ -81,9 +86,13 @@ mod tests {
     fn test_load_session_clears_filter() {
         let mut app = App::new();
         app.session_filter = "search term".into();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 0,
+            },
+        );
         assert!(app.session_filter.is_empty());
     }
 
@@ -91,9 +100,13 @@ mod tests {
     fn test_load_session_clears_filter_active() {
         let mut app = App::new();
         app.session_filter_active = true;
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 0,
+            },
+        );
         assert!(!app.session_filter_active);
     }
 
@@ -101,9 +114,13 @@ mod tests {
     fn test_load_session_hides_session_list() {
         let mut app = App::new();
         app.show_session_list = true;
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "feat".into(), idx: 2,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "feat".into(),
+                idx: 2,
+            },
+        );
         assert!(!app.show_session_list);
     }
 
@@ -111,19 +128,28 @@ mod tests {
     fn test_load_session_clears_content_search() {
         let mut app = App::new();
         app.session_content_search = true;
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "dev".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "dev".into(),
+                idx: 0,
+            },
+        );
         assert!(!app.session_content_search);
     }
 
     #[test]
     fn test_load_session_clears_search_results() {
         let mut app = App::new();
-        app.session_search_results.push((0, "sid".into(), "match".into()));
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "b".into(), idx: 0,
-        });
+        app.session_search_results
+            .push((0, "sid".into(), "match".into()));
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "b".into(),
+                idx: 0,
+            },
+        );
         assert!(app.session_search_results.is_empty());
     }
 
@@ -131,26 +157,38 @@ mod tests {
     fn test_load_session_index_zero() {
         let mut app = App::new();
         // No panic with idx=0 even without session files set up
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 0,
+            },
+        );
     }
 
     #[test]
     fn test_load_session_index_large() {
         let mut app = App::new();
         // Large index should not panic (select_session_file handles out-of-bounds)
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 999,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 999,
+            },
+        );
     }
 
     #[test]
     fn test_load_session_empty_branch() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: String::new(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: String::new(),
+                idx: 0,
+            },
+        );
         assert!(!app.show_session_list);
     }
 
@@ -160,17 +198,23 @@ mod tests {
     fn test_load_file_nonexistent() {
         let mut app = App::new();
         // Loading a non-existent file shouldn't panic
-        execute_deferred_action(&mut app, DeferredAction::LoadFile {
-            path: PathBuf::from("/tmp/nonexistent_deferred_test_file.rs"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadFile {
+                path: PathBuf::from("/tmp/nonexistent_deferred_test_file.rs"),
+            },
+        );
     }
 
     #[test]
     fn test_load_file_empty_path() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadFile {
-            path: PathBuf::from(""),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadFile {
+                path: PathBuf::from(""),
+            },
+        );
     }
 
     // ── OpenHealthPanel action ──
@@ -187,17 +231,23 @@ mod tests {
     #[test]
     fn test_switch_project_nonexistent_path() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::SwitchProject {
-            path: PathBuf::from("/tmp/no_such_project_deferred"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::SwitchProject {
+                path: PathBuf::from("/tmp/no_such_project_deferred"),
+            },
+        );
     }
 
     #[test]
     fn test_switch_project_empty_path() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::SwitchProject {
-            path: PathBuf::from(""),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::SwitchProject {
+                path: PathBuf::from(""),
+            },
+        );
     }
 
     // ── RescanHealthScope action ──
@@ -205,17 +255,18 @@ mod tests {
     #[test]
     fn test_rescan_health_scope_empty_dirs() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::RescanHealthScope {
-            dirs: vec![],
-        });
+        execute_deferred_action(&mut app, DeferredAction::RescanHealthScope { dirs: vec![] });
     }
 
     #[test]
     fn test_rescan_health_scope_with_dirs() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::RescanHealthScope {
-            dirs: vec!["src".into(), "tests".into()],
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::RescanHealthScope {
+                dirs: vec!["src".into(), "tests".into()],
+            },
+        );
     }
 
     // ── GitCommit action (without git_actions_panel) ──
@@ -224,20 +275,26 @@ mod tests {
     fn test_git_commit_no_panel() {
         let mut app = App::new();
         assert!(app.git_actions_panel.is_none());
-        execute_deferred_action(&mut app, DeferredAction::GitCommit {
-            worktree: PathBuf::from("/tmp"),
-            message: "test commit".into(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommit {
+                worktree: PathBuf::from("/tmp"),
+                message: "test commit".into(),
+            },
+        );
         // No panic — panel is None, so the match arm does nothing
     }
 
     #[test]
     fn test_git_commit_empty_message_no_panel() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::GitCommit {
-            worktree: PathBuf::from("/tmp"),
-            message: String::new(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommit {
+                worktree: PathBuf::from("/tmp"),
+                message: String::new(),
+            },
+        );
     }
 
     // ── GitCommitAndPush action (without git_actions_panel) ──
@@ -246,32 +303,43 @@ mod tests {
     fn test_git_commit_and_push_no_panel() {
         let mut app = App::new();
         assert!(app.git_actions_panel.is_none());
-        execute_deferred_action(&mut app, DeferredAction::GitCommitAndPush {
-            worktree: PathBuf::from("/tmp"),
-            message: "test".into(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommitAndPush {
+                worktree: PathBuf::from("/tmp"),
+                message: "test".into(),
+            },
+        );
     }
 
     #[test]
     fn test_git_commit_and_push_empty_message_no_panel() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::GitCommitAndPush {
-            worktree: PathBuf::from("/tmp"),
-            message: String::new(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommitAndPush {
+                worktree: PathBuf::from("/tmp"),
+                message: String::new(),
+            },
+        );
     }
 
     // ── DeferredAction enum variant construction ──
 
     #[test]
     fn test_deferred_action_load_session_construction() {
-        let action = DeferredAction::LoadSession { branch: "b".into(), idx: 5 };
+        let action = DeferredAction::LoadSession {
+            branch: "b".into(),
+            idx: 5,
+        };
         assert!(matches!(action, DeferredAction::LoadSession { .. }));
     }
 
     #[test]
     fn test_deferred_action_load_file_construction() {
-        let action = DeferredAction::LoadFile { path: PathBuf::from("/x") };
+        let action = DeferredAction::LoadFile {
+            path: PathBuf::from("/x"),
+        };
         assert!(matches!(action, DeferredAction::LoadFile { .. }));
     }
 
@@ -283,13 +351,17 @@ mod tests {
 
     #[test]
     fn test_deferred_action_switch_project_construction() {
-        let action = DeferredAction::SwitchProject { path: PathBuf::from("/p") };
+        let action = DeferredAction::SwitchProject {
+            path: PathBuf::from("/p"),
+        };
         assert!(matches!(action, DeferredAction::SwitchProject { .. }));
     }
 
     #[test]
     fn test_deferred_action_rescan_construction() {
-        let action = DeferredAction::RescanHealthScope { dirs: vec!["a".into()] };
+        let action = DeferredAction::RescanHealthScope {
+            dirs: vec!["a".into()],
+        };
         assert!(matches!(action, DeferredAction::RescanHealthScope { .. }));
     }
 
@@ -331,27 +403,42 @@ mod tests {
     fn test_sequential_load_sessions() {
         let mut app = App::new();
         app.session_filter = "old".into();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "a".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "a".into(),
+                idx: 0,
+            },
+        );
         assert!(app.session_filter.is_empty());
         app.session_filter = "new".into();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "b".into(), idx: 1,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "b".into(),
+                idx: 1,
+            },
+        );
         assert!(app.session_filter.is_empty());
     }
 
     #[test]
     fn test_load_file_then_session() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadFile {
-            path: PathBuf::from("/tmp/test"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadFile {
+                path: PathBuf::from("/tmp/test"),
+            },
+        );
         app.show_session_list = true;
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 0,
+            },
+        );
         assert!(!app.show_session_list);
     }
 
@@ -361,9 +448,13 @@ mod tests {
     fn test_load_session_branch_with_slashes() {
         let mut app = App::new();
         app.session_filter = "something".into();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "azureal/feature/sub".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "azureal/feature/sub".into(),
+                idx: 0,
+            },
+        );
         assert!(app.session_filter.is_empty());
         assert!(!app.show_session_list);
     }
@@ -372,9 +463,13 @@ mod tests {
     fn test_load_session_branch_unicode() {
         let mut app = App::new();
         app.session_filter_active = true;
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "feäture-ünïcode".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "feäture-ünïcode".into(),
+                idx: 0,
+            },
+        );
         assert!(!app.session_filter_active);
     }
 
@@ -382,12 +477,17 @@ mod tests {
     fn test_load_session_multiple_search_results_cleared() {
         let mut app = App::new();
         for i in 0..5 {
-            app.session_search_results.push((i, format!("sid{}", i), "match".into()));
+            app.session_search_results
+                .push((i, format!("sid{}", i), "match".into()));
         }
         assert_eq!(app.session_search_results.len(), 5);
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 0,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 0,
+            },
+        );
         assert!(app.session_search_results.is_empty());
     }
 
@@ -395,7 +495,10 @@ mod tests {
 
     #[test]
     fn test_deferred_action_load_session_branch_value() {
-        let action = DeferredAction::LoadSession { branch: "my-branch".into(), idx: 7 };
+        let action = DeferredAction::LoadSession {
+            branch: "my-branch".into(),
+            idx: 7,
+        };
         if let DeferredAction::LoadSession { branch, idx } = action {
             assert_eq!(branch, "my-branch");
             assert_eq!(idx, 7);
@@ -430,7 +533,10 @@ mod tests {
     fn test_deferred_action_git_commit_fields() {
         let wt = PathBuf::from("/tmp/wt");
         let msg = "fix: resolve bug".to_string();
-        let action = DeferredAction::GitCommit { worktree: wt.clone(), message: msg.clone() };
+        let action = DeferredAction::GitCommit {
+            worktree: wt.clone(),
+            message: msg.clone(),
+        };
         if let DeferredAction::GitCommit { worktree, message } = action {
             assert_eq!(worktree, wt);
             assert_eq!(message, msg);
@@ -443,7 +549,10 @@ mod tests {
     fn test_deferred_action_git_commit_and_push_fields() {
         let wt = PathBuf::from("/tmp/wt");
         let msg = "feat: add feature".to_string();
-        let action = DeferredAction::GitCommitAndPush { worktree: wt.clone(), message: msg.clone() };
+        let action = DeferredAction::GitCommitAndPush {
+            worktree: wt.clone(),
+            message: msg.clone(),
+        };
         if let DeferredAction::GitCommitAndPush { worktree, message } = action {
             assert_eq!(worktree, wt);
             assert_eq!(message, msg);
@@ -454,7 +563,11 @@ mod tests {
 
     #[test]
     fn test_deferred_action_rescan_dirs_value() {
-        let dirs = vec!["src".to_string(), "tests".to_string(), "benches".to_string()];
+        let dirs = vec![
+            "src".to_string(),
+            "tests".to_string(),
+            "benches".to_string(),
+        ];
         let action = DeferredAction::RescanHealthScope { dirs: dirs.clone() };
         if let DeferredAction::RescanHealthScope { dirs: d } = action {
             assert_eq!(d, dirs);
@@ -469,9 +582,12 @@ mod tests {
     fn test_load_file_does_not_change_session_filter() {
         let mut app = App::new();
         app.session_filter = "preserved".into();
-        execute_deferred_action(&mut app, DeferredAction::LoadFile {
-            path: PathBuf::from("/tmp/file.rs"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadFile {
+                path: PathBuf::from("/tmp/file.rs"),
+            },
+        );
         // LoadFile should not touch session_filter
         assert_eq!(app.session_filter, "preserved");
     }
@@ -488,10 +604,13 @@ mod tests {
     fn test_git_commit_no_panel_does_not_change_filter() {
         let mut app = App::new();
         app.session_filter = "untouched".into();
-        execute_deferred_action(&mut app, DeferredAction::GitCommit {
-            worktree: PathBuf::from("/tmp"),
-            message: "msg".into(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommit {
+                worktree: PathBuf::from("/tmp"),
+                message: "msg".into(),
+            },
+        );
         assert_eq!(app.session_filter, "untouched");
     }
 
@@ -501,10 +620,13 @@ mod tests {
     fn test_git_commit_panel_none_no_side_effects() {
         let mut app = App::new();
         let before_filter = app.session_filter.clone();
-        execute_deferred_action(&mut app, DeferredAction::GitCommit {
-            worktree: PathBuf::from("/nonexistent"),
-            message: "commit msg".into(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommit {
+                worktree: PathBuf::from("/nonexistent"),
+                message: "commit msg".into(),
+            },
+        );
         // Panel is None — nothing should change
         assert!(app.git_actions_panel.is_none());
         assert_eq!(app.session_filter, before_filter);
@@ -513,10 +635,13 @@ mod tests {
     #[test]
     fn test_git_commit_and_push_panel_none_no_side_effects() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::GitCommitAndPush {
-            worktree: PathBuf::from("/nonexistent"),
-            message: "commit and push msg".into(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::GitCommitAndPush {
+                worktree: PathBuf::from("/nonexistent"),
+                message: "commit and push msg".into(),
+            },
+        );
         assert!(app.git_actions_panel.is_none());
     }
 
@@ -525,18 +650,26 @@ mod tests {
     #[test]
     fn test_load_session_idx_one() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: 1,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: 1,
+            },
+        );
         assert!(!app.show_session_list);
     }
 
     #[test]
     fn test_load_session_idx_max_usize() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadSession {
-            branch: "main".into(), idx: usize::MAX,
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadSession {
+                branch: "main".into(),
+                idx: usize::MAX,
+            },
+        );
         assert!(app.session_filter.is_empty());
     }
 
@@ -546,9 +679,10 @@ mod tests {
     fn test_rescan_health_scope_many_dirs() {
         let mut app = App::new();
         let dirs: Vec<String> = (0..50).map(|i| format!("dir{}", i)).collect();
-        execute_deferred_action(&mut app, DeferredAction::RescanHealthScope {
-            dirs: dirs.clone(),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::RescanHealthScope { dirs: dirs.clone() },
+        );
         // Should not panic regardless of number of dirs
     }
 
@@ -557,9 +691,12 @@ mod tests {
     #[test]
     fn test_load_file_deep_path() {
         let mut app = App::new();
-        execute_deferred_action(&mut app, DeferredAction::LoadFile {
-            path: PathBuf::from("/a/b/c/d/e/f/g/h/i/j/k.rs"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::LoadFile {
+                path: PathBuf::from("/a/b/c/d/e/f/g/h/i/j/k.rs"),
+            },
+        );
         // No panic on deep paths
     }
 
@@ -575,9 +712,12 @@ mod tests {
     fn test_switch_project_does_not_touch_session_filter() {
         let mut app = App::new();
         app.session_filter = "keep me".into();
-        execute_deferred_action(&mut app, DeferredAction::SwitchProject {
-            path: PathBuf::from("/tmp/proj"),
-        });
+        execute_deferred_action(
+            &mut app,
+            DeferredAction::SwitchProject {
+                path: PathBuf::from("/tmp/proj"),
+            },
+        );
         // SwitchProject doesn't clear session_filter
         // (it may wipe everything depending on impl, so just test no panic)
     }

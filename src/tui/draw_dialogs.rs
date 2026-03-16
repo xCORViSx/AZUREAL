@@ -8,10 +8,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BranchDialog};
-use crate::app::types::CommandFieldMode;
 use super::keybindings;
 use super::util::{truncate, AZURE};
+use crate::app::types::CommandFieldMode;
+use crate::app::{App, BranchDialog};
 
 /// Draw help overlay with auto-sized columns from centralized keybindings
 pub fn draw_help_overlay(f: &mut Frame) {
@@ -21,8 +21,16 @@ pub fn draw_help_overlay(f: &mut Frame) {
     // Each display row is either a single binding or two paired bindings merged.
     // Paired: "j/↓ down · k/↑ up" — both key+desc on one line separated by dim ·
     enum HelpRow {
-        Single { keys: String, desc: &'static str },
-        Paired { keys1: String, desc1: &'static str, keys2: String, desc2: &'static str },
+        Single {
+            keys: String,
+            desc: &'static str,
+        },
+        Paired {
+            keys1: String,
+            desc1: &'static str,
+            keys2: String,
+            desc2: &'static str,
+        },
     }
 
     // Build display rows per section, merging pair_with_next bindings
@@ -52,17 +60,20 @@ pub fn draw_help_overlay(f: &mut Frame) {
     }
 
     // Max key width across all single + paired entries (for the first key column)
-    let key_width = section_rows.iter()
+    let key_width = section_rows
+        .iter()
         .flat_map(|(_, rows)| rows.iter())
         .map(|row| match row {
             HelpRow::Single { keys, .. } => keys.len(),
             HelpRow::Paired { keys1, keys2, .. } => keys1.len().max(keys2.len()),
         })
         .max()
-        .unwrap_or(10) + 2;
+        .unwrap_or(10)
+        + 2;
 
     // Max single-entry desc width (used for column sizing)
-    let desc_width = section_rows.iter()
+    let desc_width = section_rows
+        .iter()
         .flat_map(|(_, rows)| rows.iter())
         .map(|row| match row {
             HelpRow::Single { desc, .. } => desc.len(),
@@ -86,7 +97,10 @@ pub fn draw_help_overlay(f: &mut Frame) {
     // Distribute sections across columns to minimize max column height.
     // Try all possible partition points and pick the split with the smallest
     // tallest column — guarantees optimal packing for ≤3 columns.
-    let section_heights: Vec<usize> = section_rows.iter().map(|(_, rows)| rows.len() + 2).collect();
+    let section_heights: Vec<usize> = section_rows
+        .iter()
+        .map(|(_, rows)| rows.len() + 2)
+        .collect();
     let n = section_heights.len();
 
     // Prefix sums for O(1) range height queries
@@ -105,7 +119,9 @@ pub fn draw_help_overlay(f: &mut Frame) {
         let mut best = (usize::MAX, vec![n, n]);
         for s in 1..n {
             let max_h = range_height(0, s).max(range_height(s, n));
-            if max_h < best.0 { best = (max_h, vec![s, n]); }
+            if max_h < best.0 {
+                best = (max_h, vec![s, n]);
+            }
         }
         best.1
     } else {
@@ -116,13 +132,17 @@ pub fn draw_help_overlay(f: &mut Frame) {
                 let max_h = range_height(0, s1)
                     .max(range_height(s1, s2))
                     .max(range_height(s2, n));
-                if max_h < best.0 { best = (max_h, vec![s1, s2, n]); }
+                if max_h < best.0 {
+                    best = (max_h, vec![s1, s2, n]);
+                }
             }
         }
         // Also try 2-column packing in case 3 columns wastes space
         for s in 1..n {
             let max_h = range_height(0, s).max(range_height(s, n));
-            if max_h < best.0 { best = (max_h, vec![s, n]); }
+            if max_h < best.0 {
+                best = (max_h, vec![s, n]);
+            }
         }
         best.1
     };
@@ -139,9 +159,12 @@ pub fn draw_help_overlay(f: &mut Frame) {
             col_idx += 1;
         }
 
-        columns[col_idx].push(Line::from(vec![
-            Span::styled(*title, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        ]));
+        columns[col_idx].push(Line::from(vec![Span::styled(
+            *title,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]));
 
         for row in rows {
             let line = match row {
@@ -153,7 +176,12 @@ pub fn draw_help_overlay(f: &mut Frame) {
                     let desc_span = Span::raw(format!(" {}", desc));
                     Line::from(vec![key_span, desc_span])
                 }
-                HelpRow::Paired { keys1, desc1, keys2, desc2 } => {
+                HelpRow::Paired {
+                    keys1,
+                    desc1,
+                    keys2,
+                    desc2,
+                } => {
                     // "  keys1 desc1 · keys2 desc2"
                     let k1 = Span::styled(
                         format!("{:>width$}", keys1, width = key_width),
@@ -177,7 +205,8 @@ pub fn draw_help_overlay(f: &mut Frame) {
     let help_height = (max_col_height as u16 + 4).min(area.height.saturating_sub(4));
 
     // Calculate actual width needed
-    let help_width = ((actual_col_width * actual_num_cols) as u16 + 4).min(area.width.saturating_sub(4));
+    let help_width =
+        ((actual_col_width * actual_num_cols) as u16 + 4).min(area.width.saturating_sub(4));
 
     let help_area = Rect {
         x: (area.width.saturating_sub(help_width)) / 2,
@@ -241,14 +270,17 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         .split(dialog_area);
 
     // Filter / new name input with cursor
-    let filter_title = if dialog.filter.is_empty() { " Filter / New Name " } else { " Filter / New Name " };
-    let filter = Paragraph::new(dialog.filter.as_str())
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(AZURE))
-                .title(filter_title),
-        );
+    let filter_title = if dialog.filter.is_empty() {
+        " Filter / New Name "
+    } else {
+        " Filter / New Name "
+    };
+    let filter = Paragraph::new(dialog.filter.as_str()).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(AZURE))
+            .title(filter_title),
+    );
     f.render_widget(filter, dialog_chunks[0]);
 
     // Show cursor in filter input
@@ -269,13 +301,19 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         format!("[+] Create new: {}", dialog.filter)
     };
     let create_style = if create_selected {
-        Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(Color::Green)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Green)
     };
     items.push(ListItem::new(Line::from(vec![
         Span::styled(if create_selected { "▸ " } else { "  " }, create_style),
-        Span::styled(truncate(&create_label, dialog_width as usize - 4), create_style),
+        Span::styled(
+            truncate(&create_label, dialog_width as usize - 4),
+            create_style,
+        ),
     ])));
 
     // Branch rows (index 1+)
@@ -286,11 +324,18 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
         let is_active = dialog.is_checked_out(branch);
 
         let prefix = if is_selected { "▸ " } else { "  " };
-        let tag = if wt_count > 0 { format!(" [{} WT]", wt_count) } else { String::new() };
+        let tag = if wt_count > 0 {
+            format!(" [{} WT]", wt_count)
+        } else {
+            String::new()
+        };
         let max_name_width = (dialog_width as usize).saturating_sub(4 + tag.len());
 
         let style = if is_selected {
-            Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else if is_active {
             Style::default().fg(Color::DarkGray)
         } else if branch.contains('/') {
@@ -320,12 +365,15 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(AZURE))
             .title(title)
-            .title_bottom(Line::from(vec![
-                Span::styled(" Enter ", Style::default().fg(Color::Green)),
-                Span::styled("create/switch  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Esc ", Style::default().fg(Color::Yellow)),
-                Span::styled("cancel ", Style::default().fg(Color::DarkGray)),
-            ]).alignment(Alignment::Center)),
+            .title_bottom(
+                Line::from(vec![
+                    Span::styled(" Enter ", Style::default().fg(Color::Green)),
+                    Span::styled("create/switch  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Esc ", Style::default().fg(Color::Yellow)),
+                    Span::styled("cancel ", Style::default().fg(Color::DarkGray)),
+                ])
+                .alignment(Alignment::Center),
+            ),
     );
 
     f.render_widget(list, dialog_chunks[1]);
@@ -333,7 +381,9 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
 
 /// Draw run command picker overlay (select from saved commands)
 pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
-    let Some(ref picker) = app.run_command_picker else { return };
+    let Some(ref picker) = app.run_command_picker else {
+        return;
+    };
     let cmd_count = app.run_commands.len();
 
     // Size: fit all commands + title + footer + borders
@@ -346,44 +396,61 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, dialog_area);
 
     // Build list items with number shortcuts, scope badge, and selection highlight
-    let items: Vec<ListItem> = app.run_commands.iter().enumerate().map(|(idx, cmd)| {
-        let is_selected = idx == picker.selected;
-        let style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        let key_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
-        } else {
-            Style::default().fg(Color::Yellow)
-        };
+    let items: Vec<ListItem> = app
+        .run_commands
+        .iter()
+        .enumerate()
+        .map(|(idx, cmd)| {
+            let is_selected = idx == picker.selected;
+            let style = if is_selected {
+                Style::default()
+                    .bg(AZURE)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let key_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
 
-        // Show 1-9 number shortcuts, then just spaces for 10+
-        let num_hint = if idx < 9 { format!(" [{}] ", idx + 1) } else { "     ".to_string() };
+            // Show 1-9 number shortcuts, then just spaces for 10+
+            let num_hint = if idx < 9 {
+                format!(" [{}] ", idx + 1)
+            } else {
+                "     ".to_string()
+            };
 
-        // Scope badge: G=global, P=project
-        let scope_badge = if cmd.global { " G " } else { " P " };
-        let scope_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
-        } else if cmd.global {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+            // Scope badge: G=global, P=project
+            let scope_badge = if cmd.global { " G " } else { " P " };
+            let scope_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+            } else if cmd.global {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
 
-        let max_name = (dialog_width as usize).saturating_sub(num_hint.len() + scope_badge.len() + 4);
+            let max_name =
+                (dialog_width as usize).saturating_sub(num_hint.len() + scope_badge.len() + 4);
 
-        ListItem::new(Line::from(vec![
-            Span::styled(num_hint, key_style),
-            Span::styled(truncate(&cmd.name, max_name), style),
-            Span::styled(scope_badge, scope_style),
-        ]))
-    }).collect();
+            ListItem::new(Line::from(vec![
+                Span::styled(num_hint, key_style),
+                Span::styled(truncate(&cmd.name, max_name), style),
+                Span::styled(scope_badge, scope_style),
+            ]))
+        })
+        .collect();
 
     // Title changes when delete confirmation is pending — normal title from keybindings.rs
     let title = if let Some(del_idx) = picker.confirm_delete {
-        let name = app.run_commands.get(del_idx).map(|c| c.name.as_str()).unwrap_or("?");
+        let name = app
+            .run_commands
+            .get(del_idx)
+            .map(|c| c.name.as_str())
+            .unwrap_or("?");
         format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
     } else {
         keybindings::picker_title("Run Command")
@@ -401,7 +468,9 @@ pub fn draw_run_command_picker(f: &mut Frame, app: &App, area: Rect) {
 
 /// Draw run command dialog overlay (create/edit a command)
 pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
-    let Some(ref dialog) = app.run_command_dialog else { return };
+    let Some(ref dialog) = app.run_command_dialog else {
+        return;
+    };
     let area = f.area();
 
     // Two text fields (name + command) stacked inside an outer border
@@ -415,13 +484,32 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     f.render_widget(Clear, dialog_area);
 
     // Outer border with title — left shows mode, right shows scope badge
-    let title_text = if dialog.editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
-    let scope_label = if dialog.global { " [GLOBAL] " } else { " [PROJECT] " };
+    let title_text = if dialog.editing_idx.is_some() {
+        " Edit Run Command "
+    } else {
+        " New Run Command "
+    };
+    let scope_label = if dialog.global {
+        " [GLOBAL] "
+    } else {
+        " [PROJECT] "
+    };
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
-        .title(Line::from(Span::styled(scope_label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))).alignment(Alignment::Right));
+        .title(Span::styled(
+            title_text,
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(Span::styled(
+                scope_label,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Right),
+        );
     let inner = outer.inner(dialog_area);
     f.render_widget(outer, dialog_area);
 
@@ -430,27 +518,34 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(1),
-    ]).split(inner);
+    ])
+    .split(inner);
 
     // Name field — yellow border when active, gray when inactive
-    let name_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let name_widget = Paragraph::new(dialog.name.as_str())
-        .block(Block::default()
+    let name_color = if dialog.editing_name {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let name_widget = Paragraph::new(dialog.name.as_str()).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(name_color))
-            .title(Span::styled(" Name ", Style::default().fg(name_color))));
+            .title(Span::styled(" Name ", Style::default().fg(name_color))),
+    );
     f.render_widget(name_widget, chunks[0]);
 
     // Cursor in name field (content at y+1, x+1 inside ALL borders)
     if dialog.editing_name {
-        f.set_cursor_position((
-            chunks[0].x + 1 + dialog.name_cursor as u16,
-            chunks[0].y + 1,
-        ));
+        f.set_cursor_position((chunks[0].x + 1 + dialog.name_cursor as u16, chunks[0].y + 1));
     }
 
     // Command/Prompt field — yellow border when active, right-aligned mode cycle hint
-    let cmd_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
+    let cmd_color = if !dialog.editing_name {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
     let (field_title, mode_hint) = match dialog.field_mode {
         CommandFieldMode::Command => (" Command ", " Tab:Prompt "),
         CommandFieldMode::Prompt => (" Prompt ", " Tab:Command "),
@@ -462,8 +557,11 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     // Right-aligned mode cycle hint (only when field is focused)
     if !dialog.editing_name {
         cmd_block = cmd_block.title(
-            Line::from(Span::styled(mode_hint, Style::default().fg(Color::DarkGray)))
-                .alignment(Alignment::Right),
+            Line::from(Span::styled(
+                mode_hint,
+                Style::default().fg(Color::DarkGray),
+            ))
+            .alignment(Alignment::Right),
         );
     }
     let cmd_widget = Paragraph::new(dialog.command.as_str()).block(cmd_block);
@@ -478,28 +576,53 @@ pub fn draw_run_command_dialog(f: &mut Frame, app: &App) {
     }
 
     // Hint line — structural keys from keybindings.rs, Enter label changes by context
-    let enter_label = if dialog.editing_name { "next" } else {
+    let enter_label = if dialog.editing_name {
+        "next"
+    } else {
         match dialog.field_mode {
             CommandFieldMode::Command => "save",
             CommandFieldMode::Prompt => "generate",
         }
     };
     let pairs = keybindings::dialog_footer_hint_pairs();
-    let hint_spans: Vec<Span> = pairs.iter().map(|(key, label)| {
-        // Override "save" label with context-specific Enter label
-        let display_label = if key == "Enter" { enter_label } else if key == "Tab" && dialog.editing_name { "next" } else { label };
-        vec![
-            Span::styled(key.as_str(), Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-            Span::styled(format!(":{}  ", display_label), Style::default().fg(Color::DarkGray)),
-        ]
-    }).flatten().collect();
-    f.render_widget(Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center), chunks[2]);
+    let hint_spans: Vec<Span> = pairs
+        .iter()
+        .map(|(key, label)| {
+            // Override "save" label with context-specific Enter label
+            let display_label = if key == "Enter" {
+                enter_label
+            } else if key == "Tab" && dialog.editing_name {
+                "next"
+            } else {
+                label
+            };
+            vec![
+                Span::styled(
+                    key.as_str(),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(":{}  ", display_label),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]
+        })
+        .flatten()
+        .collect();
+    f.render_widget(
+        Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center),
+        chunks[2],
+    );
 }
 
 /// Draw preset prompt picker overlay — numbered list of saved prompts.
 /// 1-9 for first 9 presets, 0 for the 10th (keyboard-order layout).
 pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
-    let Some(ref picker) = app.preset_prompt_picker else { return };
+    let Some(ref picker) = app.preset_prompt_picker else {
+        return;
+    };
     let count = app.preset_prompts.len();
 
     // Size: fit all presets + borders
@@ -512,65 +635,78 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, dialog_area);
 
     // Build list items with number shortcuts and selection highlight
-    let items: Vec<ListItem> = app.preset_prompts.iter().enumerate().map(|(idx, preset)| {
-        let is_selected = idx == picker.selected;
-        let style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Black).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        let key_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
-        } else {
-            Style::default().fg(Color::Yellow)
-        };
+    let items: Vec<ListItem> = app
+        .preset_prompts
+        .iter()
+        .enumerate()
+        .map(|(idx, preset)| {
+            let is_selected = idx == picker.selected;
+            let style = if is_selected {
+                Style::default()
+                    .bg(AZURE)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let key_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
 
-        // 1-9 for first 9, 0 for the 10th — keyboard order
-        let num_hint = if idx < 9 {
-            format!(" [{}] ", idx + 1)
-        } else if idx == 9 {
-            " [0] ".to_string()
-        } else {
-            "     ".to_string()
-        };
+            // 1-9 for first 9, 0 for the 10th — keyboard order
+            let num_hint = if idx < 9 {
+                format!(" [{}] ", idx + 1)
+            } else if idx == 9 {
+                " [0] ".to_string()
+            } else {
+                "     ".to_string()
+            };
 
-        // Scope badge: G=global, P=project — shown after the name
-        let scope_badge = if preset.global { " G " } else { " P " };
-        let scope_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
-        } else if preset.global {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+            // Scope badge: G=global, P=project — shown after the name
+            let scope_badge = if preset.global { " G " } else { " P " };
+            let scope_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+            } else if preset.global {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
 
-        // Show name + scope badge + truncated prompt preview
-        let max_name = 20.min((dialog_width as usize).saturating_sub(num_hint.len() + 10));
-        let preview_max = (dialog_width as usize).saturating_sub(num_hint.len() + max_name + 10);
-        let preview = if preview_max > 3 {
-            let p = truncate(&preset.prompt, preview_max);
-            format!(" {}", p)
-        } else {
-            String::new()
-        };
-        // Selected: use a muted dark tone that's readable on AZURE bg
-        let preview_style = if is_selected {
-            Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+            // Show name + scope badge + truncated prompt preview
+            let max_name = 20.min((dialog_width as usize).saturating_sub(num_hint.len() + 10));
+            let preview_max =
+                (dialog_width as usize).saturating_sub(num_hint.len() + max_name + 10);
+            let preview = if preview_max > 3 {
+                let p = truncate(&preset.prompt, preview_max);
+                format!(" {}", p)
+            } else {
+                String::new()
+            };
+            // Selected: use a muted dark tone that's readable on AZURE bg
+            let preview_style = if is_selected {
+                Style::default().bg(AZURE).fg(Color::Rgb(30, 60, 100))
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
 
-        ListItem::new(Line::from(vec![
-            Span::styled(num_hint, key_style),
-            Span::styled(truncate(&preset.name, max_name), style),
-            Span::styled(scope_badge, scope_style),
-            Span::styled(preview, preview_style),
-        ]))
-    }).collect();
+            ListItem::new(Line::from(vec![
+                Span::styled(num_hint, key_style),
+                Span::styled(truncate(&preset.name, max_name), style),
+                Span::styled(scope_badge, scope_style),
+                Span::styled(preview, preview_style),
+            ]))
+        })
+        .collect();
 
     // Show delete confirmation in title if pending, otherwise from keybindings.rs
     let title = if let Some(del_idx) = picker.confirm_delete {
-        let name = app.preset_prompts.get(del_idx).map(|p| p.name.as_str()).unwrap_or("?");
+        let name = app
+            .preset_prompts
+            .get(del_idx)
+            .map(|p| p.name.as_str())
+            .unwrap_or("?");
         format!(" Delete \"{}\"? (y:yes / any:cancel) ", name)
     } else {
         keybindings::picker_title("Preset Prompts")
@@ -591,17 +727,22 @@ pub fn draw_preset_prompt_picker(f: &mut Frame, app: &App, area: Rect) {
     let hint_x = dialog_area.x + (dialog_area.width.saturating_sub(hint.len() as u16)) / 2;
     if hint_y < area.height && hint_x + (hint.len() as u16) <= area.x + area.width {
         let hint_rect = Rect::new(hint_x, hint_y, hint.len() as u16, 1);
-        f.render_widget(Paragraph::new(Line::from(Span::styled(
-            hint,
-            Style::default().fg(Color::DarkGray),
-        ))), hint_rect);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                hint,
+                Style::default().fg(Color::DarkGray),
+            ))),
+            hint_rect,
+        );
     }
 }
 
 /// Draw preset prompt dialog overlay (create/edit a preset prompt).
 /// Two text fields: Name and Prompt, stacked vertically.
 pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
-    let Some(ref dialog) = app.preset_prompt_dialog else { return };
+    let Some(ref dialog) = app.preset_prompt_dialog else {
+        return;
+    };
     let area = f.area();
 
     // Two text fields stacked: name(3) + prompt(3) + hints(1) + borders(2) = 9
@@ -614,13 +755,32 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
     f.render_widget(Clear, dialog_area);
 
     // Outer border with title — left shows mode, right shows scope badge
-    let title_text = if dialog.editing_idx.is_some() { " Edit Preset " } else { " New Preset " };
-    let scope_label = if dialog.global { " [GLOBAL] " } else { " [PROJECT] " };
+    let title_text = if dialog.editing_idx.is_some() {
+        " Edit Preset "
+    } else {
+        " New Preset "
+    };
+    let scope_label = if dialog.global {
+        " [GLOBAL] "
+    } else {
+        " [PROJECT] "
+    };
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(title_text, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
-        .title(Line::from(Span::styled(scope_label, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))).alignment(Alignment::Right));
+        .title(Span::styled(
+            title_text,
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(Span::styled(
+                scope_label,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Right),
+        );
     let inner = outer.inner(dialog_area);
     f.render_widget(outer, dialog_area);
 
@@ -629,60 +789,84 @@ pub fn draw_preset_prompt_dialog(f: &mut Frame, app: &App) {
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(1),
-    ]).split(inner);
+    ])
+    .split(inner);
 
     // Name field — yellow border when active, gray when inactive
-    let name_color = if dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let name_widget = Paragraph::new(dialog.name.as_str())
-        .block(Block::default()
+    let name_color = if dialog.editing_name {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let name_widget = Paragraph::new(dialog.name.as_str()).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(name_color))
-            .title(Span::styled(" Name ", Style::default().fg(name_color))));
+            .title(Span::styled(" Name ", Style::default().fg(name_color))),
+    );
     f.render_widget(name_widget, chunks[0]);
 
     // Cursor in name field
     if dialog.editing_name {
         // Convert char cursor to display position (byte-based for ASCII, char-based for unicode)
         let display_pos = dialog.name.chars().take(dialog.name_cursor).count();
-        f.set_cursor_position((
-            chunks[0].x + 1 + display_pos as u16,
-            chunks[0].y + 1,
-        ));
+        f.set_cursor_position((chunks[0].x + 1 + display_pos as u16, chunks[0].y + 1));
     }
 
     // Prompt field — yellow border when active
-    let prompt_color = if !dialog.editing_name { Color::Yellow } else { Color::DarkGray };
-    let prompt_widget = Paragraph::new(dialog.prompt.as_str())
-        .block(Block::default()
+    let prompt_color = if !dialog.editing_name {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let prompt_widget = Paragraph::new(dialog.prompt.as_str()).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(prompt_color))
-            .title(Span::styled(" Prompt ", Style::default().fg(prompt_color))));
+            .title(Span::styled(" Prompt ", Style::default().fg(prompt_color))),
+    );
     f.render_widget(prompt_widget, chunks[1]);
 
     // Cursor in prompt field
     if !dialog.editing_name {
         let display_pos = dialog.prompt.chars().take(dialog.prompt_cursor).count();
-        f.set_cursor_position((
-            chunks[1].x + 1 + display_pos as u16,
-            chunks[1].y + 1,
-        ));
+        f.set_cursor_position((chunks[1].x + 1 + display_pos as u16, chunks[1].y + 1));
     }
 
     // Hint line — structural keys from keybindings.rs, Enter label varies by context
     let enter_label = if dialog.editing_name { "next" } else { "save" };
     let pairs = keybindings::dialog_footer_hint_pairs();
-    let hint_spans: Vec<Span> = pairs.iter().map(|(key, label)| {
-        let display_label = if key == "Enter" { enter_label } else { label };
-        vec![
-            Span::styled(key.as_str(), Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-            Span::styled(format!(":{}  ", display_label), Style::default().fg(Color::DarkGray)),
-        ]
-    }).flatten().collect();
-    f.render_widget(Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center), chunks[2]);
+    let hint_spans: Vec<Span> = pairs
+        .iter()
+        .map(|(key, label)| {
+            let display_label = if key == "Enter" { enter_label } else { label };
+            vec![
+                Span::styled(
+                    key.as_str(),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(":{}  ", display_label),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]
+        })
+        .flatten()
+        .collect();
+    f.render_widget(
+        Paragraph::new(Line::from(hint_spans)).alignment(Alignment::Center),
+        chunks[2],
+    );
 }
 
 /// Draw the delete worktree confirmation dialog (⌘d)
-pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::DeleteWorktreeDialog, area: Rect) {
+pub fn draw_delete_worktree_dialog(
+    f: &mut Frame,
+    dialog: &crate::app::types::DeleteWorktreeDialog,
+    area: Rect,
+) {
     use crate::app::types::DeleteWorktreeDialog;
     let (title, lines) = match dialog {
         DeleteWorktreeDialog::Sole { name, warnings } => {
@@ -691,7 +875,9 @@ pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::De
                 Line::from(""),
                 Line::from(Span::styled(
                     "Delete this worktree and its branch?",
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 )),
             ];
             if !warnings.is_empty() {
@@ -699,28 +885,49 @@ pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::De
                 for w in warnings {
                     lines.push(Line::from(Span::styled(
                         format!("  ! {}", w),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     )));
                 }
             }
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
-                Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  y",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  Confirm delete", Style::default().fg(Color::White)),
             ]));
             lines.push(Line::from(vec![
-                Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Esc",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
             ]));
             (title, lines)
         }
-        DeleteWorktreeDialog::Siblings { branch, count, warnings, .. } => {
+        DeleteWorktreeDialog::Siblings {
+            branch,
+            count,
+            warnings,
+            ..
+        } => {
             let title = format!(" Delete on '{}' ", branch);
             let mut lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
-                    format!("{} other worktree{} on this branch.", count, if *count == 1 { "" } else { "s" }),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    format!(
+                        "{} other worktree{} on this branch.",
+                        count,
+                        if *count == 1 { "" } else { "s" }
+                    ),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 )),
             ];
             if !warnings.is_empty() {
@@ -728,21 +935,39 @@ pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::De
                 for w in warnings {
                     lines.push(Line::from(Span::styled(
                         format!("  ! {}", w),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     )));
                 }
             }
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
-                Span::styled("  y", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled("  Delete all worktrees + branch", Style::default().fg(Color::White)),
+                Span::styled(
+                    "  y",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  Delete all worktrees + branch",
+                    Style::default().fg(Color::White),
+                ),
             ]));
             lines.push(Line::from(vec![
-                Span::styled("  a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  a",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  Archive this one only", Style::default().fg(Color::White)),
             ]));
             lines.push(Line::from(vec![
-                Span::styled("  Esc", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Esc",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
             ]));
             (title, lines)
@@ -760,21 +985,36 @@ pub fn draw_delete_worktree_dialog(f: &mut Frame, dialog: &crate::app::types::De
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
-        .title(Span::styled(&title, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
-    let para = Paragraph::new(lines).block(block).alignment(Alignment::Left);
+        .title(Span::styled(
+            &title,
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
+    let para = Paragraph::new(lines)
+        .block(block)
+        .alignment(Alignment::Left);
     f.render_widget(para, rect);
 }
 
 /// Draw full-width table popup overlay (click a table in session pane to open)
 pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, area: Rect) {
-    if popup.lines.is_empty() { return; }
+    if popup.lines.is_empty() {
+        return;
+    }
 
     // Size: use most of the terminal, capped to content
     let max_w = area.width.saturating_sub(4);
     // Measure widest rendered line (span content widths)
-    let content_w: u16 = popup.lines.iter().map(|line| {
-        line.spans.iter().map(|s| s.content.chars().count() as u16).sum::<u16>()
-    }).max().unwrap_or(40);
+    let content_w: u16 = popup
+        .lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|s| s.content.chars().count() as u16)
+                .sum::<u16>()
+        })
+        .max()
+        .unwrap_or(40);
     let w = (content_w + 4).min(max_w).max(30); // +4 for border + padding
     let max_h = area.height.saturating_sub(4);
     let content_h = popup.total_lines as u16;
@@ -788,7 +1028,11 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
     let inner_h = h.saturating_sub(2) as usize;
     let can_scroll = popup.total_lines > inner_h;
     let scroll_info = if can_scroll {
-        format!(" {}/{} ", popup.scroll + 1, popup.total_lines.saturating_sub(inner_h) + 1)
+        format!(
+            " {}/{} ",
+            popup.scroll + 1,
+            popup.total_lines.saturating_sub(inner_h) + 1
+        )
     } else {
         String::new()
     };
@@ -797,7 +1041,10 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(" Table ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Table ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
         .title_bottom(Line::from(vec![
             Span::styled(" Esc", Style::default().fg(Color::DarkGray)),
             Span::styled(" close ", Style::default().fg(Color::DarkGray)),
@@ -808,7 +1055,9 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
             },
         ]));
 
-    let visible: Vec<Line> = popup.lines.iter()
+    let visible: Vec<Line> = popup
+        .lines
+        .iter()
         .skip(popup.scroll)
         .take(inner_h)
         .cloned()
@@ -824,12 +1073,15 @@ pub fn draw_welcome_modal(f: &mut Frame) {
     let area = f.area();
 
     // Resolve keybindings dynamically
-    let main_key = keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::BrowseMain)
-        .unwrap_or_else(|| "M".into());
-    let wt_key = keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::AddWorktree)
-        .unwrap_or_else(|| "w".into());
-    let quit_key = keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::Quit)
-        .unwrap_or_else(|| "Ctrl+Q".into());
+    let main_key =
+        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::BrowseMain)
+            .unwrap_or_else(|| "M".into());
+    let wt_key =
+        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::AddWorktree)
+            .unwrap_or_else(|| "w".into());
+    let quit_key =
+        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::Quit)
+            .unwrap_or_else(|| "Ctrl+Q".into());
 
     let key_style = Style::default().fg(AZURE).add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(Color::DarkGray);
@@ -842,15 +1094,18 @@ pub fn draw_welcome_modal(f: &mut Frame) {
         Line::from(vec![
             Span::styled(&main_key, key_style),
             Span::styled("  Browse main branch", dim),
-        ]).alignment(Alignment::Center),
+        ])
+        .alignment(Alignment::Center),
         Line::from(vec![
             Span::styled(&wt_key, key_style),
             Span::styled("  Create a worktree", dim),
-        ]).alignment(Alignment::Center),
+        ])
+        .alignment(Alignment::Center),
         Line::from(vec![
             Span::styled(&quit_key, key_style),
             Span::styled("  Quit", dim),
-        ]).alignment(Alignment::Center),
+        ])
+        .alignment(Alignment::Center),
         Line::from(""),
     ];
 
@@ -864,7 +1119,10 @@ pub fn draw_welcome_modal(f: &mut Frame) {
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(AZURE))
-        .title(Span::styled(" AZUREAL ", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+        .title(Span::styled(
+            " AZUREAL ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ));
 
     f.render_widget(Clear, rect);
     f.render_widget(Paragraph::new(lines).block(block), rect);
@@ -874,8 +1132,8 @@ pub fn draw_welcome_modal(f: &mut Frame) {
 mod tests {
     use super::*;
     use crate::app::types::{
-        RunCommand, RunCommandDialog, RunCommandPicker,
-        PresetPrompt, PresetPromptPicker, PresetPromptDialog,
+        PresetPrompt, PresetPromptDialog, PresetPromptPicker, RunCommand, RunCommandDialog,
+        RunCommandPicker,
     };
 
     // ══════════════════════════════════════════════════════════════════
@@ -920,7 +1178,11 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_apply_filter_narrows() {
-        let mut d = BranchDialog::new(vec!["main".into(), "dev".into(), "feature".into()], vec![], vec![0, 0, 0]);
+        let mut d = BranchDialog::new(
+            vec!["main".into(), "dev".into(), "feature".into()],
+            vec![],
+            vec![0, 0, 0],
+        );
         d.filter = "dev".into();
         d.apply_filter();
         assert_eq!(d.filtered_indices, vec![1]);
@@ -944,7 +1206,11 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_apply_filter_resets_selected() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
+        let mut d = BranchDialog::new(
+            vec!["a".into(), "b".into(), "c".into()],
+            vec![],
+            vec![0, 0, 0],
+        );
         d.selected = 2;
         d.filter = "z".into();
         d.apply_filter();
@@ -979,7 +1245,11 @@ mod tests {
 
     #[test]
     fn test_branch_dialog_select_next() {
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
+        let mut d = BranchDialog::new(
+            vec!["a".into(), "b".into(), "c".into()],
+            vec![],
+            vec![0, 0, 0],
+        );
         d.select_next();
         assert_eq!(d.selected, 1);
         d.select_next();
@@ -1319,14 +1589,24 @@ mod tests {
     #[test]
     fn test_num_hint_tenth() {
         let idx = 9usize;
-        let hint = if idx == 9 { " [0] ".to_string() } else { "     ".to_string() };
+        let hint = if idx == 9 {
+            " [0] ".to_string()
+        } else {
+            "     ".to_string()
+        };
         assert_eq!(hint, " [0] ");
     }
 
     #[test]
     fn test_num_hint_eleventh_plus() {
         let idx = 10usize;
-        let hint = if idx < 9 { format!(" [{}] ", idx + 1) } else if idx == 9 { " [0] ".to_string() } else { "     ".to_string() };
+        let hint = if idx < 9 {
+            format!(" [{}] ", idx + 1)
+        } else if idx == 9 {
+            " [0] ".to_string()
+        } else {
+            "     ".to_string()
+        };
         assert_eq!(hint, "     ");
     }
 
@@ -1355,14 +1635,22 @@ mod tests {
     #[test]
     fn test_filter_title_empty() {
         let filter = "";
-        let title = if filter.is_empty() { " Filter (type to search) " } else { " Filter " };
+        let title = if filter.is_empty() {
+            " Filter (type to search) "
+        } else {
+            " Filter "
+        };
         assert_eq!(title, " Filter (type to search) ");
     }
 
     #[test]
     fn test_filter_title_non_empty() {
         let filter = "main";
-        let title = if filter.is_empty() { " Filter (type to search) " } else { " Filter " };
+        let title = if filter.is_empty() {
+            " Filter (type to search) "
+        } else {
+            " Filter "
+        };
         assert_eq!(title, " Filter ");
     }
 
@@ -1392,28 +1680,44 @@ mod tests {
     #[test]
     fn test_edit_title_run_command() {
         let editing_idx: Option<usize> = Some(0);
-        let title = if editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
+        let title = if editing_idx.is_some() {
+            " Edit Run Command "
+        } else {
+            " New Run Command "
+        };
         assert_eq!(title, " Edit Run Command ");
     }
 
     #[test]
     fn test_new_title_run_command() {
         let editing_idx: Option<usize> = None;
-        let title = if editing_idx.is_some() { " Edit Run Command " } else { " New Run Command " };
+        let title = if editing_idx.is_some() {
+            " Edit Run Command "
+        } else {
+            " New Run Command "
+        };
         assert_eq!(title, " New Run Command ");
     }
 
     #[test]
     fn test_edit_title_preset() {
         let editing_idx: Option<usize> = Some(2);
-        let title = if editing_idx.is_some() { " Edit Preset " } else { " New Preset " };
+        let title = if editing_idx.is_some() {
+            " Edit Preset "
+        } else {
+            " New Preset "
+        };
         assert_eq!(title, " Edit Preset ");
     }
 
     #[test]
     fn test_new_title_preset() {
         let editing_idx: Option<usize> = None;
-        let title = if editing_idx.is_some() { " Edit Preset " } else { " New Preset " };
+        let title = if editing_idx.is_some() {
+            " Edit Preset "
+        } else {
+            " New Preset "
+        };
         assert_eq!(title, " New Preset ");
     }
 
@@ -1425,7 +1729,9 @@ mod tests {
     fn test_enter_label_editing_name() {
         let editing_name = true;
         let field_mode = CommandFieldMode::Command;
-        let label = if editing_name { "next" } else {
+        let label = if editing_name {
+            "next"
+        } else {
             match field_mode {
                 CommandFieldMode::Command => "save",
                 CommandFieldMode::Prompt => "generate",
@@ -1438,7 +1744,9 @@ mod tests {
     fn test_enter_label_command_mode() {
         let editing_name = false;
         let field_mode = CommandFieldMode::Command;
-        let label = if editing_name { "next" } else {
+        let label = if editing_name {
+            "next"
+        } else {
             match field_mode {
                 CommandFieldMode::Command => "save",
                 CommandFieldMode::Prompt => "generate",
@@ -1451,7 +1759,9 @@ mod tests {
     fn test_enter_label_prompt_mode() {
         let editing_name = false;
         let field_mode = CommandFieldMode::Prompt;
-        let label = if editing_name { "next" } else {
+        let label = if editing_name {
+            "next"
+        } else {
             match field_mode {
                 CommandFieldMode::Command => "save",
                 CommandFieldMode::Prompt => "generate",
@@ -1482,7 +1792,8 @@ mod tests {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(1),
-        ]).split(Rect::new(0, 0, 60, 7));
+        ])
+        .split(Rect::new(0, 0, 60, 7));
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0].height, 3);
         assert_eq!(chunks[1].height, 3);

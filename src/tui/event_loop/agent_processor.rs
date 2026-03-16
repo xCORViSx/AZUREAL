@@ -79,10 +79,18 @@ impl AgentProcessor {
                 let mut parser = create_parser(backend, model);
                 while let Ok(input) = input_rx.recv() {
                     match input {
-                        ProcessorInput::Parse { slot_id, output_type, data } => {
+                        ProcessorInput::Parse {
+                            slot_id,
+                            output_type,
+                            data,
+                        } => {
                             let (events, parsed_json) = parser.parse(&data);
                             let _ = output_tx.send(ProcessedOutput {
-                                slot_id, events, parsed_json, output_type, data,
+                                slot_id,
+                                events,
+                                parsed_json,
+                                output_type,
+                                data,
                             });
                         }
                         ProcessorInput::Reset { backend, model } => {
@@ -93,12 +101,19 @@ impl AgentProcessor {
             })
             .expect("failed to spawn agent-parser thread");
 
-        AgentProcessor { tx: input_tx, rx: output_rx }
+        AgentProcessor {
+            tx: input_tx,
+            rx: output_rx,
+        }
     }
 
     /// Send raw output to the processor for JSON parsing (non-blocking)
     pub fn submit(&self, slot_id: String, output_type: OutputType, data: String) {
-        let _ = self.tx.send(ProcessorInput::Parse { slot_id, output_type, data });
+        let _ = self.tx.send(ProcessorInput::Parse {
+            slot_id,
+            output_type,
+            data,
+        });
     }
 
     /// Reset parser state with a specific backend (call on session switch)

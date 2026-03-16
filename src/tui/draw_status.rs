@@ -8,10 +8,10 @@ use ratatui::{
     Frame,
 };
 
+use super::util::{truncate, AZURE, GIT_BROWN};
 use crate::app::App;
 #[cfg(test)]
 use crate::app::Focus;
-use super::util::{truncate, GIT_BROWN, AZURE};
 
 /// Draw the status bar at the bottom — shows worktree info, status messages, and CPU/PID badge
 pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
@@ -24,7 +24,10 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         let badge_color = AZURE;
         let badge_width = badge_text.len() as u16;
 
-        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        let left_area = Rect {
+            width: area.width.saturating_sub(badge_width),
+            ..area
+        };
         let left = Paragraph::new(Line::from(Span::styled(
             format!(" Git: {} ", panel.worktree_name),
             Style::default().fg(GIT_BROWN),
@@ -36,9 +39,13 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
             width: badge_width,
             ..area
         };
-        f.render_widget(Paragraph::new(Line::from(
-            Span::styled(badge_text, Style::default().fg(badge_color))
-        )), right_area);
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                badge_text,
+                Style::default().fg(badge_color),
+            ))),
+            right_area,
+        );
         return;
     }
 
@@ -57,7 +64,9 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         let display_name = session.name();
         status_spans.push(Span::styled(
             truncate(display_name, 25),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ));
 
         // Only show (branch) when it differs from the display name — avoids "main (main)"
@@ -87,9 +96,11 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
     let badge_width = badge_text.len() as u16;
 
     // Left side: status content (leave room for badge on right)
-    let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
-    let status = Paragraph::new(Line::from(status_spans))
-        .style(Style::default().bg(Color::Reset));
+    let left_area = Rect {
+        width: area.width.saturating_sub(badge_width),
+        ..area
+    };
+    let status = Paragraph::new(Line::from(status_spans)).style(Style::default().bg(Color::Reset));
     f.render_widget(status, left_area);
 
     // Right side: badge
@@ -98,9 +109,10 @@ pub fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
         width: badge_width,
         ..area
     };
-    let badge_widget = Paragraph::new(Line::from(
-        Span::styled(badge_text, Style::default().fg(badge_color))
-    ));
+    let badge_widget = Paragraph::new(Line::from(Span::styled(
+        badge_text,
+        Style::default().fg(badge_color),
+    )));
     f.render_widget(badge_widget, right_area);
 }
 
@@ -162,8 +174,12 @@ mod tests {
     #[test]
     fn focus_all_distinct() {
         let variants = [
-            Focus::Worktrees, Focus::Session, Focus::Input,
-            Focus::BranchDialog, Focus::FileTree, Focus::Viewer,
+            Focus::Worktrees,
+            Focus::Session,
+            Focus::Input,
+            Focus::BranchDialog,
+            Focus::FileTree,
+            Focus::Viewer,
         ];
         for i in 0..variants.len() {
             for j in (i + 1)..variants.len() {
@@ -212,7 +228,10 @@ mod tests {
     fn left_area_calculation() {
         let area = Rect::new(0, 49, 120, 1);
         let badge_width = 20u16;
-        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        let left_area = Rect {
+            width: area.width.saturating_sub(badge_width),
+            ..area
+        };
         assert_eq!(left_area.width, 100);
         assert_eq!(left_area.y, 49);
         assert_eq!(left_area.height, 1);
@@ -222,7 +241,10 @@ mod tests {
     fn left_area_narrow_terminal() {
         let area = Rect::new(0, 0, 15, 1);
         let badge_width = 20u16;
-        let left_area = Rect { width: area.width.saturating_sub(badge_width), ..area };
+        let left_area = Rect {
+            width: area.width.saturating_sub(badge_width),
+            ..area
+        };
         assert_eq!(left_area.width, 0);
     }
 
@@ -351,7 +373,9 @@ mod tests {
 
     #[test]
     fn bold_white_style() {
-        let style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        let style = Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD);
         assert_eq!(style.fg, Some(Color::White));
     }
 
@@ -456,5 +480,4 @@ mod tests {
     fn git_brown_is_not_azure() {
         assert_ne!(GIT_BROWN, AZURE);
     }
-
 }

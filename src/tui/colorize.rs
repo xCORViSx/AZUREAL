@@ -21,7 +21,9 @@ pub fn strip_ansi(s: &str) -> String {
         if c == '\x1b' {
             while let Some(&next) = chars.peek() {
                 chars.next();
-                if next.is_ascii_alphabetic() { break; }
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
             }
         } else {
             result.push(c);
@@ -42,10 +44,17 @@ pub enum MessageType {
 pub fn detect_message_type(line: &str) -> MessageType {
     let stripped = strip_ansi(line);
     let trimmed = stripped.trim();
-    if trimmed.starts_with("You:") || trimmed.starts_with("> ") || trimmed.starts_with("❯")
-        || trimmed.starts_with("Human:") || trimmed.starts_with("[H]") {
+    if trimmed.starts_with("You:")
+        || trimmed.starts_with("> ")
+        || trimmed.starts_with("❯")
+        || trimmed.starts_with("Human:")
+        || trimmed.starts_with("[H]")
+    {
         MessageType::User
-    } else if trimmed.starts_with("Claude:") || trimmed.starts_with("Assistant:") || trimmed.starts_with("[A]") {
+    } else if trimmed.starts_with("Claude:")
+        || trimmed.starts_with("Assistant:")
+        || trimmed.starts_with("[A]")
+    {
         MessageType::Assistant
     } else {
         MessageType::Other
@@ -62,23 +71,55 @@ pub fn colorize_output(line: &str) -> Line<'static> {
     // User prompts - cyan background header
     if trimmed.starts_with("You:") || trimmed.starts_with("> ") || trimmed.starts_with("❯") {
         return Line::from(vec![
-            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " You ▶ ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(AZURE)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" ", Style::default()),
-            Span::styled(trimmed.trim_start_matches("You:").trim_start_matches("> ").trim_start_matches("❯").trim().to_string(), Style::default().fg(Color::White)),
-        ]).alignment(Alignment::Right);
+            Span::styled(
+                trimmed
+                    .trim_start_matches("You:")
+                    .trim_start_matches("> ")
+                    .trim_start_matches("❯")
+                    .trim()
+                    .to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ])
+        .alignment(Alignment::Right);
     }
 
     // Human/user markers
     if trimmed.starts_with("Human:") || trimmed.starts_with("[H]") {
         return Line::from(vec![
-            Span::styled(" You ▶ ", Style::default().fg(Color::Black).bg(AZURE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " You ▶ ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(AZURE)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" ", Style::default()),
-            Span::styled(trimmed.trim_start_matches("Human:").trim_start_matches("[H]").trim().to_string(), Style::default().fg(Color::White)),
-        ]).alignment(Alignment::Right);
+            Span::styled(
+                trimmed
+                    .trim_start_matches("Human:")
+                    .trim_start_matches("[H]")
+                    .trim()
+                    .to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ])
+        .alignment(Alignment::Right);
     }
 
     // Claude/Assistant responses - check for tool use first
-    if trimmed.starts_with("Claude:") || trimmed.starts_with("Assistant:") || trimmed.starts_with("[A]") {
+    if trimmed.starts_with("Claude:")
+        || trimmed.starts_with("Assistant:")
+        || trimmed.starts_with("[A]")
+    {
         let content = trimmed
             .trim_start_matches("Claude:")
             .trim_start_matches("Assistant:")
@@ -98,13 +139,25 @@ pub fn colorize_output(line: &str) -> Line<'static> {
             return Line::from(vec![
                 Span::styled(" ┣━", Style::default().fg(AZURE)),
                 Span::styled("● ", Style::default().fg(Color::Yellow)),
-                Span::styled(tool_name.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                Span::styled(param.map(|p| format!("  {}", p)).unwrap_or_default(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    tool_name.to_string(),
+                    Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    param.map(|p| format!("  {}", p)).unwrap_or_default(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]);
         }
 
         return Line::from(vec![
-            Span::styled(" ◀ Claude ", Style::default().fg(Color::Black).bg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " ◀ Claude ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(ORANGE)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" ", Style::default()),
             Span::styled(content.to_string(), Style::default().fg(Color::White)),
         ]);
@@ -124,8 +177,14 @@ pub fn colorize_output(line: &str) -> Line<'static> {
         return Line::from(vec![
             Span::styled(" ┣━", Style::default().fg(AZURE)),
             Span::styled("● ", Style::default().fg(Color::Yellow)),
-            Span::styled(tool_name.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-            Span::styled(param.map(|p| format!("  {}", p)).unwrap_or_default(), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                tool_name.to_string(),
+                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                param.map(|p| format!("  {}", p)).unwrap_or_default(),
+                Style::default().fg(Color::DarkGray),
+            ),
         ]);
     }
 
@@ -139,12 +198,19 @@ pub fn colorize_output(line: &str) -> Line<'static> {
         return Line::from(vec![
             Span::styled(" ┃  └─ ", Style::default().fg(AZURE)),
             Span::styled("✓ ", Style::default().fg(Color::Green)),
-            Span::styled(result_text.to_string(), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                result_text.to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
         ]);
     }
 
     // Errors
-    if trimmed.starts_with("Error") || trimmed.starts_with("error") || trimmed.starts_with("✗") || trimmed.starts_with("✘") {
+    if trimmed.starts_with("Error")
+        || trimmed.starts_with("error")
+        || trimmed.starts_with("✗")
+        || trimmed.starts_with("✘")
+    {
         return Line::from(Span::styled(line_owned, Style::default().fg(Color::Red)));
     }
 
@@ -168,16 +234,32 @@ pub fn colorize_output(line: &str) -> Line<'static> {
 
     // Headers (markdown style)
     if trimmed.starts_with("# ") {
-        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(AZURE).add_modifier(Modifier::BOLD)));
+        return Line::from(Span::styled(
+            trimmed.to_string(),
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ));
     }
     if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
-        return Line::from(Span::styled(trimmed.to_string(), Style::default().fg(AZURE)));
+        return Line::from(Span::styled(
+            trimmed.to_string(),
+            Style::default().fg(AZURE),
+        ));
     }
 
     // File paths
-    if trimmed.contains('/') && (trimmed.ends_with(".rs") || trimmed.ends_with(".ts") ||
-        trimmed.ends_with(".py") || trimmed.ends_with(".js") || trimmed.ends_with(".md")) {
-        return Line::from(Span::styled(line_owned, Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED)));
+    if trimmed.contains('/')
+        && (trimmed.ends_with(".rs")
+            || trimmed.ends_with(".ts")
+            || trimmed.ends_with(".py")
+            || trimmed.ends_with(".js")
+            || trimmed.ends_with(".md"))
+    {
+        return Line::from(Span::styled(
+            line_owned,
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::UNDERLINED),
+        ));
     }
 
     // Default: white text
@@ -232,7 +314,10 @@ mod tests {
 
     #[test]
     fn strip_ansi_mixed_text() {
-        assert_eq!(strip_ansi("before \x1b[32mgreen\x1b[0m after"), "before green after");
+        assert_eq!(
+            strip_ansi("before \x1b[32mgreen\x1b[0m after"),
+            "before green after"
+        );
     }
 
     #[test]
@@ -282,7 +367,10 @@ mod tests {
 
     #[test]
     fn detect_human_colon() {
-        assert_eq!(detect_message_type("Human: what is this"), MessageType::User);
+        assert_eq!(
+            detect_message_type("Human: what is this"),
+            MessageType::User
+        );
     }
 
     #[test]
@@ -297,7 +385,10 @@ mod tests {
 
     #[test]
     fn detect_user_with_ansi() {
-        assert_eq!(detect_message_type("\x1b[1mYou: hello\x1b[0m"), MessageType::User);
+        assert_eq!(
+            detect_message_type("\x1b[1mYou: hello\x1b[0m"),
+            MessageType::User
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -311,7 +402,10 @@ mod tests {
 
     #[test]
     fn detect_assistant_colon() {
-        assert_eq!(detect_message_type("Assistant: response"), MessageType::Assistant);
+        assert_eq!(
+            detect_message_type("Assistant: response"),
+            MessageType::Assistant
+        );
     }
 
     #[test]
@@ -326,7 +420,10 @@ mod tests {
 
     #[test]
     fn detect_assistant_with_ansi() {
-        assert_eq!(detect_message_type("\x1b[33mAssistant: hi\x1b[0m"), MessageType::Assistant);
+        assert_eq!(
+            detect_message_type("\x1b[33mAssistant: hi\x1b[0m"),
+            MessageType::Assistant
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -596,9 +693,10 @@ mod tests {
         let line = colorize_output("# Title");
         assert!(has_color(&line, AZURE));
         // h1 gets bold modifier
-        assert!(line.spans.iter().any(|s|
-            s.style.add_modifier.contains(Modifier::BOLD)
-        ));
+        assert!(line
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD)));
     }
 
     #[test]
@@ -650,9 +748,10 @@ mod tests {
     #[test]
     fn colorize_path_underlined() {
         let line = colorize_output("src/main.rs");
-        assert!(line.spans.iter().any(|s|
-            s.style.add_modifier.contains(Modifier::UNDERLINED)
-        ));
+        assert!(line
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::UNDERLINED)));
     }
 
     // ═══════════════════════════════════════════════════════════════════

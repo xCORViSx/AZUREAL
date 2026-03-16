@@ -11,18 +11,32 @@ impl App {
         let elapsed = now.duration_since(self.cpu_last_sample.0);
         // Sample every 3s — longer window averages out Windows timer tick noise
         // (GetProcessTimes only updates at ~15.6ms granularity)
-        if elapsed.as_millis() < 3000 { return; }
+        if elapsed.as_millis() < 3000 {
+            return;
+        }
         let cpu_now = get_cpu_time_micros();
         let cpu_delta = cpu_now.saturating_sub(self.cpu_last_sample.1) as f64;
         let wall_delta = elapsed.as_micros() as f64;
         let cores = std::thread::available_parallelism()
             .map(|n| n.get() as f64)
             .unwrap_or(1.0);
-        let raw_pct = if wall_delta > 0.0 { cpu_delta / wall_delta / cores * 100.0 } else { 0.0 };
+        let raw_pct = if wall_delta > 0.0 {
+            cpu_delta / wall_delta / cores * 100.0
+        } else {
+            0.0
+        };
         // Exponential moving average (alpha=0.2) for heavy smoothing
-        self.cpu_smoothed = if self.cpu_smoothed == 0.0 { raw_pct } else { self.cpu_smoothed * 0.8 + raw_pct * 0.2 };
+        self.cpu_smoothed = if self.cpu_smoothed == 0.0 {
+            raw_pct
+        } else {
+            self.cpu_smoothed * 0.8 + raw_pct * 0.2
+        };
         // Floor: show "0%" for values under 0.5 to match Task Manager conventions
-        let display = if self.cpu_smoothed < 0.5 { 0.0 } else { self.cpu_smoothed };
+        let display = if self.cpu_smoothed < 0.5 {
+            0.0
+        } else {
+            self.cpu_smoothed
+        };
         self.cpu_usage_text = format!("{:.0}%", display);
         self.cpu_last_sample = (now, cpu_now);
     }

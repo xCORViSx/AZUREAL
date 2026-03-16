@@ -12,7 +12,6 @@
 //! - `util`: Small utility functions
 
 mod draw_dialogs;
-mod file_icons;
 mod draw_file_tree;
 mod draw_git_actions;
 mod draw_health;
@@ -24,17 +23,18 @@ mod draw_status;
 mod draw_terminal;
 mod draw_viewer;
 mod event_loop;
-pub mod render_thread;
+mod file_icons;
 mod input_dialogs;
 mod input_file_tree;
 mod input_git_actions;
 mod input_health;
 mod input_output;
 mod input_projects;
-mod input_worktrees;
 mod input_terminal;
 mod input_viewer;
+mod input_worktrees;
 pub mod keybindings;
+pub mod render_thread;
 mod run;
 
 pub mod colorize;

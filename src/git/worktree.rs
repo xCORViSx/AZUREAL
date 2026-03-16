@@ -8,19 +8,32 @@ use super::{Git, WorktreeInfo};
 
 impl Git {
     /// Create a new worktree
-    pub fn create_worktree(repo_path: &Path, worktree_path: &Path, branch_name: &str) -> Result<()> {
+    pub fn create_worktree(
+        repo_path: &Path,
+        worktree_path: &Path,
+        branch_name: &str,
+    ) -> Result<()> {
         if let Some(parent) = worktree_path.parent() {
             std::fs::create_dir_all(parent).context("Failed to create worktrees directory")?;
         }
 
         let output = Command::new("git")
-            .args(["worktree", "add", "-b", branch_name, &worktree_path.to_string_lossy()])
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                branch_name,
+                &worktree_path.to_string_lossy(),
+            ])
             .current_dir(repo_path)
             .output()
             .context("Failed to execute git worktree add")?;
 
         if !output.status.success() {
-            bail!("Failed to create worktree: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "Failed to create worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         Ok(())
@@ -33,18 +46,29 @@ impl Git {
             .current_dir(repo_path)
             .output()?;
 
-        if output.status.success() { return Ok(()); }
+        if output.status.success() {
+            return Ok(());
+        }
 
         let output = Command::new("git")
-            .args(["worktree", "remove", "--force", &worktree_path.to_string_lossy()])
+            .args([
+                "worktree",
+                "remove",
+                "--force",
+                &worktree_path.to_string_lossy(),
+            ])
             .current_dir(repo_path)
             .output()?;
 
         if !output.status.success() {
             if worktree_path.exists() {
-                std::fs::remove_dir_all(worktree_path).context("Failed to remove worktree directory")?;
+                std::fs::remove_dir_all(worktree_path)
+                    .context("Failed to remove worktree directory")?;
             }
-            let _ = Command::new("git").args(["worktree", "prune"]).current_dir(repo_path).output();
+            let _ = Command::new("git")
+                .args(["worktree", "prune"])
+                .current_dir(repo_path)
+                .output();
         }
 
         Ok(())
@@ -59,7 +83,8 @@ impl Git {
             .context("Failed to list worktrees")?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let worktrees: Vec<String> = stdout.lines()
+        let worktrees: Vec<String> = stdout
+            .lines()
             .filter(|line| line.starts_with("worktree "))
             .map(|line| line.strip_prefix("worktree ").unwrap_or(line).to_string())
             .collect();
@@ -84,9 +109,17 @@ impl Git {
         for line in stdout.lines() {
             if let Some(path) = line.strip_prefix("worktree ") {
                 if let (Some(path), Some(commit)) = (current_path.take(), current_commit.take()) {
-                    let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+                    let is_main = current_branch
+                        .as_ref()
+                        .map(|b| b == "main" || b == "master")
+                        .unwrap_or(false)
                         || path == repo_path;
-                    worktrees.push(WorktreeInfo { path, branch: current_branch.take(), _commit: commit, is_main });
+                    worktrees.push(WorktreeInfo {
+                        path,
+                        branch: current_branch.take(),
+                        _commit: commit,
+                        is_main,
+                    });
                 }
                 current_path = Some(std::path::PathBuf::from(path));
             } else if let Some(commit) = line.strip_prefix("HEAD ") {
@@ -97,9 +130,17 @@ impl Git {
         }
 
         if let (Some(path), Some(commit)) = (current_path, current_commit) {
-            let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+            let is_main = current_branch
+                .as_ref()
+                .map(|b| b == "main" || b == "master")
+                .unwrap_or(false)
                 || path == repo_path;
-            worktrees.push(WorktreeInfo { path, branch: current_branch, _commit: commit, is_main });
+            worktrees.push(WorktreeInfo {
+                path,
+                branch: current_branch,
+                _commit: commit,
+                is_main,
+            });
         }
 
         Ok(worktrees)
@@ -110,7 +151,8 @@ impl Git {
     /// feeds the stdout here.
     #[cfg(test)]
     pub(crate) fn parse_worktree_paths(stdout: &str) -> Vec<String> {
-        stdout.lines()
+        stdout
+            .lines()
             .filter(|line| line.starts_with("worktree "))
             .map(|line| line.strip_prefix("worktree ").unwrap_or(line).to_string())
             .collect()
@@ -129,9 +171,17 @@ impl Git {
         for line in stdout.lines() {
             if let Some(path) = line.strip_prefix("worktree ") {
                 if let (Some(path), Some(commit)) = (current_path.take(), current_commit.take()) {
-                    let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+                    let is_main = current_branch
+                        .as_ref()
+                        .map(|b| b == "main" || b == "master")
+                        .unwrap_or(false)
                         || path == repo_path;
-                    worktrees.push(WorktreeInfo { path, branch: current_branch.take(), _commit: commit, is_main });
+                    worktrees.push(WorktreeInfo {
+                        path,
+                        branch: current_branch.take(),
+                        _commit: commit,
+                        is_main,
+                    });
                 }
                 current_path = Some(std::path::PathBuf::from(path));
             } else if let Some(commit) = line.strip_prefix("HEAD ") {
@@ -142,16 +192,28 @@ impl Git {
         }
 
         if let (Some(path), Some(commit)) = (current_path, current_commit) {
-            let is_main = current_branch.as_ref().map(|b| b == "main" || b == "master").unwrap_or(false)
+            let is_main = current_branch
+                .as_ref()
+                .map(|b| b == "main" || b == "master")
+                .unwrap_or(false)
                 || path == repo_path;
-            worktrees.push(WorktreeInfo { path, branch: current_branch, _commit: commit, is_main });
+            worktrees.push(WorktreeInfo {
+                path,
+                branch: current_branch,
+                _commit: commit,
+                is_main,
+            });
         }
 
         worktrees
     }
 
     /// Create a worktree from an existing branch
-    pub fn create_worktree_from_branch(repo_path: &Path, worktree_path: &Path, branch_name: &str) -> Result<()> {
+    pub fn create_worktree_from_branch(
+        repo_path: &Path,
+        worktree_path: &Path,
+        branch_name: &str,
+    ) -> Result<()> {
         if let Some(parent) = worktree_path.parent() {
             std::fs::create_dir_all(parent).context("Failed to create worktrees directory")?;
         }
@@ -159,7 +221,11 @@ impl Git {
         // Check if branch exists locally (e.g. azureal/foo is local despite containing '/').
         // Only use the remote-tracking -b path for genuine remote refs (e.g. origin/main).
         let is_local = Command::new("git")
-            .args(["rev-parse", "--verify", &format!("refs/heads/{}", branch_name)])
+            .args([
+                "rev-parse",
+                "--verify",
+                &format!("refs/heads/{}", branch_name),
+            ])
             .current_dir(repo_path)
             .output()
             .map(|o| o.status.success())
@@ -169,21 +235,37 @@ impl Git {
             // Remote branch: create a local tracking branch
             let local_branch = branch_name.split('/').skip(1).collect::<Vec<_>>().join("/");
             Command::new("git")
-                .args(["worktree", "add", "--track", "-b", &local_branch, &worktree_path.to_string_lossy(), branch_name])
+                .args([
+                    "worktree",
+                    "add",
+                    "--track",
+                    "-b",
+                    &local_branch,
+                    &worktree_path.to_string_lossy(),
+                    branch_name,
+                ])
                 .current_dir(repo_path)
                 .output()
                 .context("Failed to execute git worktree add")?
         } else {
             // Local branch: just check it out directly
             Command::new("git")
-                .args(["worktree", "add", &worktree_path.to_string_lossy(), branch_name])
+                .args([
+                    "worktree",
+                    "add",
+                    &worktree_path.to_string_lossy(),
+                    branch_name,
+                ])
                 .current_dir(repo_path)
                 .output()
                 .context("Failed to execute git worktree add")?
         };
 
         if !output.status.success() {
-            bail!("Failed to create worktree: {}", String::from_utf8_lossy(&output.stderr));
+            bail!(
+                "Failed to create worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         Ok(())
@@ -566,7 +648,12 @@ branch refs/heads/feat2
     #[test]
     fn test_parse_paths_50_worktrees() {
         let output: String = (0..50)
-            .map(|i| format!("worktree /wt/{}\nHEAD abc{}\nbranch refs/heads/b{}\n\n", i, i, i))
+            .map(|i| {
+                format!(
+                    "worktree /wt/{}\nHEAD abc{}\nbranch refs/heads/b{}\n\n",
+                    i, i, i
+                )
+            })
             .collect();
         let paths = Git::parse_worktree_paths(&output);
         assert_eq!(paths.len(), 50);
@@ -636,10 +723,10 @@ branch refs/heads/master
 ";
         let info = Git::parse_worktree_info(output, Path::new("/repo"));
         assert_eq!(info.len(), 4);
-        assert!(info[0].is_main);   // main branch + path match
-        assert!(!info[1].is_main);  // feat1
-        assert!(!info[2].is_main);  // feat2
-        assert!(info[3].is_main);   // master branch
+        assert!(info[0].is_main); // main branch + path match
+        assert!(!info[1].is_main); // feat1
+        assert!(!info[2].is_main); // feat2
+        assert!(info[3].is_main); // master branch
     }
 
     // ── 42. parse_worktree_info: empty string produces empty vec ──

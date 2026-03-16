@@ -56,16 +56,31 @@ pub struct BranchDialog {
 }
 
 impl BranchDialog {
-    pub fn new(branches: Vec<String>, checked_out: Vec<String>, worktree_counts: Vec<usize>) -> Self {
+    pub fn new(
+        branches: Vec<String>,
+        checked_out: Vec<String>,
+        worktree_counts: Vec<usize>,
+    ) -> Self {
         let filtered_indices: Vec<usize> = (0..branches.len()).collect();
-        Self { branches, worktree_counts, checked_out, selected: 0, filter: String::new(), filtered_indices }
+        Self {
+            branches,
+            worktree_counts,
+            checked_out,
+            selected: 0,
+            filter: String::new(),
+            filtered_indices,
+        }
     }
 
     /// True if "Create new" row is selected
-    pub fn on_create_new(&self) -> bool { self.selected == 0 }
+    pub fn on_create_new(&self) -> bool {
+        self.selected == 0
+    }
 
     /// Total display rows: 1 ("Create new") + filtered branches
-    pub fn display_len(&self) -> usize { 1 + self.filtered_indices.len() }
+    pub fn display_len(&self) -> usize {
+        1 + self.filtered_indices.len()
+    }
 
     /// Worktree count for a branch index
     pub fn worktree_count(&self, branch_idx: usize) -> usize {
@@ -79,23 +94,34 @@ impl BranchDialog {
         } else {
             branch.to_string()
         };
-        self.checked_out.iter().any(|co| co == branch || co == &local_name)
+        self.checked_out
+            .iter()
+            .any(|co| co == branch || co == &local_name)
     }
 
     pub fn apply_filter(&mut self) {
         let filter_lower = self.filter.to_lowercase();
-        self.filtered_indices = self.branches.iter().enumerate()
+        self.filtered_indices = self
+            .branches
+            .iter()
+            .enumerate()
             .filter(|(_, b)| b.to_lowercase().contains(&filter_lower))
             .map(|(i, _)| i)
             .collect();
-        if self.selected >= self.display_len() { self.selected = 0; }
+        if self.selected >= self.display_len() {
+            self.selected = 0;
+        }
     }
 
     /// Get the selected branch (None if on "Create new" row)
     pub fn selected_branch(&self) -> Option<&String> {
-        if self.selected == 0 { return None; }
+        if self.selected == 0 {
+            return None;
+        }
         let branch_idx = self.selected - 1;
-        self.filtered_indices.get(branch_idx).and_then(|&idx| self.branches.get(idx))
+        self.filtered_indices
+            .get(branch_idx)
+            .and_then(|&idx| self.branches.get(idx))
     }
 
     pub fn select_next(&mut self) {
@@ -105,7 +131,9 @@ impl BranchDialog {
     }
 
     pub fn select_prev(&mut self) {
-        if self.selected > 0 { self.selected -= 1; }
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
     }
 
     pub fn filter_char(&mut self, c: char) {
@@ -152,7 +180,11 @@ pub struct RunCommand {
 
 impl RunCommand {
     pub fn new(name: impl Into<String>, command: impl Into<String>, global: bool) -> Self {
-        Self { name: name.into(), command: command.into(), global }
+        Self {
+            name: name.into(),
+            command: command.into(),
+            global,
+        }
     }
 }
 
@@ -182,11 +214,29 @@ pub struct RunCommandDialog {
 
 impl RunCommandDialog {
     pub fn new() -> Self {
-        Self { name: String::new(), command: String::new(), name_cursor: 0, command_cursor: 0, editing_name: true, editing_idx: None, field_mode: CommandFieldMode::Command, global: false }
+        Self {
+            name: String::new(),
+            command: String::new(),
+            name_cursor: 0,
+            command_cursor: 0,
+            editing_name: true,
+            editing_idx: None,
+            field_mode: CommandFieldMode::Command,
+            global: false,
+        }
     }
 
     pub fn edit(idx: usize, cmd: &RunCommand) -> Self {
-        Self { name: cmd.name.clone(), command: cmd.command.clone(), name_cursor: cmd.name.len(), command_cursor: cmd.command.len(), editing_name: true, editing_idx: Some(idx), field_mode: CommandFieldMode::Command, global: cmd.global }
+        Self {
+            name: cmd.name.clone(),
+            command: cmd.command.clone(),
+            name_cursor: cmd.name.len(),
+            command_cursor: cmd.command.len(),
+            editing_name: true,
+            editing_idx: Some(idx),
+            field_mode: CommandFieldMode::Command,
+            global: cmd.global,
+        }
     }
 }
 
@@ -199,7 +249,12 @@ pub struct RunCommandPicker {
 }
 
 impl RunCommandPicker {
-    pub fn new() -> Self { Self { selected: 0, confirm_delete: None } }
+    pub fn new() -> Self {
+        Self {
+            selected: 0,
+            confirm_delete: None,
+        }
+    }
 }
 
 /// A saved prompt template the user can quickly insert into the input box
@@ -215,7 +270,11 @@ pub struct PresetPrompt {
 
 impl PresetPrompt {
     pub fn new(name: impl Into<String>, prompt: impl Into<String>, global: bool) -> Self {
-        Self { name: name.into(), prompt: prompt.into(), global }
+        Self {
+            name: name.into(),
+            prompt: prompt.into(),
+            global,
+        }
     }
 }
 
@@ -228,7 +287,12 @@ pub struct PresetPromptPicker {
 }
 
 impl PresetPromptPicker {
-    pub fn new() -> Self { Self { selected: 0, confirm_delete: None } }
+    pub fn new() -> Self {
+        Self {
+            selected: 0,
+            confirm_delete: None,
+        }
+    }
 }
 
 /// Dialog for creating/editing a preset prompt (two fields: name + prompt text)
@@ -248,11 +312,27 @@ pub struct PresetPromptDialog {
 
 impl PresetPromptDialog {
     pub fn new() -> Self {
-        Self { name: String::new(), prompt: String::new(), name_cursor: 0, prompt_cursor: 0, editing_name: true, editing_idx: None, global: false }
+        Self {
+            name: String::new(),
+            prompt: String::new(),
+            name_cursor: 0,
+            prompt_cursor: 0,
+            editing_name: true,
+            editing_idx: None,
+            global: false,
+        }
     }
 
     pub fn edit(idx: usize, preset: &PresetPrompt) -> Self {
-        Self { name: preset.name.clone(), prompt: preset.prompt.clone(), name_cursor: preset.name.chars().count(), prompt_cursor: preset.prompt.chars().count(), editing_name: true, editing_idx: Some(idx), global: preset.global }
+        Self {
+            name: preset.name.clone(),
+            prompt: preset.prompt.clone(),
+            name_cursor: preset.name.chars().count(),
+            prompt_cursor: preset.prompt.chars().count(),
+            editing_name: true,
+            editing_idx: Some(idx),
+            global: preset.global,
+        }
     }
 }
 
@@ -284,15 +364,28 @@ pub struct ProjectsPanel {
 
 impl ProjectsPanel {
     pub fn new(entries: Vec<ProjectEntry>) -> Self {
-        Self { entries, selected: 0, mode: ProjectsPanelMode::Browse, input: String::new(), input_cursor: 0, error: None }
+        Self {
+            entries,
+            selected: 0,
+            mode: ProjectsPanelMode::Browse,
+            input: String::new(),
+            input_cursor: 0,
+            error: None,
+        }
     }
 
     pub fn select_next(&mut self) {
-        if self.selected + 1 < self.entries.len() { self.selected += 1; self.error = None; }
+        if self.selected + 1 < self.entries.len() {
+            self.selected += 1;
+            self.error = None;
+        }
     }
 
     pub fn select_prev(&mut self) {
-        if self.selected > 0 { self.selected -= 1; self.error = None; }
+        if self.selected > 0 {
+            self.selected -= 1;
+            self.error = None;
+        }
     }
 
     /// Enter AddPath mode with an empty input
@@ -351,10 +444,22 @@ impl ProjectsPanel {
         }
     }
 
-    pub fn cursor_left(&mut self) { if self.input_cursor > 0 { self.input_cursor -= 1; } }
-    pub fn cursor_right(&mut self) { if self.input_cursor < self.input.len() { self.input_cursor += 1; } }
-    pub fn cursor_home(&mut self) { self.input_cursor = 0; }
-    pub fn cursor_end(&mut self) { self.input_cursor = self.input.len(); }
+    pub fn cursor_left(&mut self) {
+        if self.input_cursor > 0 {
+            self.input_cursor -= 1;
+        }
+    }
+    pub fn cursor_right(&mut self) {
+        if self.input_cursor < self.input.len() {
+            self.input_cursor += 1;
+        }
+    }
+    pub fn cursor_home(&mut self) {
+        self.input_cursor = 0;
+    }
+    pub fn cursor_end(&mut self) {
+        self.input_cursor = self.input.len();
+    }
 }
 
 /// A viewer tab holding file state
@@ -613,11 +718,17 @@ pub enum BackgroundOpOutcome {
     /// Worktree archived — refresh and maintain current selection
     Archived,
     /// Worktree unarchived — refresh and select the named branch
-    Unarchived { branch: String, display_name: String },
+    Unarchived {
+        branch: String,
+        display_name: String,
+    },
     /// Worktree created — refresh and select the named branch
     Created { branch: String },
     /// Worktree deleted — refresh and clamp selection (state cleanup done before spawn)
-    Deleted { display_name: String, prev_idx: usize },
+    Deleted {
+        display_name: String,
+        prev_idx: usize,
+    },
     /// Git panel operation result (pull, push) — set result_message + refresh
     GitResult { message: String, is_error: bool },
     /// Operation failed — show error in status bar
@@ -634,7 +745,10 @@ pub enum BackgroundRebaseOutcome {
     /// Already up to date with main
     UpToDate,
     /// Rebase hit conflicts — show conflict overlay
-    Conflict { conflicted: Vec<String>, auto_merged: Vec<String> },
+    Conflict {
+        conflicted: Vec<String>,
+        auto_merged: Vec<String>,
+    },
     /// Rebase failed with error
     Failed(String),
 }
@@ -790,7 +904,12 @@ mod tests {
 
     #[test]
     fn viewer_mode_all_variants_distinct() {
-        let variants = [ViewerMode::Empty, ViewerMode::File, ViewerMode::Diff, ViewerMode::Image];
+        let variants = [
+            ViewerMode::Empty,
+            ViewerMode::File,
+            ViewerMode::Diff,
+            ViewerMode::Image,
+        ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {
                 if i == j {
@@ -831,8 +950,12 @@ mod tests {
     #[test]
     fn focus_all_variants_distinct() {
         let variants = [
-            Focus::Worktrees, Focus::FileTree, Focus::Viewer,
-            Focus::Session, Focus::Input, Focus::BranchDialog,
+            Focus::Worktrees,
+            Focus::FileTree,
+            Focus::Viewer,
+            Focus::Session,
+            Focus::Input,
+            Focus::BranchDialog,
         ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {
@@ -877,8 +1000,10 @@ mod tests {
     #[test]
     fn projects_panel_mode_all_variants_distinct() {
         let variants = [
-            ProjectsPanelMode::Browse, ProjectsPanelMode::AddPath,
-            ProjectsPanelMode::Rename, ProjectsPanelMode::Init,
+            ProjectsPanelMode::Browse,
+            ProjectsPanelMode::AddPath,
+            ProjectsPanelMode::Rename,
+            ProjectsPanelMode::Init,
         ];
         for (i, a) in variants.iter().enumerate() {
             for (j, b) in variants.iter().enumerate() {
@@ -1096,7 +1221,11 @@ mod tests {
     #[test]
     fn branch_dialog_select_next() {
         // display_len = 1 (Create new) + 3 branches = 4, max selected = 3
-        let mut d = BranchDialog::new(vec!["a".into(), "b".into(), "c".into()], vec![], vec![0, 0, 0]);
+        let mut d = BranchDialog::new(
+            vec!["a".into(), "b".into(), "c".into()],
+            vec![],
+            vec![0, 0, 0],
+        );
         assert_eq!(d.selected, 0);
         d.select_next();
         assert_eq!(d.selected, 1);
@@ -1130,7 +1259,12 @@ mod tests {
     #[test]
     fn branch_dialog_filter_char_narrows_results() {
         let mut d = BranchDialog::new(
-            vec!["main".into(), "feat/auth".into(), "feat/api".into(), "fix/bug".into()],
+            vec![
+                "main".into(),
+                "feat/auth".into(),
+                "feat/api".into(),
+                "fix/bug".into(),
+            ],
             vec![],
             vec![0, 0, 0, 0],
         );
@@ -1150,11 +1284,7 @@ mod tests {
 
     #[test]
     fn branch_dialog_filter_backspace_widens_results() {
-        let mut d = BranchDialog::new(
-            vec!["main".into(), "feat/auth".into()],
-            vec![],
-            vec![0, 0],
-        );
+        let mut d = BranchDialog::new(vec!["main".into(), "feat/auth".into()], vec![], vec![0, 0]);
         d.filter_char('f');
         d.filter_char('e');
         assert_eq!(d.filtered_indices, vec![1]); // only feat/auth
@@ -1212,7 +1342,11 @@ mod tests {
     #[test]
     fn branch_dialog_unicode_filter_rejected_by_git_safe() {
         // Emoji chars are rejected by is_git_safe_char, so filter stays empty
-        let mut d = BranchDialog::new(vec!["feat/unicorn-\u{1F984}".into(), "main".into()], vec![], vec![0, 0]);
+        let mut d = BranchDialog::new(
+            vec!["feat/unicorn-\u{1F984}".into(), "main".into()],
+            vec![],
+            vec![0, 0],
+        );
         d.filter_char('\u{1F984}');
         // filter is still empty, all branches shown
         assert_eq!(d.filtered_indices, vec![0, 1]);
@@ -1263,7 +1397,11 @@ mod tests {
 
     #[test]
     fn run_command_special_chars() {
-        let cmd = RunCommand::new("build & test", "cargo build && cargo test 2>&1 | tee log", false);
+        let cmd = RunCommand::new(
+            "build & test",
+            "cargo build && cargo test 2>&1 | tee log",
+            false,
+        );
         assert_eq!(cmd.name, "build & test");
         assert_eq!(cmd.command, "cargo build && cargo test 2>&1 | tee log");
     }
@@ -1345,7 +1483,11 @@ mod tests {
 
     #[test]
     fn preset_prompt_unicode_content() {
-        let p = PresetPrompt::new("Japanese", "\u{65E5}\u{672C}\u{8A9E}\u{306E}\u{8AAC}\u{660E}", false);
+        let p = PresetPrompt::new(
+            "Japanese",
+            "\u{65E5}\u{672C}\u{8A9E}\u{306E}\u{8AAC}\u{660E}",
+            false,
+        );
         assert_eq!(p.name, "Japanese");
         assert_eq!(p.prompt.chars().count(), 6);
     }
@@ -1404,10 +1546,12 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     fn make_entries(count: usize) -> Vec<ProjectEntry> {
-        (0..count).map(|i| ProjectEntry {
-            path: PathBuf::from(format!("/projects/proj{}", i)),
-            display_name: format!("Project {}", i),
-        }).collect()
+        (0..count)
+            .map(|i| ProjectEntry {
+                path: PathBuf::from(format!("/projects/proj{}", i)),
+                display_name: format!("Project {}", i),
+            })
+            .collect()
     }
 
     #[test]
@@ -1994,4 +2138,3 @@ mod tests {
         assert!(p.auto_resolve_overlay.is_none());
     }
 }
-

@@ -9,8 +9,12 @@ use crate::app::{App, Focus};
 pub(super) fn dispatch_escape(app: &mut App) {
     match app.focus {
         // Worktree tab row (legacy): treat same as FileTree
-        Focus::Worktrees if app.browsing_main => { app.exit_main_browse(); }
-        Focus::Worktrees => { app.focus = Focus::FileTree; }
+        Focus::Worktrees if app.browsing_main => {
+            app.exit_main_browse();
+        }
+        Focus::Worktrees => {
+            app.focus = Focus::FileTree;
+        }
         Focus::Viewer if app.viewer_edit_mode => {
             if app.viewer_edit_dirty {
                 app.viewer_edit_discard_dialog = true;
@@ -54,12 +58,14 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 // paths before saving (scope is persisted relative to project root)
                 // and passing to the rescan (which also uses project root).
                 let project_root = app.project.as_ref().map(|p| p.path.clone());
-                let wt_root = app.current_worktree()
+                let wt_root = app
+                    .current_worktree()
                     .and_then(|wt| wt.worktree_path.clone());
                 let translated: std::collections::HashSet<std::path::PathBuf> =
                     if let (Some(ref pr), Some(ref wr)) = (&project_root, &wt_root) {
                         if pr != wr {
-                            app.god_file_filter_dirs.iter()
+                            app.god_file_filter_dirs
+                                .iter()
                                 .map(|p| {
                                     if let Ok(rel) = p.strip_prefix(wr) {
                                         pr.join(rel)
@@ -77,8 +83,10 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 if let Some(ref pr) = project_root {
                     crate::app::save_health_scope(pr, &translated);
                 }
-                let dirs: Vec<String> = translated.iter()
-                    .map(|p| p.to_string_lossy().to_string()).collect();
+                let dirs: Vec<String> = translated
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
                 app.god_file_filter_mode = false;
                 app.god_file_filter_dirs.clear();
                 app.invalidate_file_tree();
@@ -92,8 +100,11 @@ pub(super) fn dispatch_escape(app: &mut App) {
             }
         }
         Focus::Session => {
-            if app.show_session_list { app.show_session_list = false; }
-            else { app.focus = Focus::FileTree; }
+            if app.show_session_list {
+                app.show_session_list = false;
+            } else {
+                app.focus = Focus::FileTree;
+            }
         }
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
             app.close_terminal();
@@ -368,7 +379,8 @@ mod tests {
         app.focus = Focus::FileTree;
         app.god_file_filter_mode = true;
         app.browsing_main = false;
-        app.god_file_filter_dirs.insert(std::path::PathBuf::from("/test"));
+        app.god_file_filter_dirs
+            .insert(std::path::PathBuf::from("/test"));
         dispatch_escape(&mut app);
         assert!(app.god_file_filter_dirs.is_empty());
     }

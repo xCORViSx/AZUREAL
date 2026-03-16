@@ -8,7 +8,9 @@ use crate::app::{App, Focus};
 /// Route NavDown to the focused pane's down handler
 pub(super) fn dispatch_nav_down(app: &mut App) {
     match app.focus {
-        Focus::Viewer => { app.scroll_viewer_down(1); }
+        Focus::Viewer => {
+            app.scroll_viewer_down(1);
+        }
         Focus::Session => {
             app.scroll_session_down(1);
         }
@@ -25,7 +27,9 @@ pub(super) fn dispatch_nav_down(app: &mut App) {
 /// Route NavUp to the focused pane's up handler
 pub(super) fn dispatch_nav_up(app: &mut App) {
     match app.focus {
-        Focus::Viewer => { app.scroll_viewer_up(1); }
+        Focus::Viewer => {
+            app.scroll_viewer_up(1);
+        }
         Focus::Session => {
             app.scroll_session_up(1);
         }
@@ -43,7 +47,9 @@ pub(super) fn dispatch_nav_up(app: &mut App) {
 pub(super) fn dispatch_nav_left(app: &mut App) {
     match app.focus {
         // Worktree tab row: Left cycles to previous tab
-        Focus::Worktrees => { app.select_prev_session(); }
+        Focus::Worktrees => {
+            app.select_prev_session();
+        }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -51,7 +57,11 @@ pub(super) fn dispatch_nav_left(app: &mut App) {
                         app.toggle_file_tree_dir();
                     } else if let Some(parent) = entry.path.parent() {
                         let parent_path = parent.to_path_buf();
-                        if let Some(pi) = app.file_tree_entries.iter().position(|e| e.path == parent_path && e.is_dir) {
+                        if let Some(pi) = app
+                            .file_tree_entries
+                            .iter()
+                            .position(|e| e.path == parent_path && e.is_dir)
+                        {
                             if app.file_tree_expanded.contains(&parent_path) {
                                 app.file_tree_selected = Some(pi);
                                 app.toggle_file_tree_dir();
@@ -69,7 +79,9 @@ pub(super) fn dispatch_nav_left(app: &mut App) {
 pub(super) fn dispatch_nav_right(app: &mut App) {
     match app.focus {
         // Worktree tab row: Right cycles to next tab
-        Focus::Worktrees => { app.select_next_session(); }
+        Focus::Worktrees => {
+            app.select_next_session();
+        }
         Focus::FileTree => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx).cloned() {
@@ -86,7 +98,9 @@ pub(super) fn dispatch_nav_right(app: &mut App) {
 /// Route PageDown to the focused pane
 pub(super) fn dispatch_page_down(app: &mut App) {
     match app.focus {
-        Focus::Viewer => { app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2)); }
+        Focus::Viewer => {
+            app.scroll_viewer_down(app.viewer_viewport_height.saturating_sub(2));
+        }
         Focus::Session => {
             let page = app.session_viewport_height.saturating_sub(2);
             app.scroll_session_down(page);
@@ -101,7 +115,9 @@ pub(super) fn dispatch_page_down(app: &mut App) {
 /// Route PageUp to the focused pane
 pub(super) fn dispatch_page_up(app: &mut App) {
     match app.focus {
-        Focus::Viewer => { app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2)); }
+        Focus::Viewer => {
+            app.scroll_viewer_up(app.viewer_viewport_height.saturating_sub(2));
+        }
         Focus::Session => {
             let page = app.session_viewport_height.saturating_sub(2);
             app.scroll_session_up(page);
@@ -117,7 +133,9 @@ pub(super) fn dispatch_page_up(app: &mut App) {
 pub(super) fn dispatch_go_to_top(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.viewer_scroll = 0,
-        Focus::Session => { app.session_scroll = 0; }
+        Focus::Session => {
+            app.session_scroll = 0;
+        }
         Focus::Worktrees => app.select_first_session(),
         Focus::FileTree => app.file_tree_first_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
@@ -131,7 +149,9 @@ pub(super) fn dispatch_go_to_top(app: &mut App) {
 pub(super) fn dispatch_go_to_bottom(app: &mut App) {
     match app.focus {
         Focus::Viewer => app.scroll_viewer_to_bottom(),
-        Focus::Session => { app.scroll_session_to_bottom(); }
+        Focus::Session => {
+            app.scroll_session_to_bottom();
+        }
         Focus::Worktrees => app.select_last_session(),
         Focus::FileTree => app.file_tree_last_sibling(),
         Focus::Input if app.terminal_mode && !app.prompt_mode => {
@@ -148,21 +168,37 @@ mod tests {
     // -- Focus enum equality/inequality --
 
     #[test]
-    fn test_focus_viewer_eq() { assert_eq!(Focus::Viewer, Focus::Viewer); }
+    fn test_focus_viewer_eq() {
+        assert_eq!(Focus::Viewer, Focus::Viewer);
+    }
     #[test]
-    fn test_focus_session_eq() { assert_eq!(Focus::Session, Focus::Session); }
+    fn test_focus_session_eq() {
+        assert_eq!(Focus::Session, Focus::Session);
+    }
     #[test]
-    fn test_focus_worktrees_eq() { assert_eq!(Focus::Worktrees, Focus::Worktrees); }
+    fn test_focus_worktrees_eq() {
+        assert_eq!(Focus::Worktrees, Focus::Worktrees);
+    }
     #[test]
-    fn test_focus_file_tree_eq() { assert_eq!(Focus::FileTree, Focus::FileTree); }
+    fn test_focus_file_tree_eq() {
+        assert_eq!(Focus::FileTree, Focus::FileTree);
+    }
     #[test]
-    fn test_focus_input_eq() { assert_eq!(Focus::Input, Focus::Input); }
+    fn test_focus_input_eq() {
+        assert_eq!(Focus::Input, Focus::Input);
+    }
     #[test]
-    fn test_focus_ne_viewer_session() { assert_ne!(Focus::Viewer, Focus::Session); }
+    fn test_focus_ne_viewer_session() {
+        assert_ne!(Focus::Viewer, Focus::Session);
+    }
     #[test]
-    fn test_focus_ne_worktrees_input() { assert_ne!(Focus::Worktrees, Focus::Input); }
+    fn test_focus_ne_worktrees_input() {
+        assert_ne!(Focus::Worktrees, Focus::Input);
+    }
     #[test]
-    fn test_focus_ne_file_tree_viewer() { assert_ne!(Focus::FileTree, Focus::Viewer); }
+    fn test_focus_ne_file_tree_viewer() {
+        assert_ne!(Focus::FileTree, Focus::Viewer);
+    }
 
     // -- Focus matching for nav dispatch --
 
@@ -362,7 +398,6 @@ mod tests {
         assert!(!handled);
     }
 
-
     // -- Page size saturating_sub edge cases --
 
     #[test]
@@ -437,10 +472,12 @@ mod tests {
     fn test_focus_health_not_handled_by_nav() {
         // Focus only has 7 variants — verify unknown variants fall through
         let f = Focus::BranchDialog;
-        let is_nav_focus = matches!(f, Focus::Viewer | Focus::Session | Focus::Worktrees | Focus::FileTree | Focus::Input);
+        let is_nav_focus = matches!(
+            f,
+            Focus::Viewer | Focus::Session | Focus::Worktrees | Focus::FileTree | Focus::Input
+        );
         assert!(!is_nav_focus);
     }
-
 
     // -- Worktrees navigation always allowed (browsing_main no longer blocks) --
 

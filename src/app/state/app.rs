@@ -26,16 +26,20 @@ use std::sync::mpsc::Receiver;
 
 use portable_pty::{Child as PtyChild, MasterPty};
 
+use super::project_snapshot::ProjectSnapshot;
+use super::AgentEvent;
+use super::DisplayEvent;
 use crate::app::terminal::SessionTerminal;
-use crate::app::types::{BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab, RcrSession, PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode};
+use crate::app::types::{
+    BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab,
+    PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel,
+    RcrSession, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
+};
 use crate::backend::Backend;
 use crate::events::EventParser;
 use crate::models::{Project, Worktree};
 use crate::syntax::SyntaxHighlighter;
 use crate::tui::render_thread::RenderThread;
-use super::AgentEvent;
-use super::DisplayEvent;
-use super::project_snapshot::ProjectSnapshot;
 
 /// Application state
 pub struct App {
@@ -170,7 +174,8 @@ pub struct App {
     /// Receiver for background file tree scan (replaces synchronous load_file_tree in event loop)
     pub file_tree_receiver: Option<std::sync::mpsc::Receiver<Vec<FileTreeEntry>>>,
     /// Receiver for background worktree refresh (replaces synchronous refresh_worktrees in event loop)
-    pub worktree_refresh_receiver: Option<std::sync::mpsc::Receiver<anyhow::Result<crate::app::types::WorktreeRefreshResult>>>,
+    pub worktree_refresh_receiver:
+        Option<std::sync::mpsc::Receiver<anyhow::Result<crate::app::types::WorktreeRefreshResult>>>,
     /// Per-worktree terminals (persist when switching worktrees)
     pub worktree_terminals: HashMap<String, SessionTerminal>,
     /// FileTree entries for the current worktree
@@ -495,10 +500,12 @@ pub struct App {
     pub deferred_action: Option<DeferredAction>,
     /// Receiver for background worktree/git operations (archive, unarchive,
     /// create, delete, pull, push). Polled in the event loop.
-    pub background_op_receiver: Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundOpProgress>>,
+    pub background_op_receiver:
+        Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundOpProgress>>,
     /// Receiver for background rebase operations (separate because rebase
     /// has conflict handling that needs the full RebaseOutcome)
-    pub rebase_op_receiver: Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundRebaseOutcome>>,
+    pub rebase_op_receiver:
+        Option<std::sync::mpsc::Receiver<crate::app::types::BackgroundRebaseOutcome>>,
     /// Selected index in session list overlay
     pub session_list_selected: usize,
     /// Scroll offset in session list overlay
@@ -819,12 +826,27 @@ impl App {
 
     /// Rebuild file tree entries from disk (preserves expanded set, resets selection)
     pub fn refresh_file_tree(&mut self) {
-        let Some(wt) = self.current_worktree() else { return };
-        let Some(ref worktree_path) = wt.worktree_path else { return };
+        let Some(wt) = self.current_worktree() else {
+            return;
+        };
+        let Some(ref worktree_path) = wt.worktree_path else {
+            return;
+        };
         let wt_path = worktree_path.clone();
-        self.file_tree_entries = super::helpers::build_file_tree(&wt_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
-        if self.file_tree_selected.map_or(true, |i| i >= self.file_tree_entries.len()) {
-            self.file_tree_selected = if self.file_tree_entries.is_empty() { None } else { Some(0) };
+        self.file_tree_entries = super::helpers::build_file_tree(
+            &wt_path,
+            &self.file_tree_expanded,
+            &self.file_tree_hidden_dirs,
+        );
+        if self
+            .file_tree_selected
+            .map_or(true, |i| i >= self.file_tree_entries.len())
+        {
+            self.file_tree_selected = if self.file_tree_entries.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
         }
         self.invalidate_file_tree();
     }

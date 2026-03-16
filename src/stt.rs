@@ -58,7 +58,11 @@ impl SttHandle {
             .spawn(move || stt_loop(cmd_rx, event_tx))
             .expect("failed to spawn STT thread");
 
-        Self { cmd_tx, event_rx, _handle: handle }
+        Self {
+            cmd_tx,
+            event_rx,
+            _handle: handle,
+        }
     }
 
     /// Send a command to the background thread (non-blocking)
@@ -99,11 +103,17 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
         match cmd {
             SttCommand::StartRecording => {
                 // If already recording, ignore (user double-pressed)
-                if matches!(state, State::Recording { .. }) { continue; }
+                if matches!(state, State::Recording { .. }) {
+                    continue;
+                }
 
                 match start_recording() {
                     Ok((stream, samples, sample_rate)) => {
-                        state = State::Recording { samples, sample_rate, _stream: stream };
+                        state = State::Recording {
+                            samples,
+                            sample_rate,
+                            _stream: stream,
+                        };
                         let _ = event_tx.send(SttEvent::RecordingStarted);
                     }
                     Err(e) => {
@@ -114,7 +124,11 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
             SttCommand::StopRecording => {
                 // Extract recording state, dropping _stream stops cpal capture
                 let (samples_buf, sample_rate) = match state {
-                    State::Recording { samples, sample_rate, _stream } => {
+                    State::Recording {
+                        samples,
+                        sample_rate,
+                        _stream,
+                    } => {
                         // _stream dropped here — stops audio capture
                         drop(_stream);
                         (samples, sample_rate)
@@ -158,7 +172,8 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
                         let _ = event_tx.send(SttEvent::Transcribed(text));
                     }
                     Err(e) => {
-                        let _ = event_tx.send(SttEvent::Error(format!("Transcription failed: {}", e)));
+                        let _ =
+                            event_tx.send(SttEvent::Error(format!("Transcription failed: {}", e)));
                     }
                 }
             }
@@ -171,11 +186,11 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
 /// The stream must be kept alive (not dropped) for capture to continue.
 fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String> {
     let host = cpal::default_host();
-    let device = host.default_input_device()
-        .ok_or("No microphone found")?;
+    let device = host.default_input_device().ok_or("No microphone found")?;
 
     // Use the device's default input config (usually 44100 or 48000 Hz, mono or stereo)
-    let config = device.default_input_config()
+    let config = device
+        .default_input_config()
         .map_err(|e| format!("Input config error: {}", e))?;
     // cpal 0.17: SampleRate is just u32, no tuple wrapper
     let sample_rate = config.sample_rate();
@@ -188,26 +203,28 @@ fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String
 
     // Build the input stream. The callback runs on a high-priority CoreAudio thread.
     // Only operation: lock mutex + extend_from_slice (~10 microseconds per callback).
-    let stream = device.build_input_stream(
-        &config.into(),
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // If stereo (or more), mix down to mono by averaging channels
-            let mut buf = samples_clone.lock().unwrap();
-            if channels == 1 {
-                buf.extend_from_slice(data);
-            } else {
-                // Mix N channels to mono: average every `channels` samples
-                for chunk in data.chunks(channels) {
-                    let sum: f32 = chunk.iter().sum();
-                    buf.push(sum / channels as f32);
+    let stream = device
+        .build_input_stream(
+            &config.into(),
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                // If stereo (or more), mix down to mono by averaging channels
+                let mut buf = samples_clone.lock().unwrap();
+                if channels == 1 {
+                    buf.extend_from_slice(data);
+                } else {
+                    // Mix N channels to mono: average every `channels` samples
+                    for chunk in data.chunks(channels) {
+                        let sum: f32 = chunk.iter().sum();
+                        buf.push(sum / channels as f32);
+                    }
                 }
-            }
-        },
-        |err| {
-            eprintln!("cpal stream error: {}", err);
-        },
-        None, // no timeout
-    ).map_err(|e| format!("Build stream error: {}", e))?;
+            },
+            |err| {
+                eprintln!("cpal stream error: {}", err);
+            },
+            None, // no timeout
+        )
+        .map_err(|e| format!("Build stream error: {}", e))?;
 
     // Start the capture
     stream.play().map_err(|e| format!("Play error: {}", e))?;
@@ -237,17 +254,17 @@ fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
     whisper_rs::install_logging_hooks();
 
     let params = whisper_rs::WhisperContextParameters::default();
-    whisper_rs::WhisperContext::new_with_params(
-        model_path.to_str().unwrap_or(""),
-        params,
-    ).map_err(|e| format!("Failed to load Whisper model: {}", e))
+    whisper_rs::WhisperContext::new_with_params(model_path.to_str().unwrap_or(""), params)
+        .map_err(|e| format!("Failed to load Whisper model: {}", e))
 }
 
 /// Resample audio from source_rate to 16000 Hz using linear interpolation.
 /// Whisper requires 16kHz mono f32 input. This is a simple but effective
 /// downsampler — good enough for speech (no high-frequency content to alias).
 fn resample_to_16k(samples: &[f32], source_rate: u32) -> Vec<f32> {
-    if source_rate == 16000 { return samples.to_vec(); }
+    if source_rate == 16000 {
+        return samples.to_vec();
+    }
 
     let ratio = source_rate as f64 / 16000.0;
     let out_len = (samples.len() as f64 / ratio) as usize;
@@ -268,11 +285,13 @@ fn resample_to_16k(samples: &[f32], source_rate: u32) -> Vec<f32> {
 /// Returns the concatenated text from all recognized segments.
 #[allow(dead_code)]
 fn transcribe(ctx: &whisper_rs::WhisperContext, samples_16k: &[f32]) -> Result<String, String> {
-    let mut state = ctx.create_state()
+    let mut state = ctx
+        .create_state()
         .map_err(|e| format!("Create state error: {}", e))?;
 
     // Configure Whisper parameters for speech-to-text dictation
-    let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+    let mut params =
+        whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
     // Disable printing to stdout — we capture text programmatically
     params.set_print_special(false);
@@ -287,7 +306,8 @@ fn transcribe(ctx: &whisper_rs::WhisperContext, samples_16k: &[f32]) -> Result<S
     params.set_suppress_blank(true);
     params.set_suppress_nst(true);
 
-    state.full(params, samples_16k)
+    state
+        .full(params, samples_16k)
         .map_err(|e| format!("Transcription error: {}", e))?;
 
     // Collect text from all segments using the iterator API
@@ -372,7 +392,11 @@ mod tests {
         let samples: Vec<f32> = vec![dc_value; 48000];
         let result = resample_to_16k(&samples, 48000);
         for &s in &result {
-            assert!((s - dc_value).abs() < 1e-5, "DC signal should be preserved: got {}", s);
+            assert!(
+                (s - dc_value).abs() < 1e-5,
+                "DC signal should be preserved: got {}",
+                s
+            );
         }
     }
 
@@ -419,7 +443,9 @@ mod tests {
 
     #[test]
     fn test_resample_alternating_signal() {
-        let samples: Vec<f32> = (0..48000).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let samples: Vec<f32> = (0..48000)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let result = resample_to_16k(&samples, 48000);
         assert_eq!(result.len(), 16000);
     }
@@ -560,10 +586,14 @@ mod tests {
     fn test_stt_handle_event_channel() {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(SttEvent::RecordingStarted).unwrap();
-        tx.send(SttEvent::RecordingStopped { duration_secs: 1.0 }).unwrap();
+        tx.send(SttEvent::RecordingStopped { duration_secs: 1.0 })
+            .unwrap();
         tx.send(SttEvent::Transcribed("test".to_string())).unwrap();
         assert!(matches!(rx.recv().unwrap(), SttEvent::RecordingStarted));
-        assert!(matches!(rx.recv().unwrap(), SttEvent::RecordingStopped { .. }));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            SttEvent::RecordingStopped { .. }
+        ));
         assert!(matches!(rx.recv().unwrap(), SttEvent::Transcribed(_)));
     }
 
@@ -635,7 +665,9 @@ mod tests {
 
     #[test]
     fn test_stt_event_recording_stopped_long_duration() {
-        let event = SttEvent::RecordingStopped { duration_secs: 300.0 };
+        let event = SttEvent::RecordingStopped {
+            duration_secs: 300.0,
+        };
         if let SttEvent::RecordingStopped { duration_secs } = event {
             assert_eq!(duration_secs, 300.0);
         }

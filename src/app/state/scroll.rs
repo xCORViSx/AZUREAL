@@ -5,7 +5,9 @@ use super::App;
 impl App {
     /// Natural bottom position: last line at bottom of viewport
     pub(crate) fn session_natural_bottom(&self) -> usize {
-        self.rendered_lines_cache.len().saturating_sub(self.session_viewport_height)
+        self.rendered_lines_cache
+            .len()
+            .saturating_sub(self.session_viewport_height)
     }
 
     /// Max scroll position: allows scrolling so last line can be at top (vim-style)
@@ -32,7 +34,10 @@ impl App {
             self.session_scroll = self.session_natural_bottom();
         }
         let old = self.session_scroll;
-        self.session_scroll = self.session_scroll.saturating_add(lines).min(self.session_max_scroll());
+        self.session_scroll = self
+            .session_scroll
+            .saturating_add(lines)
+            .min(self.session_max_scroll());
         // Re-engage auto-follow when user scrolls to (or past) the natural bottom
         if self.session_scroll >= self.session_natural_bottom() {
             self.session_scroll = usize::MAX;
@@ -60,7 +65,9 @@ impl App {
 
     /// Natural bottom position: last line at bottom of viewport
     fn viewer_natural_bottom(&self) -> usize {
-        self.viewer_lines_cache.len().saturating_sub(self.viewer_viewport_height)
+        self.viewer_lines_cache
+            .len()
+            .saturating_sub(self.viewer_viewport_height)
     }
 
     /// Max scroll position: allows scrolling so last line can be at top (vim-style)
@@ -85,7 +92,10 @@ impl App {
             self.viewer_scroll = self.viewer_natural_bottom();
         }
         let old = self.viewer_scroll;
-        self.viewer_scroll = self.viewer_scroll.saturating_add(lines).min(self.viewer_max_scroll());
+        self.viewer_scroll = self
+            .viewer_scroll
+            .saturating_add(lines)
+            .min(self.viewer_max_scroll());
         self.viewer_scroll != old
     }
 
@@ -655,13 +665,13 @@ mod tests {
     fn next_bubble_user_only() {
         let mut app = app_with_session_lines(200, 20);
         app.message_bubble_positions = vec![
-            (10, true),   // user at line 10
-            (30, false),  // assistant at line 30
-            (50, true),   // user at line 50
+            (10, true),  // user at line 10
+            (30, false), // assistant at line 30
+            (50, true),  // user at line 50
         ];
         app.session_scroll = 0;
         app.jump_to_next_bubble(false); // user only
-        // First user bubble at line 10, display_pos = 10-2 = 8
+                                        // First user bubble at line 10, display_pos = 10-2 = 8
         assert_eq!(app.session_scroll, 8);
     }
 
@@ -669,11 +679,7 @@ mod tests {
     #[test]
     fn next_bubble_include_assistant() {
         let mut app = app_with_session_lines(200, 20);
-        app.message_bubble_positions = vec![
-            (10, true),
-            (30, false),
-            (50, true),
-        ];
+        app.message_bubble_positions = vec![(10, true), (30, false), (50, true)];
         app.session_scroll = 9; // past first bubble
         app.jump_to_next_bubble(true);
         // Next bubble is assistant at line 30, display = 28
@@ -716,8 +722,8 @@ mod tests {
     fn next_bubble_skip_assistant() {
         let mut app = app_with_session_lines(200, 20);
         app.message_bubble_positions = vec![
-            (10, false),  // assistant
-            (50, true),   // user
+            (10, false), // assistant
+            (50, true),  // user
         ];
         app.session_scroll = 0;
         app.jump_to_next_bubble(false);
@@ -753,11 +759,7 @@ mod tests {
     #[test]
     fn prev_bubble_from_end() {
         let mut app = app_with_session_lines(200, 20);
-        app.message_bubble_positions = vec![
-            (10, true),
-            (50, true),
-            (90, true),
-        ];
+        app.message_bubble_positions = vec![(10, true), (50, true), (90, true)];
         app.session_scroll = 100;
         app.jump_to_prev_bubble(true);
         // Previous bubble at line 90, display = 88
@@ -770,7 +772,7 @@ mod tests {
         let mut app = app_with_session_lines(200, 20);
         app.message_bubble_positions = vec![
             (10, true),
-            (50, false),  // assistant
+            (50, false), // assistant
             (90, true),
         ];
         app.session_scroll = 100;
@@ -922,11 +924,7 @@ mod tests {
     #[test]
     fn bubble_walk_forward() {
         let mut app = app_with_session_lines(200, 20);
-        app.message_bubble_positions = vec![
-            (10, true),
-            (30, true),
-            (60, true),
-        ];
+        app.message_bubble_positions = vec![(10, true), (30, true), (60, true)];
         app.session_scroll = 0;
 
         app.jump_to_next_bubble(true);
@@ -947,11 +945,7 @@ mod tests {
     #[test]
     fn bubble_walk_backward() {
         let mut app = app_with_session_lines(200, 20);
-        app.message_bubble_positions = vec![
-            (10, true),
-            (30, true),
-            (60, true),
-        ];
+        app.message_bubble_positions = vec![(10, true), (30, true), (60, true)];
         app.session_scroll = 100;
 
         app.jump_to_prev_bubble(true);

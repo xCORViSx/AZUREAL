@@ -1,8 +1,8 @@
 //! Session output processing and display event handling
 
+use super::App;
 use crate::app::util::strip_ansi_escapes;
 use crate::events::DisplayEvent;
-use super::App;
 
 impl App {
     pub fn process_session_chunk(&mut self, chunk: &str) {
@@ -12,8 +12,11 @@ impl App {
                 '\n' => {
                     // Move the buffer into the line vec instead of clone+clear —
                     // take() reuses capacity for the next line (zero allocation).
-                    self.session_lines.push_back(std::mem::take(&mut self.session_buffer));
-                    if self.session_lines.len() > self.max_session_lines { self.session_lines.pop_front(); }
+                    self.session_lines
+                        .push_back(std::mem::take(&mut self.session_buffer));
+                    if self.session_lines.len() > self.max_session_lines {
+                        self.session_lines.pop_front();
+                    }
                 }
                 '\r' => self.session_buffer.clear(),
                 _ => self.session_buffer.push(ch),
@@ -235,7 +238,10 @@ mod tests {
         let mut app = App::new();
         app.add_user_message("Hello Claude".to_string());
         assert_eq!(app.display_events.len(), 1);
-        assert!(matches!(&app.display_events[0], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(
+            &app.display_events[0],
+            DisplayEvent::UserMessage { .. }
+        ));
     }
 
     #[test]
@@ -297,7 +303,10 @@ mod tests {
     fn test_add_user_message_unicode() {
         let mut app = App::new();
         app.add_user_message("日本語のメッセージ".to_string());
-        assert_eq!(app.pending_user_message, Some("日本語のメッセージ".to_string()));
+        assert_eq!(
+            app.pending_user_message,
+            Some("日本語のメッセージ".to_string())
+        );
     }
 
     // ── add_user_message: compaction detection ──
@@ -305,7 +314,10 @@ mod tests {
     #[test]
     fn test_add_user_message_compaction_creates_compacting_event() {
         let mut app = App::new();
-        app.add_user_message("This session is being continued from a previous conversation that ran out of context.".to_string());
+        app.add_user_message(
+            "This session is being continued from a previous conversation that ran out of context."
+                .to_string(),
+        );
         assert_eq!(app.display_events.len(), 1);
         assert!(matches!(&app.display_events[0], DisplayEvent::Compacting));
     }
@@ -313,7 +325,10 @@ mod tests {
     #[test]
     fn test_add_user_message_compaction_does_not_set_pending() {
         let mut app = App::new();
-        app.add_user_message("This session is being continued from a previous conversation that ran out of context.".to_string());
+        app.add_user_message(
+            "This session is being continued from a previous conversation that ran out of context."
+                .to_string(),
+        );
         // Compaction messages don't set pending_user_message
         assert!(app.pending_user_message.is_none());
     }
@@ -322,7 +337,9 @@ mod tests {
     fn test_add_user_message_compaction_prefix_only() {
         let mut app = App::new();
         // Must start with the exact prefix
-        app.add_user_message("This session is being continued from a previous conversation".to_string());
+        app.add_user_message(
+            "This session is being continued from a previous conversation".to_string(),
+        );
         assert!(matches!(&app.display_events[0], DisplayEvent::Compacting));
     }
 
@@ -331,14 +348,20 @@ mod tests {
         let mut app = App::new();
         // Doesn't start with the exact prefix
         app.add_user_message("this session is being continued".to_string());
-        assert!(matches!(&app.display_events[0], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(
+            &app.display_events[0],
+            DisplayEvent::UserMessage { .. }
+        ));
     }
 
     #[test]
     fn test_add_user_message_compaction_sets_scroll_max() {
         let mut app = App::new();
         app.session_scroll = 0;
-        app.add_user_message("This session is being continued from a previous conversation that ran out of context.".to_string());
+        app.add_user_message(
+            "This session is being continued from a previous conversation that ran out of context."
+                .to_string(),
+        );
         assert_eq!(app.session_scroll, usize::MAX);
     }
 

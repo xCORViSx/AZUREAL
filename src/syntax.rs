@@ -9,63 +9,63 @@ use crate::tui::util::AZURE;
 /// Capture names recognized by all language configs.
 /// Index = Highlight.0 → capture_color() maps to terminal color.
 const HIGHLIGHT_NAMES: &[&str] = &[
-    "attribute",          // 0
-    "comment",            // 1
-    "constant",           // 2
-    "constant.builtin",   // 3
-    "constructor",        // 4
-    "embedded",           // 5
-    "escape",             // 6
-    "function",           // 7
-    "function.builtin",   // 8
-    "function.method",    // 9
-    "keyword",            // 10
-    "label",              // 11
-    "number",             // 12
-    "operator",           // 13
-    "property",           // 14
-    "punctuation",        // 15
-    "punctuation.bracket", // 16
+    "attribute",             // 0
+    "comment",               // 1
+    "constant",              // 2
+    "constant.builtin",      // 3
+    "constructor",           // 4
+    "embedded",              // 5
+    "escape",                // 6
+    "function",              // 7
+    "function.builtin",      // 8
+    "function.method",       // 9
+    "keyword",               // 10
+    "label",                 // 11
+    "number",                // 12
+    "operator",              // 13
+    "property",              // 14
+    "punctuation",           // 15
+    "punctuation.bracket",   // 16
     "punctuation.delimiter", // 17
-    "string",             // 18
-    "string.special",     // 19
-    "tag",                // 20
-    "type",               // 21
-    "type.builtin",       // 22
-    "variable",           // 23
-    "variable.builtin",   // 24
-    "variable.parameter", // 25
+    "string",                // 18
+    "string.special",        // 19
+    "tag",                   // 20
+    "type",                  // 21
+    "type.builtin",          // 22
+    "variable",              // 23
+    "variable.builtin",      // 24
+    "variable.parameter",    // 25
 ];
 
 /// Map capture index to terminal color (preserves original scope_to_color scheme)
 fn capture_color(index: usize) -> Color {
     match index {
-        0 => Color::Rgb(180, 180, 255),   // attribute
-        1 => Color::Rgb(140, 140, 140),   // comment
-        2 => AZURE,                        // constant
-        3 => Color::Yellow,                // constant.builtin (numbers, true/false)
-        4 => AZURE,                        // constructor
-        5 => Color::White,                 // embedded
-        6 => Color::Magenta,               // escape
-        7 => Color::Rgb(100, 160, 255),    // function
-        8 => Color::Rgb(100, 160, 255),    // function.builtin
-        9 => Color::Rgb(100, 160, 255),    // function.method
-        10 => Color::Magenta,              // keyword
-        11 => AZURE,                       // label
-        12 => Color::Yellow,               // number
-        13 => Color::White,                // operator
-        14 => Color::White,                // property
-        15 => Color::White,                // punctuation
-        16 => Color::White,                // punctuation.bracket
-        17 => Color::White,                // punctuation.delimiter
-        18 => Color::Green,                // string
-        19 => Color::Green,                // string.special
-        20 => AZURE,                       // tag
-        21 => Color::Yellow,               // type
-        22 => Color::Yellow,               // type.builtin
-        23 => Color::White,                // variable
-        24 => Color::Magenta,              // variable.builtin (self, this)
-        25 => Color::Rgb(255, 180, 100),   // variable.parameter
+        0 => Color::Rgb(180, 180, 255),  // attribute
+        1 => Color::Rgb(140, 140, 140),  // comment
+        2 => AZURE,                      // constant
+        3 => Color::Yellow,              // constant.builtin (numbers, true/false)
+        4 => AZURE,                      // constructor
+        5 => Color::White,               // embedded
+        6 => Color::Magenta,             // escape
+        7 => Color::Rgb(100, 160, 255),  // function
+        8 => Color::Rgb(100, 160, 255),  // function.builtin
+        9 => Color::Rgb(100, 160, 255),  // function.method
+        10 => Color::Magenta,            // keyword
+        11 => AZURE,                     // label
+        12 => Color::Yellow,             // number
+        13 => Color::White,              // operator
+        14 => Color::White,              // property
+        15 => Color::White,              // punctuation
+        16 => Color::White,              // punctuation.bracket
+        17 => Color::White,              // punctuation.delimiter
+        18 => Color::Green,              // string
+        19 => Color::Green,              // string.special
+        20 => AZURE,                     // tag
+        21 => Color::Yellow,             // type
+        22 => Color::Yellow,             // type.builtin
+        23 => Color::White,              // variable
+        24 => Color::Magenta,            // variable.builtin (self, this)
+        25 => Color::Rgb(255, 180, 100), // variable.parameter
         _ => Color::White,
     }
 }
@@ -96,128 +96,272 @@ impl SyntaxHighlighter {
                        locals: &str,
                        exts: &[&'static str],
                        tokens: &[&'static str]| {
-            if let Ok(mut config) = HighlightConfiguration::new(language, name, highlights, injections, locals) {
+            if let Ok(mut config) =
+                HighlightConfiguration::new(language, name, highlights, injections, locals)
+            {
                 config.configure(HIGHLIGHT_NAMES);
                 configs.insert(name, config);
-                for ext in exts { ext_to_lang.insert(*ext, name); }
-                for tok in tokens { token_to_lang.insert(*tok, name); }
+                for ext in exts {
+                    ext_to_lang.insert(*ext, name);
+                }
+                for tok in tokens {
+                    token_to_lang.insert(*tok, name);
+                }
             }
         };
 
         // -- Core languages --
 
-        reg("rust", tree_sitter_rust::LANGUAGE.into(),
+        reg(
+            "rust",
+            tree_sitter_rust::LANGUAGE.into(),
             tree_sitter_rust::HIGHLIGHTS_QUERY,
-            tree_sitter_rust::INJECTIONS_QUERY, "",
-            &["rs"], &["rust", "rs"]);
+            tree_sitter_rust::INJECTIONS_QUERY,
+            "",
+            &["rs"],
+            &["rust", "rs"],
+        );
 
-        reg("python", tree_sitter_python::LANGUAGE.into(),
-            tree_sitter_python::HIGHLIGHTS_QUERY, "", "",
-            &["py", "pyw", "pyi"], &["python", "py"]);
+        reg(
+            "python",
+            tree_sitter_python::LANGUAGE.into(),
+            tree_sitter_python::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["py", "pyw", "pyi"],
+            &["python", "py"],
+        );
 
-        reg("javascript", tree_sitter_javascript::LANGUAGE.into(),
+        reg(
+            "javascript",
+            tree_sitter_javascript::LANGUAGE.into(),
             tree_sitter_javascript::HIGHLIGHT_QUERY,
             tree_sitter_javascript::INJECTIONS_QUERY,
             tree_sitter_javascript::LOCALS_QUERY,
-            &["js", "mjs", "cjs", "jsx"], &["javascript", "js", "jsx"]);
+            &["js", "mjs", "cjs", "jsx"],
+            &["javascript", "js", "jsx"],
+        );
 
-        reg("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            tree_sitter_typescript::HIGHLIGHTS_QUERY, "", "",
-            &["ts", "mts", "cts"], &["typescript", "ts"]);
+        reg(
+            "typescript",
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["ts", "mts", "cts"],
+            &["typescript", "ts"],
+        );
 
-        reg("tsx", tree_sitter_typescript::LANGUAGE_TSX.into(),
-            tree_sitter_typescript::HIGHLIGHTS_QUERY, "", "",
-            &["tsx"], &["tsx"]);
+        reg(
+            "tsx",
+            tree_sitter_typescript::LANGUAGE_TSX.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["tsx"],
+            &["tsx"],
+        );
 
-        reg("json", tree_sitter_json::LANGUAGE.into(),
-            tree_sitter_json::HIGHLIGHTS_QUERY, "", "",
-            &["json", "jsonc"], &["json", "jsonc"]);
+        reg(
+            "json",
+            tree_sitter_json::LANGUAGE.into(),
+            tree_sitter_json::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["json", "jsonc"],
+            &["json", "jsonc"],
+        );
 
-        reg("toml", tree_sitter_toml_ng::LANGUAGE.into(),
-            tree_sitter_toml_ng::HIGHLIGHTS_QUERY, "", "",
-            &["toml"], &["toml"]);
+        reg(
+            "toml",
+            tree_sitter_toml_ng::LANGUAGE.into(),
+            tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["toml"],
+            &["toml"],
+        );
 
-        reg("bash", tree_sitter_bash::LANGUAGE.into(),
-            tree_sitter_bash::HIGHLIGHT_QUERY, "", "",
-            &["sh", "bash", "zsh"], &["bash", "sh", "shell", "zsh"]);
+        reg(
+            "bash",
+            tree_sitter_bash::LANGUAGE.into(),
+            tree_sitter_bash::HIGHLIGHT_QUERY,
+            "",
+            "",
+            &["sh", "bash", "zsh"],
+            &["bash", "sh", "shell", "zsh"],
+        );
 
-        reg("c", tree_sitter_c::LANGUAGE.into(),
-            tree_sitter_c::HIGHLIGHT_QUERY, "", "",
-            &["c", "h"], &["c"]);
+        reg(
+            "c",
+            tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::HIGHLIGHT_QUERY,
+            "",
+            "",
+            &["c", "h"],
+            &["c"],
+        );
 
-        reg("cpp", tree_sitter_cpp::LANGUAGE.into(),
-            tree_sitter_cpp::HIGHLIGHT_QUERY, "", "",
-            &["cpp", "cc", "cxx", "hpp", "hxx", "hh"], &["cpp", "c++", "cxx", "cc"]);
+        reg(
+            "cpp",
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::HIGHLIGHT_QUERY,
+            "",
+            "",
+            &["cpp", "cc", "cxx", "hpp", "hxx", "hh"],
+            &["cpp", "c++", "cxx", "cc"],
+        );
 
-        reg("go", tree_sitter_go::LANGUAGE.into(),
-            tree_sitter_go::HIGHLIGHTS_QUERY, "", "",
-            &["go"], &["go", "golang"]);
+        reg(
+            "go",
+            tree_sitter_go::LANGUAGE.into(),
+            tree_sitter_go::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["go"],
+            &["go", "golang"],
+        );
 
-        reg("html", tree_sitter_html::LANGUAGE.into(),
+        reg(
+            "html",
+            tree_sitter_html::LANGUAGE.into(),
             tree_sitter_html::HIGHLIGHTS_QUERY,
-            tree_sitter_html::INJECTIONS_QUERY, "",
-            &["html", "htm"], &["html", "htm"]);
+            tree_sitter_html::INJECTIONS_QUERY,
+            "",
+            &["html", "htm"],
+            &["html", "htm"],
+        );
 
-        reg("css", tree_sitter_css::LANGUAGE.into(),
-            tree_sitter_css::HIGHLIGHTS_QUERY, "", "",
-            &["css"], &["css"]);
+        reg(
+            "css",
+            tree_sitter_css::LANGUAGE.into(),
+            tree_sitter_css::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["css"],
+            &["css"],
+        );
 
-        reg("java", tree_sitter_java::LANGUAGE.into(),
-            tree_sitter_java::HIGHLIGHTS_QUERY, "", "",
-            &["java"], &["java"]);
+        reg(
+            "java",
+            tree_sitter_java::LANGUAGE.into(),
+            tree_sitter_java::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["java"],
+            &["java"],
+        );
 
-        reg("ruby", tree_sitter_ruby::LANGUAGE.into(),
+        reg(
+            "ruby",
+            tree_sitter_ruby::LANGUAGE.into(),
             tree_sitter_ruby::HIGHLIGHTS_QUERY,
-            tree_sitter_ruby::LOCALS_QUERY, "",
-            &["rb"], &["ruby", "rb"]);
+            tree_sitter_ruby::LOCALS_QUERY,
+            "",
+            &["rb"],
+            &["ruby", "rb"],
+        );
 
-        reg("lua", tree_sitter_lua::LANGUAGE.into(),
+        reg(
+            "lua",
+            tree_sitter_lua::LANGUAGE.into(),
             tree_sitter_lua::HIGHLIGHTS_QUERY,
-            tree_sitter_lua::INJECTIONS_QUERY, "",
-            &["lua"], &["lua"]);
+            tree_sitter_lua::INJECTIONS_QUERY,
+            "",
+            &["lua"],
+            &["lua"],
+        );
 
-        reg("yaml", tree_sitter_yaml::LANGUAGE.into(),
-            tree_sitter_yaml::HIGHLIGHTS_QUERY, "", "",
-            &["yaml", "yml"], &["yaml", "yml"]);
+        reg(
+            "yaml",
+            tree_sitter_yaml::LANGUAGE.into(),
+            tree_sitter_yaml::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["yaml", "yml"],
+            &["yaml", "yml"],
+        );
 
-        reg("markdown", tree_sitter_md::LANGUAGE.into(),
+        reg(
+            "markdown",
+            tree_sitter_md::LANGUAGE.into(),
             tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
-            tree_sitter_md::INJECTION_QUERY_BLOCK, "",
-            &["md", "markdown"], &["markdown", "md"]);
+            tree_sitter_md::INJECTION_QUERY_BLOCK,
+            "",
+            &["md", "markdown"],
+            &["markdown", "md"],
+        );
 
-        reg("scala", tree_sitter_scala::LANGUAGE.into(),
-            tree_sitter_scala::HIGHLIGHTS_QUERY, "",
+        reg(
+            "scala",
+            tree_sitter_scala::LANGUAGE.into(),
+            tree_sitter_scala::HIGHLIGHTS_QUERY,
+            "",
             tree_sitter_scala::LOCALS_QUERY,
-            &["scala", "sc"], &["scala"]);
+            &["scala", "sc"],
+            &["scala"],
+        );
 
-        reg("r", tree_sitter_r::LANGUAGE.into(),
-            tree_sitter_r::HIGHLIGHTS_QUERY, "", "",
-            &["r", "R"], &["r", "R"]);
+        reg(
+            "r",
+            tree_sitter_r::LANGUAGE.into(),
+            tree_sitter_r::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["r", "R"],
+            &["r", "R"],
+        );
 
-        reg("haskell", tree_sitter_haskell::LANGUAGE.into(),
+        reg(
+            "haskell",
+            tree_sitter_haskell::LANGUAGE.into(),
             tree_sitter_haskell::HIGHLIGHTS_QUERY,
             tree_sitter_haskell::INJECTIONS_QUERY,
             tree_sitter_haskell::LOCALS_QUERY,
-            &["hs"], &["haskell", "hs"]);
+            &["hs"],
+            &["haskell", "hs"],
+        );
 
-        reg("php", tree_sitter_php::LANGUAGE_PHP.into(),
+        reg(
+            "php",
+            tree_sitter_php::LANGUAGE_PHP.into(),
             tree_sitter_php::HIGHLIGHTS_QUERY,
-            tree_sitter_php::INJECTIONS_QUERY, "",
-            &["php"], &["php"]);
+            tree_sitter_php::INJECTIONS_QUERY,
+            "",
+            &["php"],
+            &["php"],
+        );
 
-        reg("sql", tree_sitter_sequel::LANGUAGE.into(),
-            tree_sitter_sequel::HIGHLIGHTS_QUERY, "", "",
-            &["sql"], &["sql"]);
+        reg(
+            "sql",
+            tree_sitter_sequel::LANGUAGE.into(),
+            tree_sitter_sequel::HIGHLIGHTS_QUERY,
+            "",
+            "",
+            &["sql"],
+            &["sql"],
+        );
 
         // Perl + LaTeX: grammars exist but no HIGHLIGHTS_QUERY in crate — empty queries = plain text
-        reg("perl", tree_sitter_perl::LANGUAGE.into(),
-            "", "", "",
-            &["pl", "pm"], &["perl", "pl"]);
+        reg(
+            "perl",
+            tree_sitter_perl::LANGUAGE.into(),
+            "",
+            "",
+            "",
+            &["pl", "pm"],
+            &["perl", "pl"],
+        );
 
         // LaTeX: tree-sitter-latex crate has broken external scanner linking,
         // so .tex files fall back to plain text via ext_to_lang miss.
 
-        Self { highlighter, configs, ext_to_lang, token_to_lang }
+        Self {
+            highlighter,
+            configs,
+            ext_to_lang,
+            token_to_lang,
+        }
     }
 
     /// Highlight a file's content. Language detected from filename extension.
@@ -253,14 +397,22 @@ impl SyntaxHighlighter {
     }
 
     /// Highlight with optional background color (for edit diffs)
-    pub fn highlight_with_bg(&mut self, content: &str, filename: &str, bg: Option<Color>) -> Vec<Vec<Span<'static>>> {
+    pub fn highlight_with_bg(
+        &mut self,
+        content: &str,
+        filename: &str,
+        bg: Option<Color>,
+    ) -> Vec<Vec<Span<'static>>> {
         let base = self.highlight_file(content, filename);
         if let Some(bg_color) = bg {
-            base.into_iter().map(|line_spans| {
-                line_spans.into_iter().map(|span| {
-                    Span::styled(span.content, span.style.bg(bg_color))
-                }).collect()
-            }).collect()
+            base.into_iter()
+                .map(|line_spans| {
+                    line_spans
+                        .into_iter()
+                        .map(|span| Span::styled(span.content, span.style.bg(bg_color)))
+                        .collect()
+                })
+                .collect()
         } else {
             base
         }
@@ -280,10 +432,11 @@ impl SyntaxHighlighter {
         };
 
         let source = content.as_bytes();
-        let events = match self.highlighter.highlight(
-            config, source, None,
-            |injection_lang| configs.get(injection_lang),
-        ) {
+        let events = match self
+            .highlighter
+            .highlight(config, source, None, |injection_lang| {
+                configs.get(injection_lang)
+            }) {
             Ok(e) => e,
             Err(_) => return plain_text_lines(content),
         };
@@ -337,9 +490,15 @@ impl SyntaxHighlighter {
 
 /// Plain text fallback: one white span per line
 fn plain_text_lines(content: &str) -> Vec<Vec<Span<'static>>> {
-    content.lines().map(|line| {
-        vec![Span::styled(line.to_string(), Style::default().fg(Color::White))]
-    }).collect()
+    content
+        .lines()
+        .map(|line| {
+            vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::White),
+            )]
+        })
+        .collect()
 }
 
 impl Default for SyntaxHighlighter {
@@ -352,7 +511,9 @@ impl Default for SyntaxHighlighter {
 mod tests {
     use super::*;
 
-    fn hl() -> SyntaxHighlighter { SyntaxHighlighter::new() }
+    fn hl() -> SyntaxHighlighter {
+        SyntaxHighlighter::new()
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // SyntaxHighlighter::new / Default
@@ -399,7 +560,10 @@ mod tests {
 
     #[test]
     fn highlight_100_lines() {
-        let content = (0..100).map(|i| format!("let x{} = {};", i, i)).collect::<Vec<_>>().join("\n");
+        let content = (0..100)
+            .map(|i| format!("let x{} = {};", i, i))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_eq!(hl().highlight_file(&content, "test.rs").len(), 100);
     }
 
@@ -511,7 +675,10 @@ mod tests {
     fn highlight_empty_line_produces_span() {
         let result = hl().highlight_file("\n", "test.txt");
         for line_spans in &result {
-            assert!(!line_spans.is_empty(), "each line must have at least one span");
+            assert!(
+                !line_spans.is_empty(),
+                "each line must have at least one span"
+            );
         }
     }
 
@@ -561,7 +728,9 @@ mod tests {
     #[test]
     fn rust_comment_gray() {
         let result = hl().highlight_file("// comment", "test.rs");
-        let has_gray = result[0].iter().any(|s| matches!(s.style.fg, Some(Color::Rgb(140, 140, 140))));
+        let has_gray = result[0]
+            .iter()
+            .any(|s| matches!(s.style.fg, Some(Color::Rgb(140, 140, 140))));
         assert!(has_gray, "Comments should be gray");
     }
 
@@ -715,7 +884,10 @@ mod tests {
         let result = hl().highlight_code_block("fn main() {}", "rust");
         assert_eq!(result.len(), 1);
         let has_magenta = result[0].iter().any(|s| s.style.fg == Some(Color::Magenta));
-        assert!(has_magenta, "Rust keyword should be Magenta via token lookup");
+        assert!(
+            has_magenta,
+            "Rust keyword should be Magenta via token lookup"
+        );
     }
 
     #[test]
@@ -814,7 +986,11 @@ mod tests {
         ];
         for (file, code) in samples {
             let result = h.highlight_file(code, file);
-            assert!(!result.is_empty(), "Language {} should produce output", file);
+            assert!(
+                !result.is_empty(),
+                "Language {} should produce output",
+                file
+            );
         }
     }
 }

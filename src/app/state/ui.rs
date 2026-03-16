@@ -1,6 +1,9 @@
 //! UI state management: focus, dialogs, menus, wizard, rebase, run commands
 
-use crate::app::types::{BranchDialog, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker};
+use crate::app::types::{
+    BranchDialog, Focus, GitActionsPanel, GitChangedFile, PresetPrompt, PresetPromptDialog,
+    PresetPromptPicker, ProjectsPanel, RunCommand, RunCommandDialog, RunCommandPicker,
+};
 use crate::config::load_projects;
 use crate::git::Git;
 use crate::models::Project;
@@ -31,12 +34,23 @@ impl App {
         };
     }
 
-    pub fn toggle_help(&mut self) { self.show_help = !self.show_help; }
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+    }
     pub fn toggle_terminal(&mut self) {
-        if self.terminal_mode { self.close_terminal(); } else { self.open_terminal(); }
+        if self.terminal_mode {
+            self.close_terminal();
+        } else {
+            self.open_terminal();
+        }
     }
 
-    pub fn open_branch_dialog(&mut self, branches: Vec<String>, checked_out: Vec<String>, worktree_counts: Vec<usize>) {
+    pub fn open_branch_dialog(
+        &mut self,
+        branches: Vec<String>,
+        checked_out: Vec<String>,
+        worktree_counts: Vec<usize>,
+    ) {
         self.branch_dialog = Some(BranchDialog::new(branches, checked_out, worktree_counts));
         self.focus = Focus::BranchDialog;
     }
@@ -51,42 +65,69 @@ impl App {
     pub fn open_git_actions_panel(&mut self) {
         let session = match self.current_worktree() {
             Some(s) => s,
-            None => { self.set_status("No worktree selected"); return; }
+            None => {
+                self.set_status("No worktree selected");
+                return;
+            }
         };
         let wt_path = match session.worktree_path.as_ref() {
             Some(p) => p.clone(),
-            None => { self.set_status("No worktree path"); return; }
+            None => {
+                self.set_status("No worktree path");
+                return;
+            }
         };
         let worktree_name = session.branch_name.clone();
         let project = match self.project.as_ref() {
             Some(p) => p,
-            None => { self.set_status("No project loaded"); return; }
+            None => {
+                self.set_status("No project loaded");
+                return;
+            }
         };
         let main_branch = project.main_branch.clone();
         let repo_root = project.path.clone();
 
         // Load changed files — typically <100ms, fine for modal open
         let changed_files = match Git::get_diff_files(&wt_path, &main_branch) {
-            Ok(files) => files.into_iter().map(|(path, status, add, del, staged)| {
-                GitChangedFile { path, status, additions: add, deletions: del, staged }
-            }).collect(),
+            Ok(files) => files
+                .into_iter()
+                .map(|(path, status, add, del, staged)| GitChangedFile {
+                    path,
+                    status,
+                    additions: add,
+                    deletions: del,
+                    staged,
+                })
+                .collect(),
             Err(_) => Vec::new(),
         };
 
         let is_on_main = worktree_name == main_branch;
 
         // Load commit log — feature branches show only branch-specific commits
-        let log_main = if is_on_main { None } else { Some(main_branch.as_str()) };
+        let log_main = if is_on_main {
+            None
+        } else {
+            Some(main_branch.as_str())
+        };
         let commits = Git::get_commit_log(&wt_path, 200, log_main)
             .unwrap_or_default()
             .into_iter()
-            .map(|(hash, full_hash, subject, is_pushed)| {
-                crate::app::types::GitCommit { hash, full_hash, subject, is_pushed }
-            })
+            .map(
+                |(hash, full_hash, subject, is_pushed)| crate::app::types::GitCommit {
+                    hash,
+                    full_hash,
+                    subject,
+                    is_pushed,
+                },
+            )
             .collect();
 
         let auto_resolve_files = crate::azufig::load_auto_resolve_files(&repo_root);
-        let (commits_behind_main, commits_ahead_main) = if is_on_main { (0, 0) } else {
+        let (commits_behind_main, commits_ahead_main) = if is_on_main {
+            (0, 0)
+        } else {
             Git::get_main_divergence(&wt_path, &main_branch)
         };
         let (commits_behind_remote, commits_ahead_remote) = Git::get_remote_divergence(&wt_path);
@@ -144,8 +185,14 @@ impl App {
             if let Some(viewed_id) = self.viewed_session_id(&branch) {
                 self.unread_session_ids.remove(&viewed_id);
             }
-            let still_unread = self.session_files.get(&branch)
-                .map(|files| files.iter().any(|(uuid, _, _)| self.unread_session_ids.contains(uuid)))
+            let still_unread = self
+                .session_files
+                .get(&branch)
+                .map(|files| {
+                    files
+                        .iter()
+                        .any(|(uuid, _, _)| self.unread_session_ids.contains(uuid))
+                })
                 .unwrap_or(false);
             if !still_unread {
                 self.unread_sessions.remove(&branch);
@@ -175,7 +222,12 @@ impl App {
     /// Load a file into the viewer with inline Edit diff highlighting
     /// Shows the full file with syntax highlighting, scrolled to the edit location
     /// The edit region is highlighted with red/green diff backgrounds
-    pub fn load_file_with_edit_diff(&mut self, file_path: &str, old_string: &str, new_string: &str) {
+    pub fn load_file_with_edit_diff(
+        &mut self,
+        file_path: &str,
+        old_string: &str,
+        new_string: &str,
+    ) {
         use std::path::PathBuf;
 
         let path = PathBuf::from(file_path);
@@ -227,7 +279,8 @@ impl App {
 
         // Strategy 3: Search for significant lines from new_string (exact match)
         if !new_string.is_empty() {
-            let significant_lines: Vec<&str> = new_string.lines()
+            let significant_lines: Vec<&str> = new_string
+                .lines()
                 .filter(|l| l.trim().len() > 3)
                 .take(3)
                 .collect();
@@ -240,7 +293,8 @@ impl App {
 
         // Strategy 4: Same for old_string
         if !old_string.is_empty() {
-            let significant_lines: Vec<&str> = old_string.lines()
+            let significant_lines: Vec<&str> = old_string
+                .lines()
                 .filter(|l| l.trim().len() > 3)
                 .take(3)
                 .collect();
@@ -256,7 +310,9 @@ impl App {
         let find_trimmed_line = |search_str: &str| -> Option<usize> {
             for search_line in search_str.lines() {
                 let trimmed = search_line.trim();
-                if trimmed.len() <= 5 { continue; } // Skip short lines
+                if trimmed.len() <= 5 {
+                    continue;
+                } // Skip short lines
                 for (line_num, content_line) in content.lines().enumerate() {
                     if content_line.trim() == trimmed {
                         return Some(line_num);
@@ -275,7 +331,8 @@ impl App {
 
         // Strategy 6: Look for unique identifiers (function names, variable names)
         let find_by_identifier = |s: &str| -> Option<usize> {
-            let mut words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric() && c != '_')
+            let mut words: Vec<&str> = s
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
                 .filter(|w| w.len() >= 6)
                 .collect();
             words.sort_by(|a, b| b.len().cmp(&a.len()));
@@ -342,7 +399,9 @@ impl App {
     }
 
     pub fn execute_run_command(&mut self, idx: usize) {
-        let Some(cmd) = self.run_commands.get(idx) else { return };
+        let Some(cmd) = self.run_commands.get(idx) else {
+            return;
+        };
         let command = cmd.command.clone();
         let name = cmd.name.clone();
 
@@ -366,16 +425,22 @@ impl App {
 
         // Write global run commands — enumerate with 1-based prefix to preserve order
         crate::azufig::update_global_azufig(|az| {
-            az.runcmds = globals.iter().enumerate()
-                .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone())).collect();
+            az.runcmds = globals
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone()))
+                .collect();
         });
 
         // Write project-local run commands — same numbering (continues from globals in the Vec,
         // but each scope has its own 1-based numbering)
         if let Some(ref project) = self.project {
             crate::azufig::update_project_azufig(&project.path, |az| {
-                az.runcmds = locals.iter().enumerate()
-                    .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone())).collect();
+                az.runcmds = locals
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| (format!("{}_{}", i + 1, c.name), c.command.clone()))
+                    .collect();
             });
         }
         Ok(())
@@ -388,12 +453,14 @@ impl App {
 
         // Load global run commands, sorted by numeric prefix
         let global = crate::azufig::load_global_azufig();
-        self.run_commands.extend(load_ordered_map(&global.runcmds, true));
+        self.run_commands
+            .extend(load_ordered_map(&global.runcmds, true));
 
         // Load project-local run commands, sorted by numeric prefix
         if let Some(ref project) = self.project {
             let local = crate::azufig::load_project_azufig(&project.path);
-            self.run_commands.extend(load_ordered_map(&local.runcmds, false));
+            self.run_commands
+                .extend(load_ordered_map(&local.runcmds, false));
         }
     }
 
@@ -410,7 +477,9 @@ impl App {
 
     /// Apply a preset prompt: populate input box, enter prompt mode, close picker
     pub fn select_preset_prompt(&mut self, idx: usize) {
-        let Some(preset) = self.preset_prompts.get(idx) else { return };
+        let Some(preset) = self.preset_prompts.get(idx) else {
+            return;
+        };
         self.input = preset.prompt.clone();
         self.input_cursor = self.input.chars().count();
         self.prompt_mode = true;
@@ -423,20 +492,26 @@ impl App {
     /// locals to `[presetprompts]` in project azufig (load-modify-save).
     /// Format: N_name = "prompt text" where N is the 1-based position
     pub fn save_preset_prompts(&self) -> anyhow::Result<()> {
-        let (globals, locals): (Vec<_>, Vec<_>) = self.preset_prompts.iter()
-            .partition(|p| p.global);
+        let (globals, locals): (Vec<_>, Vec<_>) =
+            self.preset_prompts.iter().partition(|p| p.global);
 
         // Write global presets — enumerate with 1-based prefix to preserve order
         crate::azufig::update_global_azufig(|az| {
-            az.presetprompts = globals.iter().enumerate()
-                .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone())).collect();
+            az.presetprompts = globals
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone()))
+                .collect();
         });
 
         // Write project-local presets
         if let Some(ref project) = self.project {
             crate::azufig::update_project_azufig(&project.path, |az| {
-                az.presetprompts = locals.iter().enumerate()
-                    .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone())).collect();
+                az.presetprompts = locals
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (format!("{}_{}", i + 1, p.name), p.prompt.clone()))
+                    .collect();
             });
         }
         Ok(())
@@ -449,12 +524,14 @@ impl App {
 
         // Load global presets, sorted by numeric prefix
         let global = crate::azufig::load_global_azufig();
-        self.preset_prompts.extend(load_ordered_presets(&global.presetprompts, true));
+        self.preset_prompts
+            .extend(load_ordered_presets(&global.presetprompts, true));
 
         // Load project-local presets, sorted by numeric prefix
         if let Some(ref project) = self.project {
             let local = crate::azufig::load_project_azufig(&project.path);
-            self.preset_prompts.extend(load_ordered_presets(&local.presetprompts, false));
+            self.preset_prompts
+                .extend(load_ordered_presets(&local.presetprompts, false));
         }
     }
 
@@ -469,7 +546,9 @@ impl App {
                 return;
             }
             use crate::app::types::ViewerTab;
-            let title = self.viewer_path.as_ref()
+            let title = self
+                .viewer_path
+                .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".to_string());
@@ -490,7 +569,9 @@ impl App {
     }
 
     pub fn viewer_close_current_tab(&mut self) {
-        if self.viewer_tabs.is_empty() { return; }
+        if self.viewer_tabs.is_empty() {
+            return;
+        }
         self.viewer_tabs.remove(self.viewer_active_tab);
         if self.viewer_active_tab >= self.viewer_tabs.len() && !self.viewer_tabs.is_empty() {
             self.viewer_active_tab = self.viewer_tabs.len() - 1;
@@ -529,14 +610,18 @@ impl App {
         self.focus = Focus::FileTree;
     }
 
-    pub fn is_projects_panel_active(&self) -> bool { self.projects_panel.is_some() }
+    pub fn is_projects_panel_active(&self) -> bool {
+        self.projects_panel.is_some()
+    }
 
     /// Returns true if any git operation is in progress that could corrupt the
     /// repo if interrupted (commit, push, rebase, RCR, commit message generation).
     pub fn git_action_in_progress(&self) -> bool {
         // Deferred git commit or commit+push about to execute
-        if matches!(self.deferred_action,
-            Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })) {
+        if matches!(
+            self.deferred_action,
+            Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })
+        ) {
             return true;
         }
         // RCR session active (Claude resolving rebase conflicts on a worktree)
@@ -546,14 +631,22 @@ impl App {
         // Commit message being generated (Claude one-shot running)
         if let Some(ref panel) = self.git_actions_panel {
             if let Some(ref overlay) = panel.commit_overlay {
-                if overlay.generating { return true; }
+                if overlay.generating {
+                    return true;
+                }
             }
             // Squash merge running on background thread
-            if panel.squash_merge_receiver.is_some() { return true; }
+            if panel.squash_merge_receiver.is_some() {
+                return true;
+            }
         }
         // Loading indicator for a git operation (e.g. "Committing...")
-        if self.loading_indicator.is_some() && matches!(self.deferred_action,
-            Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })) {
+        if self.loading_indicator.is_some()
+            && matches!(
+                self.deferred_action,
+                Some(DeferredAction::GitCommit { .. } | DeferredAction::GitCommitAndPush { .. })
+            )
+        {
             return true;
         }
         // Background worktree/git operation in progress
@@ -597,7 +690,8 @@ impl App {
                 run_commands: std::mem::take(&mut self.run_commands),
                 preset_prompts: std::mem::take(&mut self.preset_prompts),
             };
-            self.project_snapshots.insert(current_project.path.clone(), snapshot);
+            self.project_snapshots
+                .insert(current_project.path.clone(), snapshot);
         }
 
         // ── Clear session/render state (rebuilt by load_session_output) ──
@@ -662,11 +756,16 @@ impl App {
             let mut branch_slots = snapshot.branch_slots;
             let mut active_slot = snapshot.active_slot;
             for slots in branch_slots.values_mut() {
-                slots.retain(|s| self.running_sessions.contains(s) || self.agent_exit_codes.contains_key(s));
+                slots.retain(|s| {
+                    self.running_sessions.contains(s) || self.agent_exit_codes.contains_key(s)
+                });
             }
             branch_slots.retain(|_, slots| !slots.is_empty());
             active_slot.retain(|branch, slot| {
-                branch_slots.get(branch).map(|s| s.contains(slot)).unwrap_or(false)
+                branch_slots
+                    .get(branch)
+                    .map(|s| s.contains(slot))
+                    .unwrap_or(false)
                     || self.agent_exit_codes.contains_key(slot)
             });
             self.branch_slots = branch_slots;
@@ -724,9 +823,17 @@ impl App {
         for slot in &slots {
             if let Ok(pid) = slot.parse::<u32>() {
                 #[cfg(unix)]
-                { let _ = std::process::Command::new("kill").arg(pid.to_string()).status(); }
+                {
+                    let _ = std::process::Command::new("kill")
+                        .arg(pid.to_string())
+                        .status();
+                }
                 #[cfg(windows)]
-                { let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status(); }
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F"])
+                        .status();
+                }
             }
             self.agent_receivers.remove(slot);
         }
@@ -748,22 +855,42 @@ fn parse_ordered_key(key: &str) -> (usize, String) {
 
 /// Load a HashMap of "N_name" = "value" entries as an ordered Vec of RunCommands.
 /// Sorts by numeric prefix, strips prefix from name.
-fn load_ordered_map(map: &std::collections::HashMap<String, String>, global: bool) -> Vec<RunCommand> {
-    let mut entries: Vec<_> = map.iter()
-        .map(|(k, v)| { let (ord, name) = parse_ordered_key(k); (ord, name, v.clone()) })
+fn load_ordered_map(
+    map: &std::collections::HashMap<String, String>,
+    global: bool,
+) -> Vec<RunCommand> {
+    let mut entries: Vec<_> = map
+        .iter()
+        .map(|(k, v)| {
+            let (ord, name) = parse_ordered_key(k);
+            (ord, name, v.clone())
+        })
         .collect();
     entries.sort_by_key(|(ord, _, _)| *ord);
-    entries.into_iter().map(|(_, name, cmd)| RunCommand::new(name, cmd, global)).collect()
+    entries
+        .into_iter()
+        .map(|(_, name, cmd)| RunCommand::new(name, cmd, global))
+        .collect()
 }
 
 /// Load a HashMap of "N_name" = "value" entries as an ordered Vec of PresetPrompts.
 /// Sorts by numeric prefix, strips prefix from name.
-fn load_ordered_presets(map: &std::collections::HashMap<String, String>, global: bool) -> Vec<PresetPrompt> {
-    let mut entries: Vec<_> = map.iter()
-        .map(|(k, v)| { let (ord, name) = parse_ordered_key(k); (ord, name, v.clone()) })
+fn load_ordered_presets(
+    map: &std::collections::HashMap<String, String>,
+    global: bool,
+) -> Vec<PresetPrompt> {
+    let mut entries: Vec<_> = map
+        .iter()
+        .map(|(k, v)| {
+            let (ord, name) = parse_ordered_key(k);
+            (ord, name, v.clone())
+        })
         .collect();
     entries.sort_by_key(|(ord, _, _)| *ord);
-    entries.into_iter().map(|(_, name, prompt)| PresetPrompt::new(name, prompt, global)).collect()
+    entries
+        .into_iter()
+        .map(|(_, name, prompt)| PresetPrompt::new(name, prompt, global))
+        .collect()
 }
 
 #[cfg(test)]
@@ -1049,7 +1176,8 @@ mod tests {
     #[test]
     fn open_run_command_picker_single_command_executes() {
         let mut app = App::new();
-        app.run_commands.push(RunCommand::new("test", "cargo test", false));
+        app.run_commands
+            .push(RunCommand::new("test", "cargo test", false));
         app.open_run_command_picker();
         // With a single command, no picker is opened — it executes directly
         assert!(app.run_command_picker.is_none());
@@ -1058,8 +1186,10 @@ mod tests {
     #[test]
     fn open_run_command_picker_multiple_commands_opens_picker() {
         let mut app = App::new();
-        app.run_commands.push(RunCommand::new("build", "cargo build", false));
-        app.run_commands.push(RunCommand::new("test", "cargo test", false));
+        app.run_commands
+            .push(RunCommand::new("build", "cargo build", false));
+        app.run_commands
+            .push(RunCommand::new("test", "cargo test", false));
         app.open_run_command_picker();
         assert!(app.run_command_picker.is_some());
     }
@@ -1077,7 +1207,8 @@ mod tests {
     #[test]
     fn open_preset_prompt_picker_with_presets_opens_picker() {
         let mut app = App::new();
-        app.preset_prompts.push(PresetPrompt::new("quick", "do it fast", true));
+        app.preset_prompts
+            .push(PresetPrompt::new("quick", "do it fast", true));
         app.open_preset_prompt_picker();
         assert!(app.preset_prompt_picker.is_some());
         assert!(app.preset_prompt_dialog.is_none());
@@ -1088,7 +1219,8 @@ mod tests {
     #[test]
     fn select_preset_prompt_valid_index() {
         let mut app = App::new();
-        app.preset_prompts.push(PresetPrompt::new("fix", "Fix the bug in main.rs", false));
+        app.preset_prompts
+            .push(PresetPrompt::new("fix", "Fix the bug in main.rs", false));
         app.select_preset_prompt(0);
         assert_eq!(app.input, "Fix the bug in main.rs");
         assert_eq!(app.input_cursor, "Fix the bug in main.rs".chars().count());
@@ -1109,7 +1241,8 @@ mod tests {
     #[test]
     fn select_preset_prompt_sets_status() {
         let mut app = App::new();
-        app.preset_prompts.push(PresetPrompt::new("my-preset", "prompt text", true));
+        app.preset_prompts
+            .push(PresetPrompt::new("my-preset", "prompt text", true));
         app.select_preset_prompt(0);
         let status = app.status_message.as_deref().unwrap();
         assert!(status.contains("my-preset"));
@@ -1223,7 +1356,11 @@ mod tests {
         app.main_worktree = None;
         app.enter_main_browse();
         assert!(!app.browsing_main);
-        assert!(app.status_message.as_deref().unwrap().contains("No main worktree"));
+        assert!(app
+            .status_message
+            .as_deref()
+            .unwrap()
+            .contains("No main worktree"));
     }
 
     #[test]
@@ -1415,7 +1552,11 @@ mod tests {
     fn find_edit_line_significant_lines_fallback() {
         let content = "line 0\nfn important_function() {\nline 2\nline 3\n";
         // new_string not found as a whole, but contains a significant line
-        let line = App::find_edit_line(content, "", "something\nfn important_function() {\nsomething else");
+        let line = App::find_edit_line(
+            content,
+            "",
+            "something\nfn important_function() {\nsomething else",
+        );
         assert_eq!(line, 1);
     }
 
@@ -1457,4 +1598,3 @@ mod tests {
         assert_eq!(line, 0);
     }
 }
-

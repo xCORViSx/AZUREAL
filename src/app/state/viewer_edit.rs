@@ -11,8 +11,12 @@ use super::App;
 /// Compute word-boundary wrap break positions for a single line. Returns a
 /// Vec of char offsets where each visual row starts (first is always 0).
 fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
-    if max_width == 0 || text.is_empty() { return vec![0]; }
-    if text.chars().count() <= max_width { return vec![0]; }
+    if max_width == 0 || text.is_empty() {
+        return vec![0];
+    }
+    if text.chars().count() <= max_width {
+        return vec![0];
+    }
     let opts = Options::new(max_width).break_words(true);
     let wrapped = wrap(text, opts);
     let mut breaks = Vec::with_capacity(wrapped.len());
@@ -20,7 +24,9 @@ fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
     for segment in &wrapped {
         breaks.push(offset);
         offset += segment.chars().count();
-        if text.chars().nth(offset) == Some(' ') { offset += 1; }
+        if text.chars().nth(offset) == Some(' ') {
+            offset += 1;
+        }
     }
     breaks
 }
@@ -28,8 +34,12 @@ fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
 impl App {
     /// Enter edit mode for current viewer file
     pub fn enter_viewer_edit_mode(&mut self) {
-        let Some(ref content) = self.viewer_content else { return };
-        if self.viewer_path.is_none() { return };
+        let Some(ref content) = self.viewer_content else {
+            return;
+        };
+        if self.viewer_path.is_none() {
+            return;
+        };
 
         // Split content into lines for editing
         self.viewer_edit_content = content.lines().map(String::from).collect();
@@ -112,7 +122,11 @@ impl App {
         let (line, col) = self.viewer_edit_cursor;
         let max_line = self.viewer_edit_content.len().saturating_sub(1);
         let clamped_line = line.min(max_line);
-        let line_len = self.viewer_edit_content.get(clamped_line).map(|l| l.len()).unwrap_or(0);
+        let line_len = self
+            .viewer_edit_content
+            .get(clamped_line)
+            .map(|l| l.len())
+            .unwrap_or(0);
         self.viewer_edit_cursor = (clamped_line, col.min(line_len));
     }
 
@@ -136,7 +150,7 @@ impl App {
             self.push_undo();
             if let Some(line_str) = self.viewer_edit_content.get_mut(line) {
                 let chars: Vec<char> = line_str.chars().collect();
-                let new_str: String = chars[..col-1].iter().chain(chars[col..].iter()).collect();
+                let new_str: String = chars[..col - 1].iter().chain(chars[col..].iter()).collect();
                 *line_str = new_str;
                 self.viewer_edit_cursor.1 -= 1;
             }
@@ -156,13 +170,17 @@ impl App {
     /// Handle delete in edit mode
     pub fn viewer_edit_delete(&mut self) {
         let (line, col) = self.viewer_edit_cursor;
-        let line_len = self.viewer_edit_content.get(line).map(|s| s.chars().count()).unwrap_or(0);
+        let line_len = self
+            .viewer_edit_content
+            .get(line)
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
         let total_lines = self.viewer_edit_content.len();
 
         if col < line_len {
             self.push_undo();
             let chars: Vec<char> = self.viewer_edit_content[line].chars().collect();
-            let new_str: String = chars[..col].iter().chain(chars[col+1..].iter()).collect();
+            let new_str: String = chars[..col].iter().chain(chars[col + 1..].iter()).collect();
             self.viewer_edit_content[line] = new_str;
             self.viewer_edit_dirty = true;
         } else if line + 1 < total_lines {
@@ -224,7 +242,9 @@ impl App {
         // Find which wrap row the cursor is on
         let mut wrap_row = 0;
         for (j, &brk) in breaks.iter().enumerate() {
-            if col >= brk { wrap_row = j; }
+            if col >= brk {
+                wrap_row = j;
+            }
         }
         let visual_col = col - breaks[wrap_row];
 
@@ -254,14 +274,20 @@ impl App {
         let breaks = word_wrap_breaks(line_str, cw);
         let mut wrap_row = 0;
         for (j, &brk) in breaks.iter().enumerate() {
-            if col >= brk { wrap_row = j; }
+            if col >= brk {
+                wrap_row = j;
+            }
         }
         let visual_col = col - breaks[wrap_row];
 
         if wrap_row + 1 < breaks.len() {
             // Move down one visual row within the same source line
             let next_start = breaks[wrap_row + 1];
-            let seg_end = if wrap_row + 2 < breaks.len() { breaks[wrap_row + 2] } else { line_str.chars().count() };
+            let seg_end = if wrap_row + 2 < breaks.len() {
+                breaks[wrap_row + 2]
+            } else {
+                line_str.chars().count()
+            };
             let seg_len = seg_end - next_start;
             self.viewer_edit_cursor.1 = next_start + visual_col.min(seg_len);
         } else if line + 1 < self.viewer_edit_content.len() {
@@ -299,11 +325,17 @@ impl App {
         }
         // Add cursor's wrap row within its source line
         let cursor_breaks = word_wrap_breaks(
-            self.viewer_edit_content.get(cursor_line).map(|s| s.as_str()).unwrap_or(""), cw
+            self.viewer_edit_content
+                .get(cursor_line)
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+            cw,
         );
         let mut wrap_row = 0;
         for (j, &brk) in cursor_breaks.iter().enumerate() {
-            if cursor_col >= brk { wrap_row = j; }
+            if cursor_col >= brk {
+                wrap_row = j;
+            }
         }
         visual_line += wrap_row;
 
@@ -358,14 +390,22 @@ impl App {
     /// Get selected text as a string
     pub fn get_selected_text(&self) -> Option<String> {
         let (sl, sc, el, ec) = self.get_normalized_selection()?;
-        if sl == el && sc == ec { return None; }
+        if sl == el && sc == ec {
+            return None;
+        }
 
         let mut result = String::new();
         for line_idx in sl..=el {
-            let Some(line) = self.viewer_edit_content.get(line_idx) else { continue };
+            let Some(line) = self.viewer_edit_content.get(line_idx) else {
+                continue;
+            };
             let chars: Vec<char> = line.chars().collect();
             let start_col = if line_idx == sl { sc } else { 0 };
-            let end_col = if line_idx == el { ec.min(chars.len()) } else { chars.len() };
+            let end_col = if line_idx == el {
+                ec.min(chars.len())
+            } else {
+                chars.len()
+            };
 
             if start_col < chars.len() {
                 let segment: String = chars[start_col..end_col.min(chars.len())].iter().collect();
@@ -376,13 +416,19 @@ impl App {
                 result.push('\n');
             }
         }
-        if result.is_empty() { None } else { Some(result) }
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 
     /// Delete selected text and return it
     fn delete_selection_text(&mut self) -> Option<String> {
         let (sl, sc, el, ec) = self.get_normalized_selection()?;
-        if sl == el && sc == ec { return None; }
+        if sl == el && sc == ec {
+            return None;
+        }
 
         self.push_undo();
         let deleted = self.get_selected_text();
@@ -390,7 +436,10 @@ impl App {
         if sl == el {
             // Single-line selection: remove chars from sc to ec
             let chars: Vec<char> = self.viewer_edit_content[sl].chars().collect();
-            let new_str: String = chars[..sc].iter().chain(chars[ec.min(chars.len())..].iter()).collect();
+            let new_str: String = chars[..sc]
+                .iter()
+                .chain(chars[ec.min(chars.len())..].iter())
+                .collect();
             self.viewer_edit_content[sl] = new_str;
         } else {
             // Multi-line selection: keep before sc on first line, after ec on last line, remove middle
@@ -419,7 +468,9 @@ impl App {
 
     /// Copy selected text to system clipboard. Returns true if text was copied.
     pub fn viewer_edit_copy(&mut self) -> bool {
-        let Some(text) = self.get_selected_text() else { return false };
+        let Some(text) = self.get_selected_text() else {
+            return false;
+        };
         // Try system clipboard first, fall back to internal
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(&text);
@@ -430,7 +481,9 @@ impl App {
 
     /// Cut selected text to system clipboard
     pub fn viewer_edit_cut(&mut self) {
-        let Some(text) = self.delete_selection_text() else { return };
+        let Some(text) = self.delete_selection_text() else {
+            return;
+        };
         // Try system clipboard first, fall back to internal
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(&text);
@@ -446,7 +499,9 @@ impl App {
             .and_then(|mut cb| cb.get_text().ok())
             .unwrap_or_else(|| self.clipboard.clone());
 
-        if paste_text.is_empty() { return; }
+        if paste_text.is_empty() {
+            return;
+        }
 
         // Delete selection first if any
         if self.has_edit_selection() {
@@ -474,8 +529,14 @@ impl App {
             self.viewer_edit_content[line] = before + paste_lines[0];
 
             // Insert middle lines
-            for (i, paste_line) in paste_lines.iter().enumerate().skip(1).take(paste_lines.len() - 2) {
-                self.viewer_edit_content.insert(line + i, paste_line.to_string());
+            for (i, paste_line) in paste_lines
+                .iter()
+                .enumerate()
+                .skip(1)
+                .take(paste_lines.len() - 2)
+            {
+                self.viewer_edit_content
+                    .insert(line + i, paste_line.to_string());
             }
 
             // Last paste line gets after appended
@@ -555,7 +616,9 @@ impl App {
 
     /// Select all text
     pub fn viewer_edit_select_all(&mut self) {
-        if self.viewer_edit_content.is_empty() { return; }
+        if self.viewer_edit_content.is_empty() {
+            return;
+        }
         let last_line = self.viewer_edit_content.len() - 1;
         let last_col = self.viewer_edit_content[last_line].chars().count();
         self.viewer_edit_selection = Some((0, 0, last_line, last_col));
@@ -688,8 +751,12 @@ mod tests {
         for width in 1..20 {
             let breaks = word_wrap_breaks(text, width);
             for i in 1..breaks.len() {
-                assert!(breaks[i] > breaks[i - 1],
-                    "Breaks not increasing at width {}: {:?}", width, breaks);
+                assert!(
+                    breaks[i] > breaks[i - 1],
+                    "Breaks not increasing at width {}: {:?}",
+                    width,
+                    breaks
+                );
             }
         }
     }

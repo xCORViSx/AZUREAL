@@ -3,8 +3,8 @@
 //! Loads file diffs and commit diffs into the inline viewer when the user
 //! navigates the file list or commit list with j/k or presses Enter/d.
 
-use crate::app::App;
 use crate::app::types::GitActionsPanel;
+use crate::app::App;
 use crate::git::Git;
 
 /// Load the selected file's diff into viewer_diff via full App (Enter/d from file list)
@@ -12,8 +12,14 @@ pub(crate) fn open_file_diff_inline(app: &mut App) {
     let (wt, main, path) = match app.git_actions_panel.as_ref() {
         Some(p) => {
             if let Some(file) = p.changed_files.get(p.selected_file) {
-                (p.worktree_path.clone(), p.main_branch.clone(), file.path.clone())
-            } else { return; }
+                (
+                    p.worktree_path.clone(),
+                    p.main_branch.clone(),
+                    file.path.clone(),
+                )
+            } else {
+                return;
+            }
         }
         None => return,
     };
@@ -36,7 +42,11 @@ pub(crate) fn open_file_diff_inline(app: &mut App) {
 pub(crate) fn load_file_diff_inline(panel: &mut GitActionsPanel) {
     let file = match panel.changed_files.get(panel.selected_file) {
         Some(f) => f,
-        None => { panel.viewer_diff = None; panel.viewer_diff_title = None; return; }
+        None => {
+            panel.viewer_diff = None;
+            panel.viewer_diff_title = None;
+            return;
+        }
     };
     let path = file.path.clone();
     match Git::get_file_diff(&panel.worktree_path, &panel.main_branch, &path) {
@@ -55,7 +65,11 @@ pub(crate) fn load_file_diff_inline(panel: &mut GitActionsPanel) {
 pub(crate) fn load_commit_diff_inline(panel: &mut GitActionsPanel) {
     let commit = match panel.commits.get(panel.selected_commit) {
         Some(c) => c,
-        None => { panel.viewer_diff = None; panel.viewer_diff_title = None; return; }
+        None => {
+            panel.viewer_diff = None;
+            panel.viewer_diff_title = None;
+            return;
+        }
     };
     let hash = commit.full_hash.clone();
     let subject = commit.subject.clone();
@@ -144,7 +158,12 @@ mod tests {
         let mut app = App::new();
         app.git_actions_panel = Some(make_panel());
         open_file_diff_inline(&mut app);
-        assert!(app.git_actions_panel.as_ref().unwrap().viewer_diff.is_none());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .viewer_diff
+            .is_none());
     }
 
     #[test]
@@ -167,7 +186,12 @@ mod tests {
         panel.selected_file = 99;
         app.git_actions_panel = Some(panel);
         open_file_diff_inline(&mut app);
-        assert!(app.git_actions_panel.as_ref().unwrap().viewer_diff.is_none());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .viewer_diff
+            .is_none());
     }
 
     #[test]
@@ -237,7 +261,9 @@ mod tests {
         let mut panel = make_panel();
         panel.viewer_diff = Some("previous diff".into());
         panel.viewer_diff_title = Some("prev title".into());
-        panel.changed_files.push(make_changed_file("nonexistent_file.rs"));
+        panel
+            .changed_files
+            .push(make_changed_file("nonexistent_file.rs"));
         panel.selected_file = 0;
         load_file_diff_inline(&mut panel);
         // Error path clears diff
@@ -269,7 +295,9 @@ mod tests {
     #[test]
     fn test_load_commit_diff_inline_selected_out_of_bounds() {
         let mut panel = make_panel();
-        panel.commits.push(make_commit("abc1234", "feat: add stuff"));
+        panel
+            .commits
+            .push(make_commit("abc1234", "feat: add stuff"));
         panel.selected_commit = 10;
         panel.viewer_diff = Some("stale".into());
         load_commit_diff_inline(&mut panel);
@@ -385,19 +413,37 @@ mod tests {
 
     #[test]
     fn test_changed_file_added_status() {
-        let f = GitChangedFile { path: "new.rs".into(), status: 'A', additions: 50, deletions: 0, staged: false };
+        let f = GitChangedFile {
+            path: "new.rs".into(),
+            status: 'A',
+            additions: 50,
+            deletions: 0,
+            staged: false,
+        };
         assert_eq!(f.status, 'A');
     }
 
     #[test]
     fn test_changed_file_deleted_status() {
-        let f = GitChangedFile { path: "old.rs".into(), status: 'D', additions: 0, deletions: 30, staged: false };
+        let f = GitChangedFile {
+            path: "old.rs".into(),
+            status: 'D',
+            additions: 0,
+            deletions: 30,
+            staged: false,
+        };
         assert_eq!(f.status, 'D');
     }
 
     #[test]
     fn test_changed_file_renamed_status() {
-        let f = GitChangedFile { path: "new.rs".into(), status: 'R', additions: 5, deletions: 5, staged: false };
+        let f = GitChangedFile {
+            path: "new.rs".into(),
+            status: 'R',
+            additions: 5,
+            deletions: 5,
+            staged: false,
+        };
         assert_eq!(f.status, 'R');
     }
 

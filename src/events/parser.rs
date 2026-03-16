@@ -2,8 +2,8 @@
 //!
 //! Parses raw stream-json output into DisplayEvents.
 
-use std::collections::HashMap;
 use super::display::DisplayEvent;
+use std::collections::HashMap;
 
 /// Parser for Claude Code stream-json events
 pub struct EventParser {
@@ -40,10 +40,14 @@ impl EventParser {
         let mut last_json = None;
         for line in complete.split('\n') {
             let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
+            if trimmed.is_empty() {
+                continue;
+            }
             let (line_events, json) = self.parse_line_with_json(trimmed);
             events.extend(line_events);
-            if json.is_some() { last_json = json; }
+            if json.is_some() {
+                last_json = json;
+            }
         }
 
         (events, last_json)
@@ -51,7 +55,10 @@ impl EventParser {
 
     /// Parse a single line, returning events and the raw parsed JSON value (if any).
     /// The JSON value is reused by callers for token extraction — avoids double parse.
-    fn parse_line_with_json(&mut self, line: &str) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
+    fn parse_line_with_json(
+        &mut self,
+        line: &str,
+    ) -> (Vec<DisplayEvent>, Option<serde_json::Value>) {
         let trimmed = line.trim();
 
         if trimmed.starts_with('{') {
@@ -64,10 +71,20 @@ impl EventParser {
                         "result" => self.parse_result_event(&json).into_iter().collect(),
                         "progress" => self.parse_progress_event(&json).into_iter().collect(),
                         "hook" | "hook_result" | "hook_response" => {
-                            let name = json.get("hook_name").or_else(|| json.get("name")).or_else(|| json.get("hook"))
-                                .and_then(|v| v.as_str()).unwrap_or("hook").to_string();
-                            let output = json.get("output").or_else(|| json.get("result")).or_else(|| json.get("message"))
-                                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let name = json
+                                .get("hook_name")
+                                .or_else(|| json.get("name"))
+                                .or_else(|| json.get("hook"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("hook")
+                                .to_string();
+                            let output = json
+                                .get("output")
+                                .or_else(|| json.get("result"))
+                                .or_else(|| json.get("message"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
                             vec![DisplayEvent::Hook { name, output }]
                         }
                         _ => Vec::new(),
@@ -87,48 +104,90 @@ impl EventParser {
 
         if subtype == "init" {
             return Some(DisplayEvent::Init {
-                _session_id: json.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                cwd: json.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                model: json.get("model").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                _session_id: json
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                cwd: json
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                model: json
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
             });
         }
 
-        if subtype != "hook_response" { return None; }
+        if subtype != "hook_response" {
+            return None;
+        }
 
-        let hook_name = json.get("hook_name").or_else(|| json.get("name")).or_else(|| json.get("hook"))
-            .and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
-        let output = json.get("output").or_else(|| json.get("stdout"))
-            .and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let hook_name = json
+            .get("hook_name")
+            .or_else(|| json.get("name"))
+            .or_else(|| json.get("hook"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let output = json
+            .get("output")
+            .or_else(|| json.get("stdout"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         if !hook_name.is_empty() && !output.is_empty() {
-            return Some(DisplayEvent::Hook { name: hook_name, output });
+            return Some(DisplayEvent::Hook {
+                name: hook_name,
+                output,
+            });
         }
         None
     }
 
     fn parse_progress_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
         let data = json.get("data")?;
-        if data.get("type").and_then(|v| v.as_str()) != Some("hook_progress") { return None; }
+        if data.get("type").and_then(|v| v.as_str()) != Some("hook_progress") {
+            return None;
+        }
 
         let hook_event = data.get("hookEvent").and_then(|v| v.as_str()).unwrap_or("");
-        let hook_name = data.get("hookName").and_then(|v| v.as_str()).unwrap_or(hook_event);
+        let hook_name = data
+            .get("hookName")
+            .and_then(|v| v.as_str())
+            .unwrap_or(hook_event);
         let command = data.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
-        if hook_name.is_empty() { return None; }
+        if hook_name.is_empty() {
+            return None;
+        }
 
         let output = if command.starts_with("echo '") && command.ends_with('\'') {
-            command[6..command.len()-1].to_string()
+            command[6..command.len() - 1].to_string()
         } else if command.starts_with("echo \"") && command.ends_with('"') {
-            command[6..command.len()-1].to_string()
+            command[6..command.len() - 1].to_string()
         } else if command.contains("; echo \"$OUT\"") || command.contains("; echo '$OUT'") {
             if let Some(start) = command.find("OUT='") {
                 let rest = &command[start + 5..];
-                rest.find('\'').map(|end| rest[..end].to_string()).unwrap_or_default()
+                rest.find('\'')
+                    .map(|end| rest[..end].to_string())
+                    .unwrap_or_default()
             } else if let Some(start) = command.find("OUT=\"") {
                 let rest = &command[start + 5..];
-                rest.find('"').map(|end| rest[..end].to_string()).unwrap_or_default()
-            } else { String::new() }
-        } else { String::new() };
+                rest.find('"')
+                    .map(|end| rest[..end].to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
 
         // Always show hooks - use [hookName] as fallback when no output extracted
         let display_output = if output.is_empty() {
@@ -136,13 +195,20 @@ impl EventParser {
         } else {
             output
         };
-        Some(DisplayEvent::Hook { name: hook_name.to_string(), output: display_output })
+        Some(DisplayEvent::Hook {
+            name: hook_name.to_string(),
+            output: display_output,
+        })
     }
 
     fn parse_user_event(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let mut events = Vec::new();
-        let Some(message) = json.get("message") else { return events };
-        let Some(content_val) = message.get("content") else { return events };
+        let Some(message) = json.get("message") else {
+            return events;
+        };
+        let Some(content_val) = message.get("content") else {
+            return events;
+        };
 
         if let Some(content) = content_val.as_str() {
             // Compaction summary — show banner instead of raw text
@@ -152,15 +218,23 @@ impl EventParser {
             }
             // local-command-stdout (e.g., /compact output) — filter or show Compacted banner
             if content.contains("<local-command-stdout>") {
-                if content.contains("Compacted") { events.push(DisplayEvent::Compacted); }
+                if content.contains("Compacted") {
+                    events.push(DisplayEvent::Compacted);
+                }
                 return events;
             }
             // local-command-caveat — filter entirely
-            if content.contains("<local-command-caveat>") { return events; }
+            if content.contains("<local-command-caveat>") {
+                return events;
+            }
 
             events.extend(Self::extract_hooks_from_content(content));
             events.push(DisplayEvent::UserMessage {
-                _uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                _uuid: json
+                    .get("uuid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 content: content.to_string(),
             });
         } else if let Some(arr) = content_val.as_array() {
@@ -168,20 +242,47 @@ impl EventParser {
                 let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match block_type {
                     "tool_result" => {
-                        let tool_use_id = block.get("tool_use_id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-                        let (tool_name, file_path) = self.tool_calls.get(&tool_use_id).cloned().unwrap_or(("Unknown".to_string(), None));
-                        let is_error = block.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-                        let content = if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
+                        let tool_use_id = block
+                            .get("tool_use_id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let (tool_name, file_path) = self
+                            .tool_calls
+                            .get(&tool_use_id)
+                            .cloned()
+                            .unwrap_or(("Unknown".to_string(), None));
+                        let is_error = block
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let content = if let Some(s) = block.get("content").and_then(|c| c.as_str())
+                        {
                             s.to_string()
                         } else if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
-                            arr.iter().filter_map(|b| {
-                                if b.get("type").and_then(|t| t.as_str()) == Some("text") { b.get("text").and_then(|t| t.as_str()) } else { None }
-                            }).collect::<Vec<_>>().join("\n")
-                        } else { String::new() };
+                            arr.iter()
+                                .filter_map(|b| {
+                                    if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                        b.get("text").and_then(|t| t.as_str())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        } else {
+                            String::new()
+                        };
 
                         events.extend(Self::extract_hooks_from_content(&content));
                         if !content.is_empty() {
-                            events.push(DisplayEvent::ToolResult { tool_use_id, tool_name, file_path, content, is_error });
+                            events.push(DisplayEvent::ToolResult {
+                                tool_use_id,
+                                tool_name,
+                                file_path,
+                                content,
+                                is_error,
+                            });
                         }
                     }
                     "text" => {
@@ -189,7 +290,11 @@ impl EventParser {
                             events.extend(Self::extract_hooks_from_content(text));
                             if !text.is_empty() {
                                 events.push(DisplayEvent::UserMessage {
-                                    _uuid: json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    _uuid: json
+                                        .get("uuid")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
                                     content: text.to_string(),
                                 });
                             }
@@ -204,13 +309,25 @@ impl EventParser {
 
     fn parse_assistant_event(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let mut events = Vec::new();
-        let Some(message) = json.get("message") else { return events };
-        let Some(message_id) = message.get("id").and_then(|v| v.as_str()) else { return events };
-        let uuid = json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let Some(content) = message.get("content").and_then(|v| v.as_array()) else { return events };
+        let Some(message) = json.get("message") else {
+            return events;
+        };
+        let Some(message_id) = message.get("id").and_then(|v| v.as_str()) else {
+            return events;
+        };
+        let uuid = json
+            .get("uuid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let Some(content) = message.get("content").and_then(|v| v.as_array()) else {
+            return events;
+        };
 
         for block in content {
-            let Some(block_type) = block.get("type").and_then(|v| v.as_str()) else { continue };
+            let Some(block_type) = block.get("type").and_then(|v| v.as_str()) else {
+                continue;
+            };
             match block_type {
                 "text" => {
                     if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
@@ -227,9 +344,15 @@ impl EventParser {
                         block.get("input"),
                         block.get("id").and_then(|v| v.as_str()),
                     ) {
-                        let file_path = input.get("file_path").or_else(|| input.get("path"))
-                            .and_then(|v| v.as_str()).map(|s| s.to_string());
-                        self.tool_calls.insert(tool_use_id.to_string(), (tool_name.to_string(), file_path.clone()));
+                        let file_path = input
+                            .get("file_path")
+                            .or_else(|| input.get("path"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        self.tool_calls.insert(
+                            tool_use_id.to_string(),
+                            (tool_name.to_string(), file_path.clone()),
+                        );
                         events.push(DisplayEvent::ToolCall {
                             _uuid: uuid.clone(),
                             tool_use_id: tool_use_id.to_string(),
@@ -248,29 +371,53 @@ impl EventParser {
     fn parse_result_event(&self, json: &serde_json::Value) -> Option<DisplayEvent> {
         Some(DisplayEvent::Complete {
             _session_id: json.get("session_id")?.as_str()?.to_string(),
-            success: !json.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false),
-            duration_ms: json.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
-            cost_usd: json.get("total_cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            success: !json
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            duration_ms: json
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            cost_usd: json
+                .get("total_cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
         })
     }
 
     fn parse_text_hook(&self, line: &str) -> Option<DisplayEvent> {
         let line = line.trim();
         if let Some(pos) = line.find(" hook success:") {
-            return Some(DisplayEvent::Hook { name: line[..pos].to_string(), output: line[pos + 14..].trim().to_string() });
+            return Some(DisplayEvent::Hook {
+                name: line[..pos].to_string(),
+                output: line[pos + 14..].trim().to_string(),
+            });
         }
         if let Some(pos) = line.find(" hook failed:") {
-            return Some(DisplayEvent::Hook { name: line[..pos].to_string(), output: line[pos + 13..].trim().to_string() });
+            return Some(DisplayEvent::Hook {
+                name: line[..pos].to_string(),
+                output: line[pos + 13..].trim().to_string(),
+            });
         }
         if line.ends_with(" hook success") {
-            return Some(DisplayEvent::Hook { name: line.trim_end_matches(" hook success").to_string(), output: String::new() });
+            return Some(DisplayEvent::Hook {
+                name: line.trim_end_matches(" hook success").to_string(),
+                output: String::new(),
+            });
         }
         if line.ends_with(" hook failed") {
-            return Some(DisplayEvent::Hook { name: line.trim_end_matches(" hook failed").to_string(), output: String::new() });
+            return Some(DisplayEvent::Hook {
+                name: line.trim_end_matches(" hook failed").to_string(),
+                output: String::new(),
+            });
         }
         if line.contains(" hook ") || line.contains("Hook") {
             if let Some(pos) = line.find(" hook") {
-                return Some(DisplayEvent::Hook { name: line[..pos].to_string(), output: line[pos..].to_string() });
+                return Some(DisplayEvent::Hook {
+                    name: line[..pos].to_string(),
+                    output: line[pos..].to_string(),
+                });
             }
         }
         None
@@ -286,21 +433,30 @@ impl EventParser {
                 if let Some(hook_pos) = reminder_content.find(" hook success:") {
                     let name = reminder_content[..hook_pos].trim().to_string();
                     let output = reminder_content[hook_pos + 14..].trim().to_string();
-                    if !output.is_empty() { hooks.push(DisplayEvent::Hook { name, output }); }
+                    if !output.is_empty() {
+                        hooks.push(DisplayEvent::Hook { name, output });
+                    }
                 } else if let Some(hook_pos) = reminder_content.find(" hook failed:") {
                     let name = reminder_content[..hook_pos].trim().to_string();
                     let output = reminder_content[hook_pos + 13..].trim().to_string();
-                    hooks.push(DisplayEvent::Hook { name, output: format!("FAILED: {}", output) });
+                    hooks.push(DisplayEvent::Hook {
+                        name,
+                        output: format!("FAILED: {}", output),
+                    });
                 }
                 search_start = abs_start + end + 18;
-            } else { break; }
+            } else {
+                break;
+            }
         }
         hooks
     }
 }
 
 impl Default for EventParser {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -314,7 +470,11 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::Init { _session_id, cwd, model } => {
+            DisplayEvent::Init {
+                _session_id,
+                cwd,
+                model,
+            } => {
                 assert_eq!(_session_id, "abc123");
                 assert_eq!(cwd, "/test");
                 assert_eq!(model, "claude-3");
@@ -342,7 +502,11 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::ToolCall { tool_name, file_path, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Read");
                 assert_eq!(file_path.as_deref(), Some("/test/file.rs"));
             }
@@ -397,7 +561,10 @@ mod tests {
         match &events[0] {
             DisplayEvent::Hook { name, output } => {
                 assert_eq!(name, "PreToolUse:Bash");
-                assert_eq!(output, "Ensure this action complies with CLAUDE.md and AGENTS.md.");
+                assert_eq!(
+                    output,
+                    "Ensure this action complies with CLAUDE.md and AGENTS.md."
+                );
             }
             _ => panic!("Expected Hook event"),
         }
@@ -410,7 +577,10 @@ mod tests {
         let mut parser = EventParser::new();
         let json = r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/test","model":"claude"}"#;
         let (events, _) = parser.parse(json);
-        assert!(events.is_empty(), "no newline means no complete line to parse");
+        assert!(
+            events.is_empty(),
+            "no newline means no complete line to parse"
+        );
     }
 
     #[test]
@@ -427,8 +597,10 @@ mod tests {
     #[test]
     fn test_parse_multiple_lines_at_once() {
         let mut parser = EventParser::new();
-        let line1 = r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/a","model":"claude"}"#;
-        let line2 = r#"{"type":"system","subtype":"init","session_id":"s2","cwd":"/b","model":"claude"}"#;
+        let line1 =
+            r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/a","model":"claude"}"#;
+        let line2 =
+            r#"{"type":"system","subtype":"init","session_id":"s2","cwd":"/b","model":"claude"}"#;
         let data = format!("{}\n{}\n", line1, line2);
         let (events, _) = parser.parse(&data);
         assert_eq!(events.len(), 2);
@@ -453,8 +625,10 @@ mod tests {
     #[test]
     fn test_parse_returns_last_json() {
         let mut parser = EventParser::new();
-        let line1 = r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/a","model":"claude"}"#;
-        let line2 = r#"{"type":"system","subtype":"init","session_id":"s2","cwd":"/b","model":"opus"}"#;
+        let line1 =
+            r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/a","model":"claude"}"#;
+        let line2 =
+            r#"{"type":"system","subtype":"init","session_id":"s2","cwd":"/b","model":"opus"}"#;
         let data = format!("{}\n{}\n", line1, line2);
         let (_, json) = parser.parse(&data);
         let json = json.unwrap();
@@ -567,7 +741,8 @@ mod tests {
     #[test]
     fn test_parse_user_message_content_string() {
         let mut parser = EventParser::new();
-        let json = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"What is Rust?"}}"#;
+        let json =
+            r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"What is Rust?"}}"#;
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -637,7 +812,9 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::ToolResult { tool_name, content, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name, content, ..
+            } => {
                 assert_eq!(tool_name, "Read");
                 assert_eq!(content, "file contents here");
             }
@@ -698,7 +875,10 @@ mod tests {
         let mut parser = EventParser::new();
         let json = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tc-1","content":""}]}}"#;
         let (events, _) = parser.parse(&format!("{}\n", json));
-        assert!(events.is_empty(), "empty tool result content should not produce events");
+        assert!(
+            events.is_empty(),
+            "empty tool result content should not produce events"
+        );
     }
 
     // ── parse_assistant_event ──
@@ -716,7 +896,10 @@ mod tests {
         let mut parser = EventParser::new();
         let json = r#"{"type":"assistant","uuid":"u1","message":{"model":"claude","role":"assistant","content":[{"type":"text","text":"hi"}]}}"#;
         let (events, _) = parser.parse(&format!("{}\n", json));
-        assert!(events.is_empty(), "missing message.id should produce no events");
+        assert!(
+            events.is_empty(),
+            "missing message.id should produce no events"
+        );
     }
 
     #[test]
@@ -734,7 +917,9 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 2);
         assert!(matches!(&events[0], DisplayEvent::AssistantText { text, .. } if text == "First."));
-        assert!(matches!(&events[1], DisplayEvent::AssistantText { text, .. } if text == "Second."));
+        assert!(
+            matches!(&events[1], DisplayEvent::AssistantText { text, .. } if text == "Second.")
+        );
     }
 
     #[test]
@@ -802,7 +987,12 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::Complete { success, duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert!(*success);
                 assert_eq!(*duration_ms, 5000);
                 assert!((cost_usd - 0.05).abs() < f64::EPSILON);
@@ -841,7 +1031,12 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            DisplayEvent::Complete { success, duration_ms, cost_usd, .. } => {
+            DisplayEvent::Complete {
+                success,
+                duration_ms,
+                cost_usd,
+                ..
+            } => {
                 assert!(*success);
                 assert_eq!(*duration_ms, 0);
                 assert!((cost_usd - 0.0).abs() < f64::EPSILON);
@@ -1082,7 +1277,10 @@ mod tests {
     fn test_user_event_extracts_hooks_from_system_reminder() {
         let mut parser = EventParser::new();
         let content = r#"<system-reminder>\nPreToolUse hook success: Validated command.\n</system-reminder>\nActual user message"#;
-        let json = format!(r#"{{"type":"user","uuid":"u1","message":{{"role":"user","content":"{}"}}}}"#, content);
+        let json = format!(
+            r#"{{"type":"user","uuid":"u1","message":{{"role":"user","content":"{}"}}}}"#,
+            content
+        );
         let (events, _) = parser.parse(&format!("{}\n", json));
         // Should have hook + user message
         assert!(events.len() >= 2);
@@ -1123,14 +1321,22 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", result_a));
         assert_eq!(events.len(), 2);
         match &events[0] {
-            DisplayEvent::ToolResult { tool_name, file_path, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Write");
                 assert_eq!(file_path.as_deref(), Some("/output.rs"));
             }
             _ => panic!("Expected ToolResult"),
         }
         match &events[1] {
-            DisplayEvent::ToolResult { tool_name, file_path, .. } => {
+            DisplayEvent::ToolResult {
+                tool_name,
+                file_path,
+                ..
+            } => {
                 assert_eq!(tool_name, "Bash");
                 assert!(file_path.is_none());
             }
@@ -1143,7 +1349,8 @@ mod tests {
     #[test]
     fn test_event_parser_default() {
         let parser = EventParser::default();
-        let json = r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/","model":"claude"}"#;
+        let json =
+            r#"{"type":"system","subtype":"init","session_id":"s1","cwd":"/","model":"claude"}"#;
         let mut parser = parser;
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
@@ -1166,7 +1373,8 @@ mod tests {
         let (e1, _) = parser.parse(r#"{"type":"sys"#);
         assert!(e1.is_empty());
         // Feed rest + newline
-        let (e2, _) = parser.parse(r#"tem","subtype":"init","session_id":"s1","cwd":"/","model":"c"}"#);
+        let (e2, _) =
+            parser.parse(r#"tem","subtype":"init","session_id":"s1","cwd":"/","model":"c"}"#);
         assert!(e2.is_empty());
         let (e3, _) = parser.parse("\n");
         // The full line should now parse — but it's invalid JSON since we broke it up oddly

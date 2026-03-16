@@ -7,9 +7,25 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::syntax::SyntaxHighlighter;
 use super::render_wrap::wrap_spans;
-use super::util::AZURE;
+use super::util::{AZURE, GIT_BROWN};
+use crate::syntax::SyntaxHighlighter;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ApplyPatchLineKind {
+    Header,
+    Meta,
+    Hunk,
+    Context,
+    Added,
+    Removed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ApplyPatchLine {
+    kind: ApplyPatchLineKind,
+    text: String,
+}
 
 /// Map internal tool names to user-friendly display names
 pub fn tool_display_name(tool_name: &str) -> &str {
@@ -23,50 +39,74 @@ pub fn tool_display_name(tool_name: &str) -> &str {
 /// Extract the most relevant parameter from a tool's input for display
 pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String {
     match tool_name {
-        "Read" | "read" => {
-            input.get("file_path")
-                .or_else(|| input.get("path"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        }
-        "Write" | "write" => {
-            input.get("file_path")
-                .or_else(|| input.get("path"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        }
-        "Edit" | "edit" => {
-            input.get("file_path")
-                .or_else(|| input.get("path"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        }
+        "Read" | "read" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "Write" | "write" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "Edit" | "edit" => input
+            .get("file_path")
+            .or_else(|| input.get("path"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .or_else(|| {
+                input
+                    .get("patch")
+                    .and_then(|v| v.as_str())
+                    .and_then(extract_apply_patch_file_path)
+            })
+            .unwrap_or_default(),
         "Bash" | "bash" => {
             // Full command - no truncation
-            input.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            input
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
         }
-        "Glob" | "glob" => {
-            input.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string()
-        }
-        "Grep" | "grep" => {
-            input.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string()
-        }
-        "WebFetch" | "webfetch" => {
-            input.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string()
-        }
-        "WebSearch" | "websearch" => {
-            input.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string()
-        }
+        "Glob" | "glob" => input
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "Grep" | "grep" => input
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "WebFetch" | "webfetch" => input
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "WebSearch" | "websearch" => input
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         "Task" | "task" => {
-            let agent_type = input.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("agent");
-            let desc = input.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let agent_type = input
+                .get("subagent_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("agent");
+            let desc = input
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             format!("[{}] {}", agent_type, desc)
         }
         "LSP" | "lsp" => {
-            let op = input.get("operation").and_then(|v| v.as_str()).unwrap_or("");
+            let op = input
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let file = input.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
             format!("{} {}", op, file)
         }
@@ -74,7 +114,8 @@ pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String 
         "ExitPlanMode" => "📋 Plan complete".to_string(),
         _ => {
             // Full parameter - no truncation
-            input.get("file_path")
+            input
+                .get("file_path")
                 .or_else(|| input.get("path"))
                 .or_else(|| input.get("command"))
                 .or_else(|| input.get("query"))
@@ -98,9 +139,226 @@ pub fn truncate_line(s: &str, max_len: usize) -> String {
     }
 }
 
+fn extract_apply_patch_file_path(patch: &str) -> Option<String> {
+    for line in patch.lines() {
+        if let Some(rest) = line.strip_prefix("*** Update File: ") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix("*** Add File: ") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix("*** Delete File: ") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
+pub fn extract_edit_preview_strings(input: &serde_json::Value) -> (String, String) {
+    let old = input
+        .get("old_string")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let new = input
+        .get("new_string")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !old.is_empty() || !new.is_empty() {
+        return (old.to_string(), new.to_string());
+    }
+
+    let Some(patch) = input.get("patch").and_then(|v| v.as_str()) else {
+        return (String::new(), String::new());
+    };
+
+    extract_apply_patch_first_hunk(patch)
+}
+
+fn extract_apply_patch_first_hunk(patch: &str) -> (String, String) {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Section {
+        None,
+        Update,
+        Add,
+        Delete,
+    }
+
+    let mut section = Section::None;
+    let mut old = Vec::new();
+    let mut new = Vec::new();
+    let mut started = false;
+
+    for raw in patch.lines() {
+        if raw == "*** Begin Patch" || raw == "*** End Patch" {
+            continue;
+        }
+
+        if raw.starts_with("*** Update File: ") {
+            if started {
+                break;
+            }
+            section = Section::Update;
+            continue;
+        }
+        if raw.starts_with("*** Add File: ") {
+            if started {
+                break;
+            }
+            section = Section::Add;
+            continue;
+        }
+        if raw.starts_with("*** Delete File: ") {
+            if started {
+                break;
+            }
+            section = Section::Delete;
+            continue;
+        }
+        if raw.starts_with("*** Move to: ") {
+            continue;
+        }
+        if raw.starts_with("*** ") {
+            if started {
+                break;
+            }
+            continue;
+        }
+        if raw.starts_with("@@") {
+            if started && (!old.is_empty() || !new.is_empty()) {
+                break;
+            }
+            continue;
+        }
+
+        match section {
+            Section::Update => {
+                if let Some(rest) = raw.strip_prefix('+') {
+                    new.push(rest.to_string());
+                    started = true;
+                } else if let Some(rest) = raw.strip_prefix('-') {
+                    old.push(rest.to_string());
+                    started = true;
+                } else if let Some(rest) = raw.strip_prefix(' ') {
+                    if started {
+                        old.push(rest.to_string());
+                        new.push(rest.to_string());
+                    }
+                }
+            }
+            Section::Add => {
+                if let Some(rest) = raw.strip_prefix('+') {
+                    new.push(rest.to_string());
+                    started = true;
+                } else if started {
+                    break;
+                }
+            }
+            Section::Delete => {
+                if let Some(rest) = raw.strip_prefix('-') {
+                    old.push(rest.to_string());
+                    started = true;
+                } else if started {
+                    break;
+                }
+            }
+            Section::None => {}
+        }
+    }
+
+    (old.join("\n"), new.join("\n"))
+}
+
+fn parse_apply_patch_lines(patch: &str) -> Vec<ApplyPatchLine> {
+    let mut lines = Vec::new();
+
+    for raw in patch.lines() {
+        if raw == "*** Begin Patch" || raw == "*** End Patch" {
+            continue;
+        }
+
+        let (kind, text) = if let Some(rest) = raw.strip_prefix("*** Update File: ") {
+            (
+                ApplyPatchLineKind::Header,
+                format!("Update File: {}", rest.trim()),
+            )
+        } else if let Some(rest) = raw.strip_prefix("*** Add File: ") {
+            (
+                ApplyPatchLineKind::Header,
+                format!("Add File: {}", rest.trim()),
+            )
+        } else if let Some(rest) = raw.strip_prefix("*** Delete File: ") {
+            (
+                ApplyPatchLineKind::Header,
+                format!("Delete File: {}", rest.trim()),
+            )
+        } else if let Some(rest) = raw.strip_prefix("*** Move to: ") {
+            (
+                ApplyPatchLineKind::Meta,
+                format!("Move to: {}", rest.trim()),
+            )
+        } else if raw.starts_with("@@") {
+            (ApplyPatchLineKind::Hunk, raw.to_string())
+        } else if raw.starts_with('+') {
+            (ApplyPatchLineKind::Added, raw.to_string())
+        } else if raw.starts_with('-') {
+            (ApplyPatchLineKind::Removed, raw.to_string())
+        } else if raw.starts_with(' ') {
+            (ApplyPatchLineKind::Context, raw.to_string())
+        } else {
+            (ApplyPatchLineKind::Meta, raw.to_string())
+        };
+
+        lines.push(ApplyPatchLine { kind, text });
+    }
+
+    lines
+}
+
+fn render_apply_patch_preview(
+    lines: &mut Vec<Line<'static>>,
+    patch: &str,
+    tool_color: Color,
+    max_width: usize,
+) {
+    let dim_red_bg = Color::Rgb(60, 25, 25);
+    let dim_green_bg = Color::Rgb(25, 50, 25);
+    let removed_style = Style::default()
+        .fg(Color::Rgb(170, 170, 170))
+        .bg(dim_red_bg);
+    let added_style = Style::default().fg(Color::White).bg(dim_green_bg);
+    let content_max = max_width.saturating_sub(4);
+
+    for patch_line in parse_apply_patch_lines(patch) {
+        let style = match patch_line.kind {
+            ApplyPatchLineKind::Header => {
+                Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD)
+            }
+            ApplyPatchLineKind::Meta => Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+            ApplyPatchLineKind::Hunk => Style::default().fg(Color::Cyan),
+            ApplyPatchLineKind::Context => Style::default().fg(Color::DarkGray),
+            ApplyPatchLineKind::Added => added_style,
+            ApplyPatchLineKind::Removed => removed_style,
+        };
+
+        for wrapped_spans in wrap_spans(vec![Span::styled(patch_line.text, style)], content_max) {
+            let mut all_spans = vec![Span::styled(" ┃  ", Style::default().fg(tool_color))];
+            all_spans.extend(wrapped_spans);
+            lines.push(Line::from(all_spans));
+        }
+    }
+}
+
 /// Render tool result output based on tool type
 /// Shows summarized output constrained to max_width
-pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &str, is_failed: bool, max_width: usize) -> Vec<Line<'static>> {
+pub fn render_tool_result(
+    tool_name: &str,
+    _file_path: Option<&str>,
+    content: &str,
+    is_failed: bool,
+    max_width: usize,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let tool_color = if is_failed { Color::Red } else { AZURE };
     let result_style = Style::default().fg(if is_failed { Color::Red } else { Color::Gray });
@@ -110,7 +368,8 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
         &content[..start]
     } else {
         content
-    }.trim_end();
+    }
+    .trim_end();
 
     let content_lines: Vec<&str> = content.lines().collect();
     let line_count = content_lines.len();
@@ -125,7 +384,14 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
         };
         lines.push(Line::from(vec![
             Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-            Span::styled(msg, if tool_name == "Bash" { Style::default().fg(Color::Green) } else { result_style }),
+            Span::styled(
+                msg,
+                if tool_name == "Bash" {
+                    Style::default().fg(Color::Green)
+                } else {
+                    result_style
+                },
+            ),
         ]));
         return lines;
     }
@@ -142,11 +408,18 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             if line_count > 2 {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  │ ", result_style.fg(tool_color)),
-                    Span::styled(format!("  ({} lines)", line_count), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  ({} lines)", line_count),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]));
             }
             if line_count > 1 {
-                let last = content_lines.iter().rev().find(|l| !l.trim().is_empty()).unwrap_or(&"");
+                let last = content_lines
+                    .iter()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or(&"");
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
                     Span::styled(truncate_line(last, text_max), result_style),
@@ -162,10 +435,18 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
         }
         "Bash" | "bash" => {
             // Last 2 non-empty lines (results usually at end)
-            let non_empty: Vec<&str> = content_lines.iter().filter(|l| !l.trim().is_empty()).copied().collect();
+            let non_empty: Vec<&str> = content_lines
+                .iter()
+                .filter(|l| !l.trim().is_empty())
+                .copied()
+                .collect();
             let show: Vec<&str> = non_empty.iter().rev().take(2).rev().copied().collect();
             for (i, l) in show.iter().enumerate() {
-                let prefix = if i == show.len() - 1 { " ┃  └─ " } else { " ┃  │ " };
+                let prefix = if i == show.len() - 1 {
+                    " ┃  └─ "
+                } else {
+                    " ┃  │ "
+                };
                 lines.push(Line::from(vec![
                     Span::styled(prefix, result_style.fg(tool_color)),
                     Span::styled(truncate_line(l, text_max), result_style),
@@ -182,7 +463,11 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             // First 3 matches
             let show_count = 3.min(line_count);
             for (i, l) in content_lines.iter().take(show_count).enumerate() {
-                let prefix = if i == show_count - 1 && line_count <= 3 { " ┃  └─ " } else { " ┃  │ " };
+                let prefix = if i == show_count - 1 && line_count <= 3 {
+                    " ┃  └─ "
+                } else {
+                    " ┃  │ "
+                };
                 lines.push(Line::from(vec![
                     Span::styled(prefix, result_style.fg(tool_color)),
                     Span::styled(truncate_line(l, text_max), result_style),
@@ -191,7 +476,10 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             if line_count > 3 {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-                    Span::styled(format!("  (+{} more)", line_count - 3), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  (+{} more)", line_count - 3),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]));
             }
         }
@@ -206,7 +494,11 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             // First 5 lines of subagent output
             let show_count = 5.min(line_count);
             for (i, l) in content_lines.iter().take(show_count).enumerate() {
-                let prefix = if i == show_count - 1 && line_count <= 5 { " ┃  └─ " } else { " ┃  │ " };
+                let prefix = if i == show_count - 1 && line_count <= 5 {
+                    " ┃  └─ "
+                } else {
+                    " ┃  │ "
+                };
                 lines.push(Line::from(vec![
                     Span::styled(prefix, result_style.fg(tool_color)),
                     Span::styled(truncate_line(l, text_max), result_style),
@@ -215,7 +507,10 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             if line_count > 5 {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-                    Span::styled(format!("  (+{} more lines)", line_count - 5), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  (+{} more lines)", line_count - 5),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]));
             }
         }
@@ -223,7 +518,11 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             // Default: first 3 lines
             let show_count = 3.min(line_count);
             for (i, l) in content_lines.iter().take(show_count).enumerate() {
-                let prefix = if i == show_count - 1 && line_count <= 3 { " ┃  └─ " } else { " ┃  │ " };
+                let prefix = if i == show_count - 1 && line_count <= 3 {
+                    " ┃  └─ "
+                } else {
+                    " ┃  │ "
+                };
                 lines.push(Line::from(vec![
                     Span::styled(prefix, result_style.fg(tool_color)),
                     Span::styled(truncate_line(l, text_max), result_style),
@@ -232,7 +531,10 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
             if line_count > 3 {
                 lines.push(Line::from(vec![
                     Span::styled(" ┃  └─ ", result_style.fg(tool_color)),
-                    Span::styled(format!("  (+{} more)", line_count - 3), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  (+{} more)", line_count - 3),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]));
             }
         }
@@ -245,16 +547,32 @@ pub fn render_tool_result(tool_name: &str, _file_path: Option<&str>, content: &s
 /// Reads file to find actual line numbers (runs on background render thread,
 /// not the draw path). Removed lines show grey text on dim red bg (no syntax
 /// highlighting). Added lines get syntax highlighting on dim green bg.
-pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, file_path: &Option<String>, tool_color: Color, max_width: usize, highlighter: &mut SyntaxHighlighter) {
-    let old_str = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-    let new_str = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+pub fn render_edit_diff(
+    lines: &mut Vec<Line<'static>>,
+    input: &serde_json::Value,
+    file_path: &Option<String>,
+    tool_color: Color,
+    max_width: usize,
+    highlighter: &mut SyntaxHighlighter,
+) {
+    if let Some(patch) = input.get("patch").and_then(|v| v.as_str()) {
+        render_apply_patch_preview(lines, patch, tool_color, max_width);
+        return;
+    }
 
-    if old_str.is_empty() && new_str.is_empty() { return; }
+    let (old_owned, new_owned) = extract_edit_preview_strings(input);
+    let old_str = old_owned.as_str();
+    let new_str = new_owned.as_str();
+
+    if old_str.is_empty() && new_str.is_empty() {
+        return;
+    }
 
     let dim_red_bg = Color::Rgb(60, 25, 25);
     let dim_green_bg = Color::Rgb(25, 50, 25);
 
-    let filename = file_path.as_ref()
+    let filename = file_path
+        .as_ref()
         .and_then(|p| std::path::Path::new(p).file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file.txt".to_string());
@@ -264,7 +582,8 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
     // (2) live preview during streaming → old_string is still in the file.
     // Try new_string first (post-edit), fall back to old_string (mid-edit).
     // Keep file content for full-context tree-sitter highlighting.
-    let (start_line, file_content) = file_path.as_ref()
+    let (start_line, file_content) = file_path
+        .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|content| {
             let needle = if !new_str.is_empty() && content.contains(new_str) {
@@ -275,9 +594,11 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                 None
             };
             let line = needle
-                .and_then(|s| content.find(s).map(|byte_pos| {
-                    content[..byte_pos].lines().count() + 1
-                }))
+                .and_then(|s| {
+                    content
+                        .find(s)
+                        .map(|byte_pos| content[..byte_pos].lines().count() + 1)
+                })
                 .unwrap_or(1);
             (line, content)
         })
@@ -296,9 +617,12 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
             all.into_iter()
                 .skip(start)
                 .take(new_line_count)
-                .map(|spans| spans.into_iter()
-                    .map(|s| Span::styled(s.content, s.style.bg(dim_green_bg)))
-                    .collect())
+                .map(|spans| {
+                    spans
+                        .into_iter()
+                        .map(|s| Span::styled(s.content, s.style.bg(dim_green_bg)))
+                        .collect()
+                })
                 .collect()
         }
         _ => {
@@ -308,7 +632,9 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
     };
     // Removed lines: dark grey text on dim red bg (darker than comment grey
     // in syntax-highlighted green lines, which is typically ~128 grey)
-    let removed_style = Style::default().fg(Color::Rgb(100, 100, 100)).bg(dim_red_bg);
+    let removed_style = Style::default()
+        .fg(Color::Rgb(100, 100, 100))
+        .bg(dim_red_bg);
 
     let old_lines: Vec<&str> = old_str.lines().collect();
     let new_lines: Vec<&str> = new_str.lines().collect();
@@ -325,9 +651,16 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
         match (old_line, new_line) {
             // Unchanged context — dim grey, no background
             (Some(old), Some(new)) if old == new => {
-                let dimmed = vec![Span::styled(old.to_string(), Style::default().fg(Color::DarkGray))];
+                let dimmed = vec![Span::styled(
+                    old.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                )];
                 for (j, wrapped_spans) in wrap_spans(dimmed, content_max).into_iter().enumerate() {
-                    let line_num = if j == 0 { format!(" {:>width$}   ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                    let line_num = if j == 0 {
+                        format!(" {:>width$}   ", start_line + i, width = num_width)
+                    } else {
+                        " ".repeat(num_width + 4)
+                    };
                     let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::DarkGray)),
@@ -340,8 +673,13 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
             (Some(old_text), Some(_)) => {
                 // Removed line — grey text, dim red bg, NO syntax highlighting
                 let old_spans = vec![Span::styled(old_text.to_string(), removed_style)];
-                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
-                    let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate()
+                {
+                    let line_num = if j == 0 {
+                        format!(" {:>width$} - ", start_line + i, width = num_width)
+                    } else {
+                        " ".repeat(num_width + 4)
+                    };
                     let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Red)),
@@ -351,8 +689,13 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
                 }
                 // Added line — syntax highlighted, dim green bg
                 let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
-                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
-                    let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate()
+                {
+                    let line_num = if j == 0 {
+                        format!(" {:>width$} + ", start_line + i, width = num_width)
+                    } else {
+                        " ".repeat(num_width + 4)
+                    };
                     let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Green)),
@@ -364,8 +707,13 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
             // Removed only — grey text, dim red bg
             (Some(old_text), None) => {
                 let old_spans = vec![Span::styled(old_text.to_string(), removed_style)];
-                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate() {
-                    let line_num = if j == 0 { format!(" {:>width$} - ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                for (j, wrapped_spans) in wrap_spans(old_spans, content_max).into_iter().enumerate()
+                {
+                    let line_num = if j == 0 {
+                        format!(" {:>width$} - ", start_line + i, width = num_width)
+                    } else {
+                        " ".repeat(num_width + 4)
+                    };
                     let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Red)),
@@ -377,8 +725,13 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
             // Added only — syntax highlighted, dim green bg
             (None, Some(_)) => {
                 let new_spans = new_highlighted.get(i).cloned().unwrap_or_default();
-                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate() {
-                    let line_num = if j == 0 { format!(" {:>width$} + ", start_line + i, width = num_width) } else { " ".repeat(num_width + 4) };
+                for (j, wrapped_spans) in wrap_spans(new_spans, content_max).into_iter().enumerate()
+                {
+                    let line_num = if j == 0 {
+                        format!(" {:>width$} + ", start_line + i, width = num_width)
+                    } else {
+                        " ".repeat(num_width + 4)
+                    };
                     let mut all_spans = vec![
                         Span::styled(" ┃  ", Style::default().fg(tool_color)),
                         Span::styled(line_num, Style::default().fg(Color::Green)),
@@ -393,28 +746,46 @@ pub fn render_edit_diff(lines: &mut Vec<Line<'static>>, input: &serde_json::Valu
 }
 
 /// Render Write tool preview showing line count and purpose
-pub fn render_write_preview(lines: &mut Vec<Line<'static>>, input: &serde_json::Value, tool_color: Color, max_width: usize) {
+pub fn render_write_preview(
+    lines: &mut Vec<Line<'static>>,
+    input: &serde_json::Value,
+    tool_color: Color,
+    max_width: usize,
+) {
     if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
         let content_lines: Vec<&str> = content.lines().collect();
         let line_count = content_lines.len();
 
-        let purpose_line = content_lines.iter()
+        let purpose_line = content_lines
+            .iter()
             .find(|l| {
                 let trimmed = l.trim();
-                trimmed.starts_with("//") || trimmed.starts_with("#") ||
-                trimmed.starts_with("/*") || trimmed.starts_with("\"\"\"") ||
-                trimmed.starts_with("///") || trimmed.starts_with("//!")
+                trimmed.starts_with("//")
+                    || trimmed.starts_with("#")
+                    || trimmed.starts_with("/*")
+                    || trimmed.starts_with("\"\"\"")
+                    || trimmed.starts_with("///")
+                    || trimmed.starts_with("//!")
             })
-            .or(content_lines.first()).copied()
+            .or(content_lines.first())
+            .copied()
             .unwrap_or("");
 
         let purpose_max = max_width.saturating_sub(20 + format!("{}", line_count).len());
         lines.push(Line::from(vec![
             Span::styled(" ┃  └─ ", Style::default().fg(tool_color)),
             Span::styled("✓ ", Style::default().fg(Color::Green)),
-            Span::styled(format!("{} lines", line_count), Style::default().fg(Color::White)),
+            Span::styled(
+                format!("{} lines", line_count),
+                Style::default().fg(Color::White),
+            ),
             if !purpose_line.is_empty() {
-                Span::styled(format!("  {}", truncate_line(purpose_line, purpose_max)), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))
+                Span::styled(
+                    format!("  {}", truncate_line(purpose_line, purpose_max)),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )
             } else {
                 Span::raw("")
             },
@@ -495,6 +866,14 @@ mod tests {
     #[test]
     fn display_name_webfetch_passthrough() {
         assert_eq!(tool_display_name("WebFetch"), "WebFetch");
+    }
+
+    #[test]
+    fn extract_edit_param_from_patch_fallback() {
+        let input = json!({
+            "patch": "*** Begin Patch\n*** Update File: src/main.rs\n@@\n-old\n+new\n*** End Patch"
+        });
+        assert_eq!(extract_tool_param("Edit", &input), "src/main.rs");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -649,7 +1028,10 @@ mod tests {
     #[test]
     fn extract_webfetch_url() {
         let input = json!({"url": "https://example.com"});
-        assert_eq!(extract_tool_param("WebFetch", &input), "https://example.com");
+        assert_eq!(
+            extract_tool_param("WebFetch", &input),
+            "https://example.com"
+        );
     }
 
     #[test]
@@ -821,12 +1203,18 @@ mod tests {
 
     #[test]
     fn truncate_unicode_chars() {
-        assert_eq!(truncate_line("\u{65e5}\u{672c}\u{8a9e}", 3), "\u{65e5}\u{672c}\u{8a9e}");
+        assert_eq!(
+            truncate_line("\u{65e5}\u{672c}\u{8a9e}", 3),
+            "\u{65e5}\u{672c}\u{8a9e}"
+        );
     }
 
     #[test]
     fn truncate_unicode_over_max() {
-        assert_eq!(truncate_line("\u{65e5}\u{672c}\u{8a9e}\u{30c6}\u{30b9}\u{30c8}", 4), "\u{65e5}\u{672c}\u{8a9e}\u{2026}");
+        assert_eq!(
+            truncate_line("\u{65e5}\u{672c}\u{8a9e}\u{30c6}\u{30b9}\u{30c8}", 4),
+            "\u{65e5}\u{672c}\u{8a9e}\u{2026}"
+        );
     }
 
     #[test]
@@ -905,7 +1293,10 @@ mod tests {
 
     #[test]
     fn render_result_read_many_lines() {
-        let content = (1..=10).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let content = (1..=10)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let lines = render_tool_result("Read", None, &content, false, 80);
         assert_eq!(lines.len(), 3);
         assert!(spans_text(&lines[0]).contains("line 1"));
@@ -1002,7 +1393,10 @@ mod tests {
 
     #[test]
     fn render_result_task_many_lines() {
-        let content = (1..=10).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let content = (1..=10)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let lines = render_tool_result("Task", None, &content, false, 80);
         assert_eq!(lines.len(), 6);
         let last_text = spans_text(lines.last().unwrap());
@@ -1036,7 +1430,10 @@ mod tests {
     fn render_result_failed_uses_red() {
         let lines = render_tool_result("Bash", None, "error occurred", true, 80);
         assert!(!lines.is_empty());
-        let has_red = lines[0].spans.iter().any(|s| s.style.fg == Some(Color::Red));
+        let has_red = lines[0]
+            .spans
+            .iter()
+            .any(|s| s.style.fg == Some(Color::Red));
         assert!(has_red);
     }
 
@@ -1176,5 +1573,77 @@ mod tests {
         render_write_preview(&mut lines, &input, AZURE, 80);
         let text = spans_text(&lines[0]);
         assert!(text.contains("/* Block comment */"));
+    }
+
+    #[test]
+    fn extract_edit_preview_strings_prefers_explicit_fields() {
+        let input = json!({
+            "old_string": "before",
+            "new_string": "after",
+            "patch": "*** Begin Patch\n*** Update File: src/main.rs\n@@\n-before\n+after\n*** End Patch"
+        });
+        let (old, new) = extract_edit_preview_strings(&input);
+        assert_eq!(old, "before");
+        assert_eq!(new, "after");
+    }
+
+    #[test]
+    fn extract_edit_preview_strings_from_update_patch() {
+        let input = json!({
+            "patch": "*** Begin Patch\n*** Update File: src/main.rs\n@@\n fn main() {\n-    old_call();\n+    new_call();\n }\n*** End Patch"
+        });
+        let (old, new) = extract_edit_preview_strings(&input);
+        assert_eq!(old, "    old_call();\n}");
+        assert_eq!(new, "    new_call();\n}");
+    }
+
+    #[test]
+    fn extract_edit_preview_strings_from_add_patch() {
+        let input = json!({
+            "patch": "*** Begin Patch\n*** Add File: src/new.rs\n+fn main() {}\n+println!(\"hi\");\n*** End Patch"
+        });
+        let (old, new) = extract_edit_preview_strings(&input);
+        assert!(old.is_empty());
+        assert_eq!(new, "fn main() {}\nprintln!(\"hi\");");
+    }
+
+    #[test]
+    fn render_edit_diff_from_patch_shows_diff_lines() {
+        let input = json!({
+            "patch": "*** Begin Patch\n*** Update File: src/main.rs\n@@\n-old_value();\n+new_value();\n unchanged();\n*** End Patch"
+        });
+        let mut lines = Vec::new();
+        let mut highlighter = SyntaxHighlighter::new();
+        render_edit_diff(
+            &mut lines,
+            &input,
+            &Some("src/main.rs".to_string()),
+            AZURE,
+            80,
+            &mut highlighter,
+        );
+        let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
+        assert!(rendered.contains("Update File: src/main.rs"));
+        assert!(rendered.contains("-old_value();"));
+        assert!(rendered.contains("+new_value();"));
+        assert!(rendered.contains(" unchanged();"));
+    }
+
+    #[test]
+    fn render_edit_diff_from_patch_marks_headers_brown() {
+        let input = json!({
+            "patch": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n*** End Patch"
+        });
+        let mut lines = Vec::new();
+        let mut highlighter = SyntaxHighlighter::new();
+        render_edit_diff(
+            &mut lines,
+            &input,
+            &Some("src/lib.rs".to_string()),
+            AZURE,
+            80,
+            &mut highlighter,
+        );
+        assert_eq!(lines[0].spans[1].style.fg, Some(GIT_BROWN));
     }
 }

@@ -6,55 +6,86 @@
 use anyhow::Result;
 use crossterm::event;
 
-use crate::app::{App, Focus};
 use crate::app::types::RcrSession;
+use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 use crate::git::Git;
 
 /// Handle input while the conflict resolution overlay is open.
 /// j/k or Up/Down navigate between "Resolve with Claude" and "Abort rebase".
 /// Enter/y resolves, n/Esc aborts the rebase and closes the overlay.
-pub(super) fn handle_conflict_overlay(key: event::KeyEvent, app: &mut App, claude_process: &AgentProcess) -> Result<()> {
+pub(super) fn handle_conflict_overlay(
+    key: event::KeyEvent,
+    app: &mut App,
+    claude_process: &AgentProcess,
+) -> Result<()> {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    let (sel, wt_path, repo_root, branch, conflicted, auto_merged, continue_merge) = match app.git_actions_panel.as_ref() {
-        Some(p) => match p.conflict_overlay.as_ref() {
-            Some(ov) => (
-                ov.selected, p.worktree_path.clone(), p.repo_root.clone(),
-                p.worktree_name.clone(), ov.conflicted_files.clone(), ov.auto_merged_files.clone(),
-                ov.continue_with_merge,
-            ),
+    let (sel, wt_path, repo_root, branch, conflicted, auto_merged, continue_merge) =
+        match app.git_actions_panel.as_ref() {
+            Some(p) => match p.conflict_overlay.as_ref() {
+                Some(ov) => (
+                    ov.selected,
+                    p.worktree_path.clone(),
+                    p.repo_root.clone(),
+                    p.worktree_name.clone(),
+                    ov.conflicted_files.clone(),
+                    ov.auto_merged_files.clone(),
+                    ov.continue_with_merge,
+                ),
+                None => return Ok(()),
+            },
             None => return Ok(()),
-        },
-        None => return Ok(()),
-    };
+        };
 
     match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
             if let Some(ref mut p) = app.git_actions_panel {
                 if let Some(ref mut ov) = p.conflict_overlay {
-                    if ov.selected < 1 { ov.selected = 1; }
+                    if ov.selected < 1 {
+                        ov.selected = 1;
+                    }
                 }
             }
         }
         (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
             if let Some(ref mut p) = app.git_actions_panel {
                 if let Some(ref mut ov) = p.conflict_overlay {
-                    if ov.selected > 0 { ov.selected = 0; }
+                    if ov.selected > 0 {
+                        ov.selected = 0;
+                    }
                 }
             }
         }
 
         (KeyModifiers::NONE, KeyCode::Enter) => {
             if sel == 0 {
-                spawn_conflict_claude(app, claude_process, &wt_path, &repo_root, &branch, &conflicted, &auto_merged, continue_merge);
+                spawn_conflict_claude(
+                    app,
+                    claude_process,
+                    &wt_path,
+                    &repo_root,
+                    &branch,
+                    &conflicted,
+                    &auto_merged,
+                    continue_merge,
+                );
             } else {
                 abort_rebase(app, &wt_path);
             }
         }
 
         (KeyModifiers::NONE, KeyCode::Char('y')) => {
-            spawn_conflict_claude(app, claude_process, &wt_path, &repo_root, &branch, &conflicted, &auto_merged, continue_merge);
+            spawn_conflict_claude(
+                app,
+                claude_process,
+                &wt_path,
+                &repo_root,
+                &branch,
+                &conflicted,
+                &auto_merged,
+                continue_merge,
+            );
         }
 
         (KeyModifiers::NONE, KeyCode::Char('n')) | (KeyModifiers::NONE, KeyCode::Esc) => {
@@ -95,10 +126,14 @@ fn build_conflict_prompt(display: &str, conflicted: &[String], auto_merged: &[St
         display
     );
     prompt.push_str(&format!("Conflicted files ({}):\n", conflicted.len()));
-    for f in conflicted { prompt.push_str(&format!("  - {}\n", f)); }
+    for f in conflicted {
+        prompt.push_str(&format!("  - {}\n", f));
+    }
     if !auto_merged.is_empty() {
         prompt.push_str(&format!("\nAuto-merged cleanly ({}):\n", auto_merged.len()));
-        for f in auto_merged { prompt.push_str(&format!("  - {}\n", f)); }
+        for f in auto_merged {
+            prompt.push_str(&format!("  - {}\n", f));
+        }
     }
     prompt.push_str(
         "\nResolve all conflicts:\n\
@@ -108,7 +143,7 @@ fn build_conflict_prompt(display: &str, conflicted: &[String], auto_merged: &[St
          4. Continue the rebase: git rebase --continue\n\
          5. If more conflicts appear, repeat steps 1-4 until the rebase completes\n\
          6. Verify with: git status\n\n\
-         Ask me if any conflict is ambiguous."
+         Ask me if any conflict is ambiguous.",
     );
     prompt
 }
@@ -133,7 +168,8 @@ fn spawn_conflict_claude(
     match claude_process.spawn(wt_path, &prompt, None, None) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
-            app.pending_session_names.push((slot.clone(), format!("[RCR] {}", display)));
+            app.pending_session_names
+                .push((slot.clone(), format!("[RCR] {}", display)));
             app.register_claude(branch.to_string(), pid, rx);
             app.rcr_session = Some(RcrSession {
                 branch: branch.to_string(),
@@ -183,8 +219,8 @@ fn spawn_conflict_claude(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
     use crate::app::types::{GitActionsPanel, GitConflictOverlay};
+    use crate::app::App;
     use crate::config::Config;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -245,7 +281,12 @@ mod tests {
 
     /// Helper: get the conflict overlay from the app (panics if missing)
     fn overlay(app: &App) -> &GitConflictOverlay {
-        app.git_actions_panel.as_ref().unwrap().conflict_overlay.as_ref().unwrap()
+        app.git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .as_ref()
+            .unwrap()
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -257,7 +298,8 @@ mod tests {
         let mut app = App::new();
         assert!(app.git_actions_panel.is_none());
         let cp = test_claude();
-        let result = handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp);
+        let result =
+            handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp);
         assert!(result.is_ok());
     }
 
@@ -267,7 +309,8 @@ mod tests {
         // Remove the overlay
         app.git_actions_panel.as_mut().unwrap().conflict_overlay = None;
         let cp = test_claude();
-        let result = handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp);
+        let result =
+            handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp);
         assert!(result.is_ok());
     }
 
@@ -275,7 +318,8 @@ mod tests {
     fn test_no_panel_enter_returns_ok() {
         let mut app = App::new();
         let cp = test_claude();
-        let result = handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp);
+        let result =
+            handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp);
         assert!(result.is_ok());
     }
 
@@ -291,7 +335,8 @@ mod tests {
     fn test_no_panel_y_returns_ok() {
         let mut app = App::new();
         let cp = test_claude();
-        let result = handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp);
+        let result =
+            handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp);
         assert!(result.is_ok());
     }
 
@@ -299,7 +344,8 @@ mod tests {
     fn test_no_panel_n_returns_ok() {
         let mut app = App::new();
         let cp = test_claude();
-        let result = handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp);
+        let result =
+            handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp);
         assert!(result.is_ok());
     }
 
@@ -311,7 +357,8 @@ mod tests {
     fn test_j_moves_selection_down_from_0() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 1);
     }
 
@@ -327,7 +374,8 @@ mod tests {
     fn test_j_stays_at_1_when_already_at_1() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 1);
     }
 
@@ -347,7 +395,8 @@ mod tests {
     fn test_k_moves_selection_up_from_1() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -363,7 +412,8 @@ mod tests {
     fn test_k_stays_at_0_when_already_at_0() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -383,9 +433,11 @@ mod tests {
     fn test_j_then_k_round_trip() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 1);
-        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -404,7 +456,8 @@ mod tests {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
         for _ in 0..5 {
-            handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+            handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+                .unwrap();
         }
         assert_eq!(overlay(&app).selected, 1);
     }
@@ -414,7 +467,8 @@ mod tests {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
         for _ in 0..5 {
-            handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+            handle_conflict_overlay(key(KeyCode::Char('k'), KeyModifiers::NONE), &mut app, &cp)
+                .unwrap();
         }
         assert_eq!(overlay(&app).selected, 0);
     }
@@ -427,7 +481,8 @@ mod tests {
     fn test_n_key_aborts_rebase_clears_overlay() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
     }
@@ -436,7 +491,8 @@ mod tests {
     fn test_n_key_sets_abort_message() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         let (msg, is_err) = panel.result_message.as_ref().unwrap();
         assert_eq!(msg, "Aborted");
@@ -447,7 +503,8 @@ mod tests {
     fn test_n_key_from_selection_1_also_aborts() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
         assert_eq!(panel.result_message.as_ref().unwrap().0, "Aborted");
@@ -481,7 +538,12 @@ mod tests {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app, &cp).unwrap();
-        assert!(app.git_actions_panel.as_ref().unwrap().conflict_overlay.is_none());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .is_none());
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -503,7 +565,13 @@ mod tests {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).unwrap();
-        let (_, is_err) = app.git_actions_panel.as_ref().unwrap().result_message.as_ref().unwrap();
+        let (_, is_err) = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .result_message
+            .as_ref()
+            .unwrap();
         assert!(!is_err);
     }
 
@@ -536,7 +604,8 @@ mod tests {
     fn test_y_key_spawns_claude_fails_clears_overlay() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
     }
@@ -545,8 +614,15 @@ mod tests {
     fn test_y_key_spawn_fail_is_error() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).unwrap();
-        let (_, is_err) = app.git_actions_panel.as_ref().unwrap().result_message.as_ref().unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
+        let (_, is_err) = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .result_message
+            .as_ref()
+            .unwrap();
         assert!(is_err);
     }
 
@@ -555,7 +631,8 @@ mod tests {
         // 'y' always resolves regardless of selection
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         // It called spawn_conflict_claude (which failed), not abort_rebase
         let (msg, is_err) = panel.result_message.as_ref().unwrap();
@@ -571,16 +648,23 @@ mod tests {
     fn test_unmatched_key_a_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('a'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
-        assert!(app.git_actions_panel.as_ref().unwrap().result_message.is_none());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .result_message
+            .is_none());
     }
 
     #[test]
     fn test_unmatched_key_space_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char(' '), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -596,7 +680,8 @@ mod tests {
     fn test_unmatched_key_backspace_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Backspace, KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 1);
     }
 
@@ -624,7 +709,8 @@ mod tests {
     fn test_shift_j_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('J'), KeyModifiers::SHIFT), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('J'), KeyModifiers::SHIFT), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -632,7 +718,12 @@ mod tests {
     fn test_ctrl_j_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::CONTROL), &mut app, &cp).unwrap();
+        handle_conflict_overlay(
+            key(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            &mut app,
+            &cp,
+        )
+        .unwrap();
         assert_eq!(overlay(&app).selected, 0);
     }
 
@@ -650,23 +741,48 @@ mod tests {
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::SHIFT), &mut app, &cp).unwrap();
         // No action taken — overlay still present
-        assert!(app.git_actions_panel.as_ref().unwrap().conflict_overlay.is_some());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .is_some());
     }
 
     #[test]
     fn test_ctrl_n_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::CONTROL), &mut app, &cp).unwrap();
-        assert!(app.git_actions_panel.as_ref().unwrap().conflict_overlay.is_some());
+        handle_conflict_overlay(
+            key(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            &mut app,
+            &cp,
+        )
+        .unwrap();
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .is_some());
     }
 
     #[test]
     fn test_ctrl_y_is_noop() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::CONTROL), &mut app, &cp).unwrap();
-        assert!(app.git_actions_panel.as_ref().unwrap().conflict_overlay.is_some());
+        handle_conflict_overlay(
+            key(KeyCode::Char('y'), KeyModifiers::CONTROL),
+            &mut app,
+            &cp,
+        )
+        .unwrap();
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .is_some());
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -776,7 +892,8 @@ mod tests {
     fn test_navigation_preserves_conflicted_files() {
         let mut app = app_with_conflict(vec!["a.rs".into(), "b.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let ov = overlay(&app);
         assert_eq!(ov.conflicted_files.len(), 2);
         assert_eq!(ov.conflicted_files[0], "a.rs");
@@ -787,7 +904,8 @@ mod tests {
     fn test_navigation_preserves_auto_merged_files() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec!["x.rs".into()], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let ov = overlay(&app);
         assert_eq!(ov.auto_merged_files.len(), 1);
         assert_eq!(ov.auto_merged_files[0], "x.rs");
@@ -797,18 +915,32 @@ mod tests {
     fn test_navigation_preserves_scroll() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         // Set scroll to non-zero
-        app.git_actions_panel.as_mut().unwrap().conflict_overlay.as_mut().unwrap().scroll = 5;
+        app.git_actions_panel
+            .as_mut()
+            .unwrap()
+            .conflict_overlay
+            .as_mut()
+            .unwrap()
+            .scroll = 5;
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).scroll, 5);
     }
 
     #[test]
     fn test_navigation_preserves_continue_with_merge() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
-        app.git_actions_panel.as_mut().unwrap().conflict_overlay.as_mut().unwrap().continue_with_merge = true;
+        app.git_actions_panel
+            .as_mut()
+            .unwrap()
+            .conflict_overlay
+            .as_mut()
+            .unwrap()
+            .continue_with_merge = true;
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert!(overlay(&app).continue_with_merge);
     }
 
@@ -820,7 +952,8 @@ mod tests {
     fn test_abort_preserves_panel_worktree_name() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert_eq!(panel.worktree_name, "feature-test");
     }
@@ -831,14 +964,18 @@ mod tests {
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Esc, KeyModifiers::NONE), &mut app, &cp).unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
-        assert_eq!(panel.worktree_path, std::path::PathBuf::from("/tmp/test-wt"));
+        assert_eq!(
+            panel.worktree_path,
+            std::path::PathBuf::from("/tmp/test-wt")
+        );
     }
 
     #[test]
     fn test_abort_preserves_panel_repo_root() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert_eq!(panel.repo_root, std::path::PathBuf::from("/tmp/test-repo"));
     }
@@ -851,7 +988,8 @@ mod tests {
     fn test_spawn_fail_preserves_panel_worktree_name() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert_eq!(panel.worktree_name, "feature-test");
     }
@@ -869,8 +1007,15 @@ mod tests {
     fn test_spawn_fail_error_message_is_flagged_as_error() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).unwrap();
-        let (_, is_err) = app.git_actions_panel.as_ref().unwrap().result_message.as_ref().unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
+        let (_, is_err) = app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .result_message
+            .as_ref()
+            .unwrap();
         assert!(is_err);
     }
 
@@ -884,14 +1029,20 @@ mod tests {
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).unwrap();
         // Spawn attempted (and failed) — overlay cleared
-        assert!(app.git_actions_panel.as_ref().unwrap().conflict_overlay.is_none());
+        assert!(app
+            .git_actions_panel
+            .as_ref()
+            .unwrap()
+            .conflict_overlay
+            .is_none());
     }
 
     #[test]
     fn test_empty_conflicted_list_n_still_aborts() {
         let mut app = app_with_conflict(vec![], vec![], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('n'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         let panel = app.git_actions_panel.as_ref().unwrap();
         assert!(panel.conflict_overlay.is_none());
         assert_eq!(panel.result_message.as_ref().unwrap().0, "Aborted");
@@ -901,15 +1052,21 @@ mod tests {
     fn test_only_auto_merged_no_conflicts() {
         let mut app = app_with_conflict(vec![], vec!["auto.rs".into()], 0);
         let cp = test_claude();
-        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp).unwrap();
+        handle_conflict_overlay(key(KeyCode::Char('j'), KeyModifiers::NONE), &mut app, &cp)
+            .unwrap();
         assert_eq!(overlay(&app).selected, 1);
     }
 
     #[test]
     fn test_continue_with_merge_flag_preserved_through_nav() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
-        app.git_actions_panel.as_mut().unwrap()
-            .conflict_overlay.as_mut().unwrap().continue_with_merge = true;
+        app.git_actions_panel
+            .as_mut()
+            .unwrap()
+            .conflict_overlay
+            .as_mut()
+            .unwrap()
+            .continue_with_merge = true;
         let cp = test_claude();
         handle_conflict_overlay(key(KeyCode::Down, KeyModifiers::NONE), &mut app, &cp).unwrap();
         assert!(overlay(&app).continue_with_merge);
@@ -922,7 +1079,12 @@ mod tests {
     #[test]
     fn test_all_nav_keys_return_ok() {
         let cp = test_claude();
-        for code in [KeyCode::Char('j'), KeyCode::Char('k'), KeyCode::Down, KeyCode::Up] {
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('k'),
+            KeyCode::Down,
+            KeyCode::Up,
+        ] {
             let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
             assert!(handle_conflict_overlay(key(code, KeyModifiers::NONE), &mut app, &cp).is_ok());
         }
@@ -941,28 +1103,42 @@ mod tests {
     fn test_enter_sel0_returns_ok() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        assert!(handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).is_ok());
+        assert!(
+            handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).is_ok()
+        );
     }
 
     #[test]
     fn test_enter_sel1_returns_ok() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 1);
         let cp = test_claude();
-        assert!(handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).is_ok());
+        assert!(
+            handle_conflict_overlay(key(KeyCode::Enter, KeyModifiers::NONE), &mut app, &cp).is_ok()
+        );
     }
 
     #[test]
     fn test_y_returns_ok() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        assert!(handle_conflict_overlay(key(KeyCode::Char('y'), KeyModifiers::NONE), &mut app, &cp).is_ok());
+        assert!(handle_conflict_overlay(
+            key(KeyCode::Char('y'), KeyModifiers::NONE),
+            &mut app,
+            &cp
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_unmatched_returns_ok() {
         let mut app = app_with_conflict(vec!["a.rs".into()], vec![], 0);
         let cp = test_claude();
-        assert!(handle_conflict_overlay(key(KeyCode::Char('z'), KeyModifiers::NONE), &mut app, &cp).is_ok());
+        assert!(handle_conflict_overlay(
+            key(KeyCode::Char('z'), KeyModifiers::NONE),
+            &mut app,
+            &cp
+        )
+        .is_ok());
     }
 
     // ══════════════════════════════════════════════════════════════════

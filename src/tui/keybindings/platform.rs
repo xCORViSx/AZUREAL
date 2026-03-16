@@ -11,17 +11,43 @@
 #[allow(dead_code)]
 pub fn macos_opt_key(ch: char) -> Option<char> {
     match ch {
-        'å' => Some('a'), '∫' => Some('b'), 'ç' => Some('c'), '∂' => Some('d'),
-        '´' => Some('e'), 'ƒ' => Some('f'), '©' => Some('g'), '˙' => Some('h'),
-        'ˆ' => Some('i'), '∆' => Some('j'), '˚' => Some('k'), '¬' => Some('l'),
-        'µ' => Some('m'), '˜' => Some('n'), 'ø' => Some('o'), 'π' => Some('p'),
-        'œ' => Some('q'), '®' => Some('r'), 'ß' => Some('s'), '†' => Some('t'),
-        '¨' => Some('u'), '√' => Some('v'), '∑' => Some('w'), '≈' => Some('x'),
-        '¥' => Some('y'), 'Ω' => Some('z'),
+        'å' => Some('a'),
+        '∫' => Some('b'),
+        'ç' => Some('c'),
+        '∂' => Some('d'),
+        '´' => Some('e'),
+        'ƒ' => Some('f'),
+        '©' => Some('g'),
+        '˙' => Some('h'),
+        'ˆ' => Some('i'),
+        '∆' => Some('j'),
+        '˚' => Some('k'),
+        '¬' => Some('l'),
+        'µ' => Some('m'),
+        '˜' => Some('n'),
+        'ø' => Some('o'),
+        'π' => Some('p'),
+        'œ' => Some('q'),
+        '®' => Some('r'),
+        'ß' => Some('s'),
+        '†' => Some('t'),
+        '¨' => Some('u'),
+        '√' => Some('v'),
+        '∑' => Some('w'),
+        '≈' => Some('x'),
+        '¥' => Some('y'),
+        'Ω' => Some('z'),
         // ⌥+numbers on US keyboard layout
-        '¡' => Some('1'), '™' => Some('2'), '£' => Some('3'), '¢' => Some('4'),
-        '∞' => Some('5'), '§' => Some('6'), '¶' => Some('7'), '•' => Some('8'),
-        'ª' => Some('9'), 'º' => Some('0'),
+        '¡' => Some('1'),
+        '™' => Some('2'),
+        '£' => Some('3'),
+        '¢' => Some('4'),
+        '∞' => Some('5'),
+        '§' => Some('6'),
+        '¶' => Some('7'),
+        '•' => Some('8'),
+        'ª' => Some('9'),
+        'º' => Some('0'),
         _ => None,
     }
 }
@@ -32,9 +58,13 @@ pub fn macos_opt_key(ch: char) -> Option<char> {
 #[inline]
 pub fn is_cmd(modifiers: crossterm::event::KeyModifiers) -> bool {
     #[cfg(target_os = "macos")]
-    { modifiers.contains(crossterm::event::KeyModifiers::SUPER) }
+    {
+        modifiers.contains(crossterm::event::KeyModifiers::SUPER)
+    }
     #[cfg(not(target_os = "macos"))]
-    { modifiers.contains(crossterm::event::KeyModifiers::CONTROL) }
+    {
+        modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+    }
 }
 
 /// Check if the given modifiers represent the platform "command+shift" combo.
@@ -43,12 +73,14 @@ pub fn is_cmd(modifiers: crossterm::event::KeyModifiers) -> bool {
 pub fn is_cmd_shift(modifiers: crossterm::event::KeyModifiers) -> bool {
     #[cfg(target_os = "macos")]
     {
-        let required = crossterm::event::KeyModifiers::SUPER | crossterm::event::KeyModifiers::SHIFT;
+        let required =
+            crossterm::event::KeyModifiers::SUPER | crossterm::event::KeyModifiers::SHIFT;
         modifiers == required
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let required = crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT;
+        let required =
+            crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::SHIFT;
         modifiers == required
     }
 }
@@ -62,235 +94,373 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn opt_a() { assert_eq!(macos_opt_key('å'), Some('a')); }
+    fn opt_a() {
+        assert_eq!(macos_opt_key('å'), Some('a'));
+    }
 
     #[test]
-    fn opt_b() { assert_eq!(macos_opt_key('∫'), Some('b')); }
+    fn opt_b() {
+        assert_eq!(macos_opt_key('∫'), Some('b'));
+    }
 
     #[test]
-    fn opt_c() { assert_eq!(macos_opt_key('ç'), Some('c')); }
+    fn opt_c() {
+        assert_eq!(macos_opt_key('ç'), Some('c'));
+    }
 
     #[test]
-    fn opt_d() { assert_eq!(macos_opt_key('∂'), Some('d')); }
+    fn opt_d() {
+        assert_eq!(macos_opt_key('∂'), Some('d'));
+    }
 
     #[test]
-    fn opt_e() { assert_eq!(macos_opt_key('´'), Some('e')); }
+    fn opt_e() {
+        assert_eq!(macos_opt_key('´'), Some('e'));
+    }
 
     #[test]
-    fn opt_f() { assert_eq!(macos_opt_key('ƒ'), Some('f')); }
+    fn opt_f() {
+        assert_eq!(macos_opt_key('ƒ'), Some('f'));
+    }
 
     #[test]
-    fn opt_g() { assert_eq!(macos_opt_key('©'), Some('g')); }
+    fn opt_g() {
+        assert_eq!(macos_opt_key('©'), Some('g'));
+    }
 
     #[test]
-    fn opt_h() { assert_eq!(macos_opt_key('˙'), Some('h')); }
+    fn opt_h() {
+        assert_eq!(macos_opt_key('˙'), Some('h'));
+    }
 
     #[test]
-    fn opt_i() { assert_eq!(macos_opt_key('ˆ'), Some('i')); }
+    fn opt_i() {
+        assert_eq!(macos_opt_key('ˆ'), Some('i'));
+    }
 
     #[test]
-    fn opt_j() { assert_eq!(macos_opt_key('∆'), Some('j')); }
+    fn opt_j() {
+        assert_eq!(macos_opt_key('∆'), Some('j'));
+    }
 
     #[test]
-    fn opt_k() { assert_eq!(macos_opt_key('˚'), Some('k')); }
+    fn opt_k() {
+        assert_eq!(macos_opt_key('˚'), Some('k'));
+    }
 
     #[test]
-    fn opt_l() { assert_eq!(macos_opt_key('¬'), Some('l')); }
+    fn opt_l() {
+        assert_eq!(macos_opt_key('¬'), Some('l'));
+    }
 
     #[test]
-    fn opt_m() { assert_eq!(macos_opt_key('µ'), Some('m')); }
+    fn opt_m() {
+        assert_eq!(macos_opt_key('µ'), Some('m'));
+    }
 
     #[test]
-    fn opt_n() { assert_eq!(macos_opt_key('˜'), Some('n')); }
+    fn opt_n() {
+        assert_eq!(macos_opt_key('˜'), Some('n'));
+    }
 
     #[test]
-    fn opt_o() { assert_eq!(macos_opt_key('ø'), Some('o')); }
+    fn opt_o() {
+        assert_eq!(macos_opt_key('ø'), Some('o'));
+    }
 
     #[test]
-    fn opt_p() { assert_eq!(macos_opt_key('π'), Some('p')); }
+    fn opt_p() {
+        assert_eq!(macos_opt_key('π'), Some('p'));
+    }
 
     #[test]
-    fn opt_q() { assert_eq!(macos_opt_key('œ'), Some('q')); }
+    fn opt_q() {
+        assert_eq!(macos_opt_key('œ'), Some('q'));
+    }
 
     #[test]
-    fn opt_r() { assert_eq!(macos_opt_key('®'), Some('r')); }
+    fn opt_r() {
+        assert_eq!(macos_opt_key('®'), Some('r'));
+    }
 
     #[test]
-    fn opt_s() { assert_eq!(macos_opt_key('ß'), Some('s')); }
+    fn opt_s() {
+        assert_eq!(macos_opt_key('ß'), Some('s'));
+    }
 
     #[test]
-    fn opt_t() { assert_eq!(macos_opt_key('†'), Some('t')); }
+    fn opt_t() {
+        assert_eq!(macos_opt_key('†'), Some('t'));
+    }
 
     #[test]
-    fn opt_u() { assert_eq!(macos_opt_key('¨'), Some('u')); }
+    fn opt_u() {
+        assert_eq!(macos_opt_key('¨'), Some('u'));
+    }
 
     #[test]
-    fn opt_v() { assert_eq!(macos_opt_key('√'), Some('v')); }
+    fn opt_v() {
+        assert_eq!(macos_opt_key('√'), Some('v'));
+    }
 
     #[test]
-    fn opt_w() { assert_eq!(macos_opt_key('∑'), Some('w')); }
+    fn opt_w() {
+        assert_eq!(macos_opt_key('∑'), Some('w'));
+    }
 
     #[test]
-    fn opt_x() { assert_eq!(macos_opt_key('≈'), Some('x')); }
+    fn opt_x() {
+        assert_eq!(macos_opt_key('≈'), Some('x'));
+    }
 
     #[test]
-    fn opt_y() { assert_eq!(macos_opt_key('¥'), Some('y')); }
+    fn opt_y() {
+        assert_eq!(macos_opt_key('¥'), Some('y'));
+    }
 
     #[test]
-    fn opt_z() { assert_eq!(macos_opt_key('Ω'), Some('z')); }
+    fn opt_z() {
+        assert_eq!(macos_opt_key('Ω'), Some('z'));
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  ⌥+number mappings (0–9)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn opt_1() { assert_eq!(macos_opt_key('¡'), Some('1')); }
+    fn opt_1() {
+        assert_eq!(macos_opt_key('¡'), Some('1'));
+    }
 
     #[test]
-    fn opt_2() { assert_eq!(macos_opt_key('™'), Some('2')); }
+    fn opt_2() {
+        assert_eq!(macos_opt_key('™'), Some('2'));
+    }
 
     #[test]
-    fn opt_3() { assert_eq!(macos_opt_key('£'), Some('3')); }
+    fn opt_3() {
+        assert_eq!(macos_opt_key('£'), Some('3'));
+    }
 
     #[test]
-    fn opt_4() { assert_eq!(macos_opt_key('¢'), Some('4')); }
+    fn opt_4() {
+        assert_eq!(macos_opt_key('¢'), Some('4'));
+    }
 
     #[test]
-    fn opt_5() { assert_eq!(macos_opt_key('∞'), Some('5')); }
+    fn opt_5() {
+        assert_eq!(macos_opt_key('∞'), Some('5'));
+    }
 
     #[test]
-    fn opt_6() { assert_eq!(macos_opt_key('§'), Some('6')); }
+    fn opt_6() {
+        assert_eq!(macos_opt_key('§'), Some('6'));
+    }
 
     #[test]
-    fn opt_7() { assert_eq!(macos_opt_key('¶'), Some('7')); }
+    fn opt_7() {
+        assert_eq!(macos_opt_key('¶'), Some('7'));
+    }
 
     #[test]
-    fn opt_8() { assert_eq!(macos_opt_key('•'), Some('8')); }
+    fn opt_8() {
+        assert_eq!(macos_opt_key('•'), Some('8'));
+    }
 
     #[test]
-    fn opt_9() { assert_eq!(macos_opt_key('ª'), Some('9')); }
+    fn opt_9() {
+        assert_eq!(macos_opt_key('ª'), Some('9'));
+    }
 
     #[test]
-    fn opt_0() { assert_eq!(macos_opt_key('º'), Some('0')); }
+    fn opt_0() {
+        assert_eq!(macos_opt_key('º'), Some('0'));
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  ASCII letters return None (not ⌥ mappings)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn ascii_a_none() { assert_eq!(macos_opt_key('a'), None); }
+    fn ascii_a_none() {
+        assert_eq!(macos_opt_key('a'), None);
+    }
 
     #[test]
-    fn ascii_z_none() { assert_eq!(macos_opt_key('z'), None); }
+    fn ascii_z_none() {
+        assert_eq!(macos_opt_key('z'), None);
+    }
 
     #[test]
-    fn ascii_upper_a_none() { assert_eq!(macos_opt_key('A'), None); }
+    fn ascii_upper_a_none() {
+        assert_eq!(macos_opt_key('A'), None);
+    }
 
     #[test]
-    fn ascii_upper_z_none() { assert_eq!(macos_opt_key('Z'), None); }
+    fn ascii_upper_z_none() {
+        assert_eq!(macos_opt_key('Z'), None);
+    }
 
     #[test]
-    fn ascii_m_none() { assert_eq!(macos_opt_key('m'), None); }
+    fn ascii_m_none() {
+        assert_eq!(macos_opt_key('m'), None);
+    }
 
     #[test]
-    fn ascii_upper_m_none() { assert_eq!(macos_opt_key('M'), None); }
+    fn ascii_upper_m_none() {
+        assert_eq!(macos_opt_key('M'), None);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  ASCII digits return None
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn digit_0_none() { assert_eq!(macos_opt_key('0'), None); }
+    fn digit_0_none() {
+        assert_eq!(macos_opt_key('0'), None);
+    }
 
     #[test]
-    fn digit_1_none() { assert_eq!(macos_opt_key('1'), None); }
+    fn digit_1_none() {
+        assert_eq!(macos_opt_key('1'), None);
+    }
 
     #[test]
-    fn digit_5_none() { assert_eq!(macos_opt_key('5'), None); }
+    fn digit_5_none() {
+        assert_eq!(macos_opt_key('5'), None);
+    }
 
     #[test]
-    fn digit_9_none() { assert_eq!(macos_opt_key('9'), None); }
+    fn digit_9_none() {
+        assert_eq!(macos_opt_key('9'), None);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Common special characters return None
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn space_none() { assert_eq!(macos_opt_key(' '), None); }
+    fn space_none() {
+        assert_eq!(macos_opt_key(' '), None);
+    }
 
     #[test]
-    fn exclamation_none() { assert_eq!(macos_opt_key('!'), None); }
+    fn exclamation_none() {
+        assert_eq!(macos_opt_key('!'), None);
+    }
 
     #[test]
-    fn at_sign_none() { assert_eq!(macos_opt_key('@'), None); }
+    fn at_sign_none() {
+        assert_eq!(macos_opt_key('@'), None);
+    }
 
     #[test]
-    fn hash_none() { assert_eq!(macos_opt_key('#'), None); }
+    fn hash_none() {
+        assert_eq!(macos_opt_key('#'), None);
+    }
 
     #[test]
-    fn dollar_none() { assert_eq!(macos_opt_key('$'), None); }
+    fn dollar_none() {
+        assert_eq!(macos_opt_key('$'), None);
+    }
 
     #[test]
-    fn percent_none() { assert_eq!(macos_opt_key('%'), None); }
+    fn percent_none() {
+        assert_eq!(macos_opt_key('%'), None);
+    }
 
     #[test]
-    fn ampersand_none() { assert_eq!(macos_opt_key('&'), None); }
+    fn ampersand_none() {
+        assert_eq!(macos_opt_key('&'), None);
+    }
 
     #[test]
-    fn asterisk_none() { assert_eq!(macos_opt_key('*'), None); }
+    fn asterisk_none() {
+        assert_eq!(macos_opt_key('*'), None);
+    }
 
     #[test]
-    fn slash_none() { assert_eq!(macos_opt_key('/'), None); }
+    fn slash_none() {
+        assert_eq!(macos_opt_key('/'), None);
+    }
 
     #[test]
-    fn backslash_none() { assert_eq!(macos_opt_key('\\'), None); }
+    fn backslash_none() {
+        assert_eq!(macos_opt_key('\\'), None);
+    }
 
     #[test]
-    fn tilde_none() { assert_eq!(macos_opt_key('~'), None); }
+    fn tilde_none() {
+        assert_eq!(macos_opt_key('~'), None);
+    }
 
     #[test]
-    fn period_none() { assert_eq!(macos_opt_key('.'), None); }
+    fn period_none() {
+        assert_eq!(macos_opt_key('.'), None);
+    }
 
     #[test]
-    fn comma_none() { assert_eq!(macos_opt_key(','), None); }
+    fn comma_none() {
+        assert_eq!(macos_opt_key(','), None);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Control / edge characters return None
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn null_char_none() { assert_eq!(macos_opt_key('\0'), None); }
+    fn null_char_none() {
+        assert_eq!(macos_opt_key('\0'), None);
+    }
 
     #[test]
-    fn newline_none() { assert_eq!(macos_opt_key('\n'), None); }
+    fn newline_none() {
+        assert_eq!(macos_opt_key('\n'), None);
+    }
 
     #[test]
-    fn tab_none() { assert_eq!(macos_opt_key('\t'), None); }
+    fn tab_none() {
+        assert_eq!(macos_opt_key('\t'), None);
+    }
 
     #[test]
-    fn carriage_return_none() { assert_eq!(macos_opt_key('\r'), None); }
+    fn carriage_return_none() {
+        assert_eq!(macos_opt_key('\r'), None);
+    }
 
     #[test]
-    fn bell_none() { assert_eq!(macos_opt_key('\x07'), None); }
+    fn bell_none() {
+        assert_eq!(macos_opt_key('\x07'), None);
+    }
 
     #[test]
-    fn escape_char_none() { assert_eq!(macos_opt_key('\x1b'), None); }
+    fn escape_char_none() {
+        assert_eq!(macos_opt_key('\x1b'), None);
+    }
 
     // ══════════════════════════════════════════════════════════════════
     //  Extended Unicode that is NOT in the mapping
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn emoji_smiley_none() { assert_eq!(macos_opt_key('😊'), None); }
+    fn emoji_smiley_none() {
+        assert_eq!(macos_opt_key('😊'), None);
+    }
 
     #[test]
-    fn cjk_char_none() { assert_eq!(macos_opt_key('中'), None); }
+    fn cjk_char_none() {
+        assert_eq!(macos_opt_key('中'), None);
+    }
 
     #[test]
-    fn cyrillic_char_none() { assert_eq!(macos_opt_key('Д'), None); }
+    fn cyrillic_char_none() {
+        assert_eq!(macos_opt_key('Д'), None);
+    }
 
     #[test]
-    fn arabic_char_none() { assert_eq!(macos_opt_key('ع'), None); }
+    fn arabic_char_none() {
+        assert_eq!(macos_opt_key('ع'), None);
+    }
 
     #[test]
     fn greek_alpha_none() {
@@ -317,10 +487,14 @@ mod tests {
     }
 
     #[test]
-    fn en_dash_none() { assert_eq!(macos_opt_key('–'), None); }
+    fn en_dash_none() {
+        assert_eq!(macos_opt_key('–'), None);
+    }
 
     #[test]
-    fn em_dash_none() { assert_eq!(macos_opt_key('—'), None); }
+    fn em_dash_none() {
+        assert_eq!(macos_opt_key('—'), None);
+    }
 
     #[test]
     fn copyright_is_opt_g() {

@@ -25,8 +25,12 @@ pub fn compute_worktree_refresh(
     let mut needs_refetch = false;
     let mut rebase_branches: Vec<(PathBuf, String)> = Vec::new();
     for wt in &worktrees {
-        if wt.branch.is_some() { continue; }
-        if !wt.is_main && !wt.path.starts_with(&worktrees_dir) { continue; }
+        if wt.branch.is_some() {
+            continue;
+        }
+        if !wt.is_main && !wt.path.starts_with(&worktrees_dir) {
+            continue;
+        }
         if Git::is_rebase_in_progress(&wt.path) {
             let git_dir = std::process::Command::new("git")
                 .args(["rev-parse", "--git-dir"])
@@ -38,7 +42,10 @@ pub fn compute_worktree_refresh(
             if let Some(ref gd) = git_dir {
                 let head_name = std::path::Path::new(gd).join("rebase-merge/head-name");
                 if let Ok(content) = std::fs::read_to_string(&head_name) {
-                    let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                    let branch = content
+                        .trim()
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(content.trim());
                     if !branch.is_empty() {
                         rebase_branches.push((wt.path.clone(), branch.to_string()));
                         continue;
@@ -46,7 +53,10 @@ pub fn compute_worktree_refresh(
                 }
                 let head_name = std::path::Path::new(gd).join("rebase-apply/head-name");
                 if let Ok(content) = std::fs::read_to_string(&head_name) {
-                    let branch = content.trim().strip_prefix("refs/heads/").unwrap_or(content.trim());
+                    let branch = content
+                        .trim()
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(content.trim());
                     if !branch.is_empty() {
                         rebase_branches.push((wt.path.clone(), branch.to_string()));
                         continue;
@@ -65,7 +75,12 @@ pub fn compute_worktree_refresh(
             .unwrap_or(true);
         if !head_ok {
             if let Ok(out) = std::process::Command::new("git")
-                .args(["for-each-ref", "--points-at=HEAD", "--format=%(refname:short)", "refs/heads/"])
+                .args([
+                    "for-each-ref",
+                    "--points-at=HEAD",
+                    "--format=%(refname:short)",
+                    "refs/heads/",
+                ])
                 .current_dir(&wt.path)
                 .output()
             {
@@ -159,7 +174,10 @@ impl App {
             // Not in a git repo — show Projects panel with a helpful message
             self.open_projects_panel();
             if let Some(ref mut panel) = self.projects_panel {
-                panel.error = Some("Project not initialized. Press i to initialize or choose another project.".to_string());
+                panel.error = Some(
+                    "Project not initialized. Press i to initialize or choose another project."
+                        .to_string(),
+                );
             }
             return Ok(());
         }
@@ -205,7 +223,9 @@ impl App {
     /// The event loop uses compute_worktree_refresh() + apply_worktree_result()
     /// on a background thread instead.
     pub fn load_worktrees(&mut self) -> anyhow::Result<()> {
-        let Some(project) = &self.project else { return Ok(()) };
+        let Some(project) = &self.project else {
+            return Ok(());
+        };
         // Discard any in-flight background refresh — this synchronous call takes priority
         self.worktree_refresh_receiver = None;
         let result = compute_worktree_refresh(
@@ -225,7 +245,8 @@ impl App {
         self.main_worktree = result.main_worktree;
 
         // Preserve current selection by branch name
-        let prev_branch = self.selected_worktree
+        let prev_branch = self
+            .selected_worktree
             .and_then(|i| self.worktrees.get(i))
             .map(|w| w.branch_name.clone());
 
@@ -234,12 +255,18 @@ impl App {
         self.selected_worktree = if self.worktrees.is_empty() {
             None
         } else if let Some(ref branch) = prev_branch {
-            self.worktrees.iter().position(|w| w.branch_name == *branch)
+            self.worktrees
+                .iter()
+                .position(|w| w.branch_name == *branch)
                 .or(Some(0))
         } else {
             let cwd = std::env::current_dir().ok();
-            cwd.and_then(|c| self.worktrees.iter().position(|w| w.worktree_path.as_ref() == Some(&c)))
-                .or(Some(0))
+            cwd.and_then(|c| {
+                self.worktrees
+                    .iter()
+                    .position(|w| w.worktree_path.as_ref() == Some(&c))
+            })
+            .or(Some(0))
         };
 
         self.invalidate_sidebar();
@@ -314,13 +341,21 @@ impl App {
             // Determine store session ID:
             // 1. From session list selection (numeric string from session_files cache)
             // 2. Auto-discover latest session from store for this branch
-            let store_session_id = self.session_selected_file_idx.get(&branch_name)
-                .and_then(|idx| self.session_files.get(&branch_name)
-                    .and_then(|f| f.get(*idx))
-                    .and_then(|(id, _, _)| id.parse::<i64>().ok()))
-                .or_else(|| self.session_store.as_ref()
-                    .and_then(|store| store.list_sessions(Some(&branch_name)).ok())
-                    .and_then(|sessions| sessions.last().map(|s| s.id)));
+            let store_session_id = self
+                .session_selected_file_idx
+                .get(&branch_name)
+                .and_then(|idx| {
+                    self.session_files
+                        .get(&branch_name)
+                        .and_then(|f| f.get(*idx))
+                        .and_then(|(id, _, _)| id.parse::<i64>().ok())
+                })
+                .or_else(|| {
+                    self.session_store
+                        .as_ref()
+                        .and_then(|store| store.list_sessions(Some(&branch_name)).ok())
+                        .and_then(|sessions| sessions.last().map(|s| s.id))
+                });
 
             // Clear unread for the viewed session
             if self.git_actions_panel.is_none() {
@@ -333,7 +368,9 @@ impl App {
             }
 
             // Check if there's an active Claude process on this branch
-            let is_live = self.active_slot.get(&branch_name)
+            let is_live = self
+                .active_slot
+                .get(&branch_name)
                 .map(|slot| self.running_sessions.contains(slot))
                 .unwrap_or(false);
 
@@ -349,7 +386,9 @@ impl App {
                     // Set up JSONL watching for the watcher thread
                     if let Some(uuid) = self.agent_session_ids.get(slot) {
                         if let Some(ref wt_path) = worktree_path {
-                            if let Some(jsonl_path) = crate::config::session_file(self.backend, wt_path, uuid) {
+                            if let Some(jsonl_path) =
+                                crate::config::session_file(self.backend, wt_path, uuid)
+                            {
                                 if jsonl_path.exists() {
                                     self.session_file_path = Some(jsonl_path);
                                 }
@@ -368,7 +407,10 @@ impl App {
 
                         if let Some(ref pending) = self.pending_user_message {
                             for event in self.display_events.iter().rev() {
-                                if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                                if let crate::events::DisplayEvent::UserMessage {
+                                    content, ..
+                                } = event
+                                {
                                     if content == pending {
                                         self.pending_user_message = None;
                                     }
@@ -395,7 +437,10 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch = session.branch_name.clone();
             if let Some(active_slot) = self.active_slot.get(&branch) {
-                let active_store_id = self.pid_session_target.get(active_slot).map(|(sid, _, _)| *sid);
+                let active_store_id = self
+                    .pid_session_target
+                    .get(active_slot)
+                    .map(|(sid, _, _)| *sid);
                 if let Some(active_sid) = active_store_id {
                     if let Some(viewed_sid) = self.current_session_id {
                         self.viewing_historic_session = active_sid != viewed_sid;
@@ -421,7 +466,8 @@ impl App {
     /// Returns the store ID as a string (from session_files cache) or falls
     /// back to current_session_id.
     pub fn viewed_session_id(&self, branch: &str) -> Option<String> {
-        self.session_selected_file_idx.get(branch)
+        self.session_selected_file_idx
+            .get(branch)
             .and_then(|idx| self.session_files.get(branch).and_then(|f| f.get(*idx)))
             .map(|(id, _, _)| id.clone())
             .or_else(|| self.current_session_id.map(|id| id.to_string()))
@@ -430,7 +476,9 @@ impl App {
     /// Tell the file watcher thread to watch the current session file and
     /// worktree directory. Called after session switch (from load_session_output).
     pub fn sync_file_watches(&self) {
-        let Some(ref watcher) = self.file_watcher else { return };
+        let Some(ref watcher) = self.file_watcher else {
+            return;
+        };
         watcher.send(crate::watcher::WatchCommand::ClearAll);
         if let Some(ref path) = self.session_file_path {
             watcher.send(crate::watcher::WatchCommand::WatchSessionFile(path.clone()));
@@ -438,7 +486,9 @@ impl App {
         if let Some(idx) = self.selected_worktree {
             if let Some(session) = self.worktrees.get(idx) {
                 if let Some(ref wt_path) = session.worktree_path {
-                    watcher.send(crate::watcher::WatchCommand::WatchWorktree(wt_path.to_path_buf()));
+                    watcher.send(crate::watcher::WatchCommand::WatchWorktree(
+                        wt_path.to_path_buf(),
+                    ));
                 }
             }
         }
@@ -448,7 +498,9 @@ impl App {
     /// Reads session names from store so draw_title_bar() is zero I/O.
     /// During RCR, the title is locked to "[RCR] <name>" and won't be overwritten.
     pub fn update_title_session_name(&mut self) {
-        if self.rcr_session.is_some() { return; }
+        if self.rcr_session.is_some() {
+            return;
+        }
         let Some(session) = self.current_worktree() else {
             self.title_session_name.clear();
             return;
@@ -457,7 +509,10 @@ impl App {
         let names = self.load_all_session_names();
         let session_id = self.viewed_session_id(&branch);
         self.title_session_name = match session_id {
-            Some(id) => names.get(&id).cloned().unwrap_or_else(|| format_uuid_short(&id)),
+            Some(id) => names
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format_uuid_short(&id)),
             None => String::new(),
         };
     }
@@ -467,8 +522,12 @@ impl App {
     /// Also recovers from missing-file state if the source reappears.
     pub fn check_session_file(&mut self) {
         // Auto-recovery: if source was missing and has reappeared, restore normal mode
-        let Some(path) = &self.session_file_path else { return };
-        let Ok(metadata) = std::fs::metadata(path) else { return };
+        let Some(path) = &self.session_file_path else {
+            return;
+        };
+        let Ok(metadata) = std::fs::metadata(path) else {
+            return;
+        };
         let new_size = metadata.len();
 
         if new_size != self.session_file_size {
@@ -485,12 +544,16 @@ impl App {
     /// display_events, then incremental parse treats those as "existing"
     /// and appends the same events again from the file).
     pub fn poll_session_file(&mut self) -> bool {
-        if !self.session_file_dirty { return false; }
+        if !self.session_file_dirty {
+            return false;
+        }
         self.session_file_dirty = false;
         // Skip while the ACTIVE slot is streaming — its live output already
         // feeds display_events. Other concurrent slots on the same branch don't
         // affect the displayed session file, so we only gate on the active one.
-        if self.is_active_slot_running() { return false; }
+        if self.is_active_slot_running() {
+            return false;
+        }
         self.refresh_session_events();
         true
     }
@@ -498,7 +561,9 @@ impl App {
     /// Lightweight refresh of session events (no terminal/file tree reload).
     /// Uses incremental parsing — only reads new bytes appended since last parse.
     fn refresh_session_events(&mut self) {
-        let Some(path) = self.session_file_path.clone() else { return };
+        let Some(path) = self.session_file_path.clone() else {
+            return;
+        };
 
         // Track if we were at bottom before refresh (usize::MAX = follow mode)
         let was_at_bottom = self.session_scroll == usize::MAX;
@@ -506,20 +571,24 @@ impl App {
         // Incremental parse: only read new bytes since last offset
         let was_full_reparse = self.session_file_parse_offset == 0;
         let parsed = match self.backend {
-            crate::backend::Backend::Claude => crate::app::session_parser::parse_session_file_incremental(
-                &path,
-                self.session_file_parse_offset,
-                &self.display_events,
-                &self.pending_tool_calls,
-                &self.failed_tool_calls,
-            ),
-            crate::backend::Backend::Codex => crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                &path,
-                self.session_file_parse_offset,
-                &self.display_events,
-                &self.pending_tool_calls,
-                &self.failed_tool_calls,
-            ),
+            crate::backend::Backend::Claude => {
+                crate::app::session_parser::parse_session_file_incremental(
+                    &path,
+                    self.session_file_parse_offset,
+                    &self.display_events,
+                    &self.pending_tool_calls,
+                    &self.failed_tool_calls,
+                )
+            }
+            crate::backend::Backend::Codex => {
+                crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                    &path,
+                    self.session_file_parse_offset,
+                    &self.display_events,
+                    &self.pending_tool_calls,
+                    &self.failed_tool_calls,
+                )
+            }
         };
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
@@ -559,7 +628,9 @@ impl App {
             self.model_context_window = parsed.context_window;
             tokens_changed = true;
         }
-        if tokens_changed { self.update_token_badge(); }
+        if tokens_changed {
+            self.update_token_badge();
+        }
         self.session_file_parse_offset = parsed.end_offset;
 
         // Clear pending message once it appears in the parsed events.
@@ -605,14 +676,20 @@ impl App {
             return;
         };
 
-        self.file_tree_entries = build_file_tree(worktree_path, &self.file_tree_expanded, &self.file_tree_hidden_dirs);
+        self.file_tree_entries = build_file_tree(
+            worktree_path,
+            &self.file_tree_expanded,
+            &self.file_tree_hidden_dirs,
+        );
         if !self.file_tree_entries.is_empty() {
             self.file_tree_selected = Some(0);
         }
         self.invalidate_file_tree();
     }
 
-    pub fn refresh_worktrees(&mut self) -> anyhow::Result<()> { self.load_worktrees() }
+    pub fn refresh_worktrees(&mut self) -> anyhow::Result<()> {
+        self.load_worktrees()
+    }
 
     /// Scan display_events backwards for the latest TodoWrite and AskUserQuestion.
     /// TodoWrite: update sticky todo widget. AskUserQuestion: check if awaiting response.
@@ -623,7 +700,9 @@ impl App {
         // Forward scan — track whether user responded after the last TodoWrite/AskUserQuestion
         for event in &self.display_events {
             match event {
-                crate::events::DisplayEvent::ToolCall { tool_name, input, .. } => {
+                crate::events::DisplayEvent::ToolCall {
+                    tool_name, input, ..
+                } => {
                     if tool_name == "TodoWrite" {
                         self.current_todos = super::claude::parse_todos_from_input(input);
                         self.todo_scroll = 0;
@@ -636,17 +715,23 @@ impl App {
                     }
                 }
                 crate::events::DisplayEvent::UserMessage { .. } => {
-                    if found_ask { saw_user_after_ask = true; }
+                    if found_ask {
+                        saw_user_after_ask = true;
+                    }
                     saw_user_after_todo = true;
                 }
                 _ => {}
             }
         }
         // Clear stale todos — user sent a new prompt after the last TodoWrite
-        if saw_user_after_todo { self.current_todos.clear(); }
+        if saw_user_after_todo {
+            self.current_todos.clear();
+        }
         // Only awaiting if AskUserQuestion was called and no user responded yet
         self.awaiting_ask_user_question = found_ask && !saw_user_after_ask;
-        if !found_ask { self.ask_user_questions_cache = None; }
+        if !found_ask {
+            self.ask_user_questions_cache = None;
+        }
     }
 
     /// Dump debug output to .azureal/debug-output[_name] (triggered by ⌃d)
@@ -658,16 +743,19 @@ impl App {
         if let Err(e) = self.dump_debug_output_inner(suffix) {
             self.set_status(format!("Debug dump failed: {}", e));
         } else {
-            let filename = if suffix.is_empty() { "debug-output".to_string() }
-                else { format!("debug-output_{}", suffix) };
+            let filename = if suffix.is_empty() {
+                "debug-output".to_string()
+            } else {
+                format!("debug-output_{}", suffix)
+            };
             self.set_status(format!("Debug output saved to .azureal/{}", filename));
         }
     }
 
     fn dump_debug_output_inner(&mut self, name_suffix: &str) -> anyhow::Result<()> {
-        use std::io::Write;
-        use std::collections::HashMap;
         use crate::events::DisplayEvent;
+        use std::collections::HashMap;
+        use std::io::Write;
 
         // Deterministic word obfuscator: maps each unique word to a consistent fake word
         // so structural patterns are preserved (same word → same replacement every time).
@@ -677,30 +765,49 @@ impl App {
             counter: usize,
         }
         impl Obfuscator {
-            fn new() -> Self { Self { map: HashMap::new(), counter: 0 } }
+            fn new() -> Self {
+                Self {
+                    map: HashMap::new(),
+                    counter: 0,
+                }
+            }
 
             // Generate a fake word from a counter (aaa, aab, aac, ... aba, abb, ...)
             fn fake_word(&mut self, len: usize) -> String {
                 let id = self.counter;
                 self.counter += 1;
                 // 3-letter base from counter, then pad/truncate to roughly match original length
-                let base: String = (0..3).rev().map(|i| {
-                    (b'a' + ((id / 26_usize.pow(i as u32)) % 26) as u8) as char
-                }).collect();
-                if len <= 3 { base[..len.min(3)].to_string() }
-                else { format!("{}{}", base, "x".repeat(len.saturating_sub(3))) }
+                let base: String = (0..3)
+                    .rev()
+                    .map(|i| (b'a' + ((id / 26_usize.pow(i as u32)) % 26) as u8) as char)
+                    .collect();
+                if len <= 3 {
+                    base[..len.min(3)].to_string()
+                } else {
+                    format!("{}{}", base, "x".repeat(len.saturating_sub(3)))
+                }
             }
 
             // Obfuscate a word, preserving case pattern. Skips structural tokens.
             fn word(&mut self, w: &str) -> String {
-                if w.is_empty() { return String::new(); }
+                if w.is_empty() {
+                    return String::new();
+                }
                 // Preserve: numbers, punctuation-only tokens, very short (1-2 char) structural tokens,
                 // file extensions (.rs, .md, .toml, .json, .txt, .jsonl),
                 // and common programming keywords that don't leak project info
-                if w.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') { return w.to_string(); }
-                if w.len() <= 2 { return w.to_string(); }
+                if w.chars()
+                    .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+                {
+                    return w.to_string();
+                }
+                if w.len() <= 2 {
+                    return w.to_string();
+                }
                 let key = w.to_lowercase();
-                if let Some(existing) = self.map.get(&key) { return existing.clone(); }
+                if let Some(existing) = self.map.get(&key) {
+                    return existing.clone();
+                }
                 let fake = self.fake_word(w.len());
                 // Match case pattern of original: ALL_CAPS, Capitalized, lowercase
                 let result = if w.chars().all(|c| c.is_uppercase() || !c.is_alphabetic()) {
@@ -711,7 +818,9 @@ impl App {
                         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
                         None => fake,
                     }
-                } else { fake.clone() };
+                } else {
+                    fake.clone()
+                };
                 self.map.insert(key, result.clone());
                 result
             }
@@ -731,22 +840,29 @@ impl App {
                         result.push(ch);
                     }
                 }
-                if !word.is_empty() { result.push_str(&self.word(&word)); }
+                if !word.is_empty() {
+                    result.push_str(&self.word(&word));
+                }
                 result
             }
 
             // Obfuscate a file path, keeping / separators and file extensions
             fn path(&mut self, p: &str) -> String {
-                p.split('/').map(|seg| {
-                    if seg.is_empty() { return String::new(); }
-                    // Split filename from extension
-                    if let Some(dot_pos) = seg.rfind('.') {
-                        let (name, ext) = seg.split_at(dot_pos);
-                        format!("{}{}", self.word(name), ext) // keep extension as-is
-                    } else {
-                        self.word(seg)
-                    }
-                }).collect::<Vec<_>>().join("/")
+                p.split('/')
+                    .map(|seg| {
+                        if seg.is_empty() {
+                            return String::new();
+                        }
+                        // Split filename from extension
+                        if let Some(dot_pos) = seg.rfind('.') {
+                            let (name, ext) = seg.split_at(dot_pos);
+                            format!("{}{}", self.word(name), ext) // keep extension as-is
+                        } else {
+                            self.word(seg)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/")
             }
         }
 
@@ -754,40 +870,78 @@ impl App {
 
         let debug_dir = crate::config::ensure_project_data_dir()?
             .ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
-        let filename = if name_suffix.is_empty() { "debug-output".to_string() }
-            else { format!("debug-output_{}", name_suffix) };
+        let filename = if name_suffix.is_empty() {
+            "debug-output".to_string()
+        } else {
+            format!("debug-output_{}", name_suffix)
+        };
         let debug_path = debug_dir.join(&filename);
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header — safe metadata (no content leaked)
         writeln!(file, "=== AZUREAL DEBUG DUMP ===")?;
         writeln!(file, "Dump time: {:?}", std::time::SystemTime::now())?;
-        writeln!(file, "Session file: {:?}", self.session_file_path.as_ref().map(|p| ob.path(&p.display().to_string())))?;
+        writeln!(
+            file,
+            "Session file: {:?}",
+            self.session_file_path
+                .as_ref()
+                .map(|p| ob.path(&p.display().to_string()))
+        )?;
 
         // Session file health check — only structural info, no content
         if let Some(ref path) = self.session_file_path {
             if let Ok(content) = std::fs::read_to_string(path) {
                 let file_size = content.len();
                 let ends_with_newline = content.ends_with('\n');
-                writeln!(file, "File size: {} bytes, ends with newline: {}", file_size, ends_with_newline)?;
+                writeln!(
+                    file,
+                    "File size: {} bytes, ends with newline: {}",
+                    file_size, ends_with_newline
+                )?;
                 writeln!(file, "Last 50 chars: [redacted]")?;
                 if let Some(last_line) = content.lines().last() {
-                    let is_valid_json = serde_json::from_str::<serde_json::Value>(last_line).is_ok();
+                    let is_valid_json =
+                        serde_json::from_str::<serde_json::Value>(last_line).is_ok();
                     writeln!(file, "Last line valid JSON: {}", is_valid_json)?;
                     if !is_valid_json {
-                        writeln!(file, "Last line length: {} chars (invalid JSON)", last_line.len())?;
+                        writeln!(
+                            file,
+                            "Last line length: {} chars (invalid JSON)",
+                            last_line.len()
+                        )?;
                     }
                 }
             }
         }
         writeln!(file, "")?;
-        writeln!(file, "JSONL lines: {} (parse errors: {})", self.parse_total_lines, self.parse_errors)?;
+        writeln!(
+            file,
+            "JSONL lines: {} (parse errors: {})",
+            self.parse_total_lines, self.parse_errors
+        )?;
         writeln!(file, "")?;
         writeln!(file, "=== ASSISTANT PARSING STATS ===")?;
-        writeln!(file, "  Total 'assistant' events in JSONL: {}", self.assistant_total)?;
-        writeln!(file, "  - No 'message' field: {}", self.assistant_no_message)?;
-        writeln!(file, "  - No 'content' array: {}", self.assistant_no_content_arr)?;
-        writeln!(file, "  - Text blocks created: {}", self.assistant_text_blocks)?;
+        writeln!(
+            file,
+            "  Total 'assistant' events in JSONL: {}",
+            self.assistant_total
+        )?;
+        writeln!(
+            file,
+            "  - No 'message' field: {}",
+            self.assistant_no_message
+        )?;
+        writeln!(
+            file,
+            "  - No 'content' array: {}",
+            self.assistant_no_content_arr
+        )?;
+        writeln!(
+            file,
+            "  - Text blocks created: {}",
+            self.assistant_text_blocks
+        )?;
         writeln!(file, "")?;
         writeln!(file, "Total display_events: {}", self.display_events.len())?;
 
@@ -830,18 +984,31 @@ impl App {
                     let ob_text = ob.text(&text.chars().take(80).collect::<String>());
                     format!("AssistantText: {}...", ob_text)
                 }
-                DisplayEvent::ToolCall { tool_name, file_path, .. } => {
+                DisplayEvent::ToolCall {
+                    tool_name,
+                    file_path,
+                    ..
+                } => {
                     let ob_path = file_path.as_ref().map(|p| ob.path(p)).unwrap_or_default();
                     format!("ToolCall: {} {}", tool_name, ob_path)
                 }
-                DisplayEvent::ToolResult { tool_name, file_path, content, .. } => {
+                DisplayEvent::ToolResult {
+                    tool_name,
+                    file_path,
+                    content,
+                    ..
+                } => {
                     let ob_path = file_path.as_ref().map(|p| ob.path(p)).unwrap_or_default();
                     format!("ToolResult: {} {} ({}B)", tool_name, ob_path, content.len())
                 }
                 DisplayEvent::Hook { name, output } => {
                     format!("Hook: {} ({}B)", name, output.len())
                 }
-                DisplayEvent::Complete { duration_ms, cost_usd, .. } => {
+                DisplayEvent::Complete {
+                    duration_ms,
+                    cost_usd,
+                    ..
+                } => {
                     format!("Complete: {}ms, ${:.4}", duration_ms, cost_usd)
                 }
                 DisplayEvent::Init { model, .. } => format!("Init: model={}", model),
@@ -871,7 +1038,11 @@ impl App {
         writeln!(file, "")?;
 
         for line in rendered_lines.iter() {
-            let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+            let text: String = line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect();
             writeln!(file, "{}", ob.text(&text))?;
         }
 
@@ -882,9 +1053,15 @@ impl App {
 /// Format a UUID-like session ID as "xxxxxxxx-…" (first group + dash + ellipsis)
 fn format_uuid_short(id: &str) -> String {
     if let Some(dash) = id.find('-') {
-        if dash >= 8 { return format!("{}-…", &id[..dash]); }
+        if dash >= 8 {
+            return format!("{}-…", &id[..dash]);
+        }
     }
-    if id.len() > 12 { format!("{}…", &id[..11]) } else { id.to_string() }
+    if id.len() > 12 {
+        format!("{}…", &id[..11])
+    } else {
+        id.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -986,10 +1163,21 @@ mod tests {
     fn viewed_session_id_returns_correct_id() {
         let mut app = App::new();
         let branch = "azureal/feat";
-        app.session_files.insert(branch.to_string(), vec![
-            ("uuid-1".to_string(), PathBuf::from("/sessions/1.jsonl"), "2024-01-01".to_string()),
-            ("uuid-2".to_string(), PathBuf::from("/sessions/2.jsonl"), "2024-01-02".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.to_string(),
+            vec![
+                (
+                    "uuid-1".to_string(),
+                    PathBuf::from("/sessions/1.jsonl"),
+                    "2024-01-01".to_string(),
+                ),
+                (
+                    "uuid-2".to_string(),
+                    PathBuf::from("/sessions/2.jsonl"),
+                    "2024-01-02".to_string(),
+                ),
+            ],
+        );
         app.session_selected_file_idx.insert(branch.to_string(), 0);
         assert_eq!(app.viewed_session_id(branch), Some("uuid-1".to_string()));
     }
@@ -998,10 +1186,13 @@ mod tests {
     fn viewed_session_id_second_selection() {
         let mut app = App::new();
         let branch = "azureal/test";
-        app.session_files.insert(branch.to_string(), vec![
-            ("uuid-a".to_string(), PathBuf::from("/a"), "t1".to_string()),
-            ("uuid-b".to_string(), PathBuf::from("/b"), "t2".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.to_string(),
+            vec![
+                ("uuid-a".to_string(), PathBuf::from("/a"), "t1".to_string()),
+                ("uuid-b".to_string(), PathBuf::from("/b"), "t2".to_string()),
+            ],
+        );
         app.session_selected_file_idx.insert(branch.to_string(), 1);
         assert_eq!(app.viewed_session_id(branch), Some("uuid-b".to_string()));
     }
@@ -1010,9 +1201,10 @@ mod tests {
     fn viewed_session_id_idx_out_of_bounds() {
         let mut app = App::new();
         let branch = "b";
-        app.session_files.insert(branch.to_string(), vec![
-            ("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.to_string(),
+            vec![("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string())],
+        );
         app.session_selected_file_idx.insert(branch.to_string(), 5); // out of bounds
         assert!(app.viewed_session_id(branch).is_none());
     }
@@ -1021,9 +1213,10 @@ mod tests {
     fn viewed_session_id_no_idx() {
         let mut app = App::new();
         let branch = "b";
-        app.session_files.insert(branch.to_string(), vec![
-            ("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string()),
-        ]);
+        app.session_files.insert(
+            branch.to_string(),
+            vec![("uuid-x".to_string(), PathBuf::from("/x"), "t".to_string())],
+        );
         // No entry in session_selected_file_idx
         assert!(app.viewed_session_id(branch).is_none());
     }
@@ -1225,8 +1418,10 @@ mod tests {
     #[test]
     fn load_session_output_resets_render_caches() {
         let mut app = App::new();
-        app.rendered_lines_cache.push(ratatui::text::Line::raw("old"));
-        app.session_viewport_cache.push(ratatui::text::Line::raw("old"));
+        app.rendered_lines_cache
+            .push(ratatui::text::Line::raw("old"));
+        app.session_viewport_cache
+            .push(ratatui::text::Line::raw("old"));
         app.animation_line_indices.push((0, 0, "tool1".into()));
         app.message_bubble_positions.push((0, true));
         app.rendered_events_count = 100;
@@ -1275,7 +1470,15 @@ mod tests {
     #[test]
     fn load_session_output_clears_clickable_paths() {
         let mut app = App::new();
-        app.clickable_paths.push((0, 0, 10, "/file.rs".to_string(), "".to_string(), "".to_string(), 1));
+        app.clickable_paths.push((
+            0,
+            0,
+            10,
+            "/file.rs".to_string(),
+            "".to_string(),
+            "".to_string(),
+            1,
+        ));
         app.clicked_path_highlight = Some((0, 0, 10, 1));
         app.load_session_output();
         assert!(app.clickable_paths.is_empty());
@@ -1287,13 +1490,14 @@ mod tests {
     #[test]
     fn load_file_tree_clears_when_no_worktree() {
         let mut app = App::new();
-        app.file_tree_entries.push(crate::app::types::FileTreeEntry {
-            path: PathBuf::from("/old"),
-            name: "old".to_string(),
-            is_dir: false,
-            depth: 0,
-            is_hidden: false,
-        });
+        app.file_tree_entries
+            .push(crate::app::types::FileTreeEntry {
+                path: PathBuf::from("/old"),
+                name: "old".to_string(),
+                is_dir: false,
+                depth: 0,
+                is_hidden: false,
+            });
         app.file_tree_selected = Some(0);
         app.file_tree_scroll = 5;
         app.load_file_tree();
@@ -1466,9 +1670,10 @@ mod tests {
     #[test]
     fn viewed_session_id_empty_branch() {
         let mut app = App::new();
-        app.session_files.insert("".to_string(), vec![
-            ("id".to_string(), PathBuf::from("/p"), "t".to_string()),
-        ]);
+        app.session_files.insert(
+            "".to_string(),
+            vec![("id".to_string(), PathBuf::from("/p"), "t".to_string())],
+        );
         app.session_selected_file_idx.insert("".to_string(), 0);
         assert_eq!(app.viewed_session_id(""), Some("id".to_string()));
     }

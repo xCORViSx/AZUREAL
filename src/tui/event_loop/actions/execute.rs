@@ -6,30 +6,39 @@
 
 use anyhow::Result;
 
+use super::super::mouse::{copy_session_selection, copy_viewer_selection};
+use super::escape::dispatch_escape;
+use super::navigation::{
+    dispatch_go_to_bottom, dispatch_go_to_top, dispatch_nav_down, dispatch_nav_left,
+    dispatch_nav_right, dispatch_nav_up, dispatch_page_down, dispatch_page_up,
+};
+use super::session_list::open_session_list;
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 use crate::tui::keybindings::Action;
-use super::super::mouse::{copy_viewer_selection, copy_session_selection};
-use super::navigation::{
-    dispatch_nav_down, dispatch_nav_up, dispatch_nav_left, dispatch_nav_right,
-    dispatch_page_down, dispatch_page_up, dispatch_go_to_top, dispatch_go_to_bottom,
-};
-use super::escape::dispatch_escape;
-use super::session_list::open_session_list;
 
 /// Execute a resolved keybinding action. Called by handle_key_event() after
 /// lookup_action() identifies WHAT to do. This function handles the HOW.
-pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &AgentProcess) -> Result<()> {
+pub(super) fn execute_action(
+    action: Action,
+    app: &mut App,
+    _claude_process: &AgentProcess,
+) -> Result<()> {
     match action {
         // --- Global actions ---
         Action::Quit => {
-            if !app.git_action_in_progress() { app.should_quit = true; }
-            else { app.set_status("Cannot quit while a git operation is in progress"); }
+            if !app.git_action_in_progress() {
+                app.should_quit = true;
+            } else {
+                app.set_status("Cannot quit while a git operation is in progress");
+            }
         }
         Action::DumpDebug => {
             app.debug_dump_naming = Some(String::new());
         }
-        Action::CancelClaude => { app.cancel_current_claude(); }
+        Action::CancelClaude => {
+            app.cancel_current_claude();
+        }
         Action::CopySelection => {
             // Copy from whichever pane has an active selection
             if app.prompt_mode && app.has_input_selection() {
@@ -42,16 +51,22 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                 // Git mode fallback: copy status box result message
                 if let Some((ref msg, _)) = p.result_message {
                     let text = msg.clone();
-                    if let Ok(mut cb) = arboard::Clipboard::new() { let _ = cb.set_text(&text); }
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&text);
+                    }
                     app.clipboard = text;
                     app.set_status("Copied to clipboard");
                 }
             }
         }
-        Action::ToggleHelp => { app.toggle_help(); }
+        Action::ToggleHelp => {
+            app.toggle_help();
+        }
         Action::EnterPromptMode => {
             app.show_help = false;
-            if app.terminal_mode { app.close_terminal(); }
+            if app.terminal_mode {
+                app.close_terminal();
+            }
             app.focus = Focus::Input;
             app.prompt_mode = true;
         }
@@ -74,38 +89,59 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         }
 
         // --- Terminal resize (global when terminal is open) ---
-        Action::ResizeUp => { app.adjust_terminal_height(2); }
-        Action::ResizeDown => { app.adjust_terminal_height(-2); }
+        Action::ResizeUp => {
+            app.adjust_terminal_height(2);
+        }
+        Action::ResizeDown => {
+            app.adjust_terminal_height(-2);
+        }
 
         // --- All other actions are focus-specific; dispatch inline ---
         // Worktrees
         Action::BrowseMain => {
-            if app.browsing_main { app.exit_main_browse(); }
-            else { app.enter_main_browse(); }
+            if app.browsing_main {
+                app.exit_main_browse();
+            } else {
+                app.enter_main_browse();
+            }
         }
         Action::ToggleSessionList => {
             if app.show_session_list {
                 app.show_session_list = false;
                 app.session_rename_active = false;
                 app.session_rename_id = None;
+            } else {
+                open_session_list(app);
             }
-            else { open_session_list(app); }
         }
 
         // --- Viewer tab management ---
-        Action::ViewerTabCurrent => { app.viewer_tab_current(); }
-        Action::ViewerOpenTabDialog => {
-            if !app.viewer_tabs.is_empty() { app.toggle_viewer_tab_dialog(); }
+        Action::ViewerTabCurrent => {
+            app.viewer_tab_current();
         }
-        Action::ViewerCloseTab => { app.viewer_close_current_tab(); }
+        Action::ViewerOpenTabDialog => {
+            if !app.viewer_tabs.is_empty() {
+                app.toggle_viewer_tab_dialog();
+            }
+        }
+        Action::ViewerCloseTab => {
+            app.viewer_close_current_tab();
+        }
         Action::SelectAll => {
             // Read-only viewer: select entire cache. Edit mode: select all edit content.
             if app.viewer_edit_mode {
                 app.viewer_edit_select_all();
             } else {
                 let last = app.viewer_lines_cache.len().saturating_sub(1);
-                let last_col = app.viewer_lines_cache.last()
-                    .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>())
+                let last_col = app
+                    .viewer_lines_cache
+                    .last()
+                    .map(|l| {
+                        l.spans
+                            .iter()
+                            .map(|s| s.content.chars().count())
+                            .sum::<usize>()
+                    })
                     .unwrap_or(0);
                 app.viewer_selection = Some((0, 0, last, last_col));
             }
@@ -113,35 +149,59 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
 
         // --- Viewer navigation ---
         Action::EnterEditMode => {
-            if app.viewer_path.is_some() { app.enter_viewer_edit_mode(); }
-        }
-        Action::JumpNextEdit => { jump_edit(app, true); }
-        Action::JumpPrevEdit => { jump_edit(app, false); }
-
-        // --- Viewer edit mode ---
-        Action::Save => {
-            match app.save_viewer_edits() {
-                Ok(()) => {
-                    app.set_status("File saved");
-                    if app.viewer_edit_diff.is_some() {
-                        app.viewer_edit_save_dialog = true;
-                    }
-                }
-                Err(e) => app.set_status(format!("Save failed: {}", e)),
+            if app.viewer_path.is_some() {
+                app.enter_viewer_edit_mode();
             }
         }
-        Action::Undo => { app.viewer_edit_undo(); }
-        Action::Redo => { app.viewer_edit_redo(); }
+        Action::JumpNextEdit => {
+            jump_edit(app, true);
+        }
+        Action::JumpPrevEdit => {
+            jump_edit(app, false);
+        }
+
+        // --- Viewer edit mode ---
+        Action::Save => match app.save_viewer_edits() {
+            Ok(()) => {
+                app.set_status("File saved");
+                if app.viewer_edit_diff.is_some() {
+                    app.viewer_edit_save_dialog = true;
+                }
+            }
+            Err(e) => app.set_status(format!("Save failed: {}", e)),
+        },
+        Action::Undo => {
+            app.viewer_edit_undo();
+        }
+        Action::Redo => {
+            app.viewer_edit_redo();
+        }
 
         // --- Shared navigation (used by viewer, output, worktrees, file tree, terminal) ---
-        Action::NavDown => { dispatch_nav_down(app); }
-        Action::NavUp => { dispatch_nav_up(app); }
-        Action::NavLeft => { dispatch_nav_left(app); }
-        Action::NavRight => { dispatch_nav_right(app); }
-        Action::PageDown => { dispatch_page_down(app); }
-        Action::PageUp => { dispatch_page_up(app); }
-        Action::GoToTop => { dispatch_go_to_top(app); }
-        Action::GoToBottom => { dispatch_go_to_bottom(app); }
+        Action::NavDown => {
+            dispatch_nav_down(app);
+        }
+        Action::NavUp => {
+            dispatch_nav_up(app);
+        }
+        Action::NavLeft => {
+            dispatch_nav_left(app);
+        }
+        Action::NavRight => {
+            dispatch_nav_right(app);
+        }
+        Action::PageDown => {
+            dispatch_page_down(app);
+        }
+        Action::PageUp => {
+            dispatch_page_up(app);
+        }
+        Action::GoToTop => {
+            dispatch_go_to_top(app);
+        }
+        Action::GoToBottom => {
+            dispatch_go_to_bottom(app);
+        }
 
         // --- Worktree-specific ---
         Action::AddWorktree => {
@@ -150,14 +210,22 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                 match crate::git::Git::list_all_branches_with_status(&project.path) {
                     Ok((branches, checked_out)) => {
                         // Per-branch worktree count: how many worktrees (active + archived) use each branch
-                        let worktree_counts: Vec<usize> = branches.iter().map(|branch| {
-                            let local = if branch.contains('/') {
-                                branch.split('/').skip(1).collect::<Vec<_>>().join("/")
-                            } else {
-                                branch.clone()
-                            };
-                            app.worktrees.iter().filter(|wt| wt.branch_name == *branch || wt.branch_name == local).count()
-                        }).collect();
+                        let worktree_counts: Vec<usize> = branches
+                            .iter()
+                            .map(|branch| {
+                                let local = if branch.contains('/') {
+                                    branch.split('/').skip(1).collect::<Vec<_>>().join("/")
+                                } else {
+                                    branch.clone()
+                                };
+                                app.worktrees
+                                    .iter()
+                                    .filter(|wt| {
+                                        wt.branch_name == *branch || wt.branch_name == local
+                                    })
+                                    .count()
+                            })
+                            .collect();
                         app.open_branch_dialog(branches, checked_out, worktree_counts);
                     }
                     Err(e) => app.set_status(format!("Failed to list branches: {}", e)),
@@ -166,9 +234,15 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                 app.set_status("No project loaded — open a project first");
             }
         }
-        Action::NewSession => { app.start_new_session(); }
-        Action::RunCommand => { app.open_run_command_picker(); }
-        Action::AddRunCommand => { app.open_run_command_dialog(); }
+        Action::NewSession => {
+            app.start_new_session();
+        }
+        Action::RunCommand => {
+            app.open_run_command_picker();
+        }
+        Action::AddRunCommand => {
+            app.open_run_command_dialog();
+        }
         Action::ToggleArchiveWorktree => {
             let is_archived = app.current_worktree().map(|w| w.archived).unwrap_or(false);
             let result = if is_archived {
@@ -194,27 +268,41 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                                 .current_dir(wt_path)
                                 .output()
                                 .ok()
-                                .map(|o| String::from_utf8_lossy(&o.stdout)
-                                    .lines().filter(|l| !l.is_empty()).count())
+                                .map(|o| {
+                                    String::from_utf8_lossy(&o.stdout)
+                                        .lines()
+                                        .filter(|l| !l.is_empty())
+                                        .count()
+                                })
                                 .unwrap_or(0);
                             if dirty_count > 0 {
                                 warnings.push(format!(
-                                    "{} uncommitted change{}", dirty_count,
+                                    "{} uncommitted change{}",
+                                    dirty_count,
                                     if dirty_count == 1 { "" } else { "s" }
                                 ));
                             }
                         }
                         let unmerged_count = std::process::Command::new("git")
-                            .args(["log", &format!("{}..{}", project.main_branch, wt.branch_name), "--oneline"])
+                            .args([
+                                "log",
+                                &format!("{}..{}", project.main_branch, wt.branch_name),
+                                "--oneline",
+                            ])
                             .current_dir(&project.path)
                             .output()
                             .ok()
-                            .map(|o| String::from_utf8_lossy(&o.stdout)
-                                .lines().filter(|l| !l.is_empty()).count())
+                            .map(|o| {
+                                String::from_utf8_lossy(&o.stdout)
+                                    .lines()
+                                    .filter(|l| !l.is_empty())
+                                    .count()
+                            })
                             .unwrap_or(0);
                         if unmerged_count > 0 {
                             warnings.push(format!(
-                                "{} commit{} not merged to {}", unmerged_count,
+                                "{} commit{} not merged to {}",
+                                unmerged_count,
                                 if unmerged_count == 1 { "" } else { "s" },
                                 project.main_branch
                             ));
@@ -222,27 +310,28 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
 
                         // Sibling guard: find other worktrees on the same branch
                         let current_idx = app.selected_worktree.unwrap_or(0);
-                        let sibling_indices: Vec<usize> = app.worktrees.iter().enumerate()
+                        let sibling_indices: Vec<usize> = app
+                            .worktrees
+                            .iter()
+                            .enumerate()
                             .filter(|(i, w)| *i != current_idx && w.branch_name == wt.branch_name)
                             .map(|(i, _)| i)
                             .collect();
                         if sibling_indices.is_empty() {
-                            app.delete_worktree_dialog = Some(
-                                crate::app::types::DeleteWorktreeDialog::Sole {
+                            app.delete_worktree_dialog =
+                                Some(crate::app::types::DeleteWorktreeDialog::Sole {
                                     name: wt.name().to_string(),
                                     warnings,
-                                }
-                            );
+                                });
                         } else {
                             let count = sibling_indices.len();
-                            app.delete_worktree_dialog = Some(
-                                crate::app::types::DeleteWorktreeDialog::Siblings {
+                            app.delete_worktree_dialog =
+                                Some(crate::app::types::DeleteWorktreeDialog::Siblings {
                                     branch: wt.branch_name.clone(),
                                     sibling_indices,
                                     count,
                                     warnings,
-                                }
-                            );
+                                });
                         }
                     }
                 }
@@ -275,8 +364,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
             }
         }
         Action::OpenHealth => {
-            if app.health_panel.is_some() { app.close_health_panel(); }
-            else {
+            if app.health_panel.is_some() {
+                app.close_health_panel();
+            } else {
                 // Deferred health scan — show loading popup while recursive dir walk runs
                 app.loading_indicator = Some("Scanning project health…".into());
                 app.deferred_action = Some(crate::app::DeferredAction::OpenHealthPanel);
@@ -298,7 +388,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         Action::ToggleDir => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    if entry.is_dir { app.toggle_file_tree_dir(); }
+                    if entry.is_dir {
+                        app.toggle_file_tree_dir();
+                    }
                 }
             }
         }
@@ -314,7 +406,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
                         app.toggle_file_tree_dir();
                     } else {
                         // Deferred file load — show "Loading <filename>…" while I/O runs
-                        let filename = entry.path.file_name()
+                        let filename = entry
+                            .path
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "file".into());
                         app.loading_indicator = Some(format!("Loading {}…", filename));
@@ -344,14 +438,17 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         Action::RenameFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    app.file_tree_action = Some(crate::app::types::FileTreeAction::Rename(entry.name.clone()));
+                    app.file_tree_action = Some(crate::app::types::FileTreeAction::Rename(
+                        entry.name.clone(),
+                    ));
                 }
             }
         }
         Action::CopyFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    app.file_tree_action = Some(crate::app::types::FileTreeAction::Copy(entry.path.clone()));
+                    app.file_tree_action =
+                        Some(crate::app::types::FileTreeAction::Copy(entry.path.clone()));
                     app.set_status("Copy: select target dir, Enter to paste");
                     app.invalidate_file_tree();
                 }
@@ -360,7 +457,8 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         Action::MoveFile if !app.god_file_filter_mode => {
             if let Some(idx) = app.file_tree_selected {
                 if let Some(entry) = app.file_tree_entries.get(idx) {
-                    app.file_tree_action = Some(crate::app::types::FileTreeAction::Move(entry.path.clone()));
+                    app.file_tree_action =
+                        Some(crate::app::types::FileTreeAction::Move(entry.path.clone()));
                     app.set_status("Move: select target dir, Enter to paste");
                     app.invalidate_file_tree();
                 }
@@ -370,17 +468,25 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         // --- Output/Convo ---
         // Plain Up/Down: step through ALL bubbles (user + assistant)
         Action::JumpNextBubble => {
-            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_next_bubble(true); }
+            if app.view_mode == crate::app::ViewMode::Session {
+                app.jump_to_next_bubble(true);
+            }
         }
         Action::JumpPrevBubble => {
-            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_prev_bubble(true); }
+            if app.view_mode == crate::app::ViewMode::Session {
+                app.jump_to_prev_bubble(true);
+            }
         }
         // Shift+Up/Down: jump to user prompts only (skip assistant responses)
         Action::JumpNextMessage => {
-            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_next_bubble(false); }
+            if app.view_mode == crate::app::ViewMode::Session {
+                app.jump_to_next_bubble(false);
+            }
         }
         Action::JumpPrevMessage => {
-            if app.view_mode == crate::app::ViewMode::Session { app.jump_to_prev_bubble(false); }
+            if app.view_mode == crate::app::ViewMode::Session {
+                app.jump_to_prev_bubble(false);
+            }
         }
         Action::SearchSession => {
             // Activate the session find bar — clears previous query and matches
@@ -393,19 +499,28 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         // --- Input/Terminal actions: handled by their own handlers (skip here) ---
         // These are filtered out in handle_key_event() and fall through to
         // handle_input_mode(). Listed here for exhaustive match.
-        Action::Submit | Action::InsertNewline | Action::ExitPromptMode
-        | Action::WordLeft | Action::WordRight | Action::DeleteWord
-        | Action::HistoryPrev | Action::HistoryNext
+        Action::Submit
+        | Action::InsertNewline
+        | Action::ExitPromptMode
+        | Action::WordLeft
+        | Action::WordRight
+        | Action::DeleteWord
+        | Action::HistoryPrev
+        | Action::HistoryNext
         | Action::EnterTerminalType => {}
 
         // ⌃m: cycle Claude model (opus → sonnet → haiku → default)
-        Action::CycleModel => { app.cycle_model(); }
+        Action::CycleModel => {
+            app.cycle_model();
+        }
 
         // STT toggle — works from edit mode (viewer) AND prompt input.
         // Input focus is filtered out above (is_input_action) so the raw handler
         // in handle_input_mode() catches it there. For edit mode, this is the
         // only path since lookup_action() intercepts ⌃s before handle_viewer_input().
-        Action::ToggleStt => { app.toggle_stt(); }
+        Action::ToggleStt => {
+            app.toggle_stt();
+        }
 
         // --- Generic escape: context-dependent close/back ---
         Action::Escape => {
@@ -413,7 +528,9 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
         }
 
         // --- Preset prompts ---
-        Action::PresetPrompts => { app.open_preset_prompt_picker(); }
+        Action::PresetPrompts => {
+            app.open_preset_prompt_picker();
+        }
 
         // --- Dialog actions (not reached here — modals intercept above) ---
         Action::Confirm | Action::Cancel | Action::DeleteSelected | Action::EditSelected => {}
@@ -427,19 +544,35 @@ pub(super) fn execute_action(action: Action, app: &mut App, _claude_process: &Ag
 
 /// Jump to next/prev Edit tool entry in the clickable paths list
 fn jump_edit(app: &mut App, forward: bool) {
-    let edits: Vec<usize> = app.clickable_paths.iter().enumerate()
+    let edits: Vec<usize> = app
+        .clickable_paths
+        .iter()
+        .enumerate()
         .filter(|(_, (_, _, _, _, o, n, _))| !o.is_empty() || !n.is_empty())
-        .map(|(i, _)| i).collect();
-    if edits.is_empty() { return; }
-    let cur = app.selected_tool_diff.and_then(|s| edits.iter().position(|&e| e >= s));
+        .map(|(i, _)| i)
+        .collect();
+    if edits.is_empty() {
+        return;
+    }
+    let cur = app
+        .selected_tool_diff
+        .and_then(|s| edits.iter().position(|&e| e >= s));
     let target = if forward {
-        match cur { Some(pos) => (pos + 1) % edits.len(), None => 0 }
+        match cur {
+            Some(pos) => (pos + 1) % edits.len(),
+            None => 0,
+        }
     } else {
-        match cur { Some(0) | None => edits.len() - 1, Some(pos) => pos - 1 }
+        match cur {
+            Some(0) | None => edits.len() - 1,
+            Some(pos) => pos - 1,
+        }
     };
     let idx = edits[target];
     app.selected_tool_diff = Some(idx);
-    if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) = app.clickable_paths.get(idx).cloned() {
+    if let Some((line_idx, sc, ec, file_path, old_str, new_str, wlc)) =
+        app.clickable_paths.get(idx).cloned()
+    {
         app.clicked_path_highlight = Some((line_idx, sc, ec, wlc));
         app.session_viewport_scroll = usize::MAX;
         app.load_file_with_edit_diff(&file_path, &old_str, &new_str);
@@ -455,64 +588,120 @@ mod tests {
     // -- Action enum variant equality --
 
     #[test]
-    fn test_action_quit_eq() { assert_eq!(Action::Quit, Action::Quit); }
+    fn test_action_quit_eq() {
+        assert_eq!(Action::Quit, Action::Quit);
+    }
     #[test]
-    fn test_action_dump_debug_eq() { assert_eq!(Action::DumpDebug, Action::DumpDebug); }
+    fn test_action_dump_debug_eq() {
+        assert_eq!(Action::DumpDebug, Action::DumpDebug);
+    }
     #[test]
-    fn test_action_cancel_claude_eq() { assert_eq!(Action::CancelClaude, Action::CancelClaude); }
+    fn test_action_cancel_claude_eq() {
+        assert_eq!(Action::CancelClaude, Action::CancelClaude);
+    }
     #[test]
-    fn test_action_copy_selection_eq() { assert_eq!(Action::CopySelection, Action::CopySelection); }
+    fn test_action_copy_selection_eq() {
+        assert_eq!(Action::CopySelection, Action::CopySelection);
+    }
     #[test]
-    fn test_action_toggle_help_eq() { assert_eq!(Action::ToggleHelp, Action::ToggleHelp); }
+    fn test_action_toggle_help_eq() {
+        assert_eq!(Action::ToggleHelp, Action::ToggleHelp);
+    }
     #[test]
-    fn test_action_enter_prompt_eq() { assert_eq!(Action::EnterPromptMode, Action::EnterPromptMode); }
+    fn test_action_enter_prompt_eq() {
+        assert_eq!(Action::EnterPromptMode, Action::EnterPromptMode);
+    }
     #[test]
-    fn test_action_toggle_terminal_eq() { assert_eq!(Action::ToggleTerminal, Action::ToggleTerminal); }
+    fn test_action_toggle_terminal_eq() {
+        assert_eq!(Action::ToggleTerminal, Action::ToggleTerminal);
+    }
     #[test]
-    fn test_action_cycle_forward_eq() { assert_eq!(Action::CycleFocusForward, Action::CycleFocusForward); }
+    fn test_action_cycle_forward_eq() {
+        assert_eq!(Action::CycleFocusForward, Action::CycleFocusForward);
+    }
     #[test]
-    fn test_action_cycle_backward_eq() { assert_eq!(Action::CycleFocusBackward, Action::CycleFocusBackward); }
+    fn test_action_cycle_backward_eq() {
+        assert_eq!(Action::CycleFocusBackward, Action::CycleFocusBackward);
+    }
     #[test]
-    fn test_action_resize_up_eq() { assert_eq!(Action::ResizeUp, Action::ResizeUp); }
+    fn test_action_resize_up_eq() {
+        assert_eq!(Action::ResizeUp, Action::ResizeUp);
+    }
     #[test]
-    fn test_action_resize_down_eq() { assert_eq!(Action::ResizeDown, Action::ResizeDown); }
+    fn test_action_resize_down_eq() {
+        assert_eq!(Action::ResizeDown, Action::ResizeDown);
+    }
     #[test]
-    fn test_action_browse_main_eq() { assert_eq!(Action::BrowseMain, Action::BrowseMain); }
+    fn test_action_browse_main_eq() {
+        assert_eq!(Action::BrowseMain, Action::BrowseMain);
+    }
     #[test]
-    fn test_action_toggle_session_list_eq() { assert_eq!(Action::ToggleSessionList, Action::ToggleSessionList); }
+    fn test_action_toggle_session_list_eq() {
+        assert_eq!(Action::ToggleSessionList, Action::ToggleSessionList);
+    }
     #[test]
-    fn test_action_viewer_tab_current_eq() { assert_eq!(Action::ViewerTabCurrent, Action::ViewerTabCurrent); }
+    fn test_action_viewer_tab_current_eq() {
+        assert_eq!(Action::ViewerTabCurrent, Action::ViewerTabCurrent);
+    }
     #[test]
-    fn test_action_viewer_close_tab_eq() { assert_eq!(Action::ViewerCloseTab, Action::ViewerCloseTab); }
+    fn test_action_viewer_close_tab_eq() {
+        assert_eq!(Action::ViewerCloseTab, Action::ViewerCloseTab);
+    }
     #[test]
-    fn test_action_select_all_eq() { assert_eq!(Action::SelectAll, Action::SelectAll); }
+    fn test_action_select_all_eq() {
+        assert_eq!(Action::SelectAll, Action::SelectAll);
+    }
     #[test]
-    fn test_action_enter_edit_mode_eq() { assert_eq!(Action::EnterEditMode, Action::EnterEditMode); }
+    fn test_action_enter_edit_mode_eq() {
+        assert_eq!(Action::EnterEditMode, Action::EnterEditMode);
+    }
     #[test]
-    fn test_action_save_eq() { assert_eq!(Action::Save, Action::Save); }
+    fn test_action_save_eq() {
+        assert_eq!(Action::Save, Action::Save);
+    }
     #[test]
-    fn test_action_undo_eq() { assert_eq!(Action::Undo, Action::Undo); }
+    fn test_action_undo_eq() {
+        assert_eq!(Action::Undo, Action::Undo);
+    }
     #[test]
-    fn test_action_redo_eq() { assert_eq!(Action::Redo, Action::Redo); }
+    fn test_action_redo_eq() {
+        assert_eq!(Action::Redo, Action::Redo);
+    }
     #[test]
-    fn test_action_nav_down_eq() { assert_eq!(Action::NavDown, Action::NavDown); }
+    fn test_action_nav_down_eq() {
+        assert_eq!(Action::NavDown, Action::NavDown);
+    }
     #[test]
-    fn test_action_nav_up_eq() { assert_eq!(Action::NavUp, Action::NavUp); }
+    fn test_action_nav_up_eq() {
+        assert_eq!(Action::NavUp, Action::NavUp);
+    }
     #[test]
-    fn test_action_page_down_eq() { assert_eq!(Action::PageDown, Action::PageDown); }
+    fn test_action_page_down_eq() {
+        assert_eq!(Action::PageDown, Action::PageDown);
+    }
     #[test]
-    fn test_action_page_up_eq() { assert_eq!(Action::PageUp, Action::PageUp); }
+    fn test_action_page_up_eq() {
+        assert_eq!(Action::PageUp, Action::PageUp);
+    }
     #[test]
-    fn test_action_go_to_top_eq() { assert_eq!(Action::GoToTop, Action::GoToTop); }
+    fn test_action_go_to_top_eq() {
+        assert_eq!(Action::GoToTop, Action::GoToTop);
+    }
     #[test]
-    fn test_action_go_to_bottom_eq() { assert_eq!(Action::GoToBottom, Action::GoToBottom); }
+    fn test_action_go_to_bottom_eq() {
+        assert_eq!(Action::GoToBottom, Action::GoToBottom);
+    }
 
     // -- Action inequality --
 
     #[test]
-    fn test_action_ne_quit_escape() { assert_ne!(Action::Quit, Action::Escape); }
+    fn test_action_ne_quit_escape() {
+        assert_ne!(Action::Quit, Action::Escape);
+    }
     #[test]
-    fn test_action_ne_save_undo() { assert_ne!(Action::Save, Action::Undo); }
+    fn test_action_ne_save_undo() {
+        assert_ne!(Action::Save, Action::Undo);
+    }
 
     // -- Jump edit logic --
 
@@ -520,7 +709,10 @@ mod tests {
     fn test_jump_edit_forward_wrap() {
         let edits = vec![2, 5, 8];
         let cur = Some(1usize); // at index 1
-        let target = match cur { Some(pos) => (pos + 1) % edits.len(), None => 0 };
+        let target = match cur {
+            Some(pos) => (pos + 1) % edits.len(),
+            None => 0,
+        };
         assert_eq!(target, 2);
     }
 
@@ -536,7 +728,10 @@ mod tests {
     fn test_jump_edit_backward_wrap() {
         let edits = vec![2, 5, 8];
         let cur: Option<usize> = Some(0);
-        let target = match cur { Some(0) | None => edits.len() - 1, Some(pos) => pos - 1 };
+        let target = match cur {
+            Some(0) | None => edits.len() - 1,
+            Some(pos) => pos - 1,
+        };
         assert_eq!(target, 2);
     }
 
@@ -544,7 +739,10 @@ mod tests {
     fn test_jump_edit_backward_normal() {
         let edits = vec![2, 5, 8];
         let cur = Some(2usize);
-        let target = match cur { Some(0) | None => edits.len() - 1, Some(pos) => pos - 1 };
+        let target = match cur {
+            Some(0) | None => edits.len() - 1,
+            Some(pos) => pos - 1,
+        };
         assert_eq!(target, 1);
     }
 
@@ -558,19 +756,33 @@ mod tests {
 
     #[test]
     fn test_clickable_path_structure() {
-        let path: (usize, usize, usize, String, String, String, usize) =
-            (10, 5, 20, "src/main.rs".into(), "old".into(), "new".into(), 1);
+        let path: (usize, usize, usize, String, String, String, usize) = (
+            10,
+            5,
+            20,
+            "src/main.rs".into(),
+            "old".into(),
+            "new".into(),
+            1,
+        );
         assert_eq!(path.0, 10); // line_idx
-        assert_eq!(path.1, 5);  // sc
+        assert_eq!(path.1, 5); // sc
         assert_eq!(path.2, 20); // ec
         assert_eq!(path.3, "src/main.rs");
-        assert_eq!(path.6, 1);  // wlc
+        assert_eq!(path.6, 1); // wlc
     }
 
     #[test]
     fn test_clickable_path_has_edit_content() {
-        let path: (usize, usize, usize, String, String, String, usize) =
-            (0, 0, 0, "file.rs".into(), "old_str".into(), "new_str".into(), 1);
+        let path: (usize, usize, usize, String, String, String, usize) = (
+            0,
+            0,
+            0,
+            "file.rs".into(),
+            "old_str".into(),
+            "new_str".into(),
+            1,
+        );
         let has_edit = !path.4.is_empty() || !path.5.is_empty();
         assert!(has_edit);
     }
@@ -598,25 +810,39 @@ mod tests {
     // -- Focus variants --
 
     #[test]
-    fn test_focus_input() { assert_eq!(Focus::Input, Focus::Input); }
+    fn test_focus_input() {
+        assert_eq!(Focus::Input, Focus::Input);
+    }
     #[test]
-    fn test_focus_viewer() { assert_eq!(Focus::Viewer, Focus::Viewer); }
+    fn test_focus_viewer() {
+        assert_eq!(Focus::Viewer, Focus::Viewer);
+    }
     #[test]
-    fn test_focus_worktrees() { assert_eq!(Focus::Worktrees, Focus::Worktrees); }
+    fn test_focus_worktrees() {
+        assert_eq!(Focus::Worktrees, Focus::Worktrees);
+    }
 
     // -- Health panel actions --
 
     #[test]
-    fn test_action_open_health() { assert_eq!(Action::OpenHealth, Action::OpenHealth); }
+    fn test_action_open_health() {
+        assert_eq!(Action::OpenHealth, Action::OpenHealth);
+    }
     #[test]
-    fn test_action_open_git() { assert_eq!(Action::OpenGitActions, Action::OpenGitActions); }
+    fn test_action_open_git() {
+        assert_eq!(Action::OpenGitActions, Action::OpenGitActions);
+    }
     #[test]
-    fn test_action_open_projects() { assert_eq!(Action::OpenProjects, Action::OpenProjects); }
+    fn test_action_open_projects() {
+        assert_eq!(Action::OpenProjects, Action::OpenProjects);
+    }
 
     // -- Search session action --
 
     #[test]
-    fn test_action_search_session() { assert_eq!(Action::SearchSession, Action::SearchSession); }
+    fn test_action_search_session() {
+        assert_eq!(Action::SearchSession, Action::SearchSession);
+    }
 
     // -- DeferredAction accessibility --
 

@@ -21,10 +21,20 @@ pub(crate) fn apply_selection_to_line(
     gutter: usize,
 ) -> Vec<Span<'static>> {
     let line_len = line_content.chars().count();
-    let sel_start = if visual_line_idx == sel_start_line { sel_start_col.max(gutter) } else { gutter };
-    let sel_end = if visual_line_idx == sel_end_line { sel_end_col.max(gutter) } else { line_len };
+    let sel_start = if visual_line_idx == sel_start_line {
+        sel_start_col.max(gutter)
+    } else {
+        gutter
+    };
+    let sel_end = if visual_line_idx == sel_end_line {
+        sel_end_col.max(gutter)
+    } else {
+        line_len
+    };
 
-    if sel_start >= sel_end || sel_end == 0 { return spans; }
+    if sel_start >= sel_end || sel_end == 0 {
+        return spans;
+    }
 
     let selection_style = Style::default().bg(Color::Rgb(60, 60, 100));
     let mut result: Vec<Span<'static>> = Vec::new();
@@ -69,10 +79,20 @@ pub(super) fn apply_selection_to_spans(
     sel_end_col: usize,
 ) -> Vec<Span<'static>> {
     let line_len = line_content.chars().count();
-    let sel_start = if line_idx == sel_start_line { sel_start_col } else { 0 };
-    let sel_end = if line_idx == sel_end_line { sel_end_col } else { line_len };
+    let sel_start = if line_idx == sel_start_line {
+        sel_start_col
+    } else {
+        0
+    };
+    let sel_end = if line_idx == sel_end_line {
+        sel_end_col
+    } else {
+        line_len
+    };
 
-    if sel_start >= sel_end { return spans; }
+    if sel_start >= sel_end {
+        return spans;
+    }
 
     let selection_style = Style::default().bg(Color::Rgb(60, 60, 100));
 
@@ -144,10 +164,13 @@ mod tests {
         // To truly bypass selection, sel_start must >= sel_end.
         // This happens when line_idx == sel_start_line and sel_start_col >= sel_end_col
         let result = apply_selection_to_spans(
-            vec![Span::raw("hello")], "hello",
-            0,     // line_idx == sel_start_line == sel_end_line
-            0, 10, // sel_start_col = 10 (beyond end)
-            0, 5,  // sel_end_col = 5
+            vec![Span::raw("hello")],
+            "hello",
+            0, // line_idx == sel_start_line == sel_end_line
+            0,
+            10, // sel_start_col = 10 (beyond end)
+            0,
+            5, // sel_end_col = 5
         );
         // sel_start = 10, sel_end = 5 → 10 >= 5 → early return
         assert_eq!(text(&result), "hello");
@@ -323,10 +346,7 @@ mod tests {
     fn spans_selection_before_span() {
         // Span entirely before the selection range
         let s1 = Style::default().fg(Color::Red);
-        let spans = vec![
-            Span::styled("ab".to_string(), s1),
-            Span::raw("cdef"),
-        ];
+        let spans = vec![Span::styled("ab".to_string(), s1), Span::raw("cdef")];
         let result = apply_selection_to_spans(spans, "abcdef", 0, 0, 4, 0, 6);
         // "ab" (0..2) entirely before sel_start(4), "cdef" (2..6) partially selected
         assert_eq!(result[0].content, "ab");
@@ -336,10 +356,7 @@ mod tests {
     #[test]
     fn spans_selection_after_span() {
         let s1 = Style::default().fg(Color::Red);
-        let spans = vec![
-            Span::raw("abcd"),
-            Span::styled("ef".to_string(), s1),
-        ];
+        let spans = vec![Span::raw("abcd"), Span::styled("ef".to_string(), s1)];
         let result = apply_selection_to_spans(spans, "abcdef", 0, 0, 0, 0, 2);
         // "abcd" (0..4) partially selected (0..2), "ef" (4..6) entirely after sel_end(2)
         assert_eq!(result.last().unwrap().content, "ef");
@@ -460,9 +477,8 @@ mod tests {
         let content = "  1 | hello world";
         let gutter = 6;
         let result = apply_selection_to_line(
-            spans, content,
-            3,     // visual_line_idx
-            3, 8,  // sel_start_line, sel_start_col
+            spans, content, 3, // visual_line_idx
+            3, 8, // sel_start_line, sel_start_col
             5, 20, // sel_end_line, sel_end_col
             gutter,
         );
@@ -477,10 +493,9 @@ mod tests {
         let content = "  2 | abcdef";
         let gutter = 6;
         let result = apply_selection_to_line(
-            spans, content,
-            5,      // visual_line_idx
-            3, 0,   // sel_start_line, col
-            5, 9,   // sel_end_line, col
+            spans, content, 5, // visual_line_idx
+            3, 0, // sel_start_line, col
+            5, 9, // sel_end_line, col
             gutter,
         );
         // line_idx=5 != sel_start_line → sel_start = gutter(6)
@@ -499,10 +514,7 @@ mod tests {
         ];
         let content = "  1 | hello world";
         let gutter = 6;
-        let result = apply_selection_to_line(
-            spans, content,
-            0, 0, 6, 0, 11, gutter,
-        );
+        let result = apply_selection_to_line(spans, content, 0, 0, 6, 0, 11, gutter);
         // sel_start=6, sel_end=11 → selects "hello" (chars 6..11)
         assert_eq!(text(&result), content);
         // Gutter span unchanged
@@ -554,10 +566,7 @@ mod tests {
             Span::styled("let x = 42;".to_string(), code_style),
         ];
         let content = "  1 | let x = 42;";
-        let result = apply_selection_to_line(
-            spans, content,
-            0, 0, 0, 0, 17, 6,
-        );
+        let result = apply_selection_to_line(spans, content, 0, 0, 0, 0, 17, 6);
         // Gutter (0..6) should not be selected; code (6..17) should be
         assert_eq!(result[0].content, "  1 | ");
         assert_eq!(result[0].style, gutter_style);
@@ -628,10 +637,7 @@ mod tests {
 
     #[test]
     fn spans_many_small_spans() {
-        let spans: Vec<Span<'static>> = "hello"
-            .chars()
-            .map(|c| Span::raw(c.to_string()))
-            .collect();
+        let spans: Vec<Span<'static>> = "hello".chars().map(|c| Span::raw(c.to_string())).collect();
         let result = apply_selection_to_spans(spans, "hello", 0, 0, 1, 0, 4);
         assert_eq!(text(&result), "hello");
         // "h" unselected, "e","l","l" selected, "o" unselected
@@ -644,10 +650,8 @@ mod tests {
 
     #[test]
     fn line_many_small_spans_with_gutter() {
-        let spans: Vec<Span<'static>> = "12|abc"
-            .chars()
-            .map(|c| Span::raw(c.to_string()))
-            .collect();
+        let spans: Vec<Span<'static>> =
+            "12|abc".chars().map(|c| Span::raw(c.to_string())).collect();
         let result = apply_selection_to_line(spans, "12|abc", 0, 0, 0, 0, 6, 3);
         assert_eq!(text(&result), "12|abc");
         // First 3 chars (gutter) unselected, rest selected
@@ -748,10 +752,7 @@ mod tests {
             Span::styled("abcdefgh".to_string(), c),
         ];
         let content = "  1 | abcdefgh";
-        let result = apply_selection_to_line(
-            spans, content,
-            0, 0, 8, 0, 12, 6,
-        );
+        let result = apply_selection_to_line(spans, content, 0, 0, 8, 0, 12, 6);
         // sel_start = max(8, 6) = 8, sel_end = 12
         // Gutter "  1 | " (0..6) unchanged, "ab" (6..8) unchanged, "cdef" (8..12) selected, "gh" (12..14) unchanged
         assert_eq!(text(&result), content);
