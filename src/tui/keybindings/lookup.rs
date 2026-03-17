@@ -58,7 +58,9 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::WorktreeTabPrev
             | Action::WorktreeTabNext
             | Action::AddWorktree
-                if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode =>
+                if ctx.prompt_mode
+                    || ctx.edit_mode
+                    || (ctx.terminal_mode && ctx.focus == Focus::Input) =>
             {
                 true
             }
