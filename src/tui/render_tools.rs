@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use super::render_wrap::wrap_spans;
-use super::util::{AZURE, GIT_BROWN};
+use super::util::AZURE;
 use crate::syntax::SyntaxHighlighter;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -486,14 +486,19 @@ fn render_apply_patch_preview(
     let content_max = max_width.saturating_sub(4);
 
     for patch_line in parse_apply_patch_lines(patch) {
+        // Skip header/hunk lines — the tree node already shows the file path
+        if matches!(
+            patch_line.kind,
+            ApplyPatchLineKind::Header | ApplyPatchLineKind::Hunk
+        ) {
+            continue;
+        }
+
         let style = match patch_line.kind {
-            ApplyPatchLineKind::Header => {
-                Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD)
-            }
+            ApplyPatchLineKind::Header | ApplyPatchLineKind::Hunk => unreachable!(),
             ApplyPatchLineKind::Meta => Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
-            ApplyPatchLineKind::Hunk => Style::default().fg(Color::Cyan),
             ApplyPatchLineKind::Context => Style::default().fg(Color::DarkGray),
             ApplyPatchLineKind::Added => added_style,
             ApplyPatchLineKind::Removed => removed_style,
@@ -522,14 +527,19 @@ fn render_unified_diff_preview(
     let content_max = max_width.saturating_sub(4);
 
     for diff_line in parse_unified_diff_lines(diff) {
+        // Skip header/hunk lines — the tree node already shows the file path
+        if matches!(
+            diff_line.kind,
+            ApplyPatchLineKind::Header | ApplyPatchLineKind::Hunk
+        ) {
+            continue;
+        }
+
         let style = match diff_line.kind {
-            ApplyPatchLineKind::Header => {
-                Style::default().fg(GIT_BROWN).add_modifier(Modifier::BOLD)
-            }
+            ApplyPatchLineKind::Header | ApplyPatchLineKind::Hunk => unreachable!(),
             ApplyPatchLineKind::Meta => Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
-            ApplyPatchLineKind::Hunk => Style::default().fg(Color::Cyan),
             ApplyPatchLineKind::Context => Style::default().fg(Color::DarkGray),
             ApplyPatchLineKind::Added => added_style,
             ApplyPatchLineKind::Removed => removed_style,
@@ -1863,7 +1873,8 @@ mod tests {
             &mut highlighter,
         );
         let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
-        assert!(rendered.contains("Update File: src/main.rs"));
+        assert!(!rendered.contains("Update File:"));
+        assert!(!rendered.contains("@@"));
         assert!(rendered.contains("-old_value();"));
         assert!(rendered.contains("+new_value();"));
         assert!(rendered.contains(" unchanged();"));
@@ -1885,16 +1896,15 @@ mod tests {
             &mut highlighter,
         );
         let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
-        assert!(rendered.contains("diff --git a/src/main.rs b/src/main.rs"));
-        assert!(rendered.contains("--- a/src/main.rs"));
-        assert!(rendered.contains("+++ b/src/main.rs"));
+        assert!(!rendered.contains("diff --git"));
+        assert!(!rendered.contains("@@ -1,3 +1,3 @@"));
         assert!(rendered.contains("-old_value();"));
         assert!(rendered.contains("+new_value();"));
         assert!(rendered.contains(" unchanged();"));
     }
 
     #[test]
-    fn render_edit_diff_from_patch_marks_headers_brown() {
+    fn render_edit_diff_from_patch_skips_header_and_hunk() {
         let input = json!({
             "patch": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n*** End Patch"
         });
@@ -1908,6 +1918,12 @@ mod tests {
             80,
             &mut highlighter,
         );
-        assert_eq!(lines[0].spans[1].style.fg, Some(GIT_BROWN));
+        // Header ("Update File:") and hunk ("@@") lines should be skipped;
+        // the first rendered content line is the removed line "-old"
+        let rendered: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        assert!(!rendered.contains("Update File:"));
+        assert!(!rendered.contains("@@"));
+        assert!(rendered.contains("-old"));
+        assert!(rendered.contains("+new"));
     }
 }

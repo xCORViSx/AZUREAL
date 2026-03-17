@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Edit diff preview strips redundant header and hunk lines** — `render_apply_patch_preview()` and `render_unified_diff_preview()` now skip `Header` ("Update File:", "Add File:", "diff --git") and `Hunk` ("@@") lines. The file path is already shown in the tree node above the diff body, and the hunk markers added no value. Modified: `render_tools.rs`. 3 tests updated.
+
 ### Added
 - **Open Projects option in welcome modal** — The "No worktrees" welcome modal now includes a fourth option: `P` Open projects (between "Create a worktree" and "Quit"). Input handler allows `OpenProjects` through the modal guard, and `needs_welcome_modal()` yields to both the projects panel and branch dialog so their inputs aren't blocked. Modified: `draw_dialogs.rs`, `actions.rs`, `queries.rs`.
 - **Projects panel hint in empty file tree** — When the file tree shows "No worktree", a styled hint line ("Press P to open Projects") now appears below it, guiding users to the projects panel. Modified: `draw_file_tree.rs`.

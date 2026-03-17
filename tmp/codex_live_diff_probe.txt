@@ -1,12 +1,15 @@
-alpha: one revised
+alpha: one revised again
 beta: two
-gamma: three updated
+gamma: three updated with context
 delta: four
+epsilon: five inserted for preview coverage
 
 notes:
-- first draft replaced
-- second line added
+- first draft replaced cleanly
+- second line added and expanded
 - keep this disposable for parser checks
+- third note line for a taller diff block
 
 summary:
 - mock edit cycle complete
+- ready for session preview capture
