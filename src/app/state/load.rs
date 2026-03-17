@@ -460,6 +460,10 @@ impl App {
 
         // Update the OS terminal title to reflect current project and branch
         self.update_terminal_title();
+
+        // Restore selected_model + backend from the newly loaded session's
+        // events so worktree/project switches pick up the correct model.
+        self.restore_model_from_session();
     }
 
     /// Get the session ID string of the currently viewed session for a branch.

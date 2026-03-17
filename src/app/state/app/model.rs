@@ -82,6 +82,22 @@ impl App {
         })
     }
 
+    /// Restore `selected_model` and `backend` from the current session's events.
+    /// Called after `load_session_output()` so that worktree/project switches
+    /// pick up the model from the newly loaded session instead of keeping the
+    /// previous session's model.
+    pub fn restore_model_from_session(&mut self) {
+        let restored = self
+            .last_session_model()
+            .unwrap_or(default_model());
+        self.selected_model = Some(restored.to_string());
+        let new_backend = backend_for_model(restored);
+        if new_backend != self.backend {
+            self.backend = new_backend;
+            self.agent_processor_needs_reset = true;
+        }
+    }
+
     /// Recompute the cached context usage badge from Azureal's custom
     /// compaction counter: chars since last compaction / 400k threshold.
     /// Call after store append or compaction — the draw path just reads the cache.

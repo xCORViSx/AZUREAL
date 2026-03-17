@@ -435,14 +435,20 @@ pub async fn run_app(
             while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
                 match claude_proc.try_recv() {
                     Some(result) => {
-                        app.apply_parsed_output(
-                            &result.slot_id,
-                            result.events,
-                            result.parsed_json,
-                            result.output_type,
-                            &result.data,
-                        );
-                        needs_redraw = true;
+                        // Guard: discard stale results from a previous session.
+                        // The is_viewing_slot check at submit time (line 292) gates
+                        // most output, but results can arrive from the background
+                        // parser thread after a project/worktree switch.
+                        if app.is_viewing_slot(&result.slot_id) {
+                            app.apply_parsed_output(
+                                &result.slot_id,
+                                result.events,
+                                result.parsed_json,
+                                result.output_type,
+                                &result.data,
+                            );
+                            needs_redraw = true;
+                        }
                         parsed_count += 1;
                     }
                     None => break,

@@ -4,6 +4,10 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Model not restored on worktree/project switch** — `load_session_output()` reloaded session events but never synced `selected_model` or `backend` from the new session's `ModelSwitch`/`Init` events. The model from the previous worktree/project persisted until a manual cycle. New `restore_model_from_events()` method calls `last_session_model()` and updates both fields; called at the end of `load_session_output()` so every session switch restores the correct model. Startup code in `run.rs` deduplicated — same path now handles initial load. Modified: `model.rs`, `load.rs`, `run.rs`.
+- **Stale agent events leaking across project/worktree switches** — `apply_parsed_output()` in the event loop had no `is_viewing_slot` guard. When the `AgentProcessor` background thread returned parsed results after a project switch, stale events from the old project's session could appear in the new project's session pane. Added slot ownership check before applying parsed output — mismatched results are silently discarded. Modified: `event_loop.rs`.
+
 ### Changed
 - **Edit diff preview strips redundant header and hunk lines** — `render_apply_patch_preview()` and `render_unified_diff_preview()` now skip `Header` ("Update File:", "Add File:", "diff --git") and `Hunk` ("@@") lines. The file path is already shown in the tree node above the diff body, and the hunk markers added no value. Modified: `render_tools.rs`. 3 tests updated.
 
