@@ -123,8 +123,13 @@ azureal
 | `j/k` | Scroll line |
 | `J/K` | Page scroll |
 | `Tab/Shift+Tab` | Cycle pane focus |
-| `[/]` | Switch worktree tab |
+| `G` | Git actions panel |
+| `H` | Health panel |
 | `M` | Browse main branch |
+| `P` | Projects panel |
+| `r` | Run command |
+| `R` | Add run command |
+| `[/]` | Switch worktree tab |
 | `f` | Toggle file tree |
 | `s` | Toggle session list |
 | `/` | Search / filter |
@@ -134,15 +139,11 @@ azureal
 | `⌃m` / `Ctrl+M` | Cycle model |
 | `⌃q` / `Ctrl+Q` | Quit |
 
-**Worktree actions** use a `w ␣` leader sequence (press `w` then a second key):
+**Worktree mutations** use a `w ␣` leader sequence (press `w`, then `Space`, then action key):
 
 | Key | Action |
 |-----|--------|
-| `w ␣ w` | New worktree |
-| `w ␣ G` | Git panel |
-| `w ␣ H` | Health panel |
-| `w ␣ P` | Projects panel |
-| `w ␣ R` | Run command |
+| `w ␣ a` | New worktree |
 | `w ␣ x` | Archive worktree |
 | `w ␣ d` | Delete worktree |
 

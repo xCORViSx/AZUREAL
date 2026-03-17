@@ -46,7 +46,17 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
             // sidebar filter, or wizard — they'd steal keystrokes
-            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
+            Action::EnterPromptMode
+            | Action::ToggleTerminal
+            | Action::ToggleHelp
+            | Action::OpenGitActions
+            | Action::OpenHealth
+            | Action::BrowseMain
+            | Action::OpenProjects
+            | Action::WorktreeTabNext
+            | Action::WorktreeTabPrev
+            | Action::RunCommand
+            | Action::AddRunCommand
                 if ctx.prompt_mode
                     || ctx.edit_mode
                     || (ctx.terminal_mode && ctx.focus == Focus::Input) =>
@@ -345,6 +355,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn global_shift_g_opens_git() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')),
+            Some(Action::OpenGitActions)
+        );
+    }
+
+    #[test]
+    fn global_shift_h_opens_health() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')),
+            Some(Action::OpenHealth)
+        );
+    }
+
+    #[test]
+    fn global_shift_m_browses_main() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('M')),
+            Some(Action::BrowseMain)
+        );
+    }
+
+    #[test]
+    fn global_shift_p_opens_projects() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('P')),
+            Some(Action::OpenProjects)
+        );
+    }
+
+    #[test]
+    fn global_bracket_right_next_worktree() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')),
+            Some(Action::WorktreeTabNext)
+        );
+    }
+
+    #[test]
+    fn global_bracket_left_prev_worktree() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('[')),
+            Some(Action::WorktreeTabPrev)
+        );
+    }
+
+    #[test]
+    fn global_r_runs_command() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('r')),
+            Some(Action::RunCommand)
+        );
+    }
+
+    #[test]
+    fn global_shift_r_adds_run_command() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('R')),
+            Some(Action::AddRunCommand)
+        );
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  lookup_action — Global skip guards (prompt mode)
     // ══════════════════════════════════════════════════════════════════
@@ -439,6 +521,78 @@ mod tests {
                 Some(Action::CancelClaude)
             );
         }
+    }
+
+    #[test]
+    fn prompt_mode_skips_shift_g() {
+        let ctx = KeyContext {
+            focus: Focus::Input,
+            prompt_mode: true,
+            edit_mode: false,
+            terminal_mode: false,
+            help_open: false,
+            stt_recording: false,
+        };
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')),
+            Some(Action::OpenGitActions)
+        );
+    }
+
+    #[test]
+    fn prompt_mode_skips_shift_h() {
+        let ctx = KeyContext {
+            focus: Focus::Input,
+            prompt_mode: true,
+            edit_mode: false,
+            terminal_mode: false,
+            help_open: false,
+            stt_recording: false,
+        };
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')),
+            Some(Action::OpenHealth)
+        );
+    }
+
+    #[test]
+    fn prompt_mode_skips_brackets() {
+        let ctx = KeyContext {
+            focus: Focus::Input,
+            prompt_mode: true,
+            edit_mode: false,
+            terminal_mode: false,
+            help_open: false,
+            stt_recording: false,
+        };
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')),
+            Some(Action::WorktreeTabNext)
+        );
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('[')),
+            Some(Action::WorktreeTabPrev)
+        );
+    }
+
+    #[test]
+    fn prompt_mode_skips_run_command() {
+        let ctx = KeyContext {
+            focus: Focus::Input,
+            prompt_mode: true,
+            edit_mode: false,
+            terminal_mode: false,
+            help_open: false,
+            stt_recording: false,
+        };
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('r')),
+            Some(Action::RunCommand)
+        );
+        assert_ne!(
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('R')),
+            Some(Action::AddRunCommand)
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -998,12 +1152,12 @@ mod tests {
     }
 
     #[test]
-    fn session_w_fires_global_add_worktree() {
-        // 'w' is now a GLOBAL binding (AddWorktree) — fires in all non-input contexts
+    fn session_w_does_not_resolve_globally() {
+        // 'w' is the leader trigger, not a direct global binding — lookup_action returns None
         let ctx = cmd_ctx(Focus::Session);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')),
-            Some(Action::AddWorktree)
+            None
         );
     }
 
@@ -1661,66 +1815,66 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn leader_g_opens_git() {
+    fn leader_g_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('g')),
-            Some(Action::OpenGitActions)
+            None
         );
     }
 
     #[test]
-    fn leader_h_opens_health() {
+    fn leader_h_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('h')),
-            Some(Action::OpenHealth)
+            None
         );
     }
 
     #[test]
-    fn leader_m_browses_main() {
+    fn leader_m_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('m')),
-            Some(Action::BrowseMain)
+            None
         );
     }
 
     #[test]
-    fn leader_o_opens_projects() {
+    fn leader_o_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('o')),
-            Some(Action::OpenProjects)
+            None
         );
     }
 
     #[test]
-    fn leader_r_runs_command() {
+    fn leader_r_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('r')),
-            Some(Action::RunCommand)
+            None
         );
     }
 
     #[test]
-    fn leader_shift_r_adds_run_command() {
+    fn leader_shift_r_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::SHIFT, KeyCode::Char('R')),
-            Some(Action::AddRunCommand)
+            None
         );
     }
 
     #[test]
-    fn leader_bracket_right_next_worktree() {
+    fn leader_bracket_right_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char(']')),
-            Some(Action::WorktreeTabNext)
+            None
         );
     }
 
     #[test]
-    fn leader_bracket_left_prev_worktree() {
+    fn leader_bracket_left_returns_none() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('[')),
-            Some(Action::WorktreeTabPrev)
+            None
         );
     }
 

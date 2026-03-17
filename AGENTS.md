@@ -777,7 +777,7 @@ Implementation:
 
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (10 entries — core globals like `p`, `T`, `[`/`]`, `M`, `f`, `?`, `⌘c`, `⌃c`, `⌃m`, `⌃q`), `WORKTREES` (11 entries — leader sequence targets: `w` AddWorktree, `G` OpenGitActions, `H` OpenHealth, `M` BrowseMain, `P` OpenProjects, `R` RunCommand, `r` AddRunCommand, `x` ToggleArchive, `d` DeleteWorktree, `j/k` nav), `FILE_TREE` (15 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (18 entries — core globals: `⌃q`, `⌃d`, cancel, copy, `⌃m`, `?`, `p`, `T`, `G` OpenGitActions, `H` OpenHealth, `M` BrowseMain, `P` OpenProjects, `]`/`[` worktree tabs, `r` RunCommand, `R` AddRunCommand, `Tab`/`S-Tab`), `WORKTREES` (3 entries — leader sequence `w ␣ <key>` targets: `a` AddWorktree, `x` ToggleArchive, `d` DeleteWorktree), `FILE_TREE` (17 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (25 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
 - **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, or filter — terminal mode only blocks globals when `focus == Focus::Input`, allowing other panes to use globals like `p` while terminal is open; no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode), `lookup_leader_action(mods, code)` resolves second key of `w ␣` leader sequence against the WORKTREES binding array, plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
@@ -1809,11 +1809,16 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `T` | Toggle terminal pane |
+| `G` | Git actions panel |
+| `H` | Health panel |
+| `M` | Browse main branch |
+| `P` | Projects panel |
+| `r` | Run command |
+| `R` | Add run command |
+| `[`/`]` | Switch worktree tab (works from any pane, including main browse) |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
 | `Tab`/`Shift+Tab` | Cycle focus forward/backward (FileTree → Viewer → Session → Input) |
-| `[`/`]` | Switch worktree tab (global — works from any pane, including main browse) |
-| `M` | Toggle main branch browse |
 | `f` | Toggle file tree |
 | `?` | Help |
 | `⌘c` / `Ctrl+C` | Copy selection |
@@ -1823,21 +1828,13 @@ azureal
 
 ### Worktrees (`w ␣` Leader Sequence)
 
-Worktree-related actions are behind a two-key leader sequence: press `w` then a second key. The status bar shows `[w ␣ …]` while waiting for the second key. Press `Esc` to cancel. State tracked via `LeaderState` enum on App (`None` / `Worktrees`).
+Destructive worktree actions are behind a leader sequence: press `w`, then `Space`, then the action key. The status bar shows `[w ␣ …]` while waiting. Press `Esc` to cancel. State tracked via `LeaderState` enum on App (`None` / `WaitingForSpace` / `WaitingForAction`).
 
 | Key | Action |
 |-----|--------|
-| `w ␣ w` | Add worktree (open branch dialog) |
-| `w ␣ G` | Toggle Git panel |
-| `w ␣ H` | Health panel |
-| `w ␣ M` | Browse main branch |
-| `w ␣ P` | Projects panel |
-| `w ␣ R` | Run command |
-| `w ␣ r` | Add run command |
+| `w ␣ a` | Add worktree (open branch dialog) |
 | `w ␣ x` | Archive worktree |
 | `w ␣ d` | Delete worktree |
-| `w ␣ j` | Navigate down (worktree list) |
-| `w ␣ k` | Navigate up (worktree list) |
 
 ### FileTree Pane
 | Key | Action |
@@ -1895,8 +1892,8 @@ Prompt keybindings are displayed directly in the Input pane's title bar (not in 
 
 **Type mode title shows (macOS):** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥ ←/→ :word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
 **Type mode title shows (Windows/Linux):** `(Esc:exit | Enter:submit | Shift+Enter:newline | Ctrl+c:cancel agent | ↑/↓:history | Alt+ ←/→ :word | Ctrl+w:del wrd | Ctrl+s:speech | Alt+p:presets)`
-**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | w␣:worktrees | ⌃c:cancel agent | ⌃q:quit | ?:help)`
-**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | w␣:worktrees | Alt+c:cancel agent | Ctrl+q:quit | ?:help)`
+**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | w␣r:run | ⌃c:cancel agent | ⌃q:quit | ?:help)`
+**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | w␣r:run | Alt+c:cancel agent | Ctrl+q:quit | ?:help)`
 
 ### Terminal Mode
 

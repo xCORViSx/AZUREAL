@@ -1073,12 +1073,10 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
 pub fn draw_welcome_modal(f: &mut Frame) {
     let area = f.area();
 
-    // Resolve keybindings dynamically — worktree actions use w ␣ <key> leader
-    let main_key = format!(
-        "w␣{}",
-        keybindings::find_key_for_action(&keybindings::WORKTREES, keybindings::Action::BrowseMain)
-            .unwrap_or_else(|| "m".into())
-    );
+    // Resolve keybindings dynamically — panels are global, worktree mutations use w ␣ leader
+    let main_key =
+        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::BrowseMain)
+            .unwrap_or_else(|| "M".into());
     let wt_key = format!(
         "w␣{}",
         keybindings::find_key_for_action(
@@ -1087,14 +1085,9 @@ pub fn draw_welcome_modal(f: &mut Frame) {
         )
         .unwrap_or_else(|| "a".into())
     );
-    let proj_key = format!(
-        "w␣{}",
-        keybindings::find_key_for_action(
-            &keybindings::WORKTREES,
-            keybindings::Action::OpenProjects,
-        )
-        .unwrap_or_else(|| "o".into())
-    );
+    let proj_key =
+        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::OpenProjects)
+            .unwrap_or_else(|| "P".into());
     let quit_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::Quit)
             .unwrap_or_else(|| "Ctrl+Q".into());
@@ -1313,7 +1306,7 @@ mod tests {
     fn test_branch_dialog_filter_backspace() {
         let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![], vec![0, 0]);
         d.filter = "ab".into();
-        d.cursor_pos = d.filter.len();
+        d.filter_cursor = 2; // cursor at end
         d.filter_backspace();
         assert_eq!(d.filter, "a");
     }

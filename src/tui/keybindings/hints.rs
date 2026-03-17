@@ -99,13 +99,12 @@ pub fn prompt_command_title() -> (String, String, String) {
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
     let quit = find_key_for_action(&GLOBAL, Action::Quit).unwrap_or(plat_ctrl("q"));
     let help = find_key_for_action(&GLOBAL, Action::ToggleHelp).unwrap_or("?".into());
-    // Worktree actions now use `w ␣ <key>` leader sequence
-    let g = find_key_for_action(&WORKTREES, Action::OpenGitActions).unwrap_or("g".into());
-    let h = find_key_for_action(&WORKTREES, Action::OpenHealth).unwrap_or("h".into());
-    let run = find_key_for_action(&WORKTREES, Action::RunCommand).unwrap_or("r".into());
-    let main = find_key_for_action(&WORKTREES, Action::BrowseMain).unwrap_or("m".into());
+    let g = find_key_for_action(&GLOBAL, Action::OpenGitActions).unwrap_or("G".into());
+    let h = find_key_for_action(&GLOBAL, Action::OpenHealth).unwrap_or("H".into());
+    let main = find_key_for_action(&GLOBAL, Action::BrowseMain).unwrap_or("M".into());
+    let run = find_key_for_action(&GLOBAL, Action::RunCommand).unwrap_or("r".into());
     let hints = format!(
-        "{}:PROMPT | {}:TERMINAL | w␣{}:Git | w␣{}:Health | w␣{}:main | w␣{}:run | {}:cancel | {}:quit | {}:help",
+        "{}:PROMPT | {}:TERMINAL | {}:Git | {}:Health | {}:main | {}:run | {}:cancel | {}:quit | {}:help",
         p, t, g, h, main, run, cancel, quit, help
     );
     let label = " COMMAND ".to_string();
@@ -488,7 +487,7 @@ mod tests {
     #[test]
     fn find_key_cycle_focus_backward_in_global() {
         let key = find_key_for_action(&GLOBAL, Action::CycleFocusBackward);
-        assert_eq!(key.unwrap(), "Tab"); // BackTab displays as "Tab" (see types.rs)
+        assert_eq!(key.unwrap(), "S-Tab"); // BackTab displays as "S-Tab"
     }
 
     #[test]

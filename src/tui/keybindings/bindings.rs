@@ -158,8 +158,7 @@ const KEY_EDIT_STT: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
 const KEY_EDIT_STT: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('s'));
 
 /// Global keybindings (always active, checked first).
-/// Worktree actions moved to WORKTREES leader array (`w ␣ <key>`).
-pub static GLOBAL: [Keybinding; 10] = [
+pub static GLOBAL: [Keybinding; 18] = [
     Keybinding::new(
         KeyCombo::ctrl(KeyCode::Char('q')),
         "Quit azureal",
@@ -193,51 +192,24 @@ pub static GLOBAL: [Keybinding; 10] = [
         Action::ToggleTerminal,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Tab),
-        "Cycle focus forward",
-        Action::CycleFocusForward,
-    ),
-    Keybinding::new(
-        KeyCombo::plain(KeyCode::BackTab),
-        "Cycle focus backward",
-        Action::CycleFocusBackward,
-    ),
-];
-
-/// Worktree leader-key bindings (`w ␣ <key>`).
-/// These fire only after the `w` → `Space` leader prefix.
-/// The action keys below are the THIRD keystroke in the sequence.
-pub static WORKTREES: [Keybinding; 11] = [
-    Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('g')),
+        KeyCombo::shift(KeyCode::Char('G')),
         "Git actions",
         Action::OpenGitActions,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('h')),
+        KeyCombo::shift(KeyCode::Char('H')),
         "Worktree health",
         Action::OpenHealth,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('m')),
+        KeyCombo::shift(KeyCode::Char('M')),
         "Browse main",
         Action::BrowseMain,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('o')),
+        KeyCombo::shift(KeyCode::Char('P')),
         "Projects",
         Action::OpenProjects,
-    ),
-    Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('r')),
-        "Run command",
-        Action::RunCommand,
-    )
-    .paired(),
-    Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('R')),
-        "Add run command",
-        Action::AddRunCommand,
     ),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char(']')),
@@ -250,6 +222,33 @@ pub static WORKTREES: [Keybinding; 11] = [
         "Prev worktree",
         Action::WorktreeTabPrev,
     ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Tab),
+        "Cycle focus forward",
+        Action::CycleFocusForward,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::BackTab),
+        "Cycle focus backward",
+        Action::CycleFocusBackward,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('r')),
+        "Run command",
+        Action::RunCommand,
+    )
+    .paired(),
+    Keybinding::new(
+        KeyCombo::shift(KeyCode::Char('R')),
+        "Add run command",
+        Action::AddRunCommand,
+    ),
+];
+
+/// Worktree leader-key bindings (`w ␣ <key>`).
+/// These fire only after the `w` → `Space` leader prefix.
+/// The action keys below are the THIRD keystroke in the sequence.
+pub static WORKTREES: [Keybinding; 3] = [
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('a')),
         "Add worktree",
@@ -1014,12 +1013,12 @@ mod tests {
 
     #[test]
     fn global_length() {
-        assert_eq!(GLOBAL.len(), 21);
+        assert_eq!(GLOBAL.len(), 18);
     }
 
     #[test]
     fn worktrees_length() {
-        assert_eq!(WORKTREES.len(), 0);
+        assert_eq!(WORKTREES.len(), 3);
     }
 
     #[test]
@@ -1069,7 +1068,7 @@ mod tests {
 
     #[test]
     fn git_actions_length() {
-        assert_eq!(GIT_ACTIONS.len(), 24);
+        assert_eq!(GIT_ACTIONS.len(), 25);
     }
 
     #[test]
@@ -1097,8 +1096,8 @@ mod tests {
     }
 
     #[test]
-    fn worktrees_is_empty() {
-        assert!(WORKTREES.is_empty());
+    fn worktrees_nonempty() {
+        assert!(!WORKTREES.is_empty());
     }
 
     #[test]

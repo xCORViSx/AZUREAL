@@ -102,14 +102,15 @@ pub fn handle_key_event(
         }
     }
 
-    // Welcome modal — only leader continuation (above) and ⌃q pass through.
-    // Leader ENTRY ('w' press) also needs to work here.
+    // Welcome modal — leader entry + global keybindings pass through.
+    // Don't return early so globals (⌃q, ⇧M, ⇧P, ⇧G, ⇧H, etc.) resolve normally.
     if app.needs_welcome_modal() {
         if key.code == KeyCode::Char('w') && key.modifiers == event::KeyModifiers::NONE {
             app.leader_state = LeaderState::WaitingForSpace;
             app.set_status("w …");
+            return Ok(());
         }
-        return Ok(());
+        // Fall through to keybinding resolution for global keys
     }
 
     // --- Modal overlays consume ALL input (bypass keybinding system) ---

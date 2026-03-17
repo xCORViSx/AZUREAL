@@ -2186,7 +2186,7 @@ mod tests {
             .iter()
             .find(|span| span.content.contains("gpt-5.4"))
             .expect("expected model span");
-        assert_eq!(model_span.style.fg, Some(Color::DarkGray));
+        assert_eq!(model_span.style.fg, Some(Color::Rgb(60, 60, 60)));
         assert!(!model_span.style.add_modifier.contains(Modifier::BOLD));
     }
 
@@ -2336,7 +2336,7 @@ mod tests {
             None,
         );
         let text = lines_to_text(&lines);
-        assert!(text.iter().any(|l| l.contains("compacting")));
+        assert!(text.iter().any(|l| l.contains("Compacting")));
     }
 
     /// Complete event renders duration and cost.
