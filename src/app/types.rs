@@ -52,7 +52,8 @@ pub struct BranchDialog {
     /// 0 = "Create new" row, 1..=N = branch rows
     pub selected: usize,
     pub filter: String,
-    pub filter_cursor: usize,
+    /// Cursor byte offset within `filter` (always on a char boundary)
+    pub cursor_pos: usize,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -69,7 +70,7 @@ impl BranchDialog {
             checked_out,
             selected: 0,
             filter: String::new(),
-            filter_cursor: 0,
+            cursor_pos: 0,
             filtered_indices,
         }
     }
@@ -140,29 +141,42 @@ impl BranchDialog {
 
     pub fn filter_char(&mut self, c: char) {
         if is_git_safe_char(c) {
-            let byte_pos = self
-                .filter
-                .char_indices()
-                .nth(self.filter_cursor)
-                .map(|(i, _)| i)
-                .unwrap_or(self.filter.len());
-            self.filter.insert(byte_pos, c);
-            self.filter_cursor += 1;
+            self.filter.insert(self.cursor_pos, c);
+            self.cursor_pos += c.len_utf8();
             self.apply_filter();
         }
     }
 
     pub fn filter_backspace(&mut self) {
-        if self.filter_cursor > 0 {
-            let byte_pos = self
-                .filter
+        if self.cursor_pos > 0 {
+            let prev = self.filter[..self.cursor_pos]
                 .char_indices()
-                .nth(self.filter_cursor - 1)
+                .next_back()
                 .map(|(i, _)| i)
                 .unwrap_or(0);
-            self.filter.remove(byte_pos);
-            self.filter_cursor -= 1;
+            self.filter.remove(prev);
+            self.cursor_pos = prev;
             self.apply_filter();
+        }
+    }
+
+    pub fn cursor_left(&mut self) {
+        if self.cursor_pos > 0 {
+            self.cursor_pos = self.filter[..self.cursor_pos]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    pub fn cursor_right(&mut self) {
+        if self.cursor_pos < self.filter.len() {
+            self.cursor_pos = self.filter[self.cursor_pos..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor_pos + i)
+                .unwrap_or(self.filter.len());
         }
     }
 }

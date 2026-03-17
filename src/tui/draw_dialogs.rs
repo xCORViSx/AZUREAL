@@ -283,8 +283,9 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
     );
     f.render_widget(filter, dialog_chunks[0]);
 
-    // Show cursor in filter input
-    let cursor_x = dialog_chunks[0].x + 1 + dialog.filter_cursor as u16;
+    // Show cursor in filter input (use cursor_pos byte offset → char count)
+    let chars_before_cursor = dialog.filter[..dialog.cursor_pos].chars().count();
+    let cursor_x = dialog_chunks[0].x + 1 + chars_before_cursor as u16;
     let cursor_y = dialog_chunks[0].y + 1;
     if cursor_x < dialog_chunks[0].x + dialog_chunks[0].width - 1 {
         f.set_cursor_position((cursor_x, cursor_y));
@@ -1312,6 +1313,7 @@ mod tests {
     fn test_branch_dialog_filter_backspace() {
         let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![], vec![0, 0]);
         d.filter = "ab".into();
+        d.cursor_pos = d.filter.len();
         d.filter_backspace();
         assert_eq!(d.filter, "a");
     }

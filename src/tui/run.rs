@@ -576,9 +576,9 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let base_x = area.x;
     let focused = app.focus == Focus::Worktrees;
 
-    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread)
+    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread, is_running)
     // target: None = [M] main browse, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
+    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool, bool)> = Vec::new();
 
     let main_branch = app
         .project
@@ -592,12 +592,13 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         None,
         None,
         false,
+        false,
     ));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !app.browsing_main && app.selected_worktree == Some(idx);
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
-        let running = app.is_session_running(&wt.branch_name);
+        let is_running = app.is_session_running(&wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
             tabs.push((
@@ -607,17 +608,18 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 Some(idx),
                 rebase_color,
                 false,
+                false,
             ));
-        } else if running {
-            // Running takes priority over unread — agent is actively working
-            let status = wt.status(true);
+        } else if is_running {
+            // Running always takes priority — show filled circle even if unread
             tabs.push((
-                format!("{} {}", status.symbol(), wt.name()),
+                format!("● {}", wt.name()),
                 active,
                 false,
                 Some(idx),
                 rebase_color,
                 false,
+                true,
             ));
         } else if unread {
             tabs.push((
@@ -627,6 +629,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 Some(idx),
                 rebase_color,
                 true,
+                false,
             ));
         } else {
             let status = wt.status(false);
@@ -636,6 +639,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 false,
                 Some(idx),
                 rebase_color,
+                false,
                 false,
             ));
         }
@@ -648,7 +652,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
     let tab_widths: Vec<usize> = tabs
         .iter()
-        .map(|(label, _, _, _, rebase, _)| {
+        .map(|(label, _, _, _, rebase, _, _)| {
             let base: usize = label
                 .chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
@@ -668,7 +672,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -698,7 +702,8 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut x_cursor: u16 = base_x;
 
     for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
+        let (ref label, is_active, is_archived, target, rebase_color, is_unread, is_running) =
+            tabs[idx];
         let tab_text = format!("{} ", label);
         let mut tab_w: u16 = tab_text
             .chars()
@@ -722,6 +727,8 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                     .bg(AZURE)
                     .add_modifier(Modifier::BOLD)
             }
+        } else if is_running {
+            Style::default().fg(Color::Green)
         } else if is_archived {
             Style::default().fg(dim)
         } else if is_unread {
@@ -781,9 +788,9 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let avail = area.width as usize;
     let base_x = area.x;
 
-    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread)
+    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread, is_running)
     // target: None = main branch, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool)> = Vec::new();
+    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool, bool)> = Vec::new();
 
     let main_branch = app
         .project
@@ -798,12 +805,13 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
         None,
         None,
         false,
+        false,
     ));
 
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !main_is_active && wt.branch_name == *active_branch;
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
-        let running = app.is_session_running(&wt.branch_name);
+        let is_running = app.is_session_running(&wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
             tabs.push((
@@ -813,16 +821,17 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 Some(idx),
                 rebase_color,
                 false,
+                false,
             ));
-        } else if running {
-            let status = wt.status(true);
+        } else if is_running {
             tabs.push((
-                format!("{} {}", status.symbol(), wt.name()),
+                format!("● {}", wt.name()),
                 active,
                 false,
                 Some(idx),
                 rebase_color,
                 false,
+                true,
             ));
         } else if unread {
             tabs.push((
@@ -832,6 +841,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 Some(idx),
                 rebase_color,
                 true,
+                false,
             ));
         } else {
             let status = wt.status(false);
@@ -841,6 +851,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 false,
                 Some(idx),
                 rebase_color,
+                false,
                 false,
             ));
         }
@@ -853,7 +864,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
     let tab_widths: Vec<usize> = tabs
         .iter()
-        .map(|(label, _, _, _, rebase, _)| {
+        .map(|(label, _, _, _, rebase, _, _)| {
             let base: usize = label
                 .chars()
                 .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
@@ -873,7 +884,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -903,7 +914,8 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut x_cursor: u16 = base_x;
 
     for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color, is_unread) = tabs[idx];
+        let (ref label, is_active, is_archived, target, rebase_color, is_unread, is_running) =
+            tabs[idx];
         let tab_text = format!("{} ", label);
         let mut tab_w: u16 = tab_text
             .chars()
@@ -923,6 +935,8 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                     .bg(GIT_ORANGE)
                     .add_modifier(Modifier::BOLD)
             }
+        } else if is_running {
+            Style::default().fg(Color::Green)
         } else if is_archived {
             Style::default().fg(Color::DarkGray)
         } else if is_unread {
