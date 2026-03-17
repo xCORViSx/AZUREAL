@@ -125,11 +125,6 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    // New session name dialog (centered overlay)
-    if app.new_session_dialog_active {
-        draw_new_session_dialog(f, app, area);
-    }
-
     // Split area for sticky todo widget at bottom (visible whenever todos exist —
     // stays visible even when all completed, cleared on next user prompt or session switch)
     let has_todos = !app.current_todos.is_empty() || !app.subagent_todos.is_empty();
@@ -783,6 +778,11 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         // No todos visible — clear cached rect so mouse scroll won't hit-test stale area
         app.pane_todo = Rect::default();
+    }
+
+    // New session name dialog (centered overlay) — rendered last so it appears above all content
+    if app.new_session_dialog_active {
+        draw_new_session_dialog(f, app, area);
     }
 }
 
