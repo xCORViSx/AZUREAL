@@ -1,6 +1,8 @@
-alpha
+alpha kept for tiny diff
 beta updated
+gamma restored for contrast
 delta added
 epsilon block start
 epsilon block end
-zeta trailing line
+zeta trailing line adjusted
+eta final marker

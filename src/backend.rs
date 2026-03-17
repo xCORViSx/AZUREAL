@@ -74,6 +74,25 @@ impl AgentProcess {
         }
     }
 
+    /// Spawn a new agent process on an explicitly chosen backend.
+    pub fn spawn_on_backend(
+        &self,
+        backend: Backend,
+        working_dir: &Path,
+        prompt: &str,
+        resume_session_id: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<(mpsc::Receiver<AgentEvent>, u32)> {
+        match backend {
+            Backend::Claude => self
+                .claude
+                .spawn(working_dir, prompt, resume_session_id, model),
+            Backend::Codex => self
+                .codex
+                .spawn(working_dir, prompt, resume_session_id, model),
+        }
+    }
+
     /// Spawn a new agent process. The backend is selected automatically
     /// based on the model name (gpt-* → Codex, else → Claude).
     pub fn spawn(
@@ -86,14 +105,7 @@ impl AgentProcess {
         let backend = model
             .map(crate::app::state::backend_for_model)
             .unwrap_or(Backend::Claude);
-        match backend {
-            Backend::Claude => self
-                .claude
-                .spawn(working_dir, prompt, resume_session_id, model),
-            Backend::Codex => self
-                .codex
-                .spawn(working_dir, prompt, resume_session_id, model),
-        }
+        self.spawn_on_backend(backend, working_dir, prompt, resume_session_id, model)
     }
 }
 
@@ -221,6 +233,22 @@ mod tests {
         let result = ap.spawn(Path::new("/tmp"), "", None, None);
         assert!(result.is_err());
         // Default (None) → Claude backend, which rejects empty prompts
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn agent_process_spawn_on_backend_empty_prompt_fails_claude() {
+        let ap = AgentProcess::new(Config::default());
+        let result = ap.spawn_on_backend(Backend::Claude, Path::new("/tmp"), "", None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn agent_process_spawn_on_backend_empty_prompt_fails_codex() {
+        let ap = AgentProcess::new(Config::default());
+        let result = ap.spawn_on_backend(Backend::Codex, Path::new("/tmp"), "", None, None);
+        assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
 }

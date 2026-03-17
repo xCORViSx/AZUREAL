@@ -47,6 +47,8 @@ pub struct CompactionJob {
     pub session_id: i64,
     pub boundary_seq: i64,
     pub wt_path: PathBuf,
+    pub backend: Backend,
+    pub model_label: String,
 }
 
 /// Application state
@@ -132,7 +134,7 @@ pub struct App {
     /// Compaction agent receivers: PID string → metadata.
     /// Polled separately from agent_receivers — output is captured, not displayed.
     pub compaction_receivers: HashMap<String, CompactionJob>,
-    /// Accumulated assistant text from compaction agents: PID string → text buffer
+    /// Accumulated raw stdout from compaction agents: PID string → JSONL/text buffer
     pub compaction_output: HashMap<String, String>,
     /// Set by poll_compaction_agents when a compaction completes with no output.
     /// The event loop re-spawns on next tick.

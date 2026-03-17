@@ -1,8 +1,9 @@
-alpha: one revised again
-beta: two
-gamma: three updated with context
-delta: four
+alpha: one revised for second pass
+beta: two with a narrower diff
+gamma: three updated with context and labels
+delta: four retained for comparison
 epsilon: five inserted for preview coverage
+zeta: six added to force another visible line
 
 notes:
 - first draft replaced cleanly
@@ -11,5 +12,6 @@ notes:
 - third note line for a taller diff block
 
 summary:
-- mock edit cycle complete
-- ready for session preview capture
+- mock edit cycle replaced with follow-up pass
+- ready for a second session preview capture
+- audit: leave disposable after inspection
