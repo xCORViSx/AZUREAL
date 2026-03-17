@@ -696,9 +696,13 @@ impl App {
         use crate::app::state::project_snapshot::ProjectSnapshot;
 
         // ── Save current project state to snapshot ──
+        // Save the active terminal into worktree_terminals before snapshot capture
+        // (otherwise the current worktree's shell session is lost)
+        self.save_current_terminal();
         if let Some(ref current_project) = self.project.clone() {
             let snapshot = ProjectSnapshot {
                 project: current_project.clone(),
+                display_events: std::mem::take(&mut self.display_events),
                 worktrees: std::mem::take(&mut self.worktrees),
                 selected_worktree: self.selected_worktree.take(),
                 main_worktree: self.main_worktree.take(),
@@ -762,6 +766,7 @@ impl App {
         if let Some(snapshot) = self.project_snapshots.remove(&path) {
             // Restore saved state
             self.project = Some(snapshot.project);
+            self.display_events = snapshot.display_events;
             self.worktrees = snapshot.worktrees;
             self.selected_worktree = snapshot.selected_worktree;
             self.main_worktree = snapshot.main_worktree;

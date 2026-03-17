@@ -9,13 +9,17 @@ use std::path::PathBuf;
 
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{FileTreeEntry, PresetPrompt, RunCommand, ViewerTab};
+use crate::events::DisplayEvent;
 use crate::models::{Project, Worktree};
 
 /// Captures per-project state that survives a project switch.
 /// Fields not included here are either global (agent_receivers, running_sessions)
-/// or rebuilt on restore (display_events, render cache, todos, tokens).
+/// or rebuilt on restore (render cache, todos, tokens).
 pub struct ProjectSnapshot {
     pub project: Project,
+
+    // ── Live session display state ──
+    pub display_events: Vec<DisplayEvent>,
 
     // ── Worktree state ──
     pub worktrees: Vec<Worktree>,
