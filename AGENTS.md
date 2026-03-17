@@ -1648,7 +1648,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running agents simultaneously
 5. **Error Recovery**: Verify graceful handling of agent exits and git errors
 
-## Test Coverage (6311+ tests)
+## Test Coverage (6370+ tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|
