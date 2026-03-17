@@ -321,6 +321,7 @@ impl App {
         self.failed_tool_calls.clear();
         self.token_badge_cache = None;
         self.store_chars_cached = 0;
+        self.chars_since_compaction = 0;
         self.current_todos.clear();
         self.subagent_todos.clear();
         self.active_task_tool_ids.clear();
@@ -392,6 +393,9 @@ impl App {
                         }
                     }
                 }
+                // Sync badge from store (prior turns are persisted; in-flight
+                // events will be added incrementally by apply_parsed_output).
+                self.update_token_badge();
             } else if let Some(sid) = store_session_id {
                 // Historic session: load from SQLite store
                 self.current_session_id = Some(sid);

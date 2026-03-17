@@ -840,6 +840,7 @@ impl App {
                     .map(crate::app::session_store::event_char_len)
                     .sum();
                 self.chars_since_compaction += added_chars;
+                self.update_token_badge_live();
 
                 // Extend display_events BEFORE the threshold check so that
                 // store_append_from_display captures the triggering batch.
