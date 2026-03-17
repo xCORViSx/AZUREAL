@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -460,9 +460,7 @@ fn draw_rename_dialog(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let dialog_area = Rect::new(x, y, w, h);
 
-    // Clear background behind dialog
-    let clear = Paragraph::new("").block(Block::default().style(Style::default().bg(Color::Black)));
-    f.render_widget(clear, dialog_area);
+    f.render_widget(Clear, dialog_area);
 
     let widget = Paragraph::new(input.as_str()).block(
         Block::default()

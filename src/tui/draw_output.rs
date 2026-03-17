@@ -797,11 +797,7 @@ fn draw_new_session_dialog(f: &mut Frame, app: &App, area: Rect) {
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let dialog_area = ratatui::layout::Rect::new(x, y, w, h);
 
-    let clear = ratatui::widgets::Paragraph::new("").block(
-        ratatui::widgets::Block::default()
-            .style(ratatui::style::Style::default().bg(ratatui::style::Color::Black)),
-    );
-    f.render_widget(clear, dialog_area);
+    f.render_widget(Clear, dialog_area);
 
     let widget = ratatui::widgets::Paragraph::new(input.as_str()).block(
         ratatui::widgets::Block::default()
