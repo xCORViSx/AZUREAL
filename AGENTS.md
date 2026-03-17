@@ -55,6 +55,8 @@ When the user switches sessions (worktree navigation or session list selection),
 - `register_claude()` resets `viewing_historic_session = false` so new prompts always show live output
 - Helper `viewed_session_id(branch)` resolves the UUID of the currently displayed session file
 - `apply_parsed_output()` in the event loop checks `is_viewing_slot()` before applying background `AgentProcessor` results — stale results from a previous project's session are silently discarded, preventing event leakage across project/worktree switches
+- Live session restore re-parses the JSONL file from disk (store events + JSONL turn) instead of relying on `live_display_events_cache`, which only snapshots at switch-away time and misses events generated while viewing another worktree
+- `store_append_from_jsonl()` uses `parse_jsonl_for_store()` when the exiting slot is not being viewed, avoiding reading `display_events` (which belongs to a different worktree) and preventing data corruption or silent event loss
 
 **Critical: Context injection, not `--resume`**
 The `--resume` flag is no longer used. Conversation context is built from the SQLite session store and injected into each prompt via `<azureal-session-context>` tags. This eliminates dependency on Claude's JSONL session files for conversation continuity — the `.azs` store is the single source of truth.
@@ -1460,7 +1462,7 @@ azureal/
 │   │   │   ├── sessions.rs # Worktree navigation, session file selection, archive. start_new_session() creates session in SQLite store
 │   │   │   ├── output.rs   # Session output processing
 │   │   │   ├── scroll.rs   # Scroll operations
-│   │   │   ├── claude.rs   # Claude session handling + post-exit store flow: store_append_from_jsonl() parses JSONL, strips injected context, appends to SQLite; store_append_background() handles background project exits
+│   │   │   ├── claude.rs   # Claude session handling + post-exit store flow: store_append_from_jsonl() uses display_events when viewing slot, otherwise parse_jsonl_for_store() parses JSONL directly; store_append_background() handles background project exits
 │   │   │   ├── file_browser.rs # File tree and viewer
 │   │   │   ├── ui.rs       # Focus, dialogs, menus, wizard, enter_main_browse/exit_main_browse (clears in switch_project). switch_project() saves/restores session_store + pid_session_target + current_session_id via ProjectSnapshot
 │   │   │   ├── viewer_edit.rs # Viewer edit mode: wrap-aware cursor, mouse click/drag, clipboard

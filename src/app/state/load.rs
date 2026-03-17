@@ -373,29 +373,91 @@ impl App {
                 .unwrap_or(false);
 
             if is_live {
-                // Live session: restore display_events from per-branch cache
-                // (saved by save_live_display_events() before the worktree switch).
-                if let Some(cached) = self.live_display_events_cache.remove(&branch_name) {
-                    self.display_events = cached;
-                }
-                self.invalidate_render_cache();
-                if let Some(slot) = self.active_slot.get(&branch_name) {
+                // Live session: re-parse the JSONL file from disk to capture ALL
+                // events, including those generated while viewing another worktree.
+                // The live_display_events_cache only snapshots at switch-away time
+                // and misses everything produced after that.
+                let slot = self.active_slot.get(&branch_name).cloned();
+
+                // Set current_session_id from the slot's session target
+                if let Some(ref slot) = slot {
                     if let Some((sid, _, _, _)) = self.pid_session_target.get(slot) {
                         self.current_session_id = Some(*sid);
                     }
-                    // Set up JSONL watching for the watcher thread
+                }
+
+                let mut restored_from_jsonl = false;
+                if let Some(ref slot) = slot {
                     if let Some(uuid) = self.agent_session_ids.get(slot) {
                         if let Some(ref wt_path) = worktree_path {
                             if let Some(jsonl_path) = crate::config::session_file(wt_path, uuid) {
                                 if jsonl_path.exists() {
+                                    // Prior turns from SQLite store
+                                    let store_events = self
+                                        .current_session_id
+                                        .and_then(|sid| {
+                                            self.session_store
+                                                .as_ref()
+                                                .and_then(|s| s.load_events(sid).ok())
+                                        })
+                                        .unwrap_or_default();
+
+                                    // Current turn from JSONL file
+                                    let parsed =
+                                        crate::app::session_parser::parse_session_file(&jsonl_path);
+
+                                    if !parsed.events.is_empty() || !store_events.is_empty() {
+                                        let events_offset = store_events.len();
+                                        self.display_events = store_events;
+                                        self.display_events.extend(parsed.events);
+                                        self.pending_tool_calls = parsed.pending_tools;
+                                        self.failed_tool_calls = parsed.failed_tools;
+                                        self.session_file_parse_offset = parsed.end_offset;
+                                        self.session_file_size = std::fs::metadata(&jsonl_path)
+                                            .map(|m| m.len())
+                                            .unwrap_or(0);
+
+                                        // Update events_offset so store_append_from_jsonl
+                                        // slices at the correct boundary on exit.
+                                        if let Some(target) =
+                                            self.pid_session_target.get_mut(slot.as_str())
+                                        {
+                                            target.2 = events_offset;
+                                        }
+                                        restored_from_jsonl = true;
+                                    }
                                     self.session_file_path = Some(jsonl_path);
                                 }
                             }
                         }
                     }
                 }
-                // Sync badge from store (prior turns are persisted; in-flight
-                // events will be added incrementally by apply_parsed_output).
+
+                if !restored_from_jsonl {
+                    // Fall back to cache if JSONL re-parse was not possible
+                    if let Some(cached) = self.live_display_events_cache.remove(&branch_name) {
+                        self.display_events = cached;
+                    }
+                    // Set up JSONL file watching
+                    if let Some(ref slot) = slot {
+                        if let Some(uuid) = self.agent_session_ids.get(slot) {
+                            if let Some(ref wt_path) = worktree_path {
+                                if let Some(jsonl_path) =
+                                    crate::config::session_file(wt_path, uuid)
+                                {
+                                    if jsonl_path.exists() {
+                                        self.session_file_path = Some(jsonl_path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Discard stale cache entry (JSONL re-parse has better data)
+                self.live_display_events_cache.remove(&branch_name);
+
+                self.invalidate_render_cache();
                 self.update_token_badge();
             } else if let Some(sid) = store_session_id {
                 // Historic session: load from SQLite store

@@ -363,8 +363,10 @@ impl App {
     }
 
     /// Store the current turn's display events into the SQLite session store.
-    /// Uses the live display_events (which match what the user saw) rather than
-    /// re-parsing the JSONL file. Deletes the source JSONL after successful ingestion.
+    /// When the slot is currently being viewed, uses live display_events.
+    /// When the user switched to a different worktree, falls back to parsing
+    /// the JSONL file from disk (display_events belongs to the other worktree).
+    /// Deletes the source JSONL after successful ingestion.
     fn store_append_from_jsonl(&mut self, slot_id: &str, turn_backend: Backend) {
         // Only process if this slot was targeting a store session
         let (session_id, wt_path, events_offset, session_file_offset) =
@@ -379,13 +381,24 @@ impl App {
             .get(slot_id)
             .and_then(|uuid| crate::config::session_file(&wt_path, uuid));
 
-        // Collect current turn's events from display_events (after the offset)
-        let mut events: Vec<crate::events::DisplayEvent> =
+        // When the slot isn't being viewed, display_events belongs to a
+        // different worktree — reading display_events[events_offset..] would
+        // either corrupt the store (wrong events) or produce empty results
+        // (offset past end). Fall back to parsing the JSONL file directly.
+        let slot_owns_display = self.is_viewing_slot(slot_id);
+
+        let mut events: Vec<crate::events::DisplayEvent> = if slot_owns_display {
+            // Viewed slot — use live display_events
             if events_offset < self.display_events.len() {
                 self.display_events[events_offset..].to_vec()
             } else {
                 Vec::new()
-            };
+            }
+        } else {
+            // Non-viewed slot — parse JSONL file from disk
+            Self::parse_jsonl_for_store(&jsonl_path, turn_backend, session_file_offset, &wt_path, session_id)
+        };
+
         if events.is_empty() {
             // Still delete the JSONL even if no events to store
             if let Some(p) = jsonl_path.filter(|p| p.exists()) {
@@ -393,7 +406,7 @@ impl App {
             }
             return;
         }
-        if turn_backend == Backend::Codex {
+        if slot_owns_display && turn_backend == Backend::Codex {
             if let Some(ref path) = jsonl_path {
                 if path.exists() && events_offset <= self.display_events.len() {
                     let prefix_events = &self.display_events[..events_offset];
@@ -542,6 +555,70 @@ impl App {
             if store.append_events(session_id, &events).is_ok() {
                 // Source JSONL ingested — delete the original file
                 let _ = std::fs::remove_file(&jsonl_path);
+            }
+        }
+    }
+
+    /// Parse a JSONL file directly for store ingestion (non-viewed slot path).
+    /// Used when the agent exits while the user is viewing a different worktree,
+    /// so display_events cannot be used (it belongs to the viewed worktree).
+    fn parse_jsonl_for_store(
+        jsonl_path: &Option<std::path::PathBuf>,
+        turn_backend: Backend,
+        session_file_offset: u64,
+        wt_path: &std::path::Path,
+        session_id: i64,
+    ) -> Vec<crate::events::DisplayEvent> {
+        let Some(ref path) = jsonl_path else {
+            return Vec::new();
+        };
+        if !path.exists() {
+            return Vec::new();
+        }
+        match turn_backend {
+            Backend::Claude => {
+                let parsed = crate::app::session_parser::parse_session_file(path);
+                // Strip injected context from user messages (same as
+                // store_append_background and recover_orphaned_jsonls).
+                parsed
+                    .events
+                    .into_iter()
+                    .map(|ev| match ev {
+                        crate::events::DisplayEvent::UserMessage { _uuid, content } => {
+                            let stripped =
+                                crate::app::context_injection::strip_injected_context(&content);
+                            crate::events::DisplayEvent::UserMessage {
+                                _uuid,
+                                content: stripped.to_string(),
+                            }
+                        }
+                        other => other,
+                    })
+                    .collect()
+            }
+            Backend::Codex => {
+                // Load prior-turn events from the store for Codex prefix context
+                let prefix_events =
+                    crate::app::session_store::SessionStore::open(wt_path)
+                        .ok()
+                        .and_then(|s| s.load_events(session_id).ok())
+                        .unwrap_or_default();
+                let (prefix_pending, prefix_failed) =
+                    Self::tool_status_from_events(&prefix_events);
+                let parsed =
+                    crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                        path,
+                        session_file_offset,
+                        &prefix_events,
+                        &prefix_pending,
+                        &prefix_failed,
+                    );
+                let offset = prefix_events.len();
+                if parsed.events.len() > offset {
+                    parsed.events[offset..].to_vec()
+                } else {
+                    Vec::new()
+                }
             }
         }
     }
