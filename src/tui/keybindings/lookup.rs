@@ -93,8 +93,9 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
 
     // Context-specific bindings based on focus + mode
     let context_bindings: &[Keybinding] = match ctx.focus {
-        // Worktree actions use leader sequence (w ␣ <key>) — resolved by lookup_leader_action
-        Focus::Worktrees => &[],
+        // Worktree mutation actions: resolved both here (direct press when focused)
+        // AND via leader sequence (w ␣ <key>) from any focus — see lookup_leader_action
+        Focus::Worktrees => &WORKTREES,
         Focus::FileTree => &FILE_TREE,
         Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
         Focus::Viewer => &VIEWER,
@@ -723,13 +724,36 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn worktrees_focus_has_no_context_bindings() {
-        // Worktree actions use leader sequence — Focus::Worktrees context is empty
+    fn worktrees_focus_resolves_add() {
+        // Direct press 'a' on Worktrees pane → AddWorktree
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')),
-            None
+            Some(Action::AddWorktree)
         );
+    }
+
+    #[test]
+    fn worktrees_focus_resolves_archive() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('x')),
+            Some(Action::ToggleArchiveWorktree)
+        );
+    }
+
+    #[test]
+    fn worktrees_focus_resolves_delete() {
+        let ctx = cmd_ctx(Focus::Worktrees);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('d')),
+            Some(Action::DeleteWorktree)
+        );
+    }
+
+    #[test]
+    fn worktrees_focus_unbound_key_returns_none() {
+        let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('g')),
             None

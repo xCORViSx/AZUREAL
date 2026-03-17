@@ -139,7 +139,7 @@ azureal
 | `⌃m` / `Ctrl+M` | Cycle model |
 | `⌃q` / `Ctrl+Q` | Quit |
 
-**Worktree mutations** use a `w ␣` leader sequence (press `w`, then `Space`, then action key):
+**Worktree mutations** work directly when the worktrees panel is focused, or via `w ␣` leader sequence from any focus:
 
 | Key | Action |
 |-----|--------|

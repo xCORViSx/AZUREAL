@@ -1306,7 +1306,7 @@ mod tests {
     fn test_branch_dialog_filter_backspace() {
         let mut d = BranchDialog::new(vec!["abc".into(), "def".into()], vec![], vec![0, 0]);
         d.filter = "ab".into();
-        d.filter_cursor = 2; // cursor at end
+        d.cursor_pos = 2; // cursor at end
         d.filter_backspace();
         assert_eq!(d.filter, "a");
     }
