@@ -1079,6 +1079,11 @@ pub fn draw_welcome_modal(f: &mut Frame) {
     let wt_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::AddWorktree)
             .unwrap_or_else(|| "w".into());
+    let proj_key = keybindings::find_key_for_action(
+        &keybindings::GLOBAL,
+        keybindings::Action::OpenProjects,
+    )
+    .unwrap_or_else(|| "P".into());
     let quit_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::Quit)
             .unwrap_or_else(|| "Ctrl+Q".into());
@@ -1099,6 +1104,11 @@ pub fn draw_welcome_modal(f: &mut Frame) {
         Line::from(vec![
             Span::styled(&wt_key, key_style),
             Span::styled("  Create a worktree", dim),
+        ])
+        .alignment(Alignment::Center),
+        Line::from(vec![
+            Span::styled(&proj_key, key_style),
+            Span::styled("  Open projects", dim),
         ])
         .alignment(Alignment::Center),
         Line::from(vec![

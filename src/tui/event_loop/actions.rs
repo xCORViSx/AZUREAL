@@ -74,7 +74,7 @@ pub fn handle_key_event(
         let ctx = KeyContext::from_app(app);
         if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
             match action {
-                Action::BrowseMain | Action::AddWorktree => {
+                Action::BrowseMain | Action::AddWorktree | Action::OpenProjects => {
                     execute_action(action, app, claude_process)?;
                 }
                 _ => {}
