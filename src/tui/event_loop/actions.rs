@@ -461,6 +461,11 @@ pub fn handle_key_event(
         return handle_file_tree_input(key, app);
     }
 
+    // New session dialog: text input bypasses keybinding system
+    if app.new_session_dialog_active {
+        return handle_session_input(key, app);
+    }
+
     // Session find modal: typing search text bypasses keybinding system
     if app.session_find_active {
         return handle_session_input(key, app);
