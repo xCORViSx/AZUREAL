@@ -24,7 +24,7 @@ mod types;
 // Re-export all public items so existing `use super::keybindings::*` paths work unchanged.
 
 // Types
-pub use types::{Action, HelpSection, KeyCombo, Keybinding};
+pub use types::{Action, HelpSection, KeyCombo, Keybinding, LeaderState};
 
 // Binding arrays
 pub use bindings::{
@@ -35,7 +35,7 @@ pub use bindings::{
 // Lookup functions + KeyContext
 pub use lookup::{
     lookup_action, lookup_branch_dialog_action, lookup_git_actions_action, lookup_health_action,
-    lookup_picker_action, lookup_projects_action, KeyContext,
+    lookup_leader_action, lookup_picker_action, lookup_projects_action, KeyContext,
 };
 
 // Hint generators

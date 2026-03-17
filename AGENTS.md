@@ -74,9 +74,9 @@ Each worktree provides true branch isolation:
 - Operates on a separate branch from main
 - **Archiving** removes the worktree directory but preserves the git branch (`⌘a` key). Archived worktrees show as `◇` (diamond) with dimmed text in the tab row.
 - **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
-- **Deleting** removes the worktree directory AND deletes the git branch permanently — both local and remote (`⌘d` key). Opens a centered dialog box with red double-border. **Safety warnings:** before showing the dialog, runs `git status --porcelain` on the worktree path (skipped for archived) and `git log main..branch --oneline` from the repo root. If uncommitted changes or unmerged commits are found, yellow `! N uncommitted change(s)` / `! N commit(s) not merged to main` warning lines appear in the dialog between the question and the action keys. Does not block deletion — just warns. **Sibling guard:** if other worktrees share the same branch, the dialog offers to delete all siblings + branch (`y`) or archive the current worktree only (`a`) — git prevents branch deletion while worktrees are checked out. Sole worktrees show a simple y/Esc confirmation. State: `delete_worktree_dialog: Option<DeleteWorktreeDialog>` enum with `Sole { name, warnings }` and `Siblings { branch, sibling_indices, count, warnings }` variants. Also cleans up auto-rebase config and all session state maps (`session_files`, `session_selected_file_idx`, `claude_session_ids`, `branch_slots`, `active_slot`, `running_sessions`, `claude_receivers`, `claude_exit_codes`, `unread_sessions`) for the deleted branch. `delete_branch()` deletes local branch, pushes `--delete` to remote, and prunes the local remote-tracking ref (`origin/<branch>`) so stale refs don't appear in branch dialogs.
+- **Deleting** removes the worktree directory AND deletes the git branch permanently — both local and remote (`w ␣ d` leader sequence). Opens a centered dialog box with red double-border. **Safety warnings:** before showing the dialog, runs `git status --porcelain` on the worktree path (skipped for archived) and `git log main..branch --oneline` from the repo root. If uncommitted changes or unmerged commits are found, yellow `! N uncommitted change(s)` / `! N commit(s) not merged to main` warning lines appear in the dialog between the question and the action keys. Does not block deletion — just warns. **Sibling guard:** if other worktrees share the same branch, the dialog offers to delete all siblings + branch (`y`) or archive the current worktree only (`a`) — git prevents branch deletion while worktrees are checked out. Sole worktrees show a simple y/Esc confirmation. State: `delete_worktree_dialog: Option<DeleteWorktreeDialog>` enum with `Sole { name, warnings }` and `Siblings { branch, sibling_indices, count, warnings }` variants. Also cleans up auto-rebase config and all session state maps (`session_files`, `session_selected_file_idx`, `claude_session_ids`, `branch_slots`, `active_slot`, `running_sessions`, `claude_receivers`, `claude_exit_codes`, `unread_sessions`) for the deleted branch. `delete_branch()` deletes local branch, pushes `--delete` to remote, and prunes the local remote-tracking ref (`origin/<branch>`) so stale refs don't appear in branch dialogs.
 - **Main branch browse:** Main/master branch is stored separately in `app.main_worktree: Option<Worktree>`. Press `Shift+M` globally to browse main: the `[★ main]` tab highlights in yellow as a visual distinction from feature worktrees. Main is fully functional — editing, prompting, and sessions all work the same as feature worktrees. The different git overview (pull/commit/push instead of squash/rebase) and yellow tab styling serve as indirect cues that you're on main. `Esc` or `Shift+M` again exits browse mode. `current_worktree()` transparently returns `main_worktree` when `browsing_main` is true. `enter_main_browse()` and `exit_main_browse()` in `src/app/state/ui.rs` manage state transitions; `switch_project()` clears browse state.
-- **Tab row icons:** `[★ main]` tab always first (yellow when active). Archived worktrees show `◇` (diamond) with dimmed text. Feature branches use standard status circles (`●`/`○`/etc.). Unread worktrees show `◐` (half-filled circle) in AZURE — takes priority over running `●`. Per-session granularity: if ANY session in the session list finishes while unviewed (different branch, or background slot on same branch), the tab shows `◐`. Clears per-session when that specific session is viewed; branch `◐` disappears only when all unread sessions on the branch are viewed. Only clears when session pane is visible (normal mode or git panel close). No leading space before icons — symbol sits flush against the left separator.
+- **Tab row icons:** `[★ main]` tab always first (yellow when active). Archived worktrees show `◇` (diamond) with dimmed text. Feature branches use standard status circles (`●`/`○`/etc.). Running `●` (green) takes priority over unread `◐` — if an agent is actively running, the tab always shows the running indicator. Unread worktrees show `◐` (half-filled circle) in AZURE only when no agent is running. Per-session granularity: if ANY session in the session list finishes while unviewed (different branch, or background slot on same branch), the tab shows `◐`. Clears per-session when that specific session is viewed; branch `◐` disappears only when all unread sessions on the branch are viewed. Only clears when session pane is visible (normal mode or git panel close). No leading space before icons — symbol sits flush against the left separator.
 - **Cross-machine cleanup:** On startup and project switch, `Git::prune_remote_refs()` runs `git remote prune origin` then deletes local `azureal/*` branches that are fully merged to main and have no remote counterpart. Prevents worktrees deleted on one machine from appearing as archived on another.
 - CLI: `azureal session archive <name>` / `azureal session unarchive <name>`
 
@@ -101,7 +101,7 @@ Normal Mode:                              Git Mode (Shift+G):
 ```
 
 **Panes:**
-- **Worktree Tab Row** (1 row, top): Horizontal tab bar showing all worktrees (not focusable). `[★ main]` always first (Shift+M toggles main browse). Active tab: AZURE bg + white fg + bold; archived tabs: dim gray with `◇` prefix; inactive tabs: gray with status symbol prefix (`●`/`○`/etc.). Navigation: `[`/`]` globally switch tabs (wraps around at both ends). Worktree actions (`w` add, `⌘a` archive, `⌘d` delete) are global. Pagination: greedy tab packing with `N/M` page indicator. Mouse: click tab to select. Tab row rect cached as `pane_worktree_tabs`, click regions as `worktree_tab_hits`.
+- **Worktree Tab Row** (1 row, top): Horizontal tab bar showing all worktrees (not focusable). `[★ main]` always first (Shift+M toggles main browse). Active tab: AZURE bg + white fg + bold; archived tabs: dim gray with `◇` prefix; inactive tabs: gray with status symbol prefix (`●`/`○`/etc.). Navigation: `[`/`]` globally switch tabs (wraps around at both ends). Worktree actions use `w ␣` leader sequence (see Keybindings section). Pagination: greedy tab packing with `N/M` page indicator. Mouse: click tab to select. Tab row rect cached as `pane_worktree_tabs`, click regions as `worktree_tab_hits`.
 - **FileTree** (15%): Always-visible directory tree for the selected worktree. Uses Nerd Font icons with automatic detection. Focus cycle includes it as a separate pane.
 - **Viewer** (50%): File content viewer or diff detail (dual-purpose)
 - **Session** (35%, full height): Claude conversation output with tool results — extends past input pane down to status bar. Press `s` to toggle a **Session list overlay** in this pane (replaces session output with a session file browser showing status symbol, worktree name, session name/UUID, last modified time, and `[N msgs]` count). Top border has three title positions: left shows "Session [x/y]" message position, **center shows session name in `[brackets]`** (custom names from `.azureal/sessions` preferred; raw UUIDs shown as `[xxxxxxxx-…]`; ellipsied to fit between left and right titles; cached on session switch via `title_session_name` — zero file I/O in render path), right shows token usage + PID/exit code (border characters fill gaps). Token usage shown as color-coded percentage badge (green <60%, yellow 60-80%, red >80%). PID shown in green while running; switches to exit code on exit (green for 0, red for non-zero). Uses ratatui's multi-title API with `Alignment::Center` and `Alignment::Right`.
@@ -777,8 +777,8 @@ Implementation:
 
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~109 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (21 entries — includes `⌃m` CycleModel, `w` AddWorktree, `⌘a` ToggleArchive, `⌘d` DeleteWorktree), `WORKTREES` (0 entries — worktree bindings moved to GLOBAL), `FILE_TREE` (15 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
-- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, or filter — terminal mode only blocks globals when `focus == Focus::Input`, allowing other panes to use globals like `p` while terminal is open; no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode), plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
+- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (10 entries — core globals like `p`, `T`, `[`/`]`, `M`, `f`, `?`, `⌘c`, `⌃c`, `⌃m`, `⌃q`), `WORKTREES` (11 entries — leader sequence targets: `w` AddWorktree, `G` OpenGitActions, `H` OpenHealth, `M` BrowseMain, `P` OpenProjects, `R` RunCommand, `r` AddRunCommand, `x` ToggleArchive, `d` DeleteWorktree, `j/k` nav), `FILE_TREE` (15 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (21 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, or filter — terminal mode only blocks globals when `focus == Focus::Input`, allowing other panes to use globals like `p` while terminal is open; no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode), `lookup_leader_action(mods, code)` resolves second key of `w ␣` leader sequence against the WORKTREES binding array, plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
 
@@ -790,12 +790,14 @@ Other details:
 - Modal panels with visible footer hints (Health, Git, Projects) are excluded from the help panel — their keys are already self-documenting in the panel UI
 
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
-1. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
-2. Text input modals (`BranchDialog`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel) from stealing keystrokes meant as literal text
-3. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
-4. If `stt_recording` is true, ToggleStt is resolved from any focus/mode (so recording can always be stopped even after Tab changes focus)
-5. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
-6. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav)
+1. **Leader continuation:** If `leader_state == Worktrees`, the key is resolved via `lookup_leader_action()` against the WORKTREES binding array. Any match dispatches the action and resets leader state; Esc cancels; unrecognized keys reset with a status message. Fires before all modals to complete mid-sequence
+2. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
+3. Text input modals (`BranchDialog`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel) from stealing keystrokes meant as literal text
+4. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
+5. If `stt_recording` is true, ToggleStt is resolved from any focus/mode (so recording can always be stopped even after Tab changes focus)
+6. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)
+7. **Leader entry:** Plain `w` key (no modifiers, not in prompt/terminal/edit mode) sets `leader_state = Worktrees` and shows `[w ␣ …]` in the status bar. Fires after modal dispatch but before focus-specific handlers
+8. If `None` → focus-specific handler processes unresolved keys (text editing, dialog nav)
 
 **Input handlers only handle unresolved keys:**
 - `input_viewer.rs` — tab dialog, save dialog, discard dialog, edit mode text editing
@@ -1807,22 +1809,35 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `T` | Toggle terminal pane |
-| `G` | Toggle Git panel |
 | `j/k` | Navigate / scroll line |
 | `J/K` | Page scroll (Viewer/Session/Terminal) |
 | `Tab`/`Shift+Tab` | Cycle focus forward/backward (FileTree → Viewer → Session → Input) |
 | `[`/`]` | Switch worktree tab (global — works from any pane, including main browse) |
 | `M` | Toggle main branch browse |
-| `P` | Projects panel |
-| `R` | Run command (picker or execute) |
-| `w` | Add worktree |
-| `⌘a` / `Alt+A` | Archive worktree (falls through to select-all in Viewer) |
-| `⌘d` / `Alt+D` | Delete worktree |
+| `f` | Toggle file tree |
 | `?` | Help |
 | `⌘c` / `Ctrl+C` | Copy selection |
 | `⌃c` / `Alt+C` | Cancel agent |
 | `⌃m` / `Ctrl+M` | Cycle model (opus → sonnet → haiku) |
 | `⌃q` / `Ctrl+Q` | Quit |
+
+### Worktrees (`w ␣` Leader Sequence)
+
+Worktree-related actions are behind a two-key leader sequence: press `w` then a second key. The status bar shows `[w ␣ …]` while waiting for the second key. Press `Esc` to cancel. State tracked via `LeaderState` enum on App (`None` / `Worktrees`).
+
+| Key | Action |
+|-----|--------|
+| `w ␣ w` | Add worktree (open branch dialog) |
+| `w ␣ G` | Toggle Git panel |
+| `w ␣ H` | Health panel |
+| `w ␣ M` | Browse main branch |
+| `w ␣ P` | Projects panel |
+| `w ␣ R` | Run command |
+| `w ␣ r` | Add run command |
+| `w ␣ x` | Archive worktree |
+| `w ␣ d` | Delete worktree |
+| `w ␣ j` | Navigate down (worktree list) |
+| `w ␣ k` | Navigate up (worktree list) |
 
 ### FileTree Pane
 | Key | Action |
@@ -1880,8 +1895,8 @@ Prompt keybindings are displayed directly in the Input pane's title bar (not in 
 
 **Type mode title shows (macOS):** `(Esc:exit | Enter:submit | ⇧Enter:newline | ⌃c:cancel agent | ↑/↓:history | ⌥ ←/→ :word | ⌃w:del wrd | ⌃s:speech | ⌥p:presets)`
 **Type mode title shows (Windows/Linux):** `(Esc:exit | Enter:submit | Shift+Enter:newline | Ctrl+c:cancel agent | ↑/↓:history | Alt+ ←/→ :word | Ctrl+w:del wrd | Ctrl+s:speech | Alt+p:presets)`
-**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | R:run | ⌃c:cancel agent | ⌃q:quit | ?:help)`
-**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | G:Git | H:Health | M:main | R:run | Alt+c:cancel agent | Ctrl+q:quit | ?:help)`
+**Command mode title shows (macOS):** `(p:PROMPT | T:TERMINAL | w␣:worktrees | ⌃c:cancel agent | ⌃q:quit | ?:help)`
+**Command mode title shows (Windows/Linux):** `(p:PROMPT | T:TERMINAL | w␣:worktrees | Alt+c:cancel agent | Ctrl+q:quit | ?:help)`
 
 ### Terminal Mode
 

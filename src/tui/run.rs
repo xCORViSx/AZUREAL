@@ -597,12 +597,24 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !app.browsing_main && app.selected_worktree == Some(idx);
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
+        let running = app.is_session_running(&wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
             tabs.push((
                 format!("◇ {}", wt.name()),
                 active,
                 true,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
+        } else if running {
+            // Running takes priority over unread — agent is actively working
+            let status = wt.status(true);
+            tabs.push((
+                format!("{} {}", status.symbol(), wt.name()),
+                active,
+                false,
                 Some(idx),
                 rebase_color,
                 false,
@@ -617,7 +629,7 @@ fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 true,
             ));
         } else {
-            let status = wt.status(app.is_session_running(&wt.branch_name));
+            let status = wt.status(false);
             tabs.push((
                 format!("{} {}", status.symbol(), wt.name()),
                 active,
@@ -791,12 +803,23 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     for (idx, wt) in app.worktrees.iter().enumerate() {
         let active = !main_is_active && wt.branch_name == *active_branch;
         let rebase_color = rebase_indicator_color(app, &wt.branch_name);
+        let running = app.is_session_running(&wt.branch_name);
         let unread = app.unread_sessions.contains(&wt.branch_name);
         if wt.archived {
             tabs.push((
                 format!("◇ {}", wt.name()),
                 active,
                 true,
+                Some(idx),
+                rebase_color,
+                false,
+            ));
+        } else if running {
+            let status = wt.status(true);
+            tabs.push((
+                format!("{} {}", status.symbol(), wt.name()),
+                active,
+                false,
                 Some(idx),
                 rebase_color,
                 false,
@@ -811,7 +834,7 @@ fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
                 true,
             ));
         } else {
-            let status = wt.status(app.is_session_running(&wt.branch_name));
+            let status = wt.status(false);
             tabs.push((
                 format!("{} {}", status.symbol(), wt.name()),
                 active,

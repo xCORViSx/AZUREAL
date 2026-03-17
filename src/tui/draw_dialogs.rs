@@ -284,7 +284,7 @@ pub fn draw_branch_dialog(f: &mut Frame, dialog: &BranchDialog, area: Rect) {
     f.render_widget(filter, dialog_chunks[0]);
 
     // Show cursor in filter input
-    let cursor_x = dialog_chunks[0].x + 1 + dialog.filter.chars().count() as u16;
+    let cursor_x = dialog_chunks[0].x + 1 + dialog.filter_cursor as u16;
     let cursor_y = dialog_chunks[0].y + 1;
     if cursor_x < dialog_chunks[0].x + dialog_chunks[0].width - 1 {
         f.set_cursor_position((cursor_x, cursor_y));
@@ -1072,18 +1072,28 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
 pub fn draw_welcome_modal(f: &mut Frame) {
     let area = f.area();
 
-    // Resolve keybindings dynamically
-    let main_key =
-        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::BrowseMain)
-            .unwrap_or_else(|| "M".into());
-    let wt_key =
-        keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::AddWorktree)
-            .unwrap_or_else(|| "w".into());
-    let proj_key = keybindings::find_key_for_action(
-        &keybindings::GLOBAL,
-        keybindings::Action::OpenProjects,
-    )
-    .unwrap_or_else(|| "P".into());
+    // Resolve keybindings dynamically — worktree actions use w ␣ <key> leader
+    let main_key = format!(
+        "w␣{}",
+        keybindings::find_key_for_action(&keybindings::WORKTREES, keybindings::Action::BrowseMain)
+            .unwrap_or_else(|| "m".into())
+    );
+    let wt_key = format!(
+        "w␣{}",
+        keybindings::find_key_for_action(
+            &keybindings::WORKTREES,
+            keybindings::Action::AddWorktree
+        )
+        .unwrap_or_else(|| "a".into())
+    );
+    let proj_key = format!(
+        "w␣{}",
+        keybindings::find_key_for_action(
+            &keybindings::WORKTREES,
+            keybindings::Action::OpenProjects,
+        )
+        .unwrap_or_else(|| "o".into())
+    );
     let quit_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::Quit)
             .unwrap_or_else(|| "Ctrl+Q".into());

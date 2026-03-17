@@ -52,6 +52,7 @@ pub struct BranchDialog {
     /// 0 = "Create new" row, 1..=N = branch rows
     pub selected: usize,
     pub filter: String,
+    pub filter_cursor: usize,
     pub filtered_indices: Vec<usize>,
 }
 
@@ -68,6 +69,7 @@ impl BranchDialog {
             checked_out,
             selected: 0,
             filter: String::new(),
+            filter_cursor: 0,
             filtered_indices,
         }
     }
@@ -138,14 +140,30 @@ impl BranchDialog {
 
     pub fn filter_char(&mut self, c: char) {
         if is_git_safe_char(c) {
-            self.filter.push(c);
+            let byte_pos = self
+                .filter
+                .char_indices()
+                .nth(self.filter_cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(self.filter.len());
+            self.filter.insert(byte_pos, c);
+            self.filter_cursor += 1;
             self.apply_filter();
         }
     }
 
     pub fn filter_backspace(&mut self) {
-        self.filter.pop();
-        self.apply_filter();
+        if self.filter_cursor > 0 {
+            let byte_pos = self
+                .filter
+                .char_indices()
+                .nth(self.filter_cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.filter.remove(byte_pos);
+            self.filter_cursor -= 1;
+            self.apply_filter();
+        }
     }
 }
 

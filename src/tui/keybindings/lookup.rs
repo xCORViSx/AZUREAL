@@ -46,28 +46,10 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
         let skip = match binding.action {
             // Single-letter globals must not fire during text input, edit mode,
             // sidebar filter, or wizard — they'd steal keystrokes
-            Action::EnterPromptMode
-            | Action::ToggleTerminal
-            | Action::ToggleHelp
-            | Action::OpenGitActions
-            | Action::OpenHealth
-            | Action::BrowseMain
-            | Action::OpenProjects
-            | Action::RunCommand
-            | Action::AddRunCommand
-            | Action::WorktreeTabPrev
-            | Action::WorktreeTabNext
-            | Action::AddWorktree
+            Action::EnterPromptMode | Action::ToggleTerminal | Action::ToggleHelp
                 if ctx.prompt_mode
                     || ctx.edit_mode
                     || (ctx.terminal_mode && ctx.focus == Focus::Input) =>
-            {
-                true
-            }
-            // ⌘A archive must not fire in Viewer (select-all), prompt mode
-            // (select-all input), or edit mode (select-all editor)
-            Action::ToggleArchiveWorktree
-                if ctx.focus == Focus::Viewer || ctx.prompt_mode || ctx.edit_mode =>
             {
                 true
             }
@@ -101,7 +83,8 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
 
     // Context-specific bindings based on focus + mode
     let context_bindings: &[Keybinding] = match ctx.focus {
-        Focus::Worktrees => &WORKTREES,
+        // Worktree actions use leader sequence (w ␣ <key>) — resolved by lookup_leader_action
+        Focus::Worktrees => &[],
         Focus::FileTree => &FILE_TREE,
         Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
         Focus::Viewer => &VIEWER,
@@ -214,6 +197,17 @@ pub fn lookup_picker_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Ac
 /// Filter chars (typing to search) stay raw in the handler.
 pub fn lookup_branch_dialog_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &BRANCH_DIALOG {
+        if b.matches(modifiers, code) {
+            return Some(b.action);
+        }
+    }
+    None
+}
+
+/// Resolve the third keystroke of a `w ␣ <key>` leader sequence.
+/// Checks the WORKTREES binding array for a match.
+pub fn lookup_leader_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &WORKTREES {
         if b.matches(modifiers, code) {
             return Some(b.action);
         }
@@ -334,42 +328,6 @@ mod tests {
     }
 
     #[test]
-    fn global_shift_g_opens_git() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')),
-            Some(Action::OpenGitActions)
-        );
-    }
-
-    #[test]
-    fn global_shift_h_opens_health() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')),
-            Some(Action::OpenHealth)
-        );
-    }
-
-    #[test]
-    fn global_shift_m_browses_main() {
-        let ctx = cmd_ctx(Focus::FileTree);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('M')),
-            Some(Action::BrowseMain)
-        );
-    }
-
-    #[test]
-    fn global_shift_p_opens_projects() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('P')),
-            Some(Action::OpenProjects)
-        );
-    }
-
-    #[test]
     fn global_tab_cycles_focus_forward() {
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
@@ -384,33 +342,6 @@ mod tests {
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::BackTab),
             Some(Action::CycleFocusBackward)
-        );
-    }
-
-    #[test]
-    fn global_bracket_right_next_worktree() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')),
-            Some(Action::WorktreeTabNext)
-        );
-    }
-
-    #[test]
-    fn global_bracket_left_prev_worktree() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('[')),
-            Some(Action::WorktreeTabPrev)
-        );
-    }
-
-    #[test]
-    fn global_shift_r_run_command() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('R')),
-            Some(Action::RunCommand)
         );
     }
 
@@ -464,58 +395,6 @@ mod tests {
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('T')),
             Some(Action::ToggleTerminal)
-        );
-    }
-
-    #[test]
-    fn prompt_mode_skips_open_git() {
-        let ctx = KeyContext {
-            focus: Focus::Input,
-            prompt_mode: true,
-            edit_mode: false,
-            terminal_mode: false,
-            help_open: false,
-            stt_recording: false,
-        };
-        assert_ne!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')),
-            Some(Action::OpenGitActions)
-        );
-    }
-
-    #[test]
-    fn prompt_mode_skips_open_health() {
-        let ctx = KeyContext {
-            focus: Focus::Input,
-            prompt_mode: true,
-            edit_mode: false,
-            terminal_mode: false,
-            help_open: false,
-            stt_recording: false,
-        };
-        assert_ne!(
-            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')),
-            Some(Action::OpenHealth)
-        );
-    }
-
-    #[test]
-    fn prompt_mode_skips_worktree_tab_nav() {
-        let ctx = KeyContext {
-            focus: Focus::Input,
-            prompt_mode: true,
-            edit_mode: false,
-            terminal_mode: false,
-            help_open: false,
-            stt_recording: false,
-        };
-        assert_ne!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')),
-            Some(Action::WorktreeTabNext)
-        );
-        assert_ne!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('[')),
-            Some(Action::WorktreeTabPrev)
         );
     }
 
@@ -690,30 +569,16 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn worktrees_a_returns_none() {
-        // WORKTREES is now empty and 'a' is not a GLOBAL binding — returns None
+    fn worktrees_focus_has_no_context_bindings() {
+        // Worktree actions use leader sequence — Focus::Worktrees context is empty
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')),
             None
         );
-    }
-
-    #[test]
-    fn worktrees_cmd_a_archives() {
-        let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('a')),
-            Some(Action::ToggleArchiveWorktree)
-        );
-    }
-
-    #[test]
-    fn worktrees_cmd_d_deletes() {
-        let ctx = cmd_ctx(Focus::Worktrees);
-        assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('d')),
-            Some(Action::DeleteWorktree)
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('g')),
+            None
         );
     }
 
@@ -722,12 +587,12 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn filetree_w_adds_worktree() {
-        // 'w' is now a GLOBAL binding (AddWorktree) — fires in FileTree context
+    fn filetree_w_returns_none() {
+        // 'w' is the leader entry key, handled in actions.rs — lookup returns None
         let ctx = cmd_ctx(Focus::FileTree);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')),
-            Some(Action::AddWorktree)
+            None
         );
     }
 
@@ -1787,6 +1652,106 @@ mod tests {
     fn branch_ctrl_combo_returns_none() {
         assert_eq!(
             lookup_branch_dialog_action(KeyModifiers::CONTROL, KeyCode::Char('a')),
+            None
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  lookup_leader_action (w ␣ <key> worktree commands)
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn leader_g_opens_git() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('g')),
+            Some(Action::OpenGitActions)
+        );
+    }
+
+    #[test]
+    fn leader_h_opens_health() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('h')),
+            Some(Action::OpenHealth)
+        );
+    }
+
+    #[test]
+    fn leader_m_browses_main() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('m')),
+            Some(Action::BrowseMain)
+        );
+    }
+
+    #[test]
+    fn leader_o_opens_projects() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('o')),
+            Some(Action::OpenProjects)
+        );
+    }
+
+    #[test]
+    fn leader_r_runs_command() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('r')),
+            Some(Action::RunCommand)
+        );
+    }
+
+    #[test]
+    fn leader_shift_r_adds_run_command() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::SHIFT, KeyCode::Char('R')),
+            Some(Action::AddRunCommand)
+        );
+    }
+
+    #[test]
+    fn leader_bracket_right_next_worktree() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char(']')),
+            Some(Action::WorktreeTabNext)
+        );
+    }
+
+    #[test]
+    fn leader_bracket_left_prev_worktree() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('[')),
+            Some(Action::WorktreeTabPrev)
+        );
+    }
+
+    #[test]
+    fn leader_a_adds_worktree() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('a')),
+            Some(Action::AddWorktree)
+        );
+    }
+
+    #[test]
+    fn leader_x_archives_worktree() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('x')),
+            Some(Action::ToggleArchiveWorktree)
+        );
+    }
+
+    #[test]
+    fn leader_d_deletes_worktree() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('d')),
+            Some(Action::DeleteWorktree)
+        );
+    }
+
+    #[test]
+    fn leader_unknown_returns_none() {
+        assert_eq!(
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('z')),
             None
         );
     }

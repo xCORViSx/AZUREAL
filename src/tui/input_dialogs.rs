@@ -94,6 +94,12 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
         // Raw text input for filter — only git-safe chars allowed
         match key.code {
             KeyCode::Backspace => dialog.filter_backspace(),
+            KeyCode::Left => dialog.filter_cursor = dialog.filter_cursor.saturating_sub(1),
+            KeyCode::Right => {
+                if dialog.filter_cursor < dialog.filter.chars().count() {
+                    dialog.filter_cursor += 1;
+                }
+            }
             KeyCode::Char(c) if is_git_safe_char(c) => dialog.filter_char(c),
             _ => {}
         }

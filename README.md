@@ -123,22 +123,28 @@ azureal
 | `j/k` | Scroll line |
 | `J/K` | Page scroll |
 | `Tab/Shift+Tab` | Cycle pane focus |
+| `[/]` | Switch worktree tab |
 | `M` | Browse main branch |
 | `f` | Toggle file tree |
 | `s` | Toggle session list |
-| `w` | New worktree |
-| `R` | Run command |
-| `G` | Git panel |
-| `H` | Health panel |
-| `P` | Projects panel |
 | `/` | Search / filter |
 | `?` | Help |
-| `⌘a` / `Alt+A` | Archive worktree |
-| `⌘d` / `Alt+D` | Delete worktree |
 | `⌘c` / `Ctrl+C` | Copy selection |
 | `⌃c` / `Alt+C` | Cancel agent |
 | `⌃m` / `Ctrl+M` | Cycle model |
 | `⌃q` / `Ctrl+Q` | Quit |
+
+**Worktree actions** use a `w ␣` leader sequence (press `w` then a second key):
+
+| Key | Action |
+|-----|--------|
+| `w ␣ w` | New worktree |
+| `w ␣ G` | Git panel |
+| `w ␣ H` | Health panel |
+| `w ␣ P` | Projects panel |
+| `w ␣ R` | Run command |
+| `w ␣ x` | Archive worktree |
+| `w ␣ d` | Delete worktree |
 
 **Input modes** are indicated by the input box border color:
 

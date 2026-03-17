@@ -39,7 +39,7 @@ use super::super::input_projects::handle_projects_input;
 use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
 use super::super::input_worktrees::handle_worktrees_input;
-use super::super::keybindings::{lookup_action, Action, KeyContext};
+use super::super::keybindings::{lookup_action, lookup_leader_action, Action, KeyContext, LeaderState};
 
 use execute::execute_action;
 use rcr::{abort_rcr, accept_rcr};
@@ -69,16 +69,45 @@ pub fn handle_key_event(
         return Ok(());
     }
 
-    // Welcome modal — only Browse Main and Add Worktree pass through (Quit handled above)
-    if app.needs_welcome_modal() {
-        let ctx = KeyContext::from_app(app);
-        if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
-            match action {
-                Action::BrowseMain | Action::AddWorktree | Action::OpenProjects => {
-                    execute_action(action, app, claude_process)?;
+    // --- Leader key continuation (w ␣ <key>) ---
+    // Checked early so an in-progress leader sequence always completes,
+    // even if a modal appeared after the user pressed 'w'.
+    if app.leader_state != LeaderState::None {
+        match app.leader_state {
+            LeaderState::WaitingForSpace => {
+                if key.code == KeyCode::Char(' ')
+                    && key.modifiers == event::KeyModifiers::NONE
+                {
+                    app.leader_state = LeaderState::WaitingForAction;
+                    app.set_status("w ␣ …");
+                    return Ok(());
                 }
-                _ => {}
+                // Not Space — cancel leader and fall through to process key normally
+                app.leader_state = LeaderState::None;
+                app.clear_status();
             }
+            LeaderState::WaitingForAction => {
+                app.leader_state = LeaderState::None;
+                app.clear_status();
+                if key.code == KeyCode::Esc {
+                    return Ok(());
+                }
+                if let Some(action) = lookup_leader_action(key.modifiers, key.code) {
+                    return execute_action(action, app, claude_process);
+                }
+                app.set_status("Unknown worktree command");
+                return Ok(());
+            }
+            LeaderState::None => unreachable!(),
+        }
+    }
+
+    // Welcome modal — only leader continuation (above) and ⌃q pass through.
+    // Leader ENTRY ('w' press) also needs to work here.
+    if app.needs_welcome_modal() {
+        if key.code == KeyCode::Char('w') && key.modifiers == event::KeyModifiers::NONE {
+            app.leader_state = LeaderState::WaitingForSpace;
+            app.set_status("w …");
         }
         return Ok(());
     }
@@ -463,6 +492,20 @@ pub fn handle_key_event(
     // all keypresses (including Shift+G, etc.) as literal text input.
     if app.focus == Focus::BranchDialog {
         return handle_branch_dialog_input(key, app);
+    }
+
+    // --- Leader key entry ---
+    // Plain 'w' starts the worktree leader sequence (w ␣ <key>).
+    // Checked after all modals so 'w' doesn't steal input from dialogs.
+    if key.code == KeyCode::Char('w')
+        && key.modifiers == event::KeyModifiers::NONE
+        && !app.prompt_mode
+        && !app.viewer_edit_mode
+        && !(app.terminal_mode && app.focus == Focus::Input)
+    {
+        app.leader_state = LeaderState::WaitingForSpace;
+        app.set_status("w …");
+        return Ok(());
     }
 
     // --- Centralized keybinding resolution ---

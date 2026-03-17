@@ -65,11 +65,6 @@ static ALT_END: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,
     code: KeyCode::End,
 }];
-// macOS ⌥r produces '®' (unicode) instead of ALT+r — add as alternative
-static ALT_MACOS_R: [KeyCombo; 1] = [KeyCombo {
-    modifiers: KeyModifiers::NONE,
-    code: KeyCode::Char('®'),
-}];
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
 static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,
@@ -134,15 +129,6 @@ const KEY_CANCEL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
 #[cfg(not(target_os = "macos"))]
 const KEY_CANCEL: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('c'));
 
-#[cfg(target_os = "macos")]
-const KEY_ARCHIVE: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
-#[cfg(not(target_os = "macos"))]
-const KEY_ARCHIVE: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('a'));
-
-#[cfg(target_os = "macos")]
-const KEY_DELETE_WT: KeyCombo = KeyCombo::cmd(KeyCode::Char('d'));
-#[cfg(not(target_os = "macos"))]
-const KEY_DELETE_WT: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('d'));
 
 #[cfg(target_os = "macos")]
 const KEY_SELECT_ALL: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
@@ -171,8 +157,9 @@ const KEY_EDIT_STT: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
 #[cfg(not(target_os = "macos"))]
 const KEY_EDIT_STT: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('s'));
 
-/// Global keybindings (always active, checked first)
-pub static GLOBAL: [Keybinding; 21] = [
+/// Global keybindings (always active, checked first).
+/// Worktree actions moved to WORKTREES leader array (`w ␣ <key>`).
+pub static GLOBAL: [Keybinding; 10] = [
     Keybinding::new(
         KeyCombo::ctrl(KeyCode::Char('q')),
         "Quit azureal",
@@ -206,33 +193,49 @@ pub static GLOBAL: [Keybinding; 21] = [
         Action::ToggleTerminal,
     ),
     Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('G')),
+        KeyCombo::plain(KeyCode::Tab),
+        "Cycle focus forward",
+        Action::CycleFocusForward,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::BackTab),
+        "Cycle focus backward",
+        Action::CycleFocusBackward,
+    ),
+];
+
+/// Worktree leader-key bindings (`w ␣ <key>`).
+/// These fire only after the `w` → `Space` leader prefix.
+/// The action keys below are the THIRD keystroke in the sequence.
+pub static WORKTREES: [Keybinding; 11] = [
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('g')),
         "Git actions",
         Action::OpenGitActions,
     ),
     Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('H')),
+        KeyCombo::plain(KeyCode::Char('h')),
         "Worktree health",
         Action::OpenHealth,
     ),
     Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('M')),
+        KeyCombo::plain(KeyCode::Char('m')),
         "Browse main",
         Action::BrowseMain,
     ),
     Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('P')),
+        KeyCombo::plain(KeyCode::Char('o')),
         "Projects",
         Action::OpenProjects,
     ),
     Keybinding::new(
-        KeyCombo::shift(KeyCode::Char('R')),
+        KeyCombo::plain(KeyCode::Char('r')),
         "Run command",
         Action::RunCommand,
-    ),
-    Keybinding::with_alt(
-        KeyCombo::alt(KeyCode::Char('r')),
-        &ALT_MACOS_R,
+    )
+    .paired(),
+    Keybinding::new(
+        KeyCombo::shift(KeyCode::Char('R')),
         "Add run command",
         Action::AddRunCommand,
     ),
@@ -248,30 +251,21 @@ pub static GLOBAL: [Keybinding; 21] = [
         Action::WorktreeTabPrev,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Tab),
-        "Cycle focus forward",
-        Action::CycleFocusForward,
-    ),
-    Keybinding::new(
-        KeyCombo::plain(KeyCode::BackTab),
-        "Cycle focus backward",
-        Action::CycleFocusBackward,
-    ),
-    Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('w')),
+        KeyCombo::plain(KeyCode::Char('a')),
         "Add worktree",
         Action::AddWorktree,
     ),
     Keybinding::new(
-        KEY_ARCHIVE,
+        KeyCombo::plain(KeyCode::Char('x')),
         "Archive worktree",
         Action::ToggleArchiveWorktree,
     ),
-    Keybinding::new(KEY_DELETE_WT, "Delete worktree", Action::DeleteWorktree),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('d')),
+        "Delete worktree",
+        Action::DeleteWorktree,
+    ),
 ];
-
-/// Worktree tab row bindings — kept empty; worktree actions are now global
-pub static WORKTREES: [Keybinding; 0] = [];
 
 /// FileTree bindings
 pub static FILE_TREE: [Keybinding; 17] = [
@@ -2087,11 +2081,6 @@ mod tests {
     #[test]
     fn alt_end_is_end() {
         assert_eq!(ALT_END[0].code, KeyCode::End);
-    }
-
-    #[test]
-    fn alt_macos_r_is_registered() {
-        assert_eq!(ALT_MACOS_R[0].code, KeyCode::Char('®'));
     }
 
     #[test]
