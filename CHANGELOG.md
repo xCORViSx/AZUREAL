@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Prompt submission returns to command mode** — Pressing Enter to submit a prompt now exits prompt mode (yellow border → red border) automatically. Previously the input stayed in prompt mode after submission, requiring a manual Esc to return to command mode. Modified: `input_terminal.rs`.
+
 ### Added
 - **Auto-spawned processes respect model switcher** — RCR (conflict resolution), GFM (god file modularization), and DH (documentation health) agent spawns now pass `selected_model` to `AgentProcess::spawn()` instead of hardcoding `Backend::Claude` with no model. The backend is auto-derived from the model name via `backend_for_model()`, so if the user selects a Codex model, auto-spawned processes use Codex; if Claude, they use Claude. Modified: `conflict_resolution.rs`, `god_files.rs`, `documentation.rs`.
 

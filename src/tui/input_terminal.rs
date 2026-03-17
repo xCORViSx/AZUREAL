@@ -199,6 +199,7 @@ pub fn handle_input_mode(
             if !app.input.is_empty() {
                 let input = app.input.clone();
                 app.clear_input();
+                app.prompt_mode = false;
 
                 // RCR mode: route prompts to the feature branch worktree where
                 // the rebase is happening, resume the RCR session
