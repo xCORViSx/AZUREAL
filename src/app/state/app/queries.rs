@@ -55,7 +55,11 @@ impl App {
     /// True when no worktrees exist and main is not being browsed — the welcome
     /// modal should block all input except Browse Main, Add Worktree, and Quit.
     pub fn needs_welcome_modal(&self) -> bool {
-        self.project.is_some() && self.worktrees.is_empty() && !self.browsing_main
+        self.project.is_some()
+            && self.worktrees.is_empty()
+            && !self.browsing_main
+            && !self.is_projects_panel_active()
+            && self.branch_dialog.is_none()
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
