@@ -723,6 +723,15 @@ pub struct BackgroundOpProgress {
     pub outcome: Option<BackgroundOpOutcome>,
 }
 
+/// Result payload for an RCR accept/abort operation that finished in the
+/// background. The UI restores the normal session pane and optionally opens
+/// the post-merge dialog.
+#[derive(Debug)]
+pub struct RcrCompletion {
+    pub status_msg: String,
+    pub post_merge_dialog: Option<PostMergeDialog>,
+}
+
 /// Final result of a background worktree/git operation.
 /// Each variant carries enough data for the event loop to do post-processing
 /// (refresh worktrees, select branch, clean up state, etc.)
@@ -744,6 +753,8 @@ pub enum BackgroundOpOutcome {
     },
     /// Git panel operation result (pull, push) — set result_message + refresh
     GitResult { message: String, is_error: bool },
+    /// RCR accept/abort finished — restore the normal session pane
+    RcrFinished(RcrCompletion),
     /// Operation failed — show error in status bar
     Failed(String),
 }

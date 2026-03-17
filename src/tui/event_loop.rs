@@ -644,6 +644,14 @@ pub async fn run_app(
                             crate::tui::input_git_actions::refresh_commit_log(p);
                         }
                     }
+                    BackgroundOpOutcome::RcrFinished(completion) => {
+                        app.load_session_output();
+                        app.update_title_session_name();
+                        if let Some(dialog) = completion.post_merge_dialog {
+                            app.post_merge_dialog = Some(dialog);
+                        }
+                        app.set_status(completion.status_msg);
+                    }
                     BackgroundOpOutcome::Failed(msg) => {
                         app.set_status(msg);
                     }

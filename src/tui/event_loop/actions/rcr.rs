@@ -4,97 +4,171 @@
 //! session file, restores normal convo pane, and optionally auto-proceeds
 //! with a squash merge if the rebase was triggered by one.
 
+use crate::app::types::{
+    BackgroundOpOutcome, BackgroundOpProgress, PostMergeDialog, RcrCompletion, RcrSession,
+};
 use crate::app::App;
+use crate::git::{Git, SquashMergeResult};
+use std::sync::mpsc;
 
 /// Accept the RCR resolution — delete the temporary session file, clear RCR
-/// state, and restore normal convo pane. If the rebase was triggered by a
-/// squash merge, auto-proceed with the merge (the user's original intent).
+/// state, and start the background git work with the standard loading dialog.
 pub(super) fn accept_rcr(app: &mut App) {
-    if let Some(rcr) = app.rcr_session.take() {
-        app.invalidate_sidebar();
-        // Delete the RCR session file so it doesn't pollute the session list
-        if let Some(ref sid) = rcr.session_id {
-            if let Some(path) = crate::config::session_file(&rcr.worktree_path, sid) {
-                let _ = std::fs::remove_file(path);
-            }
-        }
-        // Restore convo pane to the feature branch's normal session
-        app.load_session_output();
-        app.update_title_session_name();
+    let Some(rcr) = take_rcr_session(app) else {
+        return;
+    };
 
-        // Pop any stash left by exec_rebase_inner's pre-rebase stash on the worktree
-        let _ = std::process::Command::new("git")
-            .args(["stash", "pop"])
-            .current_dir(&rcr.worktree_path)
-            .output();
+    let main_branch = app
+        .project
+        .as_ref()
+        .map(|p| p.main_branch.clone())
+        .unwrap_or_else(|| "main".to_string());
+    let (tx, rx) = mpsc::channel();
+    app.loading_indicator = Some("Applying RCR resolution...".into());
+    app.background_op_receiver = Some(rx);
+    std::thread::spawn(move || run_accept_rcr(rcr, main_branch, tx));
+}
 
-        if rcr.continue_with_merge {
-            // Pop any stash left from the pre-merge stash in squash_merge_into_main().
-            // The merge conflicted, so the stash was never popped. Pop it before
-            // re-calling squash_merge (which would stash again, orphaning the first).
-            let _ = std::process::Command::new("git")
-                .args(["stash", "pop"])
-                .current_dir(&rcr.repo_root)
-                .output();
+/// Abort the post-run RCR approval flow and restore the worktree in the
+/// background, showing the standard loading dialog while git runs.
+pub(super) fn abort_rcr(app: &mut App) {
+    let Some(rcr) = take_rcr_session(app) else {
+        return;
+    };
 
-            // Push the rebased feature branch to its remote before merging
-            let branch_push_note = match crate::git::Git::push(&rcr.worktree_path) {
-                Ok(_) => String::new(),
-                Err(e) => format!(" (branch push failed: {})", e),
-            };
+    let (tx, rx) = mpsc::channel();
+    app.loading_indicator = Some("Aborting RCR...".into());
+    app.background_op_receiver = Some(rx);
+    std::thread::spawn(move || run_abort_rcr(rcr, tx));
+}
 
-            // Rebase was part of squash merge — auto-proceed with the merge
-            match crate::git::Git::squash_merge_into_main(&rcr.repo_root, &rcr.branch) {
-                Ok(crate::git::SquashMergeResult::Success(msg)) => {
-                    // Auto-push main to remote after successful squash merge
-                    let main_push_note = match crate::git::Git::push(&rcr.repo_root) {
-                        Ok(_) => " → pushed".to_string(),
-                        Err(e) => format!(" (main push failed: {})", e),
-                    };
-                    // Fast-forward feature branch to main so divergence indicators reset
-                    let main_branch = app
-                        .project
-                        .as_ref()
-                        .map(|p| p.main_branch.as_str())
-                        .unwrap_or("main");
-                    let _ = std::process::Command::new("git")
-                        .args(["reset", "--hard", main_branch])
-                        .current_dir(&rcr.worktree_path)
-                        .output();
-                    app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
-                        branch: rcr.branch.clone(),
-                        display_name: rcr.display_name.clone(),
-                        worktree_path: rcr.worktree_path,
-                        selected: 0,
-                    });
-                    app.set_status(format!("{}{}{}", msg, main_push_note, branch_push_note));
-                }
-                Ok(crate::git::SquashMergeResult::Conflict { .. }) => {
-                    // Shouldn't happen after a clean rebase, but handle gracefully
-                    app.set_status(format!(
-                        "Rebase resolved but merge still has conflicts for {} — try again from Git panel",
-                        rcr.display_name
-                    ));
-                }
-                Err(e) => {
-                    app.set_status(format!(
-                        "Squash merge failed for {}: {}",
-                        rcr.display_name, e
-                    ));
-                }
-            }
-        } else {
-            // Push the rebased branch to its remote
-            let push_note = match crate::git::Git::push(&rcr.worktree_path) {
-                Ok(_) => " → pushed".to_string(),
-                Err(e) => format!(" (push failed: {})", e),
-            };
-            app.set_status(format!(
-                "Rebase complete — conflicts resolved for {}{}",
-                rcr.display_name, push_note
-            ));
+fn take_rcr_session(app: &mut App) -> Option<RcrSession> {
+    let rcr = app.rcr_session.take()?;
+    app.invalidate_sidebar();
+    cleanup_rcr_session_file(&rcr);
+    app.load_session_output();
+    app.update_title_session_name();
+    Some(rcr)
+}
+
+fn cleanup_rcr_session_file(rcr: &RcrSession) {
+    if let Some(ref sid) = rcr.session_id {
+        if let Some(path) = crate::config::session_file(&rcr.worktree_path, sid) {
+            let _ = std::fs::remove_file(path);
         }
     }
+}
+
+fn send_phase(tx: &mpsc::Sender<BackgroundOpProgress>, phase: &str) {
+    let _ = tx.send(BackgroundOpProgress {
+        phase: phase.to_string(),
+        outcome: None,
+    });
+}
+
+fn send_rcr_completion(tx: mpsc::Sender<BackgroundOpProgress>, completion: RcrCompletion) {
+    let _ = tx.send(BackgroundOpProgress {
+        phase: String::new(),
+        outcome: Some(BackgroundOpOutcome::RcrFinished(completion)),
+    });
+}
+
+fn run_accept_rcr(
+    rcr: RcrSession,
+    main_branch: String,
+    tx: mpsc::Sender<BackgroundOpProgress>,
+) {
+    send_phase(&tx, "Restoring rebased worktree...");
+    // Pop any stash left by exec_rebase_inner's pre-rebase stash on the worktree.
+    let _ = std::process::Command::new("git")
+        .args(["stash", "pop"])
+        .current_dir(&rcr.worktree_path)
+        .output();
+
+    let completion = if rcr.continue_with_merge {
+        send_phase(&tx, "Restoring merge stash...");
+        // Pop any stash left from the pre-merge stash in squash_merge_into_main().
+        // The merge conflicted, so the stash was never popped. Pop it before
+        // re-calling squash_merge (which would stash again, orphaning the first).
+        let _ = std::process::Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(&rcr.repo_root)
+            .output();
+
+        send_phase(&tx, "Pushing rebased branch...");
+        let branch_push_note = match Git::push(&rcr.worktree_path) {
+            Ok(_) => String::new(),
+            Err(e) => format!(" (branch push failed: {})", e),
+        };
+
+        send_phase(&tx, "Merging into main...");
+        match Git::squash_merge_into_main(&rcr.repo_root, &rcr.branch) {
+            Ok(SquashMergeResult::Success(msg)) => {
+                send_phase(&tx, "Pushing main...");
+                let main_push_note = match Git::push(&rcr.repo_root) {
+                    Ok(_) => " → pushed".to_string(),
+                    Err(e) => format!(" (main push failed: {})", e),
+                };
+                send_phase(&tx, "Syncing feature worktree...");
+                // Fast-forward feature branch to main so divergence indicators reset.
+                let _ = std::process::Command::new("git")
+                    .args(["reset", "--hard", &main_branch])
+                    .current_dir(&rcr.worktree_path)
+                    .output();
+                RcrCompletion {
+                    status_msg: format!("{}{}{}", msg, main_push_note, branch_push_note),
+                    post_merge_dialog: Some(PostMergeDialog {
+                        branch: rcr.branch,
+                        display_name: rcr.display_name,
+                        worktree_path: rcr.worktree_path,
+                        selected: 0,
+                    }),
+                }
+            }
+            Ok(SquashMergeResult::Conflict { .. }) => RcrCompletion {
+                // Shouldn't happen after a clean rebase, but handle gracefully.
+                status_msg: format!(
+                    "Rebase resolved but merge still has conflicts for {} — try again from Git panel",
+                    rcr.display_name
+                ),
+                post_merge_dialog: None,
+            },
+            Err(e) => RcrCompletion {
+                status_msg: format!("Squash merge failed for {}: {}", rcr.display_name, e),
+                post_merge_dialog: None,
+            },
+        }
+    } else {
+        send_phase(&tx, "Pushing rebased branch...");
+        let push_note = match Git::push(&rcr.worktree_path) {
+            Ok(_) => " → pushed".to_string(),
+            Err(e) => format!(" (push failed: {})", e),
+        };
+        RcrCompletion {
+            status_msg: format!(
+                "Rebase complete — conflicts resolved for {}{}",
+                rcr.display_name, push_note
+            ),
+            post_merge_dialog: None,
+        }
+    };
+
+    send_rcr_completion(tx, completion);
+}
+
+fn run_abort_rcr(rcr: RcrSession, tx: mpsc::Sender<BackgroundOpProgress>) {
+    send_phase(&tx, "Aborting rebase...");
+    let _ = std::process::Command::new("git")
+        .args(["rebase", "--abort"])
+        .current_dir(&rcr.worktree_path)
+        .output();
+    send_rcr_completion(
+        tx,
+        RcrCompletion {
+            status_msg: format!("RCR cancelled — rebase aborted for {}", rcr.display_name),
+            post_merge_dialog: None,
+        },
+    );
 }
 
 #[cfg(test)]
@@ -102,6 +176,7 @@ mod tests {
     use super::*;
     use crate::app::types::RcrSession;
     use std::path::PathBuf;
+    use std::time::Duration;
 
     fn make_rcr(branch: &str, continue_merge: bool) -> RcrSession {
         RcrSession {
@@ -113,6 +188,21 @@ mod tests {
             session_id: None,
             approval_pending: true,
             continue_with_merge: continue_merge,
+        }
+    }
+
+    fn recv_rcr_completion(app: &mut App) -> RcrCompletion {
+        let rx = app
+            .background_op_receiver
+            .take()
+            .expect("RCR should start a background op");
+        loop {
+            let progress = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("RCR background op should finish");
+            if let Some(BackgroundOpOutcome::RcrFinished(completion)) = progress.outcome {
+                return completion;
+            }
         }
     }
 
@@ -231,8 +321,10 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("feat", false));
         accept_rcr(&mut app);
+        assert_eq!(app.loading_indicator.as_deref(), Some("Applying RCR resolution..."));
         // Status should mention rebase complete
-        let status = app.status_message.as_deref().unwrap_or("");
+        let completion = recv_rcr_completion(&mut app);
+        let status = completion.status_msg.as_str();
         assert!(
             status.contains("Rebase complete")
                 || status.contains("push failed")
@@ -247,7 +339,8 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("my-branch", false));
         accept_rcr(&mut app);
-        let status = app.status_message.as_deref().unwrap_or("");
+        let completion = recv_rcr_completion(&mut app);
+        let status = completion.status_msg.as_str();
         assert!(
             status.contains("my-branch"),
             "Status should mention branch name: {}",
@@ -262,8 +355,21 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("feat", true));
         accept_rcr(&mut app);
+        let completion = recv_rcr_completion(&mut app);
         // squash_merge will fail in test env — status should reflect that
-        assert!(app.status_message.is_some());
+        assert!(!completion.status_msg.is_empty());
+    }
+
+    #[test]
+    fn test_abort_rcr_sets_loading_and_status() {
+        let mut app = App::new();
+        app.rcr_session = Some(make_rcr("feat", false));
+        abort_rcr(&mut app);
+        assert_eq!(app.loading_indicator.as_deref(), Some("Aborting RCR..."));
+        assert!(app.rcr_session.is_none());
+        let completion = recv_rcr_completion(&mut app);
+        assert!(completion.status_msg.contains("RCR cancelled"));
+        assert!(completion.post_merge_dialog.is_none());
     }
 
     // ── accept_rcr with session_id triggers cleanup ──
@@ -421,8 +527,8 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("feature", false));
         accept_rcr(&mut app);
-        assert!(app.status_message.is_some());
-        assert!(!app.status_message.as_deref().unwrap_or("").is_empty());
+        let completion = recv_rcr_completion(&mut app);
+        assert!(!completion.status_msg.is_empty());
     }
 
     #[test]
@@ -430,7 +536,8 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("my-feature", false));
         accept_rcr(&mut app);
-        let s = app.status_message.as_deref().unwrap_or("");
+        let completion = recv_rcr_completion(&mut app);
+        let s = completion.status_msg.as_str();
         // The status must contain either "Rebase complete" or "push" references
         assert!(
             s.contains("Rebase complete") || s.contains("push") || s.contains("my-feature"),

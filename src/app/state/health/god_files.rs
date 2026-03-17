@@ -355,6 +355,7 @@ impl App {
 
         self.health_panel = None;
 
+        let selected_model = self.selected_model.clone();
         let mut spawned = 0usize;
         let mut failed = 0usize;
         for (rel_path, lines) in &checked {
@@ -364,12 +365,12 @@ impl App {
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
 
-            match claude_process.spawn(&wt_path, &prompt, None, None) {
+            match claude_process.spawn(&wt_path, &prompt, None, selected_model.as_deref()) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
                     self.pending_session_names
                         .push((slot, format!("[GFM] {}", filename)));
-                    self.register_claude(branch.clone(), pid, rx, None);
+                    self.register_claude(branch.clone(), pid, rx, selected_model.as_deref());
                     spawned += 1;
                 }
                 Err(_) => {

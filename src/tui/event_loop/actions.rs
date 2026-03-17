@@ -42,7 +42,7 @@ use super::super::input_worktrees::handle_worktrees_input;
 use super::super::keybindings::{lookup_action, Action, KeyContext};
 
 use execute::execute_action;
-use rcr::accept_rcr;
+use rcr::{abort_rcr, accept_rcr};
 
 /// Handle keyboard input events.
 /// All key → action resolution goes through lookup_action() in keybindings.rs.
@@ -93,25 +93,7 @@ pub fn handle_key_event(
                     accept_rcr(app);
                 }
                 KeyCode::Char('n') => {
-                    // Abort the rebase on the feature branch worktree,
-                    // restoring it to its pre-rebase state
-                    app.invalidate_sidebar();
-                    let rcr = app.rcr_session.take().unwrap();
-                    if let Some(ref sid) = rcr.session_id {
-                        if let Some(path) = crate::config::session_file(&rcr.worktree_path, sid) {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-                    let _ = std::process::Command::new("git")
-                        .args(["rebase", "--abort"])
-                        .current_dir(&rcr.worktree_path)
-                        .output();
-                    app.load_session_output();
-                    app.update_title_session_name();
-                    app.set_status(format!(
-                        "RCR cancelled — rebase aborted for {}",
-                        rcr.display_name
-                    ));
+                    abort_rcr(app);
                 }
                 KeyCode::Esc => {
                     // Dismiss dialog — user wants to review the session output first.

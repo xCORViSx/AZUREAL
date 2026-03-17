@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Auto-spawned processes respect model switcher** — RCR (conflict resolution), GFM (god file modularization), and DH (documentation health) agent spawns now pass `selected_model` to `AgentProcess::spawn()` instead of hardcoding `Backend::Claude` with no model. The backend is auto-derived from the model name via `backend_for_model()`, so if the user selects a Codex model, auto-spawned processes use Codex; if Claude, they use Claude. Modified: `conflict_resolution.rs`, `god_files.rs`, `documentation.rs`.
+
 ### Fixed
 - **Session pane empty after project switch-back** — `display_events` was not saved in `ProjectSnapshot`, so switching away from a project discarded its in-memory conversation history. Switching back to a live session showed an empty pane; ended sessions showed nothing until the store path loaded. Fixed by persisting `display_events` in the snapshot. Also fixed: the active terminal was not saved before snapshot capture (`save_current_terminal()` was never called in `switch_project()`), losing the current worktree's shell session. Modified: `project_snapshot.rs`, `ui.rs`.
 - **Escape key in new session dialog acted on session pane** — Pressing Escape while the new session name dialog was open moved focus to the file tree instead of canceling the dialog. The keybinding system resolved Escape to `Action::Escape` (which runs `dispatch_escape()` → focus to FileTree) before the dialog's input handler could intercept it. Fixed by adding `new_session_dialog_active` to the priority modal list in `handle_key_event()`, routing all keys to the dialog handler before keybinding resolution. Modified: `actions.rs`.

@@ -171,6 +171,7 @@ impl App {
         }
     }
 
+
     /// Short display name for the active model. Always returns the selected_model
     /// alias since it's always set (never None).
     pub fn display_model_name(&self) -> &str {

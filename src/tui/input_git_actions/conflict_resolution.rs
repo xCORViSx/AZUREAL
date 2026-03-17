@@ -164,8 +164,9 @@ fn spawn_conflict_claude(
 ) {
     let display = crate::models::strip_branch_prefix(branch);
     let prompt = build_conflict_prompt(display, conflicted, auto_merged);
+    let selected_model = app.selected_model.clone();
 
-    match claude_process.spawn(wt_path, &prompt, None, None) {
+    match claude_process.spawn(wt_path, &prompt, None, selected_model.as_deref()) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
             app.pending_session_names
