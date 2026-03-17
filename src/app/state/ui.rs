@@ -396,6 +396,7 @@ impl App {
             self.set_status("No main worktree found");
             return;
         }
+        self.save_live_display_events();
         self.save_current_terminal();
         self.pre_main_browse_selection = self.selected_worktree;
         self.browsing_main = true;
@@ -407,6 +408,7 @@ impl App {
 
     /// Exit main branch browse mode. Restores previous worktree selection and focus.
     pub fn exit_main_browse(&mut self) {
+        self.save_live_display_events();
         self.browsing_main = false;
         self.selected_worktree = self.pre_main_browse_selection.take();
         self.focus = Focus::FileTree;
@@ -723,6 +725,7 @@ impl App {
                 viewer_tabs: std::mem::take(&mut self.viewer_tabs),
                 viewer_active_tab: self.viewer_active_tab,
                 worktree_terminals: std::mem::take(&mut self.worktree_terminals),
+                live_display_events_cache: std::mem::take(&mut self.live_display_events_cache),
                 auto_rebase_enabled: std::mem::take(&mut self.auto_rebase_enabled),
                 run_commands: std::mem::take(&mut self.run_commands),
                 preset_prompts: std::mem::take(&mut self.preset_prompts),
@@ -785,6 +788,7 @@ impl App {
             self.viewer_tabs = snapshot.viewer_tabs;
             self.viewer_active_tab = snapshot.viewer_active_tab;
             self.worktree_terminals = snapshot.worktree_terminals;
+            self.live_display_events_cache = snapshot.live_display_events_cache;
             self.auto_rebase_enabled = snapshot.auto_rebase_enabled;
             self.run_commands = snapshot.run_commands;
             self.preset_prompts = snapshot.preset_prompts;

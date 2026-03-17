@@ -210,6 +210,8 @@ pub struct App {
         Option<std::sync::mpsc::Receiver<anyhow::Result<crate::app::types::WorktreeRefreshResult>>>,
     /// Per-worktree terminals (persist when switching worktrees)
     pub worktree_terminals: HashMap<String, SessionTerminal>,
+    /// Per-branch display_events cache for live sessions (prevents cross-worktree pollution)
+    pub live_display_events_cache: HashMap<String, Vec<DisplayEvent>>,
     /// FileTree entries for the current worktree
     pub file_tree_entries: Vec<FileTreeEntry>,
     /// Selected index in file tree
@@ -668,6 +670,7 @@ impl App {
             file_tree_receiver: None,
             worktree_refresh_receiver: None,
             worktree_terminals: HashMap::new(),
+            live_display_events_cache: HashMap::new(),
             file_tree_entries: Vec::new(),
             file_tree_selected: None,
             file_tree_scroll: 0,

@@ -591,6 +591,7 @@ pub async fn run_app(
                 match outcome {
                     BackgroundOpOutcome::Archived => {
                         app.set_status("Session archived");
+                        app.save_live_display_events();
                         let _ = app.refresh_worktrees();
                         app.load_session_output();
                     }
@@ -599,6 +600,7 @@ pub async fn run_app(
                         display_name,
                     } => {
                         app.set_status(format!("Unarchived: {}", display_name));
+                        app.save_live_display_events();
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         if let Some(idx) =
@@ -609,6 +611,7 @@ pub async fn run_app(
                         }
                     }
                     BackgroundOpOutcome::Created { branch } => {
+                        app.save_live_display_events();
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         if let Some(idx) =
@@ -624,6 +627,7 @@ pub async fn run_app(
                         ..
                     } => {
                         app.set_status(format!("Deleted: {}", display_name));
+                        app.save_live_display_events();
                         app.save_current_terminal();
                         let _ = app.refresh_worktrees();
                         app.selected_worktree = if app.worktrees.is_empty() {
@@ -1230,6 +1234,7 @@ fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
             } => {
                 // Switch to the conflicted worktree and open Git panel with conflict overlay
                 if let Some(idx) = app.worktrees.iter().position(|w| w.branch_name == branch) {
+                    app.save_live_display_events();
                     app.selected_worktree = Some(idx);
                     app.load_session_output();
                 }

@@ -55,6 +55,9 @@ pub struct ProjectSnapshot {
     // ── Per-worktree terminals (shell sessions) ──
     pub worktree_terminals: HashMap<String, SessionTerminal>,
 
+    // ── Per-worktree live display_events cache ──
+    pub live_display_events_cache: HashMap<String, Vec<DisplayEvent>>,
+
     // ── Per-project config ──
     pub auto_rebase_enabled: HashSet<String>,
     pub run_commands: Vec<RunCommand>,

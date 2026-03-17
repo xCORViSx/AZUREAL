@@ -281,8 +281,7 @@ impl App {
         // Restore terminal for new session (save was done before selection changed)
         self.restore_session_terminal();
 
-        // Save live display_events in case we're reloading the same active session
-        let saved_display_events = std::mem::take(&mut self.display_events);
+        self.display_events.clear();
 
         self.session_lines.clear();
         self.session_buffer.clear();
@@ -374,9 +373,11 @@ impl App {
                 .unwrap_or(false);
 
             if is_live {
-                // Live session: restore display_events from the agent processor
-                // (clean prompts, no context injection). Don't re-parse the JSONL.
-                self.display_events = saved_display_events;
+                // Live session: restore display_events from per-branch cache
+                // (saved by save_live_display_events() before the worktree switch).
+                if let Some(cached) = self.live_display_events_cache.remove(&branch_name) {
+                    self.display_events = cached;
+                }
                 self.invalidate_render_cache();
                 if let Some(slot) = self.active_slot.get(&branch_name) {
                     if let Some((sid, _, _, _)) = self.pid_session_target.get(slot) {

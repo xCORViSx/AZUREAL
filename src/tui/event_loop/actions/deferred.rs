@@ -13,6 +13,7 @@ pub fn execute_deferred_action(app: &mut App, action: crate::app::DeferredAction
     use crate::app::DeferredAction;
     match action {
         DeferredAction::LoadSession { branch, idx } => {
+            app.save_live_display_events();
             app.save_current_terminal();
             app.select_session_file(&branch, idx);
             app.show_session_list = false;

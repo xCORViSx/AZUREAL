@@ -206,6 +206,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                         app.browsing_main = false;
                     }
                     Some(idx) => {
+                        app.save_live_display_events();
                         app.selected_worktree = Some(idx);
                         app.load_session_output();
                         app.open_git_actions_panel();
@@ -228,6 +229,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                         if app.browsing_main {
                             app.exit_main_browse();
                         }
+                        app.save_live_display_events();
                         app.save_current_terminal();
                         app.selected_worktree = Some(idx);
                         app.load_session_output();

@@ -343,6 +343,7 @@ pub(super) fn execute_action(
             if app.browsing_main {
                 app.exit_main_browse();
                 if !app.worktrees.is_empty() {
+                    app.save_live_display_events();
                     app.selected_worktree = Some(app.worktrees.len() - 1);
                     app.load_session_output();
                     app.invalidate_sidebar();
@@ -355,6 +356,7 @@ pub(super) fn execute_action(
             if app.browsing_main {
                 app.exit_main_browse();
                 if !app.worktrees.is_empty() {
+                    app.save_live_display_events();
                     app.selected_worktree = Some(0);
                     app.load_session_output();
                     app.invalidate_sidebar();

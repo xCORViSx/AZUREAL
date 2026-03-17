@@ -8,6 +8,25 @@ use std::sync::mpsc;
 use super::App;
 
 impl App {
+    /// Save display_events to the per-branch cache if there's a live session
+    /// on the current branch. Must be called BEFORE `selected_worktree` changes
+    /// (same pattern as `save_current_terminal()`).
+    pub fn save_live_display_events(&mut self) {
+        let Some(wt) = self.current_worktree() else {
+            return;
+        };
+        let branch = wt.branch_name.clone();
+        let is_live = self
+            .active_slot
+            .get(&branch)
+            .map(|slot| self.running_sessions.contains(slot))
+            .unwrap_or(false);
+        if is_live && !self.display_events.is_empty() {
+            self.live_display_events_cache
+                .insert(branch, self.display_events.clone());
+        }
+    }
+
     /// Get the current worktree's path (used for per-worktree session store).
     fn current_worktree_path(&self) -> Option<std::path::PathBuf> {
         self.current_worktree()
@@ -128,6 +147,7 @@ impl App {
             Some(_) => 0, // wrap to first
             None => 0,
         };
+        self.save_live_display_events();
         self.save_current_terminal();
         self.selected_worktree = Some(next);
         self.load_session_output();
@@ -143,6 +163,7 @@ impl App {
             Some(i) => i - 1,
             None => self.worktrees.len() - 1,
         };
+        self.save_live_display_events();
         self.save_current_terminal();
         self.selected_worktree = Some(prev);
         self.load_session_output();
@@ -172,6 +193,7 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.loading_indicator = Some("Creating worktree...".into());
         self.background_op_receiver = Some(rx);
+        self.save_live_display_events();
         self.save_current_terminal();
         std::thread::spawn(move || {
             let outcome = match Git::create_worktree(&project_path, &wt_path, &branch_clone) {
@@ -295,6 +317,7 @@ impl App {
         // Clean up stale session state immediately
         self.session_files.remove(&branch);
         self.session_selected_file_idx.remove(&branch);
+        self.live_display_events_cache.remove(&branch);
         self.agent_session_ids.retain(|k, _| k != &branch);
         self.unread_sessions.remove(&branch);
         if let Some(slots) = self.branch_slots.remove(&branch) {
@@ -350,6 +373,7 @@ impl App {
             return;
         }
         if self.selected_worktree != Some(0) {
+            self.save_live_display_events();
             self.save_current_terminal();
             self.selected_worktree = Some(0);
             self.load_session_output();
@@ -488,6 +512,7 @@ impl App {
         }
         let last = self.worktrees.len() - 1;
         if self.selected_worktree != Some(last) {
+            self.save_live_display_events();
             self.save_current_terminal();
             self.selected_worktree = Some(last);
             self.load_session_output();
