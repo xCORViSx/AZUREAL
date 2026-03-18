@@ -168,6 +168,22 @@ pub async fn run_app(
             input_rx.recv_timeout(Duration::from_millis(100)).ok()
         };
 
+        // Snapshot fast-draw eligibility BEFORE processing key events.
+        // If fast_draw was active (writing directly to terminal cells) but stops
+        // being active after key processing (e.g. prompt submit sets prompt_mode=false),
+        // we must run one final fast_draw to clear stale content from the physical
+        // terminal — otherwise ratatui's diff engine won't touch those cells because
+        // its internal buffer was never updated by the direct crossterm writes.
+        #[cfg(target_os = "macos")]
+        let was_fast_path = app.prompt_mode
+            && !app.terminal_mode
+            && !app.input.contains('\n')
+            && !app.has_input_selection()
+            && app.focus == Focus::Input
+            && app.input_area.width > 2;
+        #[cfg(not(target_os = "macos"))]
+        let _was_fast_path = false;
+
         if let Some(evt) = first_event {
             // Diagnostic: capture key chars + kinds for profiler
             if let Event::Key(ref k) = evt {
@@ -249,6 +265,15 @@ pub async fn run_app(
         let has_fast_path = false;
         #[cfg(target_os = "macos")]
         if had_key_event && has_fast_path && app.focus == Focus::Input && app.input_area.width > 2 {
+            fast_draw_input(app);
+        }
+        // Reconcile: fast_draw was active before key processing but isn't now
+        // (e.g., Enter submitted the prompt → prompt_mode=false, input cleared).
+        // Run one final fast_draw to overwrite stale content on the real terminal.
+        // Without this, ratatui's diff won't touch those cells (its buffer was
+        // never updated by the direct crossterm writes).
+        #[cfg(target_os = "macos")]
+        if had_key_event && was_fast_path && !has_fast_path && app.input_area.width > 2 {
             fast_draw_input(app);
         }
 
