@@ -57,6 +57,8 @@ When the user switches sessions (worktree navigation or session list selection),
 - `apply_parsed_output()` in the event loop checks `is_viewing_slot()` before applying background `AgentProcessor` results — stale results from a previous project's session are silently discarded, preventing event leakage across project/worktree switches
 - Live session restore re-parses the JSONL file from disk (store events + JSONL turn) instead of relying on `live_display_events_cache`, which only snapshots at switch-away time and misses events generated while viewing another worktree
 - `store_append_from_jsonl()` uses `parse_jsonl_for_store()` when the exiting slot is not being viewed, avoiding reading `display_events` (which belongs to a different worktree) and preventing data corruption or silent event loss
+- **Explicit session selection honored over live session:** When the user selects a specific session from the session list while a Claude process is running, `load_session_output()` detects that `session_selected_file_idx` points to a different store ID than `active_store_id` (from `pid_session_target`). Sets `viewing_explicit_historic = true` and takes the historic/store load path, preventing the live session's JSONL output from overriding the user's selection
+- **JSONL chars added to context badge on switch-back:** When loading a live session from JSONL, `event_char_len()` is summed for all parsed events *before* they are consumed into `display_events`. After `update_token_badge()` syncs from the store, the JSONL char total is added to `chars_since_compaction` and `update_token_badge_live()` refreshes the badge — preventing the badge from under-reporting when the current turn's events haven't been stored yet
 
 **Critical: Context injection, not `--resume`**
 The `--resume` flag is no longer used. Conversation context is built from the SQLite session store and injected into each prompt via `<azureal-session-context>` tags. This eliminates dependency on Claude's JSONL session files for conversation continuity — the `.azs` store is the single source of truth.
@@ -496,8 +498,17 @@ When `refresh_worktrees()` rebuilds `session_files` via `list_claude_sessions()`
 For conversations with 200+ events, only the last 200 events are rendered on initial load. The user starts at the bottom (`session_scroll = usize::MAX`) so they see recent messages instantly. Full render happens lazily when the user reaches scroll position 0 — both `scroll_session_up()` and `jump_to_prev_bubble()` set `rendered_lines_dirty = true` when they hit scroll 0 with `rendered_events_start > 0`, triggering deferred render expansion on the next event loop frame.
 
 ```rust
-// On initial full render with many events, skip early ones:
-let deferred_start = if event_count > DEFERRED_RENDER_TAIL {
+// Deferred rendering only triggers on INITIAL load (fresh session, never rendered).
+// The guard `!expanding_deferred && rendered_events_start == 0 && rendered_events_count == 0`
+// ensures that once expansion fires (user scrolled to top), the next render sees
+// rendered_events_start > 0 (old value) and forces deferred_start = 0 (full render).
+// Without this guard, the zeros written by expansion would re-trigger deferral,
+// creating an infinite loop that prevented the user from ever seeing early events.
+let deferred_start = if !expanding_deferred
+    && app.rendered_events_start == 0
+    && app.rendered_events_count == 0
+    && event_count > DEFERRED_RENDER_TAIL
+{
     event_count.saturating_sub(DEFERRED_RENDER_TAIL)
 } else {
     0
@@ -507,7 +518,7 @@ app.rendered_events_start = deferred_start;
 
 // When user scrolls to top and there are unrendered early events:
 if app.rendered_events_start > 0 && app.session_scroll == 0 {
-    // Expand to full render
+    // Expand to full render — sets expanding_deferred flag to prevent re-deferral
     app.rendered_events_start = 0;
     app.rendered_events_count = 0;
     app.rendered_lines_dirty = true;
@@ -1719,7 +1730,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/draw_file_tree | `src/tui/draw_file_tree.rs` | 57 | File tree rendering, icon mapping, expansion state |
 | tui/draw_dialogs | `src/tui/draw_dialogs.rs` | 72 | Dialog rendering, confirmation prompts, input overlays |
 | tui/draw_projects | `src/tui/draw_projects.rs` | 62 | Projects panel rendering, list navigation |
-| tui/draw_output/render_submit | `src/tui/draw_output/render_submit.rs` | 57 | Submit button rendering, prompt preview |
+| tui/draw_output/render_submit | `src/tui/draw_output/render_submit.rs` | 60 | Submit/poll render thread (submit_render_request incremental/deferred/full, expanding_deferred guard prevents re-deferral, poll_render_result seq gating, deferred_start calculation, large session 300-event expansion) |
 | tui/draw_output/todo_widget | `src/tui/draw_output/todo_widget.rs` | 62 | Todo list widget rendering, status icons |
 | tui/draw_output/session_list | `src/tui/draw_output/session_list.rs` | 69 | Session list rendering, selection highlight |
 | tui/event_loop | `src/tui/event_loop.rs` | 50 | Event loop dispatch, tick handling |

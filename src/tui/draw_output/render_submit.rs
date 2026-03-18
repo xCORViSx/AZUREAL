@@ -80,8 +80,12 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
     let inner_width = session_width.saturating_sub(2);
 
     // Deferred render: if user scrolled to top and there are unrendered early events,
-    // expand to full render now (they want to see old messages)
-    if app.rendered_events_start > 0 && app.session_scroll == 0 {
+    // expand to full render now (they want to see old messages).
+    // Track this with a flag so the deferred_start calculation below does NOT
+    // re-trigger deferred rendering (which would create an infinite loop where
+    // expansion resets counters → deferred check re-fires → expansion again).
+    let expanding_deferred = app.rendered_events_start > 0 && app.session_scroll == 0;
+    if expanding_deferred {
         app.rendered_lines_dirty = true;
         app.rendered_events_start = 0;
         app.rendered_events_count = 0;
@@ -130,7 +134,10 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             seq: 0,
         }
     } else {
-        let deferred_start = if app.rendered_events_start == 0
+        // Only defer on INITIAL load (fresh session, never rendered).
+        // When expanding (user scrolled to top), force deferred_start=0 for full render.
+        let deferred_start = if !expanding_deferred
+            && app.rendered_events_start == 0
             && app.rendered_events_count == 0
             && event_count > DEFERRED_RENDER_TAIL
         {
@@ -1171,5 +1178,40 @@ mod tests {
         submit_render_request(&mut app, 80);
         // After expansion: start=0, count reset to 0, dirty set true then cleared
         assert_eq!(app.rendered_events_start, 0);
+    }
+
+    // ── 51. expansion with >200 events does NOT re-defer ──
+    //
+    // Regression test: before the fix, expansion reset rendered_events_start=0
+    // and rendered_events_count=0, which satisfied the deferred_start condition
+    // again (event_count > DEFERRED_RENDER_TAIL), creating an infinite loop
+    // where the user could never scroll to see early messages.
+
+    #[test]
+    fn test_expansion_does_not_redefer_large_sessions() {
+        let mut app = App::new();
+        // Populate more events than DEFERRED_RENDER_TAIL
+        for i in 0..300 {
+            app.display_events.push(DisplayEvent::UserMessage {
+                _uuid: format!("u{}", i),
+                content: format!("msg {}", i),
+            });
+        }
+        // Simulate deferred state: only tail 200 events were rendered
+        app.rendered_events_start = 100;
+        app.rendered_events_count = 200;
+        app.rendered_content_line_count = 400;
+        app.session_scroll = 0; // user scrolled to top
+        app.rendered_lines_dirty = false;
+        app.rendered_lines_width = 78;
+
+        submit_render_request(&mut app, 80);
+
+        // Expansion should have reset to full render (start=0)
+        assert_eq!(app.rendered_events_start, 0);
+        assert_eq!(app.rendered_events_count, 0);
+        // The render was submitted (dirty cleared, in_flight set)
+        assert!(!app.rendered_lines_dirty);
+        assert!(app.render_in_flight);
     }
 }

@@ -372,7 +372,20 @@ impl App {
                 .map(|slot| self.running_sessions.contains(slot))
                 .unwrap_or(false);
 
-            if is_live {
+            // Detect if user explicitly selected a different session than the
+            // active live one (e.g. via the session list). Honor that selection
+            // by taking the historic path even though a live session is running.
+            let active_store_id = self
+                .active_slot
+                .get(&branch_name)
+                .and_then(|slot| self.pid_session_target.get(slot))
+                .map(|(sid, _, _, _)| *sid);
+            let viewing_explicit_historic = is_live
+                && self.session_selected_file_idx.contains_key(&branch_name)
+                && store_session_id.is_some()
+                && store_session_id != active_store_id;
+
+            if is_live && !viewing_explicit_historic {
                 // Live session: re-parse the JSONL file from disk to capture ALL
                 // events, including those generated while viewing another worktree.
                 // The live_display_events_cache only snapshots at switch-away time
@@ -387,6 +400,9 @@ impl App {
                 }
 
                 let mut restored_from_jsonl = false;
+                // Chars from JSONL events (not yet in store) — computed before
+                // events are consumed so the context badge is accurate.
+                let mut jsonl_chars: usize = 0;
                 if let Some(ref slot) = slot {
                     if let Some(uuid) = self.agent_session_ids.get(slot) {
                         if let Some(ref wt_path) = worktree_path {
@@ -408,6 +424,12 @@ impl App {
 
                                     if !parsed.events.is_empty() || !store_events.is_empty() {
                                         let events_offset = store_events.len();
+                                        // Count JSONL chars before consuming parsed events
+                                        jsonl_chars = parsed
+                                            .events
+                                            .iter()
+                                            .map(crate::app::session_store::event_char_len)
+                                            .sum();
                                         self.display_events = store_events;
                                         self.display_events.extend(parsed.events);
                                         self.pending_tool_calls = parsed.pending_tools;
@@ -458,7 +480,14 @@ impl App {
                 self.live_display_events_cache.remove(&branch_name);
 
                 self.invalidate_render_cache();
+                // Sync badge from store (authoritative for prior turns),
+                // then add current turn's JSONL chars that haven't been
+                // stored yet so the context percentage reflects reality.
                 self.update_token_badge();
+                if jsonl_chars > 0 {
+                    self.chars_since_compaction += jsonl_chars;
+                    self.update_token_badge_live();
+                }
             } else if let Some(sid) = store_session_id {
                 // Historic session: load from SQLite store
                 self.current_session_id = Some(sid);
