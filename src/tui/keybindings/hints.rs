@@ -43,7 +43,7 @@ pub fn help_sections() -> Vec<HelpSection> {
             bindings: &GLOBAL,
         },
         HelpSection {
-            title: "WORKTREE (w)",
+            title: "WORKTREE (W)",
             bindings: &WORKTREES,
         },
         HelpSection {
@@ -244,7 +244,7 @@ pub fn git_actions_footer() -> String {
         Action::GitToggleFocus,
         Action::GitToggleFocusBack,
         "Tab",
-        "S-Tab",
+        if cfg!(target_os = "macos") { "⇧Tab" } else { "Shift+Tab" },
     );
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn help_sections_second_is_worktree() {
         let sections = help_sections();
-        assert_eq!(sections[1].title, "WORKTREE (w)");
+        assert_eq!(sections[1].title, "WORKTREE (W)");
     }
 
     #[test]
@@ -487,7 +487,11 @@ mod tests {
     #[test]
     fn find_key_cycle_focus_backward_in_global() {
         let key = find_key_for_action(&GLOBAL, Action::CycleFocusBackward);
-        assert_eq!(key.unwrap(), "S-Tab"); // BackTab displays as "S-Tab"
+        if cfg!(target_os = "macos") {
+            assert_eq!(key.unwrap(), "⇧Tab");
+        } else {
+            assert_eq!(key.unwrap(), "Shift+Tab");
+        }
     }
 
     #[test]

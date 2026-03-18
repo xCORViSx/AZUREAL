@@ -94,7 +94,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     // Context-specific bindings based on focus + mode
     let context_bindings: &[Keybinding] = match ctx.focus {
         // Worktree mutation actions: resolved both here (direct press when focused)
-        // AND via leader sequence (w <key>) from any focus — see lookup_leader_action
+        // AND via leader sequence (W <key>) from any focus — see lookup_leader_action
         Focus::Worktrees => &WORKTREES,
         Focus::FileTree => &FILE_TREE,
         Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
@@ -215,7 +215,7 @@ pub fn lookup_branch_dialog_action(modifiers: KeyModifiers, code: KeyCode) -> Op
     None
 }
 
-/// Resolve the second keystroke of a `w <key>` leader sequence.
+/// Resolve the second keystroke of a `W <key>` leader sequence.
 /// Checks the WORKTREES binding array for a match.
 pub fn lookup_leader_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &WORKTREES {
@@ -765,11 +765,11 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn filetree_w_returns_none() {
-        // 'w' is the leader entry key, handled in actions.rs — lookup returns None
+    fn filetree_shift_w_returns_none() {
+        // 'W' is the leader entry key, handled in actions.rs — lookup returns None
         let ctx = cmd_ctx(Focus::FileTree);
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')),
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('W')),
             None
         );
     }
@@ -1176,11 +1176,11 @@ mod tests {
     }
 
     #[test]
-    fn session_w_does_not_resolve_globally() {
-        // 'w' is the leader trigger, not a direct global binding — lookup_action returns None
+    fn session_shift_w_does_not_resolve_globally() {
+        // 'W' is the leader trigger, not a direct global binding — lookup_action returns None
         let ctx = cmd_ctx(Focus::Session);
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('w')),
+            lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('W')),
             None
         );
     }
@@ -1835,7 +1835,7 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  lookup_leader_action (w <key> worktree commands)
+    //  lookup_leader_action (W <key> worktree commands)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]

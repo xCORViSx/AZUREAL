@@ -161,7 +161,13 @@ impl KeyCombo {
             KeyCode::Enter => s.push_str("Enter"),
             KeyCode::Esc => s.push_str("Esc"),
             KeyCode::Tab => s.push_str("Tab"),
-            KeyCode::BackTab => s.push_str("S-Tab"),
+            KeyCode::BackTab => {
+                if cfg!(target_os = "macos") {
+                    s.push_str("⇧Tab");
+                } else {
+                    s.push_str("Shift+Tab");
+                }
+            }
             KeyCode::Backspace => s.push('⌫'),
             KeyCode::Delete => s.push('⌦'),
             KeyCode::Up => s.push('↑'),
@@ -178,10 +184,10 @@ impl KeyCombo {
     }
 }
 
-/// Leader key sequence state for `w <key>` worktree actions.
+/// Leader key sequence state for `W <key>` worktree actions.
 ///
 /// The worktree command palette uses a 2-key leader sequence:
-///   1. Press `w` → enters `WaitingForAction`
+///   1. Press `Shift+W` → enters `WaitingForAction`
 ///   2. Press action key → executes the worktree command
 ///
 /// Pressing Esc or any unexpected key cancels back to `None`.
@@ -189,7 +195,7 @@ impl KeyCombo {
 pub enum LeaderState {
     #[default]
     None,
-    /// `w` was pressed — waiting for the action key (a/d/x)
+    /// `W` was pressed — waiting for the action key (a/d/x)
     WaitingForAction,
 }
 
@@ -676,13 +682,17 @@ mod tests {
     fn display_backtab() {
         // plain(BackTab) — BackTab already implies Shift+Tab
         let kc = KeyCombo::plain(KeyCode::BackTab);
-        assert_eq!(kc.display(), "S-Tab");
-        // shift(BackTab) adds explicit shift prefix
+        if cfg!(target_os = "macos") {
+            assert_eq!(kc.display(), "⇧Tab");
+        } else {
+            assert_eq!(kc.display(), "Shift+Tab");
+        }
+        // shift(BackTab) adds explicit shift prefix (redundant but correct)
         let kc2 = KeyCombo::shift(KeyCode::BackTab);
         if cfg!(target_os = "macos") {
-            assert_eq!(kc2.display(), "⇧S-Tab");
+            assert_eq!(kc2.display(), "⇧⇧Tab");
         } else {
-            assert_eq!(kc2.display(), "Shift+S-Tab");
+            assert_eq!(kc2.display(), "Shift+Shift+Tab");
         }
     }
 

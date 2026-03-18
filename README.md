@@ -139,13 +139,13 @@ azureal
 | `⌃m` / `Ctrl+M` | Cycle model |
 | `⌃q` / `Ctrl+Q` | Quit |
 
-**Worktree mutations** work directly when the worktrees panel is focused, or via `w` leader sequence from any focus:
+**Worktree mutations** work directly when the worktrees panel is focused, or via `W` (Shift+W) leader sequence from any focus:
 
 | Key | Action |
 |-----|--------|
-| `wa` | New worktree |
-| `wx` | Archive worktree |
-| `wd` | Delete worktree |
+| `Wa` | New worktree |
+| `Wx` | Archive worktree |
+| `Wd` | Delete worktree |
 
 **Input modes** are indicated by the input box border color:
 

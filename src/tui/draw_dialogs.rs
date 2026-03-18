@@ -1073,12 +1073,12 @@ pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, ar
 pub fn draw_welcome_modal(f: &mut Frame) {
     let area = f.area();
 
-    // Resolve keybindings dynamically — panels are global, worktree mutations use w leader
+    // Resolve keybindings dynamically — panels are global, worktree mutations use W leader
     let main_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::BrowseMain)
             .unwrap_or_else(|| "M".into());
     let wt_key = format!(
-        "w{}",
+        "W{}",
         keybindings::find_key_for_action(
             &keybindings::WORKTREES,
             keybindings::Action::AddWorktree

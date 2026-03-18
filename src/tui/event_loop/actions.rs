@@ -69,9 +69,9 @@ pub fn handle_key_event(
         return Ok(());
     }
 
-    // --- Leader key continuation (w <key>) ---
+    // --- Leader key continuation (W <key>) ---
     // Checked early so an in-progress leader sequence always completes,
-    // even if a modal appeared after the user pressed 'w'.
+    // even if a modal appeared after the user pressed 'W'.
     if app.leader_state == LeaderState::WaitingForAction {
         app.leader_state = LeaderState::None;
         app.clear_status();
@@ -88,9 +88,9 @@ pub fn handle_key_event(
     // Welcome modal — leader entry + global keybindings pass through.
     // Don't return early so globals (⌃q, ⇧M, ⇧P, ⇧G, ⇧H, etc.) resolve normally.
     if app.needs_welcome_modal() {
-        if key.code == KeyCode::Char('w') && key.modifiers == event::KeyModifiers::NONE {
+        if key.code == KeyCode::Char('W') && key.modifiers == event::KeyModifiers::SHIFT {
             app.leader_state = LeaderState::WaitingForAction;
-            app.set_status("w …");
+            app.set_status("W …");
             return Ok(());
         }
         // Fall through to keybinding resolution for global keys
@@ -479,16 +479,16 @@ pub fn handle_key_event(
     }
 
     // --- Leader key entry ---
-    // Plain 'w' starts the worktree leader sequence (w <key>).
-    // Checked after all modals so 'w' doesn't steal input from dialogs.
-    if key.code == KeyCode::Char('w')
-        && key.modifiers == event::KeyModifiers::NONE
+    // Shift+W starts the worktree leader sequence (W <key>).
+    // Checked after all modals so 'W' doesn't steal input from dialogs.
+    if key.code == KeyCode::Char('W')
+        && key.modifiers == event::KeyModifiers::SHIFT
         && !app.prompt_mode
         && !app.viewer_edit_mode
         && !(app.terminal_mode && app.focus == Focus::Input)
     {
         app.leader_state = LeaderState::WaitingForAction;
-        app.set_status("w …");
+        app.set_status("W …");
         return Ok(());
     }
 

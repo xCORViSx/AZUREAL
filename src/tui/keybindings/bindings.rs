@@ -245,8 +245,8 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
 ];
 
-/// Worktree leader-key bindings (`w <key>`).
-/// These fire only after the `w` → `Space` leader prefix.
+/// Worktree leader-key bindings (`W <key>`).
+/// These fire only after the `Shift+W` leader prefix.
 /// The action keys below are the THIRD keystroke in the sequence.
 pub static WORKTREES: [Keybinding; 3] = [
     Keybinding::new(
