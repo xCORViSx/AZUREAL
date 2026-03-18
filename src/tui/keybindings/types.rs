@@ -178,21 +178,18 @@ impl KeyCombo {
     }
 }
 
-/// Leader key sequence state for `w ␣ <key>` worktree actions.
+/// Leader key sequence state for `w <key>` worktree actions.
 ///
-/// The worktree command palette uses a 3-key leader sequence:
-///   1. Press `w` → enters `WaitingForSpace`
-///   2. Press `Space` → enters `WaitingForAction`
-///   3. Press action key → executes the worktree command
+/// The worktree command palette uses a 2-key leader sequence:
+///   1. Press `w` → enters `WaitingForAction`
+///   2. Press action key → executes the worktree command
 ///
-/// Pressing Esc or any unexpected key at any stage cancels back to `None`.
+/// Pressing Esc or any unexpected key cancels back to `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LeaderState {
     #[default]
     None,
-    /// `w` was pressed — waiting for Space to confirm leader prefix
-    WaitingForSpace,
-    /// `w` then Space were pressed — waiting for the action key
+    /// `w` was pressed — waiting for the action key (a/d/x)
     WaitingForAction,
 }
 

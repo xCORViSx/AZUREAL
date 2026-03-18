@@ -43,7 +43,7 @@ pub fn help_sections() -> Vec<HelpSection> {
             bindings: &GLOBAL,
         },
         HelpSection {
-            title: "WORKTREE (w ␣)",
+            title: "WORKTREE (w)",
             bindings: &WORKTREES,
         },
         HelpSection {
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn help_sections_second_is_worktree() {
         let sections = help_sections();
-        assert_eq!(sections[1].title, "WORKTREE (w ␣)");
+        assert_eq!(sections[1].title, "WORKTREE (w)");
     }
 
     #[test]

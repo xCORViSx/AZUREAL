@@ -94,7 +94,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     // Context-specific bindings based on focus + mode
     let context_bindings: &[Keybinding] = match ctx.focus {
         // Worktree mutation actions: resolved both here (direct press when focused)
-        // AND via leader sequence (w ␣ <key>) from any focus — see lookup_leader_action
+        // AND via leader sequence (w <key>) from any focus — see lookup_leader_action
         Focus::Worktrees => &WORKTREES,
         Focus::FileTree => &FILE_TREE,
         Focus::Viewer if ctx.edit_mode => &EDIT_MODE,
@@ -215,7 +215,7 @@ pub fn lookup_branch_dialog_action(modifiers: KeyModifiers, code: KeyCode) -> Op
     None
 }
 
-/// Resolve the third keystroke of a `w ␣ <key>` leader sequence.
+/// Resolve the second keystroke of a `w <key>` leader sequence.
 /// Checks the WORKTREES binding array for a match.
 pub fn lookup_leader_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &WORKTREES {
@@ -1835,7 +1835,7 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  lookup_leader_action (w ␣ <key> worktree commands)
+    //  lookup_leader_action (w <key> worktree commands)
     // ══════════════════════════════════════════════════════════════════
 
     #[test]

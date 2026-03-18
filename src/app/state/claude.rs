@@ -2030,6 +2030,16 @@ mod tests {
             })
         )
         .unwrap();
+        // Set up worktree + active_slot so is_viewing_slot("55") returns true
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot
+            .insert("main".into(), "55".into());
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.agent_session_ids
@@ -2100,6 +2110,16 @@ mod tests {
         let sid = store.create_session("main").unwrap();
         app.session_store = Some(store);
         app.session_store_path = Some(wt_path.clone());
+        // Set up worktree + active_slot so is_viewing_slot("55") returns true
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot
+            .insert("main".into(), "55".into());
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.display_events.push(DisplayEvent::AssistantText {

@@ -155,7 +155,7 @@ pub struct App {
     /// bubble) with fresh context injection including the new compaction summary.
     /// Cleared on manual user prompt or session switch.
     pub auto_continue_after_compaction: bool,
-    /// Leader key state for `w ␣ <key>` worktree command palette
+    /// Leader key state for `w <key>` worktree command palette
     pub leader_state: crate::tui::keybindings::LeaderState,
     pub terminal_mode: bool,
     pub terminal_pty: Option<Box<dyn MasterPty + Send>>,

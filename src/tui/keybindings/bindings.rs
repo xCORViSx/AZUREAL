@@ -245,7 +245,7 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
 ];
 
-/// Worktree leader-key bindings (`w ␣ <key>`).
+/// Worktree leader-key bindings (`w <key>`).
 /// These fire only after the `w` → `Space` leader prefix.
 /// The action keys below are the THIRD keystroke in the sequence.
 pub static WORKTREES: [Keybinding; 3] = [
