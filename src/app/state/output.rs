@@ -45,8 +45,9 @@ impl App {
             return;
         }
         // Push a real event so it renders immediately and persists through
-        // the entire conversation. stream-json stdout never emits user events,
-        // so without this the message would be invisible until Claude exits
+        // the entire conversation. stream-json stdout emits user events only
+        // for sub-agent prompts (suppressed by EventParser), so without this
+        // explicit push the message would be invisible until Claude exits
         // and the session file is re-parsed.
         let event = DisplayEvent::UserMessage {
             _uuid: String::new(),

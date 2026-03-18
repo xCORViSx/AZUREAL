@@ -859,7 +859,7 @@ impl App {
                         // events go to subagent_todos instead of overwriting main todos.
                         // On first Task spawn, snapshot which main todo is in_progress
                         // so subtasks render directly beneath that parent item.
-                        if tool_name == "Task" {
+                        if tool_name == "Agent" || tool_name == "Task" {
                             if self.active_task_tool_ids.is_empty() {
                                 self.subagent_parent_idx = self
                                     .current_todos

@@ -3,13 +3,16 @@
 //! Parses raw stream-json output into DisplayEvents.
 
 use super::display::DisplayEvent;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Parser for Claude Code stream-json events
 pub struct EventParser {
     buffer: String,
     /// Track tool calls by ID so we can match results to calls
     tool_calls: HashMap<String, (String, Option<String>)>,
+    /// Track active Agent/Task tool IDs — while non-empty, string-content
+    /// user events are sub-agent prompts and should be suppressed.
+    active_agent_tool_ids: HashSet<String>,
 }
 
 impl EventParser {
@@ -17,6 +20,7 @@ impl EventParser {
         Self {
             buffer: String::new(),
             tool_calls: HashMap::new(),
+            active_agent_tool_ids: HashSet::new(),
         }
     }
 
@@ -201,7 +205,7 @@ impl EventParser {
         })
     }
 
-    fn parse_user_event(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
+    fn parse_user_event(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let mut events = Vec::new();
         let Some(message) = json.get("message") else {
             return events;
@@ -228,6 +232,13 @@ impl EventParser {
                 return events;
             }
 
+            // Sub-agent prompt suppression: when an Agent/Task tool is active,
+            // string-content user events are the sub-agent's internal prompt —
+            // not something the user typed. Suppress them.
+            if !self.active_agent_tool_ids.is_empty() {
+                return events;
+            }
+
             events.extend(Self::extract_hooks_from_content(content));
             events.push(DisplayEvent::UserMessage {
                 _uuid: json
@@ -247,6 +258,8 @@ impl EventParser {
                             .and_then(|i| i.as_str())
                             .unwrap_or("")
                             .to_string();
+                        // Clear agent tool tracking when its result arrives
+                        self.active_agent_tool_ids.remove(&tool_use_id);
                         let (tool_name, file_path) = self
                             .tool_calls
                             .get(&tool_use_id)
@@ -286,6 +299,11 @@ impl EventParser {
                         }
                     }
                     "text" => {
+                        // Suppress text blocks when an Agent/Task tool is active
+                        // (sub-agent skill expansions, intermediate prompts)
+                        if !self.active_agent_tool_ids.is_empty() {
+                            continue;
+                        }
                         if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
                             events.extend(Self::extract_hooks_from_content(text));
                             if !text.is_empty() {
@@ -353,6 +371,12 @@ impl EventParser {
                             tool_use_id.to_string(),
                             (tool_name.to_string(), file_path.clone()),
                         );
+                        // Track Agent/Task tools so we can suppress their
+                        // sub-agent prompt user events
+                        if tool_name == "Agent" || tool_name == "Task" {
+                            self.active_agent_tool_ids
+                                .insert(tool_use_id.to_string());
+                        }
                         events.push(DisplayEvent::ToolCall {
                             _uuid: uuid.clone(),
                             tool_use_id: tool_use_id.to_string(),
@@ -1364,6 +1388,76 @@ mod tests {
         let json = r#"  {"type":"system","subtype":"init","session_id":"s1","cwd":"/","model":"claude"}  "#;
         let (events, _) = parser.parse(&format!("{}\n", json));
         assert_eq!(events.len(), 1);
+    }
+
+    // ── Sub-agent prompt suppression ──
+
+    #[test]
+    fn test_agent_tool_suppresses_string_user_event() {
+        let mut parser = EventParser::new();
+        // 1. Agent tool_use
+        let tool_use = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tu-agent","name":"Agent","input":{"prompt":"search the codebase","description":"explore"}}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", tool_use));
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], DisplayEvent::ToolCall { tool_name, .. } if tool_name == "Agent"));
+
+        // 2. Sub-agent prompt (string content user event) — should be suppressed
+        let user_prompt = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"search the codebase"}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", user_prompt));
+        assert!(events.is_empty(), "sub-agent prompt should be suppressed");
+
+        // 3. Tool result clears tracking
+        let tool_result = r#"{"type":"user","uuid":"u2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-agent","content":"found 5 files"}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", tool_result));
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], DisplayEvent::ToolResult { .. }));
+
+        // 4. Next user message is NOT suppressed (agent tool resolved)
+        let real_user = r#"{"type":"user","uuid":"u3","message":{"role":"user","content":"thanks, now fix it"}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", real_user));
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], DisplayEvent::UserMessage { content, .. } if content == "thanks, now fix it"));
+    }
+
+    #[test]
+    fn test_task_tool_suppresses_string_user_event() {
+        let mut parser = EventParser::new();
+        let tool_use = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tu-task","name":"Task","input":{"prompt":"run tests"}}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", tool_use));
+        assert_eq!(events.len(), 1);
+
+        let user_prompt = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"run tests"}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", user_prompt));
+        assert!(events.is_empty(), "Task sub-agent prompt should be suppressed");
+    }
+
+    #[test]
+    fn test_agent_tool_suppresses_text_block_user_event() {
+        let mut parser = EventParser::new();
+        // Agent tool_use
+        let tool_use = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tu-agent","name":"Agent","input":{"prompt":"explore"}}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", tool_use));
+        assert_eq!(events.len(), 1);
+
+        // User event with text block in array — should be suppressed
+        let user_text_block = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"skill expansion text"}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", user_text_block));
+        assert!(events.is_empty(), "text blocks during active agent should be suppressed");
+    }
+
+    #[test]
+    fn test_non_agent_tool_does_not_suppress_user() {
+        let mut parser = EventParser::new();
+        // Non-agent tool_use (Read)
+        let tool_use = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tu-read","name":"Read","input":{"file_path":"/test.rs"}}]}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", tool_use));
+        assert_eq!(events.len(), 1);
+
+        // User event should NOT be suppressed (Read is not Agent/Task)
+        let user_msg = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"hello"}}"#;
+        let (events, _) = parser.parse(&format!("{}\n", user_msg));
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], DisplayEvent::UserMessage { .. }));
     }
 
     #[test]

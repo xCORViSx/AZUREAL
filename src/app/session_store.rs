@@ -859,7 +859,7 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
                         "Glob" | "glob" | "Grep" | "grep" => &["pattern"],
                         "WebFetch" | "webfetch" => &["url"],
                         "WebSearch" | "websearch" => &["query"],
-                        "Task" | "task" => &["subagent_type", "description"],
+                        "Agent" | "agent" | "Task" | "task" => &["subagent_type", "description"],
                         "LSP" | "lsp" => &["operation", "filePath"],
                         _ => &["file_path", "path", "command", "query", "pattern"],
                     };

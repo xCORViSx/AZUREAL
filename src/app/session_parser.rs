@@ -246,6 +246,8 @@ fn parse_session_file_from(
     let mut bytes_read: u64 = 0;
     // Model string from the last assistant event (e.g. "claude-opus-4-6")
     let mut model: Option<String> = None;
+    // Track active Agent/Task tool IDs to suppress sub-agent prompt user events
+    let mut active_agent_tool_ids: HashSet<String> = HashSet::new();
 
     // Read line-by-line tracking byte offset
     let mut line_buf = String::new();
@@ -299,6 +301,7 @@ fn parse_session_file_from(
                 &mut last_user_msg,
                 &mut ups_hooks,
                 session_slug.as_deref(),
+                &mut active_agent_tool_ids,
             ),
             "assistant" => {
                 parse_assistant_event(
@@ -308,6 +311,7 @@ fn parse_session_file_from(
                     &mut tool_calls,
                     &mut pending_tools,
                     &mut model,
+                    &mut active_agent_tool_ids,
                 );
             }
             "result" => parse_result_event(&json, timestamp, &mut timed_events),
@@ -433,6 +437,7 @@ fn parse_user_event(
     last_user_msg: &mut Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
     session_slug: Option<&str>,
+    active_agent_tool_ids: &mut HashSet<String>,
 ) {
     let message = json.get("message");
     let content_val = message.and_then(|m| m.get("content"));
@@ -504,6 +509,12 @@ fn parse_user_event(
             }
         }
 
+        // Sub-agent prompt suppression: when an Agent/Task tool is active,
+        // string-content user events are the sub-agent's internal prompt.
+        if !active_agent_tool_ids.is_empty() {
+            return;
+        }
+
         let parent_uuid = json
             .get("parentUuid")
             .and_then(|p| p.as_str())
@@ -549,6 +560,7 @@ fn parse_user_event(
                     last_user_msg,
                     ups_hooks,
                     session_slug,
+                    active_agent_tool_ids,
                 );
             }
         }
@@ -565,12 +577,15 @@ fn parse_tool_result_block(
     last_user_msg: &Option<(usize, DateTime<Utc>)>,
     ups_hooks: &mut Vec<(usize, DateTime<Utc>, DisplayEvent)>,
     session_slug: Option<&str>,
+    active_agent_tool_ids: &mut HashSet<String>,
 ) {
     let tool_use_id = block
         .get("tool_use_id")
         .and_then(|i| i.as_str())
         .unwrap_or("")
         .to_string();
+    // Clear agent tool tracking when its result arrives
+    active_agent_tool_ids.remove(&tool_use_id);
     let (tool_name, file_path) = tool_calls
         .get(&tool_use_id)
         .cloned()
@@ -676,6 +691,7 @@ fn parse_assistant_event(
     tool_calls: &mut HashMap<String, (String, Option<String>)>,
     pending_tools: &mut HashSet<String>,
     model_out: &mut Option<String>,
+    active_agent_tool_ids: &mut HashSet<String>,
 ) {
     PARSE_DIAGNOSTICS.with(|d| d.borrow_mut().assistant_events_total += 1);
 
@@ -749,6 +765,11 @@ fn parse_assistant_event(
 
                 tool_calls.insert(tool_id.clone(), (tool_name.clone(), file_path.clone()));
                 pending_tools.insert(tool_id.clone());
+                // Track Agent/Task tools so we can suppress sub-agent prompt
+                // user events
+                if tool_name == "Agent" || tool_name == "Task" {
+                    active_agent_tool_ids.insert(tool_id.clone());
+                }
 
                 events.push((
                     timestamp,
@@ -2059,6 +2080,95 @@ mod tests {
             DisplayEvent::Hook { output, .. } => assert_eq!(output, "[MyHook]"),
             other => panic!("expected Hook, got {:?}", other),
         }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    // ── Sub-agent prompt suppression ──
+
+    #[test]
+    fn test_agent_tool_suppresses_subagent_prompt() {
+        let file_path = test_file("agent_suppress");
+        let tool_use = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu-agent","name":"Agent","input":{"prompt":"explore codebase","description":"explore"}}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z","uuid":"a1"}"#;
+        let subagent_prompt = r#"{"type":"user","message":{"content":"explore codebase"},"timestamp":"2026-01-01T00:00:01Z","uuid":"u1"}"#;
+        let tool_result = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu-agent","content":"found 5 files"}]},"timestamp":"2026-01-01T00:00:02Z","uuid":"u2"}"#;
+        std::fs::write(
+            &file_path,
+            format!("{}\n{}\n{}\n", tool_use, subagent_prompt, tool_result),
+        )
+        .unwrap();
+        let result = parse_session_file(&file_path);
+        // Should have: ToolCall + ToolResult (no UserMessage for sub-agent prompt)
+        let user_msgs: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::UserMessage { .. }))
+            .collect();
+        assert!(
+            user_msgs.is_empty(),
+            "sub-agent prompt should be suppressed, got {} UserMessage(s)",
+            user_msgs.len()
+        );
+        let tool_calls: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolCall { .. }))
+            .collect();
+        assert_eq!(tool_calls.len(), 1);
+        let tool_results: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::ToolResult { .. }))
+            .collect();
+        assert_eq!(tool_results.len(), 1);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_agent_suppression_clears_after_result() {
+        let file_path = test_file("agent_suppress_clear");
+        let tool_use = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu-agent","name":"Agent","input":{"prompt":"search"}}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z","uuid":"a1"}"#;
+        let tool_result = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu-agent","content":"done"}]},"timestamp":"2026-01-01T00:00:01Z","uuid":"u2"}"#;
+        let real_user = r#"{"type":"user","message":{"content":"next question"},"timestamp":"2026-01-01T00:00:02Z","uuid":"u3"}"#;
+        std::fs::write(
+            &file_path,
+            format!("{}\n{}\n{}\n", tool_use, tool_result, real_user),
+        )
+        .unwrap();
+        let result = parse_session_file(&file_path);
+        let user_msgs: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::UserMessage { .. }))
+            .collect();
+        assert_eq!(
+            user_msgs.len(),
+            1,
+            "real user message after agent result should not be suppressed"
+        );
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_non_agent_tool_does_not_suppress() {
+        let file_path = test_file("non_agent_no_suppress");
+        let tool_use = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu-read","name":"Read","input":{"file_path":"/test.rs"}}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z","uuid":"a1"}"#;
+        let user_msg = r#"{"type":"user","message":{"content":"hello"},"timestamp":"2026-01-01T00:00:01Z","uuid":"u1"}"#;
+        std::fs::write(
+            &file_path,
+            format!("{}\n{}\n", tool_use, user_msg),
+        )
+        .unwrap();
+        let result = parse_session_file(&file_path);
+        let user_msgs: Vec<_> = result
+            .events
+            .iter()
+            .filter(|e| matches!(e, DisplayEvent::UserMessage { .. }))
+            .collect();
+        assert_eq!(
+            user_msgs.len(),
+            1,
+            "user message after non-agent tool should not be suppressed"
+        );
         let _ = std::fs::remove_file(&file_path);
     }
 }

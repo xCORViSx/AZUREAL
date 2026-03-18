@@ -98,7 +98,7 @@ pub fn extract_tool_param(tool_name: &str, input: &serde_json::Value) -> String 
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        "Task" | "task" => {
+        "Agent" | "agent" | "Task" | "task" => {
             let agent_type = input
                 .get("subagent_type")
                 .and_then(|v| v.as_str())
@@ -698,7 +698,7 @@ pub fn render_tool_result(
                 Span::styled(format!("{} files", line_count), result_style),
             ]));
         }
-        "Task" | "task" => {
+        "Agent" | "agent" | "Task" | "task" => {
             // First 5 lines of subagent output
             let show_count = 5.min(line_count);
             for (i, l) in content_lines.iter().take(show_count).enumerate() {
