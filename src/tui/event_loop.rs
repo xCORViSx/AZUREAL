@@ -645,6 +645,11 @@ pub async fn run_app(
                             app.selected_worktree = Some(idx);
                             app.load_session_output();
                         }
+                        // Enable auto-rebase by default for new worktrees
+                        if let Some(ref project) = app.project {
+                            crate::azufig::set_auto_rebase(&project.path, &branch, true);
+                            app.auto_rebase_enabled.insert(branch.clone());
+                        }
                     }
                     BackgroundOpOutcome::Deleted {
                         display_name,
