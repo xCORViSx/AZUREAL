@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'manual/**'
+      - '.github/workflows/manual.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
