@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="manual/src/SUMMARY.md"><strong>📖 Manual</strong></a>
+  <a href="https://xcorvisx.github.io/AZUREAL/"><strong>📖 Manual</strong></a>
 </p>
 
 ---

@@ -6,6 +6,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Added
 - **mdBook manual** — Comprehensive 91-page manual covering every feature, keybinding, and source module. Built with mdBook in `manual/` directory. 3 sections (User Guide, Features, Reference), 20 chapters with sub-pages. Serve locally with `mdbook serve manual`.
+- **GitHub Pages deployment for manual** — Added `manual.yml` workflow that auto-builds and deploys the mdBook to GitHub Pages on pushes to `main` that touch `manual/`. README link updated to point to the live site.
 
 ### Changed
 - **Modularized `core.rs` into 5 focused sibling modules** -- Split the 1760-line `src/git/core.rs` god file into `src/git/` directory siblings: `commit.rs` (staged diff, commit log, commit), `diff.rs` (branch diff, per-file stats, single-file diff, commit diff), `merge.rs` (squash merge with conflict detection, unmerged file checks, cleanup), `remote.rs` (push, pull, divergence queries), `staging.rs` (stage, unstage, discard, gitignore cleanup). Module root `src/git.rs` declares all siblings. Core retains types (`Git`, `SquashMergeResult`, `WorktreeInfo`), repo detection, branch listing, status, and all 62 tests. Sibling modules use `use super::Git` to add `impl Git` methods -- no re-exports needed. Modified: `src/git/core.rs`, `src/git.rs`.
