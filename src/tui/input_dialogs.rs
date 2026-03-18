@@ -329,7 +329,7 @@ pub fn handle_run_command_dialog_input(
                 dialog.command_cursor += 1;
             }
         }
-        KeyCode::Char(c) => {
+        KeyCode::Char(c) if !c.is_control() => {
             if dialog.editing_name {
                 dialog.name.insert(dialog.name_cursor, c);
                 dialog.name_cursor += 1;

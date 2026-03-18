@@ -797,7 +797,7 @@ Other details:
 **Resolution flow in `handle_key_event()` (event_loop.rs):**
 1. **Leader continuation:** If `leader_state == WaitingForAction`, the key is resolved via `lookup_leader_action()` against the WORKTREES binding array. Any match dispatches the action and resets leader state; Esc cancels; unrecognized keys reset with a status message. Fires before all modals to complete mid-sequence
 2. Modal overlays (help, wizard, projects, health, git, pickers, session list) intercept ALL input first — each modal uses its per-modal lookup function
-3. Text input modals (`BranchDialog`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel) from stealing keystrokes meant as literal text
+3. Text input modals (`BranchDialog`, `file_tree_action`, `new_session_dialog_active`) bypass keybinding resolution entirely — routed directly to their handlers before `lookup_action()` to prevent global bindings (e.g., Shift+G → Git panel, Enter → OpenFile, Esc → focus change) from stealing keystrokes meant as literal text input or action confirmation
 4. `KeyContext::from_app(app)` + `lookup_action()` resolves key → action for main views
 5. If `stt_recording` is true, ToggleStt is resolved from any focus/mode (so recording can always be stopped even after Tab changes focus)
 6. If action found → `execute_action()` dispatches it (except input-specific actions like Submit/InsertNewline/ToggleStt which fall through to handle_input_mode when `Focus::Input`)

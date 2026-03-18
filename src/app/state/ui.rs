@@ -423,7 +423,12 @@ impl App {
 
     pub fn open_run_command_picker(&mut self) {
         if self.run_commands.is_empty() {
-            self.set_status("No run commands. Press ⌥r to add one.");
+            let key = crate::tui::keybindings::find_key_for_action(
+                &crate::tui::keybindings::GLOBAL,
+                crate::tui::keybindings::Action::AddRunCommand,
+            )
+            .unwrap_or_else(|| "⇧R".into());
+            self.set_status(&format!("No run commands. Press {key} to add one."));
             return;
         }
         if self.run_commands.len() == 1 {
@@ -439,6 +444,15 @@ impl App {
         };
         let command = cmd.command.clone();
         let name = cmd.name.clone();
+
+        // Sanitize: collapse embedded newlines/carriage-returns into spaces
+        let command: String = command
+            .chars()
+            .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
 
         // Open terminal if not open and send command
         if !self.terminal_mode {

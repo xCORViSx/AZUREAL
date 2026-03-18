@@ -524,6 +524,14 @@ pub fn handle_key_event(
         return handle_file_tree_input(key, app);
     }
 
+    // FileTree action mode (Add/Rename/Delete/Copy/Move): text input and
+    // confirmation keypresses must bypass keybinding resolution so Enter and
+    // Escape reach handle_action_input() instead of being consumed as
+    // OpenFile / Escape actions.
+    if app.file_tree_action.is_some() && app.focus == Focus::FileTree {
+        return handle_file_tree_input(key, app);
+    }
+
     // New session dialog: text input bypasses keybinding system
     if app.new_session_dialog_active {
         return handle_session_input(key, app);
