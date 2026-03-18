@@ -4,24 +4,34 @@
 //! - `actions`: Keyboard action dispatch (6 sub-submodules: execute, navigation, escape, session_list, deferred, rcr)
 //! - `agent_events`: Agent process event handling
 //! - `agent_processor`: Background JSON parsing for agent streaming events
+//! - `auto_rebase`: Periodic auto-rebase checking for enabled worktrees
 //! - `coords`: Screen-to-content coordinate mapping
 //! - `fast_draw`: Fast-path input rendering (~0.1ms bypass)
+//! - `git_polling`: Background git operation polling (commit gen, squash merge, ops, rebase)
+//! - `housekeeping`: File watcher, session/tree/health refresh, STT, debug dump
 //! - `input_thread`: Dedicated stdin reader thread
 //! - `mouse`: Mouse click, drag, scroll, and selection copy
+//! - `process_input`: Input event dispatch (key, mouse, resize)
+//! - `prompt`: Staged prompt sending and compaction lifecycle
 
 mod actions;
 mod agent_events;
 mod agent_processor;
+mod auto_rebase;
 mod coords;
 #[allow(dead_code)] // macOS-only fast paths; compiled on all platforms for tests
 mod fast_draw;
+mod git_polling;
+mod housekeeping;
 mod input_thread;
 mod mouse;
+mod process_input;
+mod prompt;
 
 pub(super) use mouse::copy_viewer_selection;
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode};
 use std::io;
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -37,12 +47,11 @@ use crate::config::Config;
 use super::draw_output::{poll_render_result, submit_render_request};
 use super::run::ui;
 
-use actions::handle_key_event;
 use agent_events::handle_claude_event;
-use coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
 #[cfg(target_os = "macos")]
 use fast_draw::fast_draw_input;
-use mouse::{apply_scroll_cached, handle_mouse_click, handle_mouse_drag};
+use mouse::apply_scroll_cached;
+use process_input::process_input_event;
 
 /// Main TUI event loop
 pub async fn run_app(
@@ -328,125 +337,13 @@ pub async fn run_app(
         }
 
         // Send staged prompt when no agent is running and no dialog is blocking
-        if app.staged_prompt.is_some()
-            && !app.is_active_slot_running()
-            && !app.new_session_dialog_active
-        {
-            if let Some(prompt) = app.staged_prompt.take() {
-                if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone())
-                {
-                    let branch = app
-                        .current_worktree()
-                        .map(|s| s.branch_name.clone())
-                        .unwrap_or_default();
-                    let events_offset = app.display_events.len();
-                    app.add_user_message(prompt.clone());
-                    app.process_session_chunk(&format!("You: {}\n", prompt));
-                    app.current_todos.clear();
-                    let send_prompt = app
-                        .current_session_id
-                        .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                        .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                        .map(|payload| {
-                            crate::app::context_injection::build_context_prompt(&payload, &prompt)
-                        })
-                        .unwrap_or_else(|| prompt.clone());
-                    let selected_model = app.selected_model.clone();
-                    match claude_process.spawn(
-                        &wt_path,
-                        &send_prompt,
-                        None,
-                        selected_model.as_deref(),
-                    ) {
-                        Ok((rx, pid)) => {
-                            if let Some(sid) = app.current_session_id {
-                                app.pid_session_target.insert(
-                                    pid.to_string(),
-                                    (sid, wt_path.clone(), events_offset, app.session_file_size),
-                                );
-                            }
-                            app.register_claude(branch, pid, rx, selected_model.as_deref());
-                            app.update_title_session_name();
-                            app.set_status("Running...");
-                        }
-                        Err(e) => app.set_status(format!("Failed to start: {}", e)),
-                    }
-                    needs_redraw = true;
-                }
-            }
+        if prompt::send_staged_prompt(app, &claude_process) {
+            needs_redraw = true;
         }
 
-        // Poll compaction agents (background summarization, invisible to UI)
-        if agent_events::poll_compaction_agents(app) {
-            // No redraw needed — compaction is invisible
-        }
-
-        // Spawn compaction agent when threshold is crossed (mid-turn or post-exit).
-        // The live char counter in handle_claude_output sets compaction_needed as soon
-        // as 400K chars is reached, so this fires without waiting for process exit.
-        // Only consume the trigger if spawn succeeds — failed spawns (e.g. not enough
-        // user messages for boundary) set compaction_spawn_deferred to avoid retrying
-        // every tick. The deferred flag is cleared when a new user message is stored.
-        if !app.compaction_spawn_deferred {
-            if let Some((session_id, wt_path)) = app.compaction_needed.as_ref() {
-                let (sid, wtp) = (*session_id, wt_path.clone());
-                if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp) {
-                    app.compaction_needed = None;
-                } else {
-                    app.compaction_spawn_deferred = true;
-                }
-            }
-        }
-
-        // Retry compaction if the primary produced no output
-        if let Some((session_id, wt_path)) = app.compaction_retry_needed.as_ref() {
-            let (sid, wtp) = (*session_id, wt_path.clone());
-            if agent_events::spawn_compaction_agent(app, &claude_process, sid, &wtp) {
-                app.compaction_retry_needed = None;
-            }
-        }
-
-        // Auto-continue after mid-turn compaction: once all compaction agents finish
-        // (no receivers, no retry pending), spawn a hidden "continue" prompt with
-        // fresh context injection (includes the new compaction summary). No user
-        // bubble — the conversation resumes transparently.
-        if app.auto_continue_after_compaction
-            && app.compaction_receivers.is_empty()
-            && app.compaction_retry_needed.is_none()
-        {
-            app.auto_continue_after_compaction = false;
-            if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-                let branch = app
-                    .current_worktree()
-                    .map(|s| s.branch_name.clone())
-                    .unwrap_or_default();
-                let events_offset = app.display_events.len();
-                let prompt = "Continue.".to_string();
-                // Build context with compaction summary — no add_user_message (no bubble)
-                let send_prompt = app
-                    .current_session_id
-                    .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                    .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                    .map(|payload| {
-                        crate::app::context_injection::build_context_prompt(&payload, &prompt)
-                    })
-                    .unwrap_or_else(|| prompt.clone());
-                let selected_model = app.selected_model.clone();
-                match claude_process.spawn(&wt_path, &send_prompt, None, selected_model.as_deref())
-                {
-                    Ok((rx, pid)) => {
-                        if let Some(sid) = app.current_session_id {
-                            app.pid_session_target.insert(
-                                pid.to_string(),
-                                (sid, wt_path.clone(), events_offset, app.session_file_size),
-                            );
-                        }
-                        app.register_claude(branch, pid, rx, selected_model.as_deref());
-                        app.set_status("Auto-continuing after compaction...");
-                    }
-                    Err(e) => app.set_status(format!("Auto-continue failed: {}", e)),
-                }
-            }
+        // Compaction lifecycle: poll agents, spawn when threshold crossed, auto-continue
+        if prompt::manage_compaction(app, &claude_process) {
+            needs_redraw = true;
         }
 
         let _t_claude = _loop_start.elapsed();
@@ -483,456 +380,46 @@ pub async fn run_app(
 
         let _t_parsed = _loop_start.elapsed();
 
-        // Poll commit message generation — background thread sends the generated
-        // commit message via mpsc. Non-blocking try_recv; fills the overlay when ready.
-        if let Some(ref mut panel) = app.git_actions_panel {
-            if let Some(ref mut overlay) = panel.commit_overlay {
-                if overlay.generating {
-                    if let Some(ref rx) = overlay.receiver {
-                        if let Ok(result) = rx.try_recv() {
-                            match result {
-                                Ok(generated) => {
-                                    overlay.message = generated.message;
-                                    overlay.cursor = overlay.message.chars().count();
-                                    overlay.generating = false;
-                                    overlay.receiver = None;
-                                    let mut status = format!(
-                                        "Commit message generated by {}",
-                                        generated.generator_label
-                                    );
-                                    if let Some(notice) = generated.fallback_notice {
-                                        status.push_str(&format!(" ({})", notice));
-                                    }
-                                    panel.result_message = Some((status, false));
-                                    needs_redraw = true;
-                                }
-                                Err(err) => {
-                                    // Both backends failed — close overlay and show error
-                                    panel.commit_overlay = None;
-                                    panel.result_message = Some((err, true));
-                                    needs_redraw = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        // Poll git background operations (commit gen, squash merge, ops, rebase)
+        if git_polling::poll_commit_generation(app) {
+            needs_redraw = true;
         }
-
-        // Poll squash merge progress — background thread sends phase updates and
-        // final outcome via mpsc. Updates loading_indicator with each phase.
-        {
-            use crate::app::types::SquashMergeOutcome;
-            let mut merge_outcome: Option<SquashMergeOutcome> = None;
-            let mut new_phase: Option<String> = None;
-            if let Some(ref mut panel) = app.git_actions_panel {
-                if let Some(ref rx) = panel.squash_merge_receiver {
-                    while let Ok(progress) = rx.try_recv() {
-                        if let Some(outcome) = progress.outcome {
-                            panel.squash_merge_receiver = None;
-                            merge_outcome = Some(outcome);
-                            needs_redraw = true;
-                            break;
-                        }
-                        new_phase = Some(progress.phase);
-                        needs_redraw = true;
-                    }
-                }
-            }
-            if let Some(phase) = new_phase {
-                app.loading_indicator = Some(phase);
-            }
-            if let Some(outcome) = merge_outcome {
-                app.loading_indicator = None;
-                match outcome {
-                    SquashMergeOutcome::Success {
-                        status_msg,
-                        branch,
-                        display_name,
-                        worktree_path,
-                    } => {
-                        app.git_actions_panel = None;
-                        app.post_merge_dialog = Some(crate::app::types::PostMergeDialog {
-                            branch,
-                            display_name,
-                            worktree_path,
-                            selected: 0,
-                        });
-                        app.set_status(status_msg);
-                    }
-                    SquashMergeOutcome::Conflict {
-                        conflicted,
-                        auto_merged,
-                    } => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
-                                conflicted_files: conflicted,
-                                auto_merged_files: auto_merged,
-                                scroll: 0,
-                                selected: 0,
-                                continue_with_merge: true,
-                            });
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                        }
-                    }
-                    SquashMergeOutcome::Failed(msg) => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            p.result_message = Some((msg, true));
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                        }
-                    }
-                }
-            }
+        if git_polling::poll_squash_merge(app) {
+            needs_redraw = true;
         }
-
-        // Poll background worktree/git operations (archive, unarchive, create,
-        // delete, pull, push). Background thread sends progress phases and
-        // final outcome via mpsc.
-        {
-            use crate::app::types::BackgroundOpOutcome;
-            let mut op_outcome: Option<BackgroundOpOutcome> = None;
-            let mut new_phase: Option<String> = None;
-            if let Some(ref rx) = app.background_op_receiver {
-                while let Ok(progress) = rx.try_recv() {
-                    if let Some(outcome) = progress.outcome {
-                        app.background_op_receiver = None;
-                        op_outcome = Some(outcome);
-                        needs_redraw = true;
-                        break;
-                    }
-                    if !progress.phase.is_empty() {
-                        new_phase = Some(progress.phase);
-                        needs_redraw = true;
-                    }
-                }
-            }
-            if let Some(phase) = new_phase {
-                app.loading_indicator = Some(phase);
-            }
-            if let Some(outcome) = op_outcome {
-                app.loading_indicator = None;
-                match outcome {
-                    BackgroundOpOutcome::Archived => {
-                        app.set_status("Session archived");
-                        app.save_live_display_events();
-                        let _ = app.refresh_worktrees();
-                        app.load_session_output();
-                    }
-                    BackgroundOpOutcome::Unarchived {
-                        branch,
-                        display_name,
-                    } => {
-                        app.set_status(format!("Unarchived: {}", display_name));
-                        app.save_live_display_events();
-                        app.save_current_terminal();
-                        let _ = app.refresh_worktrees();
-                        if let Some(idx) =
-                            app.worktrees.iter().position(|s| s.branch_name == branch)
-                        {
-                            app.selected_worktree = Some(idx);
-                            app.load_session_output();
-                        }
-                    }
-                    BackgroundOpOutcome::Created { branch } => {
-                        app.save_live_display_events();
-                        app.save_current_terminal();
-                        let _ = app.refresh_worktrees();
-                        if let Some(idx) =
-                            app.worktrees.iter().position(|s| s.branch_name == branch)
-                        {
-                            app.selected_worktree = Some(idx);
-                            app.load_session_output();
-                        }
-                        // Enable auto-rebase by default for new worktrees
-                        if let Some(ref project) = app.project {
-                            crate::azufig::set_auto_rebase(&project.path, &branch, true);
-                            app.auto_rebase_enabled.insert(branch.clone());
-                        }
-                    }
-                    BackgroundOpOutcome::Deleted {
-                        display_name,
-                        prev_idx,
-                        ..
-                    } => {
-                        app.set_status(format!("Deleted: {}", display_name));
-                        app.save_live_display_events();
-                        app.save_current_terminal();
-                        let _ = app.refresh_worktrees();
-                        app.selected_worktree = if app.worktrees.is_empty() {
-                            None
-                        } else {
-                            Some(prev_idx.min(app.worktrees.len() - 1))
-                        };
-                        app.load_session_output();
-                    }
-                    BackgroundOpOutcome::GitResult { message, is_error } => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            p.result_message = Some((message, is_error));
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                        }
-                    }
-                    BackgroundOpOutcome::RcrFinished(completion) => {
-                        app.load_session_output();
-                        app.update_title_session_name();
-                        if let Some(dialog) = completion.post_merge_dialog {
-                            app.post_merge_dialog = Some(dialog);
-                        }
-                        app.set_status(completion.status_msg);
-                    }
-                    BackgroundOpOutcome::Renamed { new_branch } => {
-                        let _ = app.refresh_worktrees();
-                        // Re-select the renamed branch
-                        if let Some(idx) = app
-                            .worktrees
-                            .iter()
-                            .position(|w| w.branch_name == new_branch)
-                        {
-                            app.selected_worktree = Some(idx);
-                        }
-                        app.load_session_output();
-                        let display = crate::models::strip_branch_prefix(&new_branch);
-                        app.set_status(format!("Renamed → {}", display));
-                    }
-                    BackgroundOpOutcome::Failed(msg) => {
-                        app.set_status(msg);
-                    }
-                }
-            }
+        if git_polling::poll_background_ops(app) {
+            needs_redraw = true;
         }
-
-        // Poll background rebase operations (separate from generic ops because
-        // rebase has conflict overlay handling)
-        {
-            use crate::app::types::BackgroundRebaseOutcome;
-            let mut rebase_outcome: Option<BackgroundRebaseOutcome> = None;
-            if let Some(ref rx) = app.rebase_op_receiver {
-                if let Ok(outcome) = rx.try_recv() {
-                    app.rebase_op_receiver = None;
-                    rebase_outcome = Some(outcome);
-                    needs_redraw = true;
-                }
-            }
-            if let Some(outcome) = rebase_outcome {
-                app.loading_indicator = None;
-                match outcome {
-                    BackgroundRebaseOutcome::Rebased(msg) => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                            p.result_message = Some((msg, false));
-                        }
-                    }
-                    BackgroundRebaseOutcome::UpToDate => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                            p.result_message =
-                                Some(("Already up to date with main".to_string(), false));
-                        }
-                    }
-                    BackgroundRebaseOutcome::Conflict {
-                        conflicted,
-                        auto_merged,
-                    } => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            p.conflict_overlay = Some(crate::app::types::GitConflictOverlay {
-                                conflicted_files: conflicted,
-                                auto_merged_files: auto_merged,
-                                scroll: 0,
-                                selected: 0,
-                                continue_with_merge: false,
-                            });
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                        }
-                    }
-                    BackgroundRebaseOutcome::Failed(e) => {
-                        if let Some(ref mut p) = app.git_actions_panel {
-                            crate::tui::input_git_actions::refresh_changed_files(p);
-                            crate::tui::input_git_actions::refresh_commit_log(p);
-                            p.result_message = Some((format!("Rebase failed: {}", e), true));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Deferred debug dump saving — naming dialog closed, trigger the actual dump
-        if let Some(name) = app.debug_dump_saving.take() {
-            app.dump_debug_output(&name);
-            app.draw_pending = true;
-        }
-
-        // Poll speech-to-text events (non-blocking, only if handle exists)
-        if app.stt_handle.is_some() {
-            if app.poll_stt() {
-                needs_redraw = true;
-            }
-        }
-
-        // --- File watcher: drain kernel-level notify events (non-blocking) ---
-        // When notify is active, filesystem events set dirty flags directly.
-        // Falls back to stat() polling if the watcher failed to initialize.
-        if let Some(ref watcher) = app.file_watcher {
-            while let Some(evt) = watcher.try_recv() {
-                match evt {
-                    crate::watcher::WatchEvent::SessionFileChanged => {
-                        app.session_file_dirty = true;
-                    }
-                    crate::watcher::WatchEvent::WorktreeChanged => {
-                        app.file_tree_refresh_pending = true;
-                        app.worktree_tabs_refresh_pending = true;
-                        if app.health_panel.is_some() {
-                            app.health_refresh_pending = true;
-                        }
-                        app.worktree_last_notify = Instant::now();
-                    }
-                    crate::watcher::WatchEvent::WatcherFailed(_) => {
-                        app.file_watcher = None;
-                        break;
-                    }
-                }
-            }
-        }
-
-        let now_poll = Instant::now();
-
-        // Parse session file when dirty (set by watcher or fallback polling)
-        if app.session_file_dirty {
-            if app.poll_session_file() {
-                needs_redraw = true;
-            }
-        }
-
-        // Fallback: stat() polling when watcher is unavailable
-        if app.file_watcher.is_none()
-            && now_poll.duration_since(last_session_poll) >= min_poll_interval
-        {
-            app.check_session_file();
-            if app.poll_session_file() {
-                needs_redraw = true;
-            }
-        }
-
-        // Debounced file tree refresh: spawn background thread to avoid
-        // blocking the event loop (build_file_tree walks the filesystem,
-        // 10-100ms depending on tree depth). Old tree stays visible until
-        // the new one arrives — no flash of empty state.
-        if app.file_tree_refresh_pending
-            && app.file_tree_receiver.is_none()
-            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
-        {
-            if let Some(wt) = app.current_worktree() {
-                if let Some(ref wt_path) = wt.worktree_path {
-                    let path = wt_path.clone();
-                    let expanded = app.file_tree_expanded.clone();
-                    let hidden = app.file_tree_hidden_dirs.clone();
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    std::thread::spawn(move || {
-                        let entries =
-                            crate::app::state::helpers::build_file_tree(&path, &expanded, &hidden);
-                        let _ = tx.send(entries);
-                    });
-                    app.file_tree_receiver = Some(rx);
-                }
-            }
-            app.file_tree_refresh_pending = false;
-        }
-
-        // Poll file tree background scan result
-        if let Some(ref rx) = app.file_tree_receiver {
-            if let Ok(entries) = rx.try_recv() {
-                app.file_tree_entries = entries;
-                app.file_tree_selected = if !app.file_tree_entries.is_empty() {
-                    Some(0)
-                } else {
-                    None
-                };
-                app.file_tree_scroll = 0;
-                app.invalidate_file_tree();
-                app.file_tree_receiver = None;
-                needs_redraw = true;
-            }
-        }
-
-        // Debounced worktree tab list refresh: spawn background thread for
-        // git + FS I/O (git worktree list, branch listing, session discovery,
-        // 10-50ms). Sidebar stays visible with old data until results arrive.
-        if app.worktree_tabs_refresh_pending
-            && app.worktree_refresh_receiver.is_none()
-            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
-        {
-            if let Some(ref project) = app.project {
-                let path = project.path.clone();
-                let main_branch = project.main_branch.clone();
-                let wt_dir = project.worktrees_dir();
-                let backend = app.backend;
-                let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    let result = crate::app::state::load::compute_worktree_refresh(
-                        path,
-                        main_branch,
-                        wt_dir,
-                        backend,
-                    );
-                    let _ = tx.send(result);
-                });
-                app.worktree_refresh_receiver = Some(rx);
-            }
-            app.worktree_tabs_refresh_pending = false;
-        }
-
-        // Poll worktree refresh background result
-        if let Some(ref rx) = app.worktree_refresh_receiver {
-            if let Ok(result) = rx.try_recv() {
-                if let Ok(data) = result {
-                    app.apply_worktree_result(data);
-                }
-                app.worktree_refresh_receiver = None;
-                needs_redraw = true;
-            }
-        }
-
-        // Debounced health panel refresh: rescan god files + doc coverage
-        // when source files change while the panel is open.
-        // Skipped during active Claude streaming — the synchronous filesystem
-        // walk (10-200ms) would block the event loop and cause input hiccups.
-        // Panel refreshes once streaming finishes.
-        if app.health_refresh_pending
-            && app.agent_receivers.is_empty()
-            && now_poll.duration_since(app.worktree_last_notify) >= Duration::from_millis(500)
-        {
-            app.refresh_health_panel();
-            app.health_refresh_pending = false;
+        if git_polling::poll_rebase_ops(app) {
             needs_redraw = true;
         }
 
-        // Timer-based housekeeping
-        if now_poll.duration_since(last_session_poll) >= min_poll_interval {
-            last_session_poll = now_poll;
+        // Misc housekeeping: debug dump, STT, file watcher
+        housekeeping::handle_debug_dump(app);
+        if housekeeping::poll_stt(app) {
+            needs_redraw = true;
+        }
+        housekeeping::drain_file_watcher(app);
+
+        let now_poll = Instant::now();
+
+        // Session file, file tree, worktree tabs, health panel refreshes
+        if housekeeping::poll_refreshes(app, now_poll, &mut last_session_poll, min_poll_interval) {
+            needs_redraw = true;
         }
 
-        // Dismiss auto-rebase success dialog after 2 seconds
-        if let Some((_, until)) = &app.auto_rebase_success_until {
-            if now_poll >= *until {
-                app.auto_rebase_success_until = None;
-                needs_redraw = true;
-            }
+        // Dismiss auto-rebase success dialog after timeout
+        if housekeeping::check_auto_rebase_timeout(app, now_poll) {
+            needs_redraw = true;
         }
 
-        // Periodic auto-rebase check (every 2 seconds).
-        // Skip during active Claude streaming — git subprocess calls (git status
-        // --porcelain per worktree) block 5-50ms, and rebasing while Claude is
-        // modifying files would fail with dirty working tree anyway.
+        // Periodic auto-rebase check (every 2 seconds, skip during streaming)
         if app.agent_receivers.is_empty()
             && now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2)
         {
             app.last_auto_rebase_check = now_poll;
             if !app.auto_rebase_enabled.is_empty() {
-                if check_auto_rebase(app, &claude_process) {
+                if auto_rebase::check_auto_rebase(app, &claude_process) {
                     needs_redraw = true;
                 }
             }
@@ -1108,213 +595,6 @@ pub async fn run_app(
     Ok(())
 }
 
-/// Process a single input event from the reader thread channel.
-/// Dispatches key, mouse, and resize events to the appropriate handlers.
-#[allow(clippy::too_many_arguments)]
-fn process_input_event(
-    evt: Event,
-    app: &mut App,
-    claude_process: &AgentProcess,
-    needs_redraw: &mut bool,
-    scroll_delta: &mut i32,
-    scroll_col: &mut u16,
-    scroll_row: &mut u16,
-    had_key_event: &mut bool,
-    cached_width: &mut u16,
-    cached_height: &mut u16,
-) -> Result<()> {
-    match evt {
-        Event::Key(key) => {
-            // Input thread already filters to Press/Repeat only
-            if !matches!(key.code, KeyCode::Modifier(_)) {
-                handle_key_event(key, app, claude_process)?;
-                *had_key_event = true;
-            }
-        }
-        Event::Mouse(mouse) => match mouse.kind {
-            MouseEventKind::ScrollDown => {
-                *scroll_delta += 3;
-                *scroll_col = mouse.column;
-                *scroll_row = mouse.row;
-            }
-            MouseEventKind::ScrollUp => {
-                *scroll_delta -= 3;
-                *scroll_col = mouse.column;
-                *scroll_row = mouse.row;
-            }
-            MouseEventKind::Down(MouseButton::Left) => {
-                app.viewer_selection = None;
-                app.session_selection = None;
-                app.terminal_selection = None;
-                let (mc, mr) = (mouse.column, mouse.row);
-                use ratatui::layout::Position;
-                let mpos = Position::new(mc, mr);
-                if app.pane_viewer.contains(mpos) {
-                    if app.viewer_edit_mode {
-                        if let Some((src_line, src_col)) = screen_to_edit_pos(app, mc, mr) {
-                            app.mouse_drag_start = Some((src_line, src_col, 3));
-                        }
-                    } else if let Some((cl, cc)) = screen_to_cache_pos(
-                        mc,
-                        mr,
-                        app.pane_viewer,
-                        app.viewer_scroll,
-                        app.viewer_lines_cache.len(),
-                    ) {
-                        app.mouse_drag_start = Some((cl, cc, 0));
-                    }
-                } else if app.pane_session.contains(mpos) {
-                    app.clamp_session_scroll();
-                    if let Some((cl, cc)) = screen_to_cache_pos(
-                        mc,
-                        mr,
-                        app.pane_session,
-                        app.session_scroll,
-                        app.rendered_lines_cache.len(),
-                    ) {
-                        app.mouse_drag_start = Some((cl, cc, 1));
-                    }
-                } else if app.input_area.contains(mpos) && app.terminal_mode {
-                    // Terminal pane: anchor in scrollback-adjusted row/col
-                    let tr = mr.saturating_sub(app.input_area.y + 1) as usize
-                        + app.terminal_scroll;
-                    let tc = mc.saturating_sub(app.input_area.x + 1) as usize;
-                    app.mouse_drag_start = Some((tr, tc, 4));
-                } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
-                    let ci = screen_to_input_char(app, mc, mr);
-                    app.mouse_drag_start = Some((ci, 0, 2));
-                } else {
-                    app.mouse_drag_start = None;
-                }
-                if handle_mouse_click(app, mc, mr) {
-                    *needs_redraw = true;
-                }
-            }
-            MouseEventKind::Drag(MouseButton::Left) => {
-                if handle_mouse_drag(app, mouse.column, mouse.row) {
-                    *needs_redraw = true;
-                }
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                app.mouse_drag_start = None;
-            }
-            _ => {}
-        },
-        Event::Resize(w, h) => {
-            *cached_width = w;
-            *cached_height = h;
-            app.screen_height = h;
-            *needs_redraw = true;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Check all auto-rebase-enabled worktrees and rebase the first eligible one.
-/// Returns true if any state changed (needs redraw).
-fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
-    use super::input_git_actions::{exec_rebase_inner, RebaseOutcome};
-    use crate::app::types::GitConflictOverlay;
-
-    // Skip if RCR active or editing a file
-    if app.rcr_session.is_some() {
-        return false;
-    }
-    if app.viewer_edit_mode {
-        return false;
-    }
-
-    let project = match &app.project {
-        Some(p) => p.clone(),
-        None => return false,
-    };
-
-    // Collect eligible worktrees (avoid borrowing app during iteration)
-    let candidates: Vec<(String, std::path::PathBuf)> = app
-        .worktrees
-        .iter()
-        .filter(|wt| {
-            wt.branch_name != project.main_branch
-                && !wt.archived
-                && app.auto_rebase_enabled.contains(&wt.branch_name)
-                && !app.is_session_running(&wt.branch_name)
-                && wt.worktree_path.is_some()
-        })
-        .map(|wt| (wt.branch_name.clone(), wt.worktree_path.clone().unwrap()))
-        .collect();
-
-    // If the git panel is open, note which worktree it's viewing
-    let git_panel_branch = app
-        .git_actions_panel
-        .as_ref()
-        .map(|p| p.worktree_name.clone());
-
-    for (branch, wt_path) in candidates {
-        // Skip the worktree whose git panel is currently open
-        if git_panel_branch.as_ref() == Some(&branch) {
-            continue;
-        }
-
-        let display = crate::models::strip_branch_prefix(&branch).to_string();
-
-        // Skip worktrees with uncommitted changes — git rebase would fail
-        let dirty = std::process::Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(&wt_path)
-            .output()
-            .ok()
-            .map(|o| !o.stdout.is_empty())
-            .unwrap_or(false);
-        if dirty {
-            continue;
-        }
-
-        let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
-        match exec_rebase_inner(&wt_path, &project.main_branch, &ar_files) {
-            RebaseOutcome::UpToDate => continue,
-            RebaseOutcome::Rebased => {
-                // Push the rebased branch to its remote
-                let push_suffix = match crate::git::Git::push(&wt_path) {
-                    Ok(_) => " → pushed",
-                    Err(_) => "",
-                };
-                app.auto_rebase_success_until = Some((
-                    format!("{}{}", display, push_suffix),
-                    Instant::now() + Duration::from_secs(2),
-                ));
-                app.invalidate_sidebar();
-                return true;
-            }
-            RebaseOutcome::Conflict {
-                conflicted,
-                auto_merged,
-                ..
-            } => {
-                // Switch to the conflicted worktree and open Git panel with conflict overlay
-                if let Some(idx) = app.worktrees.iter().position(|w| w.branch_name == branch) {
-                    app.save_live_display_events();
-                    app.selected_worktree = Some(idx);
-                    app.load_session_output();
-                }
-                app.open_git_actions_panel();
-                if let Some(ref mut panel) = app.git_actions_panel {
-                    panel.conflict_overlay = Some(GitConflictOverlay {
-                        conflicted_files: conflicted,
-                        auto_merged_files: auto_merged,
-                        scroll: 0,
-                        selected: 0,
-                        continue_with_merge: false,
-                    });
-                }
-                app.invalidate_sidebar();
-                return true;
-            }
-            RebaseOutcome::Failed(_) => continue,
-        }
-    }
-    false
-}
 
 #[cfg(test)]
 mod tests {

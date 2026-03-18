@@ -688,9 +688,9 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn terminal_mode_skips_global_help_toggle() {
-        // '?' is a GLOBAL binding that gets skipped in terminal_mode.
-        // It's also NOT in the TERMINAL array, so it returns None.
+    fn terminal_command_mode_allows_global_help_toggle() {
+        // Terminal command mode (prompt_mode=false) allows globals.
+        // Only terminal type mode (prompt_mode=true) blocks them.
         let ctx = KeyContext {
             focus: Focus::Input,
             prompt_mode: false,
@@ -699,7 +699,7 @@ mod tests {
             help_open: false,
             stt_recording: false,
         };
-        assert_ne!(
+        assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('?')),
             Some(Action::ToggleHelp)
         );
@@ -1204,21 +1204,10 @@ mod tests {
             help_open: false,
             stt_recording: false,
         };
-        // 'p' is skipped in prompt_mode BUT the guard only skips EnterPromptMode,ToggleTerminal etc.
-        // Actually the guard skips it. Let me re-check: the skip is
-        //   Action::EnterPromptMode if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-        // BUT there's a second guard:
-        //   Action::EnterPromptMode if ctx.prompt_mode && ctx.focus == Focus::Input
-        // The FIRST guard fires first (prompt_mode=true), so 'p' is skipped entirely.
-        // Wait: the first guard uses `|` (OR) — it matches. So 'p' is skipped.
-        // Actually re-reading: the first guard is for EnterPromptMode | ToggleTerminal | ... if ctx.prompt_mode || ctx.edit_mode || ctx.terminal_mode
-        // That evaluates to true, so skip=true and the binding is skipped.
-        // But wait, the second guard: EnterPromptMode if ctx.prompt_mode && ctx.focus == Focus::Input
-        // Both match arms are checked separately. The first match arm matches first, so skip=true.
-        // Hmm, actually in Rust match, only the FIRST matching arm fires. So the first arm matches and skip=true.
-        // Therefore 'p' is always skipped in prompt_mode regardless of focus. That seems wrong based on the comment,
-        // but let's test actual behavior.
-        assert_ne!(
+        // EnterPromptMode has its own skip guard — only blocked when
+        // edit_mode OR (prompt_mode AND focus==Input). Here focus is Session,
+        // so 'p' fires to refocus the prompt box from another pane.
+        assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')),
             Some(Action::EnterPromptMode)
         );
@@ -1875,10 +1864,10 @@ mod tests {
     }
 
     #[test]
-    fn leader_r_returns_none() {
+    fn leader_r_returns_rename_worktree() {
         assert_eq!(
             lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('r')),
-            None
+            Some(Action::RenameWorktree)
         );
     }
 

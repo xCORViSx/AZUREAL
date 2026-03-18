@@ -5,11 +5,11 @@
 //!
 //! Split into submodules for organization:
 //! - `app`: App struct definition and initialization
-//! - `load`: Session loading and discovery
+//! - `load`: Session loading, discovery, and file monitoring (4 submodules)
 //! - `sessions`: Session navigation and CRUD
 //! - `output`: Output processing
 //! - `scroll`: Scroll operations
-//! - `claude`: Claude session handling
+//! - `claude`: Claude session handling (3 submodules: event_handling, process_lifecycle, store_ops)
 //! - `file_browser`: File tree and viewer
 //! - `health`: Worktree Health (god files + documentation coverage)
 //! - `ui`: Focus, dialogs, menus, wizard

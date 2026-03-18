@@ -1023,7 +1023,7 @@ mod tests {
 
     #[test]
     fn worktrees_length() {
-        assert_eq!(WORKTREES.len(), 3);
+        assert_eq!(WORKTREES.len(), 4);
     }
 
     #[test]

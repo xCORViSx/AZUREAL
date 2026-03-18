@@ -1,7 +1,7 @@
 //! Terminal User Interface module
 //!
 //! Split into focused submodules:
-//! - `run`: TUI entry point and main layout
+//! - `run`: TUI entry point and main layout (3 submodules: splash, worktree_tabs, overlays)
 //! - `event_loop`: Core event loop and event handling
 //! - `input_*`: Input handlers for different UI modes
 //! - `draw_*`: Rendering functions for different UI components
