@@ -652,6 +652,20 @@ pub async fn run_app(
                         }
                         app.set_status(completion.status_msg);
                     }
+                    BackgroundOpOutcome::Renamed { new_branch } => {
+                        let _ = app.refresh_worktrees();
+                        // Re-select the renamed branch
+                        if let Some(idx) = app
+                            .worktrees
+                            .iter()
+                            .position(|w| w.branch_name == new_branch)
+                        {
+                            app.selected_worktree = Some(idx);
+                        }
+                        app.load_session_output();
+                        let display = crate::models::strip_branch_prefix(&new_branch);
+                        app.set_status(format!("Renamed → {}", display));
+                    }
                     BackgroundOpOutcome::Failed(msg) => {
                         app.set_status(msg);
                     }

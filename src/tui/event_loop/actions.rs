@@ -395,6 +395,74 @@ pub fn handle_key_event(
         return Ok(());
     }
 
+    // Rename worktree dialog — text input, Enter confirms, Esc cancels
+    if app.rename_worktree_dialog.is_some() {
+        match key.code {
+            KeyCode::Esc => {
+                app.rename_worktree_dialog = None;
+                app.set_status("Rename cancelled");
+            }
+            KeyCode::Enter => {
+                let dialog = app.rename_worktree_dialog.take().unwrap();
+                let new_suffix = dialog.input.trim().to_string();
+                if new_suffix.is_empty() {
+                    app.set_status("Name cannot be empty");
+                } else if new_suffix == dialog.old_name {
+                    app.set_status("Name unchanged");
+                } else {
+                    let new_branch =
+                        format!("{}/{}", crate::models::BRANCH_PREFIX, new_suffix);
+                    if let Err(e) = app.rename_current_worktree(&new_branch) {
+                        app.set_status(format!("Rename failed: {}", e));
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(ref mut d) = app.rename_worktree_dialog {
+                    if d.cursor > 0 {
+                        let byte = d.input[..d.cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        d.input.remove(byte);
+                        d.cursor = byte;
+                    }
+                }
+            }
+            KeyCode::Left => {
+                if let Some(ref mut d) = app.rename_worktree_dialog {
+                    if d.cursor > 0 {
+                        d.cursor = d.input[..d.cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                    }
+                }
+            }
+            KeyCode::Right => {
+                if let Some(ref mut d) = app.rename_worktree_dialog {
+                    if d.cursor < d.input.len() {
+                        d.cursor = d.input[d.cursor..]
+                            .char_indices()
+                            .nth(1)
+                            .map(|(i, _)| d.cursor + i)
+                            .unwrap_or(d.input.len());
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(ref mut d) = app.rename_worktree_dialog {
+                    d.input.insert(d.cursor, c);
+                    d.cursor += c.len_utf8();
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     // Help overlay: only ? and Esc close it, everything else ignored
     if app.show_help {
         match key.code {

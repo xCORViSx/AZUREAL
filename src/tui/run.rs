@@ -285,6 +285,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if let Some(ref dialog) = app.delete_worktree_dialog {
         draw_dialogs::draw_delete_worktree_dialog(f, dialog, f.area());
     }
+    if let Some(ref dialog) = app.rename_worktree_dialog {
+        draw_dialogs::draw_rename_worktree_dialog(f, dialog, f.area());
+    }
     if let Some(ref dialog) = app.branch_dialog {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());
     }

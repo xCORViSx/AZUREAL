@@ -634,6 +634,18 @@ pub struct TablePopup {
     pub total_lines: usize,
 }
 
+/// Rename worktree dialog — text input for new branch suffix.
+/// The full branch name is `{prefix}/{input}`.
+#[derive(Debug, Clone)]
+pub struct RenameWorktreeDialog {
+    /// Display name shown in title (strip_branch_prefix result)
+    pub old_name: String,
+    /// User-typed new name (suffix only, no prefix)
+    pub input: String,
+    /// Cursor byte offset within `input`
+    pub cursor: usize,
+}
+
 /// Delete worktree confirmation dialog (⌘d). Two variants:
 /// - Sole: only worktree on this branch — confirm delete worktree + branch
 /// - Siblings: other worktrees exist on same branch — choose delete-all or archive-only
@@ -783,6 +795,8 @@ pub enum BackgroundOpOutcome {
         display_name: String,
         prev_idx: usize,
     },
+    /// Worktree renamed — refresh and re-select the branch
+    Renamed { new_branch: String },
     /// Git panel operation result (pull, push) — set result_message + refresh
     GitResult { message: String, is_error: bool },
     /// RCR accept/abort finished — restore the normal session pane

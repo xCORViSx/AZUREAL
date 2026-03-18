@@ -248,11 +248,16 @@ pub static GLOBAL: [Keybinding; 18] = [
 /// Worktree leader-key bindings (`W <key>`).
 /// These fire only after the `Shift+W` leader prefix.
 /// The action keys below are the THIRD keystroke in the sequence.
-pub static WORKTREES: [Keybinding; 3] = [
+pub static WORKTREES: [Keybinding; 4] = [
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('a')),
         "Add worktree",
         Action::AddWorktree,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('r')),
+        "Rename worktree",
+        Action::RenameWorktree,
     ),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('x')),

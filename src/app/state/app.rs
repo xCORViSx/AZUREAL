@@ -74,6 +74,8 @@ pub struct App {
     pub input_selection: Option<(usize, usize)>,
     /// Delete worktree confirmation dialog (⌘d)
     pub delete_worktree_dialog: Option<crate::app::types::DeleteWorktreeDialog>,
+    /// Rename worktree dialog (W r)
+    pub rename_worktree_dialog: Option<crate::app::types::RenameWorktreeDialog>,
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub prompt_mode: bool,
@@ -609,6 +611,7 @@ impl App {
             input_cursor: 0,
             input_selection: None,
             delete_worktree_dialog: None,
+            rename_worktree_dialog: None,
             view_mode: ViewMode::Session,
             focus: Focus::FileTree,
             prompt_mode: false,

@@ -91,6 +91,37 @@ impl Git {
         Ok((all, checked_out))
     }
 
+    /// Rename a branch (local + remote tracking)
+    pub fn rename_branch(repo_path: &Path, old_name: &str, new_name: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(["branch", "-m", old_name, new_name])
+            .current_dir(repo_path)
+            .output()
+            .context("Failed to execute git branch -m")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("Failed to rename branch {} → {}: {}", old_name, new_name, stderr);
+        }
+
+        // Update remote tracking (best-effort): push new name, delete old
+        let _ = Command::new("git")
+            .args(["push", "origin", &format!("{}:refs/heads/{}", new_name, new_name)])
+            .current_dir(repo_path)
+            .output();
+        let _ = Command::new("git")
+            .args(["push", "origin", "--delete", old_name])
+            .current_dir(repo_path)
+            .output();
+        // Set upstream for new name
+        let _ = Command::new("git")
+            .args(["branch", &format!("--set-upstream-to=origin/{}", new_name), new_name])
+            .current_dir(repo_path)
+            .output();
+
+        Ok(())
+    }
+
     /// Delete a branch (local + remote + tracking ref)
     pub fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
         // Delete local branch (try soft first, then force)

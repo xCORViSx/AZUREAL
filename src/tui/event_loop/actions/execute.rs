@@ -254,6 +254,23 @@ pub(super) fn execute_action(
                 app.set_status(format!("Failed: {}", e));
             }
         }
+        Action::RenameWorktree => {
+            if let Some(wt) = app.current_worktree().cloned() {
+                if let Some(project) = &app.project {
+                    if wt.branch_name == project.main_branch {
+                        app.set_status("Cannot rename main branch");
+                    } else {
+                        let old_name = wt.name().to_string();
+                        app.rename_worktree_dialog =
+                            Some(crate::app::types::RenameWorktreeDialog {
+                                old_name: old_name.clone(),
+                                input: old_name.clone(),
+                                cursor: old_name.len(),
+                            });
+                    }
+                }
+            }
+        }
         Action::DeleteWorktree => {
             if let Some(wt) = app.current_worktree().cloned() {
                 if let Some(project) = &app.project {

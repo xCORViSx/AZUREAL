@@ -226,6 +226,7 @@ pub enum Action {
 
     // Worktrees
     AddWorktree,
+    RenameWorktree,
     RunCommand,
     AddRunCommand,
     ToggleArchiveWorktree,

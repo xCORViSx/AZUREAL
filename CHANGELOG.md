@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Worktree rename** (`Wr`) — Rename the current worktree's branch via a text input dialog. Pre-fills with the current name (suffix only), supports cursor movement and editing. Performs `git branch -m`, updates remote tracking, and migrates all branch-keyed app state. Modified: `types.rs` (Action + RenameWorktreeDialog), `bindings.rs` (WORKTREES array 3→4), `execute.rs` (action handler), `actions.rs` (dialog input), `sessions.rs` (rename_current_worktree + state migration), `branch.rs` (Git::rename_branch), `draw_dialogs.rs` (draw_rename_worktree_dialog), `run.rs` (overlay render), `event_loop.rs` (Renamed outcome), `app.rs` (rename_worktree_dialog field).
+
 ### Changed
 - **Worktree leader key requires Shift+W** — The worktree leader sequence changed from plain `w` to `Shift+W` (`W`) for extra safety against accidental worktree mutations. Status bar shows `[W …]` while waiting. Welcome modal, help panel section title, and all documentation updated. Modified: `actions.rs`, `draw_dialogs.rs`, `hints.rs`, `types.rs`, `lookup.rs`, `bindings.rs`.
 - **Prompt submission returns to command mode** — Pressing Enter to submit a prompt now exits prompt mode (yellow border → red border) automatically. Previously the input stayed in prompt mode after submission, requiring a manual Esc to return to command mode. Modified: `input_terminal.rs`.

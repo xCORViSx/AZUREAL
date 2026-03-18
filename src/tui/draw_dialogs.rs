@@ -996,6 +996,97 @@ pub fn draw_delete_worktree_dialog(
     f.render_widget(para, rect);
 }
 
+/// Draw the rename worktree dialog (text input with cursor)
+pub fn draw_rename_worktree_dialog(
+    f: &mut Frame,
+    dialog: &crate::app::types::RenameWorktreeDialog,
+    area: Rect,
+) {
+    let title = format!(" Rename '{}' ", dialog.old_name);
+    let prefix = format!("{}/", crate::models::BRANCH_PREFIX);
+
+    // Build the input line with cursor highlight
+    let before_cursor = &dialog.input[..dialog.cursor];
+    let cursor_char = dialog.input[dialog.cursor..].chars().next();
+    let after_cursor_start = dialog.cursor + cursor_char.map(|c| c.len_utf8()).unwrap_or(0);
+    let after_cursor = &dialog.input[after_cursor_start..];
+
+    let mut input_spans = vec![
+        Span::styled(
+            format!("  {}", prefix),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(before_cursor, Style::default().fg(Color::White)),
+    ];
+    // Cursor block
+    input_spans.push(Span::styled(
+        cursor_char.map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::White),
+    ));
+    if !after_cursor.is_empty() {
+        input_spans.push(Span::styled(after_cursor, Style::default().fg(Color::White)));
+    }
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "New branch name:",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(input_spans),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  Enter",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  Confirm", Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  Esc",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  Cancel", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let w = 50u16.min(area.width.saturating_sub(4));
+    let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let x = (area.width.saturating_sub(w)) / 2;
+    let y = (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(Span::styled(
+            &title,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let para = Paragraph::new(lines)
+        .block(block)
+        .alignment(Alignment::Left);
+    f.render_widget(para, rect);
+}
+
 /// Draw full-width table popup overlay (click a table in session pane to open)
 pub fn draw_table_popup(f: &mut Frame, popup: &crate::app::types::TablePopup, area: Rect) {
     if popup.lines.is_empty() {

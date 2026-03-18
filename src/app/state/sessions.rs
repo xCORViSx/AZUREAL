@@ -354,6 +354,85 @@ impl App {
         Ok(())
     }
 
+    /// Rename the current worktree's branch and migrate all keyed state.
+    /// `new_branch` is the full branch name (with prefix).
+    pub fn rename_current_worktree(&mut self, new_branch: &str) -> anyhow::Result<()> {
+        use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
+        use std::sync::mpsc;
+
+        let wt = self
+            .current_worktree()
+            .ok_or_else(|| anyhow::anyhow!("No worktree selected"))?;
+        let project = self
+            .project
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No project loaded"))?;
+        let old_branch = wt.branch_name.clone();
+        if old_branch == project.main_branch {
+            anyhow::bail!("Cannot rename main branch");
+        }
+
+        let project_path = project.path.clone();
+        let new_branch_owned = new_branch.to_string();
+        let old_branch_clone = old_branch.clone();
+
+        // Migrate branch-keyed state immediately (fast, main thread)
+        fn migrate<V>(map: &mut std::collections::HashMap<String, V>, old: &str, new: &str) {
+            if let Some(v) = map.remove(old) {
+                map.insert(new.to_string(), v);
+            }
+        }
+        migrate(&mut self.session_files, &old_branch, new_branch);
+        migrate(
+            &mut self.session_selected_file_idx,
+            &old_branch,
+            new_branch,
+        );
+        migrate(
+            &mut self.live_display_events_cache,
+            &old_branch,
+            new_branch,
+        );
+        migrate(&mut self.branch_slots, &old_branch, new_branch);
+        migrate(&mut self.active_slot, &old_branch, new_branch);
+        if self.unread_sessions.remove(&old_branch) {
+            self.unread_sessions.insert(new_branch.to_string());
+        }
+        if self.auto_rebase_enabled.remove(&old_branch) {
+            self.auto_rebase_enabled.insert(new_branch.to_string());
+            crate::azufig::set_auto_rebase(&project_path, &old_branch, false);
+            crate::azufig::set_auto_rebase(&project_path, new_branch, true);
+        }
+
+        // Update the worktree entry in-place
+        if let Some(idx) = self.selected_worktree {
+            if let Some(wt) = self.worktrees.get_mut(idx) {
+                wt.branch_name = new_branch.to_string();
+            }
+        }
+
+        // Background git rename (I/O heavy)
+        let (tx, rx) = mpsc::channel();
+        self.loading_indicator = Some("Renaming branch...".into());
+        self.background_op_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result =
+                crate::git::Git::rename_branch(&project_path, &old_branch_clone, &new_branch_owned);
+            let outcome = match result {
+                Ok(()) => BackgroundOpOutcome::Renamed {
+                    new_branch: new_branch_owned,
+                },
+                Err(e) => BackgroundOpOutcome::Failed(format!("Rename failed: {}", e)),
+            };
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(outcome),
+            });
+        });
+        Ok(())
+    }
+
     /// Select a specific session file by index
     pub fn select_session_file(&mut self, branch_name: &str, idx: usize) {
         if let Some(files) = self.session_files.get(branch_name) {

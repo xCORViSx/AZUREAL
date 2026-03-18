@@ -144,6 +144,7 @@ azureal
 | Key | Action |
 |-----|--------|
 | `Wa` | New worktree |
+| `Wr` | Rename worktree |
 | `Wx` | Archive worktree |
 | `Wd` | Delete worktree |
 
