@@ -624,6 +624,24 @@ Before merging ANY change to render/event code:
 
 ---
 
+## CROSSTERM GOTCHAS
+
+### BackTab arrives with SHIFT modifier on some terminals
+
+Crossterm delivers Shift+Tab as `(KeyModifiers::SHIFT, KeyCode::BackTab)` on many terminals, but `KeyCode::BackTab` already *implies* Shift. If you define a binding as `KeyCombo::plain(KeyCode::BackTab)` (modifiers = NONE), it won't match when the terminal sends the SHIFT modifier alongside it.
+
+```rust
+// ❌ WRONG — only matches BackTab with zero modifiers
+KeyCombo::plain(KeyCode::BackTab)  // won't fire on terminals that send SHIFT+BackTab
+
+// ✅ CORRECT — KeyCombo::matches() strips SHIFT from BackTab before comparing
+// (Fixed in types.rs — no binding changes needed, the match function handles it)
+```
+
+**Affected:** Any `BackTab` keybinding. Fixed in `KeyCombo::matches()` (`types.rs`).
+
+---
+
 ## RATATUI GOTCHAS
 
 ### Paragraph doesn't clear unused cells
@@ -1713,7 +1731,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running agents simultaneously
 5. **Error Recovery**: Verify graceful handling of agent exits and git errors
 
-## Test Coverage (6370+ tests)
+## Test Coverage (6575+ tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|
@@ -1749,7 +1767,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/input_terminal | `src/tui/input_terminal.rs` | 55 | `build_ask_user_context` (55 -- single/multi-select/multiple-questions/empty/missing-label, edge cases: null/bool/number/string/array root values, questions field wrong types, empty arrays, zero/null/missing options, multi-select variations, Q-prefixed numbering, option label wrong types/unicode/emoji/empty/very-long, question text null/number/unicode/newlines/whitespace, output structure bookends, independent numbering per question, footer text, mixed option types, deeply nested JSON) |
 | tui/render_events | `src/tui/render_events.rs` | 77 | `render_ask_user_question` (18 -- multiple questions/no-empty-null-missing descriptions/labels, 5-option Other numbering, wide/narrow/zero width, unicode labels, long description wrapping), `render_init` (4 -- basic/empty-model/empty-cwd/line-count/unicode), `render_hook` (6 -- with-output/empty/whitespace/multiline/narrow/special-name), `render_command` (3 -- basic/line-count/empty), `render_user_message` (6 -- basic/bottom-border/empty/wraps/unicode/newlines/min-bubble), `render_complete` (5 -- success/failure/zero-duration/large-duration/zero-cost), `render_plan_approval` (5 -- all-options/header/borders/narrow/zero-width), `render_plan` (8 -- borders/name/empty/markdown-headers/bullets/numbered-list/code-block/blockquote/narrow), `render_display_events` integration (22 -- empty/init/dedup-init/user-message/assistant/hook/dedup-hooks/command/compacting/compacted/may-be-compacting/complete/filtered/pending/todowrite-skipped/tool-pending-animation/plan/compaction-summary/mixed-sequence/init-after-content-suppressed) |
 | tui/file_icons | `src/tui/file_icons.rs` | 127 | Nerd font icons (80+ extensions, named files, directories), emoji fallbacks, dir collapsed/expanded, case insensitivity, unicode filenames |
-| tui/keybindings | `src/tui/keybindings/` | 575 | `platform::macos_opt_key` (60+ Unicode-to-key mappings), `types::KeyCombo` (equality, modifiers, display), `types::Keybinding` (matching, alternatives), `types::Action` (clone, eq, debug), `types::HelpSection` fields, `lookup` (136 -- lookup_action global/context-specific/skip-guards for prompt/edit/help/terminal modes, lookup_health_action shared+god-files+docs tabs, lookup_git_actions_action focus/branch guards, lookup_projects_action, lookup_picker_action, lookup_branch_dialog_action, unknown keys return None), `hints` (116 -- help_sections count/titles/bindings, find_key_for_action known/unknown/empty, find_key_pair found/fallback, prompt_type_title label/hints content, prompt_command_title label/hints, terminal_type/command/scroll titles, health_god_files/docs hints, git_actions_labels main/feature counts/content, git_actions_footer, projects_browse_hint_pairs with/without project, picker_title, dialog_footer_hint_pairs), `bindings` (161 -- array lengths/nonempty, no duplicate primaries across 15 arrays, descriptions nonempty, specific binding verification for GLOBAL/FILE_TREE/VIEWER/EDIT_MODE/SESSION/INPUT/TERMINAL/GIT_ACTIONS/HEALTH/PROJECTS/PICKER/BRANCH_DIALOG, static alt array values, CMD_SHIFT constant, display_keys integration, matching integration) |
+| tui/keybindings | `src/tui/keybindings/` | 596 | `platform::macos_opt_key` (60+ Unicode-to-key mappings), `types::KeyCombo` (equality, modifiers, display), `types::Keybinding` (matching, alternatives), `types::Action` (clone, eq, debug), `types::HelpSection` fields, `lookup` (136 -- lookup_action global/context-specific/skip-guards for prompt/edit/help/terminal modes, lookup_health_action shared+god-files+docs tabs, lookup_git_actions_action focus/branch guards, lookup_projects_action, lookup_picker_action, lookup_branch_dialog_action, unknown keys return None), `hints` (116 -- help_sections count/titles/bindings, find_key_for_action known/unknown/empty, find_key_pair found/fallback, prompt_type_title label/hints content, prompt_command_title label/hints, terminal_type/command/scroll titles, health_god_files/docs hints, git_actions_labels main/feature counts/content, git_actions_footer, projects_browse_hint_pairs with/without project, picker_title, dialog_footer_hint_pairs), `bindings` (161 -- array lengths/nonempty, no duplicate primaries across 15 arrays, descriptions nonempty, specific binding verification for GLOBAL/FILE_TREE/VIEWER/EDIT_MODE/SESSION/INPUT/TERMINAL/GIT_ACTIONS/HEALTH/PROJECTS/PICKER/BRANCH_DIALOG, static alt array values, CMD_SHIFT constant, display_keys integration, matching integration) |
 | tui/markdown | `src/tui/markdown.rs` | 68 | `parse_markdown_spans` (40+ -- plain, bold, italic, code, mixed, edge cases, unicode, long text, base style propagation), `is_table_separator` (12+ -- valid/invalid separators, alignment markers, edge cases) |
 | tui/render_wrap | `src/tui/render_wrap.rs` | 51 | `wrap_text` (25+ -- empty, fits, wraps, newlines, width 1-3, unicode, long words), `wrap_spans` (25+ -- empty, style preservation, narrow widths, each-char-own-span, multi-span wrapping) |
 | tui/colorize | `src/tui/colorize.rs` | 68 | `strip_ansi` (11 -- plain, ANSI codes, 256-color, RGB, unicode, consecutive), `detect_message_type` (17 -- user/assistant/other markers, ANSI wrapping, partial matches), `colorize_output` (40 -- user/assistant/tool/done/error/code/JSON/bullets/headers/paths/default) |

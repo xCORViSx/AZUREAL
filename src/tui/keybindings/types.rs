@@ -69,6 +69,11 @@ impl KeyCombo {
             && modifiers == KeyModifiers::SHIFT
             && self.code == code
         {
+            // BackTab inherently implies Shift+Tab — some terminals deliver
+            // (SHIFT, BackTab), others (NONE, BackTab). Accept both.
+            if code == KeyCode::BackTab {
+                return true;
+            }
             if let KeyCode::Char(c) = code {
                 // Only for non-alpha chars — Shift+letter has separate handling below
                 if !c.is_ascii_alphabetic() {
@@ -596,6 +601,19 @@ mod tests {
     fn matches_tab_plain() {
         let kc = KeyCombo::plain(KeyCode::Tab);
         assert!(kc.matches(KeyModifiers::NONE, KeyCode::Tab));
+    }
+
+    #[test]
+    fn matches_backtab_plain_with_none() {
+        let kc = KeyCombo::plain(KeyCode::BackTab);
+        assert!(kc.matches(KeyModifiers::NONE, KeyCode::BackTab));
+    }
+
+    #[test]
+    fn matches_backtab_plain_with_shift() {
+        // Some terminals deliver Shift+Tab as (SHIFT, BackTab)
+        let kc = KeyCombo::plain(KeyCode::BackTab);
+        assert!(kc.matches(KeyModifiers::SHIFT, KeyCode::BackTab));
     }
 
     #[test]
