@@ -1115,6 +1115,7 @@ fn process_input_event(
             MouseEventKind::Down(MouseButton::Left) => {
                 app.viewer_selection = None;
                 app.session_selection = None;
+                app.terminal_selection = None;
                 let (mc, mr) = (mouse.column, mouse.row);
                 use ratatui::layout::Position;
                 let mpos = Position::new(mc, mr);
@@ -1143,6 +1144,12 @@ fn process_input_event(
                     ) {
                         app.mouse_drag_start = Some((cl, cc, 1));
                     }
+                } else if app.input_area.contains(mpos) && app.terminal_mode {
+                    // Terminal pane: anchor in scrollback-adjusted row/col
+                    let tr = mr.saturating_sub(app.input_area.y + 1) as usize
+                        + app.terminal_scroll;
+                    let tc = mc.saturating_sub(app.input_area.x + 1) as usize;
+                    app.mouse_drag_start = Some((tr, tc, 4));
                 } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
                     let ci = screen_to_input_char(app, mc, mr);
                     app.mouse_drag_start = Some((ci, 0, 2));

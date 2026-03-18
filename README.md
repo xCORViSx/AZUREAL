@@ -23,7 +23,7 @@
 - **Viewer Tabs** — Tab up to 12 files for quick switching between references
 - **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews; markdown files render with styled headers, tables, code blocks, and lists
 - **Image Viewer** — View PNG, JPG, GIF, and other image formats inline in the terminal
-- **Embedded Terminal** — Full shell per worktree with color support, click-to-position cursor, and Alt/Option+Arrow word navigation
+- **Embedded Terminal** — Full shell per worktree with color support, click-to-position cursor, Alt/Option+Arrow word navigation, mouse drag selection with auto-scroll, and mouse wheel scrolling
 - **Projects Panel** — Switch between projects in parallel; Claude processes continue running in background with activity status icons per project
 
 ### Session

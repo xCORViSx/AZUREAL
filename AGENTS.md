@@ -764,17 +764,23 @@ A PTY-based embedded terminal that acts as a portal to the user's actual shell:
 Key mappings:
 - `T` (Shift+T, global command mode): Toggle terminal; `t` (terminal command mode): Enter type mode
 - `Esc` (terminal command mode): Close terminal
-- `p` (terminal command mode): Close terminal and enter Claude prompt
+- `p` (terminal command mode or any mode with prompt tabbed away): Close terminal / refocus prompt
+- All globals (e.g. `G`, `H`, `M`, `P`, `T`, `]`/`[`, `r`) work in terminal command mode
 - `+/-` (terminal command mode): Increase/decrease terminal height
 - `Esc` (terminal type mode): Exit type mode
 - `⌥←`/`⌥→` or `⌃←`/`⌃→` (terminal type mode): Word navigation (sends `\x1bb`/`\x1bf` readline sequences)
 - Click (terminal pane): Enter type mode and reposition cursor horizontally on the current prompt line
-- All other keystrokes in terminal type mode forward directly to PTY
+- Mouse drag (terminal pane): Select text with auto-scroll at edges; selection stored as `terminal_selection` in scrollback-adjusted absolute coordinates
+- Mouse wheel (terminal pane): Scroll terminal history (clears selection)
+- `⌘C`/`⌃C` with active `terminal_selection`: Copy selected terminal text to clipboard
+- All other keystrokes in terminal type mode forward directly to PTY (clears selection)
 
 Implementation:
 - `terminal_pty`, `terminal_writer`, `terminal_rx`, `terminal_parser` in `App` struct
+- `terminal_selection: Option<(usize, usize, usize, usize)>` — `(start_row, start_col, end_row, end_col)` in absolute scrollback coordinates
 - `open_terminal()`, `close_terminal()`, `write_to_terminal()`, `poll_terminal()` in `src/app/terminal.rs`
-- `draw_terminal()` in `src/tui/draw_terminal.rs` syncs vt100 parser dimensions with viewport
+- `draw_terminal()` in `src/tui/draw_terminal.rs` syncs vt100 parser dimensions with viewport, applies selection highlight via `apply_selection_to_line()`
+- `copy_terminal_selection()` in `src/tui/event_loop/mouse.rs` — temporarily adjusts vt100 scrollback to extract text with `contents_between()`
 
 ### Centralized Keybindings
 
@@ -783,7 +789,7 @@ Implementation:
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~110 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
 - **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (18 entries — core globals: `⌃q`, `⌃d`, cancel, copy, `⌃m`, `?`, `p`, `T`, `G` OpenGitActions, `H` OpenHealth, `M` BrowseMain, `P` OpenProjects, `]`/`[` worktree tabs, `r` RunCommand, `R` AddRunCommand, `Tab`/`⇧Tab`), `WORKTREES` (4 entries — leader sequence `W <key>` targets: `a` AddWorktree, `r` RenameWorktree, `x` ToggleArchive, `d` DeleteWorktree), `FILE_TREE` (17 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (25 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
-- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, or filter — terminal mode only blocks globals when `focus == Focus::Input`, allowing other panes to use globals like `p` while terminal is open; no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode; `Focus::Worktrees` maps to `&WORKTREES` so `a`/`x`/`d` resolve directly when the worktrees panel is focused — leader sequence still works from any focus), `lookup_leader_action(mods, code)` resolves second key of `W` leader sequence against the WORKTREES binding array, plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
+- **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, or filter — terminal type mode (`prompt_mode=true`) blocks single-letter globals; terminal command mode allows all globals; `EnterPromptMode` (`p`) has its own narrower skip — only blocked in edit mode or when prompt is already focused (so `p` refocuses when tabbed away); no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode; `Focus::Worktrees` maps to `&WORKTREES` so `a`/`x`/`d` resolve directly when the worktrees panel is focused — leader sequence still works from any focus), `lookup_leader_action(mods, code)` resolves second key of `W` leader sequence against the WORKTREES binding array, plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
 

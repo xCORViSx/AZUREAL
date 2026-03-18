@@ -60,9 +60,32 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Get screen contents with ANSI formatting and convert to styled text
     let content = app.terminal_screen_contents();
-    let text: Text = content
+    let mut text: Text = content
         .into_text()
         .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&content).to_string()));
+
+    // Apply selection highlighting if active
+    if let Some((sl, sc, el, ec)) = app.terminal_selection {
+        let scroll = app.terminal_scroll;
+        for (vis_idx, line) in text.lines.iter_mut().enumerate() {
+            let abs_row = vis_idx + scroll;
+            if abs_row < sl || abs_row > el {
+                continue;
+            }
+            let line_content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let new_spans = super::draw_viewer::apply_selection_to_line(
+                std::mem::take(&mut line.spans),
+                &line_content,
+                abs_row,
+                sl,
+                sc,
+                el,
+                ec,
+                0, // no gutter
+            );
+            line.spans = new_spans;
+        }
+    }
 
     let mut block = Block::default()
         .borders(Borders::ALL)

@@ -403,6 +403,9 @@ pub struct App {
     pub viewer_selection: Option<(usize, usize, usize, usize)>,
     /// Text selection for session pane: (start_visual_line, start_col, end_visual_line, end_col)
     pub session_selection: Option<(usize, usize, usize, usize)>,
+    /// Text selection for terminal pane: (start_row, start_col, end_row, end_col)
+    /// Rows are relative to the visible screen (0 = top of terminal viewport).
+    pub terminal_selection: Option<(usize, usize, usize, usize)>,
     /// Whether the git status box text is selected (for copy via Cmd+C)
     pub git_status_selected: bool,
     /// Cached output selection for viewport cache invalidation (rebuild viewport when selection changes)
@@ -763,6 +766,7 @@ impl App {
             clipboard: String::new(),
             viewer_selection: None,
             session_selection: None,
+            terminal_selection: None,
             git_status_selected: false,
             session_selection_cached: None,
             mouse_drag_start: None,

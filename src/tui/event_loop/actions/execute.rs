@@ -6,7 +6,9 @@
 
 use anyhow::Result;
 
-use super::super::mouse::{copy_session_selection, copy_viewer_selection};
+use super::super::mouse::{
+    copy_session_selection, copy_terminal_selection, copy_viewer_selection,
+};
 use super::escape::dispatch_escape;
 use super::navigation::{
     dispatch_go_to_bottom, dispatch_go_to_top, dispatch_nav_down, dispatch_nav_left,
@@ -47,6 +49,8 @@ pub(super) fn execute_action(
                 copy_viewer_selection(app);
             } else if app.session_selection.is_some() {
                 copy_session_selection(app);
+            } else if app.terminal_selection.is_some() {
+                copy_terminal_selection(app);
             } else if let Some(ref p) = app.git_actions_panel {
                 // Git mode fallback: copy status box result message
                 if let Some((ref msg, _)) = p.result_message {

@@ -16,6 +16,8 @@ pub fn handle_input_mode(
     // PTY Terminal mode - forward keys directly to shell
     if app.terminal_mode {
         if app.prompt_mode {
+            // Any keystroke in type mode clears terminal selection
+            app.terminal_selection = None;
             // Type mode: send keystrokes to PTY
             match (key.modifiers, key.code) {
                 (_, KeyCode::Esc) => {

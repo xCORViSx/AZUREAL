@@ -115,6 +115,7 @@ pub fn apply_scroll_cached(
             app.scroll_viewer_up((-delta) as usize)
         }
     } else if app.terminal_mode && app.input_area.contains(pos) {
+        app.terminal_selection = None;
         if delta > 0 {
             app.scroll_terminal_down(delta as usize);
         } else {
@@ -565,6 +566,38 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
             }
             false
         }
+        // --- Terminal pane: anchor = (scrollback_row, col) ---
+        4 => {
+            // Auto-scroll when dragging above/below terminal pane
+            if row < app.input_area.y + 1 {
+                app.scroll_terminal_up(1);
+            } else if row >= app.input_area.y + app.input_area.height.saturating_sub(1) {
+                app.scroll_terminal_down(1);
+            }
+            // Compute current drag position in scrollback-adjusted coordinates
+            let er = row
+                .max(app.input_area.y + 1)
+                .min(app.input_area.y + app.input_area.height.saturating_sub(2));
+            let ec = col
+                .max(app.input_area.x + 1)
+                .min(app.input_area.x + app.input_area.width.saturating_sub(2));
+            let drag_row = (er - app.input_area.y - 1) as usize + app.terminal_scroll;
+            let drag_col = (ec - app.input_area.x - 1) as usize;
+            // Normalize so start <= end
+            let sel = if anchor_line < drag_row
+                || (anchor_line == drag_row && anchor_col <= drag_col)
+            {
+                (anchor_line, anchor_col, drag_row, drag_col)
+            } else {
+                (drag_row, drag_col, anchor_line, anchor_col)
+            };
+            let new = Some(sel);
+            if app.terminal_selection != new {
+                app.terminal_selection = new;
+                return true;
+            }
+            false
+        }
         _ => false,
     }
 }
@@ -690,6 +723,51 @@ fn extract_session_text(
         parts.remove(0);
     }
     parts.join("\n")
+}
+
+/// Copy text selected in the terminal pane to clipboard.
+/// Temporarily adjusts scrollback to read text from the vt100 screen buffer.
+pub fn copy_terminal_selection(app: &mut App) {
+    let Some((sl, sc, el, ec)) = app.terminal_selection else {
+        return;
+    };
+    let (rows, _) = app.terminal_parser.screen().size();
+    // Selection rows are absolute (visible_row + scrollback_at_click_time).
+    // contents_between works on visible rows, so we need to set scrollback
+    // such that the selection start is the top of the visible area.
+    let saved_scroll = app.terminal_scroll;
+    // Set scrollback so row `sl` is visible row 0
+    app.terminal_parser.screen_mut().set_scrollback(sl);
+    let actual_scroll = app.terminal_parser.screen().scrollback();
+    // Map absolute rows to visible rows relative to actual_scroll
+    let vis_sl = sl.saturating_sub(actual_scroll) as u16;
+    let vis_el = el.saturating_sub(actual_scroll) as u16;
+    let text = if vis_sl == vis_el {
+        // Single row
+        app.terminal_parser
+            .screen()
+            .contents_between(vis_sl, sc as u16, vis_el, ec as u16)
+    } else {
+        app.terminal_parser.screen().contents_between(
+            vis_sl,
+            sc as u16,
+            vis_el.min(rows.saturating_sub(1)),
+            ec as u16,
+        )
+    };
+    // Restore original scrollback
+    app.terminal_parser
+        .screen_mut()
+        .set_scrollback(saved_scroll);
+    app.terminal_scroll = saved_scroll;
+    if text.is_empty() {
+        return;
+    }
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text(&text);
+    }
+    app.clipboard = text;
+    app.set_status("Copied to clipboard");
 }
 
 #[cfg(test)]

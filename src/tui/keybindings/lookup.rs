@@ -44,10 +44,10 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
     // it would conflict with text input or modal overlays.
     for binding in &GLOBAL {
         let skip = match binding.action {
-            // Single-letter globals must not fire during text input, edit mode,
-            // sidebar filter, or wizard — they'd steal keystrokes
-            Action::EnterPromptMode
-            | Action::ToggleTerminal
+            // Single-letter globals must not fire during text input or edit mode —
+            // they'd steal keystrokes. prompt_mode covers both Claude prompt typing
+            // AND terminal type mode (both set prompt_mode=true).
+            Action::ToggleTerminal
             | Action::ToggleHelp
             | Action::OpenGitActions
             | Action::OpenHealth
@@ -57,9 +57,16 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::WorktreeTabPrev
             | Action::RunCommand
             | Action::AddRunCommand
-                if ctx.prompt_mode
-                    || ctx.edit_mode
-                    || (ctx.terminal_mode && ctx.focus == Focus::Input) =>
+                if ctx.prompt_mode || ctx.edit_mode =>
+            {
+                true
+            }
+            // 'p' must not fire when editing text or when prompt is already focused
+            // (would eat the 'p' keystroke). It SHOULD fire when prompt_mode=true
+            // but focus is elsewhere — this lets the user refocus the prompt box
+            // after tabbing away.
+            Action::EnterPromptMode
+                if ctx.edit_mode || (ctx.prompt_mode && ctx.focus == Focus::Input) =>
             {
                 true
             }
@@ -71,9 +78,6 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             {
                 true
             }
-            // 'p' also fires when already in prompt mode to re-focus input from another
-            // pane — but NOT when focus is already on Input (would be a no-op that eats 'p')
-            Action::EnterPromptMode if ctx.prompt_mode && ctx.focus == Focus::Input => true,
             _ => false,
         };
         if !skip && binding.matches(modifiers, code) {
