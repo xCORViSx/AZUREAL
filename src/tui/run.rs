@@ -1,6 +1,14 @@
 //! TUI entry point and main layout
 //!
 //! Contains the run() function to start the TUI and the ui() layout function.
+//! Heavy rendering is split into submodules:
+//! - `splash`: Block-pixel ASCII art splash shown during initialization
+//! - `worktree_tabs`: Horizontal tab bar rendering for normal and git modes
+//! - `overlays`: Small popup/dialog overlays (auto-rebase, git status, debug dump, loading)
+
+mod overlays;
+mod splash;
+mod worktree_tabs;
 
 use anyhow::Result;
 #[cfg(not(target_os = "windows"))]
@@ -12,20 +20,22 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    layout::{Constraint, Direction, Layout, Rect},
     Frame, Terminal,
 };
 use std::io;
 
-use crate::app::{App, Focus};
+use crate::app::App;
 use crate::config::Config;
 
+use overlays::{
+    draw_auto_rebase_dialog, draw_debug_dump_naming, draw_debug_dump_saving,
+    draw_git_status_box, draw_loading_indicator,
+};
+use splash::draw_splash;
+use worktree_tabs::{draw_git_worktree_tabs, draw_worktree_tabs};
+
 use super::event_loop;
-use super::keybindings;
-use super::util::{AZURE, GIT_BROWN, GIT_ORANGE};
 use super::{
     draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects,
     draw_sidebar, draw_status, draw_terminal, draw_viewer,
@@ -345,940 +355,26 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Block-pixel ASCII art splash screen shown during app initialization.
-/// Renders "AZUREAL" logo centered on screen with acronym subtitle and
-/// a dim spring azure butterfly outline in the background as the app mascot.
-fn draw_splash(f: &mut Frame) {
-    let az = Color::Rgb(51, 153, 255);
-    let dim = Color::Rgb(25, 76, 128);
-    // Very dim butterfly color — just barely visible behind text
-    let butterfly_color = Color::Rgb(15, 45, 80);
-    let logo_style = Style::default().fg(az);
-    let dim_style = Style::default().fg(dim);
-    let bf_style = Style::default().fg(butterfly_color);
-
-    let area = f.area();
-
-    // ── Spring azure butterfly (background layer) ──
-    // Pure ░ fill, no box-drawing. Two wide upper wings, two smaller lower wings,
-    // narrow body gap (2 spaces) down the center, antennae at top.
-    // 37 rows tall so it extends well above/below the 26-row text block.
-    let butterfly: Vec<&str> = vec![
-        "                         ░                          ░",
-        "                          ░░                      ░░",
-        "                            ░░                  ░░",
-        "                              ░░              ░░",
-        "                      ░░░░░░░░░░░░░░░░░░░                    ░░░░░░░░░░░░░░░░░░░",
-        "                  ░░░░░░░░░░░░░░░░░░░░░░░░                    ░░░░░░░░░░░░░░░░░░░░░░░░",
-        "               ░░░░░░░░░░░░░░░░░░░░░░░░░░░░                  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "             ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "           ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░              ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "          ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░            ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "          ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "           ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "            ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "              ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                     ░░░░░░░░░░░░░░░░░░░░░░░░░░            ░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                        ░░░░░░░░░░░░░░░░░░░░░░░░          ░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                       ░░░░░░░░░░░░░░░░░░░░░░░░░░        ░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                         ░░░░░░░░░░░░░░░░░░░░░░░░░░    ░░░░░░░░░░░░░░░░░░░░░░░░░░",
-        "                           ░░░░░░░░░░░░░░░░░░░░░░░      ░░░░░░░░░░░░░░░░░░░░░░░",
-        "                              ░░░░░░░░░░░░░░░░░░          ░░░░░░░░░░░░░░░░░░",
-        "                                 ░░░░░░░░░░░░░              ░░░░░░░░░░░░░",
-        "                                     ░░░░░░░                    ░░░░░░░",
-    ];
-
-    // Center butterfly on the SAME vertical origin as the text content
-    // so wings extend equally above and below. Text is 26 rows, butterfly
-    // is taller — offset by the difference so they share the same center.
-    let bf_h = butterfly.len() as u16;
-    let bf_lines: Vec<Line<'static>> = butterfly
-        .iter()
-        .map(|row| Line::from(Span::styled(row.to_string(), bf_style)))
-        .collect();
-    let bf_widget = Paragraph::new(bf_lines).alignment(Alignment::Center);
-
-    // ── Text content (foreground layer — overwrites butterfly where they overlap) ──
-    let logo: Vec<&str> = vec![
-        "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
-        "  ████████      ████████████    ████    ████    ██████████      ████████████      ████████      ████          ",
-        "████    ████          ████      ████    ████    ████    ████    ████            ████    ████    ████          ",
-        "████    ████          ████      ████    ████    ████    ████    ████            ████    ████    ████          ",
-        "████████████        ████        ████    ████    ██████████      ████████        ████████████    ████          ",
-        "████████████        ████        ████    ████    ██████████      ████████        ████████████    ████          ",
-        "████    ████      ████          ████    ████    ████    ████    ████            ████    ████    ████          ",
-        "████    ████      ████          ████    ████    ████    ████    ████            ████    ████    ████          ",
-        "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
-        "████    ████    ████████████      ██████████    ████    ████    ████████████    ████    ████    ████████████  ",
-    ];
-    let acronym: Vec<&str> = vec![
-        "▄▀▀▄ ▄▀▀▀ ▀▄ ▄▀ █▄  █ ▄▀▀▀ █  █ █▀▀▄ ▄▀▀▄ █▄  █ ▄▀▀▄ █  █ ▄▀▀▀   ▀▀▀█▀ ▄▀▀▄ █▄  █ █▀▀▀ █▀▀▄",
-        "█▄▄█  ▀▀▄   █   █ ▀▄█ █    █▀▀█ █▄▄▀ █  █ █ ▀▄█ █  █ █  █  ▀▀▄    ▄▀   █  █ █ ▀▄█ █▀▀  █  █",
-        "█  █ ▄▄▄▀   █   █   █ ▀▄▄▄ █  █ █ ▀▄ ▀▄▄▀ █   █ ▀▄▄▀ ▀▄▄▀ ▄▄▄▀   █▄▄▄▄ ▀▄▄▀ █   █ █▄▄▄ █▄▄▀",
-        "█  █ █▄  █ ▀█▀ █▀▀▀ ▀█▀ █▀▀▀ █▀▀▄   █▀▀▄ █  █ █▄  █ ▀▀█▀▀ ▀█▀ █▄ ▄█ █▀▀▀",
-        "█  █ █ ▀▄█  █  █▀▀   █  █▀▀  █  █   █▄▄▀ █  █ █ ▀▄█   █    █  █ ▀ █ █▀▀ ",
-        "▀▄▄▀ █   █ ▄█▄ █    ▄█▄ █▄▄▄ █▄▄▀   █ ▀▄ ▀▄▄▀ █   █   █   ▄█▄ █   █ █▄▄▄",
-        "█▀▀▀ █▄  █ █   █ ▀█▀ █▀▀▄ ▄▀▀▄ █▄  █ █▄ ▄█ █▀▀▀ █▄  █ ▀▀█▀▀",
-        "█▀▀  █ ▀▄█ ▀▄ ▄▀  █  █▄▄▀ █  █ █ ▀▄█ █ ▀ █ █▀▀  █ ▀▄█   █  ",
-        "█▄▄▄ █   █  ▀▄▀  ▄█▄ █ ▀▄ ▀▄▄▀ █   █ █   █ █▄▄▄ █   █   █  ",
-        "█  █   ▄▀▀▄ ▄▀▀▀ █▀▀▀ █▄  █ ▀▀█▀▀ ▀█▀ ▄▀▀▀   █    █    █▄ ▄█ ▄▀▀▀",
-        "▀▀▀█   █▄▄█ █ ▄▄ █▀▀  █ ▀▄█   █    █  █      █    █    █ ▀ █  ▀▀▄",
-        "   █   █  █ ▀▄▄█ █▄▄▄ █   █   █   ▄█▄ ▀▄▄▄   █▄▄▄ █▄▄▄ █   █ ▄▄▄▀",
-    ];
-
-    let logo_height = logo.len() as u16;
-    let acronym_height = acronym.len() as u16;
-    let total_height = logo_height + 1 + acronym_height + 2 + 1;
-    // Center point for all content — both butterfly and text share this
-    let center_y = area.y + area.height / 2;
-    let text_start_y = center_y.saturating_sub(total_height / 2);
-
-    // Render butterfly first (background), centered on same point as text
-    let bf_start_y = center_y.saturating_sub(bf_h / 2);
-    f.render_widget(
-        bf_widget,
-        ratatui::layout::Rect::new(
-            area.x,
-            bf_start_y,
-            area.width,
-            bf_h.min(
-                area.height
-                    .saturating_sub(bf_start_y.saturating_sub(area.y)),
-            ),
-        ),
-    );
-
-    // Then render text on top (foreground overwrites butterfly cells)
-    let mut lines: Vec<Line<'static>> = logo
-        .iter()
-        .map(|row| Line::from(Span::styled(row.to_string(), logo_style)))
-        .collect();
-    lines.push(Line::from(""));
-    for row in &acronym {
-        lines.push(Line::from(Span::styled(row.to_string(), dim_style)));
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "L o a d i n g   p r o j e c t . . .",
-        logo_style,
-    )));
-
-    let splash = Paragraph::new(lines).alignment(Alignment::Center);
-    let splash_area = ratatui::layout::Rect::new(area.x, text_start_y, area.width, total_height);
-    f.render_widget(splash, splash_area);
-}
-
-/// Generic loading indicator — centered popup shown while a deferred action
-/// (session load, file open, health scan, project switch, etc.) runs on the
-/// next frame. Reused by all two-phase deferred draw operations.
-/// Auto-rebase dialog — centered popup showing rebase progress or success.
-/// `success` = true shows green border with checkmark, false shows AZURE "in progress".
-fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
-    let area = f.area();
-    let msg = if success {
-        format!(" {} rebased onto main \u{2713} ", branch)
-    } else {
-        format!(" Auto-rebasing {} onto main... ", branch)
-    };
-    let border_color = if success { Color::Green } else { AZURE };
-    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        );
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
-}
-
-/// Git status box — full-width bar reusing the input box area.
-/// Title shows keybinding hints (formatted like the prompt box); content shows operation result messages.
-fn draw_git_status_box(f: &mut Frame, app: &App, area: Rect) {
-    let panel = match app.git_actions_panel {
-        Some(ref p) => p,
-        None => return,
-    };
-
-    let hints = keybindings::git_actions_footer();
-    let label = " GIT ".to_string();
-    let max_w = area.width.saturating_sub(2) as usize;
-    let (top_title, bottom_title) = draw_input::split_title_hints(&label, &hints, max_w);
-
-    // Content: result message or empty
-    let content = if let Some((ref msg, is_error)) = panel.result_message {
-        let color = if is_error { Color::Red } else { Color::Green };
-        let mut style = Style::default().fg(color);
-        if app.git_status_selected {
-            style = style.bg(Color::Rgb(60, 60, 100));
-        }
-        vec![Line::from(Span::styled(format!(" {}", msg), style))]
-    } else {
-        vec![]
-    };
-
-    let border_style = Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD);
-    let mut block = Block::default()
-        .title(Span::styled(top_title, border_style))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(border_style);
-
-    if let Some(bottom) = bottom_title {
-        block = block.title_bottom(Span::styled(bottom, border_style));
-    }
-
-    f.render_widget(Paragraph::new(content).block(block), area);
-}
-
-/// Horizontal worktree tab bar — 1 row at the top of the normal mode layout.
-/// Auto-rebase indicator color for a worktree branch.
-/// Returns Some(color) if auto-rebase is enabled: green=idle, orange=RCR active, blue=approval pending.
-fn rebase_indicator_color(app: &App, branch: &str) -> Option<Color> {
-    if !app.auto_rebase_enabled.contains(branch) {
-        return None;
-    }
-    if let Some(ref rcr) = app.rcr_session {
-        if rcr.branch == branch {
-            return Some(if rcr.approval_pending {
-                Color::Blue
-            } else {
-                GIT_ORANGE
-            });
-        }
-    }
-    Some(Color::Green)
-}
-
-/// Active tab: AZURE bg + white fg + bold. Inactive: DarkGray fg.
-/// [★ main] tab always first (main branch browse). Archived worktrees shown dim with ◇.
-/// Pagination: when tabs don't fit, they are packed into pages greedily.
-fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
-    let avail = area.width as usize;
-    let base_x = area.x;
-    let focused = app.focus == Focus::Worktrees;
-
-    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread, is_running)
-    // target: None = [M] main browse, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool, bool)> = Vec::new();
-
-    let main_branch = app
-        .project
-        .as_ref()
-        .map(|p| p.main_branch.as_str())
-        .unwrap_or("main");
-    tabs.push((
-        format!("★ {}", main_branch),
-        app.browsing_main,
-        false,
-        None,
-        None,
-        false,
-        false,
-    ));
-
-    for (idx, wt) in app.worktrees.iter().enumerate() {
-        let active = !app.browsing_main && app.selected_worktree == Some(idx);
-        let rebase_color = rebase_indicator_color(app, &wt.branch_name);
-        let is_running = app.is_session_running(&wt.branch_name);
-        let unread = app.unread_sessions.contains(&wt.branch_name);
-        if wt.archived {
-            tabs.push((
-                format!("◇ {}", wt.name()),
-                active,
-                true,
-                Some(idx),
-                rebase_color,
-                false,
-                false,
-            ));
-        } else if is_running {
-            // Running always takes priority — show filled circle even if unread
-            tabs.push((
-                format!("● {}", wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                false,
-                true,
-            ));
-        } else if unread {
-            tabs.push((
-                format!("◐ {}", wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                true,
-                false,
-            ));
-        } else {
-            let status = wt.status(false);
-            tabs.push((
-                format!("{} {}", status.symbol(), wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                false,
-                false,
-            ));
-        }
-    }
-
-    if tabs.is_empty() {
-        return;
-    }
-
-    // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
-    let tab_widths: Vec<usize> = tabs
-        .iter()
-        .map(|(label, _, _, _, rebase, _, _)| {
-            let base: usize = label
-                .chars()
-                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
-                .sum::<usize>()
-                + 1;
-            if rebase.is_some() {
-                base + 1
-            } else {
-                base
-            }
-        })
-        .collect();
-
-    // Pack tabs into pages greedily
-    let mut pages: Vec<Vec<usize>> = Vec::new();
-    let mut cur: Vec<usize> = Vec::new();
-    let mut cur_w: usize = 0;
-    let mut active_page: usize = 0;
-
-    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
-        let cost = if cur.is_empty() { tw } else { tw + 1 };
-        if !cur.is_empty() && cur_w + cost > avail {
-            pages.push(std::mem::take(&mut cur));
-            cur = vec![i];
-            cur_w = tw;
-        } else {
-            cur.push(i);
-            cur_w += cost;
-        }
-        if *is_active {
-            active_page = pages.len();
-        }
-    }
-    if !cur.is_empty() {
-        pages.push(cur);
-    }
-
-    let total_pages = pages.len();
-    let page_tabs = match pages.get(active_page) {
-        Some(p) => p,
-        None => return,
-    };
-
-    // Build spans and hit-test regions
-    let mut spans: Vec<Span> = Vec::with_capacity(page_tabs.len() * 2 + 1);
-    let mut hits: Vec<(u16, u16, Option<usize>)> = Vec::with_capacity(page_tabs.len());
-    let mut x_cursor: u16 = base_x;
-
-    for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color, is_unread, is_running) =
-            tabs[idx];
-        let tab_text = format!("{} ", label);
-        let mut tab_w: u16 = tab_text
-            .chars()
-            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
-            .sum();
-
-        let dim = if focused {
-            Color::Gray
-        } else {
-            Color::DarkGray
-        };
-        let style = if is_active {
-            if target.is_none() {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(Color::White)
-                    .bg(AZURE)
-                    .add_modifier(Modifier::BOLD)
-            }
-        } else if is_running {
-            Style::default().fg(Color::Green)
-        } else if is_archived {
-            Style::default().fg(dim)
-        } else if is_unread {
-            Style::default().fg(AZURE)
-        } else if target.is_none() {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(dim)
-        };
-
-        spans.push(Span::styled(tab_text, style));
-
-        if let Some(color) = rebase_color {
-            spans.push(Span::styled(
-                "R",
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ));
-            tab_w += 1;
-        }
-
-        hits.push((x_cursor, x_cursor + tab_w, target));
-        x_cursor += tab_w;
-
-        if j + 1 < page_tabs.len() {
-            let sep_color = if focused { AZURE } else { Color::DarkGray };
-            spans.push(Span::styled("│", Style::default().fg(sep_color)));
-            x_cursor += 1;
-        }
-    }
-
-    if total_pages > 1 {
-        let page_color = if focused {
-            Color::Gray
-        } else {
-            Color::DarkGray
-        };
-        spans.push(Span::styled(
-            format!("  {}/{}", active_page + 1, total_pages),
-            Style::default().fg(page_color).add_modifier(Modifier::DIM),
-        ));
-    }
-
-    app.worktree_tab_hits = hits;
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-/// Horizontal worktree tab bar — 1 row at the top of the git panel.
-/// Reuses the same design as `draw_worktree_tabs` (★ main tab, status symbols,
-/// archived styling, pagination, hit-test regions) but with GIT_ORANGE/GIT_BROWN
-/// colors instead of AZURE/Yellow/DarkGray.
-fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
-    let panel = match app.git_actions_panel.as_ref() {
-        Some(p) => p,
-        None => return,
-    };
-    let active_branch = &panel.worktree_name;
-    let avail = area.width as usize;
-    let base_x = area.x;
-
-    // Build tab entries: (display_label, is_active, is_archived, target, rebase_color, is_unread, is_running)
-    // target: None = main branch, Some(idx) = worktree index
-    let mut tabs: Vec<(String, bool, bool, Option<usize>, Option<Color>, bool, bool)> = Vec::new();
-
-    let main_branch = app
-        .project
-        .as_ref()
-        .map(|p| p.main_branch.as_str())
-        .unwrap_or("main");
-    let main_is_active = *active_branch == main_branch;
-    tabs.push((
-        format!("★ {}", main_branch),
-        main_is_active,
-        false,
-        None,
-        None,
-        false,
-        false,
-    ));
-
-    for (idx, wt) in app.worktrees.iter().enumerate() {
-        let active = !main_is_active && wt.branch_name == *active_branch;
-        let rebase_color = rebase_indicator_color(app, &wt.branch_name);
-        let is_running = app.is_session_running(&wt.branch_name);
-        let unread = app.unread_sessions.contains(&wt.branch_name);
-        if wt.archived {
-            tabs.push((
-                format!("◇ {}", wt.name()),
-                active,
-                true,
-                Some(idx),
-                rebase_color,
-                false,
-                false,
-            ));
-        } else if is_running {
-            tabs.push((
-                format!("● {}", wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                false,
-                true,
-            ));
-        } else if unread {
-            tabs.push((
-                format!("◐ {}", wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                true,
-                false,
-            ));
-        } else {
-            let status = wt.status(false);
-            tabs.push((
-                format!("{} {}", status.symbol(), wt.name()),
-                active,
-                false,
-                Some(idx),
-                rebase_color,
-                false,
-                false,
-            ));
-        }
-    }
-
-    if tabs.is_empty() {
-        return;
-    }
-
-    // Display width of each tab: "label " = display_width + 1, plus "R" if rebase indicator
-    let tab_widths: Vec<usize> = tabs
-        .iter()
-        .map(|(label, _, _, _, rebase, _, _)| {
-            let base: usize = label
-                .chars()
-                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1))
-                .sum::<usize>()
-                + 1;
-            if rebase.is_some() {
-                base + 1
-            } else {
-                base
-            }
-        })
-        .collect();
-
-    // Pack tabs into pages greedily
-    let mut pages: Vec<Vec<usize>> = Vec::new();
-    let mut cur: Vec<usize> = Vec::new();
-    let mut cur_w: usize = 0;
-    let mut active_page: usize = 0;
-
-    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
-        let cost = if cur.is_empty() { tw } else { tw + 1 };
-        if !cur.is_empty() && cur_w + cost > avail {
-            pages.push(std::mem::take(&mut cur));
-            cur = vec![i];
-            cur_w = tw;
-        } else {
-            cur.push(i);
-            cur_w += cost;
-        }
-        if *is_active {
-            active_page = pages.len();
-        }
-    }
-    if !cur.is_empty() {
-        pages.push(cur);
-    }
-
-    let total_pages = pages.len();
-    let page_tabs = match pages.get(active_page) {
-        Some(p) => p,
-        None => return,
-    };
-
-    // Build spans and hit-test regions
-    let mut spans: Vec<Span> = Vec::with_capacity(page_tabs.len() * 2 + 1);
-    let mut hits: Vec<(u16, u16, Option<usize>)> = Vec::with_capacity(page_tabs.len());
-    let mut x_cursor: u16 = base_x;
-
-    for (j, &idx) in page_tabs.iter().enumerate() {
-        let (ref label, is_active, is_archived, target, rebase_color, is_unread, is_running) =
-            tabs[idx];
-        let tab_text = format!("{} ", label);
-        let mut tab_w: u16 = tab_text
-            .chars()
-            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) as u16)
-            .sum();
-
-        // Same styling logic as draw_worktree_tabs but with git color palette
-        let style = if is_active {
-            if target.is_none() {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(GIT_ORANGE)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(Color::White)
-                    .bg(GIT_ORANGE)
-                    .add_modifier(Modifier::BOLD)
-            }
-        } else if is_running {
-            Style::default().fg(Color::Green)
-        } else if is_archived {
-            Style::default().fg(Color::DarkGray)
-        } else if is_unread {
-            Style::default().fg(AZURE)
-        } else if target.is_none() {
-            Style::default().fg(GIT_BROWN)
-        } else {
-            Style::default().fg(GIT_BROWN)
-        };
-
-        spans.push(Span::styled(tab_text, style));
-
-        if let Some(color) = rebase_color {
-            spans.push(Span::styled(
-                "R",
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ));
-            tab_w += 1;
-        }
-
-        hits.push((x_cursor, x_cursor + tab_w, target));
-        x_cursor += tab_w;
-
-        if j + 1 < page_tabs.len() {
-            spans.push(Span::styled("│", Style::default().fg(GIT_BROWN)));
-            x_cursor += 1;
-        }
-    }
-
-    if total_pages > 1 {
-        spans.push(Span::styled(
-            format!("  {}/{}", active_page + 1, total_pages),
-            Style::default().fg(GIT_BROWN).add_modifier(Modifier::DIM),
-        ));
-    }
-
-    app.worktree_tab_hits = hits;
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-/// Debug dump naming dialog — centered input for entering a suffix for the dump file.
-/// ⌃d opens this, user types a name, Enter saves, Esc cancels.
-fn draw_debug_dump_naming(f: &mut Frame, app: &App) {
-    let area = f.area();
-    let input_text = app.debug_dump_naming.as_deref().unwrap_or("");
-    let prompt = format!(" Name: {}▏", input_text);
-    let w = 50u16.min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(prompt, Style::default().fg(Color::White))).block(
-        Block::default()
-            .title(Span::styled(
-                " Debug Dump ",
-                Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(AZURE)),
-    );
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
-}
-
-/// Debug dump saving indicator — brief flash shown while the dump file is being written.
-fn draw_debug_dump_saving(f: &mut Frame) {
-    let area = f.area();
-    let msg = " Saving debug dump... ";
-    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(AZURE)),
-        );
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
-}
-
-fn draw_loading_indicator(f: &mut Frame, msg: &str) {
-    let area = f.area();
-    let padded = format!(" {} ", msg);
-    let w = (padded.len() as u16 + 4).min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(padded, Style::default().fg(Color::White)))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(AZURE)),
-        );
-    f.render_widget(ratatui::widgets::Clear, rect);
-    f.render_widget(dialog, rect);
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    // ── Color constants ───────────────────────────────────────────────
-
-    #[test]
-    fn azure_color_is_rgb() {
-        assert!(matches!(AZURE, Color::Rgb(_, _, _)));
-    }
-
-    #[test]
-    fn git_orange_is_rgb() {
-        assert!(matches!(GIT_ORANGE, Color::Rgb(_, _, _)));
-    }
-
-    #[test]
-    fn git_brown_is_rgb() {
-        assert!(matches!(GIT_BROWN, Color::Rgb(_, _, _)));
-    }
-
-    #[test]
-    fn azure_not_equal_git_orange() {
-        assert_ne!(AZURE, GIT_ORANGE);
-    }
-
-    #[test]
-    fn azure_not_equal_git_brown() {
-        assert_ne!(AZURE, GIT_BROWN);
-    }
-
-    #[test]
-    fn git_orange_not_equal_git_brown() {
-        assert_ne!(GIT_ORANGE, GIT_BROWN);
-    }
-
-    // ── Splash screen content ─────────────────────────────────────────
-
-    #[test]
-    fn splash_azure_color() {
-        let az = Color::Rgb(51, 153, 255);
-        assert_eq!(az, Color::Rgb(51, 153, 255));
-    }
-
-    #[test]
-    fn splash_dim_color() {
-        let dim = Color::Rgb(25, 76, 128);
-        assert_eq!(dim, Color::Rgb(25, 76, 128));
-    }
-
-    #[test]
-    fn splash_butterfly_color() {
-        let butterfly_color = Color::Rgb(15, 45, 80);
-        assert_eq!(butterfly_color, Color::Rgb(15, 45, 80));
-    }
-
-    #[test]
-    fn splash_colors_are_all_distinct() {
-        let az = Color::Rgb(51, 153, 255);
-        let dim = Color::Rgb(25, 76, 128);
-        let bf = Color::Rgb(15, 45, 80);
-        assert_ne!(az, dim);
-        assert_ne!(az, bf);
-        assert_ne!(dim, bf);
-    }
-
-    // ── Auto-rebase dialog formatting ─────────────────────────────────
-
-    #[test]
-    fn auto_rebase_success_message_format() {
-        let branch = "feat-tests";
-        let msg = format!(" {} rebased onto main \u{2713} ", branch);
-        assert!(msg.contains("feat-tests"));
-        assert!(msg.contains("rebased onto main"));
-        assert!(msg.contains("\u{2713}")); // checkmark
-    }
-
-    #[test]
-    fn auto_rebase_in_progress_message_format() {
-        let branch = "feat-tests";
-        let msg = format!(" Auto-rebasing {} onto main... ", branch);
-        assert!(msg.contains("Auto-rebasing"));
-        assert!(msg.contains("feat-tests"));
-        assert!(msg.contains("onto main..."));
-    }
-
-    #[test]
-    fn auto_rebase_success_border_is_green() {
-        let success = true;
-        let border_color = if success { Color::Green } else { AZURE };
-        assert_eq!(border_color, Color::Green);
-    }
-
-    #[test]
-    fn auto_rebase_progress_border_is_azure() {
-        let success = false;
-        let border_color = if success { Color::Green } else { AZURE };
-        assert_eq!(border_color, AZURE);
-    }
-
-    // ── Dialog centering arithmetic ───────────────────────────────────
-
-    #[test]
-    fn dialog_center_x_with_100_width() {
-        let area_x: u16 = 0;
-        let area_width: u16 = 100;
-        let w: u16 = 30;
-        let x = area_x + (area_width.saturating_sub(w)) / 2;
-        assert_eq!(x, 35);
-    }
-
-    #[test]
-    fn dialog_center_y_with_50_height() {
-        let area_y: u16 = 0;
-        let area_height: u16 = 50;
-        let h: u16 = 3;
-        let y = area_y + (area_height.saturating_sub(h)) / 2;
-        assert_eq!(y, 23);
-    }
-
-    #[test]
-    fn dialog_width_clamped_to_area() {
-        let area_width: u16 = 20;
-        let msg_len: u16 = 30;
-        let w = (msg_len + 4).min(area_width.saturating_sub(4));
-        assert_eq!(w, 16); // 20 - 4 = 16
-    }
-
-    #[test]
-    fn dialog_width_not_clamped_when_fits() {
-        let area_width: u16 = 100;
-        let msg_len: u16 = 20;
-        let w = (msg_len + 4).min(area_width.saturating_sub(4));
-        assert_eq!(w, 24); // 20 + 4 = 24, 100 - 4 = 96, min(24, 96) = 24
-    }
-
-    #[test]
-    fn dialog_center_with_offset_area() {
-        let area_x: u16 = 10;
-        let area_width: u16 = 80;
-        let w: u16 = 30;
-        let x = area_x + (area_width.saturating_sub(w)) / 2;
-        assert_eq!(x, 35); // 10 + (80 - 30)/2 = 10 + 25 = 35
-    }
-
-    #[test]
-    fn dialog_saturating_sub_prevents_underflow() {
-        let area_width: u16 = 2;
-        let w: u16 = 10;
-        let result = area_width.saturating_sub(w);
-        assert_eq!(result, 0);
-    }
-
-    // ── Git status box height ─────────────────────────────────────────
-
-    #[test]
-    fn git_box_height_is_three() {
-        let git_box_height = 3u16;
-        assert_eq!(git_box_height, 3);
-    }
-
-    // ── Loading indicator padding ─────────────────────────────────────
-
-    #[test]
-    fn loading_indicator_padding() {
-        let msg = "Loading session...";
-        let padded = format!(" {} ", msg);
-        assert_eq!(padded, " Loading session... ");
-        assert_eq!(padded.len(), msg.len() + 2);
-    }
-
-    #[test]
-    fn loading_indicator_width_calculation() {
-        let padded = " Loading... ";
-        let w = (padded.len() as u16 + 4).min(100u16.saturating_sub(4));
-        assert_eq!(w, padded.len() as u16 + 4); // 12 + 4 = 16, fits in 96
-    }
-
-    // ── Debug dump naming dialog ──────────────────────────────────────
-
-    #[test]
-    fn debug_dump_prompt_format() {
-        let input_text = "my-dump";
-        let prompt = format!(" Name: {}\u{25CF}", input_text);
-        assert!(prompt.contains("my-dump"));
-        assert!(prompt.starts_with(" Name: "));
-    }
-
-    #[test]
-    fn debug_dump_prompt_empty_input() {
-        let input_text = "";
-        let prompt = format!(" Name: {}\u{25CF}", input_text);
-        assert_eq!(prompt, " Name: \u{25CF}");
-    }
-
-    #[test]
-    fn debug_dump_dialog_width_clamped() {
-        let area_width: u16 = 30;
-        let w = 50u16.min(area_width.saturating_sub(4));
-        assert_eq!(w, 26); // min(50, 30-4) = 26
-    }
-
-    #[test]
-    fn debug_dump_dialog_width_unclamped() {
-        let area_width: u16 = 200;
-        let w = 50u16.min(area_width.saturating_sub(4));
-        assert_eq!(w, 50); // min(50, 196) = 50
-    }
-
-    // ── Saving indicator ──────────────────────────────────────────────
-
-    #[test]
-    fn saving_debug_dump_message_literal() {
-        let msg = " Saving debug dump... ";
-        assert_eq!(msg.len(), 22);
-    }
+    use ratatui::layout::Rect;
 
     // ── Layout constraint values ──────────────────────────────────────
 
     #[test]
     fn normal_mode_sidebar_percentage() {
-        // File tree is 15%
         let pct = 15u16;
         assert_eq!(pct, 15);
     }
 
     #[test]
     fn normal_mode_viewer_percentage() {
-        // Viewer is 50%
         let pct = 50u16;
         assert_eq!(pct, 50);
     }
 
     #[test]
     fn normal_mode_session_percentage() {
-        // Session is 35%
         let pct = 35u16;
         assert_eq!(pct, 35);
     }
@@ -1298,6 +394,12 @@ mod tests {
     fn git_mode_session_percentage() {
         let pct = 35u16;
         assert_eq!(pct, 35);
+    }
+
+    #[test]
+    fn git_box_height_is_three() {
+        let git_box_height = 3u16;
+        assert_eq!(git_box_height, 3);
     }
 
     // ── Input height calculation ──────────────────────────────────────
@@ -1320,7 +422,7 @@ mod tests {
     fn max_input_height_minimum_is_three() {
         let below_tabs_height: u16 = 2;
         let max_input = (below_tabs_height * 3 / 4).max(3);
-        assert_eq!(max_input, 3); // (2*3/4) = 1, max(1, 3) = 3
+        assert_eq!(max_input, 3);
     }
 
     #[test]
@@ -1336,7 +438,7 @@ mod tests {
         let input_lines: u16 = 5;
         let max_input: u16 = 30;
         let result = (input_lines + 2).min(max_input);
-        assert_eq!(result, 7); // 5 + 2 border = 7
+        assert_eq!(result, 7);
     }
 
     // ── Row wrapping calculation (input area) ─────────────────────────
@@ -1389,8 +491,8 @@ mod tests {
 
     #[test]
     fn row_wrapping_at_width_boundary() {
-        let input = "aaaa"; // 4 chars
-        let inner_width: usize = 3; // wraps after 3
+        let input = "aaaa";
+        let inner_width: usize = 3;
         let mut rows = 1usize;
         let mut col = 0usize;
         for c in input.chars() {
@@ -1407,14 +509,13 @@ mod tests {
                 }
             }
         }
-        assert_eq!(rows, 2); // "aaa" on row 1, "a" wraps to row 2
+        assert_eq!(rows, 2);
     }
 
     #[test]
     fn row_wrapping_empty_input() {
         let input = "";
         let inner_width: usize = 80;
-        // Empty check bypasses calculation, defaults to 1
         let input_lines = if inner_width > 0 && !input.is_empty() {
             let mut rows = 1usize;
             let mut col = 0usize;
@@ -1437,64 +538,6 @@ mod tests {
             1
         };
         assert_eq!(input_lines, 1);
-    }
-
-    // ── Splash screen dimensions ──────────────────────────────────────
-
-    #[test]
-    fn splash_logo_has_ten_rows() {
-        let logo: Vec<&str> = vec![
-            "line1", "line2", "line3", "line4", "line5", "line6", "line7", "line8", "line9",
-            "line10",
-        ];
-        assert_eq!(logo.len(), 10);
-    }
-
-    #[test]
-    fn splash_acronym_has_twelve_rows() {
-        let acronym: Vec<&str> = vec![
-            "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10", "l11", "l12",
-        ];
-        assert_eq!(acronym.len(), 12);
-    }
-
-    #[test]
-    fn splash_total_height_calculation() {
-        let logo_height: u16 = 10;
-        let acronym_height: u16 = 12;
-        let total_height = logo_height + 1 + acronym_height + 2 + 1;
-        assert_eq!(total_height, 26);
-    }
-
-    #[test]
-    fn splash_center_y_calculation() {
-        let area_y: u16 = 0;
-        let area_height: u16 = 60;
-        let center_y = area_y + area_height / 2;
-        assert_eq!(center_y, 30);
-    }
-
-    #[test]
-    fn splash_text_start_y() {
-        let center_y: u16 = 30;
-        let total_height: u16 = 26;
-        let text_start_y = center_y.saturating_sub(total_height / 2);
-        assert_eq!(text_start_y, 17);
-    }
-
-    #[test]
-    fn splash_butterfly_has_37_rows() {
-        // The actual butterfly vec in draw_splash has 37 entries
-        let butterfly_len = 37;
-        assert_eq!(butterfly_len, 37);
-    }
-
-    #[test]
-    fn splash_butterfly_start_y() {
-        let center_y: u16 = 30;
-        let bf_h: u16 = 37;
-        let bf_start_y = center_y.saturating_sub(bf_h / 2);
-        assert_eq!(bf_start_y, 12);
     }
 
     // ── Minimum splash duration ───────────────────────────────────────
@@ -1530,72 +573,6 @@ mod tests {
         assert!(msg.contains("emoji icons"));
     }
 
-    // ── Tab packing (greedy) arithmetic ───────────────────────────────
-
-    #[test]
-    fn tab_packing_first_tab_no_separator() {
-        let cur_is_empty = true;
-        let tw = 10;
-        let cost = if cur_is_empty { tw } else { tw + 1 };
-        assert_eq!(cost, 10); // first tab has no separator
-    }
-
-    #[test]
-    fn tab_packing_subsequent_tabs_add_separator() {
-        let cur_is_empty = false;
-        let tw = 10;
-        let cost = if cur_is_empty { tw } else { tw + 1 };
-        assert_eq!(cost, 11); // +1 for separator
-    }
-
-    #[test]
-    fn tab_packing_overflow_starts_new_page() {
-        let avail: usize = 20;
-        let cur_w: usize = 18;
-        let cost: usize = 5;
-        let overflow = !vec![0usize].is_empty() && cur_w + cost > avail;
-        assert!(overflow); // 18 + 5 = 23 > 20
-    }
-
-    #[test]
-    fn tab_packing_fits_stays_on_page() {
-        let avail: usize = 20;
-        let cur_w: usize = 10;
-        let cost: usize = 5;
-        let overflow = !vec![0usize].is_empty() && cur_w + cost > avail;
-        assert!(!overflow); // 10 + 5 = 15 <= 20
-    }
-
-    // ── Page indicator formatting ─────────────────────────────────────
-
-    #[test]
-    fn page_indicator_format() {
-        let active_page: usize = 0;
-        let total_pages: usize = 3;
-        let indicator = format!("  {}/{}", active_page + 1, total_pages);
-        assert_eq!(indicator, "  1/3");
-    }
-
-    #[test]
-    fn page_indicator_last_page() {
-        let active_page: usize = 2;
-        let total_pages: usize = 3;
-        let indicator = format!("  {}/{}", active_page + 1, total_pages);
-        assert_eq!(indicator, "  3/3");
-    }
-
-    // ── Focus enum comparison ─────────────────────────────────────────
-
-    #[test]
-    fn focus_worktrees_equality() {
-        assert_eq!(Focus::Worktrees, Focus::Worktrees);
-    }
-
-    #[test]
-    fn focus_variants_are_distinct() {
-        assert_ne!(Focus::Worktrees, Focus::BranchDialog);
-    }
-
     // ── Rect construction ─────────────────────────────────────────────
 
     #[test]
@@ -1612,37 +589,5 @@ mod tests {
         let r = Rect::new(0, 0, 0, 0);
         assert_eq!(r.x, 0);
         assert_eq!(r.width, 0);
-    }
-
-    // ── Style construction ────────────────────────────────────────────
-
-    #[test]
-    fn style_default_is_reset() {
-        let s = Style::default();
-        assert_eq!(s, Style::default());
-    }
-
-    #[test]
-    fn style_fg_sets_foreground() {
-        let s = Style::default().fg(Color::Red);
-        assert_ne!(s, Style::default());
-    }
-
-    #[test]
-    fn style_bg_sets_background() {
-        let s = Style::default().bg(Color::Blue);
-        assert_ne!(s, Style::default());
-    }
-
-    #[test]
-    fn style_bold_modifier() {
-        let s = Style::default().add_modifier(Modifier::BOLD);
-        assert_ne!(s, Style::default());
-    }
-
-    #[test]
-    fn style_dim_modifier() {
-        let s = Style::default().add_modifier(Modifier::DIM);
-        assert_ne!(s, Style::default());
     }
 }

@@ -1819,9 +1819,9 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | tui/render_markdown | `src/tui/render_markdown.rs` | 60 | Markdown-to-spans rendering + viewer markdown (10 tests: header/bullet/code block/blockquote/table/numbered list/mixed content/empty/width/no gutter) |
 | tui/render_thread | `src/tui/render_thread.rs` | 50 | Render thread message passing, try_recv |
 | tui/util | `src/tui/util.rs` | 50 | TUI utility functions, truncation, formatting |
-| tui/run | `src/tui/run.rs` | 15 | TUI module root: declares submodules (splash, worktree_tabs, overlays), layout constraints, input height calculation |
-| tui/run/splash | `src/tui/run/splash.rs` | 16 | Splash screen ASCII art rendering (butterfly + logo + acronym) |
-| tui/run/worktree_tabs | `src/tui/run/worktree_tabs.rs` | 28 | Worktree tab bar rendering (normal + git mode), pagination, hit-test regions, rebase indicators, color constants |
+| tui/run | `src/tui/run.rs` | 22 | TUI module root: declares submodules (splash, worktree_tabs, overlays), layout constraints, input height calculation, row wrapping |
+| tui/run/splash | `src/tui/run/splash.rs` | 15 | Splash screen ASCII art rendering (butterfly + logo + acronym) |
+| tui/run/worktree_tabs | `src/tui/run/worktree_tabs.rs` | 21 | Worktree tab bar rendering (normal + git mode), pagination, hit-test regions, rebase indicators, color constants |
 | tui/run/overlays | `src/tui/run/overlays.rs` | 18 | Popup/dialog overlays: auto-rebase, git status box, debug dump naming/saving, loading indicator |
 | backend | `src/backend.rs` | 16 | `Backend` default (Claude), Copy/Clone/Debug/PartialEq, display format, from_str_loose (5 -- claude/codex/openai/unknown/empty/case-insensitive), serde roundtrip (3 -- codex/claude/unknown fails), equality (1), clone (1), debug (1), `AgentProcess::new` (1 -- constructs both backends), spawn empty prompt (3 -- claude/codex/no-model all fail) |
 | claude | `src/claude.rs` | 52 | Init-line substring detection, session_id extraction from JSON, missing session_id, output data with tabs/special chars, verbose default, no API key default, SessionId UUID format/unicode |
