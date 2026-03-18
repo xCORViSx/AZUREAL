@@ -12,6 +12,10 @@
   A multi-session AI agent manager with git worktree isolation
 </p>
 
+<p align="center">
+  <a href="manual/src/SUMMARY.md"><strong>📖 Manual</strong></a>
+</p>
+
 ---
 
 ## Features
