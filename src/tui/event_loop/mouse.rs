@@ -392,7 +392,34 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     // Input/Terminal pane — enter prompt mode or position cursor
     if app.input_area.contains(pos) {
         if app.terminal_mode {
-            // Clicking terminal area — no cursor positioning needed
+            // Enter type mode, scroll to bottom, and reposition cursor on same row
+            if !app.prompt_mode {
+                app.prompt_mode = true;
+            }
+            app.scroll_terminal_to_bottom();
+            app.focus = Focus::Input;
+
+            // Map click to terminal-inner coordinates
+            let click_col = col.saturating_sub(app.input_area.x + 1) as u16;
+            let click_row = row.saturating_sub(app.input_area.y + 1) as u16;
+            let (cur_row, cur_col) = app.terminal_cursor_position();
+
+            // Only reposition horizontally when clicking on the cursor's row
+            if click_row == cur_row {
+                if click_col > cur_col {
+                    // Send Right arrow sequences
+                    for _ in 0..(click_col - cur_col) {
+                        app.write_to_terminal(b"\x1b[C");
+                    }
+                } else if click_col < cur_col {
+                    // Send Left arrow sequences
+                    for _ in 0..(cur_col - click_col) {
+                        app.write_to_terminal(b"\x1b[D");
+                    }
+                }
+            }
+
+            app.last_click = Some((std::time::Instant::now(), col, row));
             return true;
         }
         // Enter prompt mode and position cursor at click point

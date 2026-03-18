@@ -5,6 +5,8 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Terminal click-to-position cursor** — Clicking in the terminal pane while in type mode repositions the shell cursor horizontally on the current prompt line. Calculates the offset between the PTY cursor column and the click column, sending the appropriate Left/Right escape sequences. Also enters type mode and scrolls to bottom on click. Modified: `mouse.rs`.
+- **Terminal word navigation** — Alt/Option+Left/Right and Ctrl+Left/Right now send `\x1bb`/`\x1bf` (readline backward-word/forward-word) in terminal type mode, matching the prompt input box behavior. Modified: `input_terminal.rs`.
 - **Worktree rename** (`Wr`) — Rename the current worktree's branch via a text input dialog. Pre-fills with the current name (suffix only), supports cursor movement and editing. Performs `git branch -m`, updates remote tracking, and migrates all branch-keyed app state. Modified: `types.rs` (Action + RenameWorktreeDialog), `bindings.rs` (WORKTREES array 3→4), `execute.rs` (action handler), `actions.rs` (dialog input), `sessions.rs` (rename_current_worktree + state migration), `branch.rs` (Git::rename_branch), `draw_dialogs.rs` (draw_rename_worktree_dialog), `run.rs` (overlay render), `event_loop.rs` (Renamed outcome), `app.rs` (rename_worktree_dialog field).
 
 ### Changed

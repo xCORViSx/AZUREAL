@@ -767,7 +767,9 @@ Key mappings:
 - `p` (terminal command mode): Close terminal and enter Claude prompt
 - `+/-` (terminal command mode): Increase/decrease terminal height
 - `Esc` (terminal type mode): Exit type mode
-- All keystrokes in terminal type mode forward directly to PTY
+- `⌥←`/`⌥→` or `⌃←`/`⌃→` (terminal type mode): Word navigation (sends `\x1bb`/`\x1bf` readline sequences)
+- Click (terminal pane): Enter type mode and reposition cursor horizontally on the current prompt line
+- All other keystrokes in terminal type mode forward directly to PTY
 
 Implementation:
 - `terminal_pty`, `terminal_writer`, `terminal_rx`, `terminal_parser` in `App` struct
@@ -1905,6 +1907,7 @@ Terminal keybindings are displayed directly in the terminal pane's title bar (no
 
 **Command mode title shows (macOS):** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | ⌥↑/⌥↓:top/bottom | +/-:resize)`
 **Command mode title shows (Windows/Linux):** `(t:type | p:prompt | Esc:close | j/k:scroll | J/K:page | Alt+↑/Alt+↓:top/bottom | +/-:resize)`
-**Type mode title shows:** `(Esc:exit)`
+**Type mode title shows (macOS):** `(Esc:exit | ⌥←/→:word)`
+**Type mode title shows (Windows/Linux):** `(Esc:exit | Alt+←/→:word)`
 **Scroll mode title shows (macOS):** `[N↑] (j/k:scroll | J/K:page | ⌥↑:top | ⌥↓:bottom | t:type | Esc:close)`
 **Scroll mode title shows (Windows/Linux):** `[N↑] (j/k:scroll | J/K:page | Alt+↑:top | Alt+↓:bottom | t:type | Esc:close)`

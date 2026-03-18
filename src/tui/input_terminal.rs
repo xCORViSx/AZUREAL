@@ -41,6 +41,15 @@ pub fn handle_input_mode(
                 (KeyModifiers::NONE, KeyCode::Home) => app.write_to_terminal(b"\x1b[H"),
                 (KeyModifiers::NONE, KeyCode::End) => app.write_to_terminal(b"\x1b[F"),
                 (KeyModifiers::NONE, KeyCode::Delete) => app.write_to_terminal(b"\x1b[3~"),
+                // Word navigation: Esc+b (backward-word) / Esc+f (forward-word)
+                (KeyModifiers::ALT, KeyCode::Left)
+                | (KeyModifiers::CONTROL, KeyCode::Left) => {
+                    app.write_to_terminal(b"\x1bb");
+                }
+                (KeyModifiers::ALT, KeyCode::Right)
+                | (KeyModifiers::CONTROL, KeyCode::Right) => {
+                    app.write_to_terminal(b"\x1bf");
+                }
                 _ => {}
             }
         } else {

@@ -116,7 +116,12 @@ pub fn prompt_command_title() -> (String, String, String) {
 /// Returns (short_label, full_title, hints).
 pub fn terminal_type_title() -> (String, String, String) {
     let esc = find_key_for_action(&TERMINAL, Action::Escape).unwrap_or("Esc".into());
-    let hints = format!("{}:exit", esc);
+    let word = if cfg!(target_os = "macos") {
+        "⌥←/→:word"
+    } else {
+        "Alt+←/→:word"
+    };
+    let hints = format!("{}:exit | {}", esc, word);
     (
         " TERMINAL ".to_string(),
         format!(" TERMINAL ({}) ", hints),
