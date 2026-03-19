@@ -40,7 +40,10 @@ use auto_resolve_overlay::handle_auto_resolve_overlay;
 use commit_overlay::handle_commit_overlay;
 use conflict_resolution::handle_conflict_overlay;
 use diff_viewer::{load_commit_diff_inline, load_file_diff_inline, open_file_diff_inline};
-use operations::{exec_commit_start, exec_pull, exec_push, exec_rebase, exec_squash_merge};
+use operations::{
+    exec_commit_start, exec_pull, exec_push, exec_rebase, exec_squash_merge, exec_stash,
+    exec_stash_pop,
+};
 
 /// Action count depends on context: main=3 (pull, commit, push),
 /// feature=4 (squash-merge, rebase, commit, push)
@@ -330,6 +333,13 @@ pub fn handle_git_actions_input(
             }
         }
 
+        Action::GitStash => {
+            exec_stash(app);
+        }
+        Action::GitStashPop => {
+            exec_stash_pop(app);
+        }
+
         Action::GitAutoResolveSettings => {
             if let Some(ref mut p) = app.git_actions_panel {
                 let files: Vec<(String, bool)> = p
@@ -361,6 +371,8 @@ pub fn handle_git_actions_input(
                             0 => exec_pull(app),
                             1 => exec_commit_start(app),
                             2 => exec_push(app),
+                            3 => exec_stash(app),
+                            4 => exec_stash_pop(app),
                             _ => {}
                         }
                     } else {
@@ -369,6 +381,8 @@ pub fn handle_git_actions_input(
                             1 => exec_rebase(app),
                             2 => exec_commit_start(app),
                             3 => exec_push(app),
+                            4 => exec_stash(app),
+                            5 => exec_stash_pop(app),
                             _ => {}
                         }
                     }

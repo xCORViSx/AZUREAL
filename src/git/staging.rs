@@ -120,6 +120,32 @@ impl Git {
         &["worktrees", "worktrees/", "/worktrees", "/worktrees/"],
     )];
 
+    /// Stash all changes (tracked + untracked) via `git stash push -u`
+    pub fn stash(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["stash", "push", "-u"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to run git stash")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Pop the most recent stash entry via `git stash pop`
+    pub fn stash_pop(worktree_path: &Path) -> Result<String> {
+        let output = Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to run git stash pop")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
     pub fn ensure_worktrees_gitignored(repo_root: &Path) {
         let gitignore = repo_root.join(".gitignore");
         let content = std::fs::read_to_string(&gitignore).unwrap_or_default();

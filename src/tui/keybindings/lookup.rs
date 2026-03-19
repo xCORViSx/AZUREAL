@@ -163,8 +163,12 @@ pub fn lookup_git_actions_action(
             }
             // Pull only available on main branch
             Action::GitPull if !is_on_main || !actions_focused => true,
-            // Commit + push + auto-resolve settings need actions focus
-            Action::GitCommit | Action::GitPush | Action::GitAutoResolveSettings
+            // Commit + push + stash + auto-resolve settings need actions focus
+            Action::GitCommit
+            | Action::GitPush
+            | Action::GitStash
+            | Action::GitStashPop
+            | Action::GitAutoResolveSettings
                 if !actions_focused =>
             {
                 true

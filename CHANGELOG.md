@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Git stash actions** — `z` to stash all changes (tracked + untracked via `git stash push -u`), `Shift+Z` to pop. Available on both main and feature branches in the git panel actions pane. Shows result/error in the status box and auto-refreshes the file list and commit log. Modified: `types.rs` (Action variants), `bindings.rs` (GIT_ACTIONS 25→27), `hints.rs` (action labels), `lookup.rs` (pane guard), `operations.rs` (exec_stash/exec_stash_pop), `input_git_actions.rs` (dispatch + Confirm index mapping), `staging.rs` (Git::stash/stash_pop).
 - **mdBook manual** — Comprehensive 91-page manual covering every feature, keybinding, and source module. Built with mdBook in `manual/` directory. 3 sections (User Guide, Features, Reference), 20 chapters with sub-pages. Serve locally with `mdbook serve manual`.
 - **GitHub Pages deployment for manual** — Added `manual.yml` workflow that auto-builds and deploys the mdBook to GitHub Pages on pushes to `main` that touch `manual/`. README link updated to point to the live site.
 

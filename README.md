@@ -49,6 +49,7 @@
 - **Discard Changes** — Revert individual files (`x`) with inline confirmation prompt
 - **Squash Merge** — One-key squash merge with auto-rebase onto main and rich commit messages
 - **AI Commit Messages** — Generates conventional commit messages using the currently selected model, with automatic cross-backend fallback
+- **Stash** — Quick stash (`z`) and stash pop (`Shift+Z`) from the git panel
 - **Auto-Rebase** — Keep feature branches up-to-date automatically with configurable auto-resolve files
 - **Conflict Resolution** — Structured conflict overlay with Claude-assisted resolution (RCR)
 

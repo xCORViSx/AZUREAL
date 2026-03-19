@@ -649,6 +649,52 @@ pub(super) fn exec_push(app: &mut App) {
     });
 }
 
+/// Stash all changes (tracked + untracked) in the current worktree
+pub(super) fn exec_stash(app: &mut App) {
+    let wt = match app.git_actions_panel.as_ref() {
+        Some(p) => p.worktree_path.clone(),
+        None => return,
+    };
+    match Git::stash(&wt) {
+        Ok(msg) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let summary = msg.lines().next().unwrap_or(&msg).to_string();
+                p.result_message = Some((summary, false));
+                refresh_changed_files(p);
+                refresh_commit_log(p);
+            }
+        }
+        Err(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("{e}"), true));
+            }
+        }
+    }
+}
+
+/// Pop the most recent stash entry in the current worktree
+pub(super) fn exec_stash_pop(app: &mut App) {
+    let wt = match app.git_actions_panel.as_ref() {
+        Some(p) => p.worktree_path.clone(),
+        None => return,
+    };
+    match Git::stash_pop(&wt) {
+        Ok(msg) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                let summary = msg.lines().next().unwrap_or(&msg).to_string();
+                p.result_message = Some((summary, false));
+                refresh_changed_files(p);
+                refresh_commit_log(p);
+            }
+        }
+        Err(e) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.result_message = Some((format!("{e}"), true));
+            }
+        }
+    }
+}
+
 /// Start the commit flow: stage changes, get the diff, spawn a one-shot
 /// Claude-or-Codex helper to generate a commit message, and open the commit
 /// overlay.

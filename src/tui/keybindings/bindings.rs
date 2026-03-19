@@ -756,7 +756,7 @@ pub static HEALTH_DOCS: [Keybinding; 4] = [
 /// Actions are context-aware: main branch shows pull+commit+push,
 /// feature branches show squash-merge+commit+push. Guards in
 /// lookup_git_actions_action() enforce this based on is_on_main + actions_focused.
-pub static GIT_ACTIONS: [Keybinding; 25] = [
+pub static GIT_ACTIONS: [Keybinding; 27] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Tab),
@@ -873,6 +873,16 @@ pub static GIT_ACTIONS: [Keybinding; 25] = [
         &ALT_RBRACE,
         "Next page",
         Action::GitNextPage,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('z')),
+        "Stash changes",
+        Action::GitStash,
+    ),
+    Keybinding::new(
+        KeyCombo::shift(KeyCode::Char('Z')),
+        "Stash pop",
+        Action::GitStashPop,
     ),
     Keybinding::new(
         KeyCombo::shift(KeyCode::Char('M')),
@@ -1073,7 +1083,7 @@ mod tests {
 
     #[test]
     fn git_actions_length() {
-        assert_eq!(GIT_ACTIONS.len(), 25);
+        assert_eq!(GIT_ACTIONS.len(), 27);
     }
 
     #[test]

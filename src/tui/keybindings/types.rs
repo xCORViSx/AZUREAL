@@ -333,6 +333,8 @@ pub enum Action {
     GitDiscardFile,
     GitPrevWorktree,
     GitNextWorktree,
+    GitStash,
+    GitStashPop,
     GitPrevPage,
     GitNextPage,
 

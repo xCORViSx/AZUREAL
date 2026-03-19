@@ -1228,21 +1228,25 @@ Commit editor and conflict overlays render on top of the viewer pane from `run.r
 **Context-Aware Actions (when actions section focused):**
 Actions change based on whether the current worktree is the main/master branch or a feature branch. `is_on_main: bool` on `GitActionsPanel` determines which set is shown, set by comparing `worktree_name == main_branch` in `open_git_actions_panel()`.
 
-*On main branch:*
+*On main branch (5 actions):*
 - `l` / Enter on index 0 — Pull (`exec_pull()`) — pulls latest changes from remote
 - `c` / Enter on index 1 — Commit (see below)
 - `Shift+P` / Enter on index 2 — Push to remote
+- `z` / Enter on index 3 — Stash (`exec_stash()`) — `git stash push -u` (includes untracked)
+- `Shift+Z` / Enter on index 4 — Stash pop (`exec_stash_pop()`) — `git stash pop`
 
-*On feature branches (4 actions):*
+*On feature branches (6 actions):*
 - `m` / Enter on index 0 — Squash merge to main: runs on a **background thread** with progress phases shown via `loading_indicator`. Thread sends `SquashMergeProgress` updates through an `mpsc` channel (polled in event loop at 16ms). Phases: "Rebasing onto main..." → "Pushing rebased branch..." → "Merging into main..." → "Pushing to remote...". Final `SquashMergeOutcome` dispatches to success (PostMergeDialog), conflict (GitConflictOverlay), or error. Dirty-check runs synchronously before spawning. Pattern matches commit message generation (`GitCommitOverlay.generating` + `overlay.receiver`). RCR auto-continue path follows the same flow.
 - `Shift+R` / Enter on index 1 — Rebase onto main (`exec_rebase()`) — manual rebase of feature branch onto main, then auto-pushes the rebased branch to its remote via `Git::push(&wt_path)`. On conflict, shows overlay with RCR option; after RCR acceptance the branch is also pushed.
 - `c` / Enter on index 2 — Commit (see below)
 - `Shift+P` / Enter on index 3 — Push to remote
+- `z` / Enter on index 4 — Stash (`exec_stash()`) — `git stash push -u` (includes untracked)
+- `Shift+Z` / Enter on index 5 — Stash pop (`exec_stash_pop()`) — `git stash pop`
 - `r` — Refresh (re-fetches changed files and commit log; works on all pages including main)
 
 **Post-action refresh:** Every git action outcome calls `refresh_changed_files()` + `refresh_commit_log()` — including error paths (rebase failed, squash merge failed), conflict paths (shows overlay but also refreshes data underneath), and "up to date" results. Switching worktree pages (`[`/`]`, `{`/`}`, `Shift+M`) calls `open_git_actions_panel()` which does a full rebuild from git, so navigated-to pages always show fresh data.
 
-**Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`.
+**Mutual exclusivity guards:** `lookup_git_actions_action()` takes `focused_pane: u8` (derives `actions_focused = focused_pane == 0` internally) and blocks `GitSquashMerge` and `GitRebase` when `is_on_main` is true (cannot squash-merge/rebase main into itself) and blocks `GitPull` when `is_on_main` is false (pull only available on main). Both also require `actions_focused`. `GitStash`, `GitStashPop`, `GitCommit`, `GitPush`, and `GitAutoResolveSettings` also require `actions_focused`.
 
 **File list (when files pane focused, focused_pane==1):**
 - Each file shows status char (M=yellow, A=green, D=red, R=cyan, ?=magenta untracked), path, right-aligned `+N/-N` stats (green for additions, red for deletions; orange override when row is selected). **Staged files** show underlined path with normal colors; **unstaged files** show strikethrough path in DarkGray with dimmed stats. Title shows total file count, staged count (e.g. `3✓`), and +/- stats.

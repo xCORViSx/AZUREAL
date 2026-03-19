@@ -222,13 +222,21 @@ pub fn health_docs_hints() -> String {
 /// Context-aware: main branch shows pull+commit+push, feature shows squash-merge+commit+push.
 pub fn git_actions_labels(is_on_main: bool) -> Vec<(String, &'static str)> {
     let actions: &[Action] = if is_on_main {
-        &[Action::GitPull, Action::GitCommit, Action::GitPush]
+        &[
+            Action::GitPull,
+            Action::GitCommit,
+            Action::GitPush,
+            Action::GitStash,
+            Action::GitStashPop,
+        ]
     } else {
         &[
             Action::GitSquashMerge,
             Action::GitRebase,
             Action::GitCommit,
             Action::GitPush,
+            Action::GitStash,
+            Action::GitStashPop,
         ]
     };
     actions
