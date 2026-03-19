@@ -38,7 +38,10 @@ fn draw_git_sidebar(
     area: Rect,
 ) -> usize {
     // Split vertically: actions (auto-height) | files (fill)
-    let action_rows = if panel.is_on_main { 8 } else { 10 };
+    // Actions: N action items + divider + auto-resolve + (auto-rebase on feature) + 2 border
+    let action_count = keybindings::git_actions_labels(panel.is_on_main).len();
+    let extra = if panel.is_on_main { 2 } else { 3 }; // divider+auto-resolve (+auto-rebase)
+    let action_rows = (action_count + extra + 2) as u16; // +2 for top/bottom border
     let splits = Layout::vertical([
         ratatui::layout::Constraint::Length(action_rows),
         ratatui::layout::Constraint::Min(4),
@@ -354,17 +357,19 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn action_rows_main_is_8() {
-        let is_on_main = true;
-        let rows = if is_on_main { 8u16 } else { 10u16 };
-        assert_eq!(rows, 8);
+    fn action_rows_main_dynamic() {
+        let action_count = keybindings::git_actions_labels(true).len();
+        let extra = 2; // divider + auto-resolve
+        let rows = (action_count + extra + 2) as u16;
+        assert_eq!(rows, 9); // 5 actions + 2 extra + 2 border
     }
 
     #[test]
-    fn action_rows_feature_is_10() {
-        let is_on_main = false;
-        let rows = if is_on_main { 8u16 } else { 10u16 };
-        assert_eq!(rows, 10);
+    fn action_rows_feature_dynamic() {
+        let action_count = keybindings::git_actions_labels(false).len();
+        let extra = 3; // divider + auto-rebase + auto-resolve
+        let rows = (action_count + extra + 2) as u16;
+        assert_eq!(rows, 11); // 6 actions + 3 extra + 2 border
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -374,21 +379,21 @@ mod tests {
     #[test]
     fn sidebar_layout_main_branch() {
         let area = Rect::new(0, 0, 40, 30);
-        let action_rows = 8u16;
+        let action_rows = 9u16; // 5 actions + divider + auto-resolve + 2 border
         let splits =
             Layout::vertical([Constraint::Length(action_rows), Constraint::Min(4)]).split(area);
-        assert_eq!(splits[0].height, 8);
-        assert_eq!(splits[1].height, 22);
+        assert_eq!(splits[0].height, 9);
+        assert_eq!(splits[1].height, 21);
     }
 
     #[test]
     fn sidebar_layout_feature_branch() {
         let area = Rect::new(0, 0, 40, 30);
-        let action_rows = 10u16;
+        let action_rows = 11u16; // 6 actions + divider + auto-rebase + auto-resolve + 2 border
         let splits =
             Layout::vertical([Constraint::Length(action_rows), Constraint::Min(4)]).split(area);
-        assert_eq!(splits[0].height, 10);
-        assert_eq!(splits[1].height, 20);
+        assert_eq!(splits[0].height, 11);
+        assert_eq!(splits[1].height, 19);
     }
 
     // ══════════════════════════════════════════════════════════════════
