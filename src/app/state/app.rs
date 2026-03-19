@@ -514,8 +514,8 @@ pub struct App {
     pub auto_rebase_enabled: HashSet<String>,
     /// Throttle for periodic auto-rebase checks (every 2 seconds)
     pub last_auto_rebase_check: std::time::Instant,
-    /// Auto-rebase success dialog: (branch_display_name, dismiss_at). Shown for 2 seconds.
-    pub auto_rebase_success_until: Option<(String, std::time::Instant)>,
+    /// Auto-rebase success dialog: (branch_display_names, dismiss_at). Shown for 2 seconds.
+    pub auto_rebase_success_until: Option<(Vec<String>, std::time::Instant)>,
     /// True when user is browsing the main/master branch (via Shift+M).
     /// Main acts like any other worktree — the ★ yellow tab is visual distinction only.
     pub browsing_main: bool,

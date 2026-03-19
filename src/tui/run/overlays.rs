@@ -19,23 +19,39 @@ use super::super::util::{AZURE, GIT_ORANGE};
 
 /// Auto-rebase dialog — centered popup showing rebase progress or success.
 /// `success` = true shows green border with checkmark, false shows AZURE "in progress".
-pub fn draw_auto_rebase_dialog(f: &mut Frame, branch: &str, success: bool) {
+pub fn draw_auto_rebase_dialog(f: &mut Frame, branches: &[String], success: bool) {
     let area = f.area();
-    let msg = if success {
-        format!(" {} rebased onto main \u{2713} ", branch)
+    let lines: Vec<Line> = if success {
+        branches
+            .iter()
+            .map(|b| Line::from(Span::styled(format!(" {} \u{2713}", b), Style::default().fg(Color::White))))
+            .collect()
     } else {
-        format!(" Auto-rebasing {} onto main... ", branch)
+        branches
+            .iter()
+            .map(|b| Line::from(Span::styled(format!(" {} ...", b), Style::default().fg(Color::White))))
+            .collect()
     };
     let border_color = if success { Color::Green } else { AZURE };
-    let w = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let title = if success { " rebased onto main " } else { " auto-rebasing onto main " };
+    let max_line_w = lines
+        .iter()
+        .map(|l| l.width() as u16)
+        .max()
+        .unwrap_or(0)
+        .max(title.len() as u16);
+    let w = (max_line_w + 4).min(area.width.saturating_sub(4));
+    let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    // Top-right corner — avoids overlapping the centered post-merge dialog
+    let x = area.x + area.width.saturating_sub(w + 1);
+    let y = area.y + 1;
     let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(Span::styled(msg, Style::default().fg(Color::White)))
+    let dialog = Paragraph::new(lines)
         .alignment(Alignment::Center)
         .block(
             Block::default()
+                .title(title)
+                .title_alignment(Alignment::Center)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(border_color)),
         );

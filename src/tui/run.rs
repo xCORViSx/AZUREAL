@@ -342,8 +342,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_debug_dump_saving(f);
     }
     // Auto-rebase success dialog — 2-second toast after successful auto-rebase
-    if let Some((ref branch, _)) = app.auto_rebase_success_until {
-        draw_auto_rebase_dialog(f, branch, true);
+    if let Some((ref branches, _)) = app.auto_rebase_success_until {
+        draw_auto_rebase_dialog(f, branches, true);
     }
     // Welcome modal — no worktrees and not browsing main
     if app.needs_welcome_modal() {

@@ -86,6 +86,9 @@ pub fn poll_squash_merge(app: &mut App) -> bool {
                     selected: 0,
                 });
                 app.set_status(status_msg);
+                // Trigger immediate auto-rebase — main just got new commits
+                app.last_auto_rebase_check =
+                    std::time::Instant::now() - std::time::Duration::from_secs(10);
             }
             SquashMergeOutcome::Conflict {
                 conflicted,
@@ -197,19 +200,32 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                 app.load_session_output();
             }
             BackgroundOpOutcome::GitResult { message, is_error } => {
+                // After a successful pull, trigger immediate auto-rebase of
+                // all enabled worktrees by resetting the throttle timer.
+                let is_pull = !is_error && message.starts_with("Pulled:");
                 if let Some(ref mut p) = app.git_actions_panel {
                     p.result_message = Some((message, is_error));
                     crate::tui::input_git_actions::refresh_changed_files(p);
                     crate::tui::input_git_actions::refresh_commit_log(p);
                 }
+                if is_pull {
+                    app.last_auto_rebase_check =
+                        std::time::Instant::now() - std::time::Duration::from_secs(10);
+                }
             }
             BackgroundOpOutcome::RcrFinished(completion) => {
                 app.load_session_output();
                 app.update_title_session_name();
+                let had_merge = completion.post_merge_dialog.is_some();
                 if let Some(dialog) = completion.post_merge_dialog {
                     app.post_merge_dialog = Some(dialog);
                 }
                 app.set_status(completion.status_msg);
+                // After RCR merge, trigger immediate auto-rebase
+                if had_merge {
+                    app.last_auto_rebase_check =
+                        std::time::Instant::now() - std::time::Duration::from_secs(10);
+                }
             }
             BackgroundOpOutcome::Renamed { new_branch } => {
                 let _ = app.refresh_worktrees();

@@ -46,6 +46,10 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
         .as_ref()
         .map(|p| p.worktree_name.clone());
 
+    let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
+    let mut rebased: Vec<String> = Vec::new();
+    let mut changed = false;
+
     for (branch, wt_path) in candidates {
         // Skip the worktree whose git panel is currently open
         if git_panel_branch.as_ref() == Some(&branch) {
@@ -66,7 +70,6 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
             continue;
         }
 
-        let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
         match exec_rebase_inner(&wt_path, &project.main_branch, &ar_files) {
             RebaseOutcome::UpToDate => continue,
             RebaseOutcome::Rebased => {
@@ -75,12 +78,8 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
                     Ok(_) => " → pushed",
                     Err(_) => "",
                 };
-                app.auto_rebase_success_until = Some((
-                    format!("{}{}", display, push_suffix),
-                    Instant::now() + Duration::from_secs(2),
-                ));
-                app.invalidate_sidebar();
-                return true;
+                rebased.push(format!("{}{}", display, push_suffix));
+                changed = true;
             }
             RebaseOutcome::Conflict {
                 conflicted,
@@ -104,10 +103,17 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
                     });
                 }
                 app.invalidate_sidebar();
+                // Conflict needs user intervention — stop processing remaining trees
                 return true;
             }
             RebaseOutcome::Failed(_) => continue,
         }
     }
-    false
+
+    if !rebased.is_empty() {
+        app.auto_rebase_success_until =
+            Some((rebased, Instant::now() + Duration::from_secs(3)));
+        app.invalidate_sidebar();
+    }
+    changed
 }
