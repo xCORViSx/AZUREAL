@@ -118,7 +118,7 @@ The complete table in one place:
 | `j` / `k` | Scroll line down / up |
 | `J` / `K` | Page scroll down / up |
 | `Tab` / `Shift+Tab` | Cycle pane focus |
-| `G` | Git actions panel |
+| `G` | GitView panel |
 | `H` | Health panel |
 | `M` | Browse main branch |
 | `P` | Projects panel |

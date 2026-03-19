@@ -128,7 +128,7 @@ azureal
 | `j/k` | Scroll line |
 | `J/K` | Page scroll |
 | `Tab/Shift+Tab` | Cycle pane focus |
-| `G` | Git actions panel |
+| `G` | GitView panel |
 | `H` | Health panel |
 | `M` | Browse main branch |
 | `P` | Projects panel |

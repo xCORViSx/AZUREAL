@@ -193,7 +193,7 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
     Keybinding::new(
         KeyCombo::shift(KeyCode::Char('G')),
-        "Git actions",
+        "GitView",
         Action::OpenGitActions,
     ),
     Keybinding::new(

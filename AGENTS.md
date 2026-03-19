@@ -1916,7 +1916,7 @@ azureal
 |-----|--------|
 | `p` | Enter prompt mode (focus input) |
 | `T` | Toggle terminal pane |
-| `G` | Git actions panel |
+| `G` | GitView panel |
 | `H` | Health panel |
 | `M` | Browse main branch |
 | `P` | Projects panel |
