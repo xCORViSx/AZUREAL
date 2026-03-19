@@ -195,7 +195,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (12 submodules: 
 
 Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
-**Build requirements:** LLVM/Clang + CMake (for whisper-rs-sys). macOS: Xcode CLT. Linux: `libclang-dev cmake`. Windows: `winget install LLVM.LLVM Kitware.CMake` + set `LIBCLANG_PATH`.
+**Build requirements:** LLVM/Clang + CMake (for whisper-rs-sys). macOS: Xcode CLT. Linux: `libclang-dev cmake`. Windows: `winget install LLVM.LLVM Kitware.CMake` + set `LIBCLANG_PATH`. Windows also requires NVIDIA CUDA Toolkit (`winget install Nvidia.CUDA`) for GPU-accelerated Whisper inference.
 
 **Vendored dependencies** (`vendor/`):
 
@@ -203,7 +203,7 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
 **Platform-conditional dependencies** (`Cargo.toml`):
 
-- `whisper-rs` — Metal GPU acceleration on macOS, CPU-only elsewhere. macOS variant adds `features = ["metal"]`
+- `whisper-rs` — Metal GPU acceleration on macOS, CUDA GPU acceleration on Windows, CPU-only on Linux. macOS variant adds `features = ["metal"]`, Windows variant adds `features = ["cuda"]`
 - `crossterm` — `use-dev-tty` feature enabled on Unix only (reads `/dev/tty`); Windows uses Console API natively
 - `libc` — Unix only, for `getrusage()` CPU time sampling
 - `windows-sys` — Windows only, for `GetProcessTimes()` CPU time sampling
@@ -1081,7 +1081,7 @@ Implementation: `draw_worktree_tabs()` in `src/tui/run/worktree_tabs.rs`, `workt
 
 ### Speech-to-Text Input
 
-Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with Metal GPU acceleration, and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field. When recording is active, `⌃s` resolves from ANY focus/mode (via `stt_recording` in `KeyContext`) so the user can stop recording even after Tab clears prompt_mode.
+Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio is captured via cpal (CoreAudio on macOS), transcribed locally via whisper.cpp with GPU acceleration (Metal on macOS, CUDA on Windows), and inserted at the cursor position. In edit mode, text goes into the viewer edit buffer; in prompt mode, into the prompt input field. When recording is active, `⌃s` resolves from ANY focus/mode (via `stt_recording` in `KeyContext`) so the user can stop recording even after Tab clears prompt_mode.
 
 **Architecture:**
 - Background thread (`stt_loop`) blocks on `mpsc::recv()` when idle (zero CPU)

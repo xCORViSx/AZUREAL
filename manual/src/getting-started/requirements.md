@@ -9,7 +9,7 @@ that unlock additional features.
 |----------|--------|-------|
 | macOS | **Primary** | Metal GPU acceleration for Whisper; `.app` bundle icon support |
 | Linux | Supported | CPU-based Whisper; all features functional |
-| Windows | Supported | ConPTY terminal backend; `cmd.exe` and PowerShell shells; CPU-based Whisper |
+| Windows | Supported | ConPTY terminal backend; `cmd.exe` and PowerShell shells; CUDA GPU-accelerated Whisper |
 
 ## Required
 
@@ -89,6 +89,22 @@ winget install LLVM.LLVM Kitware.CMake
 After installing LLVM on Windows, set the `LIBCLANG_PATH` environment variable
 to the LLVM `bin` directory (e.g., `C:\Program Files\LLVM\bin`).
 
+### NVIDIA CUDA Toolkit (Windows)
+
+Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
+falls back to CPU-only mode which is significantly slower.
+
+```powershell
+winget install Nvidia.CUDA
+```
+
+Restart your terminal after installation so the `CUDA_PATH` environment variable
+is available. The build system reads `CUDA_PATH` to locate the CUDA libraries
+automatically.
+
+> **Note:** This requirement applies only to Windows. macOS uses Metal for GPU
+> acceleration (handled automatically), and Linux uses CPU inference.
+
 ## Optional
 
 ### Nerd Font
@@ -120,8 +136,9 @@ Models are available from
 models (medium, large) improve accuracy at the cost of higher latency and memory
 usage.
 
-On macOS, Whisper runs on the Metal GPU for faster inference. Linux and Windows
-use CPU inference.
+On macOS, Whisper runs on the Metal GPU for faster inference. On Windows, Whisper
+uses CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit). Linux uses CPU
+inference.
 
 ## Quick Checklist
 
@@ -130,4 +147,5 @@ Before proceeding to installation, confirm:
 - [ ] Git 2.15+ is installed
 - [ ] At least one agent CLI is installed (Claude Code or Codex)
 - [ ] LLVM/Clang and CMake are available (if building from source)
+- [ ] NVIDIA CUDA Toolkit is installed (Windows only, if building from source)
 - [ ] A Nerd Font is configured in your terminal (recommended)

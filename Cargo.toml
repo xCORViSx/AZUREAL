@@ -97,6 +97,7 @@ whisper-rs = { version = "0.15", features = ["metal"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
+whisper-rs = { version = "0.15", features = ["cuda"] }
 
 # Vendor patch: upstream whisper-rs-sys generates bindgen layout_tests that
 # fail on MSVC (whisper_full_params struct size mismatch). Our vendored fork

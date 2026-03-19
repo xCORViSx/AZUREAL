@@ -5,6 +5,9 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **CUDA GPU acceleration for Whisper on Windows** — Windows builds now compile whisper-rs with `features = ["cuda"]`, enabling NVIDIA GPU-accelerated speech-to-text inference via cuBLAS. Requires NVIDIA CUDA Toolkit (`winget install Nvidia.CUDA`). Previously Windows used CPU-only inference, which was 5-10x slower than macOS Metal. Modified: `Cargo.toml` (Windows target dependency), `manual/src/getting-started/requirements.md`, `README.md`.
+
+### Added
 - **Git stash actions** — `z` to stash all changes (tracked + untracked via `git stash push -u`), `Shift+Z` to pop. Available on both main and feature branches in the git panel actions pane. Shows result/error in the status box and auto-refreshes the file list and commit log. Modified: `types.rs` (Action variants), `bindings.rs` (GIT_ACTIONS 25→27), `hints.rs` (action labels), `lookup.rs` (pane guard), `operations.rs` (exec_stash/exec_stash_pop), `input_git_actions.rs` (dispatch + Confirm index mapping), `staging.rs` (Git::stash/stash_pop).
 - **mdBook manual** — Comprehensive 91-page manual covering every feature, keybinding, and source module. Built with mdBook in `manual/` directory. 3 sections (User Guide, Features, Reference), 20 chapters with sub-pages. Serve locally with `mdbook serve manual`.
 - **GitHub Pages deployment for manual** — Manual deployed to `gh-pages` branch via branch-based GitHub Pages (no Actions minutes required). README link points to `https://xcorvisx.github.io/AZUREAL/`. Rebuild with `mdbook build manual/` and push to `gh-pages`.
