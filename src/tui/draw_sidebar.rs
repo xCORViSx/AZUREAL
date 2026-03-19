@@ -301,16 +301,16 @@ fn draw_git_sidebar(
         }
     };
 
+    let border_fg = if files_focused { GIT_ORANGE } else { GIT_BROWN };
+    let border_mod = if files_focused { Modifier::BOLD } else { Modifier::empty() };
     let files_block = Block::default()
         .title(Span::styled(
             files_title,
-            Style::default()
-                .fg(if files_focused { GIT_ORANGE } else { GIT_BROWN })
-                .add_modifier(if files_focused {
-                    Modifier::BOLD
-                } else {
-                    Modifier::empty()
-                }),
+            Style::default().fg(border_fg).add_modifier(border_mod),
+        ))
+        .title_bottom(Span::styled(
+            keybindings::git_files_pane_footer(),
+            Style::default().fg(border_fg).add_modifier(border_mod),
         ))
         .borders(Borders::ALL)
         .border_type(if files_focused {
@@ -318,11 +318,7 @@ fn draw_git_sidebar(
         } else {
             BorderType::Plain
         })
-        .border_style(if files_focused {
-            Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(GIT_BROWN)
-        });
+        .border_style(Style::default().fg(border_fg).add_modifier(border_mod));
     f.render_widget(Paragraph::new(file_lines).block(files_block), files_area);
     file_scroll_writeback
 }

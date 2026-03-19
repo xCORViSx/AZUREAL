@@ -20,6 +20,7 @@ All notable changes to Azureal will be documented in this file.
 - **Modularized `draw_dialogs.rs` into 6 focused submodules** — Split the 1284-line file into `draw_dialogs/` directory with file-based module root: `help_overlay.rs` (help overlay with auto-sized columns), `preset_prompt.rs` (preset prompt picker and editor), `run_command.rs` (run command picker and editor), `table_popup.rs` (full-width table popup), `welcome_modal.rs` (welcome modal for empty projects), `worktree_dialogs.rs` (branch dialog, delete/rename worktree). Module root reduced to ~20 lines of `mod`/`pub use` declarations plus all 72 tests. Re-exports preserve backwards compatibility — no call-site changes needed. Modified: `src/tui/draw_dialogs.rs` (now module root), added 6 files in `src/tui/draw_dialogs/`.
 
 ### Changed
+- **Stage/discard hints moved to changed files pane** — `s:stage` and `x:discard` keybinding hints relocated from the Git status box border to the bottom border of the changed files pane, where they contextually belong. Removed from `git_actions_footer()`, added via `git_files_pane_footer()` on the files block's `title_bottom`. Modified: `hints.rs`, `keybindings.rs` (re-export), `draw_sidebar.rs`.
 - **Auto-rebase toast repositioned to top-right corner** — The success toast now renders in the top-right corner instead of centered, preventing it from obscuring the post-merge dialog (keep/archive/delete) that appears after squash merge. Modified: `overlays.rs`.
 
 ### Fixed

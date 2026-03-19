@@ -41,7 +41,8 @@ pub use lookup::{
 // Hint generators
 pub use hints::{
     dialog_footer_hint_pairs, find_key_for_action, find_key_pair, git_actions_footer,
-    git_actions_labels, health_docs_hints, health_god_files_hints, help_sections, picker_title,
+    git_actions_labels, git_files_pane_footer, health_docs_hints, health_god_files_hints,
+    help_sections, picker_title,
     projects_browse_hint_pairs, prompt_command_title, prompt_type_title, terminal_command_title,
     terminal_scroll_title, terminal_type_title,
 };

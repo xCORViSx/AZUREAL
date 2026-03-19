@@ -276,9 +276,15 @@ pub fn git_actions_footer() -> String {
         "{",
         "}",
     );
+    format!("{}/{}:cycle | {}:exec/view | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab_fwd, tab_back, enter, refresh, prev, next, pprev, pnext, esc)
+}
+
+/// Stage/discard hint string for the changed-files pane bottom border.
+pub fn git_files_pane_footer() -> String {
     let stage = find_key_for_action(&GIT_ACTIONS, Action::GitToggleStage).unwrap_or("s".into());
-    let discard = find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
-    format!("{}/{}:cycle | {}:exec/view | {}:stage | {}:discard | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab_fwd, tab_back, enter, stage, discard, refresh, prev, next, pprev, pnext, esc)
+    let discard =
+        find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
+    format!(" {}:stage | {}:discard ", stage, discard)
 }
 
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.
@@ -1067,7 +1073,7 @@ mod tests {
     #[test]
     fn git_labels_main_count() {
         let labels = git_actions_labels(true);
-        assert_eq!(labels.len(), 3);
+        assert_eq!(labels.len(), 5);
     }
 
     #[test]
@@ -1099,7 +1105,7 @@ mod tests {
     #[test]
     fn git_labels_feature_count() {
         let labels = git_actions_labels(false);
-        assert_eq!(labels.len(), 4);
+        assert_eq!(labels.len(), 6);
     }
 
     #[test]
