@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Windows console icon build failure with `windows-sys` 0.59** — Win32 API calls for setting the console icon used integer `0` literals where `*mut c_void` pointers were expected (`GetConsoleWindow()` null check, `LoadImageW()` `hinst` parameter). Replaced with `std::ptr::null_mut()` and `.is_null()` checks to match `windows-sys` 0.59's proper pointer types. Modified: `src/main.rs`.
 - **Windows console icon not showing in terminal tab or taskbar preview** — The `winres`-embedded `.ico` only affects the `.exe` file icon (Explorer, pinned taskbar, Alt+Tab), not the hosting terminal window. Added runtime Win32 API calls (`GetConsoleWindow()` + `SendMessageW(WM_SETICON)`) at startup to set the console window's small (16px) and large (32px) icons from the extracted `~/.azureal/Azureal.ico`, so the Azureal icon appears in the terminal tab and taskbar preview. Modified: `Cargo.toml` (added `Win32_System_Console` + `Win32_UI_WindowsAndMessaging` features to `windows-sys`), `src/main.rs` (console icon setup in Windows startup block).
 
 ### Added

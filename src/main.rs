@@ -232,18 +232,18 @@ async fn main() -> Result<()> {
         };
         unsafe {
             let hwnd = GetConsoleWindow();
-            if hwnd != 0 {
+            if !hwnd.is_null() {
                 let wide_path: Vec<u16> = ico_path
                     .as_os_str()
                     .encode_wide()
                     .chain(std::iter::once(0))
                     .collect();
-                let icon_sm = LoadImageW(0, wide_path.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
-                let icon_lg = LoadImageW(0, wide_path.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
-                if icon_sm != 0 {
+                let icon_sm = LoadImageW(std::ptr::null_mut(), wide_path.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+                let icon_lg = LoadImageW(std::ptr::null_mut(), wide_path.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                if !icon_sm.is_null() {
                     SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon_sm as isize);
                 }
-                if icon_lg != 0 {
+                if !icon_lg.is_null() {
                     SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon_lg as isize);
                 }
             }
