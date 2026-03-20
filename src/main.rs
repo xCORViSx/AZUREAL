@@ -213,14 +213,40 @@ async fn main() -> Result<()> {
         let _ = notify_rust::set_application("com.xcorvisx.azureal");
     }
 
-    // Write the embedded .ico to ~/.azureal/ so Windows notifications can
-    // reference it. The exe's embedded resource handles the terminal tab icon
-    // and taskbar icon automatically — this file is only for toast notifications.
+    // Write the embedded .ico to ~/.azureal/ for toast notifications, then
+    // set it as the console window icon so it shows in the terminal tab and
+    // taskbar preview (winres only embeds the exe file icon for Explorer).
     #[cfg(target_os = "windows")]
     {
         let ico_path = config::config_dir().join("Azureal.ico");
         if !ico_path.exists() {
             let _ = std::fs::write(&ico_path, include_bytes!("../resources/Azureal.ico"));
+        }
+
+        // Set the console window icon (terminal tab + taskbar preview)
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            LoadImageW, SendMessageW, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_LOADFROMFILE,
+            WM_SETICON,
+        };
+        unsafe {
+            let hwnd = GetConsoleWindow();
+            if hwnd != 0 {
+                let wide_path: Vec<u16> = ico_path
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let icon_sm = LoadImageW(0, wide_path.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+                let icon_lg = LoadImageW(0, wide_path.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                if icon_sm != 0 {
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon_sm as isize);
+                }
+                if icon_lg != 0 {
+                    SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon_lg as isize);
+                }
+            }
         }
     }
 

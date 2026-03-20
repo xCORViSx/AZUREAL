@@ -92,7 +92,7 @@
 |----------|--------|
 | macOS | Primary — Metal GPU for Whisper, `.app` bundle icon |
 | Linux | Supported — CPU Whisper, all features |
-| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CUDA GPU Whisper, embedded exe icon |
+| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CUDA GPU Whisper, branded console icon (terminal tab + taskbar) |
 
 ## Installation
 

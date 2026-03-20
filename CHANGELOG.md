@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Windows console icon not showing in terminal tab or taskbar preview** — The `winres`-embedded `.ico` only affects the `.exe` file icon (Explorer, pinned taskbar, Alt+Tab), not the hosting terminal window. Added runtime Win32 API calls (`GetConsoleWindow()` + `SendMessageW(WM_SETICON)`) at startup to set the console window's small (16px) and large (32px) icons from the extracted `~/.azureal/Azureal.ico`, so the Azureal icon appears in the terminal tab and taskbar preview. Modified: `Cargo.toml` (added `Win32_System_Console` + `Win32_UI_WindowsAndMessaging` features to `windows-sys`), `src/main.rs` (console icon setup in Windows startup block).
+
 ### Added
 - **Windows executable icon and branded notifications** — The `.exe` now embeds a Win32 icon resource (6 sizes: 256/128/64/48/32/16) via `winres` build script, so Windows Terminal shows the Azureal icon in the tab, taskbar, and Alt+Tab. On startup, the `.ico` is extracted to `~/.azureal/Azureal.ico` and used for toast notifications via `.app_id("AZUREAL")` + `.icon()`. macOS `.sound_name("Glass")` is now platform-gated. Modified: `build.rs` (new), `resources/Azureal.ico` (new), `Cargo.toml` (winres build dep), `src/main.rs` (Windows ico extraction), `src/app/state/claude/process_lifecycle.rs` (platform-specific notification config).
 - **`.azureal/` directory tracked in git** — The `.azureal/` folder (containing `azufig.toml` config and `sessions.azs` session store) is no longer gitignored, so settings and sessions sync across machines when pushing/pulling. Modified: `.gitignore`.
