@@ -79,7 +79,8 @@ pub fn draw_welcome_modal(f: &mut Frame) {
         .title(Span::styled(
             " AZUREAL ",
             Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
-        ));
+        ))
+        .title_alignment(Alignment::Center);
 
     f.render_widget(Clear, rect);
     f.render_widget(Paragraph::new(lines).block(block), rect);

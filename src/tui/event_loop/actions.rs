@@ -85,15 +85,21 @@ pub fn handle_key_event(
         return Ok(());
     }
 
-    // Welcome modal — leader entry + global keybindings pass through.
-    // Don't return early so globals (⌃q, ⇧M, ⇧P, ⇧G, ⇧H, etc.) resolve normally.
+    // Welcome modal — only dialog-listed keys are allowed: M (BrowseMain),
+    // W leader (AddWorktree), P (OpenProjects), Ctrl+Q (Quit). All others consumed.
     if app.needs_welcome_modal() {
         if key.code == KeyCode::Char('W') && key.modifiers == event::KeyModifiers::SHIFT {
             app.leader_state = LeaderState::WaitingForAction;
             app.set_status("W …");
             return Ok(());
         }
-        // Fall through to keybinding resolution for global keys
+        let ctx = KeyContext::from_app(app);
+        if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
+            if matches!(action, Action::BrowseMain | Action::OpenProjects | Action::Quit) {
+                return execute_action(action, app, claude_process);
+            }
+        }
+        return Ok(());
     }
 
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
