@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **CUDA 13.2 build failure on Windows (MSVC preprocessor)** — CUDA Toolkit 13.2's CCCL headers require MSVC's standard conforming preprocessor (`/Zc:preprocessor`), which wasn't being passed to `cl.exe` during CUDA compilation. Added the flag to the MSVC branch of CUDA host compiler options in the ggml-cuda CMakeLists. Modified: `vendor/whisper-rs/sys/whisper.cpp/ggml/src/ggml-cuda/CMakeLists.txt`.
+
 ### Added
 - **CUDA GPU acceleration for Whisper on Windows** — Windows builds now compile whisper-rs with `features = ["cuda"]`, enabling NVIDIA GPU-accelerated speech-to-text inference via cuBLAS. Requires NVIDIA CUDA Toolkit (`winget install Nvidia.CUDA`). Previously Windows used CPU-only inference, which was 5-10x slower than macOS Metal. Modified: `Cargo.toml` (Windows target dependency), `manual/src/getting-started/requirements.md`, `README.md`.
 
@@ -26,6 +29,9 @@ All notable changes to Azureal will be documented in this file.
 ### Changed
 - **Stage/discard hints moved to changed files pane** — `s:stage` and `x:discard` keybinding hints relocated from the Git status box border to the bottom border of the changed files pane, where they contextually belong. Removed from `git_actions_footer()`, added via `git_files_pane_footer()` on the files block's `title_bottom`. Modified: `hints.rs`, `keybindings.rs` (re-export), `draw_sidebar.rs`.
 - **Auto-rebase toast repositioned to top-right corner** — The success toast now renders in the top-right corner instead of centered, preventing it from obscuring the post-merge dialog (keep/archive/delete) that appears after squash merge. Modified: `overlays.rs`.
+
+### Removed
+- **File tree "Open Projects" hint** — The "Press P to open Projects" hint shown when no worktree is present has been removed from the file tree empty state. Modified: `draw_file_tree.rs`.
 
 ### Fixed
 - **GitView actions pane clipping stash and auto actions** — The actions pane height was hardcoded to 8 (main) / 10 (feature branch) rows, which didn't account for the stash/stash-pop actions added recently. Now computed dynamically from `git_actions_labels().len()` + extra rows (divider, auto-resolve, auto-rebase on feature) + 2 border, so the pane always sizes to fit. Modified: `draw_sidebar.rs`.

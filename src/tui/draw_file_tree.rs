@@ -84,11 +84,6 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
                 "No worktree",
                 Style::default().fg(Color::DarkGray),
             )));
-            lines.push(Line::from(vec![
-                Span::styled("Press ", Style::default().fg(Color::DarkGray)),
-                Span::styled("P", Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),
-                Span::styled(" to open Projects", Style::default().fg(Color::DarkGray)),
-            ]));
         } else {
             lines.push(Line::from(Span::styled(
                 "Empty directory",

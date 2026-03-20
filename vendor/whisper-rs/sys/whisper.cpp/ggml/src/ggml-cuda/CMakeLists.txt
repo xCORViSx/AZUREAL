@@ -175,7 +175,9 @@ if (CUDAToolkit_FOUND)
         list(APPEND CUDA_CXX_FLAGS ${CXX_FLAGS} ${GF_CXX_FLAGS})  # This is passed to -Xcompiler later
     endif()
 
-    if (NOT MSVC)
+    if (MSVC)
+        list(APPEND CUDA_CXX_FLAGS /Zc:preprocessor)
+    else()
         list(APPEND CUDA_CXX_FLAGS -Wno-pedantic)
     endif()
 
