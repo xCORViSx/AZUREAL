@@ -231,7 +231,7 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows. Claude subprocess spawned with `.stdin(Stdio::null())` to prevent console stdin handle sharing on Windows (causes input event competition between TUI and child).
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
-- Windows `.ico` extraction + console icon (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `Azureal.ico` to `~/.azureal/` for notifications, then sets the console window icon via `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` for terminal tab and taskbar preview.
+- Windows `.ico`/`.png` extraction + WT profile fragment (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `Azureal.ico` to `~/.azureal/` for Explorer/Alt+Tab, and `Azureal_toast.png` for toast notifications and the WT tab icon (PNG renders crisply; `.ico` is blurry). Writes a Windows Terminal profile fragment (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Azureal\azureal.json`) on every startup (not just when missing) referencing the PNG, so icon/exe path changes propagate automatically. `GetConsoleWindow()` returns null in WT (ConPTY has no window), so `WM_SETICON` cannot work.
 - Windows exe icon embedding (`build.rs`): `#[cfg(target_os = "windows")]` — `winres` embeds `.ico` as Win32 resource for Explorer/Alt+Tab file icon
 - Notification platform guards (`src/app/state/claude/process_lifecycle.rs`): `.sound_name("Glass")` gated to `#[cfg(target_os = "macos")]`; `.app_id("AZUREAL")` + `.icon()` gated to `#[cfg(target_os = "windows")]`
 - Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal.
@@ -642,6 +642,32 @@ KeyCombo::plain(KeyCode::BackTab)  // won't fire on terminals that send SHIFT+Ba
 ```
 
 **Affected:** Any `BackTab` keybinding. Fixed in `KeyCombo::matches()` (`types.rs`).
+
+---
+
+## WINDOWS GOTCHAS
+
+### `notify-rust` with custom `app_id` silently drops toasts
+
+`notify-rust`'s `.app_id("AZUREAL")` requires the AppUserModelID (AUMID) to be registered in the Windows registry via a Start Menu shortcut. Without that registration, the Action Center silently discards the toast — no error, no warning, nothing delivered.
+
+```rust
+// ❌ WRONG — AUMID "AZUREAL" is not registered, toast is silently dropped
+notify_rust::Notification::new()
+    .app_id("AZUREAL")
+    .summary("AZUREAL")
+    .body("Response complete")
+    .show()?;
+
+// ✅ CORRECT — shell out to PowerShell; its AUMID is pre-registered by Windows
+// Use CREATE_NO_WINDOW (0x08000000) to suppress console flash
+let ps_aumid = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
+// Pass WinRT toast XML to PowerShell via -Command
+// Toast XML uses <image placement="appLogoOverride"> with Azureal_toast.png for crisp icon
+// (.ico renders blurry in toasts — always use PNG for toast icons)
+```
+
+**Affected:** Any `notify-rust` call on Windows using a custom `.app_id()`. Fixed in `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`).
 
 ---
 
@@ -1475,10 +1501,11 @@ Cross-platform notification sent when any agent instance finishes its response. 
 - `.sound_name("Glass")` for macOS notification sound (platform-gated via `#[cfg(target_os = "macos")]`)
 
 *Windows:*
-- `.ico` file (6 sizes: 256/128/64/48/32/16) embedded in binary via `include_bytes!()` and extracted to `~/.azureal/Azureal.ico` on startup
+- `.ico` file (6 sizes: 256/128/64/48/32/16) embedded in binary via `include_bytes!()` and extracted to `~/.azureal/Azureal.ico` on startup; `Azureal_toast.png` also embedded via `include_bytes!()` and extracted to `~/.azureal/Azureal_toast.png` on first run — ensures the toast icon is always present without manual copying
 - `build.rs` uses `winres` crate to embed the `.ico` as a Win32 resource — Explorer, pinned taskbar, and Alt+Tab show the icon for the `.exe` file itself
-- At startup, sets the console window icon via `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` with the extracted `.ico` at 16px (small) and 32px (big), so the terminal tab and taskbar preview show the Azureal icon.
-- Notification uses `.app_id("AZUREAL")` for Windows toast grouping and `.icon()` pointing to the extracted `.ico` path
+- At startup, writes a Windows Terminal profile fragment at `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Azureal\azureal.json` — registers an "Azureal" profile with `Azureal_toast.png` (PNG, not `.ico`) as the tab icon for crisper rendering. Rewritten on every startup (not just when missing) so icon/exe path changes propagate automatically. (`GetConsoleWindow()` returns null in WT because ConPTY uses a hidden pseudo-console with no window handle.)
+- Notifications shell out to PowerShell using WinRT toast APIs — `notify-rust`'s `.app_id("AZUREAL")` silently drops toasts because the AUMID isn't registered via a Start Menu shortcut. PowerShell's own AUMID (`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe`) is always registered, so toasts reliably appear. `CREATE_NO_WINDOW` (0x08000000) prevents console flash.
+- Toast XML uses `appLogoOverride` image placement with `~/.azureal/Azureal_toast.png` for a crisp branded icon — the `.ico` file renders blurry in Windows toasts, PNG renders crisply
 - Windows uses its own default notification sound (no `.sound_name()`)
 
 **Common details:**
@@ -1685,7 +1712,8 @@ azureal/
 ├── README.md               # User-facing documentation
 └── resources/
     ├── Azureal.icns        # macOS app icon (embedded via include_bytes)
-    └── Azureal.ico         # Windows app icon (6 sizes: 256/128/64/48/32/16, embedded via winres + include_bytes)
+    ├── Azureal.ico         # Windows app icon (6 sizes: 256/128/64/48/32/16, embedded via winres + include_bytes)
+    └── Azureal_toast.png   # Windows toast notification icon (embedded via include_bytes, extracted to ~/.azureal/ on first run — PNG renders crisply in toasts; .ico blurs)
 ```
 
 # ROADMAP

@@ -357,22 +357,56 @@ impl App {
         let title = label;
         let body = body.to_string();
         std::thread::spawn(move || {
-            let mut n = notify_rust::Notification::new();
-            n.summary(&title).body(&body);
-
-            #[cfg(target_os = "macos")]
-            n.sound_name("Glass");
-
             #[cfg(target_os = "windows")]
             {
-                n.app_id("AZUREAL");
-                let ico = crate::config::config_dir().join("Azureal.ico");
-                if ico.exists() {
-                    n.icon(&ico.to_string_lossy());
-                }
+                // Use PowerShell WinRT toast — notify-rust with custom app_id silently
+                // fails on Windows because unregistered AppUserModelIDs are dropped.
+                let icon_path = dirs::home_dir()
+                    .unwrap_or_default()
+                    .join(".azureal")
+                    .join("Azureal_toast.png");
+                let icon_xml = if icon_path.exists() {
+                    format!(
+                        "<image placement=\"appLogoOverride\" src=\"{}\" />",
+                        icon_path.display(),
+                    )
+                } else {
+                    String::new()
+                };
+                let xml = format!(
+                    "<toast><visual><binding template=\"ToastGeneric\">\
+                     <text>{}</text><text>{}</text>{}\
+                     </binding></visual></toast>",
+                    title.replace('&', "&amp;").replace('<', "&lt;"),
+                    body.replace('&', "&amp;").replace('<', "&lt;"),
+                    icon_xml,
+                );
+                let ps = format!(
+                    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; \
+                     [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null; \
+                     $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; \
+                     $xml.LoadXml('{}'); \
+                     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe').Show(\
+                     [Windows.UI.Notifications.ToastNotification]::new($xml))",
+                    xml.replace('\'', "''"),
+                );
+                use std::os::windows::process::CommandExt;
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .output();
             }
 
-            let _ = n.show();
+            #[cfg(not(target_os = "windows"))]
+            {
+                let mut n = notify_rust::Notification::new();
+                n.summary(&title).body(&body);
+
+                #[cfg(target_os = "macos")]
+                n.sound_name("Glass");
+
+                let _ = n.show();
+            }
         });
     }
 

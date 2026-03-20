@@ -213,9 +213,10 @@ async fn main() -> Result<()> {
         let _ = notify_rust::set_application("com.xcorvisx.azureal");
     }
 
-    // Write the embedded .ico to ~/.azureal/ for toast notifications, then
-    // set the console window icon at runtime so the terminal tab and taskbar
-    // preview show the Azureal icon.
+    // Write the embedded .ico to ~/.azureal/ for toast notifications and
+    // install a Windows Terminal profile fragment so the tab shows our icon.
+    // GetConsoleWindow() returns null in WT (ConPTY pseudo-console has no
+    // window), so WM_SETICON cannot work — fragments are the supported way.
     #[cfg(target_os = "windows")]
     {
         let ico_path = config::config_dir().join("Azureal.ico");
@@ -223,48 +224,31 @@ async fn main() -> Result<()> {
             let _ = std::fs::write(&ico_path, include_bytes!("../resources/Azureal.ico"));
         }
 
-        // Set the console window icon via WM_SETICON
-        unsafe {
-            use std::os::windows::ffi::OsStrExt;
-            let hwnd = windows_sys::Win32::System::Console::GetConsoleWindow();
-            if !hwnd.is_null() {
-                let wide_path: Vec<u16> = std::ffi::OsStr::new(&ico_path)
-                    .encode_wide()
-                    .chain(std::iter::once(0))
-                    .collect();
-                let icon_sm = windows_sys::Win32::UI::WindowsAndMessaging::LoadImageW(
-                    0 as _,
-                    wide_path.as_ptr(),
-                    windows_sys::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
-                    16,
-                    16,
-                    windows_sys::Win32::UI::WindowsAndMessaging::LR_LOADFROMFILE,
-                );
-                let icon_lg = windows_sys::Win32::UI::WindowsAndMessaging::LoadImageW(
-                    0 as _,
-                    wide_path.as_ptr(),
-                    windows_sys::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
-                    32,
-                    32,
-                    windows_sys::Win32::UI::WindowsAndMessaging::LR_LOADFROMFILE,
-                );
-                if !icon_sm.is_null() {
-                    windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(
-                        hwnd,
-                        windows_sys::Win32::UI::WindowsAndMessaging::WM_SETICON,
-                        0, // ICON_SMALL
-                        icon_sm as isize,
-                    );
-                }
-                if !icon_lg.is_null() {
-                    windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(
-                        hwnd,
-                        windows_sys::Win32::UI::WindowsAndMessaging::WM_SETICON,
-                        1, // ICON_BIG
-                        icon_lg as isize,
-                    );
-                }
-            }
+        // Extract toast notification icon (PNG renders crisper than .ico in toasts)
+        let toast_png = config::config_dir().join("Azureal_toast.png");
+        if !toast_png.exists() {
+            let _ = std::fs::write(&toast_png, include_bytes!("../resources/Azureal_toast.png"));
+        }
+
+        // Install WT profile fragment (always rewritten to pick up icon/exe changes)
+        if let Some(local_app) = std::env::var_os("LOCALAPPDATA") {
+            let frag_dir = std::path::PathBuf::from(local_app)
+                .join("Microsoft")
+                .join("Windows Terminal")
+                .join("Fragments")
+                .join("Azureal");
+            let frag_path = frag_dir.join("azureal.json");
+            let icon = toast_png.to_string_lossy().replace('\\', "/");
+            let exe = std::env::current_exe()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let json = format!(
+                r#"{{"profiles":[{{"name":"Azureal","commandline":"\"{}\"","icon":"{}","hidden":false}}]}}"#,
+                exe, icon
+            );
+            let _ = std::fs::create_dir_all(&frag_dir);
+            let _ = std::fs::write(&frag_path, json);
         }
     }
 
