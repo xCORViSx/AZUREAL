@@ -65,7 +65,7 @@
 - **Run Commands** — Save and execute shell commands globally or per-project
 - **Preset Prompts** — Quick-access prompt templates with `⌥P` / `Alt+P` or `⌥1`-`⌥9` / `Alt+1`-`Alt+9` shortcuts
 - **Health Panel** — Scan for oversized files and missing documentation; spawn Claude to fix them
-- **Completion Notifications** — macOS notifications when any Claude instance finishes
+- **Completion Notifications** — Cross-platform notifications with branded Azureal icon when any agent instance finishes
 - **Worktree Safety** — Delete dialog warns about uncommitted changes and unmerged commits
 
 ### Performance
@@ -82,7 +82,7 @@
 - **Codex CLI** (for Codex backend, optional) — `npm install -g @openai/codex`
 - **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) with at least regular, bold, and italic variants installed, so AZUREAL can show file tree icons and the full range of text styling differences; emoji fallback when not detected
-- **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
+- **LLVM/Clang + CMake + Ninja** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` and `[Environment]::SetEnvironmentVariable("CMAKE_GENERATOR", "Ninja", "User")` in PowerShell (restart terminal after). Ninja is required on Windows because the default VS generator's MSBuild strips CUDA include paths
 - **NVIDIA CUDA Toolkit** (Windows build dependency, for GPU-accelerated Whisper) — `winget install Nvidia.CUDA` (restart terminal after install to pick up `CUDA_PATH`)
 - **Whisper model** (optional, for speech) — Create `~/.azureal/speech/` and download [ggml-small.en.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin) into it
 
@@ -92,7 +92,7 @@
 |----------|--------|
 | macOS | Primary — Metal GPU for Whisper, `.app` bundle icon |
 | Linux | Supported — CPU Whisper, all features |
-| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CUDA GPU Whisper |
+| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CUDA GPU Whisper, embedded exe icon |
 
 ## Installation
 

@@ -19,7 +19,7 @@ Sessions are stored in `.azureal/sessions.azs` — a single SQLite database (DEL
 **Persistent State (azufig.toml):**
 All persistent state consolidated into two TOML files named `azufig.toml` — one global and one project-local:
 - **Global** `~/.azureal/azufig.toml` — app config (API key, claude path, permission mode), registered projects (paths + display names), global run commands, global preset prompts
-- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), health scan scope (directory paths), project-local run commands, project-local preset prompts, git settings (auto-rebase per branch, auto-resolve file list). Always at the **main worktree root** (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees — no per-worktree copies. **Gitignored** — contains machine-specific paths and local session data. Session display names stored in `.azureal/sessions/index.json` alongside cache index.
+- **Project-local** `.azureal/azufig.toml` — filetree options (hidden entry names), health scan scope (directory paths), project-local run commands, project-local preset prompts, git settings (auto-rebase per branch, auto-resolve file list). Always at the **main worktree root** (resolved via `git rev-parse --git-common-dir` parent), shared by all worktrees — no per-worktree copies. **Tracked in git** — shared across machines for consistent settings and sessions. Session display names stored in `.azureal/sessions/index.json` alongside cache index.
 All sections use single-bracket `[section]` headers with flat `key = "value"` pairs (e.g., `ProjectName = "~/path"`). `[runcmds]` and `[presetprompts]` keys are prefixed with a 1-based position number to preserve quick-select order: `N_Name = "value"` (e.g., `1_Build = "cargo build"`, `2_Test = "cargo test"`). Prefix stripped on load, re-written on save. Keys that qualify as TOML bare keys (`A-Za-z0-9_-` only) are written unquoted for clean output; keys with spaces or special chars (e.g., `"1_Cargo run (debug)"`) stay quoted. `#[serde(default)]` on every section for forward-compatibility. Write pattern: load-modify-save (read current, update one section, write back) to avoid clobbering unrelated sections.
 
 # FEATURES
@@ -195,7 +195,7 @@ Implementation: `src/tui/event_loop.rs` + `src/tui/event_loop/` (12 submodules: 
 
 Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
-**Build requirements:** LLVM/Clang + CMake (for whisper-rs-sys). macOS: Xcode CLT. Linux: `libclang-dev cmake`. Windows: `winget install LLVM.LLVM Kitware.CMake` + set `LIBCLANG_PATH`. Windows also requires NVIDIA CUDA Toolkit (`winget install Nvidia.CUDA`) for GPU-accelerated Whisper inference.
+**Build requirements:** LLVM/Clang + CMake (for whisper-rs-sys). macOS: Xcode CLT. Linux: `libclang-dev cmake`. Windows: `winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja` + set `LIBCLANG_PATH`. Windows also requires NVIDIA CUDA Toolkit (`winget install Nvidia.CUDA`) for GPU-accelerated Whisper inference. The Ninja build system is required on Windows because CMake's default Visual Studio generator uses MSBuild, which invokes `nvcc --use-local-env` — this prevents CUDA from inheriting the Windows SDK include paths (`corecrt.h`). With `CMAKE_GENERATOR=Ninja`, CMake calls nvcc directly and the `INCLUDE`/`LIB` env vars propagate correctly. Set `INCLUDE`, `LIB` (MSVC + Windows SDK paths), and `CMAKE_GENERATOR=Ninja` in your environment, or build from a VS Developer Command Prompt with Ninja in PATH.
 
 **Vendored dependencies** (`vendor/`):
 
@@ -231,6 +231,9 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows. Claude subprocess spawned with `.stdin(Stdio::null())` to prevent console stdin handle sharing on Windows (causes input event competition between TUI and child).
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
+- Windows `.ico` extraction (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `Azureal.ico` to `~/.azureal/` for notification icon and taskbar branding
+- Windows exe icon embedding (`build.rs`): `#[cfg(target_os = "windows")]` — `winres` embeds `.ico` as Win32 resource for terminal tab/taskbar/Alt+Tab icon
+- Notification platform guards (`src/app/state/claude/process_lifecycle.rs`): `.sound_name("Glass")` gated to `#[cfg(target_os = "macos")]`; `.app_id("AZUREAL")` + `.icon()` gated to `#[cfg(target_os = "windows")]`
 - Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal.
 - fast_draw (`src/tui/event_loop/fast_draw.rs`): `fast_draw_input()` gated to `#[cfg(target_os = "macos")]` — direct VT writes bypass ratatui's buffer. `fast_draw_session()` was removed (caused rendering artifacts: disappearing borders, duplicated events, stale content).
 - Path canonicalization: All `std::fs::canonicalize()` calls replaced with `dunce::canonicalize()` to strip `\\?\` extended-length path prefix on Windows.
@@ -1120,7 +1123,7 @@ Implementation: `src/stt.rs` (engine), `stt_handle`, `stt_recording`, `stt_trans
 Each session maintains conversation history via the SQLite session store (`.azs`):
 - New sessions created in the store via `store.create_session(branch)` when the user starts a new session
 - Conversation context built from the store and injected into each prompt (no `--resume`)
-- After each agent exit, JSONL is parsed → events appended to store → JSONL file deleted
+- After each agent exit, JSONL is parsed → events appended to store → JSONL file deleted. A fallback cleanup in `handle_claude_exited()` independently resolves the JSONL path via `agent_session_ids` + worktree path and deletes it, catching cases where `store_append_from_display()` already consumed the `pid_session_target` entry (compaction, prompt supersede)
 - History is portable: copy `.azureal/sessions.azs` to transfer all session data between machines
 
 **Data Discovery:**
@@ -1447,15 +1450,17 @@ Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (render
 
 ### Completion Notifications
 
-macOS notification sent when any Claude instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
+Cross-platform notification sent when any agent instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
 
 **Notification format:**
 - Title: `worktree:session_name`
-- Body: "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+- Body: "Compacting context" (mid-turn compaction), "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
 - Session name uses custom name from `sessions` if set, otherwise first 8 chars of UUID
-- Branded Azureal icon (not Finder/Terminal)
+- Branded Azureal icon on all platforms (not Finder/Terminal/generic)
 
-**Implementation details:**
+**Platform-specific notification setup:**
+
+*macOS:*
 - Uses `notify-rust` crate with `set_application("com.xcorvisx.azureal")` for branded icon
 - `.app` bundle auto-created at `~/.azureal/AZUREAL.app` on first launch — zero manual setup
 - `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on first run
@@ -1467,18 +1472,27 @@ macOS notification sent when any Claude instance finishes its response. Fires fo
 - Bundle registered with macOS Launch Services via `lsregister` on creation/update
 - Activity Monitor shows "AZUREAL" as process name with branded icon
 - Notification permissions auto-enabled on first launch by writing `ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS` flags to `~/Library/Preferences/com.apple.ncprefs.plist` via Python's `plistlib` (the only reliable way to edit macOS binary plists). Marker file `~/.azureal/.notif_enabled` prevents overriding user's preference on subsequent launches
-- Binary mtime comparison detects when source binary changed (e.g., after `cargo install`) and re-copies
+- `.sound_name("Glass")` for macOS notification sound (platform-gated via `#[cfg(target_os = "macos")]`)
+
+*Windows:*
+- `.ico` file (6 sizes: 256/128/64/48/32/16) embedded in binary via `include_bytes!()` and extracted to `~/.azureal/Azureal.ico` on startup
+- `build.rs` uses `winres` crate to embed the `.ico` as a Win32 resource — Windows Terminal picks this up for tab icon, taskbar, and Alt+Tab
+- Notification uses `.app_id("AZUREAL")` for Windows toast grouping and `.icon()` pointing to the extracted `.ico` path
+- Windows uses its own default notification sound (no `.sound_name()`)
+
+**Common details:**
+- Binary mtime comparison detects when source binary changed (e.g., after `cargo install`) and re-copies (macOS bundle)
 - Notification runs in a fire-and-forget background thread (never blocks event loop)
 - Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
 - For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `index.json` display names
 
-Implementation: `src/app/state/claude.rs` (`send_completion_notification()`), `src/main.rs` (bundle creation + re-exec)
+Implementation: `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`), `src/main.rs` (macOS bundle creation + re-exec, Windows ico extraction), `build.rs` (Windows icon embedding via winres)
 
 # MANIFEST
 
 ```
 azureal/
-├── .azureal/                # Project-level azureal data (gitignored)
+├── .azureal/                # Project-level azureal data (tracked in git)
 │   ├── azufig.toml         # Project-local unified config (TOML): filetree options, sessions, healthscope (alias: godfilescope), local runcmds, local presetprompts
 │   └── sessions.azs        # SQLite session store (.azs = obscure extension, internally standard SQLite with DELETE journal mode) — portable sessions with S-numbering
 ├── .claude/                 # Project-level Claude Code config
@@ -1664,9 +1678,13 @@ azureal/
 │   └── workflows/
 │       └── release.yml     # GitHub Actions: multi-platform release builds (triggered by v* tags)
 ├── AGENTS.md               # This file
+├── build.rs                # Build script — Windows: embeds Azureal.ico via winres
 ├── CHANGELOG.md            # Version history
 ├── Cargo.toml              # Rust dependencies
-└── README.md               # User-facing documentation
+├── README.md               # User-facing documentation
+└── resources/
+    ├── Azureal.icns        # macOS app icon (embedded via include_bytes)
+    └── Azureal.ico         # Windows app icon (6 sizes: 256/128/64/48/32/16, embedded via winres + include_bytes)
 ```
 
 # ROADMAP

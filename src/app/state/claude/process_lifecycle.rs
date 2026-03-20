@@ -157,8 +157,34 @@ impl App {
         // Post-exit store flow: parse JSONL → strip injected context → append to SQLite
         self.store_append_from_jsonl(slot_id, turn_backend);
 
-        // If a staged prompt exists, leave it for the event loop to auto-send.
-        if self.staged_prompt.is_some() {
+        // Fallback JSONL cleanup: if store_append_from_display already consumed
+        // the pid_session_target entry (e.g. compaction, superseded prompt), the
+        // JSONL was never deleted. Resolve it independently and remove it.
+        if let Some(uuid) = self.agent_session_ids.get(slot_id) {
+            let wt_path = branch
+                .as_ref()
+                .and_then(|b| {
+                    self.worktrees
+                        .iter()
+                        .find(|wt| wt.branch_name == *b)
+                        .and_then(|wt| wt.worktree_path.clone())
+                })
+                .or_else(|| self.current_worktree().and_then(|wt| wt.worktree_path.clone()));
+            if let Some(wt) = wt_path {
+                if let Some(p) = crate::config::session_file(&wt, uuid) {
+                    let _ = std::fs::remove_file(&p);
+                    if self.session_file_path.as_ref() == Some(&p) {
+                        self.session_file_path = None;
+                        self.session_file_dirty = false;
+                    }
+                }
+            }
+        }
+
+        // If compaction is active, preserve the "Compacting context" status
+        if self.auto_continue_after_compaction || self.compaction_needed.is_some() {
+            // Status already set by the compaction trigger — don't overwrite
+        } else if self.staged_prompt.is_some() {
             self.set_status("Sending staged prompt...");
         } else {
             let display = branch.as_deref().unwrap_or(slot_id);
@@ -283,7 +309,7 @@ impl App {
         true
     }
 
-    /// Send a macOS notification when Claude finishes.
+    /// Send a notification when Claude finishes or compacts context.
     fn send_completion_notification(&self, branch_name: &str, slot_id: &str, code: Option<i32>) {
         let worktree = crate::models::strip_branch_prefix(branch_name);
 
@@ -318,20 +344,35 @@ impl App {
             format!("{}:{}", worktree, session_name)
         };
 
-        let body = match code {
-            Some(0) => "Response complete",
-            Some(_) => "Exited with error",
-            None => "Process terminated",
+        let body = if self.auto_continue_after_compaction || self.compaction_needed.is_some() {
+            "Compacting context"
+        } else {
+            match code {
+                Some(0) => "Response complete",
+                Some(_) => "Exited with error",
+                None => "Process terminated",
+            }
         };
 
         let title = label;
         let body = body.to_string();
         std::thread::spawn(move || {
-            let _ = notify_rust::Notification::new()
-                .summary(&title)
-                .body(&body)
-                .sound_name("Glass")
-                .show();
+            let mut n = notify_rust::Notification::new();
+            n.summary(&title).body(&body);
+
+            #[cfg(target_os = "macos")]
+            n.sound_name("Glass");
+
+            #[cfg(target_os = "windows")]
+            {
+                n.app_id("AZUREAL");
+                let ico = crate::config::config_dir().join("Azureal.ico");
+                if ico.exists() {
+                    n.icon(&ico.to_string_lossy());
+                }
+            }
+
+            let _ = n.show();
         });
     }
 

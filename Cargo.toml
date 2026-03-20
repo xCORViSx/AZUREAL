@@ -123,5 +123,8 @@ lto = true
 codegen-units = 1
 strip = true
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [dev-dependencies]
 tempfile = "3.26.0"

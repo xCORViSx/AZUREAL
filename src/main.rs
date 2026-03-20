@@ -213,6 +213,17 @@ async fn main() -> Result<()> {
         let _ = notify_rust::set_application("com.xcorvisx.azureal");
     }
 
+    // Write the embedded .ico to ~/.azureal/ so Windows notifications can
+    // reference it. The exe's embedded resource handles the terminal tab icon
+    // and taskbar icon automatically — this file is only for toast notifications.
+    #[cfg(target_os = "windows")]
+    {
+        let ico_path = config::config_dir().join("Azureal.ico");
+        if !ico_path.exists() {
+            let _ = std::fs::write(&ico_path, include_bytes!("../resources/Azureal.ico"));
+        }
+    }
+
     let output_format = cli.output;
 
     match cli.command {

@@ -178,17 +178,17 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('?')),
-        "Toggle help",
+        "Help",
         Action::ToggleHelp,
     ),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('p')),
-        "Enter prompt mode",
+        "Prompt mode",
         Action::EnterPromptMode,
     ),
     Keybinding::new(
         KeyCombo::shift(KeyCode::Char('T')),
-        "Toggle terminal",
+        "Terminal",
         Action::ToggleTerminal,
     ),
     Keybinding::new(
