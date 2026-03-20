@@ -3,6 +3,4 @@
 .DS_Store
 worktrees/
 nul
-.azureal/azufig.toml
-.azureal/*.azs
 release-artifacts/

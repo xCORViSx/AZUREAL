@@ -1,0 +1,16 @@
+[filetree]
+hidden = [
+    "worktrees",
+    ".git",
+    ".claude",
+    ".DS_Store",
+]
+
+[healthscope]
+dirs = []
+
+[runcmds]
+
+[presetprompts]
+
+[git]
