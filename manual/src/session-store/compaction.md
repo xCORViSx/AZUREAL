@@ -72,16 +72,23 @@ but the conversation continues without any manual intervention.
 Compaction does not summarize the entire conversation. It preserves recent
 exchanges verbatim to maintain conversational coherence.
 
-`compaction_boundary(session_id, from_seq, keep=3)` scans backward from the
-current position and preserves the **last 3 user prompts** along with all
-interleaved agent responses, tool calls, and tool results. Everything before
-this boundary is summarized by the compaction agent. Everything after it is
-kept verbatim and included in the next context injection as-is.
+`spawn_compaction_agent()` tries `compaction_boundary(session_id, from_seq, keep)`
+with progressively smaller `keep` values (**3 → 2 → 1**). `keep=3` is ideal —
+it preserves the **last 3 user prompts** along with all interleaved agent
+responses, tool calls, and tool results. However, sessions that cross the
+threshold with ≤3 user messages would never find a boundary at `keep=3`,
+leaving compaction stuck. Falling back to `keep=2` then `keep=1` ensures
+compaction can always run as long as at least one user message boundary exists.
+
+Everything before the boundary is summarized by the compaction agent.
+Everything after it is kept verbatim and included in the next context
+injection as-is.
 
 This means the agent always sees:
 
 - The compaction summary (covering all older history).
-- The last 3 user-agent exchanges in full detail.
+- The last 1–3 user-agent exchanges in full detail (depending on how many
+  exist since the last compaction).
 - The new prompt.
 
 ---

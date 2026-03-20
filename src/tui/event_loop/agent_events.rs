@@ -109,10 +109,29 @@ pub fn spawn_compaction_agent(
         .map(|c| c.after_seq + 1)
         .unwrap_or(1);
 
-    // Find boundary: compact everything BEFORE the last 3 user messages
-    let boundary_seq = match store.compaction_boundary(session_id, from_seq, 3) {
-        Ok(Some(b)) => b,
-        _ => {
+    // Find boundary: compact everything BEFORE the last N user messages.
+    // Try keep=3 first (ideal), then fall back to keep=2 and keep=1.
+    // Without fallback, sessions with ≤3 user messages since last compaction
+    // can never compact, leaving the context badge stuck at 100%.
+    let boundary_seq = store
+        .compaction_boundary(session_id, from_seq, 3)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            store
+                .compaction_boundary(session_id, from_seq, 2)
+                .ok()
+                .flatten()
+        })
+        .or_else(|| {
+            store
+                .compaction_boundary(session_id, from_seq, 1)
+                .ok()
+                .flatten()
+        });
+    let boundary_seq = match boundary_seq {
+        Some(b) => b,
+        None => {
             app.set_status("Compaction skipped: not enough user messages for boundary");
             return false;
         }

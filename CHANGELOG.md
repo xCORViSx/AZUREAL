@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Context badge stuck at 100% with few user messages** — Sessions that crossed the 400K compaction threshold with ≤3 user messages since last compaction could never compact because `compaction_boundary(keep=3)` requires >3 user messages to find a split point. `spawn_compaction_agent()` now tries progressively smaller `keep` values (3 → 2 → 1), ensuring compaction can run as long as at least one user message boundary exists. Modified: `src/tui/event_loop/agent_events.rs`.
+
 ### Enhanced
 - **Windows toast notifications display Azureal icon** — Toast notifications now show the Azureal butterfly PNG (`~/.azureal/Azureal_toast.png`) via `appLogoOverride` image placement in the toast XML. The `.ico` file rendered blurry in toasts; PNG renders crisply. Modified: `src/app/state/claude/process_lifecycle.rs`, `src/main.rs`.
 
