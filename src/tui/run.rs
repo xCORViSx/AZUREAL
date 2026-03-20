@@ -78,12 +78,19 @@ pub async fn run() -> Result<()> {
     let splash_start = std::time::Instant::now();
 
     let mut app = App::new();
+    let config = Config::load().unwrap_or_default();
+    app.claude_available = config.is_backend_installed(crate::backend::Backend::Claude);
+    app.codex_available = config.is_backend_installed(crate::backend::Backend::Codex);
+    // If the default model's backend is unavailable, pick the first available
+    if !app.claude_available {
+        app.selected_model = Some(app.first_available_model().to_string());
+        app.backend = crate::app::state::backend_for_model(app.selected_model.as_deref().unwrap());
+    }
     app.update_terminal_title();
     app.load()?;
     app.load_run_commands();
     app.load_preset_prompts();
-    app.load_session_output(); // also restores selected_model + backend
-    let config = Config::load().unwrap_or_default();
+    app.load_session_output(); // also restores selected_model + backend (respects availability)
     // Auto-detect Nerd Font support by probing a PUA glyph during splash
     app.nerd_fonts = super::file_icons::detect_nerd_font();
     if !app.nerd_fonts {

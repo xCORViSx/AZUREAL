@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-ddf35765.js";
+            window.path_to_searchindex_js = "../searchindex-288e64af.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -189,7 +189,7 @@ that unlock additional features.</p>
 <tbody>
 <tr><td>macOS</td><td><strong>Primary</strong></td><td>Metal GPU acceleration for Whisper; <code>.app</code> bundle icon support</td></tr>
 <tr><td>Linux</td><td>Supported</td><td>CPU-based Whisper; all features functional</td></tr>
-<tr><td>Windows</td><td>Supported</td><td>ConPTY terminal backend; <code>cmd.exe</code> and PowerShell shells; CPU-based Whisper</td></tr>
+<tr><td>Windows</td><td>Supported</td><td>ConPTY terminal backend; <code>cmd.exe</code> and PowerShell shells; CUDA GPU-accelerated Whisper</td></tr>
 </tbody>
 </table>
 </div>
@@ -237,6 +237,18 @@ build.</p>
 </code></pre>
 <p>After installing LLVM on Windows, set the <code>LIBCLANG_PATH</code> environment variable
 to the LLVM <code>bin</code> directory (e.g., <code>C:\Program Files\LLVM\bin</code>).</p>
+<h3 id="nvidia-cuda-toolkit-windows"><a class="header" href="#nvidia-cuda-toolkit-windows">NVIDIA CUDA Toolkit (Windows)</a></h3>
+<p>Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
+falls back to CPU-only mode which is significantly slower.</p>
+<pre><code class="language-powershell">winget install Nvidia.CUDA
+</code></pre>
+<p>Restart your terminal after installation so the <code>CUDA_PATH</code> environment variable
+is available. The build system reads <code>CUDA_PATH</code> to locate the CUDA libraries
+automatically.</p>
+<blockquote>
+<p><strong>Note:</strong> This requirement applies only to Windows. macOS uses Metal for GPU
+acceleration (handled automatically), and Linux uses CPU inference.</p>
+</blockquote>
 <h2 id="optional"><a class="header" href="#optional">Optional</a></h2>
 <h3 id="nerd-font"><a class="header" href="#nerd-font">Nerd Font</a></h3>
 <p>AZUREAL uses Nerd Font glyphs for file tree icons (file type icons, folder
@@ -259,14 +271,16 @@ expected path:</p>
 <code>ggml-small.en.bin</code> model offers a good balance of accuracy and speed. Larger
 models (medium, large) improve accuracy at the cost of higher latency and memory
 usage.</p>
-<p>On macOS, Whisper runs on the Metal GPU for faster inference. Linux and Windows
-use CPU inference.</p>
+<p>On macOS, Whisper runs on the Metal GPU for faster inference. On Windows, Whisper
+uses CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit). Linux uses CPU
+inference.</p>
 <h2 id="quick-checklist"><a class="header" href="#quick-checklist">Quick Checklist</a></h2>
 <p>Before proceeding to installation, confirm:</p>
 <ul>
 <li><input disabled="" type="checkbox"> Git 2.15+ is installed</li>
 <li><input disabled="" type="checkbox"> At least one agent CLI is installed (Claude Code or Codex)</li>
 <li><input disabled="" type="checkbox"> LLVM/Clang and CMake are available (if building from source)</li>
+<li><input disabled="" type="checkbox"> NVIDIA CUDA Toolkit is installed (Windows only, if building from source)</li>
 <li><input disabled="" type="checkbox"> A Nerd Font is configured in your terminal (recommended)</li>
 </ul>
 

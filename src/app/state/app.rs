@@ -593,6 +593,10 @@ pub struct App {
     // ── Model selection (⌃m cycle) ──
     /// User-selected model override (None = use Claude CLI default)
     pub selected_model: Option<String>,
+    /// Whether the Claude CLI was detected in PATH at startup
+    pub claude_available: bool,
+    /// Whether the Codex CLI was detected in PATH at startup
+    pub codex_available: bool,
 }
 
 impl App {
@@ -845,6 +849,8 @@ impl App {
             session_content_search: false,
             session_search_results: Vec::new(),
             selected_model: Some("opus".to_string()),
+            claude_available: true,
+            codex_available: true,
         }
     }
 

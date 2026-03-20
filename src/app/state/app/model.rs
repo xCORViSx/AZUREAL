@@ -59,6 +59,30 @@ pub fn backend_for_model(model: &str) -> Backend {
 }
 
 impl App {
+    /// Return the subset of ALL_MODELS whose backend is detected as installed.
+    /// Falls back to the full pool if neither backend is found (the app can't
+    /// function without at least one, so don't hide everything).
+    fn available_models(&self) -> Vec<&'static str> {
+        let filtered: Vec<&str> = ALL_MODELS
+            .iter()
+            .copied()
+            .filter(|m| match backend_for_model(m) {
+                Backend::Claude => self.claude_available,
+                Backend::Codex => self.codex_available,
+            })
+            .collect();
+        if filtered.is_empty() {
+            ALL_MODELS.to_vec()
+        } else {
+            filtered
+        }
+    }
+
+    /// First available model (respects backend availability).
+    pub fn first_available_model(&self) -> &'static str {
+        self.available_models().first().copied().unwrap_or(default_model())
+    }
+
     /// Extract the model from the loaded session's event stream.
     /// Scans backward for `ModelSwitch` tags first (user explicitly changed the
     /// model), then falls back to `Init` events (model from session start).
@@ -86,10 +110,17 @@ impl App {
     /// Called after `load_session_output()` so that worktree/project switches
     /// pick up the model from the newly loaded session instead of keeping the
     /// previous session's model.
+    /// If the restored model's backend is not installed, falls back to the
+    /// first available model.
     pub fn restore_model_from_session(&mut self) {
-        let restored = self
+        let mut restored = self
             .last_session_model()
             .unwrap_or(default_model());
+        // If the restored model's backend is not installed, fall back
+        let pool = self.available_models();
+        if !pool.contains(&restored) {
+            restored = pool.first().copied().unwrap_or(default_model());
+        }
         self.selected_model = Some(restored.to_string());
         let new_backend = backend_for_model(restored);
         if new_backend != self.backend {
@@ -178,14 +209,18 @@ impl App {
         self.selected_model.as_deref().unwrap_or(default_model())
     }
 
-    /// Cycle selected_model through the unified model pool.
-    /// opus → sonnet → haiku → gpt-5.4 → … → gpt-5.1-codex-mini → wrap
+    /// Cycle selected_model through available models only.
+    /// Skips model families whose backend CLI is not installed.
     /// Also updates self.backend to match the new model and injects a
     /// `ModelSwitch` tag into the session store for persistence.
     pub fn cycle_model(&mut self) {
-        let current = self.selected_model.as_deref().unwrap_or(ALL_MODELS[0]);
-        let idx = ALL_MODELS.iter().position(|&m| m == current).unwrap_or(0);
-        let next = ALL_MODELS[(idx + 1) % ALL_MODELS.len()];
+        let pool = self.available_models();
+        if pool.is_empty() {
+            return;
+        }
+        let current = self.selected_model.as_deref().unwrap_or(pool[0]);
+        let idx = pool.iter().position(|&m| m == current).unwrap_or(0);
+        let next = pool[(idx + 1) % pool.len()];
         self.selected_model = Some(next.to_string());
         let new_backend = backend_for_model(next);
         if new_backend != self.backend {
@@ -510,6 +545,82 @@ mod tests {
             crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
+    }
+
+    // ── Backend availability gating ──
+
+    #[test]
+    fn test_available_models_both_available() {
+        let app = app_default();
+        assert_eq!(app.available_models().len(), ALL_MODELS.len());
+    }
+
+    #[test]
+    fn test_available_models_codex_unavailable() {
+        let mut app = app_default();
+        app.codex_available = false;
+        let models = app.available_models();
+        assert_eq!(models, vec!["opus", "sonnet", "haiku"]);
+    }
+
+    #[test]
+    fn test_available_models_claude_unavailable() {
+        let mut app = app_default();
+        app.claude_available = false;
+        let models = app.available_models();
+        for m in &models {
+            assert!(m.starts_with("gpt-"));
+        }
+        assert_eq!(models.len(), 6);
+    }
+
+    #[test]
+    fn test_available_models_neither_falls_back_to_all() {
+        let mut app = app_default();
+        app.claude_available = false;
+        app.codex_available = false;
+        assert_eq!(app.available_models().len(), ALL_MODELS.len());
+    }
+
+    #[test]
+    fn test_cycle_skips_codex_when_unavailable() {
+        let mut app = app_default();
+        app.codex_available = false;
+        // opus → sonnet → haiku → wrap to opus
+        app.cycle_model();
+        assert_eq!(app.display_model_name(), "sonnet");
+        app.cycle_model();
+        assert_eq!(app.display_model_name(), "haiku");
+        app.cycle_model();
+        assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.backend, Backend::Claude);
+    }
+
+    #[test]
+    fn test_cycle_skips_claude_when_unavailable() {
+        let mut app = app_default();
+        app.claude_available = false;
+        app.selected_model = Some("gpt-5.4".to_string());
+        app.backend = Backend::Codex;
+        // Should cycle only through Codex models and never land on Claude
+        for _ in 0..6 {
+            app.cycle_model();
+            assert!(app.display_model_name().starts_with("gpt-"));
+            assert_eq!(app.backend, Backend::Codex);
+        }
+    }
+
+    #[test]
+    fn test_first_available_model_defaults_opus() {
+        let app = app_default();
+        assert_eq!(app.first_available_model(), "opus");
+    }
+
+    #[test]
+    fn test_first_available_model_claude_unavailable() {
+        let mut app = app_default();
+        app.claude_available = false;
+        assert!(app.first_available_model().starts_with("gpt-"));
     }
 
     // ── display_model_name ──

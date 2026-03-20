@@ -67,6 +67,30 @@ impl Config {
     pub fn codex_executable(&self) -> &str {
         self.codex_executable.as_deref().unwrap_or("codex")
     }
+
+    /// Check whether a backend's CLI executable is discoverable in PATH.
+    pub fn is_backend_installed(&self, backend: crate::backend::Backend) -> bool {
+        let exe = match backend {
+            crate::backend::Backend::Claude => self.claude_executable(),
+            crate::backend::Backend::Codex => self.codex_executable(),
+        };
+        // Absolute/relative path — just check existence
+        if exe.contains('/') || exe.contains('\\') {
+            return std::path::Path::new(exe).exists();
+        }
+        // PATH lookup: `which` on Unix, `where` on Windows
+        #[cfg(not(target_os = "windows"))]
+        let cmd = "which";
+        #[cfg(target_os = "windows")]
+        let cmd = "where";
+        std::process::Command::new(cmd)
+            .arg(exe)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 /// Get the global Azureal config directory (~/.azureal/)
