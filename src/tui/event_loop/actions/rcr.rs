@@ -182,8 +182,8 @@ mod tests {
         RcrSession {
             branch: branch.to_string(),
             display_name: branch.to_string(),
-            worktree_path: PathBuf::from("/tmp/test-rcr-wt"),
-            repo_root: PathBuf::from("/tmp/test-rcr-root"),
+            worktree_path: std::env::temp_dir().join("test-rcr-wt"),
+            repo_root: std::env::temp_dir().join("test-rcr-root"),
             slot_id: "42".to_string(),
             session_id: None,
             approval_pending: true,
@@ -268,13 +268,13 @@ mod tests {
     #[test]
     fn test_rcr_session_worktree_path_field() {
         let rcr = make_rcr("b", false);
-        assert_eq!(rcr.worktree_path, PathBuf::from("/tmp/test-rcr-wt"));
+        assert_eq!(rcr.worktree_path, std::env::temp_dir().join("test-rcr-wt"));
     }
 
     #[test]
     fn test_rcr_session_repo_root_field() {
         let rcr = make_rcr("b", false);
-        assert_eq!(rcr.repo_root, PathBuf::from("/tmp/test-rcr-root"));
+        assert_eq!(rcr.repo_root, std::env::temp_dir().join("test-rcr-root"));
     }
 
     #[test]

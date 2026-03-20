@@ -277,20 +277,17 @@ mod tests {
     #[test]
     fn global_cancel_claude() {
         let ctx = cmd_ctx(Focus::Worktrees);
-        // macOS: ⌃C = Cancel, Windows/Linux: ⌃⇧C = Cancel
+        // macOS: ⌃C = Cancel, Windows/Linux: Alt+c = Cancel
         #[cfg(target_os = "macos")]
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')),
             Some(Action::CancelClaude)
         );
         #[cfg(not(target_os = "macos"))]
-        {
-            let mods = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
-            assert_eq!(
-                lookup_action(&ctx, mods, KeyCode::Char('C')),
-                Some(Action::CancelClaude)
-            );
-        }
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::ALT, KeyCode::Char('c')),
+            Some(Action::CancelClaude)
+        );
     }
 
     #[test]
@@ -516,20 +513,17 @@ mod tests {
             help_open: false,
             stt_recording: false,
         };
-        // macOS: ⌃C = Cancel, Windows/Linux: ⌃⇧C = Cancel
+        // macOS: ⌃C = Cancel, Windows/Linux: Alt+c = Cancel
         #[cfg(target_os = "macos")]
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('c')),
             Some(Action::CancelClaude)
         );
         #[cfg(not(target_os = "macos"))]
-        {
-            let mods = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
-            assert_eq!(
-                lookup_action(&ctx, mods, KeyCode::Char('C')),
-                Some(Action::CancelClaude)
-            );
-        }
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::ALT, KeyCode::Char('c')),
+            Some(Action::CancelClaude)
+        );
     }
 
     #[test]
@@ -890,8 +884,12 @@ mod tests {
             help_open: false,
             stt_recording: false,
         };
+        #[cfg(target_os = "macos")]
+        let mods = KeyModifiers::SUPER;
+        #[cfg(not(target_os = "macos"))]
+        let mods = KeyModifiers::CONTROL;
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('s')),
+            lookup_action(&ctx, mods, KeyCode::Char('s')),
             Some(Action::Save)
         );
     }
@@ -906,8 +904,12 @@ mod tests {
             help_open: false,
             stt_recording: false,
         };
+        #[cfg(target_os = "macos")]
+        let mods = KeyModifiers::SUPER;
+        #[cfg(not(target_os = "macos"))]
+        let mods = KeyModifiers::CONTROL;
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::SUPER, KeyCode::Char('z')),
+            lookup_action(&ctx, mods, KeyCode::Char('z')),
             Some(Action::Undo)
         );
     }

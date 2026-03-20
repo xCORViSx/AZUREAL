@@ -214,8 +214,8 @@ async fn main() -> Result<()> {
     }
 
     // Write the embedded .ico to ~/.azureal/ for toast notifications, then
-    // set it as the console window icon so it shows in the terminal tab and
-    // taskbar preview (winres only embeds the exe file icon for Explorer).
+    // set the console window icon at runtime so the terminal tab and taskbar
+    // preview show the Azureal icon.
     #[cfg(target_os = "windows")]
     {
         let ico_path = config::config_dir().join("Azureal.ico");
@@ -223,28 +223,46 @@ async fn main() -> Result<()> {
             let _ = std::fs::write(&ico_path, include_bytes!("../resources/Azureal.ico"));
         }
 
-        // Set the console window icon (terminal tab + taskbar preview)
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::System::Console::GetConsoleWindow;
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            LoadImageW, SendMessageW, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_LOADFROMFILE,
-            WM_SETICON,
-        };
+        // Set the console window icon via WM_SETICON
         unsafe {
-            let hwnd = GetConsoleWindow();
+            use std::os::windows::ffi::OsStrExt;
+            let hwnd = windows_sys::Win32::System::Console::GetConsoleWindow();
             if !hwnd.is_null() {
-                let wide_path: Vec<u16> = ico_path
-                    .as_os_str()
+                let wide_path: Vec<u16> = std::ffi::OsStr::new(&ico_path)
                     .encode_wide()
                     .chain(std::iter::once(0))
                     .collect();
-                let icon_sm = LoadImageW(std::ptr::null_mut(), wide_path.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
-                let icon_lg = LoadImageW(std::ptr::null_mut(), wide_path.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                let icon_sm = windows_sys::Win32::UI::WindowsAndMessaging::LoadImageW(
+                    0 as _,
+                    wide_path.as_ptr(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
+                    16,
+                    16,
+                    windows_sys::Win32::UI::WindowsAndMessaging::LR_LOADFROMFILE,
+                );
+                let icon_lg = windows_sys::Win32::UI::WindowsAndMessaging::LoadImageW(
+                    0 as _,
+                    wide_path.as_ptr(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
+                    32,
+                    32,
+                    windows_sys::Win32::UI::WindowsAndMessaging::LR_LOADFROMFILE,
+                );
                 if !icon_sm.is_null() {
-                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon_sm as isize);
+                    windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(
+                        hwnd,
+                        windows_sys::Win32::UI::WindowsAndMessaging::WM_SETICON,
+                        0, // ICON_SMALL
+                        icon_sm as isize,
+                    );
                 }
                 if !icon_lg.is_null() {
-                    SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon_lg as isize);
+                    windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(
+                        hwnd,
+                        windows_sys::Win32::UI::WindowsAndMessaging::WM_SETICON,
+                        1, // ICON_BIG
+                        icon_lg as isize,
+                    );
                 }
             }
         }

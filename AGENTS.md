@@ -231,14 +231,14 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows. Claude subprocess spawned with `.stdin(Stdio::null())` to prevent console stdin handle sharing on Windows (causes input event competition between TUI and child).
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
-- Windows `.ico` extraction + console icon (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `Azureal.ico` to `~/.azureal/` for notifications, then sets the console window icon via `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` for terminal tab and taskbar preview
+- Windows `.ico` extraction + console icon (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `Azureal.ico` to `~/.azureal/` for notifications, then sets the console window icon via `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` for terminal tab and taskbar preview.
 - Windows exe icon embedding (`build.rs`): `#[cfg(target_os = "windows")]` — `winres` embeds `.ico` as Win32 resource for Explorer/Alt+Tab file icon
 - Notification platform guards (`src/app/state/claude/process_lifecycle.rs`): `.sound_name("Glass")` gated to `#[cfg(target_os = "macos")]`; `.app_id("AZUREAL")` + `.icon()` gated to `#[cfg(target_os = "windows")]`
 - Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal.
 - fast_draw (`src/tui/event_loop/fast_draw.rs`): `fast_draw_input()` gated to `#[cfg(target_os = "macos")]` — direct VT writes bypass ratatui's buffer. `fast_draw_session()` was removed (caused rendering artifacts: disappearing borders, duplicated events, stale content).
 - Path canonicalization: All `std::fs::canonicalize()` calls replaced with `dunce::canonicalize()` to strip `\\?\` extended-length path prefix on Windows.
 - Cross-platform session linking (`src/config.rs`): `find_foreign_project_dir()` + `link_project_dir()` create NTFS junctions (Windows, no elevation) or symlinks (Unix) to share session directories across platforms.
-- Terminal title reassertion (`src/tui/event_loop.rs`): `#[cfg(target_os = "windows")]` — Claude CLI inherits the console and overwrites the title via `SetConsoleTitle()`. After each draw frame, `update_terminal_title()` is called while Claude receivers are active.
+- Terminal title reassertion (`src/tui/event_loop.rs`): `#[cfg(target_os = "windows")]` — Claude CLI inherits the console and overwrites the title via `SetConsoleTitle()`. After every draw frame, `update_terminal_title()` is called unconditionally (not just while agents are running) so the title stays correct after agent exit too.
 - Embedded terminal Enter key (`src/tui/input_terminal.rs`): Sends `\r` (carriage return) instead of `\n` (linefeed). PowerShell treats bare `\n` as line continuation.
 
 **Already cross-platform** (no guards needed): `portable-pty` (ConPTY on Windows), `notify` (ReadDirectoryChangesW), `arboard`, `dirs`, `notify-rust`, `ratatui`/`crossterm`, `dunce`, all path handling via `PathBuf`.
@@ -1477,7 +1477,7 @@ Cross-platform notification sent when any agent instance finishes its response. 
 *Windows:*
 - `.ico` file (6 sizes: 256/128/64/48/32/16) embedded in binary via `include_bytes!()` and extracted to `~/.azureal/Azureal.ico` on startup
 - `build.rs` uses `winres` crate to embed the `.ico` as a Win32 resource — Explorer, pinned taskbar, and Alt+Tab show the icon for the `.exe` file itself
-- At startup, `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` sets the console window icon from the extracted `.ico` — this makes the terminal tab and taskbar preview show the Azureal icon (the winres-embedded resource alone only affects the `.exe` file icon, not the hosting terminal window)
+- At startup, sets the console window icon via `GetConsoleWindow()` + `SendMessageW(WM_SETICON)` with the extracted `.ico` at 16px (small) and 32px (big), so the terminal tab and taskbar preview show the Azureal icon.
 - Notification uses `.app_id("AZUREAL")` for Windows toast grouping and `.icon()` pointing to the extracted `.ico` path
 - Windows uses its own default notification sound (no `.sound_name()`)
 
@@ -1696,7 +1696,7 @@ azureal/
 - [x] Claude CLI spawning with `-p` mode
 - [x] Multi-session concurrent agents
 - [x] Stream-JSON parsing for clean output
-- [x] Conversation persistence via --resume
+- [x] Conversation persistence via SQLite session store + context injection
 - [x] Diff viewing with syntax highlighting
 - [x] Squash merge to main (replaced rebase/merge)
 - [x] Vim-style modal input (command/insert modes)
@@ -1755,7 +1755,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running agents simultaneously
 5. **Error Recovery**: Verify graceful handling of agent exits and git errors
 
-## Test Coverage (6575+ tests)
+## Test Coverage (6577 tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|

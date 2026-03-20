@@ -1607,7 +1607,10 @@ mod tests {
             .iter()
             .find(|b| b.action == Action::SelectAll)
             .unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
     }
 
     #[test]
@@ -1636,14 +1639,20 @@ mod tests {
     #[test]
     fn edit_mode_has_save() {
         let b = EDIT_MODE.iter().find(|b| b.action == Action::Save).unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
         assert_eq!(b.primary.code, KeyCode::Char('s'));
     }
 
     #[test]
     fn edit_mode_has_undo() {
         let b = EDIT_MODE.iter().find(|b| b.action == Action::Undo).unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(b.primary.modifiers, KeyModifiers::SUPER);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
         assert_eq!(b.primary.code, KeyCode::Char('z'));
     }
 
@@ -1664,7 +1673,10 @@ mod tests {
             .iter()
             .find(|b| b.action == Action::ToggleStt)
             .unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(b.primary.modifiers, KeyModifiers::CONTROL);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(b.primary.modifiers, KeyModifiers::ALT);
     }
 
     #[test]

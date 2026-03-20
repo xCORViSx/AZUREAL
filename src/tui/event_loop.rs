@@ -541,11 +541,10 @@ pub async fn run_app(
 
                 // On Windows, Claude CLI can overwrite the console title via
                 // SetConsoleTitle (inherits the console even with piped stdio).
-                // Reassert our title after each draw to keep it correct.
+                // Reassert our title after every draw — not just while agents
+                // are running — because the title stays corrupted after exit.
                 #[cfg(target_os = "windows")]
-                if !app.agent_receivers.is_empty() {
-                    app.update_terminal_title();
-                }
+                app.update_terminal_title();
 
                 // Deferred session list loading: the loading dialog just rendered,
                 // so now we can do the expensive message count I/O. The user sees

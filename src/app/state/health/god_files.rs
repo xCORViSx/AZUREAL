@@ -837,7 +837,8 @@ mod tests {
         make_source_file(&root.join("src"), "big.rs", 1500);
         let mut results = Vec::new();
         scan_dir_recursive(root, root, &mut results);
-        assert_eq!(results[0].rel_path, "src/big.rs");
+        let expected = std::path::Path::new("src").join("big.rs");
+        assert_eq!(results[0].rel_path, expected.to_string_lossy());
     }
 
     #[test]
@@ -1315,6 +1316,7 @@ fn foo() {}
         let mut results = Vec::new();
         scan_dir_recursive(root, &root.join("src"), &mut results);
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].rel_path, "src/big.rs");
+        let expected = std::path::Path::new("src").join("big.rs");
+        assert_eq!(results[0].rel_path, expected.to_string_lossy());
     }
 }

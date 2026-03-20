@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn lookup_git_actions_unmapped_key() {
-        let result = lookup_git_actions_action(0, true, KeyModifiers::NONE, KeyCode::Char('z'));
+        let result = lookup_git_actions_action(0, true, KeyModifiers::NONE, KeyCode::Char('v'));
         assert!(result.is_none());
     }
 
