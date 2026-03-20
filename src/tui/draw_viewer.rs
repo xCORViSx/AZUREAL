@@ -129,7 +129,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
             let placeholder = vec![
                 Line::from(""),
                 Line::from(Span::styled(
-                    "Select a file from the Filetree",
+                    "Select a file from the Filetree or",
                     Style::default().fg(Color::DarkGray),
                 )),
                 Line::from(Span::styled(

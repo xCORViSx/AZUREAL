@@ -8,6 +8,7 @@ All notable changes to Azureal will be documented in this file.
 - **Welcome modal title centered and input locked to dialog keys** — The "AZUREAL" border title is now centered instead of left-aligned. All keys except those listed in the dialog (M, Wa, P, Ctrl+Q) are now blocked — previously global keybindings like G, H, T, Tab, etc. leaked through to the main app. Modified: `welcome_modal.rs`, `actions.rs`.
 
 ### Fixed
+- **Viewer pane placeholder missing "or" between sources** — The empty viewer placeholder read "Select a file from the Filetree Session pane." which was missing the connective "or". Now reads "…Filetree or Session pane." Modified: `draw_viewer.rs`.
 - **CUDA 13.2 build failure on Windows (MSVC preprocessor)** — CUDA Toolkit 13.2's CCCL headers require MSVC's standard conforming preprocessor (`/Zc:preprocessor`), which wasn't being passed to `cl.exe` during CUDA compilation. Added the flag to the MSVC branch of CUDA host compiler options in the ggml-cuda CMakeLists. Modified: `vendor/whisper-rs/sys/whisper.cpp/ggml/src/ggml-cuda/CMakeLists.txt`.
 
 ### Added
