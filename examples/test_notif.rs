@@ -1,4 +1,10 @@
 // Quick test: fires a Windows toast notification with icon via PowerShell WinRT.
+#[cfg(not(windows))]
+fn main() {
+    eprintln!("This example only works on Windows.");
+}
+
+#[cfg(windows)]
 fn main() {
     use std::os::windows::process::CommandExt;
 
