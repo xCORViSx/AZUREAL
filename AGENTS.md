@@ -645,6 +645,33 @@ KeyCombo::plain(KeyCode::BackTab)  // won't fire on terminals that send SHIFT+Ba
 
 ---
 
+### Ctrl+M and Shift+Enter are indistinguishable from Enter without Kitty protocol
+
+Without the Kitty keyboard enhancement protocol, `Ctrl+M` and `Shift+Enter` both produce byte `0x0D` — identical to plain `Enter`. Crossterm decodes all three as `(KeyModifiers::NONE, KeyCode::Enter)`. The `PushKeyboardEnhancementFlags` call "succeeds" (it just writes bytes to stdout) even when the terminal ignores the escape sequence, so `kbd_enhanced` is unreliable as a feature detection signal. Terminals that DON'T support Kitty protocol include GNOME Terminal, xterm, and most SSH sessions.
+
+```rust
+// ❌ WRONG — only works with Kitty keyboard protocol
+Keybinding::new(
+    KeyCombo::ctrl(KeyCode::Char('m')),  // Ctrl+M = Enter without Kitty
+    "Cycle model",
+    Action::CycleModel,
+)
+
+// ✅ CORRECT — Alt+M always sends a distinct ESC+'m' sequence
+Keybinding::with_alt(
+    KeyCombo::ctrl(KeyCode::Char('m')),
+    &ALT_CYCLE_MODEL,  // Alt+M fallback
+    "Cycle model",
+    Action::CycleModel,
+)
+```
+
+**Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support.
+
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `bindings.rs`.
+
+---
+
 ## WINDOWS GOTCHAS
 
 ### `notify-rust` with custom `app_id` silently drops toasts

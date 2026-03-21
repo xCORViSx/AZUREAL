@@ -65,6 +65,25 @@ static ALT_END: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,
     code: KeyCode::End,
 }];
+// Alt+M fallback for Ctrl+M (CycleModel) — without Kitty protocol, Ctrl+M is
+// indistinguishable from Enter (both send 0x0D). Alt+M sends ESC+'m', always unique.
+// macOS ⌥m produces 'µ' — added as secondary fallback.
+static ALT_CYCLE_MODEL: [KeyCombo; 2] = [
+    KeyCombo {
+        modifiers: KeyModifiers::ALT,
+        code: KeyCode::Char('m'),
+    },
+    KeyCombo {
+        modifiers: KeyModifiers::NONE,
+        code: KeyCode::Char('µ'),
+    }, // macOS ⌥m
+];
+// Alt+Enter fallback for Shift+Enter (InsertNewline) — without Kitty protocol,
+// Shift+Enter is indistinguishable from Enter. Alt+Enter sends ESC+CR, always unique.
+static ALT_INSERT_NEWLINE: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::ALT,
+    code: KeyCode::Enter,
+}];
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
 static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,
@@ -171,8 +190,9 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
     Keybinding::new(KEY_CANCEL, "Cancel agent", Action::CancelClaude),
     Keybinding::new(KEY_COPY, "Copy selection", Action::CopySelection),
-    Keybinding::new(
+    Keybinding::with_alt(
         KeyCombo::ctrl(KeyCode::Char('m')),
+        &ALT_CYCLE_MODEL,
         "Cycle model",
         Action::CycleModel,
     ),
@@ -539,8 +559,9 @@ pub static INPUT: [Keybinding; 10] = [
         "Submit prompt",
         Action::Submit,
     ),
-    Keybinding::new(
+    Keybinding::with_alt(
         KeyCombo::shift(KeyCode::Enter),
+        &ALT_INSERT_NEWLINE,
         "Insert newline",
         Action::InsertNewline,
     ),
