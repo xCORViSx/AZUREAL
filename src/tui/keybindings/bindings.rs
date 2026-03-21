@@ -66,16 +66,21 @@ static ALT_END: [KeyCombo; 1] = [KeyCombo {
     code: KeyCode::End,
 }];
 // Alt+M fallback for Ctrl+M (CycleModel) — without Kitty protocol, Ctrl+M is
-// indistinguishable from Enter (both send 0x0D). Alt+M sends ESC+'m', always unique.
-// macOS terminals generally support Kitty protocol (iTerm2/Kitty/WezTerm/Ghostty),
-// so no fallback is needed — and ⌥m produces 'µ' which should remain typeable.
+// indistinguishable from Enter (both send 0x0D). On Linux/Windows, Alt+M sends
+// ESC+'m', always unique. On macOS, ⌥m produces 'µ' (unicode) — added as a
+// bare-char alternative (same pattern as ⌥p→π, ⌥r→®). WezTerm on macOS does
+// NOT honor PushKeyboardEnhancementFlags despite claiming Kitty support via
+// TERM_PROGRAM, so the macOS fallback is required.
 #[cfg(not(target_os = "macos"))]
 static ALT_CYCLE_MODEL: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::ALT,
     code: KeyCode::Char('m'),
 }];
 #[cfg(target_os = "macos")]
-static ALT_CYCLE_MODEL: [KeyCombo; 0] = [];
+static ALT_CYCLE_MODEL: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::NONE,
+    code: KeyCode::Char('µ'),
+}];
 // Alt+Enter fallback for Shift+Enter (InsertNewline) — without Kitty protocol,
 // Shift+Enter is indistinguishable from Enter. Alt+Enter sends ESC+CR, always unique.
 static ALT_INSERT_NEWLINE: [KeyCombo; 1] = [KeyCombo {

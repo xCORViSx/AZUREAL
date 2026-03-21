@@ -16,22 +16,6 @@ use std::time::Duration;
 /// receiver is dropped (send fails).
 pub fn spawn_input_thread() -> mpsc::Receiver<Event> {
     let (tx, rx) = mpsc::channel();
-
-    // Open key event log for diagnostics (first 200 key events)
-    let log_path = dirs::home_dir()
-        .map(|h| h.join(".azureal/key_events.log"));
-    let log_file = log_path.and_then(|p| {
-        use std::fs::OpenOptions;
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(p)
-            .ok()
-    });
-    let log_file = std::sync::Arc::new(std::sync::Mutex::new(log_file));
-    let log_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
     thread::spawn(move || {
         loop {
             // Block until an event is available (or 50ms timeout so we
@@ -39,20 +23,6 @@ pub fn spawn_input_thread() -> mpsc::Receiver<Event> {
             if event::poll(Duration::from_millis(50)).unwrap_or(false) {
                 match event::read() {
                     Ok(evt) => {
-                        // Log key events for diagnostics (first 200 only)
-                        if let Event::Key(ref key) = evt {
-                            let count = log_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            if count < 200 {
-                                if let Ok(mut guard) = log_file.lock() {
-                                    if let Some(ref mut f) = *guard {
-                                        use std::io::Write;
-                                        let _ = writeln!(f, "#{} code={:?} mods={:?} kind={:?}", count + 1, key.code, key.modifiers, key.kind);
-                                        let _ = f.flush();
-                                    }
-                                }
-                            }
-                        }
-
                         // Filter Release events early — main loop never uses them
                         if let Event::Key(ref key) = evt {
                             if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {

@@ -71,25 +71,10 @@ pub async fn run() -> Result<()> {
     // implementation conflicts with mouse capture: scroll/arrow CSI sequences
     // leak through as raw text (e.g. "[A[B" appearing in the input box).
     #[cfg(not(target_os = "windows"))]
-    let (kbd_enhanced, crossterm_result, env_result) = {
+    let kbd_enhanced = {
         let ct = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
-        let env = term_program_supports_kitty();
-        (ct || env, ct, env)
+        ct || term_program_supports_kitty()
     };
-    #[cfg(not(target_os = "windows"))]
-    {
-        // Write diagnostic to file so we can verify detection is working
-        if let Some(home) = dirs::home_dir() {
-            let _ = std::fs::write(
-                home.join(".azureal/kbd_debug.txt"),
-                format!(
-                    "kbd_enhanced={}\ncrossterm_query={}\nenv_fallback={}\nTERM_PROGRAM={:?}\n",
-                    kbd_enhanced, crossterm_result, env_result,
-                    std::env::var("TERM_PROGRAM"),
-                ),
-            );
-        }
-    }
     #[cfg(not(target_os = "windows"))]
     if kbd_enhanced {
         execute!(
