@@ -1776,7 +1776,7 @@ azureal/
 
 # ROADMAP
 
-## Phase 1: Core Functionality (Current)
+## Phase 1: Core Functionality
 - [x] TUI with worktrees/viewer/session/input panels
 - [x] Git worktree creation and management
 - [x] Claude CLI spawning with `-p` mode

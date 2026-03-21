@@ -2,7 +2,7 @@
 
 All notable changes to Azureal will be documented in this file.
 
-## [0.8.0] — 2026-03-21
+## [1.0.0] — 2026-03-21
 
 ### Performance
 - **Animation tick redraw gating** — The event loop previously triggered `terminal.draw()` every 250ms whenever any tool was pending, even if no animated spinners were visible on screen. Now only sets `needs_redraw` on animation ticks when `animation_line_indices` is non-empty. Zero-cost when no spinners are visible. Modified: `src/tui/event_loop.rs`.
