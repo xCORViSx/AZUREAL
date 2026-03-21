@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bbda9ffd.js";
+            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,112 +178,6 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="worktree-tab-row"><a class="header" href="#worktree-tab-row">Worktree Tab Row</a></h1>
-<p>The worktree tab row is a horizontal bar at the top of the screen that shows
-every worktree in the project at a glance. It replaced an earlier sidebar
-design and serves as both a navigation control and a status dashboard.</p>
-<hr>
-<h2 id="layout"><a class="header" href="#layout">Layout</a></h2>
-<pre><code class="language-text">[* main] | [auth-refactor] | [● api-routes] | [◇ old-feature] | 1/2
-</code></pre>
-<p>The tab row spans the full terminal width. Tabs are laid out left to right in
-creation order, with the main tab always first. If there are more tabs than fit
-on screen, pagination kicks in and a page indicator (<code>N/M</code>) appears at the
-right edge.</p>
-<hr>
-<h2 id="tab-anatomy"><a class="header" href="#tab-anatomy">Tab Anatomy</a></h2>
-<p>Each tab displays a <strong>name</strong> and may include a <strong>status icon prefix</strong> and an
-<strong>auto-rebase indicator suffix</strong>:</p>
-<pre><code class="language-text">[&lt;icon&gt; &lt;name&gt; &lt;rebase&gt;]
-</code></pre>
-<h3 id="status-icons"><a class="header" href="#status-icons">Status Icons</a></h3>
-<p>Status icons appear before the worktree name. They follow a priority order –
-only the highest-priority applicable icon is shown:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Priority</th><th>Icon</th><th>Color</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td>1 (highest)</td><td><code>●</code></td><td>Green</td><td>Agent is running</td></tr>
-<tr><td>2</td><td><code>◐</code></td><td>AZURE</td><td>Unread: a session finished while this tab was not viewed</td></tr>
-<tr><td>3 (default)</td><td><code>○</code></td><td>Gray</td><td>Idle / no active session</td></tr>
-</tbody>
-</table>
-</div>
-<p>The <strong>unread</strong> indicator (<code>◐</code>, a half-filled circle) appears when ANY session
-in the worktree completes while the worktree is not the active tab. The
-indicator clears on a per-session basis: switching to the worktree and viewing
-a session marks that session as read. If multiple sessions completed while you
-were away, the indicator persists until you have viewed each one.</p>
-<h3 id="auto-rebase-indicator"><a class="header" href="#auto-rebase-indicator">Auto-Rebase Indicator</a></h3>
-<p>If auto-rebase is enabled for a worktree, an <code>R</code> character appears after the
-name. Its color conveys the current rebase state:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Color</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td>Green</td><td>Idle – auto-rebase is enabled but nothing is happening</td></tr>
-<tr><td>Orange</td><td>Rebase Conflict Resolution (RCR) is actively running</td></tr>
-<tr><td>Blue</td><td>Approval pending – RCR finished and is waiting for user review</td></tr>
-</tbody>
-</table>
-</div>
-<p>If auto-rebase is not enabled for a worktree, no <code>R</code> appears.</p>
-<hr>
-<h2 id="tab-visual-states"><a class="header" href="#tab-visual-states">Tab Visual States</a></h2>
-<h3 id="active-tab"><a class="header" href="#active-tab">Active Tab</a></h3>
-<p>The currently selected worktree tab uses an <strong>AZURE background</strong> (<code>#3399FF</code>)
-with <strong>white bold text</strong>. This makes the active tab immediately identifiable
-even in a long row.</p>
-<h3 id="archived-tab"><a class="header" href="#archived-tab">Archived Tab</a></h3>
-<p>Archived worktrees display with:</p>
-<ul>
-<li>A <strong>diamond prefix</strong> (<code>◇</code>) replacing the normal status icon.</li>
-<li><strong>Dim gray text</strong> for the worktree name.</li>
-</ul>
-<p>Archived tabs are selectable but not fully functional until unarchived. See
-<a href="./managing.html">Managing Worktrees</a> for archive/unarchive details.</p>
-<h3 id="main-tab"><a class="header" href="#main-tab">Main Tab</a></h3>
-<p>The main tab always reads <code>[* main]</code> (with a star prefix). When main browse
-mode is active, it highlights <strong>yellow</strong> instead of AZURE. See
-<a href="./main-browse.html">Main Branch Browse</a>.</p>
-<hr>
-<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>[</code></td><td>Switch to previous worktree</td></tr>
-<tr><td><code>]</code></td><td>Switch to next worktree</td></tr>
-<tr><td><code>/</code></td><td>Switch tabs (global, works from any focus)</td></tr>
-<tr><td>Mouse click</td><td>Select the clicked tab</td></tr>
-</tbody>
-</table>
-</div>
-<p>The <code>[</code> and <code>]</code> keys cycle through worktrees in tab order, wrapping at the
-ends. Clicking a tab with the mouse selects it directly.</p>
-<h3 id="pagination"><a class="header" href="#pagination">Pagination</a></h3>
-<p>When the number of worktrees exceeds what fits in the terminal width, the tab
-row paginates. A page indicator appears at the right edge showing the current
-page and total pages (e.g., <code>1/3</code>). The <code>[</code> and <code>]</code> keys automatically advance
-to the next or previous page when you reach the edge of the visible tabs.</p>
-<hr>
-<h2 id="cross-machine-cleanup"><a class="header" href="#cross-machine-cleanup">Cross-Machine Cleanup</a></h2>
-<p>On startup, AZUREAL performs automatic cleanup of stale branch references:</p>
-<ol>
-<li><strong>Remote ref pruning</strong>: runs <code>git remote prune origin</code> to remove references
-to remote branches that no longer exist.</li>
-<li><strong>Merged branch cleanup</strong>: deletes local <code>azureal/</code>-prefixed branches that
-are fully merged into main and have no corresponding remote branch.</li>
-</ol>
-<p>This handles the common scenario where you delete a worktree on one machine
-(removing both local and remote branches) and then open the project on another
-machine that still has stale local refs. The cleanup runs silently during
-project initialization and does not affect any branch that has unmerged work.</p>
 
                     </main>
 

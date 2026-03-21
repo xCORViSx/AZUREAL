@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-bbda9ffd.js";
+            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -181,7 +181,7 @@
                         <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
 <p><strong>AZUREAL</strong> – <strong>A</strong>synchronous <strong>Z</strong>oned <strong>U</strong>nified <strong>R</strong>untime <strong>E</strong>nvironment for <strong>A</strong>gentic <strong>L</strong>LMs – is a Rust TUI application that wraps Claude Code CLI and OpenAI Codex CLI to enable multi-agent development workflows with git worktree isolation.</p>
 <p>Built with <a href="https://ratatui.rs/">ratatui</a>, AZUREAL provides a terminal-native interface for orchestrating concurrent AI coding agents, each operating in its own git worktree with independent branches, sessions, and working directories. Instead of running one agent at a time in a single checkout, you can run several agents simultaneously across isolated feature branches, all managed from a single terminal window.</p>
-<p>Version <strong>0.7.0</strong> | MIT License | Author: xCORViSx</p>
+<p>Version <strong>1.0.0</strong> | MIT License | Author: xCORViSx</p>
 <hr>
 <h2 id="philosophy"><a class="header" href="#philosophy">Philosophy</a></h2>
 <p>AZUREAL is built around two core ideas:</p>
@@ -261,7 +261,7 @@
 </ul>
 <hr>
 <blockquote>
-<p><strong>Note:</strong> AZUREAL is pre-release software (v0.7.0). Features, keybindings, and configuration formats may change between versions. This manual tracks the current release.</p>
+<p>This manual tracks AZUREAL v1.0.0 — the first stable release.</p>
 </blockquote>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
@@ -308,10 +308,50 @@ that unlock additional features.</p>
 <tbody>
 <tr><td>macOS</td><td><strong>Primary</strong></td><td>Metal GPU acceleration for Whisper; <code>.app</code> bundle icon support</td></tr>
 <tr><td>Linux</td><td>Supported</td><td>CPU-based Whisper; all features functional</td></tr>
-<tr><td>Windows</td><td>Supported</td><td>ConPTY terminal backend; <code>cmd.exe</code> and PowerShell shells; CPU-based Whisper</td></tr>
+<tr><td>Windows</td><td>Supported</td><td>ConPTY terminal backend; <code>cmd.exe</code> and PowerShell shells; CUDA GPU-accelerated Whisper</td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="terminal-emulator"><a class="header" href="#terminal-emulator">Terminal Emulator</a></h2>
+<p>AZUREAL requires a modern terminal emulator with true-color and mouse support.
+For the best experience:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Platform</th><th>Recommended</th><th>Also tested</th></tr>
+</thead>
+<tbody>
+<tr><td>macOS</td><td><a href="https://sw.kovidgoyal.net/kitty/">Kitty</a></td><td>Ghostty, Alacritty, WezTerm, Terminal.app</td></tr>
+<tr><td>Linux</td><td><a href="https://sw.kovidgoyal.net/kitty/">Kitty</a></td><td>Ghostty, Alacritty, WezTerm, Konsole</td></tr>
+<tr><td>Windows</td><td><a href="https://aka.ms/terminal">Windows Terminal</a></td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Kitty</strong> and <strong>Windows Terminal</strong> deliver the best overall experience for two
+reasons:</p>
+<ol>
+<li>
+<p><strong>Input protocol support.</strong> Kitty provides the
+<a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/">Kitty keyboard protocol</a>
+on macOS and Linux, which allows AZUREAL to distinguish ambiguous key
+combinations (e.g., <code>Tab</code> vs <code>Ctrl+I</code>, <code>Enter</code> vs <code>Ctrl+M</code>). Windows
+Terminal provides full ConPTY support with reliable mouse and key reporting.</p>
+</li>
+<li>
+<p><strong>Rendering fidelity.</strong> Both terminals produce the cleanest interpretation
+of AZUREAL’s box-drawing characters (<code>│</code>, <code>┌</code>, <code>╔</code>, <code>█</code>, <code>▓</code>, etc.),
+Unicode glyphs, and styled borders. Pane separators, tab bars, dialog
+frames, and half-block splash art all render pixel-perfect with correct
+line joining and consistent glyph widths.</p>
+</li>
+</ol>
+<p>Other listed terminals work well – the main difference is that terminals
+without the Kitty keyboard protocol trigger <code>Alt+</code> fallback bindings for
+certain shortcuts, and some terminals may show minor visual artifacts in
+complex border intersections or half-block character rendering. See
+<a href="#platform-differences">Platform Differences</a> for details.</p>
+<p>The legacy <code>conhost.exe</code> on Windows is not recommended due to limited ANSI
+support.</p>
 <h2 id="required"><a class="header" href="#required">Required</a></h2>
 <h3 id="git-215"><a class="header" href="#git-215">Git 2.15+</a></h3>
 <p>AZUREAL relies heavily on <code>git worktree</code> commands, which require Git 2.15 or
@@ -356,6 +396,18 @@ build.</p>
 </code></pre>
 <p>After installing LLVM on Windows, set the <code>LIBCLANG_PATH</code> environment variable
 to the LLVM <code>bin</code> directory (e.g., <code>C:\Program Files\LLVM\bin</code>).</p>
+<h3 id="nvidia-cuda-toolkit-windows"><a class="header" href="#nvidia-cuda-toolkit-windows">NVIDIA CUDA Toolkit (Windows)</a></h3>
+<p>Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
+falls back to CPU-only mode which is significantly slower.</p>
+<pre><code class="language-powershell">winget install Nvidia.CUDA
+</code></pre>
+<p>Restart your terminal after installation so the <code>CUDA_PATH</code> environment variable
+is available. The build system reads <code>CUDA_PATH</code> to locate the CUDA libraries
+automatically.</p>
+<blockquote>
+<p><strong>Note:</strong> This requirement applies only to Windows. macOS uses Metal for GPU
+acceleration (handled automatically), and Linux uses CPU inference.</p>
+</blockquote>
 <h2 id="optional"><a class="header" href="#optional">Optional</a></h2>
 <h3 id="nerd-font"><a class="header" href="#nerd-font">Nerd Font</a></h3>
 <p>AZUREAL uses Nerd Font glyphs for file tree icons (file type icons, folder
@@ -378,14 +430,16 @@ expected path:</p>
 <code>ggml-small.en.bin</code> model offers a good balance of accuracy and speed. Larger
 models (medium, large) improve accuracy at the cost of higher latency and memory
 usage.</p>
-<p>On macOS, Whisper runs on the Metal GPU for faster inference. Linux and Windows
-use CPU inference.</p>
+<p>On macOS, Whisper runs on the Metal GPU for faster inference. On Windows, Whisper
+uses CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit). Linux uses CPU
+inference.</p>
 <h2 id="quick-checklist"><a class="header" href="#quick-checklist">Quick Checklist</a></h2>
 <p>Before proceeding to installation, confirm:</p>
 <ul>
 <li><input disabled="" type="checkbox"> Git 2.15+ is installed</li>
 <li><input disabled="" type="checkbox"> At least one agent CLI is installed (Claude Code or Codex)</li>
 <li><input disabled="" type="checkbox"> LLVM/Clang and CMake are available (if building from source)</li>
+<li><input disabled="" type="checkbox"> NVIDIA CUDA Toolkit is installed (Windows only, if building from source)</li>
 <li><input disabled="" type="checkbox"> A Nerd Font is configured in your terminal (recommended)</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -1289,7 +1343,7 @@ Command ───────────&gt; Prompt
 <tr><td><code>j</code> / <code>k</code></td><td>Scroll line down / up</td></tr>
 <tr><td><code>J</code> / <code>K</code></td><td>Page scroll down / up</td></tr>
 <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle pane focus</td></tr>
-<tr><td><code>G</code></td><td>Git actions panel</td></tr>
+<tr><td><code>G</code></td><td>GitView panel</td></tr>
 <tr><td><code>H</code></td><td>Health panel</td></tr>
 <tr><td><code>M</code></td><td>Browse main branch</td></tr>
 <tr><td><code>P</code></td><td>Projects panel</td></tr>
@@ -1553,413 +1607,12 @@ status icons, pagination, unread indicators, and visual states.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="creating-worktrees"><a class="header" href="#creating-worktrees">Creating Worktrees</a></h1>
-<p>Creating a worktree is the first step in any feature branch workflow. Each
-worktree gets its own working directory, git branch, terminal shell, and session
-history – fully isolated from every other worktree in the project.</p>
-<hr>
-<h2 id="keybinding"><a class="header" href="#keybinding">Keybinding</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Context</th><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td>Command mode (worktrees focused)</td><td><code>w</code></td><td>Create worktree</td></tr>
-<tr><td>Command mode (any focus)</td><td><code>Wa</code></td><td>Create worktree (leader sequence)</td></tr>
-</tbody>
-</table>
-</div>
-<p>Both keys open the same creation dialog. The <code>w</code> shortcut is available when the
-tab row has focus; the <code>Wa</code> leader sequence works from any context.</p>
-<hr>
-<h2 id="the-creation-dialog"><a class="header" href="#the-creation-dialog">The Creation Dialog</a></h2>
-<p>When you press the creation key, a centered dialog appears prompting for a
-<strong>worktree name</strong>. This name determines both the branch name and the on-disk
-directory:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Field</th><th>Value</th></tr>
-</thead>
-<tbody>
-<tr><td>Branch</td><td><code>azureal/&lt;name&gt;</code></td></tr>
-<tr><td>Directory</td><td><code>&lt;repo&gt;/worktrees/&lt;name&gt;</code></td></tr>
-</tbody>
-</table>
-</div>
-<p>The <code>azureal/</code> prefix is the default branch prefix. It keeps AZUREAL-managed
-branches visually separated from manually created branches in <code>git branch</code>
-output. The prefix is configurable in the project config.</p>
-<h3 id="name-rules"><a class="header" href="#name-rules">Name Rules</a></h3>
-<ul>
-<li>The name is used as-is after the prefix. Typing <code>auth-refactor</code> creates
-branch <code>azureal/auth-refactor</code>.</li>
-<li>Standard git branch naming rules apply: no spaces, no <code>..</code>, no leading dots,
-no control characters.</li>
-<li>If a branch with the resulting name already exists, the creation fails with
-an error message in the status bar.</li>
-</ul>
-<hr>
-<h2 id="initial-prompt"><a class="header" href="#initial-prompt">Initial Prompt</a></h2>
-<p>The creation dialog includes an optional <strong>initial prompt</strong> field. If you type a
-prompt here, AZUREAL does two things after creating the worktree:</p>
-<ol>
-<li>Switches to the new worktree immediately.</li>
-<li>Sends the prompt to the active agent backend (Claude or Codex), starting a
-session automatically.</li>
-</ol>
-<p>This lets you go from “I need a feature branch” to “an agent is working on it”
-in a single action. If you leave the initial prompt empty, the worktree is
-created and selected but no session is started.</p>
-<hr>
-<h2 id="what-happens-on-create"><a class="header" href="#what-happens-on-create">What Happens on Create</a></h2>
-<p>When you confirm the dialog, the following sequence runs:</p>
-<ol>
-<li><strong><code>git worktree add -b azureal/&lt;name&gt; &lt;repo&gt;/worktrees/&lt;name&gt;</code></strong> creates the
-worktree directory and branch, forked from the current HEAD of the main
-branch.</li>
-<li><strong>A session record</strong> is inserted into the SQLite store for the new branch.</li>
-<li><strong>The tab row</strong> adds a new tab and selects it.</li>
-<li><strong>The file tree, viewer, and terminal</strong> all switch to the new worktree’s
-working directory.</li>
-<li>If an initial prompt was provided, it is sent to the agent backend.</li>
-</ol>
-<p>The entire operation is synchronous and typically completes in under a second.
-The status bar confirms success with a message like <code>Created worktree: auth-refactor</code>.</p>
-<hr>
-<h2 id="creating-from-an-existing-branch"><a class="header" href="#creating-from-an-existing-branch">Creating from an Existing Branch</a></h2>
-<p>If AZUREAL detects <code>azureal/</code>-prefixed branches that have no corresponding
-worktree directory (for example, branches created on another machine and pulled
-down), those branches appear as <strong>archived</strong> worktrees in the tab row. You do
-not need to create them again – pressing <code>u</code> on an archived tab recreates the
-worktree directory from the existing branch. See
-<a href="#managing-worktrees">Managing Worktrees</a> for details on unarchiving.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="managing-worktrees"><a class="header" href="#managing-worktrees">Managing Worktrees</a></h1>
-<p>Once a worktree exists, AZUREAL provides three management operations: renaming,
-archiving, and deleting. Each is accessed through a leader sequence starting
-with <code>W</code>.</p>
-<hr>
-<h2 id="renaming-wr"><a class="header" href="#renaming-wr">Renaming (Wr)</a></h2>
-<p>Renaming changes the branch name and updates all internal state that references
-it.</p>
-<h3 id="the-rename-dialog"><a class="header" href="#the-rename-dialog">The Rename Dialog</a></h3>
-<p>Pressing <code>Wr</code> opens a centered dialog with a <strong>cyan double-line border</strong>. The
-input field is pre-filled with the current worktree name (without the
-<code>azureal/</code> prefix). Standard text editing works inside the field: cursor
-movement with arrow keys, backspace, and character insertion.</p>
-<h3 id="what-happens-on-confirm"><a class="header" href="#what-happens-on-confirm">What Happens on Confirm</a></h3>
-<p>When you press Enter to confirm:</p>
-<ol>
-<li><strong><code>git branch -m azureal/&lt;old&gt; azureal/&lt;new&gt;</code></strong> renames the local branch.</li>
-<li><strong>The new branch is pushed</strong> to the remote.</li>
-<li><strong>The old remote branch is deleted</strong> (<code>git push origin --delete azureal/&lt;old&gt;</code>).</li>
-<li><strong>Upstream tracking is set</strong> for the new branch name.</li>
-<li><strong>All branch-keyed state maps are migrated</strong>: session files, session slots,
-and auto-rebase configuration entries are re-keyed from the old branch name
-to the new one.</li>
-</ol>
-<h3 id="restrictions"><a class="header" href="#restrictions">Restrictions</a></h3>
-<ul>
-<li>The main branch cannot be renamed. Pressing <code>Wr</code> while browsing main has
-no effect.</li>
-<li>If the new name conflicts with an existing branch, the rename fails with an
-error in the status bar.</li>
-</ul>
-<hr>
-<h2 id="archiving-wx-or-cmda--alta"><a class="header" href="#archiving-wx-or-cmda--alta">Archiving (Wx or Cmd+A / Alt+A)</a></h2>
-<p>Archiving removes a worktree’s working directory from disk while preserving
-its git branch. This is useful when you want to free disk space or reduce
-clutter without losing the branch’s commit history.</p>
-<h3 id="what-happens-on-archive"><a class="header" href="#what-happens-on-archive">What Happens on Archive</a></h3>
-<ol>
-<li><strong>The worktree directory</strong> (<code>&lt;repo&gt;/worktrees/&lt;name&gt;</code>) is removed via
-<code>git worktree remove</code>.</li>
-<li><strong>The git branch is preserved.</strong> The branch and all its commits remain in
-the repository.</li>
-<li><strong>The tab updates</strong> to show the worktree in its archived state: a diamond
-prefix and dimmed gray text.</li>
-</ol>
-<h3 id="archived-worktree-behavior"><a class="header" href="#archived-worktree-behavior">Archived Worktree Behavior</a></h3>
-<p>Archived worktrees appear in the tab row but are not fully functional:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Action</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td>Select (click or <code>[</code>/<code>]</code>)</td><td>Tab highlights but shows “press u first”</td></tr>
-<tr><td>Enter</td><td>Displays “press u first” message</td></tr>
-<tr><td><code>u</code></td><td><strong>Unarchives</strong>: recreates the worktree directory from the preserved branch</td></tr>
-<tr><td><code>Wd</code></td><td>Deletes the archived worktree (branch and all)</td></tr>
-</tbody>
-</table>
-</div>
-<h3 id="unarchiving-u"><a class="header" href="#unarchiving-u">Unarchiving (u)</a></h3>
-<p>Pressing <code>u</code> on an archived worktree runs
-<code>git worktree add &lt;repo&gt;/worktrees/&lt;name&gt; azureal/&lt;name&gt;</code>, recreating the
-working directory from the existing branch. The worktree returns to active
-state and is fully usable again.</p>
-<hr>
-<h2 id="deleting-wd"><a class="header" href="#deleting-wd">Deleting (Wd)</a></h2>
-<p>Deletion is permanent. It removes the worktree directory, the git branch
-(both local and remote), and all associated session state.</p>
-<h3 id="the-delete-dialog"><a class="header" href="#the-delete-dialog">The Delete Dialog</a></h3>
-<p>Pressing <code>Wd</code> opens a centered dialog with a <strong>red double-line border</strong>
-containing a confirmation prompt. The dialog includes safety information:</p>
-<ul>
-<li><strong>Uncommitted changes warning</strong>: If the worktree has uncommitted changes,
-a yellow warning line appears in the dialog. This gives you a chance to
-commit or stash before proceeding.</li>
-<li><strong>Unmerged commits warning</strong>: If the branch contains commits that have not
-been merged into the main branch, a yellow warning line indicates this.
-Deleting will permanently lose those commits.</li>
-</ul>
-<p>Press <code>y</code> to confirm deletion or <code>n</code> (or <code>Esc</code>) to cancel.</p>
-<h3 id="what-happens-on-delete"><a class="header" href="#what-happens-on-delete">What Happens on Delete</a></h3>
-<ol>
-<li><strong>The worktree directory</strong> is removed (<code>git worktree remove --force</code>).</li>
-<li><strong>The local branch</strong> is deleted (<code>git branch -D azureal/&lt;name&gt;</code>).</li>
-<li><strong>The remote branch</strong> is deleted (<code>git push origin --delete azureal/&lt;name&gt;</code>).</li>
-<li><strong>Session state</strong> is cleaned up: session records, session slots, and
-auto-rebase configuration entries for the branch are removed.</li>
-<li><strong>The tab is removed</strong> from the tab row. Focus moves to an adjacent
-worktree.</li>
-</ol>
-<h3 id="sibling-guard"><a class="header" href="#sibling-guard">Sibling Guard</a></h3>
-<p>If multiple worktrees share the same underlying git branch (an unusual
-situation, but possible), the delete dialog changes behavior. Instead of
-silently deleting the branch out from under sibling worktrees, it presents
-two options:</p>
-<ul>
-<li><strong>Delete all siblings</strong>: removes every worktree on that branch plus the
-branch itself.</li>
-<li><strong>Archive current only</strong>: archives the current worktree without touching
-the branch or its siblings.</li>
-</ul>
-<h3 id="restrictions-1"><a class="header" href="#restrictions-1">Restrictions</a></h3>
-<ul>
-<li>The main branch cannot be deleted.</li>
-<li>Deleting an archived worktree skips the worktree-removal step (there is no
-directory to remove) and proceeds directly to branch and state cleanup.</li>
-</ul>
-<hr>
-<h2 id="quick-reference-1"><a class="header" href="#quick-reference-1">Quick Reference</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th><th>Destructive</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Wr</code></td><td>Rename worktree</td><td>No</td></tr>
-<tr><td><code>Wx</code> or <code>Cmd+A</code>/<code>Alt+A</code></td><td>Archive worktree</td><td>No (reversible)</td></tr>
-<tr><td><code>u</code></td><td>Unarchive worktree</td><td>No</td></tr>
-<tr><td><code>Wd</code></td><td>Delete worktree</td><td>Yes</td></tr>
-</tbody>
-</table>
-</div>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="main-branch-browse"><a class="header" href="#main-branch-browse">Main Branch Browse</a></h1>
-<p>The main branch is always accessible alongside your feature worktrees. AZUREAL
-stores it separately from the worktree list (internally as <code>app.main_worktree</code>)
-and provides a dedicated browse mode for working on it.</p>
-<hr>
-<h2 id="entering-main-browse"><a class="header" href="#entering-main-browse">Entering Main Browse</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Shift+M</code></td><td>Toggle main branch browse mode</td></tr>
-</tbody>
-</table>
-</div>
-<p>Pressing <code>Shift+M</code> from command mode enters main browse mode. The <code>[* main]</code>
-tab in the tab row highlights <strong>yellow</strong> to indicate that you are viewing the
-main branch rather than a feature worktree.</p>
-<p>While in main browse mode, the entire interface operates on the main branch:</p>
-<ul>
-<li><strong>File tree</strong> shows the main branch’s working directory.</li>
-<li><strong>Viewer</strong> displays files from main.</li>
-<li><strong>Session pane</strong> shows sessions associated with the main branch.</li>
-<li><strong>Prompt input</strong> sends prompts to agents working in the main branch context.</li>
-<li><strong>Terminal</strong> (if open) operates in the main branch’s working directory.</li>
-</ul>
-<p>Main browse is fully functional. You can edit files, prompt agents, manage
-sessions, and use every feature available in a normal worktree.</p>
-<hr>
-<h2 id="exiting-main-browse"><a class="header" href="#exiting-main-browse">Exiting Main Browse</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Esc</code></td><td>Return to the previously active worktree</td></tr>
-<tr><td><code>Shift+M</code></td><td>Toggle off (same key to enter)</td></tr>
-</tbody>
-</table>
-</div>
-<p>Both keys return you to whichever feature worktree was active before you
-entered main browse. The <code>[* main]</code> tab returns to its default appearance.</p>
-<hr>
-<h2 id="git-panel-differences"><a class="header" href="#git-panel-differences">Git Panel Differences</a></h2>
-<p>The main branch’s git panel differs from feature worktree git panels in one
-important way: <strong>the available operations</strong>. Feature worktrees show
-squash-merge and rebase actions (for integrating changes back into main), while
-the main branch shows the standard <strong>pull / commit / push</strong> workflow.</p>
-<p>This difference serves as an indirect visual cue that you are working on main
-rather than a feature branch. The git panel layout and navigation remain
-identical; only the action list changes.</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Context</th><th>Git Actions</th></tr>
-</thead>
-<tbody>
-<tr><td>Feature worktree</td><td>Squash, Rebase, Commit, Push</td></tr>
-<tr><td>Main branch</td><td>Pull, Commit, Push</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="main-tab-appearance"><a class="header" href="#main-tab-appearance">Main Tab Appearance</a></h2>
-<p>The <code>[* main]</code> tab is always the first entry in the tab row and cannot be
-reordered, archived, or deleted. Its visual states are:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>State</th><th>Appearance</th></tr>
-</thead>
-<tbody>
-<tr><td>Inactive</td><td>Default styling, star prefix</td></tr>
-<tr><td>Active (main browse)</td><td>Yellow background, bold text</td></tr>
-</tbody>
-</table>
-</div>
-<p>The star character distinguishes the main tab from worktree tabs at a glance,
-even when scanning a crowded tab row.</p>
-<hr>
-<h2 id="typical-use-cases"><a class="header" href="#typical-use-cases">Typical Use Cases</a></h2>
-<ul>
-<li><strong>Quick reference</strong>: Switch to main to check the current state of a file
-before making changes in a feature branch.</li>
-<li><strong>Hotfix</strong>: Make a small fix directly on main, commit, and push without
-creating a full worktree.</li>
-<li><strong>Review merged work</strong>: After squash-merging a feature branch, browse main
-to verify the result.</li>
-<li><strong>Agent on main</strong>: Start an agent session on main for repository-wide tasks
-like dependency updates or documentation passes.</li>
-</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="worktree-tab-row-2"><a class="header" href="#worktree-tab-row-2">Worktree Tab Row</a></h1>
-<p>The worktree tab row is a horizontal bar at the top of the screen that shows
-every worktree in the project at a glance. It replaced an earlier sidebar
-design and serves as both a navigation control and a status dashboard.</p>
-<hr>
-<h2 id="layout"><a class="header" href="#layout">Layout</a></h2>
-<pre><code class="language-text">[* main] | [auth-refactor] | [● api-routes] | [◇ old-feature] | 1/2
-</code></pre>
-<p>The tab row spans the full terminal width. Tabs are laid out left to right in
-creation order, with the main tab always first. If there are more tabs than fit
-on screen, pagination kicks in and a page indicator (<code>N/M</code>) appears at the
-right edge.</p>
-<hr>
-<h2 id="tab-anatomy"><a class="header" href="#tab-anatomy">Tab Anatomy</a></h2>
-<p>Each tab displays a <strong>name</strong> and may include a <strong>status icon prefix</strong> and an
-<strong>auto-rebase indicator suffix</strong>:</p>
-<pre><code class="language-text">[&lt;icon&gt; &lt;name&gt; &lt;rebase&gt;]
-</code></pre>
-<h3 id="status-icons"><a class="header" href="#status-icons">Status Icons</a></h3>
-<p>Status icons appear before the worktree name. They follow a priority order –
-only the highest-priority applicable icon is shown:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Priority</th><th>Icon</th><th>Color</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td>1 (highest)</td><td><code>●</code></td><td>Green</td><td>Agent is running</td></tr>
-<tr><td>2</td><td><code>◐</code></td><td>AZURE</td><td>Unread: a session finished while this tab was not viewed</td></tr>
-<tr><td>3 (default)</td><td><code>○</code></td><td>Gray</td><td>Idle / no active session</td></tr>
-</tbody>
-</table>
-</div>
-<p>The <strong>unread</strong> indicator (<code>◐</code>, a half-filled circle) appears when ANY session
-in the worktree completes while the worktree is not the active tab. The
-indicator clears on a per-session basis: switching to the worktree and viewing
-a session marks that session as read. If multiple sessions completed while you
-were away, the indicator persists until you have viewed each one.</p>
-<h3 id="auto-rebase-indicator"><a class="header" href="#auto-rebase-indicator">Auto-Rebase Indicator</a></h3>
-<p>If auto-rebase is enabled for a worktree, an <code>R</code> character appears after the
-name. Its color conveys the current rebase state:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Color</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td>Green</td><td>Idle – auto-rebase is enabled but nothing is happening</td></tr>
-<tr><td>Orange</td><td>Rebase Conflict Resolution (RCR) is actively running</td></tr>
-<tr><td>Blue</td><td>Approval pending – RCR finished and is waiting for user review</td></tr>
-</tbody>
-</table>
-</div>
-<p>If auto-rebase is not enabled for a worktree, no <code>R</code> appears.</p>
-<hr>
-<h2 id="tab-visual-states"><a class="header" href="#tab-visual-states">Tab Visual States</a></h2>
-<h3 id="active-tab"><a class="header" href="#active-tab">Active Tab</a></h3>
-<p>The currently selected worktree tab uses an <strong>AZURE background</strong> (<code>#3399FF</code>)
-with <strong>white bold text</strong>. This makes the active tab immediately identifiable
-even in a long row.</p>
-<h3 id="archived-tab"><a class="header" href="#archived-tab">Archived Tab</a></h3>
-<p>Archived worktrees display with:</p>
-<ul>
-<li>A <strong>diamond prefix</strong> (<code>◇</code>) replacing the normal status icon.</li>
-<li><strong>Dim gray text</strong> for the worktree name.</li>
-</ul>
-<p>Archived tabs are selectable but not fully functional until unarchived. See
-<a href="#managing-worktrees">Managing Worktrees</a> for archive/unarchive details.</p>
-<h3 id="main-tab"><a class="header" href="#main-tab">Main Tab</a></h3>
-<p>The main tab always reads <code>[* main]</code> (with a star prefix). When main browse
-mode is active, it highlights <strong>yellow</strong> instead of AZURE. See
-<a href="#main-branch-browse">Main Branch Browse</a>.</p>
-<hr>
-<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>[</code></td><td>Switch to previous worktree</td></tr>
-<tr><td><code>]</code></td><td>Switch to next worktree</td></tr>
-<tr><td><code>/</code></td><td>Switch tabs (global, works from any focus)</td></tr>
-<tr><td>Mouse click</td><td>Select the clicked tab</td></tr>
-</tbody>
-</table>
-</div>
-<p>The <code>[</code> and <code>]</code> keys cycle through worktrees in tab order, wrapping at the
-ends. Clicking a tab with the mouse selects it directly.</p>
-<h3 id="pagination"><a class="header" href="#pagination">Pagination</a></h3>
-<p>When the number of worktrees exceeds what fits in the terminal width, the tab
-row paginates. A page indicator appears at the right edge showing the current
-page and total pages (e.g., <code>1/3</code>). The <code>[</code> and <code>]</code> keys automatically advance
-to the next or previous page when you reach the edge of the visible tabs.</p>
-<hr>
-<h2 id="cross-machine-cleanup"><a class="header" href="#cross-machine-cleanup">Cross-Machine Cleanup</a></h2>
-<p>On startup, AZUREAL performs automatic cleanup of stale branch references:</p>
-<ol>
-<li><strong>Remote ref pruning</strong>: runs <code>git remote prune origin</code> to remove references
-to remote branches that no longer exist.</li>
-<li><strong>Merged branch cleanup</strong>: deletes local <code>azureal/</code>-prefixed branches that
-are fully merged into main and have no corresponding remote branch.</li>
-</ol>
-<p>This handles the common scenario where you delete a worktree on one machine
-(removing both local and remote branches) and then open the project on another
-machine that still has stale local refs. The cleanup runs silently during
-project initialization and does not affect any branch that has unmerged work.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="agent-sessions"><a class="header" href="#agent-sessions">Agent Sessions</a></h1>
 <p>AZUREAL orchestrates AI coding agents by wrapping two CLI tools – <strong>Claude Code CLI</strong> and <strong>OpenAI Codex CLI</strong> – behind a unified interface. You interact with both backends through the same prompt input, the same session pane, and the same keybindings. The backend is determined automatically from whichever model you have selected.</p>
@@ -2695,15 +2348,21 @@ but the conversation continues without any manual intervention.</p>
 <h2 id="boundary-selection"><a class="header" href="#boundary-selection">Boundary Selection</a></h2>
 <p>Compaction does not summarize the entire conversation. It preserves recent
 exchanges verbatim to maintain conversational coherence.</p>
-<p><code>compaction_boundary(session_id, from_seq, keep=3)</code> scans backward from the
-current position and preserves the <strong>last 3 user prompts</strong> along with all
-interleaved agent responses, tool calls, and tool results. Everything before
-this boundary is summarized by the compaction agent. Everything after it is
-kept verbatim and included in the next context injection as-is.</p>
+<p><code>spawn_compaction_agent()</code> tries <code>compaction_boundary(session_id, from_seq, keep)</code>
+with progressively smaller <code>keep</code> values (<strong>3 → 2 → 1</strong>). <code>keep=3</code> is ideal —
+it preserves the <strong>last 3 user prompts</strong> along with all interleaved agent
+responses, tool calls, and tool results. However, sessions that cross the
+threshold with ≤3 user messages would never find a boundary at <code>keep=3</code>,
+leaving compaction stuck. Falling back to <code>keep=2</code> then <code>keep=1</code> ensures
+compaction can always run as long as at least one user message boundary exists.</p>
+<p>Everything before the boundary is summarized by the compaction agent.
+Everything after it is kept verbatim and included in the next context
+injection as-is.</p>
 <p>This means the agent always sees:</p>
 <ul>
 <li>The compaction summary (covering all older history).</li>
-<li>The last 3 user-agent exchanges in full detail.</li>
+<li>The last 1–3 user-agent exchanges in full detail (depending on how many
+exist since the last compaction).</li>
 <li>The new prompt.</li>
 </ul>
 <hr>
@@ -3232,7 +2891,7 @@ shown. For two-line files, first and last are shown without the count.</p>
 <h3 id="bash"><a class="header" href="#bash">Bash</a></h3>
 <p>Shows the last 2 non-empty lines of output, since command results are
 typically most meaningful at the end:</p>
-<pre><code class="language-text"> ┃  │ Compiling azureal v0.7.0
+<pre><code class="language-text"> ┃  │ Compiling azureal v1.0.0
  ┃  └─ Finished release [optimized] target(s) in 12.34s
 </code></pre>
 <p>When the output is empty or all whitespace, a green checkmark (<code>✓</code>) is shown.</p>
@@ -3306,7 +2965,7 @@ lines end with an ellipsis.</p>
 browser. The list is scoped to the current worktree – only sessions belonging
 to the active worktree’s branch are shown.</p>
 <hr>
-<h2 id="layout-1"><a class="header" href="#layout-1">Layout</a></h2>
+<h2 id="layout"><a class="header" href="#layout">Layout</a></h2>
 <p>Each row in the session list displays:</p>
 <div class="table-wrapper">
 <table>
@@ -3324,7 +2983,7 @@ to the active worktree’s branch are shown.</p>
 <p>The currently selected row is highlighted with an AZURE background and black
 text. The session name on the selected row renders bold.</p>
 <hr>
-<h2 id="navigation-1"><a class="header" href="#navigation-1">Navigation</a></h2>
+<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -3800,7 +3459,7 @@ probe fails, the tree falls back to <strong>emoji icons</strong> (for example, a
 for directories, a page emoji for generic files). The detection runs once per
 application launch.</p>
 <hr>
-<h2 id="navigation-2"><a class="header" href="#navigation-2">Navigation</a></h2>
+<h2 id="navigation-1"><a class="header" href="#navigation-1">Navigation</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -4966,7 +4625,7 @@ Pressing <code>m</code> on a feature branch runs a multi-step background operati
 rebases the branch, squash merges it into main, and pushes the result – all
 with progress feedback in the status bar.</p>
 <hr>
-<h2 id="keybinding-1"><a class="header" href="#keybinding-1">Keybinding</a></h2>
+<h2 id="keybinding"><a class="header" href="#keybinding">Keybinding</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -5602,7 +5261,7 @@ top or bottom edge of the terminal pane triggers automatic scrolling.</p>
 is copied to the system clipboard. Without a selection, the standard interrupt
 signal is sent to the PTY instead.</p>
 <hr>
-<h2 id="quick-reference-2"><a class="header" href="#quick-reference-2">Quick Reference</a></h2>
+<h2 id="quick-reference-1"><a class="header" href="#quick-reference-1">Quick Reference</a></h2>
 <pre><code class="language-text">T (Shift+T)       Toggle terminal open/closed
 t                  Enter type mode (keystrokes go to shell)
 Esc                Exit type mode / close terminal
@@ -5756,7 +5415,7 @@ wheel. Scrolling up moves through command history and output; scrolling down
 returns toward the current output. The scrollback buffer preserves all output
 from the shell session.</p>
 <hr>
-<h2 id="quick-reference-3"><a class="header" href="#quick-reference-3">Quick Reference</a></h2>
+<h2 id="quick-reference-2"><a class="header" href="#quick-reference-2">Quick Reference</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -6127,7 +5786,7 @@ session to avoid repeated model load times.</p>
 use if not already present. The <code>small.en</code> model provides a good balance between
 transcription accuracy and speed for English-language input.</p>
 <hr>
-<h2 id="quick-reference-4"><a class="header" href="#quick-reference-4">Quick Reference</a></h2>
+<h2 id="quick-reference-3"><a class="header" href="#quick-reference-3">Quick Reference</a></h2>
 <pre><code class="language-text">Ctrl+S    Toggle recording on/off (prompt mode or edit mode)
 Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 </code></pre>
@@ -6228,7 +5887,7 @@ picker:</p>
 <p>The position prefix (<code>1_</code>, <code>2_</code>, etc.) controls the display order and maps to the
 <code>1</code>-<code>9</code> quick-select keys in the picker.</p>
 <hr>
-<h2 id="quick-reference-5"><a class="header" href="#quick-reference-5">Quick Reference</a></h2>
+<h2 id="quick-reference-4"><a class="header" href="#quick-reference-4">Quick Reference</a></h2>
 <pre><code class="language-text">r          Open run command picker (or execute if only 1 defined)
 Alt+r      Open new command dialog
 Ctrl+S     Toggle global/project scope (in dialog)
@@ -6306,7 +5965,7 @@ the current project and override global presets at the same position number.</p>
 available. This serves as a passive reminder of the feature without requiring you
 to memorize the keybinding.</p>
 <hr>
-<h2 id="quick-reference-6"><a class="header" href="#quick-reference-6">Quick Reference</a></h2>
+<h2 id="quick-reference-5"><a class="header" href="#quick-reference-5">Quick Reference</a></h2>
 <pre><code class="language-text">Alt+P         Open preset prompt picker (prompt mode only)
 Alt+1 - Alt+9 Quick-select preset 1-9 (prompt mode only)
 Alt+0         Quick-select preset 10 (prompt mode only)
@@ -6320,7 +5979,7 @@ behind. It gives you a quick read on the health of your project and provides
 one-click actions to fix what it finds, powered by concurrent agent sessions.</p>
 <p>Open the Health Panel with <strong><code>Shift+H</code></strong> from anywhere in AZUREAL.</p>
 <hr>
-<h2 id="layout-2"><a class="header" href="#layout-2">Layout</a></h2>
+<h2 id="layout-1"><a class="header" href="#layout-1">Layout</a></h2>
 <p>The Health Panel appears as a centered modal overlay, sized at <strong>55% x 70%</strong> of
 the terminal (minimum 50 columns by 16 rows). The title bar reads
 <strong>“Health: &lt;worktree&gt;”</strong>, showing the name of the currently active worktree.</p>
@@ -6441,7 +6100,7 @@ sized modules while preserving all existing behavior.</p>
 <p>You can monitor progress in the session pane – each <code>[GFM]</code> session appears as
 a separate conversation.</p>
 <hr>
-<h2 id="quick-reference-7"><a class="header" href="#quick-reference-7">Quick Reference</a></h2>
+<h2 id="quick-reference-6"><a class="header" href="#quick-reference-6">Quick Reference</a></h2>
 <pre><code class="language-text">Shift+H       Open Health Panel
 Tab           Switch to Documentation tab
 j/k           Navigate results
@@ -6536,7 +6195,7 @@ changes, no logic changes.</p>
 <p>You can track progress in the session pane, where each <code>[DH]</code> session appears as
 a separate conversation.</p>
 <hr>
-<h2 id="quick-reference-8"><a class="header" href="#quick-reference-8">Quick Reference</a></h2>
+<h2 id="quick-reference-7"><a class="header" href="#quick-reference-7">Quick Reference</a></h2>
 <pre><code class="language-text">Shift+H       Open Health Panel
 Tab           Switch to God Files tab
 j/k           Navigate results
@@ -6599,7 +6258,7 @@ both the God Files and Documentation tabs with results filtered to the
 selected directories.</li>
 </ol>
 <hr>
-<h2 id="quick-reference-9"><a class="header" href="#quick-reference-9">Quick Reference</a></h2>
+<h2 id="quick-reference-8"><a class="header" href="#quick-reference-8">Quick Reference</a></h2>
 <pre><code class="language-text">s             Enter Scope Mode (from Health Panel)
 Enter         Toggle directory in/out of scope
 Esc           Save scope to azufig.toml and rescan
@@ -6662,7 +6321,7 @@ never interfere with the core TUI experience.</p>
 mechanism and <code>ncprefs.plist</code> integration are macOS-specific. On other platforms,
 notifications are not sent.</p>
 <hr>
-<h2 id="quick-reference-10"><a class="header" href="#quick-reference-10">Quick Reference</a></h2>
+<h2 id="quick-reference-9"><a class="header" href="#quick-reference-9">Quick Reference</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -6737,7 +6396,7 @@ metadata are preserved verbatim, since these are needed for diagnosis.</li>
 multiple places in the dump, it will have the same replacement word everywhere,
 so patterns and relationships remain visible even in obfuscated output.</p>
 <hr>
-<h2 id="quick-reference-11"><a class="header" href="#quick-reference-11">Quick Reference</a></h2>
+<h2 id="quick-reference-10"><a class="header" href="#quick-reference-10">Quick Reference</a></h2>
 <pre><code class="language-text">Ctrl+D        Open debug dump naming dialog
 Enter         Confirm name and write dump
 Esc           Cancel
@@ -7617,6 +7276,30 @@ file viewer, the git panel, and the embedded terminal all work everywhere. The
 differences are in input handling, GPU availability, terminal protocol support,
 and platform-specific integrations.</p>
 <hr>
+<h2 id="recommended-terminals"><a class="header" href="#recommended-terminals">Recommended Terminals</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Platform</th><th>Recommended</th><th>Also tested</th></tr>
+</thead>
+<tbody>
+<tr><td>macOS</td><td><a href="https://sw.kovidgoyal.net/kitty/">Kitty</a></td><td>Ghostty, Alacritty, WezTerm, Terminal.app</td></tr>
+<tr><td>Linux</td><td><a href="https://sw.kovidgoyal.net/kitty/">Kitty</a></td><td>Ghostty, Alacritty, WezTerm, Konsole</td></tr>
+<tr><td>Windows</td><td><a href="https://aka.ms/terminal">Windows Terminal</a></td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Kitty</strong> and <strong>Windows Terminal</strong> deliver the best overall experience – both
+for input handling and for rendering fidelity. They produce the cleanest
+interpretation of AZUREAL’s box-drawing characters, Unicode glyphs, and styled
+borders, resulting in pixel-perfect pane separators, tab bars, and dialog
+frames. Kitty also provides the Kitty keyboard protocol on macOS/Linux for
+unambiguous key reporting, while Windows Terminal provides full ConPTY support
+with reliable mouse and key event handling. Other listed terminals work well –
+AZUREAL automatically provides <code>Alt+</code> fallback bindings for key combinations
+that require the Kitty protocol, though some terminals may show minor visual
+artifacts in complex border intersections or half-block character rendering.</p>
+<hr>
 <h2 id="platform-matrix"><a class="header" href="#platform-matrix">Platform Matrix</a></h2>
 <div class="table-wrapper">
 <table>
@@ -7629,11 +7312,11 @@ and platform-specific integrations.</p>
 <tr><td>Session store (SQLite)</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
 <tr><td>File watcher backend</td><td>kqueue</td><td>inotify</td><td>ReadDirectoryChangesW</td></tr>
 <tr><td>Embedded terminal</td><td>PTY</td><td>PTY</td><td>ConPTY</td></tr>
-<tr><td>Speech-to-text (Whisper)</td><td>Metal GPU</td><td>CPU only</td><td>CPU only</td></tr>
+<tr><td>Speech-to-text (Whisper)</td><td>Metal GPU</td><td>CPU only</td><td>CUDA GPU</td></tr>
 <tr><td>Kitty keyboard protocol</td><td>Yes</td><td>Yes</td><td>No</td></tr>
 <tr><td><code>fast_draw_input()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
 <tr><td><code>.app</code> bundle</td><td>Yes</td><td>N/A</td><td>N/A</td></tr>
-<tr><td>Notifications</td><td>NSUserNotification</td><td>N/A</td><td>N/A</td></tr>
+<tr><td>Notifications</td><td>NSUserNotification</td><td>N/A</td><td>Toast (PowerShell)</td></tr>
 <tr><td>Modifier key for destructive actions</td><td>Cmd</td><td>Ctrl</td><td>Alt</td></tr>
 </tbody>
 </table>
@@ -7789,9 +7472,11 @@ Ctrl+M, etc.).</li>
 <li>Separate key press and release events.</li>
 <li>Accurate modifier reporting.</li>
 </ul>
-<p>The protocol is supported by modern terminal emulators including Kitty, iTerm2
-(3.5+), WezTerm, Ghostty, and Alacritty. Terminal.app does not support it, but
-AZUREAL falls back gracefully to standard key reporting.</p>
+<p>The recommended terminal on macOS is <strong>Kitty</strong>, which has full protocol support.
+AZUREAL has also been tested in <strong>Ghostty</strong>, <strong>Alacritty</strong>, <strong>WezTerm</strong>, and
+<strong>Terminal.app</strong>. Terminal.app does not support the Kitty protocol, but AZUREAL
+falls back gracefully to standard key reporting with <code>Alt+</code> alternatives for
+affected bindings.</p>
 <hr>
 <h2 id="build-notes"><a class="header" href="#build-notes">Build Notes</a></h2>
 <p>macOS builds require Xcode Command Line Tools for Clang headers and CMake for
@@ -7849,18 +7534,14 @@ keybinding set is otherwise identical across both platforms.</p>
 <hr>
 <h2 id="kitty-keyboard-protocol-1"><a class="header" href="#kitty-keyboard-protocol-1">Kitty Keyboard Protocol</a></h2>
 <p>AZUREAL enables the <strong>Kitty keyboard protocol</strong> on Linux, just as on macOS. The
-protocol is supported by:</p>
-<ul>
-<li>Kitty</li>
-<li>WezTerm</li>
-<li>Alacritty</li>
-<li>Ghostty</li>
-<li>Foot</li>
-</ul>
+recommended terminal on Linux is <strong>Kitty</strong>, which has full protocol support.
+AZUREAL has also been tested in <strong>Ghostty</strong>, <strong>Alacritty</strong>, <strong>WezTerm</strong>, and
+<strong>Konsole</strong>. Other terminals with protocol support include Foot.</p>
 <p>Terminal emulators that do not support the protocol (e.g., GNOME Terminal, older
-xterm) fall back to standard key reporting with no loss of functionality. The
-only difference is that certain ambiguous key combinations (like Tab vs Ctrl+I)
-may not be distinguishable without the protocol.</p>
+xterm, Konsole) fall back to standard key reporting with no loss of
+functionality. The only difference is that certain ambiguous key combinations
+(like Tab vs Ctrl+I) may not be distinguishable without the protocol – AZUREAL
+provides <code>Alt+</code> fallback bindings for these cases.</p>
 <hr>
 <h2 id="file-watcher-1"><a class="header" href="#file-watcher-1">File Watcher</a></h2>
 <p>The file watcher uses <strong>inotify</strong> on Linux. This is efficient and event-driven
@@ -8009,21 +7690,11 @@ to inotify on Linux and kqueue on macOS.</p>
 – it is bounded by available memory. The graceful fallback to stat()-based
 polling is still implemented but rarely needed on Windows.</p>
 <hr>
-<h2 id="recommended-terminal-emulators"><a class="header" href="#recommended-terminal-emulators">Recommended Terminal Emulators</a></h2>
-<p>AZUREAL works best with modern terminal emulators that support:</p>
-<ul>
-<li>ANSI/VT escape sequences</li>
-<li>256-color or true-color output</li>
-<li>Mouse event reporting</li>
-<li>ConPTY</li>
-</ul>
-<p>Recommended:</p>
-<ul>
-<li><strong>Windows Terminal</strong> – ships with Windows 11, available on Windows 10 via
-Microsoft Store. Best compatibility.</li>
-<li><strong>WezTerm</strong> – cross-platform, excellent VT support.</li>
-<li><strong>Alacritty</strong> – GPU-accelerated, minimal.</li>
-</ul>
+<h2 id="recommended-terminal"><a class="header" href="#recommended-terminal">Recommended Terminal</a></h2>
+<p>The recommended terminal on Windows is <strong><a href="https://aka.ms/terminal">Windows Terminal</a></strong>,
+which ships with Windows 11 and is available on Windows 10 via the Microsoft
+Store. It provides full ConPTY support, true-color output, and reliable mouse
+event reporting.</p>
 <p>The legacy <code>conhost.exe</code> (the default console host prior to Windows Terminal) has
 limited ANSI support and is not recommended.</p>
 <div style="break-before: page; page-break-before: always;"></div>

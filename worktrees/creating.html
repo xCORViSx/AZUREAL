@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bbda9ffd.js";
+            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,87 +178,6 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="creating-worktrees"><a class="header" href="#creating-worktrees">Creating Worktrees</a></h1>
-<p>Creating a worktree is the first step in any feature branch workflow. Each
-worktree gets its own working directory, git branch, terminal shell, and session
-history – fully isolated from every other worktree in the project.</p>
-<hr>
-<h2 id="keybinding"><a class="header" href="#keybinding">Keybinding</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Context</th><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td>Command mode (worktrees focused)</td><td><code>w</code></td><td>Create worktree</td></tr>
-<tr><td>Command mode (any focus)</td><td><code>Wa</code></td><td>Create worktree (leader sequence)</td></tr>
-</tbody>
-</table>
-</div>
-<p>Both keys open the same creation dialog. The <code>w</code> shortcut is available when the
-tab row has focus; the <code>Wa</code> leader sequence works from any context.</p>
-<hr>
-<h2 id="the-creation-dialog"><a class="header" href="#the-creation-dialog">The Creation Dialog</a></h2>
-<p>When you press the creation key, a centered dialog appears prompting for a
-<strong>worktree name</strong>. This name determines both the branch name and the on-disk
-directory:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Field</th><th>Value</th></tr>
-</thead>
-<tbody>
-<tr><td>Branch</td><td><code>azureal/&lt;name&gt;</code></td></tr>
-<tr><td>Directory</td><td><code>&lt;repo&gt;/worktrees/&lt;name&gt;</code></td></tr>
-</tbody>
-</table>
-</div>
-<p>The <code>azureal/</code> prefix is the default branch prefix. It keeps AZUREAL-managed
-branches visually separated from manually created branches in <code>git branch</code>
-output. The prefix is configurable in the project config.</p>
-<h3 id="name-rules"><a class="header" href="#name-rules">Name Rules</a></h3>
-<ul>
-<li>The name is used as-is after the prefix. Typing <code>auth-refactor</code> creates
-branch <code>azureal/auth-refactor</code>.</li>
-<li>Standard git branch naming rules apply: no spaces, no <code>..</code>, no leading dots,
-no control characters.</li>
-<li>If a branch with the resulting name already exists, the creation fails with
-an error message in the status bar.</li>
-</ul>
-<hr>
-<h2 id="initial-prompt"><a class="header" href="#initial-prompt">Initial Prompt</a></h2>
-<p>The creation dialog includes an optional <strong>initial prompt</strong> field. If you type a
-prompt here, AZUREAL does two things after creating the worktree:</p>
-<ol>
-<li>Switches to the new worktree immediately.</li>
-<li>Sends the prompt to the active agent backend (Claude or Codex), starting a
-session automatically.</li>
-</ol>
-<p>This lets you go from “I need a feature branch” to “an agent is working on it”
-in a single action. If you leave the initial prompt empty, the worktree is
-created and selected but no session is started.</p>
-<hr>
-<h2 id="what-happens-on-create"><a class="header" href="#what-happens-on-create">What Happens on Create</a></h2>
-<p>When you confirm the dialog, the following sequence runs:</p>
-<ol>
-<li><strong><code>git worktree add -b azureal/&lt;name&gt; &lt;repo&gt;/worktrees/&lt;name&gt;</code></strong> creates the
-worktree directory and branch, forked from the current HEAD of the main
-branch.</li>
-<li><strong>A session record</strong> is inserted into the SQLite store for the new branch.</li>
-<li><strong>The tab row</strong> adds a new tab and selects it.</li>
-<li><strong>The file tree, viewer, and terminal</strong> all switch to the new worktree’s
-working directory.</li>
-<li>If an initial prompt was provided, it is sent to the agent backend.</li>
-</ol>
-<p>The entire operation is synchronous and typically completes in under a second.
-The status bar confirms success with a message like <code>Created worktree: auth-refactor</code>.</p>
-<hr>
-<h2 id="creating-from-an-existing-branch"><a class="header" href="#creating-from-an-existing-branch">Creating from an Existing Branch</a></h2>
-<p>If AZUREAL detects <code>azureal/</code>-prefixed branches that have no corresponding
-worktree directory (for example, branches created on another machine and pulled
-down), those branches appear as <strong>archived</strong> worktrees in the tab row. You do
-not need to create them again – pressing <code>u</code> on an archived tab recreates the
-worktree directory from the existing branch. See
-<a href="./managing.html">Managing Worktrees</a> for details on unarchiving.</p>
 
                     </main>
 

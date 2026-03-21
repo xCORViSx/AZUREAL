@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bbda9ffd.js";
+            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -229,15 +229,21 @@ but the conversation continues without any manual intervention.</p>
 <h2 id="boundary-selection"><a class="header" href="#boundary-selection">Boundary Selection</a></h2>
 <p>Compaction does not summarize the entire conversation. It preserves recent
 exchanges verbatim to maintain conversational coherence.</p>
-<p><code>compaction_boundary(session_id, from_seq, keep=3)</code> scans backward from the
-current position and preserves the <strong>last 3 user prompts</strong> along with all
-interleaved agent responses, tool calls, and tool results. Everything before
-this boundary is summarized by the compaction agent. Everything after it is
-kept verbatim and included in the next context injection as-is.</p>
+<p><code>spawn_compaction_agent()</code> tries <code>compaction_boundary(session_id, from_seq, keep)</code>
+with progressively smaller <code>keep</code> values (<strong>3 → 2 → 1</strong>). <code>keep=3</code> is ideal —
+it preserves the <strong>last 3 user prompts</strong> along with all interleaved agent
+responses, tool calls, and tool results. However, sessions that cross the
+threshold with ≤3 user messages would never find a boundary at <code>keep=3</code>,
+leaving compaction stuck. Falling back to <code>keep=2</code> then <code>keep=1</code> ensures
+compaction can always run as long as at least one user message boundary exists.</p>
+<p>Everything before the boundary is summarized by the compaction agent.
+Everything after it is kept verbatim and included in the next context
+injection as-is.</p>
 <p>This means the agent always sees:</p>
 <ul>
 <li>The compaction summary (covering all older history).</li>
-<li>The last 3 user-agent exchanges in full detail.</li>
+<li>The last 1–3 user-agent exchanges in full detail (depending on how many
+exist since the last compaction).</li>
 <li>The new prompt.</li>
 </ul>
 <hr>

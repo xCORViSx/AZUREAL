@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bbda9ffd.js";
+            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,128 +178,6 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="managing-worktrees"><a class="header" href="#managing-worktrees">Managing Worktrees</a></h1>
-<p>Once a worktree exists, AZUREAL provides three management operations: renaming,
-archiving, and deleting. Each is accessed through a leader sequence starting
-with <code>W</code>.</p>
-<hr>
-<h2 id="renaming-wr"><a class="header" href="#renaming-wr">Renaming (Wr)</a></h2>
-<p>Renaming changes the branch name and updates all internal state that references
-it.</p>
-<h3 id="the-rename-dialog"><a class="header" href="#the-rename-dialog">The Rename Dialog</a></h3>
-<p>Pressing <code>Wr</code> opens a centered dialog with a <strong>cyan double-line border</strong>. The
-input field is pre-filled with the current worktree name (without the
-<code>azureal/</code> prefix). Standard text editing works inside the field: cursor
-movement with arrow keys, backspace, and character insertion.</p>
-<h3 id="what-happens-on-confirm"><a class="header" href="#what-happens-on-confirm">What Happens on Confirm</a></h3>
-<p>When you press Enter to confirm:</p>
-<ol>
-<li><strong><code>git branch -m azureal/&lt;old&gt; azureal/&lt;new&gt;</code></strong> renames the local branch.</li>
-<li><strong>The new branch is pushed</strong> to the remote.</li>
-<li><strong>The old remote branch is deleted</strong> (<code>git push origin --delete azureal/&lt;old&gt;</code>).</li>
-<li><strong>Upstream tracking is set</strong> for the new branch name.</li>
-<li><strong>All branch-keyed state maps are migrated</strong>: session files, session slots,
-and auto-rebase configuration entries are re-keyed from the old branch name
-to the new one.</li>
-</ol>
-<h3 id="restrictions"><a class="header" href="#restrictions">Restrictions</a></h3>
-<ul>
-<li>The main branch cannot be renamed. Pressing <code>Wr</code> while browsing main has
-no effect.</li>
-<li>If the new name conflicts with an existing branch, the rename fails with an
-error in the status bar.</li>
-</ul>
-<hr>
-<h2 id="archiving-wx-or-cmda--alta"><a class="header" href="#archiving-wx-or-cmda--alta">Archiving (Wx or Cmd+A / Alt+A)</a></h2>
-<p>Archiving removes a worktree’s working directory from disk while preserving
-its git branch. This is useful when you want to free disk space or reduce
-clutter without losing the branch’s commit history.</p>
-<h3 id="what-happens-on-archive"><a class="header" href="#what-happens-on-archive">What Happens on Archive</a></h3>
-<ol>
-<li><strong>The worktree directory</strong> (<code>&lt;repo&gt;/worktrees/&lt;name&gt;</code>) is removed via
-<code>git worktree remove</code>.</li>
-<li><strong>The git branch is preserved.</strong> The branch and all its commits remain in
-the repository.</li>
-<li><strong>The tab updates</strong> to show the worktree in its archived state: a diamond
-prefix and dimmed gray text.</li>
-</ol>
-<h3 id="archived-worktree-behavior"><a class="header" href="#archived-worktree-behavior">Archived Worktree Behavior</a></h3>
-<p>Archived worktrees appear in the tab row but are not fully functional:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Action</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td>Select (click or <code>[</code>/<code>]</code>)</td><td>Tab highlights but shows “press u first”</td></tr>
-<tr><td>Enter</td><td>Displays “press u first” message</td></tr>
-<tr><td><code>u</code></td><td><strong>Unarchives</strong>: recreates the worktree directory from the preserved branch</td></tr>
-<tr><td><code>Wd</code></td><td>Deletes the archived worktree (branch and all)</td></tr>
-</tbody>
-</table>
-</div>
-<h3 id="unarchiving-u"><a class="header" href="#unarchiving-u">Unarchiving (u)</a></h3>
-<p>Pressing <code>u</code> on an archived worktree runs
-<code>git worktree add &lt;repo&gt;/worktrees/&lt;name&gt; azureal/&lt;name&gt;</code>, recreating the
-working directory from the existing branch. The worktree returns to active
-state and is fully usable again.</p>
-<hr>
-<h2 id="deleting-wd"><a class="header" href="#deleting-wd">Deleting (Wd)</a></h2>
-<p>Deletion is permanent. It removes the worktree directory, the git branch
-(both local and remote), and all associated session state.</p>
-<h3 id="the-delete-dialog"><a class="header" href="#the-delete-dialog">The Delete Dialog</a></h3>
-<p>Pressing <code>Wd</code> opens a centered dialog with a <strong>red double-line border</strong>
-containing a confirmation prompt. The dialog includes safety information:</p>
-<ul>
-<li><strong>Uncommitted changes warning</strong>: If the worktree has uncommitted changes,
-a yellow warning line appears in the dialog. This gives you a chance to
-commit or stash before proceeding.</li>
-<li><strong>Unmerged commits warning</strong>: If the branch contains commits that have not
-been merged into the main branch, a yellow warning line indicates this.
-Deleting will permanently lose those commits.</li>
-</ul>
-<p>Press <code>y</code> to confirm deletion or <code>n</code> (or <code>Esc</code>) to cancel.</p>
-<h3 id="what-happens-on-delete"><a class="header" href="#what-happens-on-delete">What Happens on Delete</a></h3>
-<ol>
-<li><strong>The worktree directory</strong> is removed (<code>git worktree remove --force</code>).</li>
-<li><strong>The local branch</strong> is deleted (<code>git branch -D azureal/&lt;name&gt;</code>).</li>
-<li><strong>The remote branch</strong> is deleted (<code>git push origin --delete azureal/&lt;name&gt;</code>).</li>
-<li><strong>Session state</strong> is cleaned up: session records, session slots, and
-auto-rebase configuration entries for the branch are removed.</li>
-<li><strong>The tab is removed</strong> from the tab row. Focus moves to an adjacent
-worktree.</li>
-</ol>
-<h3 id="sibling-guard"><a class="header" href="#sibling-guard">Sibling Guard</a></h3>
-<p>If multiple worktrees share the same underlying git branch (an unusual
-situation, but possible), the delete dialog changes behavior. Instead of
-silently deleting the branch out from under sibling worktrees, it presents
-two options:</p>
-<ul>
-<li><strong>Delete all siblings</strong>: removes every worktree on that branch plus the
-branch itself.</li>
-<li><strong>Archive current only</strong>: archives the current worktree without touching
-the branch or its siblings.</li>
-</ul>
-<h3 id="restrictions-1"><a class="header" href="#restrictions-1">Restrictions</a></h3>
-<ul>
-<li>The main branch cannot be deleted.</li>
-<li>Deleting an archived worktree skips the worktree-removal step (there is no
-directory to remove) and proceeds directly to branch and state cleanup.</li>
-</ul>
-<hr>
-<h2 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th><th>Destructive</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Wr</code></td><td>Rename worktree</td><td>No</td></tr>
-<tr><td><code>Wx</code> or <code>Cmd+A</code>/<code>Alt+A</code></td><td>Archive worktree</td><td>No (reversible)</td></tr>
-<tr><td><code>u</code></td><td>Unarchive worktree</td><td>No</td></tr>
-<tr><td><code>Wd</code></td><td>Delete worktree</td><td>Yes</td></tr>
-</tbody>
-</table>
-</div>
 
                     </main>
 
