@@ -172,6 +172,7 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
             &crate::tui::keybindings::GLOBAL,
             crate::tui::keybindings::Action::CycleModel,
             app.kbd_enhanced,
+            app.alt_enter_stolen,
         )
         .unwrap_or_else(|| "Ctrl+m".into());
         block = block.title_bottom(

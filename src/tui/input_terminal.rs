@@ -5,7 +5,7 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
-use crate::tui::keybindings::{is_cmd, macos_opt_key};
+use crate::tui::keybindings::{is_cmd_key, macos_opt_key};
 
 /// Handle keyboard input when Input field is focused (terminal mode or Claude prompt)
 pub fn handle_input_mode(
@@ -105,24 +105,25 @@ pub fn handle_input_mode(
 
     // Claude prompt mode - handle text editing
     // Clipboard operations (Cmd/Ctrl+C/X/V/A) - handle BEFORE character input
-    match (key.modifiers, key.code) {
-        (m, KeyCode::Char('c')) if is_cmd(m) => {
+    // Uses is_cmd_key() for macOS ⌥-unicode fallback (WezTerm doesn't deliver ⌘)
+    if let KeyCode::Char(c) = key.code {
+        if is_cmd_key(key.modifiers, key.code, 'c') {
             app.input_copy();
             return Ok(());
         }
-        (m, KeyCode::Char('x')) if is_cmd(m) => {
+        if is_cmd_key(key.modifiers, key.code, 'x') {
             app.input_cut();
             return Ok(());
         }
-        (m, KeyCode::Char('v')) if is_cmd(m) => {
+        if is_cmd_key(key.modifiers, key.code, 'v') {
             app.input_paste();
             return Ok(());
         }
-        (m, KeyCode::Char('a')) if is_cmd(m) => {
+        if is_cmd_key(key.modifiers, key.code, 'a') {
             app.input_select_all();
             return Ok(());
         }
-        _ => {}
+        let _ = c; // suppress unused warning
     }
 
     // Regular text editing
@@ -199,8 +200,11 @@ pub fn handle_input_mode(
         | (KeyModifiers::CONTROL, KeyCode::Backspace) => app.input_delete_word(),
         // Shift+Enter — insert newline (Enter alone submits)
         // With DISAMBIGUATE_ESCAPE_CODES, Shift+Enter sends CSI 13;2u → (SHIFT, Enter).
-        // ALT+Enter arm kept as safety net for Kitty-macOS edge cases.
-        (KeyModifiers::SHIFT, KeyCode::Enter) | (KeyModifiers::ALT, KeyCode::Enter) => {
+        // Ctrl+J (0x0A) as primary fallback — always distinct from Enter (0x0D).
+        // Alt+Enter as secondary fallback (WezTerm on macOS steals this for fullscreen).
+        (KeyModifiers::SHIFT, KeyCode::Enter)
+        | (KeyModifiers::CONTROL, KeyCode::Char('j'))
+        | (KeyModifiers::ALT, KeyCode::Enter) => {
             if app.has_input_selection() {
                 app.input_delete_selection();
             }

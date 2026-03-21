@@ -210,21 +210,21 @@ Azureal compiles and runs on **macOS**, **Linux**, and **Windows**.
 
 **Platform-conditional keybindings** (`src/tui/keybindings/bindings.rs`):
 
-macOS `⌘` (Super) bindings get platform equivalents via `#[cfg(target_os = "macos")]` const key combos. Windows/Linux terminals cannot capture the Win/Super key. On Windows/Linux, destructive/modal actions use `Alt+` instead of `Ctrl+Shift+` because Windows Terminal intercepts `Ctrl+Shift+` combos and without the Kitty keyboard protocol the Shift modifier is dropped for alphabetic chars.
+macOS `⌘` (Super) bindings get platform equivalents via `#[cfg(target_os = "macos")]` const key combos. Windows/Linux terminals cannot capture the Win/Super key. On Windows/Linux, destructive/modal actions use `Alt+` instead of `Ctrl+Shift+` because Windows Terminal intercepts `Ctrl+Shift+` combos and without the Kitty keyboard protocol the Shift modifier is dropped for alphabetic chars. On macOS, `⌘` bindings also have `⌥`-letter fallbacks (macOS Option+letter produces unicode chars like ç, å, ß, Ω) for terminals that don't support the Kitty keyboard protocol (e.g. WezTerm). These fallbacks are registered via `with_alt_kitty` and matched in raw key handlers via `is_cmd_key()`. `is_cmd_key(modifiers, code, letter)` checks both `is_cmd(mods) && char == letter` and the macOS ⌥-unicode fallback via `macos_opt_key()`.
 
-| Action | macOS | Windows/Linux |
-|--------|-------|---------------|
-| Copy selection | `⌘c` | `Ctrl+C` |
-| Cancel agent | `⌃c` | `Alt+C` |
-| Archive worktree | `⌘a` | `Alt+A` |
-| Delete worktree | `⌘d` | `Alt+D` |
-| Select all | `⌘a` | `Ctrl+A` |
-| Save file | `⌘s` | `Ctrl+S` |
-| Undo | `⌘z` | `Ctrl+Z` |
-| Redo | `⌘⇧Z` | `Ctrl+Y` |
-| STT (edit mode) | `⌃s` | `Alt+S` |
+| Action | macOS | macOS fallback (⌥) | Windows/Linux |
+|--------|-------|---------------------|---------------|
+| Copy selection | `⌘c` | `⌥c` (ç) | `Ctrl+C` |
+| Cancel agent | `⌃c` | — | `Alt+C` |
+| Archive worktree | `⌘a` | — | `Alt+A` |
+| Delete worktree | `⌘d` | — | `Alt+D` |
+| Select all | `⌘a` | `⌥a` (å) | `Ctrl+A` |
+| Save file | `⌘s` | `⌥s` (ß) | `Ctrl+S` |
+| Undo | `⌘z` | `⌥z` (Ω) | `Ctrl+Z` |
+| Redo | `⌘⇧Z` | `⌃y` | `Ctrl+Y` |
+| STT (edit mode) | `⌃s` | — | `Alt+S` |
 
-Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+Shift+` text labels on Windows/Linux.
+Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+Shift+` text labels on Windows/Linux. macOS ⌥-unicode chars (ç, µ, å, etc.) are reverse-mapped to `⌥<letter>` via `macos_opt_key()` for clean hint display.
 
 **Runtime platform guards:**
 
@@ -234,7 +234,7 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - Windows `.ico`/`.png` extraction + WT profile fragment (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `AZUREAL.ico` to `~/.azureal/` for Explorer/Alt+Tab, and `AZUREAL_toast.png` for toast notifications and the WT tab icon (PNG renders crisply; `.ico` is blurry). Writes a Windows Terminal profile fragment (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Azureal\azureal.json`) on every startup (not just when missing) referencing the PNG, so icon/exe path changes propagate automatically. `GetConsoleWindow()` returns null in WT (ConPTY has no window), so `WM_SETICON` cannot work.
 - Windows exe icon embedding (`build.rs`): `#[cfg(target_os = "windows")]` — `winres` embeds `.ico` as Win32 resource for Explorer/Alt+Tab file icon
 - Notification platform guards (`src/app/state/claude/process_lifecycle.rs`): `.sound_name("Glass")` gated to `#[cfg(target_os = "macos")]`; `.app_id("AZUREAL")` + `.icon()` gated to `#[cfg(target_os = "windows")]`
-- Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal. Detection: crossterm DSR query ORed with `term_program_supports_kitty()` env var check (WezTerm/iTerm.app/kitty/ghostty) to catch false negatives.
+- Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal. Detection: crossterm DSR query ORed with `term_program_supports_kitty()` env var check (iTerm.app/kitty/ghostty) to catch false negatives. WezTerm deliberately excluded — it accepts the push silently but doesn't honor the protocol on macOS.
 - fast_draw (`src/tui/event_loop/fast_draw.rs`): `fast_draw_input()` gated to `#[cfg(target_os = "macos")]` — direct VT writes bypass ratatui's buffer. `fast_draw_session()` was removed (caused rendering artifacts: disappearing borders, duplicated events, stale content).
 - Path canonicalization: All `std::fs::canonicalize()` calls replaced with `dunce::canonicalize()` to strip `\\?\` extended-length path prefix on Windows.
 - Cross-platform session linking (`src/config.rs`): `find_foreign_project_dir()` + `link_project_dir()` create NTFS junctions (Windows, no elevation) or symlinks (Unix) to share session directories across platforms.
@@ -676,7 +676,7 @@ KeyCombo::plain(KeyCode::BackTab)  // won't fire on terminals that send SHIFT+Ba
 
 ### Ctrl+M and Shift+Enter are indistinguishable from Enter without Kitty protocol
 
-Without the Kitty keyboard enhancement protocol, `Ctrl+M` and `Shift+Enter` both produce byte `0x0D` — identical to plain `Enter`. Crossterm decodes all three as `(KeyModifiers::NONE, KeyCode::Enter)`. Terminals that DON'T support Kitty protocol include GNOME Terminal, xterm, and most SSH sessions. Detection uses two methods ORed together: (1) `crossterm::terminal::supports_keyboard_enhancement()` which queries the terminal via DSR, and (2) `term_program_supports_kitty()` which checks the `TERM_PROGRAM` env var for known-good terminals (`WezTerm`, `iTerm.app`, `kitty`, `ghostty`). The env fallback catches false negatives from crossterm's query (notably WezTerm, which doesn't respond fast enough to the DSR probe). `PushKeyboardEnhancementFlags` is only sent when either detection method returns `true`.
+Without the Kitty keyboard enhancement protocol, `Ctrl+M` and `Shift+Enter` both produce byte `0x0D` — identical to plain `Enter`. Crossterm decodes all three as `(KeyModifiers::NONE, KeyCode::Enter)`. Terminals that DON'T support Kitty protocol include GNOME Terminal, xterm, WezTerm (macOS), and most SSH sessions. Detection uses two methods ORed together: (1) `crossterm::terminal::supports_keyboard_enhancement()` which queries the terminal via DSR, and (2) `term_program_supports_kitty()` which checks the `TERM_PROGRAM` env var for known-good terminals (`iTerm.app`, `kitty`, `ghostty`). The env fallback catches false negatives from crossterm's query. `PushKeyboardEnhancementFlags` is only sent when either detection method returns `true`. **WezTerm is deliberately excluded** from `term_program_supports_kitty()` — it accepts the push silently but does NOT honor the protocol on macOS (all key events arrive without modifier disambiguation). Including WezTerm would set `kbd_enhanced=true`, causing hint labels to show non-functional primary keys (⌃m, ⇧Enter) instead of the working fallbacks.
 
 ```rust
 // ❌ WRONG — only works with Kitty keyboard protocol
@@ -689,7 +689,7 @@ Keybinding::new(
 // ✅ CORRECT — Alt+M always sends a distinct ESC+'m' sequence
 Keybinding::with_alt_kitty(
     KeyCombo::ctrl(KeyCode::Char('m')),
-    &ALT_CYCLE_MODEL,  // Alt+M fallback (Linux only; empty on macOS)
+    &ALT_CYCLE_MODEL,  // µ on macOS (⌥m unicode), Alt+M on Linux
     "Cycle model",
     Action::CycleModel,
 )
@@ -699,7 +699,7 @@ Keybinding::with_alt_kitty(
 
 **Hint adaptation:** All UI surfaces adapt via `Keybinding::display_keys_adaptive(kbd_enhanced)`. Bindings constructed with `with_alt_kitty()` have `primary_requires_kitty = true`; when `!kbd_enhanced`, `display_keys_adaptive()` hides the primary and shows only the fallback alternatives. Used in: help panel (`draw_help_overlay`), prompt border hints (`find_key_adaptive` in `hints.rs`), session chrome (`session_chrome.rs`).
 
-**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback on Linux/Windows; ⌥m→µ bare-char fallback on macOS), `InsertNewline` (Shift+Enter → Alt+Enter fallback on all platforms). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback on Linux/Windows; ⌥m→µ bare-char fallback on macOS), `InsertNewline` (Shift+Enter → Ctrl+J primary fallback on all platforms, Alt+Enter secondary fallback — but WezTerm on macOS steals Alt+Enter for fullscreen). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
 
 ---
 

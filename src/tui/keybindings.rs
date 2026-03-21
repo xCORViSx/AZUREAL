@@ -48,4 +48,4 @@ pub use hints::{
 };
 
 // Platform utilities
-pub use platform::{is_cmd, is_cmd_shift, macos_opt_key};
+pub use platform::{is_cmd, is_cmd_key, is_cmd_shift, macos_opt_key};

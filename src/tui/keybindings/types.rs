@@ -162,7 +162,19 @@ impl KeyCombo {
 
         match self.code {
             KeyCode::Char(' ') => s.push_str("Space"),
-            KeyCode::Char(c) => s.push(c),
+            KeyCode::Char(c) => {
+                // On macOS, bare unicode chars from ⌥+letter (e.g. µ = ⌥m)
+                // should display as ⌥<letter> instead of the raw unicode char
+                #[cfg(target_os = "macos")]
+                if self.modifiers == KeyModifiers::NONE {
+                    if let Some(letter) = super::platform::macos_opt_key(c) {
+                        s.push('⌥');
+                        s.push(letter);
+                        return s;
+                    }
+                }
+                s.push(c);
+            }
             KeyCode::Enter => s.push_str("Enter"),
             KeyCode::Esc => s.push_str("Esc"),
             KeyCode::Tab => s.push_str("Tab"),
@@ -453,17 +465,23 @@ impl Keybinding {
 
     /// Like `display_keys`, but when `!kbd_enhanced` and `primary_requires_kitty`,
     /// shows only the fallback alternatives (skipping the non-functional primary).
-    pub fn display_keys_adaptive(&self, kbd_enhanced: bool) -> String {
+    /// Does NOT filter bare unicode chars here — they're the actual working keys
+    /// when the primary is hidden, and `display()` now renders them as `⌥<letter>`.
+    /// When `alt_enter_stolen` is true (WezTerm on macOS), also skips `(ALT, Enter)`
+    /// since WezTerm intercepts it for fullscreen toggle.
+    pub fn display_keys_adaptive(&self, kbd_enhanced: bool, alt_enter_stolen: bool) -> String {
         if kbd_enhanced || !self.primary_requires_kitty {
             return self.display_keys();
         }
         // Show only alternatives (the fallbacks that work without Kitty)
         let mut s = String::new();
         for alt in self.alternatives {
-            if let KeyCode::Char(c) = alt.code {
-                if !c.is_ascii() && alt.modifiers == KeyModifiers::NONE {
-                    continue;
-                }
+            // Skip Alt+Enter when WezTerm steals it
+            if alt_enter_stolen
+                && alt.modifiers == KeyModifiers::ALT
+                && alt.code == KeyCode::Enter
+            {
+                continue;
             }
             if !s.is_empty() {
                 s.push('/');
@@ -1003,15 +1021,15 @@ mod tests {
         );
         // With Kitty: shows both
         if cfg!(target_os = "macos") {
-            assert_eq!(kb.display_keys_adaptive(true), "⌃m/⌥m");
+            assert_eq!(kb.display_keys_adaptive(true, false), "⌃m/⌥m");
         } else {
-            assert_eq!(kb.display_keys_adaptive(true), "Ctrl+m/Alt+m");
+            assert_eq!(kb.display_keys_adaptive(true, false), "Ctrl+m/Alt+m");
         }
         // Without Kitty: shows only fallback
         if cfg!(target_os = "macos") {
-            assert_eq!(kb.display_keys_adaptive(false), "⌥m");
+            assert_eq!(kb.display_keys_adaptive(false, false), "⌥m");
         } else {
-            assert_eq!(kb.display_keys_adaptive(false), "Alt+m");
+            assert_eq!(kb.display_keys_adaptive(false, false), "Alt+m");
         }
     }
 
@@ -1028,8 +1046,44 @@ mod tests {
             Action::NavDown,
         );
         // Non-kitty binding shows same output regardless of kbd_enhanced
-        assert_eq!(kb.display_keys_adaptive(true), "j/↓");
-        assert_eq!(kb.display_keys_adaptive(false), "j/↓");
+        assert_eq!(kb.display_keys_adaptive(true, false), "j/↓");
+        assert_eq!(kb.display_keys_adaptive(false, false), "j/↓");
+    }
+
+    #[test]
+    fn display_keys_adaptive_alt_enter_stolen_skips_alt_enter() {
+        static ALTS: [KeyCombo; 2] = [
+            KeyCombo {
+                modifiers: KeyModifiers::ALT,
+                code: KeyCode::Enter,
+            },
+            KeyCombo {
+                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('j'),
+            },
+        ];
+        let kb = Keybinding::with_alt_kitty(
+            KeyCombo::shift(KeyCode::Enter),
+            &ALTS,
+            "Insert newline",
+            Action::InsertNewline,
+        );
+        // Without Kitty, alt_enter_stolen=false: shows Alt+Enter
+        let s = kb.display_keys_adaptive(false, false);
+        if cfg!(target_os = "macos") {
+            assert!(s.contains("⌥Enter"), "expected ⌥Enter, got: {}", s);
+        } else {
+            assert!(s.contains("Alt+Enter"), "expected Alt+Enter, got: {}", s);
+        }
+        // Without Kitty, alt_enter_stolen=true: skips Alt+Enter, shows Ctrl+J
+        let s = kb.display_keys_adaptive(false, true);
+        if cfg!(target_os = "macos") {
+            assert!(s.contains("⌃j"), "expected ⌃j, got: {}", s);
+            assert!(!s.contains("⌥Enter"), "should not contain ⌥Enter: {}", s);
+        } else {
+            assert!(s.contains("Ctrl+j"), "expected Ctrl+j, got: {}", s);
+            assert!(!s.contains("Alt+Enter"), "should not contain Alt+Enter: {}", s);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════

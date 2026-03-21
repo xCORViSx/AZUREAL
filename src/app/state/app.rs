@@ -485,6 +485,9 @@ pub struct App {
     /// When false, Ctrl+M / Shift+Enter are indistinguishable from Enter,
     /// so hints and lookups prefer Alt-based fallback keys.
     pub kbd_enhanced: bool,
+    /// WezTerm on macOS steals Alt+Enter for fullscreen toggle.
+    /// When true, hints skip Alt+Enter and show Ctrl+J for InsertNewline instead.
+    pub alt_enter_stolen: bool,
     /// File/directory names to hide in the file tree (e.g. ".git", ".DS_Store")
     pub file_tree_hidden_dirs: HashSet<String>,
     /// When true, the file tree pane switches to "options" overlay mode
@@ -813,6 +816,7 @@ impl App {
             stt_transcribing: false,
             nerd_fonts: true,
             kbd_enhanced: false, // set in run() after PushKeyboardEnhancementFlags
+            alt_enter_stolen: false, // set in run() based on TERM_PROGRAM
             file_tree_hidden_dirs: HashSet::new(), // populated from azufig in load()
             file_tree_options_mode: false,
             file_tree_options_selected: 0,

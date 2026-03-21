@@ -103,6 +103,12 @@ pub async fn run() -> Result<()> {
 
     let mut app = App::new();
     app.kbd_enhanced = kbd_enhanced;
+    // WezTerm on macOS steals Alt+Enter for fullscreen toggle.
+    // Detect it so hints show Ctrl+J instead of the non-functional Alt+Enter.
+    app.alt_enter_stolen = matches!(
+        std::env::var("TERM_PROGRAM").as_deref(),
+        Ok("WezTerm")
+    );
     let config = Config::load().unwrap_or_default();
     app.claude_available = config.is_backend_installed(crate::backend::Backend::Claude);
     app.codex_available = config.is_backend_installed(crate::backend::Backend::Codex);
@@ -334,7 +340,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());
     }
     if app.show_help {
-        draw_dialogs::draw_help_overlay(f, app.kbd_enhanced);
+        draw_dialogs::draw_help_overlay(f, app.kbd_enhanced, app.alt_enter_stolen);
     }
     // Run command overlays (picker takes priority over dialog)
     if app.run_command_picker.is_some() {

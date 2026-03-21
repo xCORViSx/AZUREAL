@@ -40,8 +40,8 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
             });
         }
 
-        (m, KeyCode::Char('p'))
-            if crate::tui::keybindings::is_cmd(m)
+        (m, KeyCode::Char(c))
+            if crate::tui::keybindings::is_cmd_key(m, KeyCode::Char(c), 'p')
                 && !generating
                 && !overlay.message.trim().is_empty() =>
         {
@@ -151,7 +151,19 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
             }
         }
 
+        // Shift+Enter or Ctrl+J — insert newline (Ctrl+J fallback for terminals
+        // without Kitty protocol, e.g. WezTerm on macOS)
         (m, KeyCode::Enter) if m.contains(KeyModifiers::SHIFT) && !generating => {
+            let byte_pos = overlay
+                .message
+                .char_indices()
+                .nth(overlay.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(overlay.message.len());
+            overlay.message.insert(byte_pos, '\n');
+            overlay.cursor += 1;
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('j')) if !generating => {
             let byte_pos = overlay
                 .message
                 .char_indices()

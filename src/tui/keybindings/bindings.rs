@@ -86,16 +86,16 @@ static ALT_CYCLE_MODEL: [KeyCombo; 1] = [KeyCombo {
 // NOTE: WezTerm on macOS intercepts Alt+Enter for fullscreen toggle. Users must add
 // `{ key = "Enter", mods = "ALT", action = wezterm.action.DisableDefaultAssignment }`
 // to their WezTerm config, or use Ctrl+J (0x0A, distinct from Enter's 0x0D).
-// Ctrl+J first — it's the display-preferred fallback (shown in hints).
-// Alt+Enter second — also accepted but WezTerm on macOS steals it for fullscreen.
+// Alt+Enter first — shown in hints (works on most terminals).
+// Ctrl+J second — silent fallback for WezTerm (which steals Alt+Enter for fullscreen).
 static ALT_INSERT_NEWLINE: [KeyCombo; 2] = [
-    KeyCombo {
-        modifiers: KeyModifiers::CONTROL,
-        code: KeyCode::Char('j'),
-    },
     KeyCombo {
         modifiers: KeyModifiers::ALT,
         code: KeyCode::Enter,
+    },
+    KeyCombo {
+        modifiers: KeyModifiers::CONTROL,
+        code: KeyCode::Char('j'),
     },
 ];
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
@@ -149,11 +149,24 @@ const CTRL_SHIFT: KeyModifiers =
 // ── Platform-conditional key combos ──────────────────────────────────────────
 // macOS: ⌘ bindings (Cmd key). Windows/Linux: Ctrl or Ctrl+Shift equivalents.
 // Super (Win key) is intercepted by the OS on Windows — terminals never receive it.
+//
+// On macOS, ⌘ keys require Kitty keyboard protocol — without it, SUPER modifier
+// is intercepted by the terminal (copy, quit, etc.) and never reaches the app.
+// WezTerm on macOS ignores PushKeyboardEnhancementFlags entirely. Each ⌘ binding
+// has an ⌥+letter fallback (same pattern as CycleModel's ⌥m→µ): the macOS Option
+// key always produces a distinct unicode char regardless of protocol support.
 
 #[cfg(target_os = "macos")]
 const KEY_COPY: KeyCombo = KeyCombo::cmd(KeyCode::Char('c'));
 #[cfg(not(target_os = "macos"))]
 const KEY_COPY: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
+
+// macOS ⌥c → ç (copy fallback for terminals without Kitty/SUPER support)
+#[cfg(target_os = "macos")]
+static ALT_COPY: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::NONE,
+    code: KeyCode::Char('ç'),
+}];
 
 #[cfg(target_os = "macos")]
 const KEY_CANCEL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
@@ -168,20 +181,48 @@ const KEY_SELECT_ALL: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
 #[cfg(not(target_os = "macos"))]
 const KEY_SELECT_ALL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('a'));
 
+// macOS ⌥a → å (select-all fallback)
+#[cfg(target_os = "macos")]
+static ALT_SELECT_ALL: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::NONE,
+    code: KeyCode::Char('å'),
+}];
+
 #[cfg(target_os = "macos")]
 const KEY_SAVE: KeyCombo = KeyCombo::cmd(KeyCode::Char('s'));
 #[cfg(not(target_os = "macos"))]
 const KEY_SAVE: KeyCombo = KeyCombo::ctrl(KeyCode::Char('s'));
+
+// macOS ⌥s → ß (save fallback — no conflict with STT's ⌃s, different modifier)
+#[cfg(target_os = "macos")]
+static ALT_SAVE: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::NONE,
+    code: KeyCode::Char('ß'),
+}];
 
 #[cfg(target_os = "macos")]
 const KEY_UNDO: KeyCombo = KeyCombo::cmd(KeyCode::Char('z'));
 #[cfg(not(target_os = "macos"))]
 const KEY_UNDO: KeyCombo = KeyCombo::ctrl(KeyCode::Char('z'));
 
+// macOS ⌥z → Ω (undo fallback)
+#[cfg(target_os = "macos")]
+static ALT_UNDO: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::NONE,
+    code: KeyCode::Char('Ω'),
+}];
+
 #[cfg(target_os = "macos")]
 const KEY_REDO: KeyCombo = KeyCombo::new(CMD_SHIFT, KeyCode::Char('Z'));
 #[cfg(not(target_os = "macos"))]
 const KEY_REDO: KeyCombo = KeyCombo::ctrl(KeyCode::Char('y'));
+
+// macOS redo fallback: ⌃y (same as Win/Linux — sends 0x19, always distinct)
+#[cfg(target_os = "macos")]
+static ALT_REDO: [KeyCombo; 1] = [KeyCombo {
+    modifiers: KeyModifiers::CONTROL,
+    code: KeyCode::Char('y'),
+}];
 
 // STT in edit mode: ⌃s on macOS (no conflict with ⌘s Save), ⌃⇧S on non-macOS (⌃s is Save)
 #[cfg(target_os = "macos")]
@@ -203,6 +244,9 @@ pub static GLOBAL: [Keybinding; 18] = [
         Action::DumpDebug,
     ),
     Keybinding::new(KEY_CANCEL, "Cancel agent", Action::CancelClaude),
+    #[cfg(target_os = "macos")]
+    Keybinding::with_alt_kitty(KEY_COPY, &ALT_COPY, "Copy selection", Action::CopySelection),
+    #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_COPY, "Copy selection", Action::CopySelection),
     Keybinding::with_alt_kitty(
         KeyCombo::ctrl(KeyCode::Char('m')),
@@ -463,6 +507,9 @@ pub static VIEWER: [Keybinding; 14] = [
         "Close viewer",
         Action::Escape,
     ),
+    #[cfg(target_os = "macos")]
+    Keybinding::with_alt_kitty(KEY_SELECT_ALL, &ALT_SELECT_ALL, "Select all", Action::SelectAll),
+    #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_SELECT_ALL, "Select all", Action::SelectAll),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('t')),
@@ -484,8 +531,17 @@ pub static VIEWER: [Keybinding; 14] = [
 
 /// Edit mode bindings
 pub static EDIT_MODE: [Keybinding; 5] = [
+    #[cfg(target_os = "macos")]
+    Keybinding::with_alt_kitty(KEY_SAVE, &ALT_SAVE, "Save file", Action::Save),
+    #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_SAVE, "Save file", Action::Save),
+    #[cfg(target_os = "macos")]
+    Keybinding::with_alt_kitty(KEY_UNDO, &ALT_UNDO, "Undo", Action::Undo).paired(),
+    #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_UNDO, "Undo", Action::Undo).paired(),
+    #[cfg(target_os = "macos")]
+    Keybinding::with_alt_kitty(KEY_REDO, &ALT_REDO, "Redo", Action::Redo),
+    #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_REDO, "Redo", Action::Redo),
     Keybinding::new(KEY_EDIT_STT, "Speech input", Action::ToggleStt),
     Keybinding::new(

@@ -12,7 +12,7 @@ use crate::tui::keybindings;
 use crate::tui::util::AZURE;
 
 /// Draw help overlay with auto-sized columns from centralized keybindings
-pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool) {
+pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool, alt_enter_stolen: bool) {
     let area = f.area();
     let sections = keybindings::help_sections();
 
@@ -40,7 +40,7 @@ pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool) {
         while i < bindings.len() {
             if bindings[i].pair_with_next && i + 1 < bindings.len() {
                 rows.push(HelpRow::Paired {
-                    keys1: bindings[i].display_keys_adaptive(kbd_enhanced),
+                    keys1: bindings[i].display_keys_adaptive(kbd_enhanced, alt_enter_stolen),
                     desc1: bindings[i].description,
                     keys2: bindings[i + 1].display_keys(),
                     desc2: bindings[i + 1].description,
@@ -48,7 +48,7 @@ pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool) {
                 i += 2;
             } else {
                 rows.push(HelpRow::Single {
-                    keys: bindings[i].display_keys_adaptive(kbd_enhanced),
+                    keys: bindings[i].display_keys_adaptive(kbd_enhanced, alt_enter_stolen),
                     desc: bindings[i].description,
                 });
                 i += 1;

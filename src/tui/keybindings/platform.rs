@@ -67,6 +67,29 @@ pub fn is_cmd(modifiers: crossterm::event::KeyModifiers) -> bool {
     }
 }
 
+/// Check if (modifiers, code) matches a platform "cmd+letter" binding,
+/// including macOS ⌥-unicode fallback (e.g. ⌥c → ç matches 'c').
+/// This handles WezTerm on macOS where SUPER modifier is never delivered.
+#[inline]
+pub fn is_cmd_key(
+    modifiers: crossterm::event::KeyModifiers,
+    code: crossterm::event::KeyCode,
+    letter: char,
+) -> bool {
+    if let crossterm::event::KeyCode::Char(c) = code {
+        if is_cmd(modifiers) && c == letter {
+            return true;
+        }
+        #[cfg(target_os = "macos")]
+        if modifiers == crossterm::event::KeyModifiers::NONE {
+            if let Some(mapped) = macos_opt_key(c) {
+                return mapped == letter;
+            }
+        }
+    }
+    false
+}
+
 /// Check if the given modifiers represent the platform "command+shift" combo.
 /// macOS: ⌘⇧ (SUPER|SHIFT). Windows/Linux: Ctrl+Shift (CONTROL|SHIFT).
 #[inline]

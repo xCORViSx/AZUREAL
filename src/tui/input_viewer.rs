@@ -5,7 +5,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::keybindings::{is_cmd, is_cmd_shift, macos_opt_key};
+use super::keybindings::{is_cmd_key, is_cmd_shift, macos_opt_key};
 use crate::app::App;
 
 /// Handle keyboard input for the Viewer panel.
@@ -40,9 +40,11 @@ pub fn handle_viewer_input(key: KeyEvent, app: &mut App) -> Result<()> {
 
 /// Handle input when in edit mode
 fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
-    match (key.modifiers, key.code) {
-        // Save: Cmd+S / Ctrl+S
-        (m, KeyCode::Char('s')) if is_cmd(m) => {
+    // is_cmd_key matches ⌘+letter (macOS) / Ctrl+letter (Win/Linux), plus macOS ⌥-unicode fallbacks
+    let (m, c) = (key.modifiers, key.code);
+    match (m, c) {
+        // Save: Cmd+S / Ctrl+S / ⌥s(ß)
+        _ if is_cmd_key(m, c, 's') => {
             match app.save_viewer_edits() {
                 Ok(()) => {
                     app.set_status("File saved");
@@ -55,8 +57,8 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
             }
         }
 
-        // Undo: Cmd+Z / Ctrl+Z
-        (m, KeyCode::Char('z')) if is_cmd(m) && !m.contains(KeyModifiers::SHIFT) => {
+        // Undo: Cmd+Z / Ctrl+Z / ⌥z(Ω)
+        _ if is_cmd_key(m, c, 'z') && !m.contains(KeyModifiers::SHIFT) => {
             app.viewer_edit_undo();
         }
 
@@ -67,34 +69,34 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
         (m, KeyCode::Char('z')) if is_cmd_shift(m) => {
             app.viewer_edit_redo();
         }
-        #[cfg(not(target_os = "macos"))]
-        (m, KeyCode::Char('y')) if is_cmd(m) => {
+        // Ctrl+Y — redo on all platforms (macOS fallback for ⌘⇧Z without Kitty)
+        (m, KeyCode::Char('y')) if m.contains(KeyModifiers::CONTROL) => {
             app.viewer_edit_redo();
         }
 
-        // Copy: Cmd+C / Ctrl+C
-        (m, KeyCode::Char('c')) if is_cmd(m) => {
+        // Copy: Cmd+C / Ctrl+C / ⌥c(ç)
+        _ if is_cmd_key(m, c, 'c') => {
             if app.viewer_edit_copy() {
                 app.set_status("Copied to clipboard");
             }
         }
 
-        // Cut: Cmd+X / Ctrl+X
-        (m, KeyCode::Char('x')) if is_cmd(m) => {
+        // Cut: Cmd+X / Ctrl+X / ⌥x(≈)
+        _ if is_cmd_key(m, c, 'x') => {
             if app.has_edit_selection() {
                 app.viewer_edit_cut();
                 app.set_status("Cut to clipboard");
             }
         }
 
-        // Paste: Cmd+V / Ctrl+V (from system clipboard)
-        (m, KeyCode::Char('v')) if is_cmd(m) => {
+        // Paste: Cmd+V / Ctrl+V / ⌥v(√)
+        _ if is_cmd_key(m, c, 'v') => {
             app.viewer_edit_paste();
             app.viewer_edit_scroll_to_cursor();
         }
 
-        // Select All: Cmd+A / Ctrl+A
-        (m, KeyCode::Char('a')) if is_cmd(m) => {
+        // Select All: Cmd+A / Ctrl+A / ⌥a(å)
+        _ if is_cmd_key(m, c, 'a') => {
             app.viewer_edit_select_all();
         }
 

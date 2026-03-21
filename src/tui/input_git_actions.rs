@@ -32,7 +32,7 @@ use crossterm::event;
 use crossterm::event::KeyModifiers;
 
 use super::event_loop::copy_viewer_selection;
-use super::keybindings::{is_cmd, lookup_git_actions_action, Action};
+use super::keybindings::{is_cmd_key, lookup_git_actions_action, Action};
 use crate::app::App;
 use crate::backend::AgentProcess;
 
@@ -88,61 +88,56 @@ pub fn handle_git_actions_input(
     }
 
     // Cmd+C / Ctrl+C (copy) and Cmd+A / Ctrl+A (select all) — global actions that must work in git mode
-    if is_cmd(key.modifiers) {
-        match key.code {
-            event::KeyCode::Char('c') => {
-                if app.viewer_selection.is_some() {
-                    copy_viewer_selection(app);
-                } else if app.git_status_selected {
-                    if let Some(ref p) = app.git_actions_panel {
-                        if let Some((ref msg, _)) = p.result_message {
-                            let text = msg.clone();
-                            if let Ok(mut cb) = arboard::Clipboard::new() {
-                                let _ = cb.set_text(&text);
-                            }
-                            app.clipboard = text;
-                            app.set_status("Copied to clipboard");
-                        }
+    // is_cmd_key also matches macOS ⌥-unicode fallbacks (⌥c→ç, ⌥a→å) for WezTerm compatibility
+    if is_cmd_key(key.modifiers, key.code, 'c') {
+        if app.viewer_selection.is_some() {
+            copy_viewer_selection(app);
+        } else if app.git_status_selected {
+            if let Some(ref p) = app.git_actions_panel {
+                if let Some((ref msg, _)) = p.result_message {
+                    let text = msg.clone();
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&text);
                     }
-                } else if let Some(ref p) = app.git_actions_panel {
-                    if let Some((ref msg, _)) = p.result_message {
-                        let text = msg.clone();
-                        if let Ok(mut cb) = arboard::Clipboard::new() {
-                            let _ = cb.set_text(&text);
-                        }
-                        app.clipboard = text;
-                        app.set_status("Copied to clipboard");
-                    }
+                    app.clipboard = text;
+                    app.set_status("Copied to clipboard");
                 }
-                return Ok(());
             }
-            event::KeyCode::Char('a') => {
-                if app.viewer_lines_cache.is_empty() {
-                    // No viewer content — select the status box message
-                    app.git_status_selected = app
-                        .git_actions_panel
-                        .as_ref()
-                        .and_then(|p| p.result_message.as_ref())
-                        .is_some();
-                } else {
-                    app.git_status_selected = false;
-                    let last = app.viewer_lines_cache.len().saturating_sub(1);
-                    let last_col = app
-                        .viewer_lines_cache
-                        .last()
-                        .map(|l| {
-                            l.spans
-                                .iter()
-                                .map(|s| s.content.chars().count())
-                                .sum::<usize>()
-                        })
-                        .unwrap_or(0);
-                    app.viewer_selection = Some((0, 0, last, last_col));
+        } else if let Some(ref p) = app.git_actions_panel {
+            if let Some((ref msg, _)) = p.result_message {
+                let text = msg.clone();
+                if let Ok(mut cb) = arboard::Clipboard::new() {
+                    let _ = cb.set_text(&text);
                 }
-                return Ok(());
+                app.clipboard = text;
+                app.set_status("Copied to clipboard");
             }
-            _ => {}
         }
+        return Ok(());
+    } else if is_cmd_key(key.modifiers, key.code, 'a') {
+        if app.viewer_lines_cache.is_empty() {
+            // No viewer content — select the status box message
+            app.git_status_selected = app
+                .git_actions_panel
+                .as_ref()
+                .and_then(|p| p.result_message.as_ref())
+                .is_some();
+        } else {
+            app.git_status_selected = false;
+            let last = app.viewer_lines_cache.len().saturating_sub(1);
+            let last_col = app
+                .viewer_lines_cache
+                .last()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.chars().count())
+                        .sum::<usize>()
+                })
+                .unwrap_or(0);
+            app.viewer_selection = Some((0, 0, last, last_col));
+        }
+        return Ok(());
     }
 
     // Shift+J/K and PageDown/PageUp — scroll the diff viewer
