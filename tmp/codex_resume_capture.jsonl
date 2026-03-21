@@ -1,4 +1,0 @@
-{"type":"thread.started","thread_id":"019cf64c-cb6c-7fc3-8979-99d4389ef9e1"}
-{"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"The requested file change is complete."}}
-{"type":"turn.completed","usage":{"input_tokens":63776,"cached_input_tokens":54144,"output_tokens":456}}
