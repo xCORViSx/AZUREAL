@@ -18,7 +18,7 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::render_markdown::render_assistant_text_with_paths_colored;
 use super::render_tools::render_tool_result;
@@ -137,6 +137,28 @@ fn render_display_events_with_state(
 ) {
     let w = width as usize;
     let bubble_width = (w * 2 / 3).max(40);
+
+    // Pre-scan Read tool results to extract first line numbers from output content.
+    // This map persists even after JSONL cleanup since ToolResult content is stored in .azs.
+    let read_offsets: HashMap<String, usize> = events
+        .iter()
+        .filter_map(|e| {
+            if let DisplayEvent::ToolResult {
+                tool_use_id,
+                tool_name,
+                content,
+                ..
+            } = e
+            {
+                if tool_name == "Read" {
+                    let first_line = content.lines().next()?;
+                    let num_str = first_line.trim().split('→').next()?.trim();
+                    return Some((tool_use_id.clone(), num_str.parse::<usize>().ok()?));
+                }
+            }
+            None
+        })
+        .collect();
 
     // Pre-computed state flags: for full renders these are all default (false/None),
     // for incremental renders they come from pre_scan_events() on the main thread.
@@ -315,6 +337,7 @@ fn render_display_events_with_state(
                     failed_tools,
                     bubble_width,
                     syntax_highlighter,
+                    &read_offsets,
                 );
             }
             DisplayEvent::ToolResult {

@@ -422,6 +422,8 @@ pub struct App {
     pub viewer_edit_diff_line: Option<usize>,
     /// One-shot flag: correct viewer_scroll to match the actual visual line on next cache rebuild
     pub viewer_scroll_to_diff: bool,
+    /// One-shot: after cache rebuild, map this raw file line to its visual line and scroll there
+    pub viewer_scroll_to_line: Option<usize>,
     /// Previous viewer state before Edit diff (content, path, scroll) for restoration on Esc
     pub viewer_prev_state: Option<(Option<String>, Option<PathBuf>, usize)>,
     /// Current position in prompt history (None = new input, Some(idx) = browsing history)
@@ -782,6 +784,7 @@ impl App {
             viewer_edit_diff: None,
             viewer_edit_diff_line: None,
             viewer_scroll_to_diff: false,
+            viewer_scroll_to_line: None,
             viewer_prev_state: None,
             prompt_history_idx: None,
             prompt_history_temp: None,

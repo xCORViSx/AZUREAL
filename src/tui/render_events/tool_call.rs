@@ -2,7 +2,7 @@
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::SyntaxHighlighter;
 use crate::tui::colorize::ORANGE;
@@ -27,6 +27,7 @@ pub(super) fn render_tool_call(
     failed_tools: &HashSet<String>,
     bubble_width: usize,
     highlighter: &mut SyntaxHighlighter,
+    read_offsets: &HashMap<String, usize>,
 ) {
     let tool_color = AZURE;
     let is_pending = pending_tools.contains(tool_use_id);
@@ -90,11 +91,31 @@ pub(super) fn render_tool_call(
                 } else {
                     (String::new(), String::new())
                 };
+                // For Read tools, append #L{line} so clicking opens at the read range.
+                // Primary source: pre-scanned ToolResult content (survives JSONL cleanup).
+                // Fallback: input.offset from the tool call JSON (only available while JSONL exists).
+                let click_path = if tool_name == "Read" {
+                    let line = read_offsets
+                        .get(tool_use_id)
+                        .copied()
+                        .or_else(|| input.get("offset").and_then(|v| v.as_u64()).map(|v| v as usize));
+                    if let Some(l) = line {
+                        if l > 1 {
+                            format!("{}#L{}", param_raw, l)
+                        } else {
+                            param_raw.to_string()
+                        }
+                    } else {
+                        param_raw.to_string()
+                    }
+                } else {
+                    param_raw.to_string()
+                };
                 clickable_paths.push((
                     lines.len(),
                     start_col,
                     end_col,
-                    param_raw.to_string(),
+                    click_path,
                     old_s,
                     new_s,
                     wrap_line_count,

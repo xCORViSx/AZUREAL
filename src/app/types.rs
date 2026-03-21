@@ -726,6 +726,21 @@ pub struct GitActionsPanel {
     pub squash_merge_receiver: Option<std::sync::mpsc::Receiver<SquashMergeProgress>>,
     /// When Some, a discard confirmation is pending for the file at this index
     pub discard_confirm: Option<usize>,
+    /// Cached file stats — recomputed when changed_files or staged flags mutate,
+    /// avoids three `.iter()` passes per frame in draw_git_sidebar.
+    pub cached_staged_count: usize,
+    pub cached_total_add: usize,
+    pub cached_total_del: usize,
+}
+
+impl GitActionsPanel {
+    /// Recompute cached file stats from changed_files.
+    /// Call after any mutation to changed_files or staged flags.
+    pub fn recompute_file_stats(&mut self) {
+        self.cached_staged_count = self.changed_files.iter().filter(|f| f.staged).count();
+        self.cached_total_add = self.changed_files.iter().map(|f| f.additions).sum();
+        self.cached_total_del = self.changed_files.iter().map(|f| f.deletions).sum();
+    }
 }
 
 /// Progress update from the squash merge background thread
@@ -2198,6 +2213,9 @@ mod tests {
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
             discard_confirm: None,
+            cached_staged_count: 0,
+            cached_total_add: 0,
+            cached_total_del: 0,
         };
         assert_eq!(p.worktree_name, "feat-api");
         assert!(!p.is_on_main);

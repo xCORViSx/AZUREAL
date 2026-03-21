@@ -2,12 +2,21 @@
 
 All notable changes to Azureal will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] — 2026-03-21
+
+### Performance
+- **Animation tick redraw gating** — The event loop previously triggered `terminal.draw()` every 250ms whenever any tool was pending, even if no animated spinners were visible on screen. Now only sets `needs_redraw` on animation ticks when `animation_line_indices` is non-empty. Zero-cost when no spinners are visible. Modified: `src/tui/event_loop.rs`.
+- **Cached git sidebar stats** — `staged_count`, `total_add`, and `total_del` were recomputed via three `.iter()` passes over `changed_files` every frame in the git sidebar. Now cached on `GitActionsPanel` and only recomputed at mutation points (file refresh, stage toggle, stage all, panel open). Modified: `src/app/types.rs`, `src/tui/draw_sidebar.rs`, `src/tui/input_git_actions.rs`, `src/tui/input_git_actions/operations.rs`, `src/app/state/ui.rs`.
 
 ### Changed
 - **Updated all dependencies to latest versions** — rusqlite 0.32→0.39, toml 0.8→1.0, dirs 5→6, tree-sitter-scala 0.24→0.25, windows-sys 0.59→0.61, tempfile 3.26→3.27. All transitive deps also updated via `cargo update` (122 packages). All 6583 tests pass.
+- **Removed unplanned roadmap items** — Eliminated unchecked items that won't be implemented pre-1.0: session templates, per-project configuration, theme customization, session export/reporting, agent orchestration, custom tool definitions.
+
+### Fixed
+- **Read tool hyperlink scroll accuracy** — Clicking a Read tool's file hyperlink now opens the viewer at the exact visual line corresponding to the read range, accounting for line wrapping. Line numbers are sourced from the ToolResult output content (survives JSONL cleanup) with `input.offset` as fallback. Previously used raw line numbers which drifted from visual position on files with wrapped lines. Modified: `src/tui/render_events/tool_call.rs`, `src/tui/render_events.rs`, `src/app/state/app.rs`, `src/app/state/ui.rs`, `src/tui/draw_viewer.rs`.
 
 ### Improved
+- **Read tool file hyperlinks open at read range** — Clicking a Read tool's file path hyperlink now opens the file at the first line of the read range instead of always opening at line 1. Line number is extracted from the ToolResult output (first `N→` line), so it works for historical sessions whose JSONL files were cleaned up. Modified: `src/tui/render_events/tool_call.rs`, `src/tui/render_events.rs`.
 - **Help panel pairs cycle-focus bindings on one row** — CycleFocusForward (`Tab`) and CycleFocusBackward (`Shift+Tab`) now render on a single row using the paired binding display, matching the existing pattern for nav-up/down pairs.
 
 ### Fixed

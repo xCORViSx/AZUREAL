@@ -441,6 +441,7 @@ pub fn handle_git_actions_input(
                         },
                         false,
                     ));
+                    p.recompute_file_stats();
                 }
             }
         }
@@ -460,6 +461,7 @@ pub fn handle_git_actions_input(
                     },
                     false,
                 ));
+                p.recompute_file_stats();
             }
         }
         Action::GitDiscardFile => {

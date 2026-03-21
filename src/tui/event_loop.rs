@@ -129,8 +129,16 @@ pub async fn run_app(
             last_animation = now_anim;
         }
 
-        // Only redraw for animation if it actually updated
-        let mut needs_redraw = terminal_changed || (animation_due && has_pending_tools);
+        // Only trigger redraw for animation when pending tools are visible
+        // in the viewport (have entries in animation_line_indices). This
+        // avoids running the full ui() function at 4fps when tools are
+        // pending but off-screen.
+        let has_visible_pending = has_pending_tools
+            && app
+                .animation_line_indices
+                .iter()
+                .any(|(_, _, id)| app.pending_tool_calls.contains(id));
+        let mut needs_redraw = terminal_changed || (animation_due && has_visible_pending);
         let mut scroll_delta: i32 = 0;
         let mut scroll_col: u16 = 0;
         let mut scroll_row: u16 = 0;

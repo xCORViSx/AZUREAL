@@ -282,26 +282,21 @@ fn draw_git_sidebar(
     // Title with file count, staged count, and +/- stats
     let files_title = if panel.changed_files.is_empty() {
         " Changed Files (none) ".to_string()
+    } else if panel.cached_staged_count > 0 {
+        format!(
+            " Changed Files ({}, {}\u{2713}, +{}/-{}) ",
+            panel.changed_files.len(),
+            panel.cached_staged_count,
+            panel.cached_total_add,
+            panel.cached_total_del
+        )
     } else {
-        let staged_count = panel.changed_files.iter().filter(|f| f.staged).count();
-        let total_add: usize = panel.changed_files.iter().map(|f| f.additions).sum();
-        let total_del: usize = panel.changed_files.iter().map(|f| f.deletions).sum();
-        if staged_count > 0 {
-            format!(
-                " Changed Files ({}, {}\u{2713}, +{}/-{}) ",
-                panel.changed_files.len(),
-                staged_count,
-                total_add,
-                total_del
-            )
-        } else {
-            format!(
-                " Changed Files ({}, +{}/-{}) ",
-                panel.changed_files.len(),
-                total_add,
-                total_del
-            )
-        }
+        format!(
+            " Changed Files ({}, +{}/-{}) ",
+            panel.changed_files.len(),
+            panel.cached_total_add,
+            panel.cached_total_del
+        )
     };
 
     let border_fg = if files_focused { GIT_ORANGE } else { GIT_BROWN };

@@ -851,10 +851,12 @@ pub(crate) fn refresh_changed_files(panel: &mut GitActionsPanel) {
             if panel.selected_file >= panel.changed_files.len() {
                 panel.selected_file = panel.changed_files.len().saturating_sub(1);
             }
+            panel.recompute_file_stats();
         }
         Err(_) => {
             panel.changed_files.clear();
             panel.selected_file = 0;
+            panel.recompute_file_stats();
         }
     }
 }

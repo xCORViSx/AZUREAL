@@ -164,6 +164,9 @@ impl App {
         let (commits_behind_remote, commits_ahead_remote) = Git::get_remote_divergence(&wt_path);
 
         self.force_full_redraw = true;
+        let cached_staged_count = changed_files.iter().filter(|f| f.staged).count();
+        let cached_total_add = changed_files.iter().map(|f| f.additions).sum();
+        let cached_total_del = changed_files.iter().map(|f| f.deletions).sum();
         self.git_actions_panel = Some(GitActionsPanel {
             worktree_name,
             worktree_path: wt_path,
@@ -191,6 +194,9 @@ impl App {
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
             discard_confirm: None,
+            cached_staged_count,
+            cached_total_add,
+            cached_total_del,
         });
     }
 
@@ -243,8 +249,15 @@ impl App {
             self.viewer_mode = crate::app::ViewerMode::File;
             self.viewer_edit_diff = None;
             self.viewer_edit_diff_line = None;
-            self.viewer_scroll = target_line.unwrap_or(1).saturating_sub(1);
             self.viewer_scroll_to_diff = false;
+            if let Some(line) = target_line {
+                // Defer scroll until cache rebuild maps raw→visual line
+                self.viewer_scroll = 0;
+                self.viewer_scroll_to_line = Some(line);
+            } else {
+                self.viewer_scroll = 0;
+                self.viewer_scroll_to_line = None;
+            }
             self.viewer_lines_dirty = true;
             self.focus = Focus::Viewer;
         } else {

@@ -331,6 +331,8 @@ for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
 
 **Animation guard:** The animation patching loop is skipped entirely when `animation_line_indices` is empty (no tool calls rendered). Pulse animation only runs when at least one tool is still pending (checked via `pending_tool_calls`).
 
+**Animation tick redraw gating:** The event loop's 250ms animation tick only sets `needs_redraw = true` when `animation_line_indices` is non-empty (i.e., spinners are visible on screen). When no tools are rendered, animation ticks are free — no `terminal.draw()` call, no `ui()` invocation. Previously, any pending tool caused redraws even if the spinners were scrolled off screen.
+
 **Throttle values in `src/tui/event_loop.rs`:**
 - `min_draw_interval = 33ms` (~30fps) for user interaction, **adaptive 200ms (~5fps) during idle streaming** — when Claude is streaming but the user isn't interacting, draw frequency drops 6x to reduce PTY escape-sequence volume. Reverts to 30fps immediately on any key event.
 - `min_animation_interval = 250ms` (4fps pulsating indicators - viewport color patch only)
@@ -607,7 +609,34 @@ pub fn list_claude_sessions(...) -> Vec<(String, PathBuf, String)> {
 
 **Files:** `src/config.rs::list_claude_sessions()` pre-formats time strings; `src/tui/draw_sidebar.rs` just displays them
 
-### 7. Worktree Tab Row (Replaces Sidebar)
+### 7. Cache Computed Stats at Mutation Time
+
+```rust
+// ❌ WRONG - Recompute stats from changed_files every frame
+fn draw_git_sidebar(...) {
+    let staged = panel.changed_files.iter().filter(|f| f.staged).count();
+    let adds = panel.changed_files.iter().map(|f| f.additions).sum();
+    let dels = panel.changed_files.iter().map(|f| f.deletions).sum();
+}
+
+// ✅ CORRECT - Cache stats, recompute only at mutation points
+impl GitActionsPanel {
+    fn recompute_file_stats(&mut self) {
+        self.cached_staged_count = self.changed_files.iter().filter(|f| f.staged).count();
+        self.cached_total_add = self.changed_files.iter().map(|f| f.additions).sum();
+        self.cached_total_del = self.changed_files.iter().map(|f| f.deletions).sum();
+    }
+}
+fn draw_git_sidebar(...) {
+    let staged = panel.cached_staged_count;  // FREE - just read a usize
+}
+```
+
+**Rule:** When a render function iterates a collection to compute derived values, cache those values on the struct and recompute only when the collection mutates. Call the recompute method at every mutation point (stage toggle, stage all, refresh, panel init).
+
+**Files:** `src/app/types.rs` — `cached_staged_count`, `cached_total_add`, `cached_total_del` fields + `recompute_file_stats()`; callers: `refresh_changed_files()`, `GitToggleStage`, `GitStageAll`, `open_git_actions_panel()`
+
+### 8. Worktree Tab Row (Replaces Sidebar)
 
 The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. The tab row rebuilds every frame (no caching needed — it's a single row of spans). `invalidate_sidebar()` is retained as a no-op for compatibility with existing callers.
 
@@ -1766,9 +1795,6 @@ azureal/
 - [x] TodoWrite sticky widget (persistent checkbox list at bottom of Session pane)
 - [x] AskUserQuestion options box (numbered options with context-aware response handling)
 - [x] Squash merge to main (collapses all branch commits into single main commit, replaced rebase/merge/auto-rebase)
-- [ ] Session templates
-- [ ] Per-project configuration
-- [ ] Theme customization
 - [x] Input history persistence
 - [x] Search/filter sessions (`/` in Worktrees pane)
 - [x] Session search (`/` in Session pane — find text in current session, `n/N` to cycle matches)
@@ -1784,10 +1810,7 @@ azureal/
 - [x] Git panel worktree tab bar (mirrors normal tab row design: ★ main tab, status symbols, archived styling, mouse clicks; GIT_ORANGE/GIT_BROWN theme; paginated; `[`/`]` cycles worktrees (skips main), `{`/`}` jumps pages; ★ main via click/Shift+M; focused pane preserved)
 - [x] Debug dump shortcut (⌃d: creates debug output snapshot with naming dialog)
 - [x] Multi-backend support — OpenAI Codex CLI as second backend alongside Claude Code CLI. `AgentProcess` struct holds both backends, dispatches at spawn time based on selected model via `backend_for_model()`. Unified model pool (9 models: opus/sonnet/haiku + 6 Codex GPT models) — single Ctrl+M cycle through all. Codex streaming parser, Codex session file parser, Codex session discovery, backend-dispatched session loading. Both backends produce `DisplayEvent` for rendering — TUI layer unchanged.
-- [ ] Session export/reporting
 - [x] Cross-session context sharing (via SQLite session store + context injection — all 9 phases complete)
-- [ ] Agent orchestration (one agent spawns tasks for others)
-- [ ] Custom tool definitions per session
 
 ## Phase 4: Portable Sessions (Complete)
 - [x] SQLite-backed session store (`.azureal/sessions.azs`) with DELETE journal mode, S-numbered sessions
@@ -2066,7 +2089,7 @@ Destructive worktree actions are behind a two-key leader sequence: press `Shift+
 | `n/N` | Next/prev search match (after `/` search confirmed with Enter) |
 | `Esc` | Return to FileTree |
 
-**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read or Write path opens the file plain in the Viewer. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Session pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Session scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Session pane.
+**Clickable File Paths:** Edit, Read, and Write tool file paths are underlined in orange and clickable. Clicking an Edit path opens the full file in the Viewer with the edit region highlighted (red background for deleted lines, green background for added lines) and sets the `selected_tool_diff` index so `⌥←/⌥→` cycling continues from that position. Clicking a Read path opens the file in the Viewer scrolled to the first line of the read range. The line number is sourced from a pre-scanned `read_offsets: HashMap<String, usize>` built from ToolResult content (parses first `N→` line) — this survives JSONL cleanup since ToolResult content is stored in `.azs`. Falls back to `input.offset` from tool call JSON. The line is appended as `#L{line}` to the stored click path, parsed by `split_file_reference`; the raw line is stored in `viewer_scroll_to_line` and mapped to the correct visual line after cache rebuild in `draw_viewer.rs`, accounting for word-wrap; clicking a Write path opens the file plain at line 1. The clicked/cycled path is highlighted with inverted colors (orange background, black text) in the Session pane — highlight covers all wrapped continuation lines via `wrap_line_count` field in `ClickablePath`. Clicking a continuation line of a wrapped path also triggers the file open. Use `⌥←/⌥→` in the Viewer to cycle through edits (also syncs Session scroll and sets the highlight). The border title shows `[Edit N/M]` where N is the current edit-only position and M is the total number of Edit tool calls (excludes Read/Write). The last 20 Edit calls also show inline diff previews in the Session pane.
 
 **Clickable Tables:** Markdown tables in assistant messages are clickable. Clicking anywhere on a table opens a centered popup overlay that re-renders the table at near-terminal width (terminal width minus 8 chars) so columns aren't truncated. The popup has an AZURE double border, "Table" title, scroll support (`j`/`k`/arrows), and dismiss (`Esc`/`q`/click outside). Table regions are tracked via `ClickableTable = (cache_line_start, cache_line_end, raw_markdown)` alongside `ClickablePath` through the background render pipeline — `render_assistant_text()` returns both rendered lines and table regions, which are offset to absolute cache positions and threaded through `RenderResult` → `poll_render_result()` → `app.clickable_tables`. The popup calls `render_table_for_popup()` which reuses `scan_tables()` + `render_table_row()` at the wider width. State is `app.table_popup: Option<TablePopup>`, cleared on session switch.
 

@@ -269,6 +269,9 @@ mod tests {
             auto_resolve_overlay: None,
             squash_merge_receiver: None,
             discard_confirm: None,
+            cached_staged_count: 0,
+            cached_total_add: 0,
+            cached_total_del: 0,
         });
         app
     }
