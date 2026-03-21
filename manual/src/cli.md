@@ -125,7 +125,7 @@ RUST_LOG=debug azureal 2> azureal.log
 ## Debug Dump
 
 The `Ctrl+D` keybinding inside the TUI triggers a debug dump -- a snapshot of
-internal state written to a timestamped file. This is covered in detail at
+internal state written to a named text file in `.azureal/`. This is covered in detail at
 [Debug Dump](./debug-dump.md). The dump is useful for filing bug reports or
 inspecting runtime state without attaching a debugger.
 

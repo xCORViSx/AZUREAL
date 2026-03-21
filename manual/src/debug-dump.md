@@ -27,6 +27,9 @@ The output file is saved to:
 For example, entering "broken-render" produces
 `.azureal/debug-output-broken-render.txt` in the project root.
 
+The name is used directly in the filename, so short hyphenated identifiers are
+usually the easiest to search for and share.
+
 ---
 
 ## Contents

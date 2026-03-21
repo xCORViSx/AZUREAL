@@ -17,6 +17,7 @@ All notable changes to Azureal will be documented in this file.
 - **Removed unplanned roadmap items** — Eliminated unchecked items that won't be implemented pre-1.0: session templates, per-project configuration, theme customization, session export/reporting, agent orchestration, custom tool definitions.
 
 ### Fixed
+- **Session list ordered by most recent activity** — Sessions in the session list overlay were ordered by creation ID (alphabetical/chronological creation order). Now ordered by most recent event activity (descending), with newest-created sessions as tiebreaker for sessions with no events. The most recently used session always appears first. Modified: `src/app/session_store.rs`.
 - **Read tool hyperlink scroll accuracy** — Clicking a Read tool's file hyperlink now opens the viewer at the exact visual line corresponding to the read range, accounting for line wrapping. Line numbers are sourced from the ToolResult output content (survives JSONL cleanup) with `input.offset` as fallback. Previously used raw line numbers which drifted from visual position on files with wrapped lines. Modified: `src/tui/render_events/tool_call.rs`, `src/tui/render_events.rs`, `src/app/state/app.rs`, `src/app/state/ui.rs`, `src/tui/draw_viewer.rs`.
 
 ### Improved

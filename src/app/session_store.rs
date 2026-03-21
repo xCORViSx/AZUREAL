@@ -283,8 +283,10 @@ impl SessionStore {
                  LEFT JOIN (SELECT session_id, COUNT(*) as cnt FROM events \
                     WHERE kind IN ('UserMessage','AssistantText') GROUP BY session_id) m \
                     ON m.session_id = s.id \
+                 LEFT JOIN (SELECT session_id, MAX(id) as max_eid FROM events GROUP BY session_id) latest \
+                    ON latest.session_id = s.id \
                  WHERE s.worktree = ?1 \
-                 ORDER BY s.id",
+                 ORDER BY COALESCE(latest.max_eid, 0) DESC, s.id DESC",
                 Box::new(wt.to_string()),
             ),
             None => (
@@ -297,7 +299,9 @@ impl SessionStore {
                  LEFT JOIN (SELECT session_id, COUNT(*) as cnt FROM events \
                     WHERE kind IN ('UserMessage','AssistantText') GROUP BY session_id) m \
                     ON m.session_id = s.id \
-                 ORDER BY s.id",
+                 LEFT JOIN (SELECT session_id, MAX(id) as max_eid FROM events GROUP BY session_id) latest \
+                    ON latest.session_id = s.id \
+                 ORDER BY COALESCE(latest.max_eid, 0) DESC, s.id DESC",
                 Box::new(""),
             ),
         };
@@ -1090,8 +1094,9 @@ mod tests {
         store.create_session("feat-a").unwrap();
         let list = store.list_sessions(None).unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].id, 1);
-        assert_eq!(list[1].id, 2);
+        // Ordered by most recent activity DESC, then id DESC (newest first)
+        assert_eq!(list[0].id, 2);
+        assert_eq!(list[1].id, 1);
     }
 
     #[test]
@@ -1122,6 +1127,24 @@ mod tests {
         let list = store.list_sessions(None).unwrap();
         assert_eq!(list[0].event_count, 0);
         assert_eq!(list[0].message_count, 0);
+    }
+
+    #[test]
+    fn list_sessions_ordered_by_most_recent_activity() {
+        let store = SessionStore::open_memory().unwrap();
+        let id1 = store.create_session("main").unwrap();
+        let id2 = store.create_session("main").unwrap();
+        let id3 = store.create_session("main").unwrap();
+        // Add events to session 1 (oldest) AFTER creating all sessions
+        // — its events have the highest autoincrement IDs
+        store.append_events(id1, &sample_events()).unwrap();
+        let list = store.list_sessions(Some("main")).unwrap();
+        assert_eq!(list.len(), 3);
+        // Session 1 has the most recent events → first
+        assert_eq!(list[0].id, id1);
+        // Sessions 2 and 3 have no events → ordered by id DESC
+        assert_eq!(list[1].id, id3);
+        assert_eq!(list[2].id, id2);
     }
 
     // ── append_events / load_events round-trip ──
