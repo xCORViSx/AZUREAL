@@ -43,14 +43,19 @@ use super::{
 
 /// Fallback detection for Kitty keyboard protocol support via TERM_PROGRAM.
 /// crossterm's `supports_keyboard_enhancement()` queries the terminal with a DSR
-/// sequence and waits for a response, but some terminals (notably WezTerm) don't
-/// respond fast enough — causing a false negative. These terminals are known to
-/// fully support the Kitty keyboard protocol, so we check the env var as a safety net.
+/// sequence and waits for a response, but some terminals don't respond fast enough —
+/// causing a false negative. These terminals are known to fully support the Kitty
+/// keyboard protocol, so we check the env var as a safety net.
+///
+/// NOTE: WezTerm is deliberately excluded. It accepts `PushKeyboardEnhancementFlags`
+/// silently but does NOT actually enable the protocol on macOS — Shift+Enter and
+/// Ctrl+M remain indistinguishable from plain Enter. Including it would set
+/// `kbd_enhanced=true`, causing hint labels to show non-functional primary keys.
 #[cfg(not(target_os = "windows"))]
 fn term_program_supports_kitty() -> bool {
     matches!(
         std::env::var("TERM_PROGRAM").as_deref(),
-        Ok("WezTerm" | "iTerm.app" | "kitty" | "ghostty")
+        Ok("iTerm.app" | "kitty" | "ghostty")
     )
 }
 

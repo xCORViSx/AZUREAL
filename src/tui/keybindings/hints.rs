@@ -677,14 +677,14 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "macos")]
-    fn find_key_adaptive_returns_primary_when_no_alt_on_macos() {
-        // macOS has no Alt+M fallback — should return primary Ctrl+M even without Kitty
+    fn find_key_adaptive_returns_alt_mu_on_macos() {
+        // macOS has ⌥m → µ fallback — without Kitty, shows µ instead of ⌃m
         let key = find_key_adaptive(&GLOBAL, Action::CycleModel, false);
         assert!(key.is_some());
         let k = key.unwrap();
         assert!(
-            k.contains('m') || k.contains('M'),
-            "expected Ctrl+M (no fallback on macOS), got: {}",
+            k.contains('µ'),
+            "expected µ (macOS ⌥m fallback), got: {}",
             k
         );
     }
@@ -790,11 +790,11 @@ mod tests {
     }
 
     #[test]
-    fn prompt_type_title_no_kitty_shows_alt_enter() {
+    fn prompt_type_title_no_kitty_shows_ctrl_j_fallback() {
         let (_, _, hints) = prompt_type_title(false);
         assert!(
-            hints.contains("Alt+Enter") || hints.contains("⌥Enter"),
-            "without Kitty, newline hint should show Alt+Enter: {}",
+            hints.contains("Ctrl+j") || hints.contains("⌃j"),
+            "without Kitty, newline hint should show Ctrl+J fallback: {}",
             hints
         );
     }

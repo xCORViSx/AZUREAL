@@ -97,7 +97,7 @@ impl App {
                     self.session_store
                         .as_ref()
                         .and_then(|store| store.list_sessions(Some(&branch_name)).ok())
-                        .and_then(|sessions| sessions.last().map(|s| s.id))
+                        .and_then(|sessions| sessions.first().map(|s| s.id))
                 });
 
             // Clear unread for the viewed session

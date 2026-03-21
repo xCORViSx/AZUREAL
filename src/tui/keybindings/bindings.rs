@@ -83,10 +83,21 @@ static ALT_CYCLE_MODEL: [KeyCombo; 1] = [KeyCombo {
 }];
 // Alt+Enter fallback for Shift+Enter (InsertNewline) — without Kitty protocol,
 // Shift+Enter is indistinguishable from Enter. Alt+Enter sends ESC+CR, always unique.
-static ALT_INSERT_NEWLINE: [KeyCombo; 1] = [KeyCombo {
-    modifiers: KeyModifiers::ALT,
-    code: KeyCode::Enter,
-}];
+// NOTE: WezTerm on macOS intercepts Alt+Enter for fullscreen toggle. Users must add
+// `{ key = "Enter", mods = "ALT", action = wezterm.action.DisableDefaultAssignment }`
+// to their WezTerm config, or use Ctrl+J (0x0A, distinct from Enter's 0x0D).
+// Ctrl+J first — it's the display-preferred fallback (shown in hints).
+// Alt+Enter second — also accepted but WezTerm on macOS steals it for fullscreen.
+static ALT_INSERT_NEWLINE: [KeyCombo; 2] = [
+    KeyCombo {
+        modifiers: KeyModifiers::CONTROL,
+        code: KeyCode::Char('j'),
+    },
+    KeyCombo {
+        modifiers: KeyModifiers::ALT,
+        code: KeyCode::Enter,
+    },
+];
 // macOS ⌥p produces 'π' (unicode) instead of ALT+p — add as alternative
 static ALT_MACOS_P: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,

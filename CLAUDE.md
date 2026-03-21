@@ -695,11 +695,11 @@ Keybinding::with_alt_kitty(
 )
 ```
 
-**Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative on Linux. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support. macOS omits the `Alt+M` fallback for CycleModel because macOS terminals generally support Kitty protocol and `⌥m` produces `µ` which should remain typeable — `ALT_CYCLE_MODEL` is `cfg`-gated to an empty array on macOS.
+**Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support. On macOS, `⌥m` produces `µ` (unicode) — added as a bare-char alternative (same pattern as `⌥p`→`π`, `⌥r`→`®`). WezTerm on macOS silently ignores `PushKeyboardEnhancementFlags` despite claiming Kitty support via `TERM_PROGRAM`, so the macOS fallback is required.
 
 **Hint adaptation:** All UI surfaces adapt via `Keybinding::display_keys_adaptive(kbd_enhanced)`. Bindings constructed with `with_alt_kitty()` have `primary_requires_kitty = true`; when `!kbd_enhanced`, `display_keys_adaptive()` hides the primary and shows only the fallback alternatives. Used in: help panel (`draw_help_overlay`), prompt border hints (`find_key_adaptive` in `hints.rs`), session chrome (`session_chrome.rs`).
 
-**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback on Linux; no fallback on macOS), `InsertNewline` (Shift+Enter → Alt+Enter fallback on all platforms). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback on Linux/Windows; ⌥m→µ bare-char fallback on macOS), `InsertNewline` (Shift+Enter → Alt+Enter fallback on all platforms). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
 
 ---
 
