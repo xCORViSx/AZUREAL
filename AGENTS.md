@@ -658,19 +658,19 @@ Keybinding::new(
 )
 
 // ✅ CORRECT — Alt+M always sends a distinct ESC+'m' sequence
-Keybinding::with_alt(
+Keybinding::with_alt_kitty(
     KeyCombo::ctrl(KeyCode::Char('m')),
-    &ALT_CYCLE_MODEL,  // Alt+M fallback
+    &ALT_CYCLE_MODEL,  // Alt+M fallback (Linux only; empty on macOS)
     "Cycle model",
     Action::CycleModel,
 )
 ```
 
-**Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support.
+**Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative on Linux. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support. macOS omits the `Alt+M` fallback for CycleModel because macOS terminals generally support Kitty protocol and `⌥m` produces `µ` which should remain typeable — `ALT_CYCLE_MODEL` is `cfg`-gated to an empty array on macOS.
 
 **Hint adaptation:** All UI surfaces adapt via `Keybinding::display_keys_adaptive(kbd_enhanced)`. Bindings constructed with `with_alt_kitty()` have `primary_requires_kitty = true`; when `!kbd_enhanced`, `display_keys_adaptive()` hides the primary and shows only the fallback alternatives. Used in: help panel (`draw_help_overlay`), prompt border hints (`find_key_adaptive` in `hints.rs`), session chrome (`session_chrome.rs`).
 
-**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback on Linux; no fallback on macOS), `InsertNewline` (Shift+Enter → Alt+Enter fallback on all platforms). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
 
 ---
 

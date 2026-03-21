@@ -662,14 +662,29 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn find_key_adaptive_returns_alt_when_not_enhanced() {
         let key = find_key_adaptive(&GLOBAL, Action::CycleModel, false);
         assert!(key.is_some());
         let k = key.unwrap();
-        // Without Kitty: should show Alt+M (or ⌥m on macOS)
+        // Without Kitty: should show Alt+M
         assert!(
-            k.contains("Alt") || k.contains('⌥'),
+            k.contains("Alt"),
             "expected Alt+M variant, got: {}",
+            k
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn find_key_adaptive_returns_primary_when_no_alt_on_macos() {
+        // macOS has no Alt+M fallback — should return primary Ctrl+M even without Kitty
+        let key = find_key_adaptive(&GLOBAL, Action::CycleModel, false);
+        assert!(key.is_some());
+        let k = key.unwrap();
+        assert!(
+            k.contains('m') || k.contains('M'),
+            "expected Ctrl+M (no fallback on macOS), got: {}",
             k
         );
     }
