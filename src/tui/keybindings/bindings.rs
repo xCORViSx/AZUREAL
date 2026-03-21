@@ -81,8 +81,8 @@ static ALT_CYCLE_MODEL: [KeyCombo; 1] = [KeyCombo {
     modifiers: KeyModifiers::NONE,
     code: KeyCode::Char('µ'),
 }];
-// Alt+Enter fallback for Shift+Enter (InsertNewline) — without Kitty protocol,
-// Shift+Enter is indistinguishable from Enter. Alt+Enter sends ESC+CR, always unique.
+// Alt+Enter and Ctrl+J fallbacks for Shift+Enter (InsertNewline).
+// Shift+Enter works in most terminals even without Kitty protocol.
 // NOTE: WezTerm on macOS intercepts Alt+Enter for fullscreen toggle. Users must add
 // `{ key = "Enter", mods = "ALT", action = wezterm.action.DisableDefaultAssignment }`
 // to their WezTerm config, or use Ctrl+J (0x0A, distinct from Enter's 0x0D).
@@ -630,7 +630,7 @@ pub static INPUT: [Keybinding; 10] = [
         "Submit prompt",
         Action::Submit,
     ),
-    Keybinding::with_alt_kitty(
+    Keybinding::with_alt(
         KeyCombo::shift(KeyCode::Enter),
         &ALT_INSERT_NEWLINE,
         "Insert newline",

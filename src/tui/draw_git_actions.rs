@@ -20,6 +20,8 @@ pub(crate) fn draw_commit_editor(
     f: &mut Frame,
     overlay: &crate::app::types::GitCommitOverlay,
     area: Rect,
+    kbd_enhanced: bool,
+    alt_enter_stolen: bool,
 ) {
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
@@ -156,21 +158,26 @@ pub(crate) fn draw_commit_editor(
             commit_lines.push(Line::from(""));
         }
 
-        // Hint bar at the bottom
+        // Hint bar at the bottom — keys adapt to terminal capabilities
+        let commit_push_key = if cfg!(target_os = "macos") {
+            if kbd_enhanced { "⌘P" } else { "⌥p" }
+        } else {
+            "Ctrl+P"
+        };
+        let newline_key = if alt_enter_stolen {
+            "⌃j"
+        } else if cfg!(target_os = "macos") {
+            "⇧Enter"
+        } else {
+            "Shift+Enter"
+        };
         commit_lines.push(Line::from(""));
         commit_lines.push(Line::from(vec![
             Span::styled(" Enter", Style::default().fg(GIT_ORANGE)),
             Span::styled(":commit  ", Style::default().fg(GIT_BROWN)),
-            Span::styled(
-                if cfg!(target_os = "macos") {
-                    "\u{2318}P"
-                } else {
-                    "Ctrl+P"
-                },
-                Style::default().fg(GIT_ORANGE),
-            ),
+            Span::styled(commit_push_key, Style::default().fg(GIT_ORANGE)),
             Span::styled(":commit+push  ", Style::default().fg(GIT_BROWN)),
-            Span::styled("Shift+Enter", Style::default().fg(GIT_ORANGE)),
+            Span::styled(newline_key, Style::default().fg(GIT_ORANGE)),
             Span::styled(":newline  ", Style::default().fg(GIT_BROWN)),
             Span::styled("Esc", Style::default().fg(GIT_ORANGE)),
             Span::styled(":cancel", Style::default().fg(GIT_BROWN)),

@@ -26,8 +26,8 @@ fn plat_alt(key: &str) -> String {
     }
 }
 
-/// Platform-appropriate modifier prefix for Shift
-fn plat_shift(key: &str) -> String {
+/// Platform-appropriate modifier prefix for Shift (retained for future use)
+fn _plat_shift(key: &str) -> String {
     if cfg!(target_os = "macos") {
         format!("⇧{}", key)
     } else {
@@ -69,7 +69,7 @@ pub fn help_sections() -> Vec<HelpSection> {
 /// Title + hints for prompt input (type mode).
 /// Returns (short_label, full_title_with_hints, just_the_hints).
 /// Callers use full title if it fits, otherwise short label in border + hints as inner row.
-pub fn prompt_type_title(kbd_enhanced: bool, alt_enter_stolen: bool) -> (String, String, String) {
+pub fn prompt_type_title(_kbd_enhanced: bool, alt_enter_stolen: bool) -> (String, String, String) {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
@@ -77,10 +77,15 @@ pub fn prompt_type_title(kbd_enhanced: bool, alt_enter_stolen: bool) -> (String,
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or(plat_ctrl("w"));
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or(plat_ctrl("s"));
     let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or(plat_alt("p"));
-    // Without Kitty protocol, Shift+Enter is indistinguishable from Enter —
-    // show the Alt+Enter fallback instead so users know what actually works.
-    let newline_key = find_key_adaptive(&INPUT, Action::InsertNewline, kbd_enhanced, alt_enter_stolen)
-        .unwrap_or_else(|| plat_shift("Enter"));
+    // Shift+Enter works in most terminals without Kitty protocol.
+    // Only WezTerm (alt_enter_stolen) needs the Ctrl+J fallback.
+    let newline_key = if alt_enter_stolen {
+        "⌃j".to_string()
+    } else if cfg!(target_os = "macos") {
+        "⇧Enter".to_string()
+    } else {
+        "Shift+Enter".to_string()
+    };
     let alt_arrows = if cfg!(target_os = "macos") {
         "⌥←/→:word".to_string()
     } else {
@@ -815,11 +820,11 @@ mod tests {
     }
 
     #[test]
-    fn prompt_type_title_no_kitty_shows_alt_enter_fallback() {
+    fn prompt_type_title_no_kitty_shows_shift_enter() {
         let (_, _, hints) = prompt_type_title(false, false);
         assert!(
-            hints.contains("Alt+Enter") || hints.contains("⌥Enter"),
-            "without Kitty, newline hint should show Alt+Enter fallback: {}",
+            hints.contains("Shift+Enter") || hints.contains("⇧Enter"),
+            "without Kitty, newline hint should show Shift+Enter (works in most terminals): {}",
             hints
         );
     }

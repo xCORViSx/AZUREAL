@@ -362,7 +362,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Git panel overlays — commit editor and conflict resolution render over viewer pane
     if let Some(ref panel) = app.git_actions_panel {
         if let Some(ref overlay) = panel.commit_overlay {
-            draw_git_actions::draw_commit_editor(f, overlay, app.pane_viewer);
+            draw_git_actions::draw_commit_editor(f, overlay, app.pane_viewer, app.kbd_enhanced, app.alt_enter_stolen);
         }
         if let Some(ref ov) = panel.conflict_overlay {
             draw_git_actions::draw_conflict_inline(f, ov, app.pane_viewer);
