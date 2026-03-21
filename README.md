@@ -156,7 +156,7 @@ azureal
 | `s` | Toggle session list |
 | `/` | Search / filter |
 | `?` | Help |
-| `⌘c` / `Ctrl+C` | Copy selection |
+| `⌘c` / `Ctrl+C` | Copy selection (fallback: `⌥c` macOS) |
 | `⌃c` / `Alt+C` | Cancel agent |
 | `⌃m` / `Ctrl+M` | Cycle model (fallback: `⌥m` macOS, `Alt+M` Linux) |
 | `⌃q` / `Ctrl+Q` | Quit |

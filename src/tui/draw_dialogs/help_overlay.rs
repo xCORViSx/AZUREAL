@@ -42,7 +42,7 @@ pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool, alt_enter_stolen: bo
                 rows.push(HelpRow::Paired {
                     keys1: bindings[i].display_keys_adaptive(kbd_enhanced, alt_enter_stolen),
                     desc1: bindings[i].description,
-                    keys2: bindings[i + 1].display_keys(),
+                    keys2: bindings[i + 1].display_keys_adaptive(kbd_enhanced, alt_enter_stolen),
                     desc2: bindings[i + 1].description,
                 });
                 i += 2;

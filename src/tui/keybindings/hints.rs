@@ -261,7 +261,11 @@ pub fn git_actions_footer() -> String {
         Action::GitToggleFocus,
         Action::GitToggleFocusBack,
         "Tab",
-        if cfg!(target_os = "macos") { "⇧Tab" } else { "Shift+Tab" },
+        if cfg!(target_os = "macos") {
+            "⇧Tab"
+        } else {
+            "Shift+Tab"
+        },
     );
     let enter = find_key_for_action(&GIT_ACTIONS, Action::Confirm).unwrap_or("Enter".into());
     let refresh = find_key_for_action(&GIT_ACTIONS, Action::GitRefresh).unwrap_or("R".into());
@@ -320,7 +324,9 @@ pub fn projects_browse_hint_pairs(has_project: bool) -> Vec<(String, &'static st
         v.push(("Esc".into(), "close"));
     }
     v.push((
-        find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or("⌃Q".into()),
+        find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or_else(|| {
+            if cfg!(target_os = "macos") { "⌃Q" } else { "Ctrl+Q" }.into()
+        }),
         "quit",
     ));
     v
@@ -341,10 +347,20 @@ pub fn picker_title(label: &str) -> String {
 /// Dialog footer hint pairs for run command / preset prompt dialogs.
 /// Returns (key_display, label) for Tab/BackTab/CtrlS structural keys.
 pub fn dialog_footer_hint_pairs() -> Vec<(String, &'static str)> {
+    let back_tab = if cfg!(target_os = "macos") {
+        "⇧Tab"
+    } else {
+        "Shift+Tab"
+    };
+    let ctrl_s = if cfg!(target_os = "macos") {
+        "⌃s"
+    } else {
+        "Ctrl+s"
+    };
     vec![
         ("Tab".into(), "next"),
-        ("⇧Tab".into(), "back"),
-        ("⌃s".into(), "scope"),
+        (back_tab.into(), "back"),
+        (ctrl_s.into(), "scope"),
         ("Enter".into(), "save"),
         ("Esc".into(), "cancel"),
     ]
