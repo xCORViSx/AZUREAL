@@ -68,7 +68,7 @@ pub fn help_sections() -> Vec<HelpSection> {
 /// Title + hints for prompt input (type mode).
 /// Returns (short_label, full_title_with_hints, just_the_hints).
 /// Callers use full title if it fits, otherwise short label in border + hints as inner row.
-pub fn prompt_type_title() -> (String, String, String) {
+pub fn prompt_type_title(kbd_enhanced: bool) -> (String, String, String) {
     let esc = find_key_for_action(&INPUT, Action::ExitPromptMode).unwrap_or("Esc".into());
     let submit = find_key_for_action(&INPUT, Action::Submit).unwrap_or("Enter".into());
     let cancel = find_key_for_action(&GLOBAL, Action::CancelClaude).unwrap_or(plat_ctrl("c"));
@@ -76,7 +76,10 @@ pub fn prompt_type_title() -> (String, String, String) {
     let dw = find_key_for_action(&INPUT, Action::DeleteWord).unwrap_or(plat_ctrl("w"));
     let stt = find_key_for_action(&INPUT, Action::ToggleStt).unwrap_or(plat_ctrl("s"));
     let presets = find_key_for_action(&INPUT, Action::PresetPrompts).unwrap_or(plat_alt("p"));
-    let shift_enter = plat_shift("Enter");
+    // Without Kitty protocol, Shift+Enter is indistinguishable from Enter —
+    // show the Alt+Enter fallback instead so users know what actually works.
+    let newline_key = find_key_adaptive(&INPUT, Action::InsertNewline, kbd_enhanced)
+        .unwrap_or_else(|| plat_shift("Enter"));
     let alt_arrows = if cfg!(target_os = "macos") {
         "⌥←/→:word".to_string()
     } else {
@@ -84,7 +87,7 @@ pub fn prompt_type_title() -> (String, String, String) {
     };
     let hints = format!(
         "{}:exit | {}:submit | {}:newline | {}:cancel agent | {}/{}:history | {} | {}:del wrd | {}:speech | {}:presets",
-        esc, submit, shift_enter, cancel, hprev, hnext, alt_arrows, dw, stt, presets
+        esc, submit, newline_key, cancel, hprev, hnext, alt_arrows, dw, stt, presets
     );
     let label = " PROMPT ".to_string();
     let full = format!(" PROMPT ({}) ", hints);
@@ -352,6 +355,26 @@ pub fn find_key_for_action(bindings: &[Keybinding], action: Action) -> Option<St
         .iter()
         .find(|b| b.action == action)
         .map(|b| b.primary.display())
+}
+
+/// Like `find_key_for_action` but returns the first alt key when `kbd_enhanced`
+/// is false (the primary key may be indistinguishable from Enter without Kitty).
+pub fn find_key_adaptive(
+    bindings: &[Keybinding],
+    action: Action,
+    kbd_enhanced: bool,
+) -> Option<String> {
+    bindings
+        .iter()
+        .find(|b| b.action == action)
+        .map(|b| {
+            if !kbd_enhanced {
+                if let Some(alt) = b.alternatives.first() {
+                    return alt.display();
+                }
+            }
+            b.primary.display()
+        })
 }
 
 /// Find a pair of keys for two related actions (e.g., NavDown/NavUp → "j"/"k")
@@ -622,30 +645,68 @@ mod tests {
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  find_key_adaptive
+    // ══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn find_key_adaptive_returns_primary_when_enhanced() {
+        let key = find_key_adaptive(&GLOBAL, Action::CycleModel, true);
+        assert!(key.is_some());
+        let k = key.unwrap();
+        // With Kitty: should show Ctrl+M (or ⌃m on macOS)
+        assert!(
+            k.contains('m') || k.contains('M'),
+            "expected Ctrl+M variant, got: {}",
+            k
+        );
+    }
+
+    #[test]
+    fn find_key_adaptive_returns_alt_when_not_enhanced() {
+        let key = find_key_adaptive(&GLOBAL, Action::CycleModel, false);
+        assert!(key.is_some());
+        let k = key.unwrap();
+        // Without Kitty: should show Alt+M (or ⌥m on macOS)
+        assert!(
+            k.contains("Alt") || k.contains('⌥'),
+            "expected Alt+M variant, got: {}",
+            k
+        );
+    }
+
+    #[test]
+    fn find_key_adaptive_returns_primary_when_no_alts() {
+        // Action::Quit has no alternative keys — should return primary regardless
+        let with = find_key_adaptive(&GLOBAL, Action::Quit, true);
+        let without = find_key_adaptive(&GLOBAL, Action::Quit, false);
+        assert_eq!(with, without);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  prompt_type_title
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
     fn prompt_type_title_short_label() {
-        let (label, _, _) = prompt_type_title();
+        let (label, _, _) = prompt_type_title(true);
         assert_eq!(label, " PROMPT ");
     }
 
     #[test]
     fn prompt_type_title_full_starts_with_prompt() {
-        let (_, full, _) = prompt_type_title();
+        let (_, full, _) = prompt_type_title(true);
         assert!(full.starts_with(" PROMPT ("));
     }
 
     #[test]
     fn prompt_type_title_full_ends_with_paren() {
-        let (_, full, _) = prompt_type_title();
+        let (_, full, _) = prompt_type_title(true);
         assert!(full.ends_with(") "));
     }
 
     #[test]
     fn prompt_type_title_hints_contains_exit() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("exit"),
             "hints should mention exit: {}",
@@ -655,7 +716,7 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_submit() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("submit"),
             "hints should mention submit: {}",
@@ -665,7 +726,7 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_cancel() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("cancel"),
             "hints should mention cancel: {}",
@@ -675,7 +736,7 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_history() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("history"),
             "hints should mention history: {}",
@@ -685,7 +746,7 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_del_wrd() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("del wrd"),
             "hints should mention del wrd: {}",
@@ -695,7 +756,7 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_speech() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("speech"),
             "hints should mention speech: {}",
@@ -705,10 +766,30 @@ mod tests {
 
     #[test]
     fn prompt_type_title_hints_contains_presets() {
-        let (_, _, hints) = prompt_type_title();
+        let (_, _, hints) = prompt_type_title(true);
         assert!(
             hints.contains("presets"),
             "hints should mention presets: {}",
+            hints
+        );
+    }
+
+    #[test]
+    fn prompt_type_title_no_kitty_shows_alt_enter() {
+        let (_, _, hints) = prompt_type_title(false);
+        assert!(
+            hints.contains("Alt+Enter") || hints.contains("⌥Enter"),
+            "without Kitty, newline hint should show Alt+Enter: {}",
+            hints
+        );
+    }
+
+    #[test]
+    fn prompt_type_title_kitty_shows_shift_enter() {
+        let (_, _, hints) = prompt_type_title(true);
+        assert!(
+            hints.contains("Shift+Enter") || hints.contains("⇧Enter"),
+            "with Kitty, newline hint should show Shift+Enter: {}",
             hints
         );
     }

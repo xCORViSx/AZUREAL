@@ -78,6 +78,7 @@ pub async fn run() -> Result<()> {
     let splash_start = std::time::Instant::now();
 
     let mut app = App::new();
+    app.kbd_enhanced = kbd_enhanced;
     let config = Config::load().unwrap_or_default();
     app.claude_available = config.is_backend_installed(crate::backend::Backend::Claude);
     app.codex_available = config.is_backend_installed(crate::backend::Backend::Codex);

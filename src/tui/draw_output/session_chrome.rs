@@ -168,9 +168,10 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
             "gpt-5.1-codex-mini" => Color::LightBlue,
             _ => Color::DarkGray,
         };
-        let model_key = crate::tui::keybindings::find_key_for_action(
+        let model_key = crate::tui::keybindings::find_key_adaptive(
             &crate::tui::keybindings::GLOBAL,
             crate::tui::keybindings::Action::CycleModel,
+            app.kbd_enhanced,
         )
         .unwrap_or_else(|| "Ctrl+m".into());
         block = block.title_bottom(

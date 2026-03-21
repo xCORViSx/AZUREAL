@@ -668,7 +668,9 @@ Keybinding::with_alt(
 
 **Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support.
 
-**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `bindings.rs`.
+**Hint adaptation:** Hints in the prompt border and session chrome use `find_key_adaptive()` which returns the Alt fallback key display when `app.kbd_enhanced` is false. This ensures users see the key that actually works on their terminal, not a non-functional primary key.
+
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `bindings.rs`, `hints.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
 
 ---
 
