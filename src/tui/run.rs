@@ -58,14 +58,18 @@ pub async fn run() -> Result<()> {
     // implementation conflicts with mouse capture: scroll/arrow CSI sequences
     // leak through as raw text (e.g. "[A[B" appearing in the input box).
     #[cfg(not(target_os = "windows"))]
-    let kbd_enhanced = execute!(
-        stdout,
-        PushKeyboardEnhancementFlags(
-            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-        )
-    )
-    .is_ok();
+    let kbd_enhanced = crossterm::terminal::supports_keyboard_enhancement()
+        .unwrap_or(false);
+    #[cfg(not(target_os = "windows"))]
+    if kbd_enhanced {
+        execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
+        )?;
+    }
     #[cfg(target_os = "windows")]
     let kbd_enhanced = false;
 
@@ -310,7 +314,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());
     }
     if app.show_help {
-        draw_dialogs::draw_help_overlay(f);
+        draw_dialogs::draw_help_overlay(f, app.kbd_enhanced);
     }
     // Run command overlays (picker takes priority over dialog)
     if app.run_command_picker.is_some() {

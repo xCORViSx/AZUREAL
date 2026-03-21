@@ -647,7 +647,7 @@ KeyCombo::plain(KeyCode::BackTab)  // won't fire on terminals that send SHIFT+Ba
 
 ### Ctrl+M and Shift+Enter are indistinguishable from Enter without Kitty protocol
 
-Without the Kitty keyboard enhancement protocol, `Ctrl+M` and `Shift+Enter` both produce byte `0x0D` — identical to plain `Enter`. Crossterm decodes all three as `(KeyModifiers::NONE, KeyCode::Enter)`. The `PushKeyboardEnhancementFlags` call "succeeds" (it just writes bytes to stdout) even when the terminal ignores the escape sequence, so `kbd_enhanced` is unreliable as a feature detection signal. Terminals that DON'T support Kitty protocol include GNOME Terminal, xterm, and most SSH sessions.
+Without the Kitty keyboard enhancement protocol, `Ctrl+M` and `Shift+Enter` both produce byte `0x0D` — identical to plain `Enter`. Crossterm decodes all three as `(KeyModifiers::NONE, KeyCode::Enter)`. Terminals that DON'T support Kitty protocol include GNOME Terminal, xterm, and most SSH sessions. Detection uses `crossterm::terminal::supports_keyboard_enhancement()` which actually queries the terminal; `PushKeyboardEnhancementFlags` is only sent when this returns `true`.
 
 ```rust
 // ❌ WRONG — only works with Kitty keyboard protocol
@@ -668,9 +668,9 @@ Keybinding::with_alt(
 
 **Rule:** Any binding using `Ctrl+<letter that maps to an ASCII control code>` or `Shift+Enter` MUST have an `Alt+<key>` alternative. Alt always sends a distinct `ESC` prefix regardless of terminal protocol support.
 
-**Hint adaptation:** Hints in the prompt border and session chrome use `find_key_adaptive()` which returns the Alt fallback key display when `app.kbd_enhanced` is false. This ensures users see the key that actually works on their terminal, not a non-functional primary key.
+**Hint adaptation:** All UI surfaces adapt via `Keybinding::display_keys_adaptive(kbd_enhanced)`. Bindings constructed with `with_alt_kitty()` have `primary_requires_kitty = true`; when `!kbd_enhanced`, `display_keys_adaptive()` hides the primary and shows only the fallback alternatives. Used in: help panel (`draw_help_overlay`), prompt border hints (`find_key_adaptive` in `hints.rs`), session chrome (`session_chrome.rs`).
 
-**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `bindings.rs`, `hints.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
+**Affected:** `CycleModel` (Ctrl+M → Alt+M fallback), `InsertNewline` (Shift+Enter → Alt+Enter fallback). Fixed in `types.rs`, `bindings.rs`, `hints.rs`, `help_overlay.rs`, `draw_input.rs`, `session_chrome.rs`, `app.rs`, `run.rs`.
 
 ---
 

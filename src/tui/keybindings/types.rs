@@ -365,6 +365,9 @@ pub struct Keybinding {
     /// When true, help panel merges this binding with the NEXT one onto a single line.
     /// Use for counterpart pairs like up/down, next/prev, expand/collapse.
     pub pair_with_next: bool,
+    /// When true, the primary key only works with Kitty keyboard protocol.
+    /// `display_keys_adaptive(false)` will show only the fallback alternatives.
+    pub primary_requires_kitty: bool,
 }
 
 impl Keybinding {
@@ -375,6 +378,7 @@ impl Keybinding {
             description,
             action,
             pair_with_next: false,
+            primary_requires_kitty: false,
         }
     }
 
@@ -390,6 +394,26 @@ impl Keybinding {
             description,
             action,
             pair_with_next: false,
+            primary_requires_kitty: false,
+        }
+    }
+
+    /// Like `with_alt`, but marks the primary key as requiring Kitty protocol.
+    /// When `display_keys_adaptive(false)` is called, only the fallback
+    /// alternatives are shown (the primary is hidden).
+    pub const fn with_alt_kitty(
+        primary: KeyCombo,
+        alternatives: &'static [KeyCombo],
+        description: &'static str,
+        action: Action,
+    ) -> Self {
+        Self {
+            primary,
+            alternatives,
+            description,
+            action,
+            pair_with_next: false,
+            primary_requires_kitty: true,
         }
     }
 
@@ -422,6 +446,28 @@ impl Keybinding {
                 }
             }
             s.push('/');
+            s.push_str(&alt.display());
+        }
+        s
+    }
+
+    /// Like `display_keys`, but when `!kbd_enhanced` and `primary_requires_kitty`,
+    /// shows only the fallback alternatives (skipping the non-functional primary).
+    pub fn display_keys_adaptive(&self, kbd_enhanced: bool) -> String {
+        if kbd_enhanced || !self.primary_requires_kitty {
+            return self.display_keys();
+        }
+        // Show only alternatives (the fallbacks that work without Kitty)
+        let mut s = String::new();
+        for alt in self.alternatives {
+            if let KeyCode::Char(c) = alt.code {
+                if !c.is_ascii() && alt.modifiers == KeyModifiers::NONE {
+                    continue;
+                }
+            }
+            if !s.is_empty() {
+                s.push('/');
+            }
             s.push_str(&alt.display());
         }
         s
@@ -941,6 +987,49 @@ mod tests {
         } else {
             assert_eq!(kb.display_keys(), "j/↓/Ctrl+n");
         }
+    }
+
+    #[test]
+    fn display_keys_adaptive_kitty_required_shows_alt_when_no_kitty() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::ALT,
+            code: KeyCode::Char('m'),
+        }];
+        let kb = Keybinding::with_alt_kitty(
+            KeyCombo::ctrl(KeyCode::Char('m')),
+            &ALTS,
+            "Cycle model",
+            Action::CycleModel,
+        );
+        // With Kitty: shows both
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys_adaptive(true), "⌃m/⌥m");
+        } else {
+            assert_eq!(kb.display_keys_adaptive(true), "Ctrl+m/Alt+m");
+        }
+        // Without Kitty: shows only fallback
+        if cfg!(target_os = "macos") {
+            assert_eq!(kb.display_keys_adaptive(false), "⌥m");
+        } else {
+            assert_eq!(kb.display_keys_adaptive(false), "Alt+m");
+        }
+    }
+
+    #[test]
+    fn display_keys_adaptive_non_kitty_binding_unchanged() {
+        static ALTS: [KeyCombo; 1] = [KeyCombo {
+            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Down,
+        }];
+        let kb = Keybinding::with_alt(
+            KeyCombo::plain(KeyCode::Char('j')),
+            &ALTS,
+            "Down",
+            Action::NavDown,
+        );
+        // Non-kitty binding shows same output regardless of kbd_enhanced
+        assert_eq!(kb.display_keys_adaptive(true), "j/↓");
+        assert_eq!(kb.display_keys_adaptive(false), "j/↓");
     }
 
     // ══════════════════════════════════════════════════════════════════

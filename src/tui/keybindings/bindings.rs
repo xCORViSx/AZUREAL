@@ -190,7 +190,7 @@ pub static GLOBAL: [Keybinding; 18] = [
     ),
     Keybinding::new(KEY_CANCEL, "Cancel agent", Action::CancelClaude),
     Keybinding::new(KEY_COPY, "Copy selection", Action::CopySelection),
-    Keybinding::with_alt(
+    Keybinding::with_alt_kitty(
         KeyCombo::ctrl(KeyCode::Char('m')),
         &ALT_CYCLE_MODEL,
         "Cycle model",
@@ -246,7 +246,8 @@ pub static GLOBAL: [Keybinding; 18] = [
         KeyCombo::plain(KeyCode::Tab),
         "Cycle focus forward",
         Action::CycleFocusForward,
-    ),
+    )
+    .paired(),
     Keybinding::new(
         KeyCombo::plain(KeyCode::BackTab),
         "Cycle focus backward",
@@ -559,7 +560,7 @@ pub static INPUT: [Keybinding; 10] = [
         "Submit prompt",
         Action::Submit,
     ),
-    Keybinding::with_alt(
+    Keybinding::with_alt_kitty(
         KeyCombo::shift(KeyCode::Enter),
         &ALT_INSERT_NEWLINE,
         "Insert newline",
