@@ -8,6 +8,27 @@ and platform-specific integrations.
 
 ---
 
+## Recommended Terminals
+
+| Platform | Recommended | Also tested |
+|----------|-------------|-------------|
+| macOS | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Terminal.app |
+| Linux | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Konsole |
+| Windows | [Windows Terminal](https://aka.ms/terminal) | — |
+
+**Kitty** and **Windows Terminal** deliver the best overall experience -- both
+for input handling and for rendering fidelity. They produce the cleanest
+interpretation of AZUREAL's box-drawing characters, Unicode glyphs, and styled
+borders, resulting in pixel-perfect pane separators, tab bars, and dialog
+frames. Kitty also provides the Kitty keyboard protocol on macOS/Linux for
+unambiguous key reporting, while Windows Terminal provides full ConPTY support
+with reliable mouse and key event handling. Other listed terminals work well --
+AZUREAL automatically provides `Alt+` fallback bindings for key combinations
+that require the Kitty protocol, though some terminals may show minor visual
+artifacts in complex border intersections or half-block character rendering.
+
+---
+
 ## Platform Matrix
 
 | Feature | macOS | Linux | Windows |
@@ -17,11 +38,11 @@ and platform-specific integrations.
 | Session store (SQLite) | Yes | Yes | Yes |
 | File watcher backend | kqueue | inotify | ReadDirectoryChangesW |
 | Embedded terminal | PTY | PTY | ConPTY |
-| Speech-to-text (Whisper) | Metal GPU | CPU only | CPU only |
+| Speech-to-text (Whisper) | Metal GPU | CPU only | CUDA GPU |
 | Kitty keyboard protocol | Yes | Yes | No |
 | `fast_draw_input()` | Yes | No | No |
 | `.app` bundle | Yes | N/A | N/A |
-| Notifications | NSUserNotification | N/A | N/A |
+| Notifications | NSUserNotification | N/A | Toast (PowerShell) |
 | Modifier key for destructive actions | Cmd | Ctrl | Alt |
 
 ---

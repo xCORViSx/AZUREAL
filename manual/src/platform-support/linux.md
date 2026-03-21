@@ -64,18 +64,15 @@ keybinding set is otherwise identical across both platforms.
 ## Kitty Keyboard Protocol
 
 AZUREAL enables the **Kitty keyboard protocol** on Linux, just as on macOS. The
-protocol is supported by:
-
-- Kitty
-- WezTerm
-- Alacritty
-- Ghostty
-- Foot
+recommended terminal on Linux is **Kitty**, which has full protocol support.
+AZUREAL has also been tested in **Ghostty**, **Alacritty**, **WezTerm**, and
+**Konsole**. Other terminals with protocol support include Foot.
 
 Terminal emulators that do not support the protocol (e.g., GNOME Terminal, older
-xterm) fall back to standard key reporting with no loss of functionality. The
-only difference is that certain ambiguous key combinations (like Tab vs Ctrl+I)
-may not be distinguishable without the protocol.
+xterm, Konsole) fall back to standard key reporting with no loss of
+functionality. The only difference is that certain ambiguous key combinations
+(like Tab vs Ctrl+I) may not be distinguishable without the protocol -- AZUREAL
+provides `Alt+` fallback bindings for these cases.
 
 ---
 

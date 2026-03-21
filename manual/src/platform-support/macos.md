@@ -108,9 +108,11 @@ reporting. This protocol provides:
 - Separate key press and release events.
 - Accurate modifier reporting.
 
-The protocol is supported by modern terminal emulators including Kitty, iTerm2
-(3.5+), WezTerm, Ghostty, and Alacritty. Terminal.app does not support it, but
-AZUREAL falls back gracefully to standard key reporting.
+The recommended terminal on macOS is **Kitty**, which has full protocol support.
+AZUREAL has also been tested in **Ghostty**, **Alacritty**, **WezTerm**, and
+**Terminal.app**. Terminal.app does not support the Kitty protocol, but AZUREAL
+falls back gracefully to standard key reporting with `Alt+` alternatives for
+affected bindings.
 
 ---
 

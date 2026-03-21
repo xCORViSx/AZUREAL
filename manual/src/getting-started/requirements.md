@@ -11,6 +11,41 @@ that unlock additional features.
 | Linux | Supported | CPU-based Whisper; all features functional |
 | Windows | Supported | ConPTY terminal backend; `cmd.exe` and PowerShell shells; CUDA GPU-accelerated Whisper |
 
+## Terminal Emulator
+
+AZUREAL requires a modern terminal emulator with true-color and mouse support.
+For the best experience:
+
+| Platform | Recommended | Also tested |
+|----------|-------------|-------------|
+| macOS | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Terminal.app |
+| Linux | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Konsole |
+| Windows | [Windows Terminal](https://aka.ms/terminal) | — |
+
+**Kitty** and **Windows Terminal** deliver the best overall experience for two
+reasons:
+
+1. **Input protocol support.** Kitty provides the
+   [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
+   on macOS and Linux, which allows AZUREAL to distinguish ambiguous key
+   combinations (e.g., `Tab` vs `Ctrl+I`, `Enter` vs `Ctrl+M`). Windows
+   Terminal provides full ConPTY support with reliable mouse and key reporting.
+
+2. **Rendering fidelity.** Both terminals produce the cleanest interpretation
+   of AZUREAL's box-drawing characters (`│`, `┌`, `╔`, `█`, `▓`, etc.),
+   Unicode glyphs, and styled borders. Pane separators, tab bars, dialog
+   frames, and half-block splash art all render pixel-perfect with correct
+   line joining and consistent glyph widths.
+
+Other listed terminals work well -- the main difference is that terminals
+without the Kitty keyboard protocol trigger `Alt+` fallback bindings for
+certain shortcuts, and some terminals may show minor visual artifacts in
+complex border intersections or half-block character rendering. See
+[Platform Differences](../keybindings/platform-differences.md) for details.
+
+The legacy `conhost.exe` on Windows is not recommended due to limited ANSI
+support.
+
 ## Required
 
 ### Git 2.15+

@@ -76,6 +76,20 @@
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
 - **Minimal Footprint** — Single-file SQLite session store (`.azs`), two small TOML config files, and runtime git/Claude discovery
 
+## Recommended Terminals
+
+For the best experience, use a modern terminal emulator with true-color and mouse support:
+
+| Platform | Recommended | Also tested |
+|----------|-------------|-------------|
+| macOS | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Terminal.app |
+| Linux | [Kitty](https://sw.kovidgoyal.net/kitty/) | Ghostty, Alacritty, WezTerm, Konsole |
+| Windows | [Windows Terminal](https://aka.ms/terminal) | — |
+
+**Kitty** and **Windows Terminal** deliver the best overall experience — not just for input protocol support (Kitty keyboard protocol on macOS/Linux, full ConPTY on Windows), but also for **rendering fidelity**. Both terminals produce the cleanest interpretation of AZUREAL's box-drawing characters, Unicode glyphs, and styled borders, resulting in pixel-perfect pane separators, tab bars, and dialog frames. Other listed terminals work well — the main differences are that terminals without the Kitty keyboard protocol cannot distinguish certain key combinations (e.g., `Ctrl+M` vs `Enter`), so AZUREAL automatically provides `Alt+` fallback bindings where needed, and some terminals may show minor visual artifacts in complex border intersections or half-block character rendering.
+
+A [Nerd Font](https://www.nerdfonts.com/) is recommended for file tree icons and full text styling. AZUREAL falls back to emoji icons when a Nerd Font is not detected.
+
 ## Requirements
 
 - **Rust** (latest stable) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`

@@ -37,7 +37,7 @@ Shows the last 2 non-empty lines of output, since command results are
 typically most meaningful at the end:
 
 ```text
- ┃  │ Compiling azureal v0.7.0
+ ┃  │ Compiling azureal v1.0.0
  ┃  └─ Finished release [optimized] target(s) in 12.34s
 ```
 

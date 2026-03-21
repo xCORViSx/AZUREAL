@@ -41,6 +41,19 @@ use super::{
     draw_sidebar, draw_status, draw_terminal, draw_viewer,
 };
 
+/// Fallback detection for Kitty keyboard protocol support via TERM_PROGRAM.
+/// crossterm's `supports_keyboard_enhancement()` queries the terminal with a DSR
+/// sequence and waits for a response, but some terminals (notably WezTerm) don't
+/// respond fast enough — causing a false negative. These terminals are known to
+/// fully support the Kitty keyboard protocol, so we check the env var as a safety net.
+#[cfg(not(target_os = "windows"))]
+fn term_program_supports_kitty() -> bool {
+    matches!(
+        std::env::var("TERM_PROGRAM").as_deref(),
+        Ok("WezTerm" | "iTerm.app" | "kitty" | "ghostty")
+    )
+}
+
 /// Run the TUI application
 pub async fn run() -> Result<()> {
     enable_raw_mode()?;
@@ -59,7 +72,8 @@ pub async fn run() -> Result<()> {
     // leak through as raw text (e.g. "[A[B" appearing in the input box).
     #[cfg(not(target_os = "windows"))]
     let kbd_enhanced = crossterm::terminal::supports_keyboard_enhancement()
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || term_program_supports_kitty();
     #[cfg(not(target_os = "windows"))]
     if kbd_enhanced {
         execute!(

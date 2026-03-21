@@ -151,21 +151,12 @@ polling is still implemented but rarely needed on Windows.
 
 ---
 
-## Recommended Terminal Emulators
+## Recommended Terminal
 
-AZUREAL works best with modern terminal emulators that support:
-
-- ANSI/VT escape sequences
-- 256-color or true-color output
-- Mouse event reporting
-- ConPTY
-
-Recommended:
-
-- **Windows Terminal** -- ships with Windows 11, available on Windows 10 via
-  Microsoft Store. Best compatibility.
-- **WezTerm** -- cross-platform, excellent VT support.
-- **Alacritty** -- GPU-accelerated, minimal.
+The recommended terminal on Windows is **[Windows Terminal](https://aka.ms/terminal)**,
+which ships with Windows 11 and is available on Windows 10 via the Microsoft
+Store. It provides full ConPTY support, true-color output, and reliable mouse
+event reporting.
 
 The legacy `conhost.exe` (the default console host prior to Windows Terminal) has
 limited ANSI support and is not recommended.
