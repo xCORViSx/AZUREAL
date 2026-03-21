@@ -92,8 +92,8 @@ async fn main() -> Result<()> {
             let _ = std::fs::create_dir_all(contents.join("MacOS"));
             let _ = std::fs::create_dir_all(contents.join("Resources"));
             let _ = std::fs::write(
-                contents.join("Resources/Azureal.icns"),
-                include_bytes!("../resources/Azureal.icns"),
+                contents.join("Resources/AZUREAL.icns"),
+                include_bytes!("../resources/AZUREAL.icns"),
             );
             let _ = std::fs::write(
                 contents.join("Info.plist"),
@@ -219,15 +219,15 @@ async fn main() -> Result<()> {
     // window), so WM_SETICON cannot work — fragments are the supported way.
     #[cfg(target_os = "windows")]
     {
-        let ico_path = config::config_dir().join("Azureal.ico");
+        let ico_path = config::config_dir().join("AZUREAL.ico");
         if !ico_path.exists() {
-            let _ = std::fs::write(&ico_path, include_bytes!("../resources/Azureal.ico"));
+            let _ = std::fs::write(&ico_path, include_bytes!("../resources/AZUREAL.ico"));
         }
 
         // Extract toast notification icon (PNG renders crisper than .ico in toasts)
-        let toast_png = config::config_dir().join("Azureal_toast.png");
+        let toast_png = config::config_dir().join("AZUREAL_toast.png");
         if !toast_png.exists() {
-            let _ = std::fs::write(&toast_png, include_bytes!("../resources/Azureal_toast.png"));
+            let _ = std::fs::write(&toast_png, include_bytes!("../resources/AZUREAL_toast.png"));
         }
 
         // Install WT profile fragment (always rewritten to pick up icon/exe changes)

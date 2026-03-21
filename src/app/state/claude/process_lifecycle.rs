@@ -364,7 +364,7 @@ impl App {
                 let icon_path = dirs::home_dir()
                     .unwrap_or_default()
                     .join(".azureal")
-                    .join("Azureal_toast.png");
+                    .join("AZUREAL_toast.png");
                 let icon_xml = if icon_path.exists() {
                     format!(
                         "<image placement=\"appLogoOverride\" src=\"{}\" />",
