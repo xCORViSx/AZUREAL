@@ -2,7 +2,7 @@
 
 All notable changes to Azureal will be documented in this file.
 
-## [Unreleased]
+## [1.0.77] — 2026-03-22
 
 ### Documentation
 - **Recommended color schemes in README** — Added a "Recommended Color Schemes" section with two tested themes: "Winter is Coming (Dark Blue)" for Windows Terminal and "Copland OS" (built-in) for Kitty. Both complement AZUREAL's AZURE accent on dark backgrounds.
