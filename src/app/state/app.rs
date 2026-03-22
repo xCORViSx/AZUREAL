@@ -84,6 +84,12 @@ pub struct App {
     /// multiple drain cycles. If Enter submits mid-paste, remaining chars would be
     /// processed with prompt_mode=false, triggering globals like OpenProjects.
     pub paste_guard_until: std::time::Instant,
+    /// Windows paste detection: deferred Enter. When Enter is pressed in prompt
+    /// mode on Windows, we defer submission for ~30ms. If characters arrive within
+    /// that window (from a paste), the Enter becomes a newline instead of submitting.
+    /// This is necessary because Windows Terminal delivers pasted newlines as
+    /// individual Enter key events — there's no bracketed paste support.
+    pub paste_deferred_enter: Option<std::time::Instant>,
     pub should_quit: bool,
     pub status_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
@@ -637,6 +643,7 @@ impl App {
             focus: Focus::FileTree,
             prompt_mode: false,
             paste_guard_until: std::time::Instant::now(),
+            paste_deferred_enter: None,
             should_quit: false,
             status_message: None,
             agent_receivers: HashMap::new(),

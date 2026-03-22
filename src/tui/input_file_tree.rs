@@ -11,7 +11,15 @@ use crate::app::types::FileTreeAction;
 use crate::app::App;
 
 /// Names matching the options overlay (same order as draw_file_tree.rs)
-const FT_OPTIONS: &[&str] = &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"];
+const FT_OPTIONS: &[&str] = &[
+    "worktrees",
+    ".git",
+    ".claude",
+    ".azureal",
+    ".DS_Store",
+    "target",
+    "node_modules",
+];
 
 /// Handle keyboard input for the FileTree panel.
 /// ALL command keybindings are resolved by lookup_action() in event_loop.rs BEFORE
@@ -274,8 +282,8 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn ft_options_has_5_entries() {
-        assert_eq!(FT_OPTIONS.len(), 5);
+    fn ft_options_has_7_entries() {
+        assert_eq!(FT_OPTIONS.len(), 7);
     }
 
     #[test]
@@ -307,7 +315,7 @@ mod tests {
     fn ft_options_order_matches_draw() {
         assert_eq!(
             FT_OPTIONS,
-            &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"]
+            &["worktrees", ".git", ".claude", ".azureal", ".DS_Store", "target", "node_modules"]
         );
     }
 

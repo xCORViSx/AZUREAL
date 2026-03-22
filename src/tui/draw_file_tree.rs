@@ -378,7 +378,6 @@ const FT_OPTIONS: &[&str] = &[
 /// hidden directory with QuadrantOutside border and "Filetree Options" title.
 fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(""));
 
     for (i, &name) in FT_OPTIONS.iter().enumerate() {
         let checked = app.file_tree_hidden_dirs.contains(name);
@@ -408,7 +407,18 @@ fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(AZURE),
         )));
 
-    f.render_widget(Paragraph::new(lines).block(block), area);
+    // Scroll so selected item is always visible
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let scroll = if inner_h == 0 || app.file_tree_options_selected < inner_h {
+        0
+    } else {
+        (app.file_tree_options_selected - inner_h + 1) as u16
+    };
+
+    f.render_widget(
+        Paragraph::new(lines).block(block).scroll((scroll, 0)),
+        area,
+    );
 }
 
 /// Draw the file tree panel showing the session's worktree files

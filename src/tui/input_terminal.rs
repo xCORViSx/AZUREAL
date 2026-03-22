@@ -126,6 +126,34 @@ pub fn handle_input_mode(
         return Ok(());
     }
 
+    // Windows deferred-Enter paste detection: when an Enter was deferred (waiting
+    // to see if it's a paste or a real submit), resolve it based on what key arrives.
+    // Characters arriving within ~30ms of Enter → paste detected → Enter becomes \n.
+    // Another bare Enter → previous Enter was a paste newline → insert \n, defer again.
+    // Any other key → user interaction, cancel the defer.
+    #[cfg(target_os = "windows")]
+    if app.paste_deferred_enter.is_some() {
+        match key.code {
+            KeyCode::Char(_) => {
+                // Character arrived after deferred Enter → paste detected
+                app.paste_deferred_enter = None;
+                app.input_char('\n'); // Convert deferred Enter to newline
+                // Fall through to process this char normally below
+            }
+            KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
+                // Another bare Enter while deferred → previous was paste newline
+                app.input_char('\n');
+                app.paste_deferred_enter = Some(std::time::Instant::now());
+                return Ok(());
+            }
+            _ => {
+                // Non-char key (Esc, Backspace, arrows, etc.) → cancel defer
+                app.paste_deferred_enter = None;
+                // Fall through to process this key normally
+            }
+        }
+    }
+
     // Claude prompt mode - handle text editing
     // Clipboard operations (Cmd/Ctrl+C/X/V/A) - handle BEFORE character input
     // Uses is_cmd_key() for macOS ⌥-unicode fallback (WezTerm doesn't deliver ⌘)
@@ -234,6 +262,20 @@ pub fn handle_input_mode(
             app.input_char('\n');
         }
         (KeyModifiers::NONE, KeyCode::Enter) => {
+            // Windows paste detection: defer Enter for ~30ms to see if characters
+            // follow (paste) or not (real submit). When the event loop fires the
+            // timeout, it re-injects Enter with paste_deferred_enter still set,
+            // so we skip this check and proceed directly to submit.
+            #[cfg(target_os = "windows")]
+            {
+                if app.paste_deferred_enter.is_none() {
+                    app.paste_deferred_enter = Some(std::time::Instant::now());
+                    return Ok(());
+                }
+                // paste_deferred_enter is Some → event loop timeout fired, proceed to submit
+                app.paste_deferred_enter = None;
+            }
+
             if !app.input.is_empty() {
                 let input = app.input.clone();
                 app.clear_input();

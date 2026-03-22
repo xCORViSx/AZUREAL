@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::app::App;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 use crate::app::Focus;
 use crate::backend::AgentProcess;
 use crate::config::Config;
@@ -176,7 +176,8 @@ pub async fn run_app(
             || commit_generating
             || squash_merging
             || bg_pending
-            || app.terminal_mode;
+            || app.terminal_mode
+            || app.paste_deferred_enter.is_some();
 
         // First event: block briefly when idle so we don't spin the CPU
         let first_event = if is_busy {
@@ -274,6 +275,41 @@ pub async fn run_app(
                     &mut cached_width,
                     &mut cached_height,
                 )?;
+            }
+        }
+
+        // Windows deferred-Enter timeout: if Enter was deferred and 30ms elapsed
+        // with no new characters (not a paste), fire the submit. We leave
+        // paste_deferred_enter as Some so handle_input_mode sees it and proceeds
+        // to submit instead of re-deferring.
+        #[cfg(target_os = "windows")]
+        if let Some(t) = app.paste_deferred_enter {
+            if t.elapsed() > Duration::from_millis(30) {
+                if app.prompt_mode && app.focus == Focus::Input {
+                    // Re-inject Enter — paste_deferred_enter is still Some, so
+                    // handle_input_mode will skip the defer and submit directly
+                    let enter_key = crossterm::event::KeyEvent::new_with_kind(
+                        KeyCode::Enter,
+                        crossterm::event::KeyModifiers::NONE,
+                        KeyEventKind::Press,
+                    );
+                    process_input_event(
+                        Event::Key(enter_key),
+                        app,
+                        &claude_process,
+                        &mut needs_redraw,
+                        &mut scroll_delta,
+                        &mut scroll_col,
+                        &mut scroll_row,
+                        &mut had_key_event,
+                        &mut cached_width,
+                        &mut cached_height,
+                    )?;
+                    needs_redraw = true;
+                } else {
+                    // Focus changed or prompt_mode exited — cancel defer
+                    app.paste_deferred_enter = None;
+                }
             }
         }
 
