@@ -19,9 +19,9 @@ project-specific run commands and preset prompts.
   ...
 ```
 
-The `.azureal/` directory is gitignored. The project config lives alongside the
-session store and is local to the machine -- it is not committed to the
-repository.
+The `.azureal/` directory is **gitignored by default** -- AZUREAL automatically
+adds `.azureal/` to `.gitignore` on first load to prevent the session store and
+runtime files from causing rebase conflicts.
 
 Because git worktrees share a common working tree root, the project config file
 at the main worktree root is shared by all worktrees in the project. You do not
@@ -42,7 +42,7 @@ hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store"]
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `hidden` | Array of file/directory names to hide from the file tree. | `[]` |
+| `hidden` | Array of file/directory names to hide from the file tree. | `["worktrees", ".git", ".claude", ".azureal", ".DS_Store", "target", "node_modules"]` |
 
 Entries are matched by exact name against the filename component (not the full
 path). If a directory is named `target`, adding `"target"` hides it at every
@@ -56,12 +56,12 @@ backward compatibility.
 
 ```toml
 [healthscope]
-directories = ["src", "crates", "lib"]
+dirs = ["src", "crates", "lib"]
 ```
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `directories` | Array of directory names to include when scanning for god files and documentation coverage. | (scans entire project) |
+| `dirs` | Array of directory paths to include when scanning for god files and documentation coverage. | `[]` (scans entire project) |
 
 When this section is absent or empty, the health panel scans the entire project
 tree. When populated, only the listed directories are scanned. This is useful for
@@ -99,41 +99,45 @@ menu and are only visible when this project is active.
 
 ### `[git]`
 
-Git automation settings, organized into subsections.
+Git automation settings. This section uses a flat key-value map. Auto-rebase
+and auto-resolve settings are stored **per-worktree** -- each worktree has its
+own `.azureal/azufig.toml` with its own `[git]` section. They are not stored
+in the project-level config with per-branch keys.
 
-#### `[git.auto-rebase]`
+#### Auto-Rebase
 
-Per-branch auto-rebase settings. When enabled for a branch, AZUREAL
-automatically rebases the branch onto `main` after each agent session completes.
+When enabled for a worktree, AZUREAL automatically rebases the worktree's
+branch onto `main` every 2 seconds (when idle).
 
 ```toml
-[git.auto-rebase]
-feat-auth = "true"
-fix-parser = "true"
+[git]
+auto-rebase = "true"
 ```
 
-Keys are branch names. Values are `"true"` to enable auto-rebase or `"false"`
-(or absent) to disable it. Auto-rebase is deferred while an agent is actively
-streaming to avoid interrupting work in progress.
+The key `auto-rebase` is set to `"true"` to enable or removed to disable.
+Auto-rebase is deferred while an agent is actively streaming to avoid
+interrupting work in progress.
 
 See [Rebase & Auto-Rebase](../git-panel/rebase.md) for how auto-rebase
 integrates with the git panel.
 
-#### `[git.auto-resolve]`
+#### Auto-Resolve
 
 Per-file auto-resolve settings for merge conflicts. When enabled for a file,
 AZUREAL automatically resolves conflicts in that file during rebase operations
-without prompting.
+using a union merge strategy (keeping both sides' changes).
 
 ```toml
-[git.auto-resolve]
-Cargo.lock = "true"
-package-lock.json = "true"
+[git]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 ```
 
-Keys are filenames (not paths). Values are `"true"` to enable auto-resolve. This
-is most useful for lock files and generated files that will be regenerated after
-the rebase completes.
+Keys follow the pattern `auto-resolve/<filename>`. Values are `"true"` to
+enable auto-resolve. The default list includes `AGENTS.md`, `CHANGELOG.md`,
+`README.md`, and `CLAUDE.md`.
 
 See [Auto-Resolve Settings](../git-panel/auto-resolve.md) for details.
 
@@ -148,7 +152,7 @@ A complete project config:
 hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store", ".azureal"]
 
 [healthscope]
-directories = ["src", "crates"]
+dirs = ["src", "crates"]
 
 [runcmds]
 1_Dev = "cargo run"
@@ -159,10 +163,8 @@ directories = ["src", "crates"]
 1_Modularize = "Break this file into smaller modules, one feature per file."
 2_Optimize = "Profile and optimize the hot path in this function."
 
-[git.auto-rebase]
-feat-session-store = "true"
-feat-render-pipeline = "true"
-
-[git.auto-resolve]
-Cargo.lock = "true"
+[git]
+auto-rebase = "true"
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
 ```

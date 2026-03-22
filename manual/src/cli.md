@@ -16,6 +16,16 @@ Running `azureal` with no arguments launches the full TUI interface inside the
 current terminal. AZUREAL expects to be run from within a git repository (or with
 a registered project -- see [Projects Panel](./projects.md)).
 
+### Global Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-o, --output <format>` | Output format: `table`, `json`, or `plain` | `table` |
+| `-v, --verbose` | Enable verbose output | off |
+| `--config <path>` | Path to config file | (auto-detected) |
+
+These flags can be placed before or after any subcommand.
+
 ---
 
 ## Self-Installation
@@ -69,10 +79,131 @@ After unarchiving, the worktree reappears as a normal tab in the TUI with its
 full session history intact (stored in the SQLite session store, not in the
 worktree directory).
 
+#### `azureal session list`
+
+List all sessions. Alias: `azureal session ls`.
+
+```sh
+azureal session list
+azureal session list --project /path/to/project --all
+```
+
+| Flag | Description |
+|------|-------------|
+| `-p, --project` | Filter by project path |
+| `-a, --all` | Show archived sessions too |
+
+#### `azureal session new`
+
+Create a new session.
+
+```sh
+azureal session new -p "Fix the login bug"
+azureal session new -p "Add tests" --name my-session --project /path
+```
+
+| Flag | Description |
+|------|-------------|
+| `-p, --prompt` | Initial prompt for the agent (required) |
+| `-d, --project` | Project path (defaults to current directory) |
+| `-n, --name` | Custom session name |
+
+#### `azureal session status <name>`
+
+Show the status of a session.
+
+#### `azureal session stop <name>`
+
+Stop a running session.
+
+| Flag | Description |
+|------|-------------|
+| `-f, --force` | Force stop (SIGKILL instead of SIGTERM) |
+
+#### `azureal session delete <name>`
+
+Delete a session and its worktree.
+
+| Flag | Description |
+|------|-------------|
+| `-y, --yes` | Skip confirmation prompt |
+
+#### `azureal session resume <name>`
+
+Resume a stopped or waiting session.
+
+| Flag | Description |
+|------|-------------|
+| `-p, --prompt` | Additional prompt to send |
+
+#### `azureal session logs <name>`
+
+Show session logs/output.
+
+| Flag | Description |
+|------|-------------|
+| `-f, --follow` | Follow output in real-time |
+| `-l, --lines` | Number of lines to show (default: 50) |
+
+#### `azureal session diff <name>`
+
+Show diff for a session's worktree.
+
+| Flag | Description |
+|------|-------------|
+| `--stat` | Show stat only (files changed summary) |
+
+#### `azureal session cleanup`
+
+Clean up worktrees from completed/failed/archived sessions.
+
+| Flag | Description |
+|------|-------------|
+| `-d, --project` | Project path (defaults to current directory) |
+| `--delete-branches` | Also delete the associated git branches |
+| `-y, --yes` | Perform cleanup without confirmation |
+| `--dry-run` | Only show what would be cleaned up |
+
 ### `azureal project`
 
-Project management subcommands. These mirror the operations available in the
-[Projects Panel](./projects.md).
+Project management subcommands.
+
+#### `azureal project list`
+
+List all registered projects. Alias: `azureal project ls`.
+
+#### `azureal project show [project]`
+
+Show details for a project. Defaults to the current directory if no project is
+specified.
+
+#### `azureal project remove <project>`
+
+Remove a project from tracking (does not delete the repository).
+
+| Flag | Description |
+|------|-------------|
+| `-y, --yes` | Skip confirmation prompt |
+
+#### `azureal project config`
+
+Show or update project configuration.
+
+| Flag | Description |
+|------|-------------|
+| `-p, --project` | Project path (defaults to current directory) |
+| `--main-branch` | Set the main branch name |
+
+### Shortcut Commands
+
+Several session operations have top-level shortcuts:
+
+| Shortcut | Equivalent |
+|----------|-----------|
+| `azureal list` (or `azureal ls`) | `azureal session list` |
+| `azureal new -p "prompt"` | `azureal session new -p "prompt"` |
+| `azureal status <name>` | `azureal session status <name>` |
+| `azureal diff <name>` | `azureal session diff <name>` |
 
 ---
 
@@ -146,10 +277,23 @@ Prints the version number and exits.
 | Command | Description |
 |---------|-------------|
 | `azureal` | Launch the TUI |
+| `azureal tui` | Launch the TUI (explicit subcommand) |
 | `azureal --version` | Print version and exit |
+| `azureal session list` | List all sessions |
+| `azureal session new -p "prompt"` | Create a new session |
+| `azureal session status <name>` | Show session status |
+| `azureal session stop <name>` | Stop a running session |
+| `azureal session delete <name>` | Delete a session and its worktree |
 | `azureal session archive <name>` | Archive a worktree (remove directory, keep branch) |
 | `azureal session unarchive <name>` | Unarchive a worktree (recreate directory from branch) |
-| `azureal project` | Project management subcommands |
+| `azureal session resume <name>` | Resume a stopped session |
+| `azureal session logs <name>` | Show session logs |
+| `azureal session diff <name>` | Show worktree diff |
+| `azureal session cleanup` | Clean up completed/failed worktrees |
+| `azureal project list` | List registered projects |
+| `azureal project show [project]` | Show project details |
+| `azureal project remove <project>` | Remove project from tracking |
+| `azureal project config` | Show/update project configuration |
 
 | Environment Variable | Description |
 |---------------------|-------------|

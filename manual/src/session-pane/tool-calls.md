@@ -118,5 +118,5 @@ to visually group the result with its tool call.
 
 When a tool call triggers permission hooks or validation checks, the hook
 output appears as dim gray lines near the tool call. Hooks are prefixed with
-`>` and show the hook name followed by its output. Consecutive duplicate hook
+`›` and show the hook name followed by its output. Consecutive duplicate hook
 lines are deduplicated.

@@ -31,8 +31,8 @@ from their respective files independently.
 
 Both files follow the same TOML conventions:
 
-- **Section headers** use `[section]` notation. Subsections use
-  `[section.subsection]` (e.g., `[git.auto-rebase]`).
+- **Section headers** use single-bracket `[section]` notation (e.g., `[config]`,
+  `[git]`, `[filetree]`).
 - **Key-value pairs** use `key = "value"` format. Keys that qualify as TOML bare
   keys (alphanumeric, dashes, underscores) are written unquoted. Values are
   always quoted strings.
@@ -63,8 +63,10 @@ inside `.azureal/`. Because git worktrees share a common `.git` directory, the
 project config is effectively shared by all worktrees in the project. You do not
 create separate configs per worktree.
 
-The `.azureal/` directory is gitignored. Configuration is local to the machine
-and is not committed to the repository.
+The `.azureal/` directory is **gitignored by default** -- AZUREAL automatically
+adds `.azureal/` to `.gitignore` (alongside `worktrees/`) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts.
 
 ---
 

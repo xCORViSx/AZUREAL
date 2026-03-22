@@ -106,10 +106,10 @@ latency is up to 500ms.
 
 ### Phase 2: Incremental Parse
 
-The `AgentProcessor` thread seeks to its last known file offset and reads only
-the **newly appended lines**. Each line is parsed as a JSON event and converted
-to a `DisplayEvent`. The processor does not re-read or re-parse previously
-processed content.
+The `refresh_session_events()` function seeks to its last known file offset
+(`session_file_parse_offset`) and reads only the **newly appended lines** from
+the JSONL file. Each line is parsed as a JSON event and converted to a
+`DisplayEvent`. Previously processed content is not re-read or re-parsed.
 
 This is the key to performance during long agent sessions. A session with 10,000
 events that appends one new event pays the cost of parsing one line, not 10,000.

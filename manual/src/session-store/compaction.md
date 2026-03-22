@@ -149,7 +149,7 @@ into context consumption.
 
 ### Inactivity Watcher
 
-When the meter reaches **90% or higher** and no new events arrive for **30
+When the meter reaches **90% or higher** and no new events arrive for **20
 seconds**, a yellow banner appears in the session pane:
 
 > Session may be compacting...

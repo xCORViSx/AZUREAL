@@ -36,9 +36,6 @@ mode, or active filter/search inputs).
 | `r` | Run command | Opens the run-command picker, or executes directly if only one command is registered |
 | `R` | Add run command | Opens the dialog to register a new run command |
 | `[` / `]` | Switch worktree tab | Moves to the previous/next worktree tab. Wraps around at both ends |
-| `f` | Toggle file tree | Shows or hides the file tree pane |
-| `s` | Toggle session list | Opens the session list overlay when the session pane is focused |
-| `/` | Search / filter | Context-dependent: filters the file tree, searches session text, or filters session list depending on focused pane |
 | `Tab` / `Shift+Tab` | Cycle pane focus | Cycles focus through FileTree, Viewer, Session, and Input in order |
 
 ---
@@ -72,10 +69,9 @@ area border turns yellow to indicate prompt mode.
 | `Ctrl+S` / `Alt+S` | Toggle speech-to-text | Starts or stops audio capture for transcription. macOS uses `Ctrl+S`; Windows/Linux uses `Alt+S` |
 | `Alt+P` | Preset prompts picker | Opens the preset prompt selection dialog |
 | `Alt+1` through `Alt+9`, `Alt+0` | Quick-select preset | Inserts preset prompt 1-9 or 10 directly without opening the picker |
-| `Up` / `Down` | Cursor navigation | Moves the text cursor up/down within multi-line input |
-| `Left` / `Right` | Character navigation | Moves the cursor one character left/right |
-| `Home` / `End` | Line start/end | Jumps to the beginning or end of the current line |
-| `Ctrl+U` | Clear input | Deletes all text in the input area |
+| `Up` / `Down` | History prev/next | Cycles through previously submitted prompts |
+| `Alt+Left` / `Alt+Right` | Word navigation | Jumps one word left/right within the input |
+| `Ctrl+W` | Delete word | Deletes the word before the cursor |
 
 ---
 
@@ -88,9 +84,13 @@ mode (not typing a prompt).
 |-----|--------|
 | `j` / `k` | Scroll line | Scroll session content down/up by one line |
 | `J` / `K` | Page scroll | Scroll session content down/up by one page |
+| `Up` / `Down` | Jump to next/prev message | Jump to the next or previous message bubble (user + assistant) |
+| `Shift+Up` / `Shift+Down` | Jump to next/prev prompt | Jump to the next or previous user prompt only |
+| `Alt+Up` / `Alt+Down` | Top / bottom | Jump to the top or bottom of the session |
+| `a` | New session | Create a new empty session and enter prompt mode |
 | `s` | Toggle session list | Opens the session list overlay |
 | `/` | Search text | Enters search mode to find text within the session |
-| `n` / `N` | Next/prev search match | Jumps to the next or previous occurrence of the search term |
+| `n` / `N` | Next/prev search match | Jumps to the next or previous occurrence of the search term (handled as raw keys when search is active) |
 
 ---
 
@@ -119,15 +119,19 @@ These keybindings apply when the file tree pane is focused.
 | Key | Action |
 |-----|--------|
 | `j` / `k` / `Up` / `Down` | Navigate | Move selection through the file tree |
-| `Enter` | Open file / expand directory | Opens the selected file in the viewer, or expands/collapses a directory |
-| `Backspace` | Collapse / go to parent | Collapses the current directory, or moves selection to the parent directory |
+| `h` / `Left` | Collapse / go to parent | Collapses the current directory, or moves selection to the parent directory |
+| `l` / `Right` | Expand directory | Expands the selected directory |
+| `Enter` | Open file / toggle directory | Opens the selected file in the viewer, or expands/collapses a directory |
+| `Space` | Toggle directory | Expands or collapses the selected directory |
+| `Alt+Right` / `Alt+J` | Recursive expand | Expands a directory and all its subdirectories |
+| `Alt+Left` / `Alt+K` | Recursive collapse | Collapses a directory and all its subdirectories |
+| `Alt+Up` / `Alt+Down` | Jump to first/last sibling | Jumps to the first or last sibling in the current folder |
 | `a` | Add file/directory | Opens dialog to create a new file or directory at the current location |
 | `d` | Delete | Delete the selected file or directory |
 | `r` | Rename | Rename the selected file or directory |
 | `c` | Copy (clipboard mode) | Marks the selected item for copying; navigate to destination and paste |
 | `m` | Move (clipboard mode) | Marks the selected item for moving; navigate to destination and paste |
 | `O` | Options overlay | Opens the file tree options overlay |
-| `/` | Filter | Enter filter mode to narrow the tree by filename |
 
 ---
 
@@ -140,12 +144,14 @@ read-only mode.
 |-----|--------|
 | `j` / `k` | Scroll line | Scroll the file content down/up by one line |
 | `J` / `K` | Page scroll | Scroll the file content down/up by one page |
-| `e` | Enter edit mode | Switch to edit mode for the current file |
-| `t` | Save to tab | Save the current file view as a persistent tab |
-| `Alt+t` | Tab picker dialog | Open the tab picker to select from open tabs |
-| `[` / `]` | Navigate tabs | Cycle through open viewer tabs |
-| `x` | Close current tab | Close the currently active viewer tab |
+| `Alt+Up` / `Alt+Down` | Top / bottom | Jump to the top or bottom of the file |
 | `Alt+Left` / `Alt+Right` | Cycle through edits | Navigate between edit locations in the diff viewer |
+| `e` | Enter edit mode | Switch to edit mode for the current file |
+| `Cmd+A` / `Ctrl+A` | Select all | Select all text in the viewer |
+| `t` | Save to tab | Save the current file view as a persistent tab |
+| `Alt+T` | Tab picker dialog | Open the tab picker to select from open tabs |
+| `x` | Close current tab | Close the currently active viewer tab |
+| `Esc` | Close viewer | Exit the viewer (restores previous content if in Edit diff view) |
 
 ---
 
@@ -201,8 +207,10 @@ overrides listed below.
 ## Git Panel
 
 The git panel is a modal overlay opened with `G`. It has three focus areas --
-Actions, Files, and Commits -- cycled with `Tab`/`Shift+Tab`. Some keybindings
-are context-dependent based on which area is focused and whether the current
+Actions (pane 0), Files (pane 1), and Commits (pane 2) -- cycled with
+`Tab`/`Shift+Tab`. The Viewer pane always shows the diff for the selected file
+or commit but is not a separate focus target. Some keybindings are
+context-dependent based on which area is focused and whether the current
 worktree is the main branch or a feature branch.
 
 ### Actions Pane
@@ -214,8 +222,10 @@ worktree is the main branch or a feature branch.
 | `R` | Rebase | Feature branch only |
 | `c` | Commit | Any branch |
 | `P` | Push | Any branch |
+| `z` | Stash | Any branch |
+| `Z` | Stash pop | Any branch |
 | `a` | Toggle auto-rebase | Feature branch only |
-| `s` | Auto-resolve settings | Feature branch only |
+| `s` | Auto-resolve settings | Actions pane only |
 
 ### Files Pane
 
@@ -240,8 +250,8 @@ worktree is the main branch or a feature branch.
 |-----|--------|
 | `Tab` / `Shift+Tab` | Cycle pane focus | Rotate focus: Actions, Files, Commits |
 | `[` / `]` | Switch worktree | View git state for a different worktree |
-| `{` / `}` | Jump page | Page through the commit or file list |
-| `r` / `R` | Refresh | Refresh git state for the current view |
+| `{` / `}` | Jump page | Jump to the previous/next worktree tab bar page |
+| `r` | Refresh | Refresh changed files and commit log |
 | `Cmd+A` / `Ctrl+A` | Select all (viewer) | Select all text in the diff viewer |
 | `Cmd+C` / `Ctrl+C` | Copy selection | Copy selected text from the diff viewer |
 | `J` / `PageDown` | Page down diff | Scroll the diff viewer down by one page |
@@ -325,25 +335,25 @@ unsure of your current context.
 
 | Key | Command Mode | Session Pane | File Tree | Viewer | Git Panel | Health Panel | Projects Panel |
 |-----|-------------|--------------|-----------|--------|-----------|--------------|----------------|
-| `a` | -- | -- | Add file | -- | Auto-rebase / Toggle all | Toggle all | Add project |
+| `a` | -- | New session | Add file | -- | Auto-rebase / Toggle all | Toggle all | Add project |
 | `c` | -- | -- | Copy (clipboard) | -- | Commit | -- | -- |
 | `d` | -- | -- | Delete | -- | View diff | -- | Delete project |
 | `e` | -- | -- | -- | Edit mode | -- | -- | -- |
-| `f` | Toggle file tree | -- | -- | -- | -- | -- | -- |
 | `i` | -- | -- | -- | -- | -- | -- | Init git repo |
 | `j` | -- | Scroll down | Navigate down | Scroll down | Navigate down | Navigate down | Navigate down |
 | `k` | -- | Scroll up | Navigate up | Scroll up | Navigate up | Navigate up | Navigate up |
-| `l` | -- | -- | -- | -- | Pull (main) | -- | -- |
+| `l` | -- | -- | Expand | -- | Pull (main) | -- | -- |
 | `m` | -- | -- | Move (clipboard) | -- | Squash merge | Modularize/Document | -- |
 | `n` | -- | Next match | -- | -- | -- | -- | Rename |
 | `p` | Prompt mode | -- | -- | -- | -- | -- | -- |
 | `r` | Run command | -- | Rename | -- | Refresh | -- | -- |
-| `s` | Session list | Session list | -- | -- | Stage / Auto-resolve / Scope | Scope mode | -- |
+| `s` | -- | Session list | -- | -- | Stage / Auto-resolve / Scope | Scope mode | -- |
 | `t` | -- | -- | -- | Save to tab | -- | -- | -- |
 | `v` | -- | -- | -- | -- | -- | View as tabs | -- |
 | `x` | -- | -- | -- | Close tab | Discard changes | -- | -- |
+| `z` | -- | -- | -- | -- | Stash | -- | -- |
 | `?` | Help overlay | -- | -- | -- | -- | -- | -- |
-| `/` | Search/filter | Search | Filter | -- | -- | -- | -- |
+| `/` | -- | Search | -- | -- | -- | -- | -- |
 
 ---
 

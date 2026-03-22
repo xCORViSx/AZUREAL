@@ -56,19 +56,21 @@ the normal layout is restored exactly as you left it.
 ## Context-Aware Actions
 
 The actions available in the git panel depend on which branch is active. On
-main, you get pull/commit/push. On feature branches, you get squash
-merge/rebase/commit/push. A few actions are always available regardless of
-branch.
+main, you get pull/commit/push/stash/stash pop. On feature branches, you get
+squash merge/rebase/commit/push/stash/stash pop. A few actions are always
+available regardless of branch.
 
-### On Main Branch
+### On Main Branch (5 actions)
 
 | Key | Action |
 |-----|--------|
 | `l` | Pull |
 | `c` | Commit |
 | `Shift+P` | Push |
+| `z` | Stash |
+| `Shift+Z` | Stash pop |
 
-### On Feature Branch
+### On Feature Branch (6 actions)
 
 | Key | Action |
 |-----|--------|
@@ -76,14 +78,16 @@ branch.
 | `Shift+R` | Rebase onto main |
 | `c` | Commit |
 | `Shift+P` | Push |
+| `z` | Stash |
+| `Shift+Z` | Stash pop |
 
 ### Always Available
 
-| Key | Action |
-|-----|--------|
-| `r` | Refresh git state |
-| `a` | Toggle auto-rebase |
-| `s` | Auto-resolve settings |
+| Key | Context | Action |
+|-----|---------|--------|
+| `r` | Any pane | Refresh git state |
+| `a` | Actions focused, feature branch only | Toggle auto-rebase |
+| `s` | Actions focused | Auto-resolve settings |
 
 ---
 

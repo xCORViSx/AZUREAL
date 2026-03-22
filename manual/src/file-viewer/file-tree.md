@@ -63,8 +63,8 @@ application launch.
 | `Enter` | Open file in Viewer, or expand/collapse directory |
 | `l` / Right | Expand directory |
 | `h` / Left | Collapse directory |
-| `g` | Jump to first entry |
-| `G` | Jump to last entry |
+| `Alt+Up` | Jump to first sibling in current folder |
+| `Alt+Down` | Jump to last sibling in current folder |
 
 Double-clicking a file opens it in the Viewer. Double-clicking a directory
 toggles its expanded/collapsed state.
@@ -86,9 +86,11 @@ tree.
 | `.claude` | Hidden |
 | `.azureal` | Hidden |
 | `.DS_Store` | Hidden |
+| `target` | Hidden |
+| `node_modules` | Hidden |
 
-Each entry is a toggle. Checked entries are visible; unchecked entries are
-filtered out of the tree. Navigate the list with `j`/`k` and toggle with
+Each entry is a "Hide" toggle. Checked entries are hidden from the tree;
+unchecked entries are visible. Navigate the list with `j`/`k` and toggle with
 `Space` or `Enter`. Press `Esc` or `O` again to close the overlay.
 
 ### Persistence

@@ -62,8 +62,9 @@ mutable references to event handlers.
 
 Manages the lifecycle of agent CLI processes. Holds both a `ClaudeProcess` and a
 `CodexProcess`. At spawn time, the selected model determines which backend is
-invoked. The process writes JSONL to a temporary file, which the
-`AgentProcessor` thread tails and parses.
+invoked. The process streams JSON events on stdout, which are forwarded to the
+`AgentProcessor` thread for parsing. A separate reader thread also writes events
+to a temporary JSONL file for post-exit ingestion into the session store.
 
 ### `DisplayEvent`
 

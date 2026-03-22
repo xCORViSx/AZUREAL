@@ -1,8 +1,8 @@
 # Completion Notifications
 
-AZUREAL sends native macOS notifications when agent sessions complete. This lets
-you work in other applications while agents run and get notified the moment a
-response is ready -- without polling the terminal.
+AZUREAL sends native desktop notifications when agent sessions complete. This
+lets you work in other applications while agents run and get notified the moment
+a response is ready -- without polling the terminal.
 
 ---
 
@@ -16,6 +16,7 @@ The notification content varies based on the exit condition:
 
 | Condition | Body Text |
 |-----------|-----------|
+| Context compaction | "Compacting context" |
 | Normal completion | "Response complete" |
 | Error exit | "Exited with error" |
 | Process terminated | "Process terminated" |
@@ -26,45 +27,48 @@ alone.
 
 ---
 
-## Branding
+## Platform Details
 
-Notifications display the AZUREAL icon. The icon infrastructure is set up
-automatically:
+### macOS
 
+- Notifications sent via the `notify-rust` crate.
 - An `.icns` icon file is **embedded in the binary** at compile time via
   `include_bytes!()`.
 - On first launch, AZUREAL creates a minimal `.app` bundle at
   **`~/.azureal/AZUREAL.app`** containing the extracted icon. This bundle is
   what macOS associates with the notification, allowing the branded icon to
   appear.
+- Notification permissions are automatically enabled by writing to the
+  `ncprefs.plist` file, avoiding the need for users to manually grant
+  permissions through System Settings on first use.
+- The `.app` bundle is created once and reused on subsequent launches.
+- Notification sound: "Glass".
 
-The `.app` bundle is created once and reused on subsequent launches.
+### Windows
 
----
+- Notifications are sent via **PowerShell WinRT toast APIs**. The `notify-rust`
+  crate is not used on Windows because its custom `.app_id()` requires a
+  registered AppUserModelID (AUMID), which silently drops toasts when
+  unregistered.
+- PowerShell's own pre-registered AUMID is used instead, ensuring reliable
+  delivery.
+- `CREATE_NO_WINDOW` (`0x08000000`) prevents a console window from flashing
+  when the PowerShell process spawns.
+- Toast XML uses `appLogoOverride` with `~/.azureal/AZUREAL_toast.png` for a
+  crisp branded icon (PNG renders clearly in toasts; `.ico` renders blurry).
 
-## Notification Permissions
+### Linux
 
-AZUREAL automatically enables notification permissions by writing to the
-`ncprefs.plist` file. This avoids the need for users to manually grant
-notification permissions through System Settings on first use.
+- Notifications sent via the `notify-rust` crate (same as macOS).
 
 ---
 
 ## Implementation
 
-Notifications are sent via the `notify-rust` crate. Each notification is
-dispatched on a **fire-and-forget background thread** that never blocks the
-event loop. If the notification system is unavailable or the send fails, the
-failure is silently ignored -- notifications are a convenience feature and must
-never interfere with the core TUI experience.
-
----
-
-## Platform Note
-
-Completion notifications currently target **macOS only**. The `.app` bundle
-mechanism and `ncprefs.plist` integration are macOS-specific. On other platforms,
-notifications are not sent.
+Each notification is dispatched on a **fire-and-forget background thread** that
+never blocks the event loop. If the notification system is unavailable or the
+send fails, the failure is silently ignored -- notifications are a convenience
+feature and must never interfere with the core TUI experience.
 
 ---
 
@@ -74,8 +78,8 @@ notifications are not sent.
 |--------|-------|
 | Trigger | Every session exit (all sessions, not just focused) |
 | Title format | `worktree:session_name` |
-| Notification library | notify-rust |
-| Icon delivery | `include_bytes!()` embedded `.icns` |
-| App bundle | `~/.azureal/AZUREAL.app` (auto-created on first launch) |
+| macOS | `notify-rust` + `.app` bundle + Glass sound |
+| Windows | PowerShell WinRT toast + PNG icon |
+| Linux | `notify-rust` |
 | Threading | Fire-and-forget background thread |
-| Platform | macOS only |
+| Platform | macOS, Windows, and Linux |

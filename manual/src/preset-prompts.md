@@ -49,7 +49,7 @@ Presets support two scopes, just like [Run Commands](./run-commands.md):
 | **Global** | `~/.azureal/azufig.toml` | G |
 | **Project** | `.azureal/azufig.toml` (in project root) | P |
 
-Press **`Ctrl+G`** in the preset dialog to toggle between global and project
+Press **`Ctrl+S`** in the preset dialog to toggle between global and project
 scope.
 
 Global presets are available everywhere. Project-local presets are specific to
@@ -71,5 +71,5 @@ to memorize the keybinding.
 Alt+P         Open preset prompt picker (prompt mode only)
 Alt+1 - Alt+9 Quick-select preset 1-9 (prompt mode only)
 Alt+0         Quick-select preset 10 (prompt mode only)
-Ctrl+G        Toggle global/project scope (in dialog)
+Ctrl+S        Toggle global/project scope (in dialog)
 ```

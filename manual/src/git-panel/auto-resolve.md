@@ -94,19 +94,18 @@ Changes are saved immediately on close.
 
 ## Persistence
 
-The auto-resolve file list is stored in `azufig.toml` under the `[git]`
-section:
+The auto-resolve file list is stored per-worktree in
+`<worktree_path>/.azureal/azufig.toml` under the `[git]` section. Each file is
+a separate key with an `auto-resolve/` prefix:
 
 ```toml
 [git]
-auto_resolve_files = [
-    "AGENTS.md",
-    "CHANGELOG.md",
-    "README.md",
-    "CLAUDE.md",
-]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 ```
 
-This configuration is per-project, so different projects can have different
+This configuration is per-worktree, so different worktrees can have different
 auto-resolve lists. Editing the TOML file directly has the same effect as using
 the settings overlay.

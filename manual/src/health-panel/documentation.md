@@ -61,9 +61,11 @@ is most needed.
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate up / down one entry |
+| `J` / `K` | Page down / page up |
+| `Alt+Up` / `Alt+Down` | Jump to top / bottom |
 | `Space` | Toggle checkbox on the highlighted file |
 | `a` | Check all files that are not already at 100% coverage |
-| `v` | View the highlighted file in the file viewer |
+| `v` | View all checked files as Viewer tabs (up to 12) |
 | `Enter` | Spawn documentation sessions for all checked files |
 
 ---
@@ -90,9 +92,11 @@ a separate conversation.
 Shift+H       Open Health Panel
 Tab           Switch to God Files tab
 j/k           Navigate results
+J/K           Page down / page up
+Alt+Up/Down   Jump to top / bottom
 Space         Toggle checkbox
 a             Check all non-100% files
-v             View file in viewer
+v             View checked files as tabs
 Enter         Spawn [DH] sessions for checked files
 s             Enter Scope Mode
 ```

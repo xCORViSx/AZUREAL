@@ -56,8 +56,9 @@ Switching worktrees via the tab row does not change which pane has focus.
 
 In Git Mode (Shift+G), the focus cycle changes to match the git panel layout:
 
-- **Tab** / **Shift+Tab** cycles through the git-specific panes (Actions,
-  Files, Viewer, Commits).
+- **Tab** / **Shift+Tab** cycles through the three git-specific panes
+  (Actions, Files, Commits). The Viewer always shows the diff for the
+  selected file or commit but is not a separate focus target.
 - The bottom bar shows `Tab/⇧Tab:cycle | Enter` as a reminder.
 - **Shift+G** or **Esc** exits Git Mode and returns to the normal focus
   cycle.
@@ -68,9 +69,9 @@ Each pane accepts its own set of keys when focused. A brief summary:
 
 | Pane | Navigation |
 |------|------------|
-| FileTree | `j/k` to move, `Enter` to open, `h/l` or arrows to collapse/expand |
-| Viewer | `j/k` or arrows to scroll, `g/G` for top/bottom, `/` to search |
-| Session | `j/k` or arrows to scroll, `s` for session list, `g/G` for top/bottom |
+| FileTree | `j/k` to move, `Enter` to open, `h/l` to collapse/expand |
+| Viewer | `j/k` to scroll, `Alt+Up`/`Alt+Down` for top/bottom |
+| Session | `j/k` to scroll, `s` for session list, `Alt+Up`/`Alt+Down` for top/bottom |
 | Input | Standard text editing, `Enter` to send prompt |
 
 Detailed keybindings for each pane are covered in the

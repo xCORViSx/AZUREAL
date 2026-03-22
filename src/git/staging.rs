@@ -115,10 +115,16 @@ impl Git {
     /// Silently no-ops if already present or if any step fails.
     /// Entries that must be in .gitignore for azureal to work correctly.
     /// Each tuple: (canonical form to write, all accepted variants).
-    const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[(
-        "worktrees/",
-        &["worktrees", "worktrees/", "/worktrees", "/worktrees/"],
-    )];
+    const REQUIRED_GITIGNORE: &[(&str, &[&str])] = &[
+        (
+            "worktrees/",
+            &["worktrees", "worktrees/", "/worktrees", "/worktrees/"],
+        ),
+        (
+            ".azureal/",
+            &[".azureal", ".azureal/", "/.azureal", "/.azureal/"],
+        ),
+    ];
 
     /// Stash all changes (tracked + untracked) via `git stash push -u`
     pub fn stash(worktree_path: &Path) -> Result<String> {

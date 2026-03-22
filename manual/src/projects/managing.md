@@ -27,11 +27,11 @@ Pressing Enter on a project in the list performs a full project switch:
 1. **Validation** -- The target directory is checked to confirm it is still a
    valid git repository. If it is not, the entry is pruned and an error message
    appears.
-2. **Process cleanup** -- All Claude processes for the current project are
-   killed. This ensures clean separation between projects.
-3. **State snapshot** -- The current project's full state is captured (see
+2. **State snapshot** -- The current project's full state is captured (see
    [Parallel Projects](./parallel.md) for what is included in the snapshot).
-4. **Reload** -- AZUREAL reloads with the target project's repository,
+   Agent processes continue running in the background -- their output is
+   captured to session files and handled via the background exit flow.
+3. **Reload** -- AZUREAL reloads with the target project's repository,
    restoring its snapshot if one exists.
 
 The switch is effectively a full context change: the file tree, worktrees,

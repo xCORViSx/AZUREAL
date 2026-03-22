@@ -53,8 +53,8 @@ means:
 - **Up/Down** moves through wrapped visual lines, not source lines. If a single
   source line wraps into three visual rows, pressing Down three times moves
   through all three rows before reaching the next source line.
-- **Home** moves to the start of the current visual line. **End** moves to the
-  end of the current visual line.
+- **Home** moves to the start of the current source line. **End** moves to the
+  end of the current source line.
 
 The wrap-aware cursor ensures that navigation feels natural regardless of line
 length.

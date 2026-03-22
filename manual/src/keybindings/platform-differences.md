@@ -38,10 +38,10 @@ AZUREAL renders modifier keys differently depending on the platform:
 
 | Symbol | Modifier |
 |--------|----------|
-| `^` | Control |
-| `Option` | Option |
-| `Shift` | Shift |
-| `Cmd` | Command |
+| `⌃` | Control |
+| `⌥` | Option |
+| `⇧` | Shift |
+| `⌘` | Command |
 
 **Windows and Linux** use text labels:
 

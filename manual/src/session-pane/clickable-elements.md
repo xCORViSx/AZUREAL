@@ -24,9 +24,6 @@ column, the file path string, and (for Edit tools) the old/new edit strings.
 When a path wraps across multiple lines, the `wrap_line_count` field tells the
 click handler how many cache lines to check.
 
-**Hover highlight:** When the mouse hovers over a clickable file path, the
-path region is highlighted to indicate it is interactive.
-
 ---
 
 ## Assistant Markdown File Links

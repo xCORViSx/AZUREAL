@@ -122,8 +122,9 @@ Certain layout changes require a complete screen repaint:
 - Opening or closing overlay panels (health, projects, help)
 - Terminal mode toggle
 
-These events set a `force_redraw` flag that bypasses all draw suppression and
-throttling, ensuring the layout transition renders immediately.
+These events set a `force_full_redraw` flag that bypasses all draw suppression
+and throttling, ensuring the layout transition renders immediately with a full
+`terminal.clear()` before the draw.
 
 ---
 

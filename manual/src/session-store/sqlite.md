@@ -12,9 +12,9 @@ and schema.
 
 The store file is **not** created when you open a project. It is created
 lazily on first use -- specifically, when you create your first session.
-Projects that have never had a session will not have a `.azureal/` directory.
-This keeps the filesystem clean and avoids polluting repositories with empty
-database files.
+Projects that have never had a session will not have a `sessions.azs` file
+(though the `.azureal/` directory may still exist for configuration files
+like `azufig.toml`).
 
 ---
 
@@ -40,9 +40,10 @@ The primary session record.
 | `name` | TEXT | User-assigned session name (or default "S*n*") |
 | `worktree` | TEXT | Path to the git worktree this session belongs to |
 | `created` | TEXT | ISO 8601 timestamp of session creation |
-| `completed` | TEXT | ISO 8601 timestamp of completion (NULL if still active) |
+| `completed` | INTEGER | Boolean success flag (1 = success, 0 = failure, NULL if still active) |
 | `duration_ms` | INTEGER | Total session duration in milliseconds |
 | `cost_usd` | REAL | Accumulated cost in USD (populated on completion) |
+| `last_claude_uuid` | TEXT | UUID of the last Claude JSONL session file (for orphan recovery) |
 
 ### `events`
 
@@ -50,11 +51,14 @@ Every prompt, response, tool call, and tool result is stored as an event.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `session_id` | INTEGER | Foreign key to `sessions.id` |
+| `id` | INTEGER | Primary key, auto-incremented |
+| `session_id` | INTEGER | Foreign key to `sessions.id` (with cascade delete) |
 | `seq` | INTEGER | Sequence number within the session (monotonically increasing) |
-| `kind` | TEXT | Event type (e.g., `UserPrompt`, `AssistantResponse`, `ToolCall`, `ToolResult`, `Complete`) |
-| `data` | TEXT | JSON-encoded event payload |
-| `char_len` | INTEGER | Character length of the serialized data |
+| `kind` | TEXT | Event type (e.g., `UserMessage`, `AssistantText`, `ToolCall`, `ToolResult`, `Complete`) |
+| `data` | TEXT | Zstd-compressed JSON event payload (stored as blob despite TEXT type) |
+| `char_len` | INTEGER | Character length of the original (uncompressed) event data |
+
+A unique constraint on `(session_id, seq)` prevents duplicate events.
 
 ### `compactions`
 
@@ -62,9 +66,11 @@ Compaction summaries that replace older event ranges.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `session_id` | INTEGER | Foreign key to `sessions.id` |
+| `id` | INTEGER | Primary key, auto-incremented |
+| `session_id` | INTEGER | Foreign key to `sessions.id` (with cascade delete) |
 | `after_seq` | INTEGER | The sequence number after which events were compacted |
 | `summary` | TEXT | The 2000--4000 character compaction summary |
+| `created` | TEXT | ISO 8601 timestamp of when the compaction was stored |
 
 ### `meta`
 
@@ -75,12 +81,10 @@ Key-value store for runtime state and schema versioning.
 | `key` | TEXT | Metadata key |
 | `value` | TEXT | Metadata value |
 
-Notable keys include:
-
-- `current_session_id` -- tracks which session is currently active in the UI.
-- `pid_session_target` -- maps PIDs to `(session_id, worktree_path)` tuples,
-  recorded at agent spawn time so that AZUREAL can associate a running process
-  with the correct session and worktree even after restarts.
+The primary key stored here is `schema_version`, which tracks the database
+schema version for migrations. Other runtime state such as the active session
+ID and PID-to-session mappings are held in memory on the App struct, not
+persisted to the database.
 
 ---
 

@@ -6,35 +6,26 @@ The Codex backend wraps the **OpenAI Codex CLI** (`codex` command) to execute pr
 
 ## Command Structure
 
-Codex invocations differ depending on whether the session is new or being resumed.
-
-### New Session
+Every Codex invocation follows this pattern:
 
 ```sh
 codex exec --json "<prompt>"
 ```
 
-### Resume Session
-
-```sh
-codex exec --json resume <UUID> "<prompt>"
-```
-
-When a Codex session has a thread ID from a previous exchange, AZUREAL passes it via the `resume <UUID>` argument. This tells the Codex CLI to continue an existing conversation thread. Unlike the Claude backend (which uses context injection exclusively), the Codex backend uses the CLI's native resume mechanism for thread continuity.
+Like the Claude backend, AZUREAL does **not** use the Codex CLI's native `resume` mechanism. Conversation continuity is handled entirely through context injection from the SQLite session store. Each prompt spawns a fresh process with the full context prepended.
 
 | Flag / Argument | Purpose |
 |-----------------|---------|
 | `exec` | Non-interactive execution mode. |
 | `--json` | Emits structured JSON output for machine parsing. |
-| `resume <UUID>` | Continues an existing conversation thread (optional, omitted for the first prompt). |
 
 ---
 
 ## Session ID Capture
 
-When a Codex process starts a new thread, it emits a `thread.started` event containing a `thread_id` field. AZUREAL captures this ID and stores it for use in subsequent `resume` commands within the same session.
+When a Codex process starts a new thread, it emits a `thread.started` event containing a `thread_id` field. AZUREAL captures this ID and associates it with the active session slot.
 
-The thread ID persists across prompts, enabling the Codex CLI to maintain its own conversation state. This is in addition to AZUREAL's own context injection -- both mechanisms contribute to continuity.
+The thread ID is used for display and diagnostics. It is not used for resumption -- context injection replaces that role, just as with the Claude backend.
 
 ---
 
@@ -81,7 +72,7 @@ All models with names starting with `gpt-` are automatically routed to the Codex
 
 The `--json` flag causes Codex CLI to emit structured JSON events. AZUREAL reads these events from the process output and converts them into the same `AgentEvent` and `DisplayEvent` types used by the Claude backend. The key events include:
 
-- **thread.started** -- thread creation, carrying the `thread_id` used for subsequent resume commands.
+- **thread.started** -- thread creation, carrying the `thread_id` for session identification.
 - **Assistant text** -- incremental response text from the model.
 - **Tool calls and results** -- file operations, command execution, and their outcomes.
 - **Error** -- error conditions reported by the CLI.
@@ -94,7 +85,7 @@ Because both backends produce the same `DisplayEvent` values, the session pane, 
 
 Each Codex process follows the same lifecycle as Claude:
 
-1. **Spawn**: A new `codex exec` process is started with the prompt and, if available, a thread ID for resumption.
+1. **Spawn**: A new `codex exec` process is started with the context-injected prompt.
 2. **Stream**: JSON events are read and parsed in real time.
 3. **Exit**: The process exits when the response is complete.
 4. **Ingest**: Events are appended to the SQLite store and temporary output files are cleaned up.

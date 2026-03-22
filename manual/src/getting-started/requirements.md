@@ -118,16 +118,22 @@ sudo apt install libclang-dev cmake
 **Windows:**
 
 ```powershell
-winget install LLVM.LLVM Kitware.CMake
+winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja
 ```
 
 After installing LLVM on Windows, set the `LIBCLANG_PATH` environment variable
 to the LLVM `bin` directory (e.g., `C:\Program Files\LLVM\bin`).
 
+The Ninja build system is required because CMake's default Visual Studio
+generator uses MSBuild, which prevents CUDA from inheriting the Windows SDK
+include paths. Set `CMAKE_GENERATOR=Ninja` in your environment, or build from
+a VS Developer Command Prompt with Ninja in PATH.
+
 ### NVIDIA CUDA Toolkit (Windows)
 
-Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
-falls back to CPU-only mode which is significantly slower.
+Required on Windows for GPU-accelerated Whisper inference. The Windows build
+compiles Whisper with CUDA support, so the CUDA Toolkit must be present at
+build time.
 
 ```powershell
 winget install Nvidia.CUDA

@@ -69,10 +69,10 @@ AZUREAL has also been tested in **Ghostty**, **Alacritty**, **WezTerm**, and
 **Konsole**. Other terminals with protocol support include Foot.
 
 Terminal emulators that do not support the protocol (e.g., GNOME Terminal, older
-xterm, Konsole) fall back to standard key reporting with no loss of
-functionality. The only difference is that certain ambiguous key combinations
-(like Tab vs Ctrl+I) may not be distinguishable without the protocol -- AZUREAL
-provides `Alt+` fallback bindings for these cases.
+xterm) fall back to standard key reporting with no loss of functionality. The
+only difference is that certain ambiguous key combinations (like Tab vs Ctrl+I)
+may not be distinguishable without the protocol -- AZUREAL provides `Alt+`
+fallback bindings for these cases.
 
 ---
 
@@ -111,9 +111,12 @@ auto-scroll, and mouse wheel scrolling -- work identically to macOS.
 
 ## Notifications
 
-System notifications are not currently implemented on Linux. Agent completion
-events are reflected in the status bar and session list but do not produce
-desktop notifications. This is a planned feature.
+System notifications are delivered via the **notify-rust** crate, which uses
+the system's D-Bus notification service (e.g., `notify-send`). When an agent
+session completes while AZUREAL is not the focused application, a desktop
+notification appears with the session name and completion status. Most Linux
+desktop environments and notification daemons (GNOME, KDE, dunst, mako) support
+this out of the box.
 
 ---
 

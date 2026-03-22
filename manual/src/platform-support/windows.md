@@ -34,16 +34,17 @@ the Unix behavior where Enter sends `\n`.
 ### Terminal Title Reassertion
 
 Claude Code CLI calls `SetConsoleTitle()` during execution, which overwrites
-AZUREAL's terminal title. After each agent process exits, AZUREAL reasserts its
-own title (`AZUREAL @ <project> : <branch>`) to restore the expected title bar
-content.
+AZUREAL's terminal title. AZUREAL reasserts its own title
+(`AZUREAL @ <project> : <branch>`) after every draw frame, ensuring the title
+stays correct both during and after agent execution.
 
 ---
 
-## CPU-Only Whisper with MSVC Fixes
+## CUDA GPU Whisper with MSVC Fixes
 
-Whisper runs on the CPU on Windows, as on Linux. However, the `whisper-rs` crate
-requires additional patches to compile with the MSVC toolchain:
+Whisper runs on the **CUDA GPU** on Windows, providing GPU-accelerated
+transcription (requires an NVIDIA GPU and the CUDA Toolkit). The `whisper-rs`
+crate requires additional patches to compile with the MSVC toolchain:
 
 - **Layout tests disabled** -- MSVC produces different struct layouts than GCC/
   Clang, causing layout assertion failures in the vendored whisper.cpp bindings.
@@ -57,7 +58,7 @@ affect runtime behavior.
 ### Build Dependencies
 
 ```powershell
-winget install LLVM.LLVM Kitware.CMake
+winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja Nvidia.CUDA
 ```
 
 After installing LLVM, set the `LIBCLANG_PATH` environment variable:
@@ -66,7 +67,10 @@ After installing LLVM, set the `LIBCLANG_PATH` environment variable:
 [Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")
 ```
 
-Restart your terminal after setting this variable.
+Set `CMAKE_GENERATOR=Ninja` in your environment so CMake uses Ninja instead of
+the Visual Studio generator (required for correct CUDA include path propagation).
+
+Restart your terminal after setting these variables.
 
 ---
 

@@ -68,7 +68,7 @@ ensures the badge stays accurate without adding I/O overhead to the hot path.
 ## Compaction Inactivity Watcher
 
 When the context percentage reaches 90% or above, AZUREAL starts monitoring
-for inactivity. If no session events arrive for 20 seconds while the context
+for inactivity. If no session events arrive for 30 seconds while the context
 is at or above 90%, a yellow warning banner is injected into the conversation:
 
 ```text

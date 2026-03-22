@@ -114,8 +114,8 @@ or diff detail, depending on context.
 **Viewer Tabs:**
 
 - Up to 12 tabs across 2 rows (6 per row, fixed-width).
-- `t` saves the current file to a tab; `⌥t` opens the tab dialog.
-- `[` / `]` navigate between tabs; `x` closes the active tab.
+- `t` saves the current file to a tab; `Alt+T` opens the tab dialog.
+- `x` closes the active tab.
 - The tab bar renders inside the Viewer border at rows 1-2, overlaying empty
   padding so content shifts down accordingly.
 

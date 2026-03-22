@@ -21,14 +21,14 @@ Before spawning the agent process, AZUREAL calls `build_context()` on the SQLite
 
 The context is formatted as structured text and wrapped in `<azureal-session-context>` XML tags. This tagged context is prepended to the user's prompt, giving the agent full conversational history without relying on the CLI's own session management.
 
-For the Codex backend, the native `resume <UUID>` mechanism supplements (but does not replace) context injection.
+Both backends receive context injection identically -- neither uses a CLI-native resume flag.
 
 ### 3. Agent Process Is Spawned
 
 A new CLI process is spawned based on the active backend:
 
 - **Claude**: `claude -p "<context + prompt>" --verbose --output-format stream-json`
-- **Codex**: `codex exec --json "<prompt>"` (or `codex exec --json resume <UUID> "<prompt>"` if a thread ID exists)
+- **Codex**: `codex exec --json "<context + prompt>"`
 
 The process runs in the worktree's directory, so all file operations performed by the agent are scoped to the correct working tree. The process's PID is registered as a new session slot (see [Multi-Agent Concurrency](./multi-agent.md)).
 

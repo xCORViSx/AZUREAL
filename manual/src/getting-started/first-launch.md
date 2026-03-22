@@ -42,7 +42,7 @@ AZUREAL displays a welcome modal with the following options:
 | Key | Action |
 |-----|--------|
 | `M` | Browse the main branch -- opens the file browser and session pane on `main` |
-| `w` | Create a new worktree -- prompts for a branch name and sets up an isolated working directory |
+| `Wn` | Create a new worktree -- `W` leader sequence followed by `n` to open the branch dialog |
 | `P` | Open the Projects panel -- switch to a different project or register a new one |
 | `Ctrl+Q` | Quit AZUREAL |
 
@@ -75,8 +75,9 @@ directories, project-local run commands, preset prompts, and git settings like
 per-branch auto-rebase rules and auto-resolve file lists.
 
 This file lives at the **main worktree root** (the original clone directory) and
-is shared by all worktrees in the project. It is gitignored by default since it
-contains machine-specific paths.
+is shared by all worktrees in the project. The entire `.azureal/` directory is
+**gitignored by default** to prevent the session store and runtime files from
+causing rebase conflicts.
 
 ## Session Store
 
@@ -97,8 +98,8 @@ manually.
 After the splash screen and project detection complete, you are ready to start
 working:
 
-1. **Create a worktree** (`w` from the welcome modal, or the `w` key in normal
-   mode) to start an isolated feature branch.
+1. **Create a worktree** (`Wn` from the welcome modal -- `W` leader followed by
+   `n`) to start an isolated feature branch.
 2. **Send a prompt** to an agent by typing in the session pane input area and
    pressing Enter.
 3. **Browse the file tree** to review changes the agent has made.

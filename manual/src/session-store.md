@@ -21,7 +21,8 @@ fine, but the intent is that AZUREAL owns this file.
 
 The store is **not** created when you load a project. It is opened (and the
 file created, if absent) only when you create your first session. Projects
-that have never had a session have no `.azureal/` directory at all.
+that have never had a session will not have a `sessions.azs` file (though
+the `.azureal/` directory may exist for configuration).
 
 ### Backend-Agnostic
 

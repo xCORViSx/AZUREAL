@@ -21,11 +21,12 @@ Press **`Ctrl+D`** to start a debug dump. A two-phase process follows:
 The output file is saved to:
 
 ```text
-.azureal/debug-output-{name}.txt
+.azureal/debug-output_{name}
 ```
 
 For example, entering "broken-render" produces
-`.azureal/debug-output-broken-render.txt` in the project root.
+`.azureal/debug-output_broken-render` in the project root. Entering an empty
+name produces `.azureal/debug-output`.
 
 The name is used directly in the filename, so short hyphenated identifiers are
 usually the easiest to search for and share.
@@ -78,7 +79,7 @@ Esc           Cancel
 
 | Detail | Value |
 |--------|-------|
-| Output path | `.azureal/debug-output-{name}.txt` |
+| Output path | `.azureal/debug-output_{name}` (no extension) |
 | Execution timing | Next frame after dialog close |
 | Obfuscation | Deterministic word replacement |
 | Preserved verbatim | Tool names, event types, parsing stats, structure |

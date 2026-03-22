@@ -14,7 +14,7 @@ When you press `c`, the following sequence runs:
 
 1. **Stage** -- All files marked as staged in the UI are staged in the git
    index.
-2. **Diff** -- AZUREAL captures the staged diff (`git diff --cached`).
+2. **Diff** -- AZUREAL captures the staged diff (`git diff --staged`).
 3. **Generate** -- A background thread spawns to send the diff to the selected
    AI model with instructions to produce a conventional commit message.
 4. **Display** -- The generated message fills an editable text area in the
@@ -70,7 +70,7 @@ message entirely, tweak a word, or accept it as-is.
 | Key | Action |
 |-----|--------|
 | `Enter` | Commit with the current message |
-| `Cmd+P` | Commit and push in one action |
+| `Cmd+P` / `Ctrl+P` | Commit and push in one action |
 | `Shift+Enter` | Insert a newline (for multi-line messages) |
 | `Esc` | Cancel the commit |
 

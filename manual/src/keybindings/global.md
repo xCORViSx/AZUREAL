@@ -14,7 +14,7 @@ These keybindings are available in **command mode** (red border). They are suppr
 
 ---
 
-## Scrolling
+## Scrolling (Per-Pane)
 
 | Key | Action |
 |-----|--------|
@@ -23,7 +23,7 @@ These keybindings are available in **command mode** (red border). They are suppr
 | `J` (Shift+J) | Page scroll down |
 | `K` (Shift+K) | Page scroll up |
 
-Scroll targets the currently focused pane. In the session pane, this scrolls the conversation. In the file viewer, this scrolls the file content.
+These are defined per-pane (FileTree, Viewer, Session, Terminal) rather than as global bindings, but they behave consistently across all scrollable panes. The scroll targets whichever pane currently has focus.
 
 ---
 
@@ -34,7 +34,7 @@ Scroll targets the currently focused pane. In the session pane, this scrolls the
 | `Tab` | Cycle pane focus forward |
 | `Shift+Tab` | Cycle pane focus backward |
 
-Focus cycles through the visible panes: file tree, file viewer, and session pane. Hidden panes (e.g., when the file tree is toggled off) are skipped.
+Focus cycles through the four panes: FileTree, Viewer, Session, and Input.
 
 ---
 
@@ -60,25 +60,6 @@ Panels are modal overlays that take focus when opened. Each panel defines its ow
 | `]` | Switch to next worktree tab |
 
 These keys cycle through the worktree tab row at the top of the interface. The active worktree determines which branch, session, and terminal are shown.
-
----
-
-## Toggles
-
-| Key | Action |
-|-----|--------|
-| `f` | Toggle file tree visibility |
-| `s` | Toggle session list visibility |
-
----
-
-## Search
-
-| Key | Action |
-|-----|--------|
-| `/` | Activate search / filter |
-
-The behavior of `/` depends on the focused pane. In the session pane, it opens the session search. In the file tree, it opens the file filter. Once a search/filter is active, letter keys type into the filter field -- global bindings are suppressed until `Esc` dismisses the filter.
 
 ---
 
@@ -114,9 +95,7 @@ The complete table in one place:
 |-----|--------|
 | `p` | Enter prompt mode |
 | `T` | Toggle terminal |
-| `Esc` | Return to command mode |
-| `j` / `k` | Scroll line down / up |
-| `J` / `K` | Page scroll down / up |
+| `Esc` | Return to command mode (per-pane) |
 | `Tab` / `Shift+Tab` | Cycle pane focus |
 | `G` | GitView panel |
 | `H` | Health panel |
@@ -125,9 +104,6 @@ The complete table in one place:
 | `r` | Run command |
 | `R` | Add run command |
 | `[` / `]` | Switch worktree tab |
-| `f` | Toggle file tree |
-| `s` | Toggle session list |
-| `/` | Search / filter |
 | `?` | Help overlay |
 | `Cmd+C` / `Ctrl+C` | Copy selection |
 | `Ctrl+C` / `Alt+C` | Cancel agent |

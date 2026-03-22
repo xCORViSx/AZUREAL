@@ -59,15 +59,17 @@ far the branch has diverged from main and from its remote tracking branch:
  ↑2 ↓0 main  ↑1 ↓3 remote
 ```
 
-These badges are color-coded: green for ahead, yellow for behind.
+These badges are color-coded: the main badge uses red when behind and green
+when only ahead; the remote badge uses yellow when behind and cyan when only
+ahead.
 
-### Bottom: Status Bar
+### Bottom: Git Status Box
 
-A full-width status bar replaces the normal status bar. It displays:
-
-- The current branch name
-- Navigation hints (Tab/Shift+Tab to cycle panes, Enter to act)
-- Operation progress messages during long-running actions
+A full-width git status box (3 rows, GIT_ORANGE double border) sits below the
+three panes. Its title bar contains keybinding hints in the same style as the
+prompt title bar. The content area shows operation result messages (green for
+success, red for errors). A minimal 1-row status bar sits beneath it, showing
+`Git: <worktree>` on the left and CPU/PID badge on the right.
 
 ---
 

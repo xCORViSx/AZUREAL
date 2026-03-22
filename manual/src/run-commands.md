@@ -13,14 +13,15 @@ project).
 Press **`r`** (global keybinding) to open the run command picker. If only one
 command is defined, it executes immediately without showing the picker.
 
-Press **`Alt+r`** to open the new command dialog directly, bypassing the picker.
+Press **`Shift+R`** to open the new command dialog directly, bypassing the
+picker.
 
 ---
 
 ## The Picker
 
-The picker lists all defined run commands for the current scope. Each entry shows
-its position number and name.
+The picker lists all defined run commands. Each entry shows its position number,
+name, and a **G** (global) or **P** (project) scope badge.
 
 | Key | Action |
 |-----|--------|
@@ -35,7 +36,7 @@ its position number and name.
 
 ## Creating a Command
 
-The new command dialog (opened via `Alt+r` or `a` from the picker) has two
+The new command dialog (opened via `Shift+R` or `a` from the picker) has two
 fields:
 
 1. **Name** -- A short label for the command (e.g., "Build", "Test", "Deploy").
@@ -69,8 +70,9 @@ Run commands support two scopes:
 
 Press **`Ctrl+S`** in the dialog to toggle between global and project scope.
 
-Both scopes are merged in the picker, with project-local commands taking
-precedence if names collide.
+Both scopes are merged in the picker -- global commands appear first, followed
+by project-local commands. Each command shows a **G** (global) or **P**
+(project) scope badge.
 
 ---
 
@@ -96,7 +98,7 @@ The position prefix (`1_`, `2_`, etc.) controls the display order and maps to th
 
 ```text
 r          Open run command picker (or execute if only 1 defined)
-Alt+r      Open new command dialog
+Shift+R    Open new command dialog
 Ctrl+S     Toggle global/project scope (in dialog)
 Tab        Cycle fields / toggle Command vs Prompt mode (in dialog)
 1-9        Quick-select in picker

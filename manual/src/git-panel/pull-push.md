@@ -29,16 +29,25 @@ automatically to reflect any new changes.
 | `Shift+P` | Git panel, any branch, Actions focused | Push to remote |
 
 Push works on any branch -- main or feature. The behavior adapts based on the
-branch state:
+branch state.
+
+### Pre-Push Pull (Main Only)
+
+On main/master branches, AZUREAL runs `git pull --rebase` before pushing to
+incorporate any upstream changes. This is skipped on feature branches -- they
+are kept in sync with main via the auto-rebase system, and pulling on a feature
+branch whose remote was already squash-merged could corrupt HEAD state.
 
 ### Regular Push
 
 If the local branch is ahead of its remote tracking branch and has not
-diverged (no rewritten history), AZUREAL runs a standard push:
+diverged (no rewritten history), AZUREAL runs:
 
 ```sh
-git push
+git push -u origin <branch>
 ```
+
+The `-u` flag sets the upstream tracking reference on first push.
 
 ### Force Push with Lease
 
@@ -47,7 +56,7 @@ happens after a rebase rewrites commit history -- a regular push would be
 rejected. AZUREAL detects this condition and automatically uses:
 
 ```sh
-git push --force-with-lease
+git push --force-with-lease -u origin <branch>
 ```
 
 The status bar appends **(force-pushed)** to confirm that a force push was

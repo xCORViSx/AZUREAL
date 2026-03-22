@@ -11,20 +11,18 @@ readable without leaving the terminal.
 
 ### Headers
 
-Headers are rendered with a gradient block prefix that varies by level:
+Headers are rendered with a single block prefix character that varies by level:
 
 ```text
-████ H1 Heading
-▓▓▓░ H2 Heading
-▒▒░  H3 Heading
-░░   H4 Heading
-░    H5 Heading
-     H6 Heading
+█ H1 Heading       (AZURE, bold, underlined)
+▓ H2 Heading       (AZURE, bold)
+▒ H3 Heading       (Green, bold)
+░ H4-H6 Heading    (Green)
 ```
 
-The `BLOCK FULL` / `DARK SHADE` / `MEDIUM SHADE` / `LIGHT SHADE` characters
-create a visual weight that distinguishes heading levels at a glance. Header
-text is rendered bold.
+The descending block density (`FULL` > `DARK SHADE` > `MEDIUM SHADE` >
+`LIGHT SHADE`) creates visual weight that distinguishes heading levels at a
+glance. Header text is rendered bold (H1-H3) with H1 additionally underlined.
 
 ### Bullets and Lists
 

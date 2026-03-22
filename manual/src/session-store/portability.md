@@ -33,8 +33,8 @@ The single `.azs` file contains **everything**:
   already in their compacted form.
 - **All compaction summaries** -- the full text of every compaction summary
   generated during the project's lifetime.
-- **Runtime metadata** -- the active session ID, PID-to-session mappings, and
-  schema version.
+- **Runtime metadata** -- the schema version (active session ID and
+  PID-to-session mappings are held in memory, not persisted to the store).
 
 There are no external files that the store depends on. The temporary JSONL
 files produced by agent processes during streaming are ingested into the store
@@ -74,12 +74,10 @@ match.
 
 ## Version Control Considerations
 
-The `.azureal/` directory is typically added to `.gitignore` because session
-data is personal to each developer. In a team setting, each developer
-maintains their own session store with their own conversation history.
+The `.azureal/` directory is **gitignored by default**. AZUREAL automatically
+adds `.azureal/` to `.gitignore` (alongside `worktrees/`) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts during multi-worktree development.
 
-If you want to share session data (e.g., for onboarding or debugging), copy
-the `.azs` file directly rather than committing it to the repository. Session
-files can grow to several megabytes in active projects, and conversation
-content may contain sensitive information (API keys in tool results, file
-contents from private repositories, etc.).
+To share session history across machines, copy the `.azureal/sessions.azs` file
+manually or use a separate sync mechanism.

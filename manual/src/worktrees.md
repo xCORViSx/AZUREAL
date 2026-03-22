@@ -16,10 +16,11 @@ worktree through AZUREAL, three things happen:
 
 1. **A git worktree is created** under `<repo>/worktrees/<name>`, giving you a
    full working directory on a new branch named `azureal/<name>`.
-2. **A session slot is allocated** in the SQLite session store, ready to hold
-   agent conversations for that branch.
-3. **The tab row updates** to show the new worktree alongside your existing
+2. **The tab row updates** to show the new worktree alongside your existing
    ones.
+3. **A session is created on demand** when you send your first prompt or
+   explicitly create one via the session dialog -- the SQLite store is not
+   pre-populated at worktree creation time.
 
 From that point on, the worktree is a self-contained development environment.
 Switching between worktrees (with `[`/`]` or by clicking tabs) swaps the file
@@ -31,7 +32,7 @@ tree, viewer, session history, terminal, and git state all at once.
 
 The main branch (typically `main` or `master`) is not a worktree in the
 traditional sense -- it is the original repository checkout. AZUREAL treats it
-specially: it always appears as the first tab (`[* main]`), it cannot be
+specially: it always appears as the first tab (`[★ main]`), it cannot be
 deleted or archived, and its git panel offers pull/commit/push instead of
 squash/rebase. You can browse and work on main at any time via `Shift+M`.
 

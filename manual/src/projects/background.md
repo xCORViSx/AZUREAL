@@ -36,21 +36,16 @@ active project's state is live.
 
 ---
 
-## Process Isolation
+## Process Continuity
 
-Each project switch kills all Claude processes for the project being left.
-However, this only applies to the switch action itself -- processes that were
-started in a project and are still running when you switch away are the
-"background processes" described above. The distinction is:
+Agent processes are **not** killed when you switch projects. All running
+sessions continue executing in the background. Their output is captured to
+session files on disk and handled via the background exit flow (see above).
+When you switch back, the project snapshot is restored and includes any output
+that was produced while the project was backgrounded.
 
-- **Switching projects** triggers `kill all Claude processes` for the departing
-  project's active sessions that you explicitly want to stop.
-- **Background processes** are sessions that were already running and are
-  allowed to continue. They were started before the switch and their output
-  continues to be captured to disk.
-
-> **Note:** The key fact here is that session file capture ensures no output is
-> ever lost, even though the background project's display is not being updated.
+> **Note:** Session file capture ensures no output is ever lost, even though
+> the background project's display is not being updated in real time.
 
 ---
 

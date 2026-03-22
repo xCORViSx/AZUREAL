@@ -30,11 +30,11 @@ Opens the worktree creation dialog. You provide a branch name, and AZUREAL creat
 
 ### Rename (Wr)
 
-Opens a rename prompt for the active worktree's display label. The underlying git branch is not renamed -- this only changes the label shown in the tab row.
+Opens a rename dialog pre-filled with the current branch suffix. On confirm, the underlying git branch is renamed (`git branch -m`), the new branch is pushed to the remote, and the old remote branch is deleted. All branch-keyed app state is migrated to the new name.
 
 ### Archive (Wa)
 
-Archives the active worktree. Archived worktrees are removed from the tab row but not deleted from disk. They can be restored from the worktree management interface.
+Archives the active worktree. The worktree directory is removed, but the git branch is preserved. Archived worktrees remain visible in the tab row with a dim `◇` prefix and can be unarchived with `u` to recreate the worktree from the preserved branch.
 
 ### Delete (Wd)
 
@@ -48,14 +48,14 @@ When the Worktrees pane has focus, the leader prefix is not required. The second
 
 | Key | Action |
 |-----|--------|
-| `a` | Create a new worktree |
+| `n` | Create a new worktree |
 | `r` | Rename worktree |
-| `x` | Archive worktree |
+| `a` | Archive worktree |
 | `d` | Delete worktree |
 
 This shortcut exists because when you are already looking at the worktrees list, the `W` prefix is redundant. The direct keys are faster and more natural in that context.
 
-Outside the Worktrees pane, these single keys have other meanings (e.g., `r` runs a command, `d` may be unbound), so the `W` leader prefix is required to disambiguate.
+Outside the Worktrees pane, these single keys have other meanings (e.g., `r` runs a command, `n` may be unbound), so the `W` leader prefix is required to disambiguate.
 
 ---
 

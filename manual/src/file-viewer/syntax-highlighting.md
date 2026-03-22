@@ -9,20 +9,20 @@ multi-line strings, and language-specific edge cases.
 
 ## Supported Languages
 
-Twenty-five language grammars are bundled:
+Twenty-four language grammars are bundled:
 
 | Language | Extensions |
 |----------|-----------|
 | Rust | `.rs` |
-| Python | `.py`, `.pyw` |
-| JavaScript | `.js`, `.mjs`, `.cjs` |
-| TypeScript | `.ts` |
+| Python | `.py`, `.pyw`, `.pyi` |
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` |
+| TypeScript | `.ts`, `.mts`, `.cts` |
 | TSX | `.tsx` |
-| JSON | `.json` |
+| JSON | `.json`, `.jsonc` |
 | TOML | `.toml` |
-| Bash | `.sh`, `.bash` |
+| Bash | `.sh`, `.bash`, `.zsh` |
 | C | `.c`, `.h` |
-| C++ | `.cpp`, `.hpp`, `.cc`, `.cxx` |
+| C++ | `.cpp`, `.hpp`, `.cc`, `.cxx`, `.hxx`, `.hh` |
 | Go | `.go` |
 | HTML | `.html`, `.htm` |
 | CSS | `.css` |
@@ -31,12 +31,15 @@ Twenty-five language grammars are bundled:
 | Lua | `.lua` |
 | YAML | `.yml`, `.yaml` |
 | Markdown | `.md`, `.markdown` |
-| Scala | `.scala` |
+| Scala | `.scala`, `.sc` |
 | R | `.r`, `.R` |
 | Haskell | `.hs` |
 | PHP | `.php` |
 | SQL | `.sql` |
 | Perl | `.pl`, `.pm` |
+
+Perl is registered with an empty highlight query, so `.pl` and `.pm` files are
+recognized but rendered as plain text without syntax coloring.
 
 Files with unrecognized extensions are displayed as plain text without
 highlighting.
@@ -70,34 +73,34 @@ Tree-sitter grammars produce **captures** -- named tokens like `keyword`,
 `string`, `comment`, and `function`. AZUREAL maps 26 capture names to specific
 colors:
 
-| Capture | Typical Color |
-|---------|--------------|
-| `keyword` | Magenta / Purple |
-| `string` | Green |
+| Capture | Color |
+|---------|-------|
+| `attribute` | Light blue / Lavender |
 | `comment` | Gray (dim) |
+| `constant` | AZURE (blue) |
+| `constant.builtin` | Yellow |
+| `constructor` | AZURE (blue) |
+| `embedded` | White |
+| `escape` | Magenta |
 | `function` | Blue |
-| `type` | Yellow |
-| `variable` | White |
-| `constant` | Orange |
-| `number` | Orange |
+| `function.builtin` | Blue |
+| `function.method` | Blue |
+| `keyword` | Magenta |
+| `label` | AZURE (blue) |
+| `number` | Yellow |
 | `operator` | White |
-| `punctuation` | Gray |
-| `property` | Cyan |
-| `attribute` | Yellow |
-| `tag` | Red |
-| `namespace` | Yellow |
-| `label` | Cyan |
-| `boolean` | Orange |
-| `builtin` | Cyan |
-| `constructor` | Yellow |
-| `escape` | Orange |
-| `field` | Cyan |
-| `parameter` | White (italic) |
-| `include` | Magenta |
-| `conditional` | Magenta |
-| `repeat` | Magenta |
-| `exception` | Magenta |
-| `module` | Yellow |
+| `property` | White |
+| `punctuation` | White |
+| `punctuation.bracket` | White |
+| `punctuation.delimiter` | White |
+| `string` | Green |
+| `string.special` | Green |
+| `tag` | AZURE (blue) |
+| `type` | Yellow |
+| `type.builtin` | Yellow |
+| `variable` | White |
+| `variable.builtin` | Magenta |
+| `variable.parameter` | Orange |
 
 These mappings produce a consistent visual language across all supported
 grammars. Keywords and control flow are always in the magenta family, strings

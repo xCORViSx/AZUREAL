@@ -32,8 +32,9 @@ operation.
 ### Step 2: Stash Dirty Working Tree
 
 If the working tree has uncommitted changes, they are stashed automatically.
-The stash is popped on all exit paths (success, failure, conflict) so your
-uncommitted work is never lost.
+The stash is popped on success and failure exit paths. On conflict, the stash
+remains until the conflict is resolved (popped after RCR accept or abort) so
+your uncommitted work is never lost.
 
 ### Step 3: Rebase Feature onto Main
 

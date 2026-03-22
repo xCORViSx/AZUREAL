@@ -35,7 +35,7 @@ default state for that worktree.
 | Feature | Description |
 |---------|-------------|
 | **File Tree** | Directory browser with Nerd Font icons, expand/collapse, filtering options |
-| **Syntax Highlighting** | Tree-sitter based highlighting for 25 languages |
+| **Syntax Highlighting** | Tree-sitter based highlighting for 24 languages |
 | **Markdown Preview** | Prettified rendering of `.md` files with styled headers, tables, and code blocks |
 | **Image Viewer** | Terminal graphics protocol rendering for PNG, JPG, GIF, BMP, WebP, and ICO |
 | **Diff Viewer** | Inline diffs from agent Edit tool calls with syntax highlighting |

@@ -43,6 +43,7 @@ family:
 | GPT-5.4 | Green |
 | GPT-5.3-codex | Light green |
 | GPT-5.2-codex | Teal |
+| GPT-5.2 | Light cyan |
 | GPT-5.1-codex-max | Blue |
 | GPT-5.1-codex-mini | Light blue |
 
@@ -98,17 +99,19 @@ Two banners indicate context compaction status:
 Hooks (permission checks, tool validations) are captured from multiple sources
 in the event stream (`hook_progress`, `system-reminder` tags,
 `hook_response`). They render as dim gray lines near their corresponding tool
-calls, prefixed with `>`. Consecutive duplicate hooks are deduplicated to
+calls, prefixed with `›`. Consecutive duplicate hooks are deduplicated to
 prevent visual clutter.
 
 ## Scrolling and Navigation
 
-- `j` / `k` or arrow keys scroll one line at a time.
-- `g` jumps to the top of the session; `G` jumps to the bottom.
+- `j` / `k` scroll one line at a time.
+- `Up` / `Down` arrows jump to the previous / next message bubble.
+- `J` / `K` page scroll (viewport height minus 2 lines of overlap).
+- `Alt+Up` / `Alt+Down` jump to the top / bottom of the session.
 - Mouse wheel scrolling works regardless of keyboard focus.
 - The session pane auto-follows new content (pinned to bottom) until the user
-  scrolls up. Scrolling up detaches from the bottom; pressing `G` or scrolling
-  back to the end re-attaches.
+  scrolls up. Scrolling up detaches from the bottom; scrolling back to the end
+  re-attaches.
 
 ## Session Find
 

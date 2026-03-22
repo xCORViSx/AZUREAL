@@ -42,7 +42,7 @@ artifacts in complex border intersections or half-block character rendering.
 | Kitty keyboard protocol | Yes | Yes | No |
 | `fast_draw_input()` | Yes | No | No |
 | `.app` bundle | Yes | N/A | N/A |
-| Notifications | NSUserNotification | N/A | Toast (PowerShell) |
+| Notifications | NSUserNotification | D-Bus (notify-rust) | Toast (PowerShell) |
 | Modifier key for destructive actions | Cmd | Ctrl | Alt |
 
 ---
@@ -75,7 +75,7 @@ speech-to-text dependency. Platform-specific build requirements:
 |----------|----------------------|
 | macOS | Xcode Command Line Tools |
 | Linux | `libclang-dev`, `cmake` |
-| Windows | `LLVM.LLVM`, `CMake`, `LIBCLANG_PATH` environment variable |
+| Windows | `LLVM.LLVM`, `CMake`, `Ninja`, `LIBCLANG_PATH` environment variable, NVIDIA CUDA Toolkit |
 
 See [Requirements](./getting-started/requirements.md) for installation
 instructions.

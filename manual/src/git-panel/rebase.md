@@ -53,7 +53,9 @@ actions.
 |-----|---------|--------|
 | `a` | Git panel, Actions focused | Toggle auto-rebase on/off |
 
-The setting is persisted in `azufig.toml`, so it survives restarts.
+The setting is persisted per-worktree in
+`<worktree_path>/.azureal/azufig.toml` under the `[git]` section as
+`auto-rebase = "true"`, so it survives restarts.
 
 ### How It Works
 

@@ -12,13 +12,13 @@ prompt or edit buffer. No audio ever leaves your machine.
 The speech pipeline runs through four stages:
 
 1. **Capture** -- Audio is recorded from the default input device via the `cpal`
-   library (CoreAudio on macOS). Raw samples arrive as f32 at the device's native
-   sample rate and channel count.
+   library (CoreAudio on macOS, WASAPI on Windows). Raw samples arrive as f32 at
+   the device's native sample rate and channel count.
 2. **Preprocessing** -- Multi-channel audio is mixed down to mono, then
    resampled to 16kHz (Whisper's expected input rate).
 3. **Transcription** -- The accumulated audio buffer is fed to whisper.cpp with
    `Greedy { best_of: 1 }` decoding. On macOS, Metal GPU acceleration is used
-   automatically.
+   automatically; on Windows, CUDA GPU acceleration is used.
 4. **Insertion** -- The transcribed text is inserted at the current cursor
    position with smart spacing: a space is prepended if the cursor is not at the
    start of a line or immediately after a space.
@@ -29,6 +29,10 @@ The speech pipeline runs through four stages:
 
 Press **`Ctrl+S`** while in prompt mode or edit mode to start recording. Press
 **`Ctrl+S`** again to stop recording and trigger transcription.
+
+On **Windows and Linux**, the edit mode binding is **`Alt+S`** instead of
+`Ctrl+S` (because `Ctrl+S` is used for file save in edit mode on those
+platforms). The prompt mode binding remains `Ctrl+S` on all platforms.
 
 The stop keybinding resolves from **any** focus state or mode while recording is
 active. You do not need to navigate back to the prompt to stop -- `Ctrl+S` will
@@ -74,23 +78,32 @@ AZUREAL uses the `ggml-small.en` Whisper model, stored at:
 ~/.azureal/speech/ggml-small.en.bin
 ```
 
-This file is approximately **466 MB**. It is downloaded automatically on first
-use if not already present. The `small.en` model provides a good balance between
-transcription accuracy and speed for English-language input.
+This file is approximately **466 MB**. If the model file is missing, AZUREAL
+shows an error with download instructions. You must download the model manually
+before first use:
+
+```bash
+mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+```
+
+The `small.en` model provides a good balance between transcription accuracy and
+speed for English-language input.
 
 ---
 
 ## Quick Reference
 
 ```text
-Ctrl+S    Toggle recording on/off (prompt mode or edit mode)
+Ctrl+S    Toggle recording on/off (prompt mode, or edit mode on macOS)
+Alt+S     Toggle recording on/off (edit mode on Windows/Linux)
 Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 ```
 
 | Detail | Value |
 |--------|-------|
-| Audio library | cpal (CoreAudio on macOS) |
-| Transcription engine | whisper.cpp (Metal GPU on macOS) |
+| Audio library | cpal (CoreAudio on macOS, WASAPI on Windows) |
+| Transcription engine | whisper.cpp (Metal GPU on macOS, CUDA GPU on Windows) |
 | Sample pipeline | f32 -> mono mixdown -> 16kHz resample |
 | Decoding strategy | Greedy { best_of: 1 } |
 | Model file | `~/.azureal/speech/ggml-small.en.bin` (~466 MB) |

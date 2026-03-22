@@ -35,8 +35,6 @@ content area.
 |-----|--------|
 | `t` | Save current file to a new tab |
 | `Alt+t` | Open tab dialog |
-| `[` | Switch to previous tab |
-| `]` | Switch to next tab |
 | `x` | Close current tab |
 
 ### Saving a Tab
@@ -48,18 +46,9 @@ is created.
 ### Tab Dialog
 
 `Alt+t` opens a tab dialog overlay that shows all current tabs in a navigable
-list. You can select a tab from the dialog to switch to it, or manage tabs from
-within the overlay.
-
-### Navigating Tabs
-
-`[` and `]` cycle through open tabs in order. Navigation wraps at both ends --
-pressing `]` on the last tab moves to the first, and pressing `[` on the first
-tab moves to the last.
-
-When you navigate to a tab, the Viewer loads that file's content immediately.
-The file tree cursor does not move -- tabs provide an independent navigation
-path from the tree.
+list. Navigate with `j`/`k`, select with `Enter`, or jump directly to a tab
+with number keys `1`-`9`. You can also close tabs with `x` from within the
+dialog.
 
 ### Closing Tabs
 

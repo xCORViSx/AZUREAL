@@ -51,7 +51,7 @@ automatically unwrapped to show only the actual output.
 ### Edit
 
 The file path is a clickable link. Beneath the tool call, an inline diff
-preview shows the last 20 edit hunks:
+preview shows the changes:
 
 - **Removed lines** are styled with gray text on a dim red background.
 - **Added lines** are syntax-highlighted on a dim green background.

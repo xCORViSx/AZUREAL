@@ -32,6 +32,7 @@ text. The session name on the selected row renders bold.
 | `K` | Page up (jump by viewport height) |
 | `Enter` | Load the selected session |
 | `a` | Start a new session |
+| `r` | Rename the selected session |
 | `s` / `Esc` | Close the session list and return to conversation |
 
 ---
@@ -42,12 +43,11 @@ Opening the session list uses a two-phase approach to avoid blocking the UI:
 
 1. **Immediate:** A centered "Loading sessions..." dialog appears on the first
    frame after `s` is pressed.
-2. **Background:** Message counts are computed and the full list renders once
-   counting is complete.
+2. **Background:** Message counts are loaded from the SQLite session store and
+   the full list renders once data is available.
 
-Message counts are computed via fast string scanning of session files -- no
-JSON parsing is performed. This keeps the count computation fast even for large
-session files.
+Message counts are pre-computed in the session store, so loading the list
+requires no event file parsing.
 
 ---
 
@@ -64,11 +64,11 @@ the filter input (the filter text persists and continues filtering). Press
 ## Content Search
 
 Typing `//` (two slashes) switches from name filtering to content search mode.
-Content search looks inside session file contents rather than matching names:
+Content search looks inside session event data (stored in the SQLite session
+store) rather than matching names:
 
 - **Minimum query length:** 3 characters (no search runs below this).
 - **Result cap:** 100 results maximum.
-- **File size limit:** Files larger than 5 MB are skipped.
 
 The filter bar shows the search mode prefix (`//`) and a result count badge
 on the right side (e.g., `42 results`).

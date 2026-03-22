@@ -30,22 +30,24 @@ Core application settings.
 
 ```toml
 [config]
-api_key = "sk-ant-..."
-claude_path = "/usr/local/bin/claude"
-permission_mode = "plan"
+anthropic_api_key = "sk-ant-..."
+claude_executable = "/usr/local/bin/claude"
+default_permission_mode = "ignore"
 ```
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `api_key` | Anthropic API key. Used by Claude Code CLI for authentication. | (none) |
-| `claude_path` | Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes. | Auto-detected from `$PATH` |
-| `permission_mode` | Permission mode passed to Claude Code via `--permission-mode`. Valid values: `"default"`, `"plan"`, `"bypasstool"`. | `"default"` |
+| `anthropic_api_key` | Anthropic API key. Used by Claude Code CLI for authentication. | (none) |
+| `claude_executable` | Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes. | Auto-detected from `$PATH` |
+| `codex_executable` | Absolute path to the Codex CLI binary. | Auto-detected from `$PATH` |
+| `default_permission_mode` | Permission mode for agent sessions. Valid values: `"approve"`, `"ignore"`, `"ask"`. | `"ignore"` |
+| `verbose` | Enable verbose logging. | `false` |
 
-The `permission_mode` controls how Claude Code handles tool use permissions:
+The `default_permission_mode` controls how Claude Code handles tool use permissions:
 
-- `"default"` -- Claude Code asks for permission on each tool use.
-- `"plan"` -- Claude Code plans tool use but does not execute without approval.
-- `"bypasstool"` -- Claude Code executes tools without asking for permission.
+- `"ignore"` -- Claude Code skips permissions entirely (`--dangerously-skip-permissions`).
+- `"approve"` -- Claude Code approves all tool use automatically.
+- `"ask"` -- Claude Code asks for permission on each tool use (default Claude behavior).
 
 ### `[projects]`
 
@@ -110,9 +112,9 @@ A complete global config:
 
 ```toml
 [config]
-api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
-claude_path = "/opt/homebrew/bin/claude"
-permission_mode = "bypasstool"
+anthropic_api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
+claude_executable = "/opt/homebrew/bin/claude"
+default_permission_mode = "ignore"
 
 [projects]
 AZUREAL = "~/AZUREAL"

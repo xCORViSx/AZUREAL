@@ -81,8 +81,9 @@ files are unstaged, it stages all; if all are staged, it unstages all.
 | `x` | Changed Files focused | Discard changes to the selected file |
 
 Pressing `x` prompts for inline confirmation directly in the file list entry.
-The prompt displays `y/n` next to the file name. Pressing `y` confirms the
-discard; pressing `n` or any other key cancels.
+The prompt displays `Discard <path>? [y/n]` in the file's row. Pressing `y`
+confirms the discard; pressing `n` or `Esc` cancels. Other keys are ignored
+while the confirmation is active.
 
 The discard mechanism depends on the file type:
 

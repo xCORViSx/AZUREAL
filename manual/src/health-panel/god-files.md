@@ -23,21 +23,21 @@ For all other languages, the entire file length is counted.
 The scanner looks for well-known source directories at the project root:
 
 ```text
-src/  lib/  crates/  packages/  app/  ...
+src/  lib/  crates/  packages/  app/  cmd/  pkg/  internal/  ...
 ```
 
-Approximately 55 directory names are recognized. If none are found, the scanner
+Approximately 16 directory names are recognized. If none are found, the scanner
 falls back to scanning the entire project root.
 
 ### Excluded Directories
 
-Approximately 60 directories are automatically skipped during scanning. These
+Approximately 75 directories are automatically skipped during scanning. These
 include build output directories (`target/`, `node_modules/`, `dist/`, `.git/`,
 etc.) and other non-source paths that would produce false positives.
 
 ### Recognized Extensions
 
-The scanner recognizes approximately 60 source file extensions (`.rs`, `.py`,
+The scanner recognizes approximately 75 source file extensions (`.rs`, `.py`,
 `.ts`, `.js`, `.go`, `.java`, `.c`, `.cpp`, and many more). Files with
 unrecognized extensions are ignored.
 
@@ -57,9 +57,10 @@ the project root and its production line count.
 |-----|--------|
 | `j` / `k` | Navigate up / down one entry |
 | `J` / `K` | Page down / page up |
+| `Alt+Up` / `Alt+Down` | Jump to top / bottom |
 | `Space` | Toggle checkbox on the highlighted file |
 | `a` | Toggle all checkboxes (select all / deselect all) |
-| `v` | View the highlighted file in the file viewer (opens as tabs) |
+| `v` | View all checked files as Viewer tabs (up to 12) |
 | `Enter` or `m` | Modularize all checked files |
 
 ---
@@ -101,9 +102,10 @@ Shift+H       Open Health Panel
 Tab           Switch to Documentation tab
 j/k           Navigate results
 J/K           Page down / page up
+Alt+Up/Down   Jump to top / bottom
 Space         Toggle checkbox
 a             Toggle all checkboxes
-v             View file in viewer
+v             View checked files as tabs
 Enter / m     Modularize checked files
 s             Enter Scope Mode
 ```
