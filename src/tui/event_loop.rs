@@ -31,7 +31,7 @@ mod prompt;
 pub(super) use mouse::copy_viewer_selection;
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyEventKind};
 use std::io;
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -202,33 +202,44 @@ pub async fn run_app(
         let _was_fast_path = false;
 
         if let Some(evt) = first_event {
-            // Diagnostic: capture key chars + kinds for profiler
-            if let Event::Key(ref k) = evt {
-                if let KeyCode::Char(c) = k.code {
-                    _key_chars.push(c);
-                    let kind_ch = match k.kind {
-                        crossterm::event::KeyEventKind::Press => 'P',
-                        crossterm::event::KeyEventKind::Repeat => 'R',
-                        _ => '?',
-                    };
-                    _key_chars.push(kind_ch);
-                    _key_chars.push(' ');
+            // Collect all events from this drain cycle.
+            // On Windows, crossterm uses ReadConsoleInputW which delivers pasted
+            // text as individual KEY_EVENT records — each newline becomes a plain
+            // Enter keypress that triggers prompt submit. Collecting the full batch
+            // lets coalesce_paste_events detect and merge them.
+            let mut batch = vec![evt];
+            while let Ok(evt) = input_rx.try_recv() {
+                batch.push(evt);
+            }
+            // If the batch ends with Enter and has other events, the input thread
+            // may still be forwarding remaining paste events. Wait briefly (2ms) to
+            // catch them — imperceptible to humans but paste events arrive within
+            // microseconds. Only extends when batch already has >1 event (solo Enter
+            // is just a normal submit, no delay needed).
+            if batch.len() > 1 {
+                let last_is_enter = batch
+                    .iter()
+                    .rev()
+                    .find_map(|e| {
+                        if let Event::Key(k) = e {
+                            Some(k.code == KeyCode::Enter)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(false);
+                if last_is_enter {
+                    if let Ok(extra) = input_rx.recv_timeout(Duration::from_millis(2)) {
+                        batch.push(extra);
+                        while let Ok(evt) = input_rx.try_recv() {
+                            batch.push(evt);
+                        }
+                    }
                 }
             }
-            process_input_event(
-                evt,
-                app,
-                &claude_process,
-                &mut needs_redraw,
-                &mut scroll_delta,
-                &mut scroll_col,
-                &mut scroll_row,
-                &mut had_key_event,
-                &mut cached_width,
-                &mut cached_height,
-            )?;
-            // Drain remaining queued events (non-blocking)
-            while let Ok(evt) = input_rx.try_recv() {
+
+            // Diagnostic: capture key chars + kinds for profiler
+            for evt in &batch {
                 if let Event::Key(ref k) = evt {
                     if let KeyCode::Char(c) = k.code {
                         _key_chars.push(c);
@@ -241,6 +252,14 @@ pub async fn run_app(
                         _key_chars.push(' ');
                     }
                 }
+            }
+
+            // Coalesce rapid char+Enter events into a single Event::Paste.
+            // On Windows, bracketed paste doesn't produce Event::Paste —
+            // pasted text arrives as individual KEY_EVENT records.
+            let batch = coalesce_paste_events(batch);
+
+            for evt in batch {
                 process_input_event(
                     evt,
                     app,
@@ -509,10 +528,15 @@ pub async fn run_app(
             // Pre-draw drain: catch events buffered by the input thread since
             // the primary drain. If a key arrives, skip draw (loop back).
             let mut got_key = false;
+            let mut pre_batch = Vec::new();
             while let Ok(evt) = input_rx.try_recv() {
                 if let Event::Key(_) = &evt {
                     got_key = true;
                 }
+                pre_batch.push(evt);
+            }
+            let pre_batch = coalesce_paste_events(pre_batch);
+            for evt in pre_batch {
                 process_input_event(
                     evt,
                     app,
@@ -602,6 +626,68 @@ pub async fn run_app(
     Ok(())
 }
 
+/// Detect rapid char+Enter key events in a drain batch and coalesce them into
+/// a single `Event::Paste`. On Windows, `EnableBracketedPaste` sends the VT
+/// sequence but crossterm's `ReadConsoleInputW`-based reader delivers pasted
+/// text as individual `KEY_EVENT` records — `Event::Paste` is never generated.
+/// Each newline arrives as a plain Enter keypress, triggering prompt submit.
+///
+/// Heuristic: characters appear AFTER an Enter in the same drain batch AND the
+/// batch has ≥3 key presses. Human typing at normal speed (≤200 WPM, ~60ms
+/// between keys) never produces Enter + character within the 16-100ms drain
+/// window. The ≥3 threshold prevents false positives from fast typing patterns
+/// like (Enter, j) at idle poll intervals (100ms). Even a short paste like
+/// "a\nb" produces 3 presses (a, Enter, b), safely above the threshold.
+fn coalesce_paste_events(events: Vec<Event>) -> Vec<Event> {
+    let mut press_count = 0usize;
+    let mut seen_enter = false;
+    let mut chars_after_enter = false;
+
+    for evt in &events {
+        if let Event::Key(k) = evt {
+            if k.kind == KeyEventKind::Press {
+                match k.code {
+                    KeyCode::Enter => {
+                        press_count += 1;
+                        seen_enter = true;
+                    }
+                    KeyCode::Char(_) => {
+                        press_count += 1;
+                        if seen_enter {
+                            chars_after_enter = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if !chars_after_enter || press_count < 3 {
+        return events; // Not a paste — process normally
+    }
+
+    // Coalesce: extract char/Enter Press keys into paste text, keep the rest
+    let mut paste_text = String::new();
+    let mut other_events = Vec::new();
+
+    for evt in events {
+        match &evt {
+            Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
+                KeyCode::Char(c) => paste_text.push(c),
+                KeyCode::Enter => paste_text.push('\n'),
+                _ => other_events.push(evt),
+            },
+            _ => other_events.push(evt),
+        }
+    }
+
+    if !paste_text.is_empty() {
+        other_events.push(Event::Paste(paste_text));
+    }
+
+    other_events
+}
 
 #[cfg(test)]
 mod tests {

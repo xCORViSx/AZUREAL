@@ -122,8 +122,15 @@ pub fn process_input_event(
                 app.input_cursor += text.chars().count();
                 *had_key_event = true;
             } else if app.terminal_mode {
-                // In terminal type mode, forward pasted text directly to PTY
-                app.write_to_terminal(text.as_bytes());
+                // In terminal type mode, forward with bracketed paste wrapping
+                // so shells (PowerShell PSReadLine, bash, zsh) buffer the entire
+                // block instead of executing each line individually.
+                let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
+                let mut data = Vec::with_capacity(normalized.len() + 12);
+                data.extend_from_slice(b"\x1b[200~");
+                data.extend_from_slice(normalized.as_bytes());
+                data.extend_from_slice(b"\x1b[201~");
+                app.write_to_terminal(&data);
                 *had_key_event = true;
             } else if app.viewer_edit_mode {
                 // In edit mode, insert pasted text at cursor
